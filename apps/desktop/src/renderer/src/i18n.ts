@@ -88,10 +88,6 @@ const DICT: Record<string, { zh: string; en: string }> = {
     zh: '用于私有仓库拉取更新（GitHub PAT，需该仓库 Contents: Read 权限）。留空表示公开仓库。',
     en: 'For pulling from private repos (GitHub PAT with Contents: Read). Leave empty for public repos.',
   },
-  'settings.update.tokenHow': {
-    zh: '如何获取 Token：登录 GitHub → 右上角头像 → Settings → Developer settings → Personal access tokens → Generate new token（建议选 Fine-grained，仅勾选本仓库的 Contents: Read 权限），生成后粘贴到下方。',
-    en: 'How to get a token: GitHub → Settings → Developer settings → Personal access tokens → Generate new token (recommend Fine-grained, only Contents: Read for this repo), then paste it below.',
-  },
   'settings.update.genericUrl': { zh: '更新服务器地址', en: 'Update Server URL' },
   'settings.update.check': { zh: '🔄 立即检查更新', en: '🔄 Check for Updates' },
   'settings.update.checkOk': {

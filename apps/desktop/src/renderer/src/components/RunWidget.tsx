@@ -20,8 +20,11 @@ const NPM_PRIORITY = ['dev', 'start', 'serve', 'build', 'test'];
 
 /** 尝试从文件内容中解析运行配置（多语言） */
 async function detectScripts(workspace: string): Promise<ScriptOption[]> {
+  // 先判断文件是否存在，再读取，避免对不存在文件触发 readFile 产生 ENOENT 噪音日志
   const tryRead = async (p: string): Promise<string | null> => {
     try {
+      const exists = await window.ide.pathExists(p);
+      if (!exists) return null;
       const content = await window.ide.readFile(p);
       return content || null;
     } catch {

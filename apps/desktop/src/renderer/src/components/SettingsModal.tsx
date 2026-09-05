@@ -20,6 +20,12 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSaved?: (settings: AppSettings) => void;
+  /** 应用内非阻塞提示（用于替代原生 alert） */
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 const PERMISSION_ORDER: PermissionMode[] = ['allow_all_extreme', 'allow_all', 'ask', 'deny_all'];
@@ -31,7 +37,7 @@ const PERMISSION_HINTS: Record<PermissionMode, string> = {
   deny_all: '拦截全部工具调用，仅可查看不可修改。',
 };
 
-export function SettingsModal({ open, onClose, onSaved }: Props) {
+export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
   const { locale, t, setLocale } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [probe, setProbe] = useState<string>('');
@@ -45,6 +51,21 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
   const [modelProbeResults, setModelProbeResults] = useState<
     Record<string, { ok: boolean; detail: string }>
   >({});
+  // 更新下载进度状态：下载中显示进度条，完成/失败后隐藏。
+  // 注意：必须放在条件早退(if(!open||!settings) return null)之前，否则违反 Hook 规则。
+  const [updating, setUpdating] = useState<{ phase: 'download' | 'done'; percent: number } | null>(
+    null,
+  );
+  // 更新检查结果提示（显示在「软件更新」页内，替代右下角 toast）
+  const [updateMsg, setUpdateMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    const unsub = window.ide.onUpdateProgress((p) => {
+      setUpdating(p.phase === 'done' ? null : { phase: 'download', percent: p.percent });
+    });
+    return () => unsub();
+  }, []);
 
   const MODEL_PRESETS: Array<{
     label: string;
@@ -205,6 +226,16 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
     setProbe('');
   }, [open]);
 
+  // 按 Esc 关闭设置弹窗
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   if (!open || !settings) return null;
 
   async function save(): Promise<void> {
@@ -233,27 +264,17 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
 
   async function checkUpdateNow(): Promise<void> {
     if (!settings) return;
+    setUpdateMsg(null);
     // 先保存当前更新配置，再触发检查，确保 token / owner / repo 已生效
     const next = await window.ide.saveSettings(settings);
     setSettings(next);
     const res = await window.ide.checkUpdate();
     if (!res.ok) {
-      alert(`${t('settings.update.checkFail')}${res.detail || ''}`);
+      setUpdateMsg({ type: 'error', text: `${t('settings.update.checkFail')}${res.detail || ''}` });
     } else {
-      alert(t('settings.update.checkOk'));
+      setUpdateMsg({ type: 'success', text: res.detail || t('settings.update.checkOk') });
     }
   }
-
-  // 更新下载进度状态：下载中显示进度条，完成/失败后隐藏
-  const [updating, setUpdating] = useState<{ phase: 'download' | 'done'; percent: number } | null>(
-    null,
-  );
-  useEffect(() => {
-    const unsub = window.ide.onUpdateProgress((p) => {
-      setUpdating(p.phase === 'done' ? null : { phase: 'download', percent: p.percent });
-    });
-    return () => unsub();
-  }, []);
 
   /** 返回一个非空的 updateFeed，避免 spread undefined 导致类型不完整。 */
   function feedWith(patch: Partial<UpdateFeedConfig>): UpdateFeedConfig {
@@ -262,7 +283,7 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
   }
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
+    <div className="settings-overlay">
       <div className="settings-modal modern-settings" onClick={(e) => e.stopPropagation()}>
         {/* 顶部标题栏 */}
         <div className="settings-header">
@@ -989,13 +1010,6 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                         <div className="setting-card-title">
                           <strong>{t('settings.update.token')}</strong>
                         </div>
-                        <p className="setting-card-desc">{t('settings.update.tokenDesc')}</p>
-                        <div
-                          className="setting-card-desc"
-                          style={{ fontSize: 12, lineHeight: 1.7, marginTop: 6 }}
-                        >
-                          {t('settings.update.tokenHow')}
-                        </div>
                         <input
                           className="modern-input"
                           type="password"
@@ -1039,6 +1053,15 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                     >
                       {t('settings.update.check')}
                     </button>
+                    {updateMsg && (
+                      <div
+                        className={`update-result-msg ${updateMsg.type === 'error' ? 'is-error' : 'is-ok'}`}
+                        style={{ marginTop: 10 }}
+                      >
+                        {updateMsg.type === 'error' ? '✕ ' : '✓ '}
+                        {updateMsg.text}
+                      </div>
+                    )}
                     {updating && (
                       <div className="update-progress" style={{ marginTop: 10 }}>
                         <div className="update-progress-track">

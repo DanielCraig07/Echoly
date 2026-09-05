@@ -3496,6 +3496,9 @@ body.resizing.resizing-row {
 .settings-modal.modern-settings {
   width: min(920px, 94vw);
   height: min(680px, 86vh);
+  min-width: 720px;
+  min-height: 480px;
+  resize: both;
   background: #181920;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
@@ -3504,7 +3507,7 @@ body.resizing.resizing-row {
     0 0 0 1px rgba(255, 255, 255, 0.05);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .settings-header {
@@ -3628,7 +3631,13 @@ body.resizing.resizing-row {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px 24px;
+  padding: 20px 24px 72px;
+}
+
+/* 软件更新页：让「立即检查更新」按钮与结果提示区域有足够底部间距，
+   避免提示贴到滚动容器底边被裁切 */
+.settings-panel-section:has(.update-result-msg) {
+  padding-bottom: 8px;
 }
 
 .settings-panel-section {
@@ -6029,6 +6038,24 @@ body.resizing.resizing-row {
 .update-progress-text {
   font-size: 11px;
   color: var(--muted);
+}
+
+/* 更新检查结果提示（页面内） */
+.update-result-msg {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  line-height: 1.5;
+}
+.update-result-msg.is-ok {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+.update-result-msg.is-error {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
 }
 
 .chat-tab-close:hover {

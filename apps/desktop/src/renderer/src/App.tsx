@@ -1966,6 +1966,7 @@ export function App() {
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onSaved={applySettings}
+        onShowToast={showToast}
       />
 
       {/* 扩展管理面板 */}
