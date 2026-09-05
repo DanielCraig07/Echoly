@@ -1074,9 +1074,57 @@ export function App() {
         e.preventDefault();
         searchRef.current?.focus('code');
       }
+      // Command palette 中登记的快捷键（Cmd+N/B/J/O/, 等）。这些组合键没有打字
+      // 语义，即使焦点在输入框/终端（xterm 的隐藏 textarea）里也应触发，因此不做
+      // isTyping 拦截，否则打开终端后标签页或 xterm 获得焦点就会让快捷键失效。
+      const shortcutMap: Record<string, string> = {
+        n: 'cmd-new-chat',
+        b: 'cmd-toggle-ai',
+        j: 'cmd-toggle-terminal',
+        o: 'cmd-switch-workspace',
+        ',': 'cmd-open-settings',
+      };
+      const isMonacoFocused = (() => {
+        const el = document.activeElement as HTMLElement | null;
+        return !!(el && typeof el.closest === 'function' && el.closest('.monaco-editor'));
+      })();
+      const isTerminalFocused = (() => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el) return false;
+        return el.classList?.contains('xterm-helper-textarea') || !!el.closest?.('.xterm');
+      })();
+      // 仅当焦点在应用自带文本输入且不在编辑器/终端里时，跳过 IDE 快捷键；
+      // 编辑器与终端里的 Cmd 组合键仍交由 IDE 处理（它们不冲突于打字）。
+      const skipDueToInput = (() => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el) return false;
+        if (isMonacoFocused || isTerminalFocused) return false;
+        const tag = el.tagName?.toLowerCase();
+        return tag === 'input' || tag === 'textarea' || el.isContentEditable;
+      })();
+      if (ctrl && !e.shiftKey && shortcutMap[e.key.toLowerCase()]) {
+        if (skipDueToInput) return;
+        const action = ideActions.find((a) => a.id === shortcutMap[e.key.toLowerCase()]);
+        if (action) {
+          e.preventDefault();
+          action.handler();
+          return;
+        }
+      }
+      // Cmd+Shift+G -> Git 面板（映射到 cmd-git-status）；Cmd+Shift+` -> 新终端
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        ideActions.find((a) => a.id === 'cmd-git-status')?.handler();
+        return;
+      }
+      if (ctrl && e.shiftKey && (e.key === '`' || e.key === '~')) {
+        e.preventDefault();
+        ideActions.find((a) => a.id === 'cmd-new-terminal')?.handler();
+        return;
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [activePath]);
 
   // Keep side-panel widths in sync with the app window's actual size (see
@@ -1119,8 +1167,8 @@ export function App() {
       shortcut: 'Cmd+N',
       handler: () => {
         chatRef.current?.clearAndNewSession();
-        if (layout.chatPanelExpanded === false) {
-          const next = { ...layout, chatPanelExpanded: true };
+        if (layoutRef.current.chatPanelExpanded === false) {
+          const next = { ...layoutRef.current, chatPanelExpanded: true };
           setLayout(next);
           persistLayout(next);
         }
@@ -1132,7 +1180,10 @@ export function App() {
       category: '视图',
       shortcut: 'Cmd+B',
       handler: () => {
-        const next = { ...layout, chatPanelExpanded: layout.chatPanelExpanded === false };
+        const next = {
+          ...layoutRef.current,
+          chatPanelExpanded: layoutRef.current.chatPanelExpanded === false,
+        };
         setLayout(next);
         persistLayout(next);
       },
@@ -1143,7 +1194,10 @@ export function App() {
       category: '终端',
       shortcut: 'Cmd+J',
       handler: () => {
-        const next = { ...layout, bottomPanelExpanded: layout.bottomPanelExpanded !== true };
+        const next = {
+          ...layoutRef.current,
+          bottomPanelExpanded: layoutRef.current.bottomPanelExpanded !== true,
+        };
         setLayout(next);
         persistLayout(next);
       },
@@ -1155,8 +1209,8 @@ export function App() {
       shortcut: 'Cmd+Shift+`',
       handler: () => {
         terminalNonce.current += 1;
-        setTerminalOpenRequest({ cwd: workspace || '', nonce: terminalNonce.current });
-        const next = { ...layout, bottomPanelExpanded: true };
+        setTerminalOpenRequest({ cwd: workspaceRef.current || '', nonce: terminalNonce.current });
+        const next = { ...layoutRef.current, bottomPanelExpanded: true };
         setLayout(next);
         persistLayout(next);
       },
@@ -1168,7 +1222,7 @@ export function App() {
       shortcut: 'Cmd+Shift+G',
       handler: () => {
         setLeftPanel('git');
-        const next = { ...layout, leftPanelExpanded: true };
+        const next = { ...layoutRef.current, leftPanelExpanded: true };
         setLayout(next);
         persistLayout(next);
       },

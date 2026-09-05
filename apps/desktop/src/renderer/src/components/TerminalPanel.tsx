@@ -38,19 +38,8 @@ function terminalTheme(uiTheme: UiTheme) {
   };
 }
 
-/** Pipe-based local shell has no PTY echo; mirror printable input locally. */
-function echoLocalInput(term: Terminal, data: string): void {
-  for (const ch of data) {
-    const code = ch.charCodeAt(0);
-    if (ch === '\r') {
-      term.write('\r\n');
-    } else if (ch === '\u007f' || ch === '\b') {
-      term.write('\b \b');
-    } else if (code >= 0x20 || ch === '\t') {
-      term.write(ch);
-    }
-  }
-}
+/** 已废弃：PTY（node-pty）会原生回显输入，无需再手动镜像。保留签名以防外部引用。 */
+function echoLocalInput(_term: Terminal, _data: string): void {}
 
 function makeTab(index: number, cwd?: string, initialCommand?: string): TermTab {
   return { clientId: uid(), index, cwd, initialCommand };
@@ -150,7 +139,9 @@ function TerminalSession({
       }
 
       term.onData((data) => {
-        if (terminalKind === 'local') echoLocalInput(term, data);
+        // 使用 node-pty 后，shell 会自行回显输入（PTY 原生 echo）并处理退格/光标，
+        // 因此不再手动 echoLocalInput，否则会与 PTY 双重回显，退格还会把已显示的
+        // 提示符/输入删掉。
         void window.ide.writeTerminal(id, data);
       });
 

@@ -162,7 +162,8 @@ function fileMenuTemplate(): MenuItemConstructorOptions[] {
   return [
     {
       label: '新建文本文件',
-      accelerator: 'CommandOrControl+N',
+      // 移除 Cmd+N 加速键：该快捷键被指令面板的「AI: 新建对话会话」占用。
+      // 若保留加速键，macOS 原生菜单会在渲染进程 keydown 之前拦截它。
       click: () => sendMenuCommand({ type: 'newFile' }),
     },
     {
@@ -193,7 +194,8 @@ function fileMenuTemplate(): MenuItemConstructorOptions[] {
     { type: 'separator' },
     {
       label: '打开...',
-      accelerator: 'CommandOrControl+O',
+      // 移除 Cmd+O 加速键：被指令面板「工作区: 打开或切换工作区目录」占用，
+      // 避免原生菜单在渲染进程 keydown 之前拦截。
       click: async () => {
         const win = getActiveWindow();
         if (!win) return;

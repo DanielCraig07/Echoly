@@ -3,6 +3,7 @@ import './monaco';
 import { Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { I18nProvider } from './i18n';
 
 // Polyfill for Electron renderer process
 // Electron 默认禁用 prompt/alert/confirm，提供兼容实现
@@ -72,6 +73,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
-    <App />
+    <I18nProvider>
+      <App />
+    </I18nProvider>
   </ErrorBoundary>,
 );

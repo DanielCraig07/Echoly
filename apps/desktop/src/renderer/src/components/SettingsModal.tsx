@@ -14,7 +14,7 @@ import {
   DEFAULT_PROVIDERS,
   DEFAULT_MODELS,
 } from '@deepseek-ide/shared';
-import { useI18n, setLocale as persistLocale } from '../i18n';
+import { useI18n } from '../i18n';
 
 interface Props {
   open: boolean;
@@ -32,7 +32,7 @@ const PERMISSION_HINTS: Record<PermissionMode, string> = {
 };
 
 export function SettingsModal({ open, onClose, onSaved }: Props) {
-  const { locale, setLocale } = useI18n();
+  const { locale, t, setLocale } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [probe, setProbe] = useState<string>('');
   const [probing, setProbing] = useState(false);
@@ -238,9 +238,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
     setSettings(next);
     const res = await window.ide.checkUpdate();
     if (!res.ok) {
-      alert(`检查更新失败：${res.detail || '未知错误'}`);
+      alert(`${t('settings.update.checkFail')}${res.detail || ''}`);
     } else {
-      alert('已启动更新检查，请留意下载进度。');
+      alert(t('settings.update.checkOk'));
     }
   }
 
@@ -257,9 +257,14 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
         <div className="settings-header">
           <div className="settings-header-left">
             <div className="settings-logo-pill">Echoly</div>
-            <h2>偏好设置</h2>
+            <h2>{t('settings.title')}</h2>
           </div>
-          <button type="button" className="settings-close-btn" onClick={onClose} title="关闭 (Esc)">
+          <button
+            type="button"
+            className="settings-close-btn"
+            onClick={onClose}
+            title={t('common.close')}
+          >
             ✕
           </button>
         </div>
@@ -275,8 +280,8 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
             >
               <span className="nav-icon">🤖</span>
               <div className="nav-text">
-                <span className="nav-title">AI 模型配置</span>
-                <span className="nav-sub">多模型端点与密钥</span>
+                <span className="nav-title">{t('settings.nav.models')}</span>
+                <span className="nav-sub">{t('settings.nav.modelsDesc')}</span>
               </div>
             </button>
 
@@ -287,8 +292,8 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
             >
               <span className="nav-icon">⚡</span>
               <div className="nav-text">
-                <span className="nav-title">运行与推理</span>
-                <span className="nav-sub">温度、步数与窗口</span>
+                <span className="nav-title">{t('settings.nav.runtime')}</span>
+                <span className="nav-sub">{t('settings.nav.runtimeDesc')}</span>
               </div>
             </button>
 
@@ -299,8 +304,8 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
             >
               <span className="nav-icon">🎨</span>
               <div className="nav-text">
-                <span className="nav-title">外观与权限</span>
-                <span className="nav-sub">主题、放行策略</span>
+                <span className="nav-title">{t('settings.nav.general')}</span>
+                <span className="nav-sub">{t('settings.nav.generalDesc')}</span>
               </div>
             </button>
 
@@ -323,8 +328,8 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
             >
               <span className="nav-icon">🔄</span>
               <div className="nav-text">
-                <span className="nav-title">软件更新</span>
-                <span className="nav-sub">在线更新配置</span>
+                <span className="nav-title">{t('settings.nav.update')}</span>
+                <span className="nav-sub">{t('settings.nav.updateDesc')}</span>
               </div>
             </button>
           </aside>
@@ -776,25 +781,21 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                 <div className="modern-card-group">
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>界面语言 (Language)</strong>
+                      <strong>{t('settings.language')}</strong>
                     </div>
                     <select
                       className="modern-select"
                       value={locale}
-                      onChange={(e) => {
-                        const l = e.target.value as 'zh' | 'en';
-                        persistLocale(l);
-                        setLocale(l);
-                      }}
+                      onChange={(e) => setLocale(e.target.value as 'zh' | 'en')}
                     >
-                      <option value="zh">中文</option>
-                      <option value="en">English</option>
+                      <option value="zh">{t('settings.language.zh')}</option>
+                      <option value="en">{t('settings.language.en')}</option>
                     </select>
                   </div>
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>界面主题 (Theme)</strong>
+                      <strong>{t('settings.theme')}</strong>
                     </div>
                     <div className="theme-selector-cards">
                       <div
@@ -802,14 +803,14 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                         onClick={() => setSettings({ ...settings, theme: 'dark' })}
                       >
                         <div className="theme-preview dark-preview" />
-                        <span>深色极客 Dark (默认)</span>
+                        <span>{t('settings.theme.dark')}</span>
                       </div>
                       <div
                         className={`theme-card ${settings.theme === 'light' ? 'selected' : ''}`}
                         onClick={() => setSettings({ ...settings, theme: 'light' })}
                       >
                         <div className="theme-preview light-preview" />
-                        <span>浅色雅致 Light</span>
+                        <span>{t('settings.theme.light')}</span>
                       </div>
                     </div>
                   </div>
@@ -915,18 +916,15 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
               <div className="settings-panel-section">
                 <div className="panel-title-bar">
                   <div>
-                    <h3 className="panel-h3">在线更新</h3>
-                    <p className="panel-desc">
-                      配置在线自动更新源。私有 GitHub
-                      仓库需填写访问令牌（Token），令牌仅保存在本机且加密存储。
-                    </p>
+                    <h3 className="panel-h3">{t('settings.update.title')}</h3>
+                    <p className="panel-desc">{t('settings.update.desc')}</p>
                   </div>
                 </div>
 
                 <div className="modern-card-group">
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>更新源 (Provider)</strong>
+                      <strong>{t('settings.update.provider')}</strong>
                     </div>
                     <select
                       className="modern-select"
@@ -945,17 +943,17 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                     </select>
                   </div>
 
-                  {settings.updateFeed?.provider === 'github' && (
+                  {(settings.updateFeed?.provider ?? 'github') === 'github' && (
                     <>
                       <div className="setting-card">
                         <div className="setting-card-title">
-                          <strong>仓库 Owner / Repo</strong>
+                          <strong>{t('settings.update.ownerRepo')}</strong>
                         </div>
                         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                           <input
                             className="modern-input"
-                            placeholder="Owner，如 DanielCraig07"
-                            value={settings.updateFeed?.owner ?? ''}
+                            placeholder={t('settings.update.ownerPh')}
+                            value={settings.updateFeed?.owner ?? 'DanielCraig07'}
                             onChange={(e) =>
                               setSettings({
                                 ...settings,
@@ -965,8 +963,8 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                           />
                           <input
                             className="modern-input"
-                            placeholder="Repo，如 Echoly"
-                            value={settings.updateFeed?.repo ?? ''}
+                            placeholder={t('settings.update.repoPh')}
+                            value={settings.updateFeed?.repo ?? 'Echoly'}
                             onChange={(e) =>
                               setSettings({
                                 ...settings,
@@ -978,12 +976,15 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                       </div>
                       <div className="setting-card">
                         <div className="setting-card-title">
-                          <strong>访问令牌 (Token)</strong>
+                          <strong>{t('settings.update.token')}</strong>
                         </div>
-                        <p className="setting-card-desc">
-                          用于私有仓库拉取更新（GitHub PAT，需该仓库 Contents: Read
-                          权限）。留空表示公开仓库。
-                        </p>
+                        <p className="setting-card-desc">{t('settings.update.tokenDesc')}</p>
+                        <div
+                          className="setting-card-desc"
+                          style={{ fontSize: 12, lineHeight: 1.7, marginTop: 6 }}
+                        >
+                          {t('settings.update.tokenHow')}
+                        </div>
                         <input
                           className="modern-input"
                           type="password"
@@ -1003,7 +1004,7 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                   {settings.updateFeed?.provider === 'generic' && (
                     <div className="setting-card">
                       <div className="setting-card-title">
-                        <strong>更新服务器地址</strong>
+                        <strong>{t('settings.update.genericUrl')}</strong>
                       </div>
                       <input
                         className="modern-input"
@@ -1025,7 +1026,7 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                       className="primary save-all-btn"
                       onClick={() => void checkUpdateNow()}
                     >
-                      🔄 立即检查更新
+                      {t('settings.update.check')}
                     </button>
                   </div>
                 </div>
@@ -1050,13 +1051,13 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
               onClick={() => void runProbe()}
               disabled={probing}
             >
-              {probing ? '探测中…' : '⚡ 探测默认模型'}
+              {probing ? t('common.probing') : t('common.probe')}
             </button>
             <button type="button" className="cancel-btn" onClick={onClose}>
-              关闭
+              {t('common.close')}
             </button>
             <button type="button" className="primary save-all-btn" onClick={() => void save()}>
-              应用并保存配置
+              {t('common.applySave')}
             </button>
           </div>
         </div>
