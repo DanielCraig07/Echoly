@@ -135,6 +135,14 @@ const api: IpcApi = {
   extensionResolveWebview: (viewId) => ipcRenderer.invoke('extension:resolve-webview', viewId),
   checkUpdate: () => ipcRenderer.invoke('updater:check'),
   getUpdateState: () => ipcRenderer.invoke('updater:getState'),
+  onUpdateProgress: (cb) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      progress: { phase: 'download' | 'done'; loaded: number; total: number; percent: number },
+    ) => cb(progress);
+    ipcRenderer.on('updater:progress', listener);
+    return () => ipcRenderer.removeListener('updater:progress', listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('ide', api);

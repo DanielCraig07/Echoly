@@ -244,6 +244,17 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
     }
   }
 
+  // 更新下载进度状态：下载中显示进度条，完成/失败后隐藏
+  const [updating, setUpdating] = useState<{ phase: 'download' | 'done'; percent: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    const unsub = window.ide.onUpdateProgress((p) => {
+      setUpdating(p.phase === 'done' ? null : { phase: 'download', percent: p.percent });
+    });
+    return () => unsub();
+  }, []);
+
   /** 返回一个非空的 updateFeed，避免 spread undefined 导致类型不完整。 */
   function feedWith(patch: Partial<UpdateFeedConfig>): UpdateFeedConfig {
     const base: UpdateFeedConfig = settings?.updateFeed ?? { provider: 'github' };
@@ -1028,6 +1039,19 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                     >
                       {t('settings.update.check')}
                     </button>
+                    {updating && (
+                      <div className="update-progress" style={{ marginTop: 10 }}>
+                        <div className="update-progress-track">
+                          <div
+                            className="update-progress-fill"
+                            style={{ width: `${Math.max(4, updating.percent)}%` }}
+                          />
+                        </div>
+                        <span className="update-progress-text">
+                          {t('settings.update.downloading')} {updating.percent}%
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

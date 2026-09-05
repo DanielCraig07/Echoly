@@ -99,6 +99,7 @@ const DICT: Record<string, { zh: string; en: string }> = {
     en: 'Update check started, watch download progress.',
   },
   'settings.update.checkFail': { zh: '检查更新失败：', en: 'Update check failed: ' },
+  'settings.update.downloading': { zh: '下载更新中', en: 'Downloading update' },
 
   // 通用
   'common.close': { zh: '关闭', en: 'Close' },

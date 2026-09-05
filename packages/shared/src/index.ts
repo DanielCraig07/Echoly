@@ -850,6 +850,15 @@ export interface IpcApi {
   checkUpdate: () => Promise<{ ok: boolean; detail?: string }>;
   /** 获取更新状态 */
   getUpdateState: () => Promise<{ checked: boolean; feed: unknown }>;
+  /** 更新下载进度事件：phase=download 时带 loaded/total/percent */
+  onUpdateProgress: (
+    cb: (progress: {
+      phase: 'download' | 'done';
+      loaded: number;
+      total: number;
+      percent: number;
+    }) => void,
+  ) => () => void;
 }
 
 declare global {

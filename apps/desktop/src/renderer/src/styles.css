@@ -5900,6 +5900,137 @@ body.resizing.resizing-row {
   background: rgba(255, 255, 255, 0.45) !important;
 }
 
+/* ── Monaco 查找/替换小组件 (Find Widget) 美化 ───────────────────────────────
+   默认样式是硬编码的灰白块，在深色主题下显得扎眼。这里统一重绘为贴合 IDE
+   深色风格的圆角浮层。注意：只改颜色/边框/圆角，不要改 padding/height/gap，
+   否则会破坏 Monaco 内部对 find/replace 两行的测高布局，导致替换输入框被挡。 */
+.monaco-editor .find-widget {
+  background: var(--bg-modal) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35) !important;
+  overflow: visible !important;
+  color: var(--text) !important;
+  top: 12px !important;
+}
+
+.monaco-editor .find-widget .monaco-inputbox {
+  background: var(--bg-input) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 5px !important;
+  box-shadow: none !important;
+}
+
+.monaco-editor .find-widget .monaco-inputbox .input {
+  color: var(--text) !important;
+  background: transparent !important;
+}
+
+.monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-soft) !important;
+}
+
+.monaco-editor .find-widget .find-part,
+.monaco-editor .find-widget .replace-part {
+  cursor: text;
+}
+
+.monaco-editor .find-widget .find-part,
+.monaco-editor .find-widget .replace-part {
+  gap: 4px !important;
+  align-items: center !important;
+}
+
+.monaco-editor .find-widget .replace-part .replace-input {
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.monaco-editor .find-widget .find-actions,
+.monaco-editor .find-widget .monaco-action-bar {
+  color: var(--muted) !important;
+}
+
+.monaco-editor .find-widget .monaco-action-bar .action-label,
+.monaco-editor .find-widget .find-widget .action-item .action-label {
+  color: var(--muted) !important;
+}
+
+.monaco-editor .find-widget .monaco-action-bar .action-item:hover .action-label,
+.monaco-editor .find-widget .find-actions .action-item:hover .action-label {
+  color: var(--text) !important;
+  background-color: var(--bg-hover) !important;
+  border-radius: 4px !important;
+}
+
+.monaco-editor .find-widget .button {
+  background: var(--bg-hover) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 5px !important;
+  color: var(--text) !important;
+}
+
+.monaco-editor .find-widget .button:hover {
+  background: var(--bg-hover-strong) !important;
+  border-color: var(--accent) !important;
+}
+
+.monaco-editor .find-widget .button.checked {
+  background: var(--accent-soft) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-light) !important;
+}
+
+/* 匹配/选中亮色 */
+.monaco-editor .findMatch {
+  background: rgba(76, 141, 255, 0.3) !important;
+  outline: 1px solid var(--accent) !important;
+}
+.monaco-editor .currentFindMatch {
+  background: rgba(76, 141, 255, 0.55) !important;
+  outline: 1px solid var(--accent-light) !important;
+}
+
+/* 关闭按钮 */
+.monaco-editor .find-widget .close-button {
+  color: var(--muted) !important;
+}
+.monaco-editor .find-widget .close-button:hover {
+  color: var(--text) !important;
+  background: var(--bg-hover) !important;
+  border-radius: 4px !important;
+}
+
+/* 查找输入框里的提示占位（Find / Replace / No results 文字与输入框对齐） */
+.monaco-editor .find-widget .monaco-inputbox .input::placeholder,
+.monaco-editor .find-widget .monaco-inputbox .input {
+  font-size: 12px !important;
+}
+
+/* 更新下载进度条 */
+.update-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.update-progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+.update-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.15s ease;
+}
+.update-progress-text {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .chat-tab-close:hover {
   color: var(--fg);
   background: rgba(255, 255, 255, 0.15);
@@ -8143,6 +8274,17 @@ body.resizing.resizing-row {
   font-size: 12px;
   font-weight: 500;
   color: var(--text);
+}
+
+/* 模型下拉里的 provider 徽章：未定义为独立类时会落到浏览器默认字号偏大，
+   这里显式缩小并圆角，与列表项协调 */
+.chat-model-provider-badge {
+  font-size: 9.5px !important;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .chat-model-item-sub {
