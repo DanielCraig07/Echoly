@@ -34,21 +34,3 @@ jobs:
 
       - name: Build (renderer/main)
         run: npm run build
-
-  package-mac:
-    runs-on: macos-latest
-    needs: quality
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - name: Install dependencies
-        run: npm install
-      - name: Package macOS arm64 DMG
-        run: npm run pack:mac:arm64
-      - uses: actions/upload-artifact@v4
-        with:
-          name: echoly-mac-arm64-dmg
-          path: apps/desktop/release/*.dmg
