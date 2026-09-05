@@ -69,8 +69,11 @@ export function initUpdater(getUpdateFeed: () => UpdateFeedConfig | null): void 
         repo: cfg.repo || GH_REPO,
       });
       // 私有仓库：注入 token 作为请求头，使匿名不可访问的 Release 也能被拉取。
+      // 注意：electron-updater 的 addAuthHeader 会把 token 原样放入 authorization 头，
+      // GitHub 要求带 scheme 前缀（`bearer <token>` / `token <token>`），裸 token 会被拒绝
+      // 并伪装成 404，因此这里显式加上 `bearer ` 前缀。
       if (cfg.token) {
-        autoUpdater.addAuthHeader(cfg.token);
+        autoUpdater.addAuthHeader(`bearer ${cfg.token}`);
       }
     } else if (cfg.genericUrl) {
       autoUpdater.setFeedURL({ provider: 'generic', url: cfg.genericUrl });
