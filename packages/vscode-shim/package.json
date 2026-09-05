@@ -1,0 +1,17 @@
+{
+  "name": "@deepseek-ide/vscode-shim",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@types/node": "^22.10.2",
+    "@types/vscode": "^1.98.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

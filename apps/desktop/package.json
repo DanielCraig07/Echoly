@@ -1,0 +1,115 @@
+{
+  "name": "@deepseek-ide/desktop",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Echoly Desktop App",
+  "author": "Echoly",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "pack": "npm run build && electron-builder --win --x64 --config.electronVersion=35.7.5",
+    "pack:win32": "npm run build && electron-builder --win --ia32 --config.electronVersion=35.7.5 --config.electronDist=electron-dist-cache/win32-ia32",
+    "pack:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
+    "pack:mac:arm64": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64 --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
+    "pack:mac:x64": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --x64 --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+  },
+  "dependencies": {
+    "@deepseek-ide/agent": "*",
+    "@deepseek-ide/llm": "*",
+    "@deepseek-ide/shared": "*",
+    "@deepseek-ide/skills": "*",
+    "@deepseek-ide/tools": "*",
+    "@monaco-editor/react": "^4.7.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "mermaid": "^11.17.2",
+    "monaco-editor": "^0.52.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "ssh2": "^1.16.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@types/ssh2": "^1.15.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "35.7.5",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.0.0",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.1"
+  },
+  "build": {
+    "appId": "com.echoly.ide",
+    "productName": "Echoly",
+    "electronVersion": "35.7.5",
+    "forceCodeSigning": false,
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "icon": "resources/icon.png",
+    "electronDist": "../../node_modules/electron/dist",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "icon": "resources/icon.ico",
+      "target": [
+        "nsis",
+        "dir"
+      ],
+      "signAndEditExecutable": false,
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "icon": "resources/icon.icns",
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "${productName} ${version} ${arch}",
+      "writeUpdateInfo": false,
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false
+  }
+}

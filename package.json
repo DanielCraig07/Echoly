@@ -1,0 +1,29 @@
+{
+  "name": "echoly",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Echoly - AI-first Modern Intelligent IDE",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @deepseek-ide/desktop",
+    "build": "npm run build -w @deepseek-ide/desktop",
+    "pack": "npm run pack -w @deepseek-ide/desktop",
+    "pack:win32": "npm run pack:win32 -w @deepseek-ide/desktop",
+    "pack:mac": "npm run pack:mac -w @deepseek-ide/desktop",
+    "pack:mac:arm64": "npm run pack:mac:arm64 -w @deepseek-ide/desktop",
+    "pack:mac:x64": "npm run pack:mac:x64 -w @deepseek-ide/desktop",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "probe-llm": "npm run probe -w @deepseek-ide/llm",
+    "build-cursor-ext": "npm run build -w packages/cursor-extension",
+    "package-cursor-ext": "npm run build -w packages/cursor-extension && node scripts/package-cursor-ext.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  }
+}

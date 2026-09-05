@@ -1,0 +1,81 @@
+{
+  "name": "deepseek-cursor-connector",
+  "displayName": "Deepseek Intranet Connector",
+  "description": "连接 Cursor IDE 到内网 Deepseek 模型服务器 (192.168.10.241:8002)",
+  "version": "1.0.0",
+  "publisher": "tsingtec",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "deepseek-cursor.probe",
+        "title": "Deepseek: 测试连接"
+      },
+      {
+        "command": "deepseek-cursor.configure",
+        "title": "Deepseek: 配置内网模型"
+      },
+      {
+        "command": "deepseek-cursor.showSettings",
+        "title": "Deepseek: 查看当前配置"
+      },
+      {
+        "command": "deepseek-cursor.startProxy",
+        "title": "Deepseek: 启动本地代理服务器"
+      },
+      {
+        "command": "deepseek-cursor.stopProxy",
+        "title": "Deepseek: 停止本地代理服务器"
+      }
+    ],
+    "configuration": {
+      "title": "Deepseek Intranet Connector",
+      "properties": {
+        "deepseek-cursor.baseUrl": {
+          "type": "string",
+          "default": "http://192.168.10.241:8002",
+          "description": "内网 Deepseek 模型服务器地址"
+        },
+        "deepseek-cursor.model": {
+          "type": "string",
+          "default": "deepseek-v4",
+          "description": "使用的模型名称"
+        },
+        "deepseek-cursor.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API 密钥（内网环境可为空）"
+        },
+        "deepseek-cursor.proxyPort": {
+          "type": "number",
+          "default": 18002,
+          "description": "本地代理服务器端口"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=out/extension.js --external:vscode --platform=node --format=cjs --sourcemap",
+    "watch": "npm run build -- --watch",
+    "package": "node ../../scripts/package-cursor-ext.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.96.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "@deepseek-ide/shared": "*",
+    "@deepseek-ide/llm": "*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danielcraig/deepseek-ide.git"
+  }
+}

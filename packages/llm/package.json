@@ -1,0 +1,22 @@
+{
+  "name": "@deepseek-ide/llm",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "probe": "tsx src/probe.ts"
+  },
+  "dependencies": {
+    "@deepseek-ide/shared": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
