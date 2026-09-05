@@ -184,175 +184,250 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
   const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
   const cmdKey = isMac ? '⌘' : 'Ctrl+';
 
+  const handleTabSwitch = () => {
+    if (mode === 'actions') setMode('files');
+    else if (mode === 'files') setMode('code');
+    else setMode('actions');
+  };
+
   return (
-    <div className={`top-search ${open ? 'open' : ''}`} ref={rootRef}>
-      <div className="top-search-modes" role="tablist" aria-label="搜索模式">
-        <button
-          type="button"
-          role="tab"
-          className={mode === 'files' ? 'active' : ''}
-          aria-selected={mode === 'files'}
-          onClick={() => {
-            setMode('files');
-            setOpen(true);
-            inputRef.current?.focus();
-          }}
-          disabled={!enabled}
-          title={`搜索文件 (${cmdKey}P)`}
-        >
-          文件
-        </button>
-        <button
-          type="button"
-          role="tab"
-          className={mode === 'actions' ? 'active' : ''}
-          aria-selected={mode === 'actions'}
-          onClick={() => {
-            setMode('actions');
-            setOpen(true);
-            inputRef.current?.focus();
-          }}
-          title={`全局命令 (${cmdKey}Shift+P)`}
-        >
-          动作
-        </button>
-        <button
-          type="button"
-          role="tab"
-          className={mode === 'code' ? 'active' : ''}
-          aria-selected={mode === 'code'}
-          onClick={() => {
-            setMode('code');
-            setOpen(true);
-            inputRef.current?.focus();
-          }}
-          disabled={!enabled}
-          title={`搜索代码 (${cmdKey}Shift+F)`}
-        >
-          代码
-        </button>
-      </div>
-      <input
-        ref={inputRef}
-        className="top-search-input"
-        type="search"
-        disabled={!enabled && mode !== 'actions'}
-        placeholder={
-          mode === 'actions'
-            ? `搜索 IDE 动作指令… (或输入 >)`
-            : mode === 'files'
-              ? `搜索文件… (${cmdKey}P)`
-              : `搜索代码… (${cmdKey}Shift+F)`
-        }
-        value={query}
-        onChange={(e) => {
-          const val = e.target.value;
-          setQuery(val);
-          if (val.startsWith('>') && mode !== 'actions') {
-            setMode('actions');
-          }
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={onKeyDown}
-      />
+    <>
       {open && (
-        <div className="top-search-dropdown" role="listbox">
-          {loading && <div className="top-search-empty">搜索中…</div>}
-          {!loading && !query.trim() && mode !== 'actions' && (
-            <div className="top-search-empty">输入关键字开始搜索</div>
-          )}
-          {!loading && hitsCount === 0 && (
-            <div className="top-search-empty">无匹配结果</div>
-          )}
-          {!loading &&
-            mode === 'files' &&
-            fileHits.map((h, i) => (
+        <div
+          className="cmd-palette-backdrop"
+          onClick={() => {
+            setOpen(false);
+            setQuery('');
+          }}
+        >
+          <div
+            className="cmd-palette-modal"
+            ref={rootRef}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 顶部搜索输入与模式切换 */}
+            <div className="cmd-palette-header">
+              <div className="cmd-palette-icon">
+                {mode === 'actions' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                ) : mode === 'files' ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                )}
+              </div>
+              <input
+                ref={inputRef}
+                className="cmd-palette-input"
+                type="search"
+                disabled={!enabled && mode !== 'actions'}
+                placeholder={
+                  mode === 'actions'
+                    ? '输入关键词搜索全局动作与命令…'
+                    : mode === 'files'
+                      ? '搜索项目文件… (按 Tab 切换到命令模式)'
+                      : '搜索全文代码片段…'
+                }
+                value={query}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setQuery(val);
+                  if (val.startsWith('>') && mode !== 'actions') {
+                    setMode('actions');
+                  }
+                  setOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab') {
+                    e.preventDefault();
+                    handleTabSwitch();
+                    return;
+                  }
+                  onKeyDown(e);
+                }}
+              />
+              <div className="cmd-palette-tabs">
+                <button
+                  type="button"
+                  className={`cmd-tab ${mode === 'actions' ? 'active' : ''}`}
+                  onClick={() => {
+                    setMode('actions');
+                    inputRef.current?.focus();
+                  }}
+                >
+                  动作
+                </button>
+                <button
+                  type="button"
+                  className={`cmd-tab ${mode === 'files' ? 'active' : ''}`}
+                  onClick={() => {
+                    setMode('files');
+                    inputRef.current?.focus();
+                  }}
+                  disabled={!enabled}
+                >
+                  文件
+                </button>
+                <button
+                  type="button"
+                  className={`cmd-tab ${mode === 'code' ? 'active' : ''}`}
+                  onClick={() => {
+                    setMode('code');
+                    inputRef.current?.focus();
+                  }}
+                  disabled={!enabled}
+                >
+                  代码
+                </button>
+              </div>
               <button
-                key={h.path}
                 type="button"
-                role="option"
-                aria-selected={i === activeIndex}
-                className={`top-search-item ${i === activeIndex ? 'active' : ''}`}
-                onMouseEnter={() => setActiveIndex(i)}
-                onClick={() => selectFile(h.path)}
-              >
-                <span className="top-search-name">{h.path.split('/').pop()}</span>
-                <span className="top-search-path">{h.path}</span>
-              </button>
-            ))}
-          {!loading &&
-            mode === 'actions' &&
-            actionHits.map((act, i) => (
-              <button
-                key={act.id}
-                type="button"
-                role="option"
-                aria-selected={i === activeIndex}
-                className={`top-search-item top-search-action-item ${i === activeIndex ? 'active' : ''}`}
-                onMouseEnter={() => setActiveIndex(i)}
-                onClick={() => executeAction(act)}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  width: '100%',
+                className="cmd-palette-close-btn"
+                title="关闭 (Esc)"
+                onClick={() => {
+                  setOpen(false);
+                  setQuery('');
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span
-                    style={{
-                      fontSize: 10,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      background: 'var(--bg-card, rgba(255,255,255,0.06))',
-                      color: 'var(--accent, #6a4da2)',
-                      fontWeight: 600,
-                      border: '1px solid var(--border)',
-                    }}
-                  >
-                    {act.category}
-                  </span>
-                  <span className="top-search-name" style={{ fontSize: 12 }}>{act.title}</span>
+                Esc
+              </button>
+            </div>
+
+            {/* 结果列表区 */}
+            <div className="cmd-palette-body">
+              {loading && (
+                <div className="cmd-palette-state">
+                  <div className="cmd-spinner" />
+                  <span>正在全力搜索中…</span>
                 </div>
-                {act.shortcut && (
-                  <kbd
-                    style={{
-                      fontSize: 10,
-                      color: 'var(--muted)',
-                      background: 'var(--bg)',
-                      border: '1px solid var(--border)',
-                      padding: '1px 5px',
-                      borderRadius: 3,
-                    }}
-                  >
-                    {act.shortcut}
-                  </kbd>
-                )}
-              </button>
-            ))}
-          {!loading &&
-            mode === 'code' &&
-            codeHits.map((h, i) => (
-              <button
-                key={`${h.path}:${h.line}:${i}`}
-                type="button"
-                role="option"
-                aria-selected={i === activeIndex}
-                className={`top-search-item ${i === activeIndex ? 'active' : ''}`}
-                onMouseEnter={() => setActiveIndex(i)}
-                onClick={() => selectFile(h.path, h.line)}
-              >
-                <span className="top-search-name">
-                  {h.path}
-                  <span className="top-search-line">:{h.line}</span>
+              )}
+
+              {!loading && !query.trim() && mode !== 'actions' && (
+                <div className="cmd-palette-state">
+                  <span className="cmd-state-hint">键入文件名或路径片段快速定位文件</span>
+                </div>
+              )}
+
+              {!loading && hitsCount === 0 && (
+                <div className="cmd-palette-state">
+                  <span className="cmd-state-hint">未找到匹配的结果</span>
+                </div>
+              )}
+
+              {!loading && mode === 'actions' && (
+                <div className="cmd-palette-list">
+                  {actionHits.map((act, i) => {
+                    const isSelected = i === activeIndex;
+                    return (
+                      <div
+                        key={act.id}
+                        className={`cmd-item ${isSelected ? 'active' : ''}`}
+                        onMouseEnter={() => setActiveIndex(i)}
+                        onClick={() => executeAction(act)}
+                      >
+                        <div className="cmd-item-left">
+                          <span className={`cmd-category-tag cat-${act.category}`}>
+                            {act.category}
+                          </span>
+                          <span className="cmd-item-title">{act.title}</span>
+                        </div>
+                        {act.shortcut && (
+                          <div className="cmd-item-right">
+                            <kbd className="cmd-kbd">{act.shortcut}</kbd>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {!loading && mode === 'files' && (
+                <div className="cmd-palette-list">
+                  {fileHits.map((h, i) => {
+                    const isSelected = i === activeIndex;
+                    const fileName = h.path.split('/').pop() || h.path;
+                    const dirName = h.path.substring(0, h.path.lastIndexOf('/')) || '';
+                    return (
+                      <div
+                        key={h.path}
+                        className={`cmd-item ${isSelected ? 'active' : ''}`}
+                        onMouseEnter={() => setActiveIndex(i)}
+                        onClick={() => selectFile(h.path)}
+                      >
+                        <div className="cmd-item-left">
+                          <svg className="cmd-file-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                          </svg>
+                          <span className="cmd-item-title">{fileName}</span>
+                          {dirName && <span className="cmd-item-subpath">{dirName}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {!loading && mode === 'code' && (
+                <div className="cmd-palette-list">
+                  {codeHits.map((h, i) => {
+                    const isSelected = i === activeIndex;
+                    return (
+                      <div
+                        key={`${h.path}:${h.line}:${i}`}
+                        className={`cmd-item cmd-code-item ${isSelected ? 'active' : ''}`}
+                        onMouseEnter={() => setActiveIndex(i)}
+                        onClick={() => selectFile(h.path, h.line)}
+                      >
+                        <div className="cmd-code-header">
+                          <span className="cmd-item-title">{h.path}</span>
+                          <span className="cmd-code-line">:{h.line}</span>
+                        </div>
+                        <div className="cmd-code-preview">{h.preview.trim()}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* 底部极客状态栏 */}
+            <div className="cmd-palette-footer">
+              <div className="cmd-footer-shortcuts">
+                <span className="cmd-shortcut-tip">
+                  <kbd className="cmd-mini-kbd">↑</kbd>
+                  <kbd className="cmd-mini-kbd">↓</kbd> 选择
                 </span>
-                <span className="top-search-path">{h.preview.trim()}</span>
-              </button>
-            ))}
+                <span className="cmd-shortcut-tip">
+                  <kbd className="cmd-mini-kbd">↵</kbd> 执行
+                </span>
+                <span className="cmd-shortcut-tip">
+                  <kbd className="cmd-mini-kbd">Tab</kbd> 模式切换
+                </span>
+                <span className="cmd-shortcut-tip">
+                  <kbd className="cmd-mini-kbd">Esc</kbd> 退出
+                </span>
+              </div>
+              <div className="cmd-footer-count">
+                {mode === 'actions'
+                  ? `${actionHits.length} 个动作指令`
+                  : mode === 'files'
+                    ? `${fileHits.length} 个文件匹配`
+                    : `${codeHits.length} 处匹配代码`}
+              </div>
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 });

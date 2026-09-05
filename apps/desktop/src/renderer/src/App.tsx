@@ -1188,7 +1188,9 @@ export function App() {
               : ''}
             {activePath ? activePath.split('/').pop() : 'Echoly'}
           </span>
-          {/* IDEA 风格运行配置工具条 */}
+        </div>
+        <div className="titlebar-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* IDEA 风格运行配置工具条（移至右侧） */}
           <RunWidget
             workspace={workspace}
             isBottomExpanded={layout.bottomPanelExpanded === true}
@@ -1206,9 +1208,23 @@ export function App() {
               });
             }}
           />
-        </div>
-        <div className="titlebar-actions" style={{ display: 'flex', alignItems: 'center' }}>
-          {/* 3个区域折叠/展开切换按钮 (匹配图 2) */}
+
+          {/* 全局命令与文件搜索触发栏 */}
+          <button
+            type="button"
+            className="top-search-trigger"
+            onClick={() => searchRef.current?.focus('actions')}
+            title="搜索动作或文件 (⌘P / ⌘Shift+P)"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <span className="search-trigger-text">命令 / 搜索</span>
+            <kbd className="search-trigger-kbd">⌘P</kbd>
+          </button>
+
+          {/* 3个区域折叠/展开切换按钮 */}
           <div className="layout-toggle-group">
             <button
               type="button"
@@ -1262,20 +1278,6 @@ export function App() {
               </svg>
             </button>
           </div>
-
-          {/* 安装插件按钮 - 已隐藏 */}
-          {/* <button
-            type="button"
-            className="layout-toggle-btn plugin-btn"
-            title="安装插件"
-            onClick={() => setExtensionPanelOpen(true)}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <rect x="7" y="7" width="3" height="9" />
-              <rect x="14" y="7" width="3" height="5" />
-            </svg>
-          </button> */}
 
           {/* 设置按钮 */}
           <button

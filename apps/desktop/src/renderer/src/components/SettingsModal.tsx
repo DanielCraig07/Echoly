@@ -103,6 +103,10 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
     },
   ];
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'models' | 'runtime' | 'general' | 'skills'>('models');
+  const [showApiKey, setShowApiKey] = useState(false);
+
   async function probeSingleModel(model: ModelProfile): Promise<void> {
     setModelProbingId(model.id);
     try {
@@ -215,397 +219,555 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
 
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-modal wide" onClick={(e) => e.stopPropagation()}>
+      <div className="settings-modal modern-settings" onClick={(e) => e.stopPropagation()}>
+        {/* 顶部标题栏 */}
         <div className="settings-header">
-          <h2>设置</h2>
-          <button type="button" className="settings-close-btn" onClick={onClose} title="关闭">
+          <div className="settings-header-left">
+            <div className="settings-logo-pill">Echoly</div>
+            <h2>偏好设置</h2>
+          </div>
+          <button type="button" className="settings-close-btn" onClick={onClose} title="关闭 (Esc)">
             ✕
           </button>
         </div>
 
-        <div className="settings-body">
-          <section className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div>
-                <h3 style={{ margin: 0 }}>AI 模型管理</h3>
-                <p className="muted" style={{ margin: '4px 0 0', fontSize: 11 }}>
-                  可自由配置多个 GPT、DeepSeek、Claude 或本地 Ollama 兼容模型，并在聊天时随时切换
-                </p>
+        {/* 主体两栏布局 */}
+        <div className="settings-layout">
+          {/* 左侧导航栏 */}
+          <aside className="settings-sidebar">
+            <button
+              type="button"
+              className={`settings-nav-item ${activeTab === 'models' ? 'active' : ''}`}
+              onClick={() => setActiveTab('models')}
+            >
+              <span className="nav-icon">🤖</span>
+              <div className="nav-text">
+                <span className="nav-title">AI 模型配置</span>
+                <span className="nav-sub">多模型端点与密钥</span>
               </div>
-              <button
-                type="button"
-                className="primary"
-                style={{ padding: '4px 12px', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
-                onClick={() => {
-                  setEditingModel({
-                    id: `model_${Date.now()}`,
-                    name: '新模型',
-                    provider: 'deepseek',
-                    baseUrl: 'http://192.168.10.241:8002',
-                    model: 'deepseek-v4-flash',
-                    apiKey: '',
-                  });
-                  setIsCreatingNew(true);
-                }}
-              >
-                + 添加模型
-              </button>
-            </div>
+            </button>
 
-            {/* Editing / Creating Model Form */}
-            {editingModel && (
-              <div className="model-edit-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <strong style={{ fontSize: 13, color: 'var(--accent)' }}>
-                    {isCreatingNew ? '➕ 添加新 AI 模型' : `✎ 编辑模型: ${editingModel.name}`}
-                  </strong>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>快捷预设:</span>
-                    <select
-                      style={{ fontSize: 11, padding: '2px 6px', background: 'var(--bg-input)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4 }}
-                      onChange={(e) => {
-                        const preset = MODEL_PRESETS.find((p) => p.label === e.target.value);
-                        if (preset) {
-                          setEditingModel({
-                            ...editingModel,
-                            provider: preset.provider,
-                            name: preset.name,
-                            baseUrl: preset.baseUrl,
-                            model: preset.model,
-                            enableThinking: preset.enableThinking,
-                            thinkingTokens: preset.thinkingTokens,
-                          });
-                        }
-                      }}
-                      defaultValue=""
-                    >
-                      <option value="" disabled>选择预设模板填充…</option>
-                      {MODEL_PRESETS.map((p) => (
-                        <option key={p.label} value={p.label}>{p.label}</option>
-                      ))}
-                    </select>
+            <button
+              type="button"
+              className={`settings-nav-item ${activeTab === 'runtime' ? 'active' : ''}`}
+              onClick={() => setActiveTab('runtime')}
+            >
+              <span className="nav-icon">⚡</span>
+              <div className="nav-text">
+                <span className="nav-title">运行与推理</span>
+                <span className="nav-sub">温度、步数与窗口</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              className={`settings-nav-item ${activeTab === 'general' ? 'active' : ''}`}
+              onClick={() => setActiveTab('general')}
+            >
+              <span className="nav-icon">🎨</span>
+              <div className="nav-text">
+                <span className="nav-title">外观与权限</span>
+                <span className="nav-sub">主题、放行策略</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              className={`settings-nav-item ${activeTab === 'skills' ? 'active' : ''}`}
+              onClick={() => setActiveTab('skills')}
+            >
+              <span className="nav-icon">🧩</span>
+              <div className="nav-text">
+                <span className="nav-title">Skills 技能库</span>
+                <span className="nav-sub">Cursor / 本地技能</span>
+              </div>
+            </button>
+          </aside>
+
+          {/* 右侧面板内容 */}
+          <main className="settings-content">
+            {/* 1. AI 模型配置 Tab */}
+            {activeTab === 'models' && (
+              <div className="settings-panel-section">
+                <div className="panel-title-bar">
+                  <div>
+                    <h3 className="panel-h3">AI 模型管理与端点</h3>
+                    <p className="panel-desc">
+                      支持 DeepSeek、Claude、OpenAI (GPT) 及本地 Ollama 兼容端点，随时在聊天中按需切换。
+                    </p>
                   </div>
+                  <button
+                    type="button"
+                    className="add-model-btn"
+                    onClick={() => {
+                      setEditingModel({
+                        id: `model_${Date.now()}`,
+                        name: '新模型',
+                        provider: 'deepseek',
+                        baseUrl: 'http://192.168.10.241:8002',
+                        model: 'deepseek-v4-flash',
+                        apiKey: '',
+                      });
+                      setIsCreatingNew(true);
+                    }}
+                  >
+                    + 添加新模型
+                  </button>
                 </div>
 
-                <div className="settings-grid-2">
-                  <div className="settings-row">
-                    <label>模型协议类型 (Provider)</label>
-                    <select
-                      value={editingModel.provider}
-                      onChange={(e) => {
-                        const p = e.target.value as ModelProviderType;
-                        setEditingModel({ ...editingModel, provider: p });
-                      }}
-                    >
-                      {(Object.keys(AI_PROVIDER_LABELS) as ModelProviderType[]).map((k) => (
-                        <option key={k} value={k}>{AI_PROVIDER_LABELS[k]}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="settings-row">
-                    <label>显示名称 (Display Name)</label>
-                    <input
-                      value={editingModel.name}
-                      placeholder="如：DeepSeek (内网) / GPT-4o"
-                      onChange={(e) => setEditingModel({ ...editingModel, name: e.target.value })}
-                    />
-                  </div>
-                </div>
+                {/* 编辑/新建模型浮动卡片 */}
+                {editingModel && (
+                  <div className="model-edit-box">
+                    <div className="model-edit-box-header">
+                      <div className="edit-title">
+                        <span className="edit-dot" />
+                        <strong>{isCreatingNew ? '配置新 AI 模型' : `编辑模型: ${editingModel.name}`}</strong>
+                      </div>
+                      <div className="preset-quick-select">
+                        <span className="preset-label">快速套用预设:</span>
+                        <select
+                          className="preset-select"
+                          onChange={(e) => {
+                            const preset = MODEL_PRESETS.find((p) => p.label === e.target.value);
+                            if (preset) {
+                              setEditingModel({
+                                ...editingModel,
+                                provider: preset.provider,
+                                name: preset.name,
+                                baseUrl: preset.baseUrl,
+                                model: preset.model,
+                                enableThinking: preset.enableThinking,
+                                thinkingTokens: preset.thinkingTokens,
+                              });
+                            }
+                          }}
+                          defaultValue=""
+                        >
+                          <option value="" disabled>选择预设模板填充…</option>
+                          {MODEL_PRESETS.map((p) => (
+                            <option key={p.label} value={p.label}>{p.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
 
-                <div className="settings-row">
-                  <label>Base URL (接口地址)</label>
-                  <input
-                    className="mono-input"
-                    value={editingModel.baseUrl}
-                    placeholder="如：https://api.openai.com 或 http://192.168.10.241:8002"
-                    onChange={(e) => setEditingModel({ ...editingModel, baseUrl: e.target.value })}
-                  />
-                </div>
+                    <div className="settings-grid-2">
+                      <div className="settings-row">
+                        <label>协议类型 (Provider)</label>
+                        <select
+                          className="modern-select"
+                          value={editingModel.provider}
+                          onChange={(e) => {
+                            const p = e.target.value as ModelProviderType;
+                            setEditingModel({ ...editingModel, provider: p });
+                          }}
+                        >
+                          {(Object.keys(AI_PROVIDER_LABELS) as ModelProviderType[]).map((k) => (
+                            <option key={k} value={k}>{AI_PROVIDER_LABELS[k]}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="settings-row">
+                        <label>显示别名 (Display Name)</label>
+                        <input
+                          className="modern-input"
+                          value={editingModel.name}
+                          placeholder="例如：DeepSeek (内网) 或 GPT-4o"
+                          onChange={(e) => setEditingModel({ ...editingModel, name: e.target.value })}
+                        />
+                      </div>
+                    </div>
 
-                <div className="settings-grid-2">
-                  <div className="settings-row">
-                    <label>模型标识 (Model ID)</label>
-                    <input
-                      className="mono-input"
-                      value={editingModel.model}
-                      placeholder="如：gpt-4o, deepseek-v4-flash, claude-3-7-sonnet-20250219"
-                      onChange={(e) => setEditingModel({ ...editingModel, model: e.target.value })}
-                    />
-                  </div>
-                  <div className="settings-row">
-                    <label>API Key</label>
-                    <input
-                      type="password"
-                      className="mono-input"
-                      value={editingModel.apiKey}
-                      placeholder={editingModel.provider === 'deepseek' ? '内网或官方 API Key' : '必填 API Key'}
-                      onChange={(e) => setEditingModel({ ...editingModel, apiKey: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                {(editingModel.provider === 'anthropic' || editingModel.model.includes('reasoner') || editingModel.model.includes('r1')) && (
-                  <div className="settings-grid-2">
                     <div className="settings-row">
-                      <label>深度思考 (Extended Thinking)</label>
-                      <label className="checkbox-label">
+                      <label>API 接口地址 (Base URL)</label>
+                      <input
+                        className="modern-input mono-font"
+                        value={editingModel.baseUrl}
+                        placeholder="例如：https://api.deepseek.com 或 http://192.168.10.241:8002"
+                        onChange={(e) => setEditingModel({ ...editingModel, baseUrl: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="settings-grid-2">
+                      <div className="settings-row">
+                        <label>模型标识 (Model ID)</label>
+                        <input
+                          className="modern-input mono-font"
+                          value={editingModel.model}
+                          placeholder="如 deepseek-v4-flash, gpt-4o, claude-3-7-sonnet"
+                          onChange={(e) => setEditingModel({ ...editingModel, model: e.target.value })}
+                        />
+                      </div>
+                      <div className="settings-row">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label>API Key</label>
+                          <button
+                            type="button"
+                            className="toggle-eye-btn"
+                            onClick={() => setShowApiKey(!showApiKey)}
+                          >
+                            {showApiKey ? '隐藏 Key' : '显示 Key'}
+                          </button>
+                        </div>
+                        <input
+                          type={showApiKey ? 'text' : 'password'}
+                          className="modern-input mono-font"
+                          value={editingModel.apiKey}
+                          placeholder={editingModel.provider === 'deepseek' ? '内网可留空，官方 API 必填' : '填入对应的 API Key'}
+                          onChange={(e) => setEditingModel({ ...editingModel, apiKey: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    {(editingModel.provider === 'anthropic' || editingModel.model.includes('reasoner') || editingModel.model.includes('r1')) && (
+                      <div className="settings-grid-2 thinking-config-row">
+                        <div className="settings-row">
+                          <label>深度思考模式 (Extended Thinking)</label>
+                          <label className="modern-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={editingModel.enableThinking !== false}
+                              onChange={(e) => setEditingModel({ ...editingModel, enableThinking: e.target.checked })}
+                            />
+                            <span>启用推理思考过程输出</span>
+                          </label>
+                        </div>
+                        <div className="settings-row">
+                          <label>Thinking Tokens 上限</label>
+                          <input
+                            type="number"
+                            className="modern-input"
+                            min="1000"
+                            step="1000"
+                            value={editingModel.thinkingTokens || 8000}
+                            onChange={(e) => setEditingModel({ ...editingModel, thinkingTokens: Number(e.target.value) || 8000 })}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="model-edit-box-footer">
+                      <label className="modern-checkbox-label">
                         <input
                           type="checkbox"
-                          checked={editingModel.enableThinking !== false}
-                          onChange={(e) => setEditingModel({ ...editingModel, enableThinking: e.target.checked })}
+                          checked={editingModel.isDefault === true || settings.activeModelId === editingModel.id}
+                          onChange={(e) => setEditingModel({ ...editingModel, isDefault: e.target.checked })}
                         />
-                        <span>启用深度思考</span>
+                        <span>设为当前默认优先模型</span>
                       </label>
-                    </div>
-                    <div className="settings-row">
-                      <label>Thinking Tokens</label>
-                      <input
-                        type="number"
-                        min="1000"
-                        step="1000"
-                        value={editingModel.thinkingTokens || 8000}
-                        onChange={(e) => setEditingModel({ ...editingModel, thinkingTokens: Number(e.target.value) || 8000 })}
-                      />
+                      <div className="edit-btn-group">
+                        <button
+                          type="button"
+                          className="test-btn"
+                          disabled={modelProbingId === editingModel.id}
+                          onClick={() => void probeSingleModel(editingModel)}
+                        >
+                          {modelProbingId === editingModel.id ? '正在连接测试…' : '⚡ 连通性测试'}
+                        </button>
+                        <button type="button" className="cancel-btn" onClick={() => { setEditingModel(null); setIsCreatingNew(false); }}>
+                          取消
+                        </button>
+                        <button type="button" className="primary save-model-btn" onClick={() => handleSaveEditingModel(editingModel)}>
+                          保存配置
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                  <label className="checkbox-label" style={{ fontSize: 12 }}>
+                {/* 模型列表 */}
+                <div className="modern-model-list">
+                  {(settings.models || []).map((m) => {
+                    const isActive = settings.activeModelId === m.id || m.isDefault;
+                    const probeRes = modelProbeResults[m.id];
+                    const isProbing = modelProbingId === m.id;
+                    return (
+                      <div key={m.id} className={`modern-model-card ${isActive ? 'is-active' : ''}`}>
+                        <div className="model-card-left">
+                          <div className={`model-provider-badge prov-${m.provider}`}>
+                            {m.provider === 'anthropic'
+                              ? 'Claude'
+                              : m.provider === 'deepseek'
+                                ? 'DeepSeek'
+                                : m.provider === 'openai'
+                                  ? 'OpenAI'
+                                  : 'Ollama / 自定义'}
+                          </div>
+                          <div className="model-info-block">
+                            <div className="model-name-line">
+                              <span className="model-display-name">{m.name}</span>
+                              {isActive && <span className="active-glow-pill">★ 默认选中</span>}
+                              {m.enableThinking && <span className="thinking-pill">⚡ 深度思考</span>}
+                            </div>
+                            <div className="model-meta-line">
+                              <code className="model-id-code">{m.model}</code>
+                              <span className="meta-sep">•</span>
+                              <span className="model-endpoint-text" title={m.baseUrl}>{m.baseUrl}</span>
+                              <span className="meta-sep">•</span>
+                              {m.apiKey ? (
+                                <span className="key-state has-key">已配置密钥</span>
+                              ) : (
+                                <span className="key-state no-key">免密钥/未配置</span>
+                              )}
+                            </div>
+                            {probeRes && (
+                              <div className={`probe-result-bubble ${probeRes.ok ? 'probe-success' : 'probe-error'}`}>
+                                <span className="probe-icon">{probeRes.ok ? '✓' : '✕'}</span>
+                                <span className="probe-text">
+                                  {probeRes.ok ? '连通性正常' : `探测异常: ${probeRes.detail}`}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="model-card-right-actions">
+                          <button
+                            type="button"
+                            className="card-action-btn probe-btn"
+                            title="连通性探测"
+                            disabled={isProbing}
+                            onClick={() => void probeSingleModel(m)}
+                          >
+                            {isProbing ? '探测中…' : '⚡ 探测'}
+                          </button>
+                          {!isActive && (
+                            <button
+                              type="button"
+                              className="card-action-btn default-btn"
+                              title="设为默认模型"
+                              onClick={() => handleSetDefaultModel(m.id)}
+                            >
+                              ★ 设默认
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="card-action-btn edit-btn"
+                            title="编辑此模型参数"
+                            onClick={() => {
+                              setEditingModel({ ...m });
+                              setIsCreatingNew(false);
+                            }}
+                          >
+                            ✎ 编辑
+                          </button>
+                          {(settings.models?.length || 0) > 1 && (
+                            <button
+                              type="button"
+                              className="card-action-btn delete-btn"
+                              title="删除此模型"
+                              onClick={() => handleDeleteModel(m.id)}
+                            >
+                              🗑
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 2. 运行与推理参数 Tab */}
+            {activeTab === 'runtime' && (
+              <div className="settings-panel-section">
+                <div className="panel-title-bar">
+                  <div>
+                    <h3 className="panel-h3">运行与推理参数</h3>
+                    <p className="panel-desc">精细调节模型生成多样性、Agent 自主执行深度及上下文记忆容量。</p>
+                  </div>
+                </div>
+
+                <div className="modern-card-group">
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>采样温度 (Temperature)</strong>
+                      <span className="card-current-val">{settings.temperature}</span>
+                    </div>
+                    <p className="setting-card-desc">控制输出的随机性。数值越小越精确严谨（建议编程设为 0.0 - 0.2）。</p>
                     <input
-                      type="checkbox"
-                      checked={editingModel.isDefault === true || settings.activeModelId === editingModel.id}
-                      onChange={(e) => setEditingModel({ ...editingModel, isDefault: e.target.checked })}
+                      type="range"
+                      min="0"
+                      max="1.5"
+                      step="0.05"
+                      className="modern-range"
+                      value={settings.temperature}
+                      onChange={(e) => setSettings({ ...settings, temperature: Number(e.target.value) || 0 })}
                     />
-                    <span>设为默认优先模型</span>
-                  </label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      type="button"
-                      disabled={modelProbingId === editingModel.id}
-                      onClick={() => void probeSingleModel(editingModel)}
-                    >
-                      {modelProbingId === editingModel.id ? '测试中…' : '⚡ 测试连通性'}
-                    </button>
-                    <button type="button" onClick={() => { setEditingModel(null); setIsCreatingNew(false); }}>
-                      取消
-                    </button>
-                    <button type="button" className="primary" onClick={() => handleSaveEditingModel(editingModel)}>
-                      保存此模型
-                    </button>
+                  </div>
+
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>Max Agent Steps (自主执行步数上限)</strong>
+                      <span className="card-current-val">{settings.maxAgentSteps} 步</span>
+                    </div>
+                    <p className="setting-card-desc">单次任务中 AI 连续执行工具（读写文件、运行命令）的最大循环次数。</p>
+                    <input
+                      type="number"
+                      min="5"
+                      max="200"
+                      className="modern-input"
+                      value={settings.maxAgentSteps}
+                      onChange={(e) => setSettings({ ...settings, maxAgentSteps: Number(e.target.value) || 50 })}
+                    />
+                  </div>
+
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>上下文窗口容量 (Context Window Tokens)</strong>
+                      <span className="card-current-val">{settings.contextWindowTokens.toLocaleString()} tokens</span>
+                    </div>
+                    <p className="setting-card-desc">超出此限制将自动进行会话历史精简压缩，防止请求超出模型容量限制。</p>
+                    <input
+                      type="number"
+                      min="4000"
+                      step="4000"
+                      className="modern-input"
+                      value={settings.contextWindowTokens}
+                      onChange={(e) => setSettings({ ...settings, contextWindowTokens: Number(e.target.value) || 128000 })}
+                    />
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Models Cards List */}
-            <div className="model-cards-list">
-              {(settings.models || []).map((m) => {
-                const isActive = settings.activeModelId === m.id || m.isDefault;
-                const probeRes = modelProbeResults[m.id];
-                const isProbing = modelProbingId === m.id;
-                return (
-                  <div key={m.id} className={`model-card-item ${isActive ? 'active' : ''}`}>
-                    <div className="model-card-main">
-                      <div className="model-card-header-row">
-                        <span className={`model-tag ${m.provider}`}>
-                          {m.provider === 'anthropic' ? 'Claude' : m.provider === 'deepseek' ? 'DeepSeek' : m.provider === 'openai' ? 'OpenAI' : '自定义'}
-                        </span>
-                        <strong className="model-card-title">{m.name}</strong>
-                        {isActive && <span className="default-badge">★ 默认选中</span>}
-                      </div>
-                      <div className="model-card-sub-row">
-                        <span className="model-code-badge">{m.model}</span>
-                        <span className="model-url-text" title={m.baseUrl}>{m.baseUrl}</span>
-                        {m.apiKey ? <span className="key-set-badge">已设 Key</span> : <span className="key-missing-badge">未设 Key</span>}
-                      </div>
-                      {probeRes && (
-                        <div className={`model-probe-badge ${probeRes.ok ? 'ok' : 'err'}`}>
-                          {probeRes.ok ? '✓ 连通正常' : `✕ 连通失败: ${probeRes.detail}`}
-                        </div>
-                      )}
+            {/* 3. 外观与权限 Tab */}
+            {activeTab === 'general' && (
+              <div className="settings-panel-section">
+                <div className="panel-title-bar">
+                  <div>
+                    <h3 className="panel-h3">外观与工作流权限</h3>
+                    <p className="panel-desc">设置 IDE 视觉主题、自动保存以及 AI 工具调用执行时的授权安全策略。</p>
+                  </div>
+                </div>
+
+                <div className="modern-card-group">
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>界面主题 (Theme)</strong>
                     </div>
-                    <div className="model-card-actions">
-                      <button
-                        type="button"
-                        className="model-action-btn"
-                        title="测试此模型接口连通性"
-                        disabled={isProbing}
-                        onClick={() => void probeSingleModel(m)}
+                    <div className="theme-selector-cards">
+                      <div
+                        className={`theme-card ${settings.theme === 'dark' ? 'selected' : ''}`}
+                        onClick={() => setSettings({ ...settings, theme: 'dark' })}
                       >
-                        {isProbing ? '…' : '⚡ 探测'}
-                      </button>
-                      {!isActive && (
-                        <button
-                          type="button"
-                          className="model-action-btn"
-                          title="设为此 IDE 的默认模型"
-                          onClick={() => handleSetDefaultModel(m.id)}
-                        >
-                          ★ 设为默认
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="model-action-btn"
-                        title="编辑模型参数"
-                        onClick={() => {
-                          setEditingModel({ ...m });
-                          setIsCreatingNew(false);
-                        }}
+                        <div className="theme-preview dark-preview" />
+                        <span>深色极客 Dark (默认)</span>
+                      </div>
+                      <div
+                        className={`theme-card ${settings.theme === 'light' ? 'selected' : ''}`}
+                        onClick={() => setSettings({ ...settings, theme: 'light' })}
                       >
-                        ✎ 编辑
-                      </button>
-                      {(settings.models?.length || 0) > 1 && (
-                        <button
-                          type="button"
-                          className="model-action-btn danger"
-                          title="删除此模型"
-                          onClick={() => handleDeleteModel(m.id)}
-                        >
-                          🗑
-                        </button>
-                      )}
+                        <div className="theme-preview light-preview" />
+                        <span>浅色雅致 Light · TSINGTEC</span>
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </section>
 
-          <section className="settings-section">
-            <h3>运行参数</h3>
-            <div className="settings-grid-2">
-              <div className="settings-row">
-                <label>Temperature</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="2"
-                  value={settings.temperature}
-                  onChange={(e) =>
-                    setSettings({ ...settings, temperature: Number(e.target.value) || 0 })
-                  }
-                />
-              </div>
-              <div className="settings-row">
-                <label>Max Agent Steps</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={settings.maxAgentSteps}
-                  onChange={(e) =>
-                    setSettings({ ...settings, maxAgentSteps: Number(e.target.value) || 50 })
-                  }
-                />
-              </div>
-            </div>
-            <div className="settings-row">
-              <label>上下文窗口（tokens）</label>
-              <input
-                type="number"
-                min="1000"
-                step="1000"
-                value={settings.contextWindowTokens}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    contextWindowTokens: Number(e.target.value) || 128000,
-                  })
-                }
-              />
-            </div>
-          </section>
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>工具执行安全策略 (Permission Mode)</strong>
+                    </div>
+                    <p className="setting-card-desc">控制 AI 在尝试修改本地代码或在终端执行命令时的放行准则。</p>
+                    <select
+                      className="modern-select"
+                      value={settings.permissionMode}
+                      onChange={(e) => setSettings({ ...settings, permissionMode: e.target.value as PermissionMode })}
+                    >
+                      {PERMISSION_ORDER.map((m) => (
+                        <option key={m} value={m}>{PERMISSION_MODE_LABELS[m]}</option>
+                      ))}
+                    </select>
+                    <div className="perm-hint-bubble">
+                      ℹ️ {PERMISSION_HINTS[settings.permissionMode]}
+                    </div>
+                  </div>
 
-          <section className="settings-section">
-            <h3>界面与行为</h3>
-            <div className="settings-grid-2">
-              <div className="settings-row">
-                <label>界面主题</label>
-                <select
-                  value={settings.theme}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      theme: e.target.value as 'dark' | 'light',
-                    })
-                  }
-                >
-                  <option value="dark">深色 Dark</option>
-                  <option value="light">浅色 Light · TSINGTEC</option>
-                </select>
+                  <div className="setting-card">
+                    <label className="modern-checkbox-label" style={{ fontSize: 13, fontWeight: 500 }}>
+                      <input
+                        type="checkbox"
+                        checked={settings.autoSave === true}
+                        onChange={(e) => setSettings({ ...settings, autoSave: e.target.checked })}
+                      />
+                      <span>代码编辑自动保存到磁盘 (编辑停止约 0.8 秒后写入)</span>
+                    </label>
+                  </div>
+                </div>
               </div>
-              <div className="settings-row">
-                <label>工具权限</label>
-                <select
-                  value={settings.permissionMode}
-                  onChange={(e) =>
-                    setSettings({
-                      ...settings,
-                      permissionMode: e.target.value as PermissionMode,
-                    })
-                  }
-                >
-                  {PERMISSION_ORDER.map((m) => (
-                    <option key={m} value={m}>
-                      {PERMISSION_MODE_LABELS[m]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <p className="settings-inline-hint">{PERMISSION_HINTS[settings.permissionMode]}</p>
-            <label className="settings-check">
-              <input
-                type="checkbox"
-                checked={settings.autoSave === true}
-                onChange={(e) => setSettings({ ...settings, autoSave: e.target.checked })}
-              />
-              编辑后自动写入磁盘（约 0.8 秒）
-            </label>
-          </section>
-
-          <section className="settings-section">
-            <h3>Skills</h3>
-            <p className="muted">
-              工作区：<code>.cursor/skills/*/SKILL.md</code> 或{' '}
-              <code>.deepseek/skills/*/SKILL.md</code>
-              <br />
-              用户目录：<code>userData/skills/*/SKILL.md</code>（兼容 Cursor frontmatter）
-            </p>
-            <div className="settings-row-inline">
-              <button type="button" onClick={() => void openSkills()}>
-                打开用户 Skills 文件夹
-              </button>
-              {skillsDir && <span className="muted">{skillsDir}</span>}
-            </div>
-            {skills.length === 0 ? (
-              <div className="muted">当前未发现 skills</div>
-            ) : (
-              <ul className="skills-list">
-                {skills.map((s) => (
-                  <li key={s.path}>
-                    <strong>{s.name}</strong> <span className="muted">({s.source})</span>
-                    <div className="muted">{s.description || s.path}</div>
-                  </li>
-                ))}
-              </ul>
             )}
-          </section>
+
+            {/* 4. Skills 扩展库 Tab */}
+            {activeTab === 'skills' && (
+              <div className="settings-panel-section">
+                <div className="panel-title-bar">
+                  <div>
+                    <h3 className="panel-h3">Skills 技能扩展库</h3>
+                    <p className="panel-desc">兼容 Cursor frontmatter 技能协议，赋予 AI 专属的代码生成与工程工作流能力。</p>
+                  </div>
+                  <button type="button" className="open-skills-btn" onClick={() => void openSkills()}>
+                    📂 打开用户 Skills 目录
+                  </button>
+                </div>
+
+                {skillsDir && (
+                  <div className="skills-dir-badge">
+                    <span>用户技能路径:</span>
+                    <code>{skillsDir}</code>
+                  </div>
+                )}
+
+                {skills.length === 0 ? (
+                  <div className="skills-empty-state">
+                    <span className="empty-icon">🧩</span>
+                    <p>当前未发现已安装的 Skills</p>
+                    <span className="empty-sub">
+                      可将技能放置在 <code>.cursor/skills/*/SKILL.md</code> 或 <code>.deepseek/skills/*/SKILL.md</code>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="skills-grid-list">
+                    {skills.map((s) => (
+                      <div key={s.path} className="skill-card-item">
+                        <div className="skill-card-header">
+                          <strong>{s.name}</strong>
+                          <span className="skill-source-pill">{s.source}</span>
+                        </div>
+                        <p className="skill-card-desc">{s.description || s.path}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </main>
         </div>
 
-        <div className="settings-footer">
-          {probe && (
-            <div className={probe.startsWith('OK') ? 'probe-ok' : 'probe-fail'}>{probe}</div>
-          )}
-          <div className="settings-actions">
-            <button onClick={() => void runProbe()} disabled={probing}>
-              {probing ? '探测中…' : '探测模型'}
+        {/* 底部 Footer 统一保存栏 */}
+        <div className="settings-footer-bar">
+          <div className="footer-probe-zone">
+            {probe && (
+              <span className={`probe-status-text ${probe.startsWith('OK') ? 'is-ok' : 'is-fail'}`}>
+                {probe.startsWith('OK') ? '✓ ' : '✕ '} {probe}
+              </span>
+            )}
+          </div>
+          <div className="footer-actions">
+            <button
+              type="button"
+              className="probe-all-btn"
+              onClick={() => void runProbe()}
+              disabled={probing}
+            >
+              {probing ? '探测中…' : '⚡ 探测默认模型'}
             </button>
-            <button onClick={onClose}>取消</button>
-            <button className="primary" onClick={() => void save()}>
-              保存
+            <button type="button" className="cancel-btn" onClick={onClose}>
+              关闭
+            </button>
+            <button type="button" className="primary save-all-btn" onClick={() => void save()}>
+              应用并保存配置
             </button>
           </div>
         </div>
@@ -613,3 +775,4 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
     </div>
   );
 }
+
