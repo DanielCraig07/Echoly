@@ -6,7 +6,7 @@ export interface WorkspaceOpenFilesState {
   updatedAt: number;
 }
 
-const STORAGE_KEY = 'tsingtec_workspace_open_files';
+const STORAGE_KEY = 'echoly_workspace_open_files';
 const MAX_WORKSPACES = 40;
 
 function normalizeRoot(root: string): string {
@@ -53,9 +53,7 @@ export function saveWorkspaceOpenFiles(
   };
 
   // Cap stored workspaces by recency
-  const entries = Object.entries(map).sort(
-    (a, b) => (b[1].updatedAt ?? 0) - (a[1].updatedAt ?? 0),
-  );
+  const entries = Object.entries(map).sort((a, b) => (b[1].updatedAt ?? 0) - (a[1].updatedAt ?? 0));
   const trimmed = Object.fromEntries(entries.slice(0, MAX_WORKSPACES));
   writeAll(trimmed);
 }

@@ -19,7 +19,10 @@ export interface ExtensionAPI {
   /**
    * 执行扩展命令
    */
-  executeCommand(command: string, ...args: any[]): Promise<{ success: boolean; result?: any; error?: string }>;
+  executeCommand(
+    command: string,
+    ...args: any[]
+  ): Promise<{ success: boolean; result?: any; error?: string }>;
 
   /**
    * 获取已加载的扩展列表

@@ -21,14 +21,51 @@ export interface SearchOpts {
 }
 
 const SKIP_DIRS = new Set([
-  'node_modules', '.git', 'dist', 'out', 'release', '.next', 'build',
-  '__pycache__', '.venv', 'venv', 'target', '.idea', 'coverage', '.cache', 'vendor',
+  'node_modules',
+  '.git',
+  'dist',
+  'out',
+  'release',
+  '.next',
+  'build',
+  '__pycache__',
+  '.venv',
+  'venv',
+  'target',
+  '.idea',
+  'coverage',
+  '.cache',
+  'vendor',
 ]);
 
 const BINARY_EXTS = new Set([
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'pdf', 'zip', 'tar', 'gz', '7z',
-  'exe', 'dll', 'so', 'dylib', 'bin', 'woff', 'woff2', 'ttf', 'eot', 'mp4', 'mp3',
-  'dmg', 'iso', 'class', 'pyc', 'lock',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'ico',
+  'pdf',
+  'zip',
+  'tar',
+  'gz',
+  '7z',
+  'exe',
+  'dll',
+  'so',
+  'dylib',
+  'bin',
+  'woff',
+  'woff2',
+  'ttf',
+  'eot',
+  'mp4',
+  'mp3',
+  'dmg',
+  'iso',
+  'class',
+  'pyc',
+  'lock',
 ]);
 
 function shellEscape(arg: string): string {
@@ -36,12 +73,14 @@ function shellEscape(arg: string): string {
 }
 
 export function globToRegExp(glob: string): RegExp {
+  // Placeholder for `**/` so the inserted `(?:.*/)?` quantifier isn't mangled by
+  // the later `? -> .` replacement. `**/` matches zero or more directory segments.
   const escaped = glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '::DOUBLE_STAR::')
+    .replace(/\*\*\//g, '__DOUBLE_STAR_SLASH__')
     .replace(/\*/g, '[^/]*')
-    .replace(/::DOUBLE_STAR::/g, '.*')
-    .replace(/\?/g, '.');
+    .replace(/\?/g, '.')
+    .replace(/__DOUBLE_STAR_SLASH__/g, '(?:.*/)?');
   return new RegExp(`^${escaped}$`);
 }
 
@@ -74,31 +113,50 @@ export async function searchWithRg(
 ): Promise<CodeSearchHit[]> {
   const cwd = opts.path ? resolveInWorkspace(workspaceRoot, opts.path) : workspaceRoot;
   const maxResults = opts.maxResults ?? 50;
-  
+
   const args = [
     '--line-number',
-    '--color', 'never',
-    '--max-columns', '300',
-    '--max-count', '50',        // 每个文件最多 50 次（减少）
-    '--max-filesize', '2M',     // 跳过超过 2MB 的文件
-    '--max-depth', '10',        // 最大搜索深度 10 层
+    '--color',
+    'never',
+    '--max-columns',
+    '300',
+    '--max-count',
+    '50', // 每个文件最多 50 次（减少）
+    '--max-filesize',
+    '2M', // 跳过超过 2MB 的文件
+    '--max-depth',
+    '10', // 最大搜索深度 10 层
     // 性能优化：使用 mmap（更快的文件读取）
     '--mmap',
   ];
-  
+
   if (opts.caseInsensitive) args.push('-i');
   if (opts.glob) args.push('--glob', opts.glob);
-  
+
   // 自动排除常见大型目录
   const excludes = [
-    'node_modules', '.git', 'dist', 'build', 'out', 'release',
-    '.next', '__pycache__', '.venv', 'venv', 'target', '.idea',
-    'coverage', '.cache', 'vendor', 'tmp', 'temp',
+    'node_modules',
+    '.git',
+    'dist',
+    'build',
+    'out',
+    'release',
+    '.next',
+    '__pycache__',
+    '.venv',
+    'venv',
+    'target',
+    '.idea',
+    'coverage',
+    '.cache',
+    'vendor',
+    'tmp',
+    'temp',
   ];
   for (const ex of excludes) {
     args.push('--glob', `!${ex}`);
   }
-  
+
   args.push('--', pattern, '.');
 
   return await new Promise((resolve, reject) => {
@@ -117,11 +175,11 @@ export async function searchWithRg(
 
     child.stdout.on('data', (d) => {
       buffer += String(d);
-      
+
       // 流式解析：边收边处理
       const lines = buffer.split('\n');
       buffer = lines.pop() || ''; // 保留不完整的行
-      
+
       for (const line of lines) {
         if (!line.trim()) continue;
         const hit = parseRgLine(line);
@@ -136,25 +194,25 @@ export async function searchWithRg(
         }
       }
     });
-    
+
     child.stderr.on('data', (d) => {
       stderr += String(d);
     });
-    
+
     child.on('error', (err) => {
       clearTimeout(timeout);
       reject(err);
     });
-    
+
     child.on('close', (code) => {
       clearTimeout(timeout);
-      
+
       // 处理残留的最后一行
       if (buffer.trim()) {
         const hit = parseRgLine(buffer);
         if (hit && hits.length < maxResults) hits.push(hit);
       }
-      
+
       if (killed || code === 0 || code === 1) {
         resolve(hits);
       } else {
@@ -182,9 +240,23 @@ export async function searchCodeRemote(
   const searchPath = opts.path ? shellEscape(opts.path) : '.';
 
   const excludes = [
-    '.git', 'node_modules', 'dist', 'build', 'out', 'release',
-    '.next', '__pycache__', '.venv', 'venv', 'target', '.idea',
-    'coverage', '.cache', 'vendor', 'tmp', 'temp',
+    '.git',
+    'node_modules',
+    'dist',
+    'build',
+    'out',
+    'release',
+    '.next',
+    '__pycache__',
+    '.venv',
+    'venv',
+    'target',
+    '.idea',
+    'coverage',
+    '.cache',
+    'vendor',
+    'tmp',
+    'temp',
   ];
 
   // 1. 优先尝试远端 rg（极速 Rust 并发检索，自动尊重 .gitignore）
@@ -192,11 +264,16 @@ export async function searchCodeRemote(
     const rgArgs = [
       'rg',
       '--line-number',
-      '--color', 'never',
-      '--max-columns', '300',
-      '--max-count', '50',
-      '--max-filesize', '2M',
-      '--max-depth', '12',
+      '--color',
+      'never',
+      '--max-columns',
+      '300',
+      '--max-count',
+      '50',
+      '--max-filesize',
+      '2M',
+      '--max-depth',
+      '12',
     ];
     if (opts.caseInsensitive) rgArgs.push('-i');
     if (opts.glob) rgArgs.push('--glob', shellEscape(opts.glob));
@@ -237,7 +314,10 @@ export async function searchCodeRemote(
     const findCmd = `find ${searchPath} -maxdepth 12 \\( ${pruneParts} \\) -prune -o -type f${globPart} -size -2M -exec grep -n -I -E ${caseFlag} -m 20 -e ${escPattern} {} + 2>/dev/null`;
     const findRes = await backend.runCommand(findCmd, 10000);
     const findErr = findRes.stderr.toLowerCase();
-    if (!findErr.includes('not found') && (findRes.code === 0 || findRes.code === 1 || findRes.stdout.trim().length > 0)) {
+    if (
+      !findErr.includes('not found') &&
+      (findRes.code === 0 || findRes.code === 1 || findRes.stdout.trim().length > 0)
+    ) {
       return parseCommandSearchOutput(findRes.stdout, maxResults);
     }
   } catch {
@@ -368,7 +448,8 @@ export async function collectFilePathsRemote(
 
   // 2. 尝试 rg --files
   try {
-    const rgCmd = "rg --files --hidden -g '!.git' -g '!node_modules' -g '!dist' -g '!out' -g '!build' -g '!.next' -g '!__pycache__' -g '!vendor' -g '!target' -g '!.venv' -g '!venv' --max-filesize 2M";
+    const rgCmd =
+      "rg --files --hidden -g '!.git' -g '!node_modules' -g '!dist' -g '!out' -g '!build' -g '!.next' -g '!__pycache__' -g '!vendor' -g '!target' -g '!.venv' -g '!venv' --max-filesize 2M";
     const rgRes = await backend.runCommand(rgCmd, 6000);
     if (rgRes.code === 0 && rgRes.stdout.trim()) {
       const lines = rgRes.stdout
@@ -385,7 +466,8 @@ export async function collectFilePathsRemote(
 
   // 3. 尝试 POSIX find
   try {
-    const findCmd = "find . -maxdepth 10 \\( -name .git -o -name node_modules -o -name dist -o -name out -o -name build -o -name .next -o -name __pycache__ -o -name vendor -o -name target -o -name .venv -o -name venv \\) -prune -o -type f -print";
+    const findCmd =
+      'find . -maxdepth 10 \\( -name .git -o -name node_modules -o -name dist -o -name out -o -name build -o -name .next -o -name __pycache__ -o -name vendor -o -name target -o -name .venv -o -name venv \\) -prune -o -type f -print';
     const findRes = await backend.runCommand(findCmd, 8000);
     if (findRes.code === 0 && findRes.stdout.trim()) {
       const lines = findRes.stdout
@@ -403,10 +485,7 @@ export async function collectFilePathsRemote(
   return [];
 }
 
-async function walkCollectFilePaths(
-  backend: WorkspaceBackend,
-  maxFiles = 5000,
-): Promise<string[]> {
+async function walkCollectFilePaths(backend: WorkspaceBackend, maxFiles = 5000): Promise<string[]> {
   const files: string[] = [];
 
   async function walk(rel: string): Promise<void> {
@@ -506,7 +585,9 @@ export async function globFilesByPattern(
   pattern: string,
   maxResults = 200,
 ): Promise<string[]> {
-  const re = globToRegExp(pattern.startsWith('**/') || pattern.includes('/') ? pattern : `**/${pattern}`);
+  const re = globToRegExp(
+    pattern.startsWith('**/') || pattern.includes('/') ? pattern : `**/${pattern}`,
+  );
   const files = await collectFilePaths(backend, Math.max(maxResults * 20, 2000));
   const matches: string[] = [];
   for (const path of files) {

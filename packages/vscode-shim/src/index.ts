@@ -6,6 +6,49 @@
 
 import * as vscode from 'vscode';
 
+/**
+ * 受控扩展 API 白名单。
+ *
+ * vscode-shim 只为扩展提供白名单内的命名空间（授权范围内的功能）。访问未列入
+ * 白名单的 API（如 debug/tasks/scm 等未实现能力）会记录警告并返回空 stub，避免
+ * 无限适配 VSCode 全部 API 造成维护失控。新增可用能力时在此登记即可。
+ */
+export const VSCODE_API_WHITELIST = new Set([
+  'commands',
+  'window',
+  'workspace',
+  'Uri',
+  'EventEmitter',
+  'Disposable',
+  'Range',
+  'Position',
+  'Selection',
+  'Location',
+  'Diagnostic',
+  'DiagnosticSeverity',
+  'MarkdownString',
+  'ThemeIcon',
+  'CodeAction',
+  'CancellationTokenSource',
+  'TreeItem',
+  'TreeItemCollapsibleState',
+  'languages',
+  'extensions',
+  'env',
+  'StatusBarAlignment',
+  'ViewColumn',
+  'FileType',
+  'version',
+  'l10n',
+  'ExtensionMode',
+  'ExtensionKind',
+]);
+
+/** 扩展访问了未授权/未实现的 API，记录一条警告以便排查。 */
+function warnUnsupportedApi(name: string): void {
+  console.warn(`[vscode-shim] 扩展尝试访问未列入白名单的 API: "vscode.${name}"（已忽略）`);
+}
+
 export interface ExtensionContext {
   subscriptions: { dispose(): void }[];
   workspaceState: any;
@@ -25,7 +68,12 @@ export interface VSCodeShimOptions {
   extensionPath: string;
   onCommand: (command: string, ...args: any[]) => Promise<any>;
   onMessage: (message: any) => void;
-  onWebviewViewRegister?: (viewId: string, provider: any, extensionPath: string, options?: any) => void;
+  onWebviewViewRegister?: (
+    viewId: string,
+    provider: any,
+    extensionPath: string,
+    options?: any,
+  ) => void;
 }
 
 /**
@@ -38,7 +86,12 @@ export class VSCodeShim {
   private extensionPath: string;
   private onCommandHandler: (command: string, ...args: any[]) => Promise<any>;
   private onMessageHandler: (message: any) => void;
-  private onWebviewViewRegisterHandler?: (viewId: string, provider: any, extensionPath: string, options?: any) => void;
+  private onWebviewViewRegisterHandler?: (
+    viewId: string,
+    provider: any,
+    extensionPath: string,
+    options?: any,
+  ) => void;
 
   constructor(options: VSCodeShimOptions) {
     this.workspaceRoot = options.workspaceRoot;
@@ -464,7 +517,11 @@ export class VSCodeShim {
           const parts = id.split('.');
           return {
             id,
-            extensionUri: { fsPath: self.extensionPath, scheme: 'file', toString: () => self.extensionPath } as vscode.Uri,
+            extensionUri: {
+              fsPath: self.extensionPath,
+              scheme: 'file',
+              toString: () => self.extensionPath,
+            } as vscode.Uri,
             extensionPath: self.extensionPath,
             isActive: true,
             packageJSON: {
@@ -511,7 +568,7 @@ export class VSCodeShim {
           };
         },
       } as any,
-      
+
       NotebookCellOutputItem: {
         text(value: string, mime?: string) {
           return {
@@ -528,11 +585,13 @@ export class VSCodeShim {
         error(value: Error) {
           return {
             mime: 'application/vnd.code.notebook.error',
-            data: Buffer.from(JSON.stringify({
-              name: value.name,
-              message: value.message,
-              stack: value.stack,
-            })),
+            data: Buffer.from(
+              JSON.stringify({
+                name: value.name,
+                message: value.message,
+                stack: value.stack,
+              }),
+            ),
           };
         },
         stdout(value: string) {
@@ -559,7 +618,7 @@ export class VSCodeShim {
           };
         }
         fire(data: any) {
-          this._listeners.forEach(l => l(data));
+          this._listeners.forEach((l) => l(data));
         }
         dispose() {
           this._listeners = [];
@@ -576,7 +635,7 @@ export class VSCodeShim {
         }
         static from(...disposables: { dispose(): any }[]) {
           return new Disposable(() => {
-            disposables.forEach(d => {
+            disposables.forEach((d) => {
               if (d && typeof d.dispose === 'function') {
                 d.dispose();
               }
@@ -616,15 +675,33 @@ export class VSCodeShim {
       } as any,
       SnippetString: class SnippetString {} as any,
       CancellationTokenSource: class CancellationTokenSource {
-        token = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose() {} }) };
+        token = {
+          isCancellationRequested: false,
+          onCancellationRequested: () => ({ dispose() {} }),
+        };
         cancel() {}
         dispose() {}
       } as any,
       TreeItem: class TreeItem {} as any,
       TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
-      
+
       // VSCode version
       version: '1.94.0',
+
+      // 受控白名单：为未授权命名空间注入 getter，访问时告警并返回空 stub
+      ...Object.fromEntries(
+        ['debug', 'tasks', 'scm', 'comments', 'authentication', 'tests', 'notebooks'].map(
+          (name) => [
+            name,
+            new Proxy({} as any, {
+              get(_t, prop: string) {
+                warnUnsupportedApi(`${name}.${String(prop)}`);
+                return undefined;
+              },
+            }),
+          ],
+        ),
+      ),
     } as any;
   }
 
@@ -678,7 +755,11 @@ export function createExtensionContext(extensionPath: string): ExtensionContext 
       setKeysForSync() {},
     },
     extensionPath,
-    extensionUri: { fsPath: extensionPath, scheme: 'file', toString: () => extensionPath } as vscode.Uri,
+    extensionUri: {
+      fsPath: extensionPath,
+      scheme: 'file',
+      toString: () => extensionPath,
+    } as vscode.Uri,
     asAbsolutePath(relativePath: string) {
       return require('path').join(extensionPath, relativePath);
     },
@@ -712,7 +793,11 @@ export function createExtensionContext(extensionPath: string): ExtensionContext 
     },
     extension: {
       id: 'unknown.extension',
-      extensionUri: { fsPath: extensionPath, scheme: 'file', toString: () => extensionPath } as vscode.Uri,
+      extensionUri: {
+        fsPath: extensionPath,
+        scheme: 'file',
+        toString: () => extensionPath,
+      } as vscode.Uri,
       extensionPath,
       isActive: true,
       packageJSON: {

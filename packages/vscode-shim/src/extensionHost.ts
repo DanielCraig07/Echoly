@@ -10,7 +10,12 @@ export interface ExtensionHostOptions {
   workspaceRoot: string;
   onCommand: (command: string, ...args: any[]) => Promise<any>;
   onMessage: (message: any) => void;
-  onWebviewViewRegister?: (viewId: string, provider: any, extensionPath: string, options?: any) => void;
+  onWebviewViewRegister?: (
+    viewId: string,
+    provider: any,
+    extensionPath: string,
+    options?: any,
+  ) => void;
 }
 
 export class ExtensionHost {
@@ -26,7 +31,7 @@ export class ExtensionHost {
       onMessage: options.onMessage,
       onWebviewViewRegister: options.onWebviewViewRegister,
     });
-    
+
     // 立即注入 vscode 模块到全局，确保任何扩展 require('vscode') 时都能找到
     const vscodeAPI = this.shim.createAPI();
     this.injectVscodeModule(vscodeAPI);
@@ -39,7 +44,7 @@ export class ExtensionHost {
    */
   async activateExtension(extension: LoadedExtension): Promise<void> {
     const extensionId = `${extension.manifest.publisher}.${extension.manifest.name}`;
-    
+
     console.log(`[activateExtension] 开始激活扩展: ${extensionId}`);
 
     // 创建扩展上下文
@@ -64,7 +69,7 @@ export class ExtensionHost {
     } else {
       console.warn(`[activateExtension] Extension ${extensionId} has no activate function`);
     }
-    
+
     console.log(`[activateExtension] 扩展激活流程完成`);
   }
 
@@ -130,7 +135,7 @@ export class ExtensionHost {
       loaded: true,
       exports: vscodeAPI,
     };
-    
+
     // 方法2：拦截 require 调用
     const originalRequire = Module.prototype.require;
     Module.prototype.require = function (id: string) {
@@ -139,11 +144,11 @@ export class ExtensionHost {
       }
       return originalRequire.apply(this, arguments);
     };
-    
+
     // 方法3：添加到 global
     (global as any).vscode = vscodeAPI;
   }
-  
+
   /**
    * 注入 window polyfills（Electron 主进程中不支持的浏览器 API）
    */
@@ -152,27 +157,30 @@ export class ExtensionHost {
     if (typeof (global as any).window === 'undefined') {
       (global as any).window = {};
     }
-    
+
     // 提供 window.prompt 的 stub 实现
     if (typeof (global as any).window.prompt === 'undefined') {
-      (global as any).window.prompt = function(message?: string, defaultValue?: string): string | null {
+      (global as any).window.prompt = function (
+        message?: string,
+        defaultValue?: string,
+      ): string | null {
         console.warn('[VSCode Shim] window.prompt() is not fully supported in extension context');
         console.log('[VSCode Shim] Prompt message:', message, 'default:', defaultValue);
         // 返回默认值或空字符串，避免扩展崩溃
         return defaultValue || '';
       };
     }
-    
+
     // 提供 window.alert 的 stub 实现
     if (typeof (global as any).window.alert === 'undefined') {
-      (global as any).window.alert = function(message?: string): void {
+      (global as any).window.alert = function (message?: string): void {
         console.log('[VSCode Shim] Alert:', message);
       };
     }
-    
+
     // 提供 window.confirm 的 stub 实现
     if (typeof (global as any).window.confirm === 'undefined') {
-      (global as any).window.confirm = function(message?: string): boolean {
+      (global as any).window.confirm = function (message?: string): boolean {
         console.log('[VSCode Shim] Confirm:', message);
         return true; // 默认返回 true
       };

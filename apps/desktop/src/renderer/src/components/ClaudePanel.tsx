@@ -39,20 +39,20 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
       try {
         setLoading(true);
         setError('');
-        
+
         console.log(`[ClaudePanel] Resolving webview: ${viewId}`);
         const result = await window.ide.extensionResolveWebview(viewId);
-        
+
         if (!isMounted) return;
-        
+
         if (result.success && result.html) {
           console.log(`[ClaudePanel] Got HTML content, length: ${result.html.length}`);
           console.log(`[ClaudePanel] HTML preview:`, result.html.substring(0, 200));
           setHtml(result.html);
-          
-          // macOS userData 路径
-          const filePath = `/Users/danielcraig/Library/Application Support/TSINGTEC IDE/webview-${viewId}.html`;
-          setHtmlFile(`file://${filePath}`);
+
+          // 使用主进程返回的真实 userData 路径（不再硬编码旧品牌目录）
+          const filePath = result.filePath || '';
+          setHtmlFile(filePath ? `file://${filePath}` : '');
           console.log(`[ClaudePanel] Webview file path:`, filePath);
         } else {
           setError(result.error || '无法加载扩展界面');
@@ -132,7 +132,11 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
   }
 
   if (!htmlFile && !loading && !error) {
-    return <div className="claude-panel loading"><div>准备加载...</div></div>;
+    return (
+      <div className="claude-panel loading">
+        <div>准备加载...</div>
+      </div>
+    );
   }
 
   return (

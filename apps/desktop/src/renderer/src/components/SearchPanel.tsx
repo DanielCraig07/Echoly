@@ -96,7 +96,12 @@ function SearchTreeNodeView({
           }}
           className="search-result-item"
         >
-          <span className="chevron" style={{ fontSize: 11, color: 'var(--muted)', width: 12, display: 'inline-block' }}>{isCollapsed ? '▸' : '▾'}</span>
+          <span
+            className="chevron"
+            style={{ fontSize: 11, color: 'var(--muted)', width: 12, display: 'inline-block' }}
+          >
+            {isCollapsed ? '▸' : '▾'}
+          </span>
           <RenderFileTreeIcon name={node.name} isDirectory={true} isOpen={!isCollapsed} />
           <span style={{ color: 'var(--text)', fontWeight: 500 }}>{node.name}</span>
         </div>
@@ -141,7 +146,12 @@ function SearchTreeNodeView({
         }}
         className="search-result-item"
       >
-        <span className="chevron" style={{ fontSize: 11, color: 'var(--muted)', width: 12, display: 'inline-block' }}>{isCollapsed ? '▸' : '▾'}</span>
+        <span
+          className="chevron"
+          style={{ fontSize: 11, color: 'var(--muted)', width: 12, display: 'inline-block' }}
+        >
+          {isCollapsed ? '▸' : '▾'}
+        </span>
         <RenderFileTreeIcon name={node.name} isDirectory={false} />
         <span style={{ color: 'var(--text)', fontWeight: 600 }}>{node.name}</span>
         <span
@@ -183,7 +193,9 @@ function SearchTreeNodeView({
               }}
               className="search-result-item"
             >
-              <span style={{ color: 'var(--accent)', fontSize: 11, minWidth: 24, textAlign: 'right' }}>
+              <span
+                style={{ color: 'var(--accent)', fontSize: 11, minWidth: 24, textAlign: 'right' }}
+              >
                 {hit.line}:
               </span>
               <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -262,7 +274,10 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
       searchStr = searchStr.toLowerCase();
     }
     if (isWholeWord) {
-      const regex = new RegExp(`\\b${searchStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, isCaseSensitive ? '' : 'i');
+      const regex = new RegExp(
+        `\\b${searchStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
+        isCaseSensitive ? '' : 'i',
+      );
       if (!regex.test(hit.preview)) return false;
     }
     if (isRegex) {
@@ -274,11 +289,17 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
       }
     }
     if (includesPattern.trim()) {
-      const patterns = includesPattern.split(',').map((p) => p.trim()).filter(Boolean);
+      const patterns = includesPattern
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean);
       if (patterns.length > 0 && !patterns.some((p) => hit.path.includes(p))) return false;
     }
     if (excludesPattern.trim()) {
-      const patterns = excludesPattern.split(',').map((p) => p.trim()).filter(Boolean);
+      const patterns = excludesPattern
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean);
       if (patterns.length > 0 && patterns.some((p) => hit.path.includes(p))) return false;
     }
     return true;
@@ -339,10 +360,16 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           const regex = new RegExp(query, isCaseSensitive ? 'g' : 'gi');
           newContent = content.replace(regex, replaceQuery);
         } else if (isWholeWord) {
-          const regex = new RegExp(`\\b${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, isCaseSensitive ? 'g' : 'gi');
+          const regex = new RegExp(
+            `\\b${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
+            isCaseSensitive ? 'g' : 'gi',
+          );
           newContent = content.replace(regex, replaceQuery);
         } else {
-          const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), isCaseSensitive ? 'g' : 'gi');
+          const regex = new RegExp(
+            query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+            isCaseSensitive ? 'g' : 'gi',
+          );
           newContent = content.replace(regex, replaceQuery);
         }
         if (newContent !== content) {
@@ -358,16 +385,27 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
   const highlightMatch = (text: string, q: string) => {
     if (!q) return text;
     try {
-      const regex = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, isCaseSensitive ? 'g' : 'gi');
+      const regex = new RegExp(
+        `(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`,
+        isCaseSensitive ? 'g' : 'gi',
+      );
       const parts = text.split(regex);
       return parts.map((part, i) =>
         regex.test(part) ? (
-          <mark key={i} style={{ background: 'var(--accent)', color: '#fff', padding: '0 2px', borderRadius: 2 }}>
+          <mark
+            key={i}
+            style={{
+              background: 'var(--accent)',
+              color: '#fff',
+              padding: '0 2px',
+              borderRadius: 2,
+            }}
+          >
             {part}
           </mark>
         ) : (
           part
-        )
+        ),
       );
     } catch {
       return text;
@@ -375,7 +413,10 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
   };
 
   return (
-    <div className="search-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    <div
+      className="search-panel"
+      style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
+    >
       {/* 1. Header Bar */}
       <div
         className="search-panel-header"
@@ -389,17 +430,43 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           boxSizing: 'border-box',
         }}
       >
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>▾</span> 搜索
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: 'var(--text)',
+            letterSpacing: '0.05em',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>
+            ▾
+          </span>{' '}
+          搜索
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
             type="button"
             title="刷新搜索"
             onClick={() => void performSearch(query, isCaseSensitive)}
-            style={{ padding: 4, background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+            style={{
+              padding: 4,
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
               <polyline points="23 4 23 10 17 10" />
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>
@@ -408,9 +475,22 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             type="button"
             title="清空搜索结果"
             onClick={handleClear}
-            style={{ padding: 4, background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+            style={{
+              padding: 4,
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -429,17 +509,35 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             }}
           >
             {displayMode === 'tree' ? (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M4 4h4v4H4zM12 16h4v4h-4zM12 8h8M12 8v12M8 6h4" />
               </svg>
             ) : (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="8" y1="6" x2="21" y2="6"/>
-                <line x1="8" y1="12" x2="21" y2="12"/>
-                <line x1="8" y1="18" x2="21" y2="18"/>
-                <line x1="3" y1="6" x2="3.01" y2="6"/>
-                <line x1="3" y1="12" x2="3.01" y2="12"/>
-                <line x1="3" y1="18" x2="3.01" y2="18"/>
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="8" y1="6" x2="21" y2="6" />
+                <line x1="8" y1="12" x2="21" y2="12" />
+                <line x1="8" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" />
+                <line x1="3" y1="12" x2="3.01" y2="12" />
+                <line x1="3" y1="18" x2="3.01" y2="18" />
               </svg>
             )}
           </button>
@@ -447,9 +545,22 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             type="button"
             title={allCollapsed ? '全部展开' : '全部折叠'}
             onClick={toggleAllCollapse}
-            style={{ padding: 4, background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+            style={{
+              padding: 4,
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
               <rect x="8" y="8" width="12" height="12" rx="2" ry="2" />
               <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
               <line x1="11" y1="14" x2="17" y2="14" />
@@ -460,7 +571,15 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
       </div>
 
       {/* 2. Inputs Area */}
-      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--border)' }}>
+      <div
+        style={{
+          padding: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
         {/* Search Input Row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
@@ -508,7 +627,15 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               }}
             />
             {/* Action Toggles Inside Input */}
-            <div style={{ position: 'absolute', right: 4, display: 'flex', gap: 2, alignItems: 'center' }}>
+            <div
+              style={{
+                position: 'absolute',
+                right: 4,
+                display: 'flex',
+                gap: 2,
+                alignItems: 'center',
+              }}
+            >
               <button
                 type="button"
                 title="区分大小写 (Alt+C)"
@@ -598,7 +725,15 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                   outline: 'none',
                 }}
               />
-              <div style={{ position: 'absolute', right: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 4,
+                  display: 'flex',
+                  gap: 4,
+                  alignItems: 'center',
+                }}
+              >
                 <button
                   type="button"
                   title="保留大小写"
@@ -630,7 +765,14 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                     cursor: 'pointer',
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <polyline points="17 1 21 5 17 9" />
                     <path d="M3 11V9a4 4 0 0 1 4-4h14" />
                     <polyline points="7 23 3 19 7 15" />
@@ -647,7 +789,13 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           <button
             type="button"
             onClick={() => setShowDetails((v) => !v)}
-            style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer' }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              fontSize: 11,
+              cursor: 'pointer',
+            }}
           >
             {showDetails ? '隐藏过滤选项 ▲' : '包含 / 排除的文件... ▼'}
           </button>
@@ -704,8 +852,16 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
 
         {!loading && groups.length > 0 && (
           <div>
-            <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
-              在 {totalFiles} 个文件中找到了 {totalMatches} 个结果 ({displayMode === 'tree' ? '树结构' : '列表模式'})
+            <div
+              style={{
+                padding: '6px 12px',
+                fontSize: 11,
+                color: 'var(--muted)',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              在 {totalFiles} 个文件中找到了 {totalMatches} 个结果 (
+              {displayMode === 'tree' ? '树结构' : '列表模式'})
             </div>
 
             {displayMode === 'tree' ? (
@@ -730,7 +886,10 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 {groups.map((group) => {
                   const isCollapsed = !!collapsedFiles[group.path];
                   return (
-                    <div key={group.path} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}>
+                    <div
+                      key={group.path}
+                      style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.04)' }}
+                    >
                       {/* File Header */}
                       <div
                         onClick={() => toggleFileCollapse(group.path)}
@@ -744,11 +903,23 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                           userSelect: 'none',
                         }}
                       >
-                        <span style={{ fontSize: 10, color: 'var(--muted)' }}>{isCollapsed ? '▸' : '▾'}</span>
+                        <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                          {isCollapsed ? '▸' : '▾'}
+                        </span>
                         <RenderFileTreeIcon name={group.fileName} isDirectory={false} />
-                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{group.fileName}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                          {group.fileName}
+                        </span>
                         {group.dirPath && (
-                          <span style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: 'var(--muted)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
                             {group.dirPath}
                           </span>
                         )}
@@ -790,10 +961,23 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                               }}
                               className="search-result-item"
                             >
-                              <span style={{ color: 'var(--accent)', fontSize: 11, minWidth: 24, textAlign: 'right' }}>
+                              <span
+                                style={{
+                                  color: 'var(--accent)',
+                                  fontSize: 11,
+                                  minWidth: 24,
+                                  textAlign: 'right',
+                                }}
+                              >
                                 {hit.line}:
                               </span>
-                              <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              <span
+                                style={{
+                                  color: 'var(--text)',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
                                 {highlightMatch(hit.preview, query)}
                               </span>
                             </div>

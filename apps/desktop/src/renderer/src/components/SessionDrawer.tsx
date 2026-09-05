@@ -78,8 +78,7 @@ export function SessionDrawer({
 
   const handleLoad = async (session: ChatSession) => {
     if (currentMessages.length > 0) {
-      const title =
-        currentMessages.find((m) => m.role === 'user')?.content.slice(0, 40) ?? '对话';
+      const title = currentMessages.find((m) => m.role === 'user')?.content.slice(0, 40) ?? '对话';
       const meta = buildSessionWorkspaceMeta(workspaceInfo);
       await window.ide.saveSession({
         id: currentSessionId,

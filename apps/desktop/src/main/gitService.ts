@@ -58,21 +58,26 @@ export class GitService {
       const quotedArgs = args.map((a) => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
       let res = await this.ssh.runCommand(`git ${quotedArgs}`);
       // 远程命令偶发抖动重试保护
-      if (res.code !== 0 && (res.stderr.includes('timed out') || res.stderr.includes('SSH 未连接') || res.stderr.includes('Channel open failure'))) {
+      if (
+        res.code !== 0 &&
+        (res.stderr.includes('timed out') ||
+          res.stderr.includes('SSH 未连接') ||
+          res.stderr.includes('Channel open failure'))
+      ) {
         await new Promise((r) => setTimeout(r, 600));
         res = await this.ssh.runCommand(`git ${quotedArgs}`);
       }
-      const isConnectionIssue = res.code !== 0 && (
-        res.stderr.includes('SSH 未连接') ||
-        res.stderr.includes('timed out') ||
-        res.stderr.includes('Channel open failure') ||
-        res.stderr.includes('Connection reset')
-      );
+      const isConnectionIssue =
+        res.code !== 0 &&
+        (res.stderr.includes('SSH 未连接') ||
+          res.stderr.includes('timed out') ||
+          res.stderr.includes('Channel open failure') ||
+          res.stderr.includes('Connection reset'));
       return {
         code: res.code,
         stdout: res.stdout,
         stderr: res.stderr,
-        error: isConnectionIssue ? (res.stderr || 'SSH 远程连接异常') : undefined,
+        error: isConnectionIssue ? res.stderr || 'SSH 远程连接异常' : undefined,
       };
     }
 
@@ -401,7 +406,10 @@ export class GitService {
       await this.runGit(['reset', 'HEAD', '--', ...tracked], root);
       const res = await this.runGit(['checkout', 'HEAD', '--', ...tracked], root);
       if (res.code !== 0) {
-        const alt = await this.runGit(['restore', '--staged', '--worktree', '--', ...tracked], root);
+        const alt = await this.runGit(
+          ['restore', '--staged', '--worktree', '--', ...tracked],
+          root,
+        );
         if (alt.code !== 0) {
           await this.runGit(['checkout', '--', ...tracked], root);
         }
@@ -479,7 +487,12 @@ export class GitService {
     return { ok: true, path: posix, original, modified, staged: false };
   }
 
-  async branches(): Promise<{ ok: boolean; detail?: string; branches: GitBranchInfo[]; tags?: string[] }> {
+  async branches(): Promise<{
+    ok: boolean;
+    detail?: string;
+    branches: GitBranchInfo[];
+    tags?: string[];
+  }> {
     const gate = this.localRootOrError();
     if ('ok' in gate && gate.ok === false) {
       return { ok: false, detail: gate.detail, branches: [] };
@@ -502,9 +515,13 @@ export class GitService {
     }
 
     const tagsRes = await this.runGit(['tag', '-l'], root);
-    const tags: string[] = tagsRes.code === 0
-      ? tagsRes.stdout.split(/\r?\n/).map((t) => t.trim()).filter(Boolean)
-      : [];
+    const tags: string[] =
+      tagsRes.code === 0
+        ? tagsRes.stdout
+            .split(/\r?\n/)
+            .map((t) => t.trim())
+            .filter(Boolean)
+        : [];
 
     return { ok: true, branches, tags };
   }
@@ -519,7 +536,10 @@ export class GitService {
     let args = ['checkout', name];
     if (name.includes('/') && !name.startsWith('.')) {
       const local = name.includes('/') ? name.split('/').slice(1).join('/') : name;
-      const exists = await this.runGit(['show-ref', '--verify', `--quiet`, `refs/heads/${local}`], root);
+      const exists = await this.runGit(
+        ['show-ref', '--verify', `--quiet`, `refs/heads/${local}`],
+        root,
+      );
       if (exists.code !== 0) {
         args = ['checkout', '-b', local, '--track', name];
       } else {
@@ -528,7 +548,8 @@ export class GitService {
     }
     const res = await this.runGit(args, root);
     if (res.error) return { ok: false, detail: res.error };
-    if (res.code !== 0) return { ok: false, detail: res.stderr.trim() || res.stdout.trim() || '切换分支失败' };
+    if (res.code !== 0)
+      return { ok: false, detail: res.stderr.trim() || res.stdout.trim() || '切换分支失败' };
     return { ok: true, detail: `已切换到 ${name}` };
   }
 
@@ -555,7 +576,10 @@ export class GitService {
       // retry without ff-only for broader compatibility
       const alt = await this.runGit(['pull'], root);
       if (alt.code !== 0) {
-        return { ok: false, detail: (res.stderr || alt.stderr || alt.stdout || 'pull 失败').trim() };
+        return {
+          ok: false,
+          detail: (res.stderr || alt.stderr || alt.stdout || 'pull 失败').trim(),
+        };
       }
       return { ok: true, detail: alt.stdout.trim() || 'pull 完成' };
     }
@@ -571,7 +595,10 @@ export class GitService {
     if (res.code !== 0) {
       const alt = await this.runGit(['push'], root);
       if (alt.code !== 0) {
-        return { ok: false, detail: (res.stderr || alt.stderr || alt.stdout || 'push 失败').trim() };
+        return {
+          ok: false,
+          detail: (res.stderr || alt.stderr || alt.stdout || 'push 失败').trim(),
+        };
       }
       return { ok: true, detail: alt.stdout.trim() || alt.stderr.trim() || 'push 完成' };
     }
@@ -585,7 +612,12 @@ export class GitService {
     }
     const { root } = gate as { root: string };
     const res = await this.runGit(
-      ['log', `-n${maxCount}`, '--topo-order', '--pretty=format:%H%x09%h%x09%an%x09%ar%x09%P%x09%s'],
+      [
+        'log',
+        `-n${maxCount}`,
+        '--topo-order',
+        '--pretty=format:%H%x09%h%x09%an%x09%ar%x09%P%x09%s',
+      ],
       root,
     );
     if (res.code !== 0) {
@@ -621,7 +653,13 @@ export class GitService {
     }
     const { root } = gate as { root: string };
     const res = await this.runGit(
-      ['log', `-n${maxCount}`, '--pretty=format:%H%x09%h%x09%an%x09%ar%x09%P%x09%s', '--', filePath],
+      [
+        'log',
+        `-n${maxCount}`,
+        '--pretty=format:%H%x09%h%x09%an%x09%ar%x09%P%x09%s',
+        '--',
+        filePath,
+      ],
       root,
     );
     if (res.code !== 0) {
@@ -656,10 +694,7 @@ export class GitService {
       return { ok: false, detail: gate.detail };
     }
     const { root } = gate as { root: string };
-    const res = await this.runGit(
-      ['blame', `-L${line},${line}`, '--porcelain', filePath],
-      root,
-    );
+    const res = await this.runGit(['blame', `-L${line},${line}`, '--porcelain', filePath], root);
     if (res.code !== 0 || !res.stdout.trim()) {
       return { ok: false, detail: res.stderr.trim() || '无法获取该行 Blame 信息' };
     }
@@ -729,7 +764,14 @@ export class GitService {
   async showCommitDiff(hash: string, filePath: string): Promise<GitDiffResult> {
     const gate = this.localRootOrError();
     if ('ok' in gate && gate.ok === false) {
-      return { ok: false, detail: gate.detail, path: filePath, original: '', modified: '', staged: false };
+      return {
+        ok: false,
+        detail: gate.detail,
+        path: filePath,
+        original: '',
+        modified: '',
+        staged: false,
+      };
     }
     const { root } = gate as { root: string };
     const [origRes, modRes] = await Promise.all([
@@ -745,5 +787,3 @@ export class GitService {
     };
   }
 }
-
-

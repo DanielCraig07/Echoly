@@ -1,4 +1,13 @@
-import { forwardRef, useImperativeHandle, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useImperativeHandle,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react';
 import type { FileTreeNode, GitStatusEntry, GitStatusResult } from '@deepseek-ide/shared';
 
 export type PathClipboard = {
@@ -15,9 +24,7 @@ export type FileTreeHandlers = {
   onSelectNode?: (node: { path: string; isDirectory: boolean } | null) => void;
 };
 
-type MenuTarget =
-  | { kind: 'blank' }
-  | { kind: 'node'; node: FileTreeNode };
+type MenuTarget = { kind: 'blank' } | { kind: 'node'; node: FileTreeNode };
 
 type ContextMenuState = {
   x: number;
@@ -82,7 +89,8 @@ function FileTreeContextMenu({ state, clipboard, onClose, onAction }: MenuProps)
     const rect = el.getBoundingClientRect();
     let { x, y } = state;
     if (x + rect.width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - rect.width - 8);
-    if (y + rect.height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - rect.height - 8);
+    if (y + rect.height > window.innerHeight - 8)
+      y = Math.max(8, window.innerHeight - rect.height - 8);
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }, [state]);
@@ -136,7 +144,6 @@ function FileTreeContextMenu({ state, clipboard, onClose, onAction }: MenuProps)
     items.push(item('rename', '重命名...'));
     items.push(item('delete', '永久删除', { danger: true }));
   }
-
 
   return (
     <div className="ctx-menu" ref={ref} role="menu">
@@ -194,20 +201,36 @@ function InlineNameInput({
   );
 }
 
-
-export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string; isDirectory: boolean; isOpen?: boolean }) {
+export function RenderFileTreeIcon({
+  name,
+  isDirectory,
+  isOpen,
+}: {
+  name: string;
+  isDirectory: boolean;
+  isOpen?: boolean;
+}) {
   const lowerName = name.toLowerCase();
-  const segments = lowerName.split(' / ').map(s => s.trim());
+  const segments = lowerName.split(' / ').map((s) => s.trim());
   const lastName = segments[segments.length - 1];
 
-  const svgStyle: React.CSSProperties = { marginRight: 6, flexShrink: 0, verticalAlign: 'middle', display: 'inline-block' };
+  const svgStyle: React.CSSProperties = {
+    marginRight: 6,
+    flexShrink: 0,
+    verticalAlign: 'middle',
+    display: 'inline-block',
+  };
 
   if (isDirectory) {
     // 1. Git directory
-    if (segments.some(s => s === '.git' || s === '.github' || s === '.gitlab')) {
+    if (segments.some((s) => s === '.git' || s === '.github' || s === '.gitlab')) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill="#f05032" opacity="0.8" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill="#f05032"
+            opacity="0.8"
+          />
           <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill="#f05032" />
           <circle cx="8" cy="10" r="1.5" fill="#fff" />
           <path d="M8 8.5v3M6.5 10h3" stroke="#f05032" strokeWidth="0.8" />
@@ -216,10 +239,14 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     }
 
     // 2. Node modules / vendor / packages
-    if (segments.some(s => s === 'node_modules' || s === 'packages' || s === 'vendor')) {
+    if (segments.some((s) => s === 'node_modules' || s === 'packages' || s === 'vendor')) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill="#8d6e63" opacity="0.8" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill="#8d6e63"
+            opacity="0.8"
+          />
           <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill="#8d6e63" />
           <rect x="5.5" y="8" width="5" height="4" rx="0.5" stroke="#fff" strokeWidth="1" />
           <path d="M8 8v4M5.5 10h5" stroke="#fff" strokeWidth="0.8" />
@@ -228,21 +255,38 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     }
 
     // 3. Source code / lib / core
-    if (segments.some(s => s === 'src' || s === 'source' || s === 'lib' || s === 'core')) {
+    if (segments.some((s) => s === 'src' || s === 'source' || s === 'lib' || s === 'core')) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill={isOpen ? '#43a047' : '#2e7d32'} opacity="0.8" />
-          <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill={isOpen ? '#4caf50' : '#388e3c'} />
-          <path d="M6 9l-1.5 1.5L6 12M10 9l1.5 1.5L10 12" stroke="#fff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill={isOpen ? '#43a047' : '#2e7d32'}
+            opacity="0.8"
+          />
+          <path
+            d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z"
+            fill={isOpen ? '#4caf50' : '#388e3c'}
+          />
+          <path
+            d="M6 9l-1.5 1.5L6 12M10 9l1.5 1.5L10 12"
+            stroke="#fff"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       );
     }
 
     // 4. Desktop / Electron / Apps
-    if (segments.some(s => s === 'desktop' || s === 'apps' || s === 'app' || s === 'electron')) {
+    if (segments.some((s) => s === 'desktop' || s === 'apps' || s === 'app' || s === 'electron')) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill="#1976d2" opacity="0.8" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill="#1976d2"
+            opacity="0.8"
+          />
           <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill="#2196f3" />
           <rect x="5" y="8.5" width="6" height="4" rx="0.5" stroke="#fff" strokeWidth="1" />
           <line x1="6.5" y1="13" x2="9.5" y2="13" stroke="#fff" strokeWidth="1" />
@@ -251,10 +295,19 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     }
 
     // 5. Components / UI / Views / Pages
-    if (segments.some(s => s === 'components' || s === 'component' || s === 'ui' || s === 'views' || s === 'pages')) {
+    if (
+      segments.some(
+        (s) =>
+          s === 'components' || s === 'component' || s === 'ui' || s === 'views' || s === 'pages',
+      )
+    ) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill="#f57c00" opacity="0.8" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill="#f57c00"
+            opacity="0.8"
+          />
           <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill="#ff9800" />
           <rect x="5" y="8" width="2.5" height="2.5" rx="0.3" fill="#fff" />
           <rect x="8.5" y="8" width="2.5" height="2.5" rx="0.3" fill="#fff" opacity="0.7" />
@@ -265,10 +318,18 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     }
 
     // 6. Config / Settings
-    if (segments.some(s => ['config', 'configuration', 'settings', 'conf', '.config', '.vscode'].includes(s))) {
+    if (
+      segments.some((s) =>
+        ['config', 'configuration', 'settings', 'conf', '.config', '.vscode'].includes(s),
+      )
+    ) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill="#0097a7" opacity="0.8" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill="#0097a7"
+            opacity="0.8"
+          />
           <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill="#00bcd4" />
           <circle cx="8" cy="10" r="1.8" stroke="#fff" strokeWidth="1" />
           <circle cx="8" cy="10" r="0.6" fill="#fff" />
@@ -277,10 +338,20 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     }
 
     // 7. Assets / Images / Public / Resources
-    if (segments.some(s => ['assets', 'static', 'public', 'images', 'icons', 'fonts', 'media', 'resources'].includes(s))) {
+    if (
+      segments.some((s) =>
+        ['assets', 'static', 'public', 'images', 'icons', 'fonts', 'media', 'resources'].includes(
+          s,
+        ),
+      )
+    ) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill="#e65100" opacity="0.8" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill="#e65100"
+            opacity="0.8"
+          />
           <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill="#ffb300" />
           <circle cx="6" cy="9" r="0.9" fill="#fff" />
           <path d="M4.5 12.5l2.2-2.5 1.8 1.5 2-2.2 1.5 3.2z" fill="#fff" opacity="0.9" />
@@ -289,10 +360,18 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     }
 
     // 8. Dist / Build / Out / Release
-    if (segments.some(s => ['dist', 'build', 'out', 'release', 'bin', 'target', '.output'].includes(s))) {
+    if (
+      segments.some((s) =>
+        ['dist', 'build', 'out', 'release', 'bin', 'target', '.output'].includes(s),
+      )
+    ) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill="#546e7a" opacity="0.8" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill="#546e7a"
+            opacity="0.8"
+          />
           <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill="#78909c" />
           <path d="M8 8l-2.5 1.5v2.8L8 13.5l2.5-1.2V9.5z" stroke="#fff" strokeWidth="0.9" />
           <path d="M8 8v5.5M5.5 9.5L8 11l2.5-1.5" stroke="#fff" strokeWidth="0.8" />
@@ -301,10 +380,16 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     }
 
     // 9. Tests / Specs
-    if (segments.some(s => ['test', 'tests', 'spec', 'specs', '__tests__', '__mocks__'].includes(s))) {
+    if (
+      segments.some((s) => ['test', 'tests', 'spec', 'specs', '__tests__', '__mocks__'].includes(s))
+    ) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill="#00796b" opacity="0.8" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill="#00796b"
+            opacity="0.8"
+          />
           <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill="#26a69a" />
           <path d="M7 8.5v3a1 1 0 0 0 2 0v-3" stroke="#fff" strokeWidth="1" strokeLinecap="round" />
         </svg>
@@ -312,10 +397,18 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     }
 
     // 10. Utils / Hooks / Helpers / Store / Types
-    if (segments.some(s => ['utils', 'helpers', 'hooks', 'store', 'stores', 'types', 'models', 'services'].includes(s))) {
+    if (
+      segments.some((s) =>
+        ['utils', 'helpers', 'hooks', 'store', 'stores', 'types', 'models', 'services'].includes(s),
+      )
+    ) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z" fill="#c2185b" opacity="0.8" />
+          <path
+            d="M2 3a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v2H2V3z"
+            fill="#c2185b"
+            opacity="0.8"
+          />
           <path d="M2 6.5h12v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6.5z" fill="#ec407a" />
           <circle cx="6.5" cy="9.5" r="1.2" stroke="#fff" strokeWidth="0.9" />
           <circle cx="9.5" cy="11.5" r="1.2" stroke="#fff" strokeWidth="0.9" />
@@ -328,7 +421,11 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     if (isOpen) {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <path d="M1.5 3a1 1 0 0 1 1-1h3.293l1.5 1.5H13.5a1 1 0 0 1 1 1v2H2.5L1.5 3z" fill="#dca04d" opacity="0.85" />
+          <path
+            d="M1.5 3a1 1 0 0 1 1-1h3.293l1.5 1.5H13.5a1 1 0 0 1 1 1v2H2.5L1.5 3z"
+            fill="#dca04d"
+            opacity="0.85"
+          />
           <path d="M1 7h14l-1.8 6.3a1 1 0 0 1-.96.7H2.76a1 1 0 0 1-.96-.7L1 7z" fill="#e5ad5b" />
           <path d="M1 7h14" stroke="#f6c77d" strokeWidth="0.75" />
         </svg>
@@ -336,8 +433,15 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     }
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-        <path d="M1.5 3a1 1 0 0 1 1-1h3.293l1.5 1.5H13.5a1 1 0 0 1 1 1v1.5H1.5V3z" fill="#dca04d" opacity="0.85" />
-        <path d="M1.5 5.5h13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-6.5a1 1 0 0 1 1-1z" fill="#e5ad5b" />
+        <path
+          d="M1.5 3a1 1 0 0 1 1-1h3.293l1.5 1.5H13.5a1 1 0 0 1 1 1v1.5H1.5V3z"
+          fill="#dca04d"
+          opacity="0.85"
+        />
+        <path
+          d="M1.5 5.5h13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-6.5a1 1 0 0 1 1-1z"
+          fill="#e5ad5b"
+        />
       </svg>
     );
   }
@@ -345,11 +449,24 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
   // =================== FILE ICONS ===================
 
   // 1. TypeScript (.ts, .cts, .mts)
-  if (lowerName.endsWith('.ts') && !lowerName.endsWith('.d.ts') || lowerName.endsWith('.cts') || lowerName.endsWith('.mts')) {
+  if (
+    (lowerName.endsWith('.ts') && !lowerName.endsWith('.d.ts')) ||
+    lowerName.endsWith('.cts') ||
+    lowerName.endsWith('.mts')
+  ) {
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#3178c6" />
-        <text x="3.2" y="11.5" fill="#fff" fontSize="7.8" fontWeight="bold" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">TS</text>
+        <text
+          x="3.2"
+          y="11.5"
+          fill="#fff"
+          fontSize="7.8"
+          fontWeight="bold"
+          fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        >
+          TS
+        </text>
       </svg>
     );
   }
@@ -359,7 +476,16 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#1e4f8a" />
-        <text x="2" y="11.5" fill="#fff" fontSize="7.2" fontWeight="bold" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">D.TS</text>
+        <text
+          x="2"
+          y="11.5"
+          fill="#fff"
+          fontSize="7.2"
+          fontWeight="bold"
+          fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        >
+          D.TS
+        </text>
       </svg>
     );
   }
@@ -369,9 +495,36 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#2d3748" />
-        <ellipse cx="8" cy="8" rx="5.5" ry="2.2" stroke="#61dafb" strokeWidth="0.9" fill="none" transform="rotate(30 8 8)" />
-        <ellipse cx="8" cy="8" rx="5.5" ry="2.2" stroke="#61dafb" strokeWidth="0.9" fill="none" transform="rotate(90 8 8)" />
-        <ellipse cx="8" cy="8" rx="5.5" ry="2.2" stroke="#61dafb" strokeWidth="0.9" fill="none" transform="rotate(150 8 8)" />
+        <ellipse
+          cx="8"
+          cy="8"
+          rx="5.5"
+          ry="2.2"
+          stroke="#61dafb"
+          strokeWidth="0.9"
+          fill="none"
+          transform="rotate(30 8 8)"
+        />
+        <ellipse
+          cx="8"
+          cy="8"
+          rx="5.5"
+          ry="2.2"
+          stroke="#61dafb"
+          strokeWidth="0.9"
+          fill="none"
+          transform="rotate(90 8 8)"
+        />
+        <ellipse
+          cx="8"
+          cy="8"
+          rx="5.5"
+          ry="2.2"
+          stroke="#61dafb"
+          strokeWidth="0.9"
+          fill="none"
+          transform="rotate(150 8 8)"
+        />
         <circle cx="8" cy="8" r="1.3" fill="#61dafb" />
       </svg>
     );
@@ -382,7 +535,16 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#f7df1e" />
-        <text x="3.4" y="11.5" fill="#000" fontSize="8" fontWeight="bold" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">JS</text>
+        <text
+          x="3.4"
+          y="11.5"
+          fill="#000"
+          fontSize="8"
+          fontWeight="bold"
+          fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        >
+          JS
+        </text>
       </svg>
     );
   }
@@ -392,9 +554,36 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#00b4d8" />
-        <ellipse cx="8" cy="8" rx="5.5" ry="2.2" stroke="#fff" strokeWidth="0.9" fill="none" transform="rotate(30 8 8)" />
-        <ellipse cx="8" cy="8" rx="5.5" ry="2.2" stroke="#fff" strokeWidth="0.9" fill="none" transform="rotate(90 8 8)" />
-        <ellipse cx="8" cy="8" rx="5.5" ry="2.2" stroke="#fff" strokeWidth="0.9" fill="none" transform="rotate(150 8 8)" />
+        <ellipse
+          cx="8"
+          cy="8"
+          rx="5.5"
+          ry="2.2"
+          stroke="#fff"
+          strokeWidth="0.9"
+          fill="none"
+          transform="rotate(30 8 8)"
+        />
+        <ellipse
+          cx="8"
+          cy="8"
+          rx="5.5"
+          ry="2.2"
+          stroke="#fff"
+          strokeWidth="0.9"
+          fill="none"
+          transform="rotate(90 8 8)"
+        />
+        <ellipse
+          cx="8"
+          cy="8"
+          rx="5.5"
+          ry="2.2"
+          stroke="#fff"
+          strokeWidth="0.9"
+          fill="none"
+          transform="rotate(150 8 8)"
+        />
         <circle cx="8" cy="8" r="1.3" fill="#fff" />
       </svg>
     );
@@ -405,7 +594,9 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#cb3837" opacity="0.1" />
-        <text x="2" y="11.5" fill="#cbcb41" fontSize="9" fontWeight="bold" fontFamily="monospace">{"{}"}</text>
+        <text x="2" y="11.5" fill="#cbcb41" fontSize="9" fontWeight="bold" fontFamily="monospace">
+          {'{}'}
+        </text>
       </svg>
     );
   }
@@ -415,7 +606,13 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <rect width="16" height="16" rx="2.5" fill="#083344" />
-        <path d="M3 11V5l2.2 2.5L7.4 5v6M10.5 8.5L12 10.5l1.5-2h-1V6h-1v2.5h-1z" stroke="#38bdf8" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+        <path
+          d="M3 11V5l2.2 2.5L7.4 5v6M10.5 8.5L12 10.5l1.5-2h-1V6h-1v2.5h-1z"
+          stroke="#38bdf8"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     );
   }
@@ -438,7 +635,9 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <rect width="16" height="16" rx="2.5" fill="#264de4" />
         <path d="M3.5 3.5l.8 9.5 3.7 1 3.7-1 .8-9.5H3.5z" fill="#2965f1" />
-        <text x="4.2" y="11" fill="#fff" fontSize="8" fontWeight="bold" fontFamily="sans-serif">#</text>
+        <text x="4.2" y="11" fill="#fff" fontSize="8" fontWeight="bold" fontFamily="sans-serif">
+          #
+        </text>
       </svg>
     );
   }
@@ -446,7 +645,9 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#cd6799" />
-        <text x="2.5" y="11" fill="#fff" fontSize="7" fontWeight="bold" fontFamily="sans-serif">S</text>
+        <text x="2.5" y="11" fill="#fff" fontSize="7" fontWeight="bold" fontFamily="sans-serif">
+          S
+        </text>
         <circle cx="10.5" cy="8.5" r="2" fill="#fff" opacity="0.8" />
       </svg>
     );
@@ -455,7 +656,9 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#1d365d" />
-        <text x="2" y="11" fill="#fff" fontSize="6.5" fontWeight="bold" fontFamily="sans-serif">LESS</text>
+        <text x="2" y="11" fill="#fff" fontSize="6.5" fontWeight="bold" fontFamily="sans-serif">
+          LESS
+        </text>
       </svg>
     );
   }
@@ -474,8 +677,14 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
   if (lowerName.endsWith('.py')) {
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
-        <path d="M7.8 2C5.5 2 5.7 3 5.7 3l.01 1.2h2.2v.3H4.7S3 4.3 3 6.6c0 2.2 1.5 2.1 1.5 2.1h.9V7.5s-.1-1.3 1.3-1.3h2.2s1.3 0 1.3-1.2V3.2S10.3 2 7.8 2zm-.9.7a.5.5 0 1 1 0 1 .5.5 0 0 1 0-1z" fill="#3776ab" />
-        <path d="M8.2 14c2.3 0 2.1-1 2.1-1l-.01-1.2H8.1v-.3h3.2s1.7.2 1.7-2.1c0-2.2-1.5-2.1-1.5-2.1h-.9v1.2s.1 1.3-1.3 1.3H7.1s-1.3 0-1.3 1.2v1.8s-.1 1.2 2.4 1.2zm.9-.7a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z" fill="#ffd438" />
+        <path
+          d="M7.8 2C5.5 2 5.7 3 5.7 3l.01 1.2h2.2v.3H4.7S3 4.3 3 6.6c0 2.2 1.5 2.1 1.5 2.1h.9V7.5s-.1-1.3 1.3-1.3h2.2s1.3 0 1.3-1.2V3.2S10.3 2 7.8 2zm-.9.7a.5.5 0 1 1 0 1 .5.5 0 0 1 0-1z"
+          fill="#3776ab"
+        />
+        <path
+          d="M8.2 14c2.3 0 2.1-1 2.1-1l-.01-1.2H8.1v-.3h3.2s1.7.2 1.7-2.1c0-2.2-1.5-2.1-1.5-2.1h-.9v1.2s.1 1.3-1.3 1.3H7.1s-1.3 0-1.3 1.2v1.8s-.1 1.2 2.4 1.2zm.9-.7a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1z"
+          fill="#ffd438"
+        />
       </svg>
     );
   }
@@ -486,7 +695,16 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <circle cx="8" cy="8" r="6.5" stroke="#dea584" strokeWidth="1" strokeDasharray="1.5 1" />
         <circle cx="8" cy="8" r="4.5" fill="#dea584" />
-        <text x="5.5" y="10.5" fill="#1e1e1e" fontSize="7" fontWeight="bold" fontFamily="sans-serif">R</text>
+        <text
+          x="5.5"
+          y="10.5"
+          fill="#1e1e1e"
+          fontSize="7"
+          fontWeight="bold"
+          fontFamily="sans-serif"
+        >
+          R
+        </text>
       </svg>
     );
   }
@@ -496,7 +714,9 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#00add8" />
-        <text x="2.5" y="11.5" fill="#fff" fontSize="8" fontWeight="bold" fontFamily="sans-serif">GO</text>
+        <text x="2.5" y="11.5" fill="#fff" fontSize="8" fontWeight="bold" fontFamily="sans-serif">
+          GO
+        </text>
       </svg>
     );
   }
@@ -506,15 +726,36 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <rect width="16" height="16" rx="2.5" fill="#f44336" opacity="0.12" />
-        <path d="M4 11.5c1.5.5 5.5.5 8 0M5 13c1.5.3 4 .3 6 0" stroke="#f44336" strokeWidth="1" strokeLinecap="round" />
-        <path d="M7 3c-1 1.5 1 2.5 0 4M9 3c-1 1.5 1 2.5 0 4" stroke="#e53935" strokeWidth="1" strokeLinecap="round" />
+        <path
+          d="M4 11.5c1.5.5 5.5.5 8 0M5 13c1.5.3 4 .3 6 0"
+          stroke="#f44336"
+          strokeWidth="1"
+          strokeLinecap="round"
+        />
+        <path
+          d="M7 3c-1 1.5 1 2.5 0 4M9 3c-1 1.5 1 2.5 0 4"
+          stroke="#e53935"
+          strokeWidth="1"
+          strokeLinecap="round"
+        />
       </svg>
     );
   }
-  if (lowerName.endsWith('.class') || lowerName.endsWith('.jar') || lowerName.endsWith('.war') || lowerName === 'pom.xml') {
+  if (
+    lowerName.endsWith('.class') ||
+    lowerName.endsWith('.jar') ||
+    lowerName.endsWith('.war') ||
+    lowerName === 'pom.xml'
+  ) {
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
-        <path d="M8 2.5l5 2.5v6l-5 2.5-5-2.5V5l5-2.5z" stroke="#e57373" strokeWidth="1" fill="#c62828" opacity="0.2" />
+        <path
+          d="M8 2.5l5 2.5v6l-5 2.5-5-2.5V5l5-2.5z"
+          stroke="#e57373"
+          strokeWidth="1"
+          fill="#c62828"
+          opacity="0.2"
+        />
         <path d="M8 2.5v11M3 5l5 2.5 5-2.5" stroke="#e57373" strokeWidth="0.9" />
       </svg>
     );
@@ -525,15 +766,24 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#5c6bc0" />
-        <text x="4.5" y="11.5" fill="#fff" fontSize="8.5" fontWeight="bold" fontFamily="sans-serif">C</text>
+        <text x="4.5" y="11.5" fill="#fff" fontSize="8.5" fontWeight="bold" fontFamily="sans-serif">
+          C
+        </text>
       </svg>
     );
   }
-  if (lowerName.endsWith('.cpp') || lowerName.endsWith('.cc') || lowerName.endsWith('.cxx') || lowerName.endsWith('.hpp')) {
+  if (
+    lowerName.endsWith('.cpp') ||
+    lowerName.endsWith('.cc') ||
+    lowerName.endsWith('.cxx') ||
+    lowerName.endsWith('.hpp')
+  ) {
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#00599c" />
-        <text x="2" y="11" fill="#fff" fontSize="6.5" fontWeight="bold" fontFamily="sans-serif">C++</text>
+        <text x="2" y="11" fill="#fff" fontSize="6.5" fontWeight="bold" fontFamily="sans-serif">
+          C++
+        </text>
       </svg>
     );
   }
@@ -556,7 +806,9 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#cb171e" />
-        <text x="2" y="11" fill="#fff" fontSize="6.5" fontWeight="bold" fontFamily="sans-serif">YML</text>
+        <text x="2" y="11" fill="#fff" fontSize="6.5" fontWeight="bold" fontFamily="sans-serif">
+          YML
+        </text>
       </svg>
     );
   }
@@ -575,13 +827,20 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <rect width="16" height="16" rx="2.5" fill="#ff6f00" opacity="0.15" />
-        <text x="2" y="11.5" fill="#ff6f00" fontSize="8" fontWeight="bold" fontFamily="monospace">&lt;&gt;</text>
+        <text x="2" y="11.5" fill="#ff6f00" fontSize="8" fontWeight="bold" fontFamily="monospace">
+          &lt;&gt;
+        </text>
       </svg>
     );
   }
 
   // 19. Env & Config (.env, .ini, .properties, .conf)
-  if (lowerName.startsWith('.env') || lowerName.endsWith('.ini') || lowerName.endsWith('.conf') || lowerName.endsWith('.properties')) {
+  if (
+    lowerName.startsWith('.env') ||
+    lowerName.endsWith('.ini') ||
+    lowerName.endsWith('.conf') ||
+    lowerName.endsWith('.properties')
+  ) {
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <rect width="16" height="16" rx="2.5" fill="#ffd54f" opacity="0.2" />
@@ -592,11 +851,24 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
   }
 
   // 20. Shell Script (.sh, .bash, .zsh, .fish, .bat, .cmd)
-  if (lowerName.endsWith('.sh') || lowerName.endsWith('.bash') || lowerName.endsWith('.zsh') || lowerName.endsWith('.fish') || lowerName.endsWith('.bat') || lowerName.endsWith('.cmd')) {
+  if (
+    lowerName.endsWith('.sh') ||
+    lowerName.endsWith('.bash') ||
+    lowerName.endsWith('.zsh') ||
+    lowerName.endsWith('.fish') ||
+    lowerName.endsWith('.bat') ||
+    lowerName.endsWith('.cmd')
+  ) {
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <rect width="16" height="16" rx="2.5" fill="#263238" />
-        <path d="M4 6l2.5 2L4 10M7.5 10h4" stroke="#4caf50" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        <path
+          d="M4 6l2.5 2L4 10M7.5 10h4"
+          stroke="#4caf50"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     );
   }
@@ -640,7 +912,9 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#07c160" />
-        <text x="1.5" y="11" fill="#fff" fontSize="5.8" fontWeight="bold" fontFamily="sans-serif">WXML</text>
+        <text x="1.5" y="11" fill="#fff" fontSize="5.8" fontWeight="bold" fontFamily="sans-serif">
+          WXML
+        </text>
       </svg>
     );
   }
@@ -648,7 +922,9 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#07c160" />
-        <text x="1.5" y="11" fill="#fff" fontSize="5.8" fontWeight="bold" fontFamily="sans-serif">WXSS</text>
+        <text x="1.5" y="11" fill="#fff" fontSize="5.8" fontWeight="bold" fontFamily="sans-serif">
+          WXSS
+        </text>
       </svg>
     );
   }
@@ -656,7 +932,9 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
     return (
       <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle}>
         <rect width="16" height="16" rx="2.5" fill="#07c160" />
-        <text x="2.5" y="11" fill="#fff" fontSize="6.5" fontWeight="bold" fontFamily="sans-serif">WXS</text>
+        <text x="2.5" y="11" fill="#fff" fontSize="6.5" fontWeight="bold" fontFamily="sans-serif">
+          WXS
+        </text>
       </svg>
     );
   }
@@ -664,7 +942,12 @@ export function RenderFileTreeIcon({ name, isDirectory, isOpen }: { name: string
   // Default File - Clean VS Code style folded paper
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" style={svgStyle} fill="none">
-      <path d="M3.5 2a1 1 0 0 1 1-1h5.5l3.5 3.5V14a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1V2z" stroke="currentColor" strokeWidth="1" opacity="0.6" />
+      <path
+        d="M3.5 2a1 1 0 0 1 1-1h5.5l3.5 3.5V14a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1V2z"
+        stroke="currentColor"
+        strokeWidth="1"
+        opacity="0.6"
+      />
       <path d="M10 1v3.5h3.5" stroke="currentColor" strokeWidth="1" opacity="0.6" />
     </svg>
   );
@@ -675,7 +958,14 @@ function getNodeGitStatus(
   isDir: boolean,
   entries: GitStatusEntry[] = [],
 ): { label?: string; hasChanges?: boolean; color?: string } | null {
-  if (!nodePath || typeof nodePath !== 'string' || !entries || !Array.isArray(entries) || !entries.length) return null;
+  if (
+    !nodePath ||
+    typeof nodePath !== 'string' ||
+    !entries ||
+    !Array.isArray(entries) ||
+    !entries.length
+  )
+    return null;
   const norm = nodePath.replace(/\\/g, '/');
 
   try {
@@ -699,7 +989,6 @@ function getNodeGitStatus(
     return null;
   }
 }
-
 
 function TreeNode({
   node,
@@ -755,8 +1044,6 @@ function TreeNode({
     }
   }, [expandPath, node.isDirectory, node.path]);
 
-
-
   const gitMeta = getNodeGitStatus(node.path, node.isDirectory, gitEntries);
 
   const indents = [];
@@ -778,7 +1065,7 @@ function TreeNode({
           />
         ) : (
           <div
-            className={`file-node file-node-dir ${(selectedNode?.path === node.path) ? 'active' : ''}`}
+            className={`file-node file-node-dir ${selectedNode?.path === node.path ? 'active' : ''}`}
             style={{
               paddingLeft: 12 + depth * 16,
               position: 'sticky',
@@ -792,8 +1079,22 @@ function TreeNode({
             onContextMenu={(e) => onContextNode(e, node)}
           >
             {indents}
-            <span style={{ marginRight: 6, fontSize: 13, fontWeight: 'bold', width: 12, display: 'inline-block', textAlign: 'center', zIndex: 1 }}>{open ? '▾' : '▸'}</span>
-            <span style={{ zIndex: 1, display: 'flex' }}><RenderFileTreeIcon name={node.name} isDirectory={true} isOpen={open} /></span>
+            <span
+              style={{
+                marginRight: 6,
+                fontSize: 13,
+                fontWeight: 'bold',
+                width: 12,
+                display: 'inline-block',
+                textAlign: 'center',
+                zIndex: 1,
+              }}
+            >
+              {open ? '▾' : '▸'}
+            </span>
+            <span style={{ zIndex: 1, display: 'flex' }}>
+              <RenderFileTreeIcon name={node.name} isDirectory={true} isOpen={open} />
+            </span>
             <span
               className="file-node-name"
               style={{ color: gitMeta?.hasChanges ? '#e5a54b' : undefined }}
@@ -875,7 +1176,9 @@ function TreeNode({
     >
       {indents}
       <span style={{ width: 14, zIndex: 1 }} />
-      <span style={{ zIndex: 1, display: 'flex' }}><RenderFileTreeIcon name={node.name} isDirectory={false} /></span>
+      <span style={{ zIndex: 1, display: 'flex' }}>
+        <RenderFileTreeIcon name={node.name} isDirectory={false} />
+      </span>
       <span className="file-node-name" style={{ color: gitMeta?.color }} title={node.name}>
         {node.name}
       </span>
@@ -887,8 +1190,6 @@ function TreeNode({
     </div>
   );
 }
-
-
 
 function FindInFolderModal({
   folderPath,
@@ -988,20 +1289,22 @@ interface Props extends FileTreeHandlers {
   refreshKey: number;
 }
 
-export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree({
-  workspace,
-  activePath,
-  selectedNode = null,
-  gitStatus,
-  onViewFileHistory,
-  onOpenFile,
-  onOpenTerminal,
-  onAddToChat,
-  onAddToNewChat,
-  onSelectNode,
-  refreshKey: extRefreshKey,
-}: Props, ref) {
-
+export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
+  {
+    workspace,
+    activePath,
+    selectedNode = null,
+    gitStatus,
+    onViewFileHistory,
+    onOpenFile,
+    onOpenTerminal,
+    onAddToChat,
+    onAddToNewChat,
+    onSelectNode,
+    refreshKey: extRefreshKey,
+  }: Props,
+  ref,
+) {
   const [roots, setRoots] = useState<FileTreeNode[]>([]);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const refreshKey = (extRefreshKey ?? 0) + localRefreshKey;
@@ -1016,16 +1319,32 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree({
   useImperativeHandle(ref, () => ({
     createFile: () => {
       const parent = selectedNode
-        ? (selectedNode.isDirectory ? selectedNode.path : (selectedNode.path.includes('/') ? selectedNode.path.substring(0, selectedNode.path.lastIndexOf('/')) : '.'))
-        : (activePath ? (activePath.includes('/') ? activePath.substring(0, activePath.lastIndexOf('/')) : '.') : '.');
+        ? selectedNode.isDirectory
+          ? selectedNode.path
+          : selectedNode.path.includes('/')
+            ? selectedNode.path.substring(0, selectedNode.path.lastIndexOf('/'))
+            : '.'
+        : activePath
+          ? activePath.includes('/')
+            ? activePath.substring(0, activePath.lastIndexOf('/'))
+            : '.'
+          : '.';
       setExpandPath(parent === '.' ? null : parent);
       setInlineEdit({ mode: 'create-file', parentPath: parent });
       bump();
     },
     createFolder: () => {
       const parent = selectedNode
-        ? (selectedNode.isDirectory ? selectedNode.path : (selectedNode.path.includes('/') ? selectedNode.path.substring(0, selectedNode.path.lastIndexOf('/')) : '.'))
-        : (activePath ? (activePath.includes('/') ? activePath.substring(0, activePath.lastIndexOf('/')) : '.') : '.');
+        ? selectedNode.isDirectory
+          ? selectedNode.path
+          : selectedNode.path.includes('/')
+            ? selectedNode.path.substring(0, selectedNode.path.lastIndexOf('/'))
+            : '.'
+        : activePath
+          ? activePath.includes('/')
+            ? activePath.substring(0, activePath.lastIndexOf('/'))
+            : '.'
+          : '.';
       setExpandPath(parent === '.' ? null : parent);
       setInlineEdit({ mode: 'create-folder', parentPath: parent });
       bump();

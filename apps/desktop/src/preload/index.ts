@@ -49,7 +49,8 @@ const api: IpcApi = {
   getSession: (id) => ipcRenderer.invoke('session:get', id),
   saveSession: (session: ChatSession) => ipcRenderer.invoke('session:save', session),
   deleteSession: (id) => ipcRenderer.invoke('session:delete', id),
-  probeLlm: (options?: { baseUrl?: string; apiKey?: string; model?: string; provider?: string }) => ipcRenderer.invoke('agent:probe', options),
+  probeLlm: (options?: { baseUrl?: string; apiKey?: string; model?: string; provider?: string }) =>
+    ipcRenderer.invoke('agent:probe', options),
   listSkills: () => ipcRenderer.invoke('skills:list'),
   openUserSkillsDir: () => ipcRenderer.invoke('skills:openUserDir'),
   cloneRepo: (req: GitCloneRequest) => ipcRenderer.invoke('git:clone', req),
@@ -70,7 +71,6 @@ const api: IpcApi = {
   gitFileHistory: (path, maxCount) => ipcRenderer.invoke('git:fileHistory', path, maxCount),
   gitBlameLine: (path: string, line: number) => ipcRenderer.invoke('git:blameLine', path, line),
   gitShowCommitDiff: (hash, path) => ipcRenderer.invoke('git:showCommitDiff', hash, path),
-
 
   searchFiles: (query, max) => ipcRenderer.invoke('search:files', query, max),
   searchCode: (req: SearchCodeRequest) => ipcRenderer.invoke('search:code', req),
@@ -120,7 +120,10 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('git:cloneLog', listener);
   },
   onDownloadProgress: (cb) => {
-    const listener = (_: Electron.IpcRendererEvent, progress: { percent: number; downloaded: number; total: number }) => cb(progress);
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      progress: { percent: number; downloaded: number; total: number },
+    ) => cb(progress);
     ipcRenderer.on('extension:download-progress', listener);
     return () => ipcRenderer.removeListener('extension:download-progress', listener);
   },
@@ -130,6 +133,8 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('extension:webview-registered', listener);
   },
   extensionResolveWebview: (viewId) => ipcRenderer.invoke('extension:resolve-webview', viewId),
+  checkUpdate: () => ipcRenderer.invoke('updater:check'),
+  getUpdateState: () => ipcRenderer.invoke('updater:getState'),
 };
 
 contextBridge.exposeInMainWorld('ide', api);

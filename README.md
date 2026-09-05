@@ -7,6 +7,7 @@
 ## ✨ 核心特性
 
 ### 🤖 1. 下一代 AI 协同中枢
+
 - **多模型灵活切换 (Model Switcher)**：
   - 开箱即用支持 **DeepSeek-V3 / DeepSeek-R1（深度思考）**、**Claude 3.5 Sonnet**、**OpenAI GPT-4o** 等主流前沿大模型；
   - 聊天输入区直观下拉切换当前模型，支持自定义 Base URL 与 API Key。
@@ -19,22 +20,26 @@
   - 实时 Token 上下文用量监控与步数穿透。
 
 ### ⚡ 2. 全能指令面板 (Command Palette / Search Everywhere)
+
 - 键盘流极速操作：
   - 📂 **文件快速打开**：`Cmd+P` / `Ctrl+P`，极速模糊检索全工程文件；
   - ⚡ **动作指令面板**：`Cmd+Shift+P` / `Ctrl+Shift+P`（或在搜索框输入 `>` 自动切入），一键触发 IDE 各项操作（切换分支、新建会话、拉取提交、清空终端、打开设置等）；
   - 🔍 **代码符号检索**：`Cmd+Shift+F` / `Ctrl+Shift+F`，全文代码检索并精准定位行号。
 
 ### ▶️ 3. IDEA 风格 Run Configuration 一键运行
+
 - 位于顶部导航栏中央标志性位置；
 - **自动脚本扫描**：自动解析当前项目 `package.json` 中的 `scripts`（如 `dev`, `start`, `build`, `test`, `lint` 等）；
 - **一键启动 ▶**：用户无需手动打开终端，点击绿色运行按钮自动展开底部终端并执行脚本，支持微光状态指示与一键 ⏹ 停止。
 
 ### 🌿 4. 工业级 Git 版本控制全闭环
+
 - **Monaco 行级 Git Blame**：光标在任意代码行停留时，行末以优雅淡灰字实时浮现最后提交作者、相对时间与 Commit 摘要；
 - **完整 Git 周期管理**：工作区更改列表、单文件/全部文件暂存与取消暂存、提交、分支切换与创建、Pull / Push；
 - **智能空状态引导**：当打开非 Git 项目时，展示现代卡片引导界面，支持一键 `git init` 初始化仓库。
 
 ### 🌐 5. 远程 SSH 开发与弹性保活
+
 - **SFTP 远程文件工作区**：直连 Linux 服务器，无缝浏览与编辑远程代码；
 - **远程终端会话**：内置 SSH 交互式终端，支持高低延迟网络自适应；
 - **连接弹性保活与容灾**：5 秒智能心跳保持，网络临时抖动自动重试，平滑保持 Git 与编辑状态，杜绝误判断线。
@@ -44,6 +49,7 @@
 ## 🚀 快速开始
 
 ### 运行环境
+
 - **Node.js** >= 20.0.0
 - **npm** >= 10.0.0
 - 系统要求：macOS (Apple Silicon / Intel) 或 Windows 10/11 (x64 / ia32)
@@ -91,7 +97,7 @@ npm run pack:mac:x64
 npm run pack:mac
 ```
 
-* 构建完成后，DMG 安装包将产出至 `apps/desktop/release/Echoly-<version>-<arch>.dmg`。
+- 构建完成后，DMG 安装包将产出至 `apps/desktop/release/Echoly-<version>-<arch>.dmg`。
 
 ### Windows (EXE 安装包 & 便携版)
 
@@ -103,7 +109,7 @@ npm run pack
 npm run pack:win32
 ```
 
-* 构建产物包含：
+- 构建产物包含：
   - **安装向导包**：`apps/desktop/release/Echoly-<version>-<arch>-Setup.exe`
   - **免安装绿色便携目录**：`apps/desktop/release/win-unpacked/`
 
@@ -134,15 +140,15 @@ Echoly/
 
 ## 🛠️ 键盘快捷键速查
 
-| 快捷键 (macOS / Win) | 功能描述 |
-| :--- | :--- |
-| `Cmd+P` / `Ctrl+P` | 打开文件快速检索面板 |
+| 快捷键 (macOS / Win)           | 功能描述                               |
+| :----------------------------- | :------------------------------------- |
+| `Cmd+P` / `Ctrl+P`             | 打开文件快速检索面板                   |
 | `Cmd+Shift+P` / `Ctrl+Shift+P` | 唤起全局动作指令面板 (Command Palette) |
-| `Cmd+Shift+F` / `Ctrl+Shift+F` | 全文代码符号检索 |
-| `Cmd+J` / `Ctrl+J` | 展开 / 折叠底部控制台终端 |
-| `Cmd+B` / `Ctrl+B` | 展开 / 折叠右侧 AI 助手面板 |
-| `Cmd+Shift+G` / `Ctrl+Shift+G` | 快速切到 Git 版本控制面板 |
-| `Cmd+,` / `Ctrl+,` | 打开系统首选项与模型设置 |
+| `Cmd+Shift+F` / `Ctrl+Shift+F` | 全文代码符号检索                       |
+| `Cmd+J` / `Ctrl+J`             | 展开 / 折叠底部控制台终端              |
+| `Cmd+B` / `Ctrl+B`             | 展开 / 折叠右侧 AI 助手面板            |
+| `Cmd+Shift+G` / `Ctrl+Shift+G` | 快速切到 Git 版本控制面板              |
+| `Cmd+,` / `Ctrl+,`             | 打开系统首选项与模型设置               |
 
 ---
 

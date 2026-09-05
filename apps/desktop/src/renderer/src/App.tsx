@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import type {
   AgentEvent,
   AppSettings,
@@ -26,14 +33,24 @@ import { CloneRepoModal } from './components/CloneRepoModal';
 import { SshConnectModal } from './components/SshConnectModal';
 import { SwitchWorkspaceModal } from './components/SwitchWorkspaceModal';
 import { BranchSwitchModal } from './components/BranchSwitchModal';
-import { TopSearchBar, type TopSearchBarHandle, type CommandAction } from './components/TopSearchBar';
+import {
+  TopSearchBar,
+  type TopSearchBarHandle,
+  type CommandAction,
+} from './components/TopSearchBar';
 import { RunWidget } from './components/RunWidget';
 import { ExtensionPanel } from './components/ExtensionPanel';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { GitPanel } from './components/GitPanel';
 import { SearchPanel } from './components/SearchPanel';
 import { StatusBar } from './components/StatusBar';
-import { isImagePath, isUntitledPath, languageFromPath, uid, buildSessionWorkspaceMeta } from './utils';
+import {
+  isImagePath,
+  isUntitledPath,
+  languageFromPath,
+  uid,
+  buildSessionWorkspaceMeta,
+} from './utils';
 import {
   clearWorkspaceOpenFiles,
   loadWorkspaceOpenFiles,
@@ -48,6 +65,26 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 const MIN_EDITOR_WIDTH = 280;
+
+/** localStorage key for recent workspaces. */
+const RECENT_WORKSPACES_KEY = 'echoly_recent_workspaces';
+
+function readRecentWorkspaces(): RecentWorkspaceItem[] {
+  try {
+    const raw = localStorage.getItem(RECENT_WORKSPACES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRecentWorkspaces(items: RecentWorkspaceItem[]): void {
+  try {
+    localStorage.setItem(RECENT_WORKSPACES_KEY, JSON.stringify(items));
+  } catch {
+    // quota / private mode — ignore
+  }
+}
 
 /**
  * Side panel widths are stored as absolute pixel preferences (set by dragging the
@@ -76,7 +113,9 @@ function computeEffectiveLayoutWidths(
   const available = Math.max(0, containerWidth - MIN_EDITOR_WIDTH);
   const scale = total > 0 ? available / total : 1;
   return {
-    explorerWidth: leftShown ? Math.max(140, Math.floor(layout.explorerWidth * scale)) : layout.explorerWidth,
+    explorerWidth: leftShown
+      ? Math.max(140, Math.floor(layout.explorerWidth * scale))
+      : layout.explorerWidth,
     chatWidth: chatShown ? Math.max(200, Math.floor(layout.chatWidth * scale)) : layout.chatWidth,
   };
 }
@@ -128,7 +167,9 @@ export function App() {
   const [messages, setMessages] = useState<ChatSessionMessage[]>([]);
   const [sessionId, setSessionId] = useState(() => uid());
   const [terminalKey, setTerminalKey] = useState(0);
-  const [selectedNode, setSelectedNode] = useState<{ path: string; isDirectory: boolean } | null>(null);
+  const [selectedNode, setSelectedNode] = useState<{ path: string; isDirectory: boolean } | null>(
+    null,
+  );
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(
     DEFAULT_SETTINGS.permissionMode,
   );
@@ -183,7 +224,12 @@ export function App() {
   const [activeLanguage, setActiveLanguage] = useState('plaintext');
   const [wordWrap, setWordWrap] = useState(false);
   const [toasts, setToasts] = useState<
-    Array<{ id: string; title: string; detail?: string; type: 'success' | 'error' | 'info' | 'warn' }>
+    Array<{
+      id: string;
+      title: string;
+      detail?: string;
+      type: 'success' | 'error' | 'info' | 'warn';
+    }>
   >([]);
 
   const showToast = useCallback(
@@ -194,7 +240,7 @@ export function App() {
         setToasts((prev) => prev.filter((t) => t.id !== id));
       }, 4000);
     },
-    []
+    [],
   );
 
   const handleDiscardPath = async (p: string | string[]) => {
@@ -234,8 +280,8 @@ export function App() {
           .then((freshContent) => {
             setTabs((prev) =>
               prev.map((t) =>
-                t.path === tab.path ? { ...t, content: freshContent, dirty: false } : t
-              )
+                t.path === tab.path ? { ...t, content: freshContent, dirty: false } : t,
+              ),
             );
           })
           .catch(() => {
@@ -259,7 +305,6 @@ export function App() {
       });
     }
   };
-
 
   useEffect(() => {
     if (!workspace) return;
@@ -312,16 +357,13 @@ export function App() {
   }, [activePath]);
 
   const [recentWorkspaces, setRecentWorkspaces] = useState<RecentWorkspaceItem[]>(() => {
-
-    try {
-      const raw = localStorage.getItem('antigravity_recent_workspaces');
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+    return readRecentWorkspaces();
   });
 
-  const [sshTargetForModal, setSshTargetForModal] = useState<{ server?: string; remotePath?: string } | null>(null);
+  const [sshTargetForModal, setSshTargetForModal] = useState<{
+    server?: string;
+    remotePath?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (workspaceInfo.root) {
@@ -342,9 +384,7 @@ export function App() {
           lastOpenedAt: Date.now(),
         };
         const updated = [newItem, ...filtered].slice(0, 20);
-        try {
-          localStorage.setItem('antigravity_recent_workspaces', JSON.stringify(updated));
-        } catch { }
+        writeRecentWorkspaces(updated);
         return updated;
       });
     }
@@ -424,144 +464,156 @@ export function App() {
     }
   }, []);
 
-  const switchWorkspaceInCurrentWindow = useCallback(async (path: string) => {
-    try {
-      persistOpenFilesForRoot(workspaceRef.current);
-      if (workspaceInfo.kind === 'ssh') {
-        await window.ide.sshDisconnect();
-      }
-      await window.ide.setWorkspace(path);
-      const info = await window.ide.getWorkspaceInfo();
-      setWorkspaceInfo(info);
-      setWorkspace(info.root);
-
-      setDiffs([]);
-      setScmDiff(null);
-      setActiveDiffId(null);
-      setMessages([]);
-      setSessionId(uid());
-      setLayout((prev) => ({ ...prev, bottomPanelExpanded: false }));
-      setTerminalKey((k) => k + 1);
-      await restoreOpenFilesForRoot(info.root);
-    } catch (err) {
-      console.error(err);
-    }
-  }, [workspaceInfo.kind, persistOpenFilesForRoot, restoreOpenFilesForRoot]);
-
-  const requestWorkspaceSwitch = useCallback((path: string) => {
-    if (workspace && workspace !== path) {
-      setSwitchWorkspacePath(path);
-    } else {
-      void switchWorkspaceInCurrentWindow(path);
-    }
-  }, [workspace, switchWorkspaceInCurrentWindow]);
-
-  const handleSwitchWorkspacePath = useCallback(async (targetPath: string) => {
-    if (!targetPath || targetPath === workspace) return;
-
-    const isSsh =
-      targetPath.startsWith('ssh ') ||
-      targetPath.startsWith('ssh:') ||
-      targetPath.startsWith('ssh://') ||
-      /^[^@\s]+@[^:\s]+:/.test(targetPath);
-    if (isSsh) {
-      let userHost = '';
-      let hostOnly = '';
-      const m =
-        targetPath.match(/^ssh\s+([^@\s]+@)?([^:/\s]+)/i) ||
-        targetPath.match(/^ssh:\/\/([^@/\s]+@)?([^:/\s]+)/i) ||
-        targetPath.match(/^([^@/\s]+@)?([^:/\s]+):/);
-      if (m) {
-        hostOnly = m[2] || '';
-        userHost = (m[1] || '') + hostOnly;
-      }
-
-      const remotePathMatch = targetPath.match(/:(.+)$/);
-      const remotePath = remotePathMatch?.[1]?.trim() || undefined;
-
-      const profiles = await window.ide.listSshProfiles().catch(() => []);
-      const matchedProfile = profiles.find((p) => {
-        if (remotePath && p.remotePath === remotePath) return true;
-        if (hostOnly && p.host === hostOnly) return true;
-        if (userHost && `${p.username}@${p.host}` === userHost.replace(/^@/, '')) return true;
-        if (userHost && p.name === userHost) return true;
-        return false;
-      });
-
-      if (matchedProfile) {
-        const res = await window.ide.sshConnect({
-          host: matchedProfile.host,
-          port: matchedProfile.port,
-          username: matchedProfile.username,
-          privateKeyPath: matchedProfile.privateKeyPath,
-          remotePath: remotePath || matchedProfile.remotePath,
-        });
-        if (res.ok) {
-          const info = await window.ide.getWorkspaceInfo();
-          persistOpenFilesForRoot(workspaceRef.current);
-          setWorkspaceInfo(info);
-          setWorkspace(info.root);
-          setDiffs([]);
-          setScmDiff(null);
-          setTerminalKey((k) => k + 1);
-          await restoreOpenFilesForRoot(info.root);
-          return;
+  const switchWorkspaceInCurrentWindow = useCallback(
+    async (path: string) => {
+      try {
+        persistOpenFilesForRoot(workspaceRef.current);
+        if (workspaceInfo.kind === 'ssh') {
+          await window.ide.sshDisconnect();
         }
+        await window.ide.setWorkspace(path);
+        const info = await window.ide.getWorkspaceInfo();
+        setWorkspaceInfo(info);
+        setWorkspace(info.root);
+
+        setDiffs([]);
+        setScmDiff(null);
+        setActiveDiffId(null);
+        setMessages([]);
+        setSessionId(uid());
+        setLayout((prev) => ({ ...prev, bottomPanelExpanded: false }));
+        setTerminalKey((k) => k + 1);
+        await restoreOpenFilesForRoot(info.root);
+      } catch (err) {
+        console.error(err);
       }
+    },
+    [workspaceInfo.kind, persistOpenFilesForRoot, restoreOpenFilesForRoot],
+  );
 
-      setSshTargetForModal({
-        server: userHost || hostOnly || undefined,
-        remotePath: remotePath || targetPath,
-      });
-      setSshOpen(true);
-    } else {
-      requestWorkspaceSwitch(targetPath);
-    }
-  }, [workspace, requestWorkspaceSwitch, persistOpenFilesForRoot, restoreOpenFilesForRoot]);
+  const requestWorkspaceSwitch = useCallback(
+    (path: string) => {
+      if (workspace && workspace !== path) {
+        setSwitchWorkspacePath(path);
+      } else {
+        void switchWorkspaceInCurrentWindow(path);
+      }
+    },
+    [workspace, switchWorkspaceInCurrentWindow],
+  );
 
-  const handleSelectRecentWorkspace = useCallback(async (item: RecentWorkspaceItem) => {
-    const isSsh = item.kind === 'ssh' || !!item.sshServer || item.path.startsWith('ssh ');
-    if (isSsh) {
-      const profiles = await window.ide.listSshProfiles().catch(() => []);
-      const matchedProfile = profiles.find(
-        (p: any) => (item.sshServer && (p.name === item.sshServer || p.host === item.sshServer)) || p.remotePath === item.path
-      );
-      if (matchedProfile) {
-        const res = await window.ide.sshConnect({
-          host: matchedProfile.host,
-          port: matchedProfile.port,
-          username: matchedProfile.username,
-          privateKeyPath: matchedProfile.privateKeyPath,
-          remotePath: item.path || matchedProfile.remotePath,
-        });
-        if (res.ok) {
-          const info = await window.ide.getWorkspaceInfo();
-          persistOpenFilesForRoot(workspaceRef.current);
-          setWorkspaceInfo(info);
-          setWorkspace(info.root);
-          setDiffs([]);
-          setScmDiff(null);
-          setTerminalKey((k) => k + 1);
-          await restoreOpenFilesForRoot(info.root);
-          return;
+  const handleSwitchWorkspacePath = useCallback(
+    async (targetPath: string) => {
+      if (!targetPath || targetPath === workspace) return;
+
+      const isSsh =
+        targetPath.startsWith('ssh ') ||
+        targetPath.startsWith('ssh:') ||
+        targetPath.startsWith('ssh://') ||
+        /^[^@\s]+@[^:\s]+:/.test(targetPath);
+      if (isSsh) {
+        let userHost = '';
+        let hostOnly = '';
+        const m =
+          targetPath.match(/^ssh\s+([^@\s]+@)?([^:/\s]+)/i) ||
+          targetPath.match(/^ssh:\/\/([^@/\s]+@)?([^:/\s]+)/i) ||
+          targetPath.match(/^([^@/\s]+@)?([^:/\s]+):/);
+        if (m) {
+          hostOnly = m[2] || '';
+          userHost = (m[1] || '') + hostOnly;
         }
+
+        const remotePathMatch = targetPath.match(/:(.+)$/);
+        const remotePath = remotePathMatch?.[1]?.trim() || undefined;
+
+        const profiles = await window.ide.listSshProfiles().catch(() => []);
+        const matchedProfile = profiles.find((p) => {
+          if (remotePath && p.remotePath === remotePath) return true;
+          if (hostOnly && p.host === hostOnly) return true;
+          if (userHost && `${p.username}@${p.host}` === userHost.replace(/^@/, '')) return true;
+          if (userHost && p.name === userHost) return true;
+          return false;
+        });
+
+        if (matchedProfile) {
+          const res = await window.ide.sshConnect({
+            host: matchedProfile.host,
+            port: matchedProfile.port,
+            username: matchedProfile.username,
+            privateKeyPath: matchedProfile.privateKeyPath,
+            remotePath: remotePath || matchedProfile.remotePath,
+          });
+          if (res.ok) {
+            const info = await window.ide.getWorkspaceInfo();
+            persistOpenFilesForRoot(workspaceRef.current);
+            setWorkspaceInfo(info);
+            setWorkspace(info.root);
+            setDiffs([]);
+            setScmDiff(null);
+            setTerminalKey((k) => k + 1);
+            await restoreOpenFilesForRoot(info.root);
+            return;
+          }
+        }
+
+        setSshTargetForModal({
+          server: userHost || hostOnly || undefined,
+          remotePath: remotePath || targetPath,
+        });
+        setSshOpen(true);
+      } else {
+        requestWorkspaceSwitch(targetPath);
       }
-      setSshTargetForModal({
-        server: item.sshServer,
-        remotePath: item.path,
-      });
-      setSshOpen(true);
-    } else {
-      requestWorkspaceSwitch(item.path);
-    }
-  }, [requestWorkspaceSwitch, persistOpenFilesForRoot, restoreOpenFilesForRoot]);
+    },
+    [workspace, requestWorkspaceSwitch, persistOpenFilesForRoot, restoreOpenFilesForRoot],
+  );
+
+  const handleSelectRecentWorkspace = useCallback(
+    async (item: RecentWorkspaceItem) => {
+      const isSsh = item.kind === 'ssh' || !!item.sshServer || item.path.startsWith('ssh ');
+      if (isSsh) {
+        const profiles = await window.ide.listSshProfiles().catch(() => []);
+        const matchedProfile = profiles.find(
+          (p: any) =>
+            (item.sshServer && (p.name === item.sshServer || p.host === item.sshServer)) ||
+            p.remotePath === item.path,
+        );
+        if (matchedProfile) {
+          const res = await window.ide.sshConnect({
+            host: matchedProfile.host,
+            port: matchedProfile.port,
+            username: matchedProfile.username,
+            privateKeyPath: matchedProfile.privateKeyPath,
+            remotePath: item.path || matchedProfile.remotePath,
+          });
+          if (res.ok) {
+            const info = await window.ide.getWorkspaceInfo();
+            persistOpenFilesForRoot(workspaceRef.current);
+            setWorkspaceInfo(info);
+            setWorkspace(info.root);
+            setDiffs([]);
+            setScmDiff(null);
+            setTerminalKey((k) => k + 1);
+            await restoreOpenFilesForRoot(info.root);
+            return;
+          }
+        }
+        setSshTargetForModal({
+          server: item.sshServer,
+          remotePath: item.path,
+        });
+        setSshOpen(true);
+      } else {
+        requestWorkspaceSwitch(item.path);
+      }
+    },
+    [requestWorkspaceSwitch, persistOpenFilesForRoot, restoreOpenFilesForRoot],
+  );
 
   const handleRemoveRecentWorkspace = useCallback((path: string) => {
     setRecentWorkspaces((prev) => {
       const updated = prev.filter((item) => item.path !== path);
-      try {
-        localStorage.setItem('antigravity_recent_workspaces', JSON.stringify(updated));
-      } catch { }
+      writeRecentWorkspaces(updated);
       return updated;
     });
     clearWorkspaceOpenFiles(path);
@@ -570,8 +622,8 @@ export function App() {
   const handleClearRecentWorkspaces = useCallback(() => {
     setRecentWorkspaces([]);
     try {
-      localStorage.removeItem('antigravity_recent_workspaces');
-    } catch { }
+      localStorage.removeItem(RECENT_WORKSPACES_KEY);
+    } catch {}
   }, []);
 
   const applySettings = useCallback((s: AppSettings) => {
@@ -656,8 +708,6 @@ export function App() {
     };
   }, [workspace, tabs, activePath]);
 
-
-
   const persistLayout = useCallback((next: LayoutSettings) => {
     if (saveLayoutTimer.current) clearTimeout(saveLayoutTimer.current);
     saveLayoutTimer.current = setTimeout(() => {
@@ -674,7 +724,7 @@ export function App() {
       const startShellWidth = shell?.clientWidth ?? window.innerWidth;
 
       const onMove = (ev: MouseEvent) => {
-        let next = { ...start };
+        const next = { ...start };
         if (axis === 'explorer') {
           next.explorerWidth = clamp(start.explorerWidth + (ev.clientX - startX), 140, 900);
         } else if (axis === 'chat') {
@@ -763,9 +813,20 @@ export function App() {
       return;
     }
     const content = await window.ide.readFile(path);
+    // 大文件：超过 2MB 时不整段塞进 Monaco，避免渲染卡顿；仅提示并留空，待 agent/其它流程按需处理
+    const isLarge = content.length > 2 * 1024 * 1024;
     setTabs((prev) => {
       if (prev.some((t) => t.path === path)) return prev;
-      return [...prev, { path, content, language: languageFromPath(path), dirty: false }];
+      return [
+        ...prev,
+        {
+          path,
+          content: isLarge ? '' : content,
+          language: languageFromPath(path),
+          dirty: false,
+          isLargeFile: isLarge,
+        },
+      ];
     });
     setActivePath(path);
     if (line != null && line > 0) setRevealLine(line);
@@ -864,16 +925,12 @@ export function App() {
     if (isUntitledPath(path)) return;
     await window.ide.writeFile(path, content);
     setTabs((prev) =>
-      prev.map((t) =>
-        t.path === path && t.content === content ? { ...t, dirty: false } : t,
-      ),
+      prev.map((t) => (t.path === path && t.content === content ? { ...t, dirty: false } : t)),
     );
   }, []);
 
   function onChangeContent(path: string, content: string): void {
-    setTabs((prev) =>
-      prev.map((t) => (t.path === path ? { ...t, content, dirty: true } : t)),
-    );
+    setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, content, dirty: true } : t)));
     if (isUntitledPath(path) || !autoSaveRef.current) return;
     const prevTimer = autoSaveTimers.current.get(path);
     if (prevTimer) clearTimeout(prevTimer);
@@ -924,15 +981,18 @@ export function App() {
       }
       if (command.type === 'openWorkspace') {
         const path = command.path;
-        window.ide.listDir(path).then((res) => {
-          if (Array.isArray(res)) {
-            requestWorkspaceSwitch(path);
-          } else {
+        window.ide
+          .listDir(path)
+          .then((res) => {
+            if (Array.isArray(res)) {
+              requestWorkspaceSwitch(path);
+            } else {
+              void openFile(path);
+            }
+          })
+          .catch(() => {
             void openFile(path);
-          }
-        }).catch(() => {
-          void openFile(path);
-        });
+          });
         return;
       }
       if (command.type !== 'save') return;
@@ -1036,7 +1096,7 @@ export function App() {
   const terminalKind = workspaceInfo.kind === 'ssh' ? 'ssh' : 'local';
   const remoteHost =
     workspaceInfo.kind === 'ssh' && workspaceInfo.label
-      ? workspaceInfo.label.match(/^ssh\s+[^@\s]+@([^:\s/]+)/i)?.[1] ?? null
+      ? (workspaceInfo.label.match(/^ssh\s+[^@\s]+@([^:\s/]+)/i)?.[1] ?? null)
       : null;
 
   const isWelcomeShell = !workspace;
@@ -1173,7 +1233,11 @@ export function App() {
   ];
 
   return (
-    <div className={`app-shell${isWelcomeShell ? ' welcome-shell' : ''}`} ref={shellRef} style={shellStyle}>
+    <div
+      className={`app-shell${isWelcomeShell ? ' welcome-shell' : ''}`}
+      ref={shellRef}
+      style={shellStyle}
+    >
       <header className="titlebar">
         <div className="titlebar-left" style={{ width: 70, WebkitAppRegion: 'drag' } as any}></div>
         <div className="titlebar-center" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1216,7 +1280,14 @@ export function App() {
             onClick={() => searchRef.current?.focus('actions')}
             title="搜索动作或文件 (⌘P / ⌘Shift+P)"
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -1238,9 +1309,32 @@ export function App() {
               }}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.2" />
-                <line x1="5.5" y1="1.5" x2="5.5" y2="14.5" stroke="currentColor" strokeWidth="1.2" />
-                <rect x="1.5" y="1.5" width="4" height="13" fill="currentColor" opacity="0.4" rx="1" />
+                <rect
+                  x="1.5"
+                  y="1.5"
+                  width="13"
+                  height="13"
+                  rx="2"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <line
+                  x1="5.5"
+                  y1="1.5"
+                  x2="5.5"
+                  y2="14.5"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <rect
+                  x="1.5"
+                  y="1.5"
+                  width="4"
+                  height="13"
+                  fill="currentColor"
+                  opacity="0.4"
+                  rx="1"
+                />
               </svg>
             </button>
             <button
@@ -1249,15 +1343,41 @@ export function App() {
               title={layout.bottomPanelExpanded === true ? '折叠底部终端' : '展开底部终端'}
               disabled={isWelcomeShell}
               onClick={() => {
-                const next = { ...layout, bottomPanelExpanded: layout.bottomPanelExpanded !== true };
+                const next = {
+                  ...layout,
+                  bottomPanelExpanded: layout.bottomPanelExpanded !== true,
+                };
                 setLayout(next);
                 persistLayout(next);
               }}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.2" />
-                <line x1="1.5" y1="10.5" x2="14.5" y2="10.5" stroke="currentColor" strokeWidth="1.2" />
-                <rect x="1.5" y="10.5" width="13" height="4" fill="currentColor" opacity="0.4" rx="1" />
+                <rect
+                  x="1.5"
+                  y="1.5"
+                  width="13"
+                  height="13"
+                  rx="2"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <line
+                  x1="1.5"
+                  y1="10.5"
+                  x2="14.5"
+                  y2="10.5"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <rect
+                  x="1.5"
+                  y="10.5"
+                  width="13"
+                  height="4"
+                  fill="currentColor"
+                  opacity="0.4"
+                  rx="1"
+                />
               </svg>
             </button>
             <button
@@ -1272,9 +1392,32 @@ export function App() {
               }}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.2" />
-                <line x1="10.5" y1="1.5" x2="10.5" y2="14.5" stroke="currentColor" strokeWidth="1.2" />
-                <rect x="10.5" y="1.5" width="4" height="13" fill="currentColor" opacity="0.4" rx="1" />
+                <rect
+                  x="1.5"
+                  y="1.5"
+                  width="13"
+                  height="13"
+                  rx="2"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <line
+                  x1="10.5"
+                  y1="1.5"
+                  x2="10.5"
+                  y2="14.5"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <rect
+                  x="10.5"
+                  y="1.5"
+                  width="4"
+                  height="13"
+                  fill="currentColor"
+                  opacity="0.4"
+                  rx="1"
+                />
               </svg>
             </button>
           </div>
@@ -1286,7 +1429,14 @@ export function App() {
             title="设置"
             onClick={() => setSettingsOpen(true)}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            >
               <circle cx="12" cy="12" r="3" />
               <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24" />
             </svg>
@@ -1306,7 +1456,16 @@ export function App() {
         {showLeftPanel && (
           <>
             <aside className="panel left-side-panel">
-              <div className="idea-sidebar-tabs" style={{ justifyContent: 'center', gap: 16, height: 35, padding: '4px 12px 4px', borderBottom: '1px solid var(--border)' }}>
+              <div
+                className="idea-sidebar-tabs"
+                style={{
+                  justifyContent: 'center',
+                  gap: 16,
+                  height: 35,
+                  padding: '4px 12px 4px',
+                  borderBottom: '1px solid var(--border)',
+                }}
+              >
                 <button
                   type="button"
                   className={leftPanel === 'explorer' ? 'active' : ''}
@@ -1314,16 +1473,39 @@ export function App() {
                   title="文件"
                   style={{ width: 26, height: 26, borderRadius: 6 }}
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" /></svg>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                    <polyline points="10 9 9 9 8 9" />
+                  </svg>
                 </button>
                 <button
                   type="button"
-                  className={leftPanel === 'search' as any ? 'active' : ''}
+                  className={leftPanel === ('search' as any) ? 'active' : ''}
                   title="搜索"
                   onClick={() => setLeftPanel('search' as any)}
                   style={{ width: 26, height: 26, borderRadius: 6 }}
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.3-4.3" />
+                  </svg>
                 </button>
                 <button
                   type="button"
@@ -1332,29 +1514,93 @@ export function App() {
                   title="版本控制"
                   style={{ width: 26, height: 26, borderRadius: 6 }}
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <circle cx="18" cy="18" r="3" />
+                    <circle cx="6" cy="6" r="3" />
+                    <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                    <line x1="6" y1="9" x2="6" y2="21" />
+                  </svg>
                 </button>
               </div>
               {leftPanel === 'explorer' ? (
                 <div className="explorer-wrapper">
                   {/* 1. 工作区根节点折叠组: ∨ project-IDE */}
-                  <div className="explorer-section" style={{ flex: workspaceExpanded ? 1 : 'none', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  <div
+                    className="explorer-section"
+                    style={{
+                      flex: workspaceExpanded ? 1 : 'none',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      minHeight: 0,
+                    }}
+                  >
                     <div
                       className="explorer-section-title idea-project-title"
-                      style={{ height: 30, boxSizing: 'border-box', padding: '0 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center' }}
+                      style={{
+                        height: 30,
+                        boxSizing: 'border-box',
+                        padding: '0 10px',
+                        borderBottom: '1px solid var(--border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
                       onClick={() => setWorkspaceExpanded((v) => !v)}
                     >
-                      <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>{workspaceExpanded ? '▾' : '▸'}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', letterSpacing: '0.05em' }}>{workspaceInfo.label ? (workspaceInfo.label.includes('/') ? workspaceInfo.label.split('/').filter(Boolean).pop()?.toUpperCase() : workspaceInfo.label.toUpperCase()) : 'PROJECT-IDE'}</span>
+                      <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>
+                        {workspaceExpanded ? '▾' : '▸'}
+                      </span>
+                      <span
+                        title={workspaceInfo.label || 'PROJECT-IDE'}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: 'var(--text)',
+                          letterSpacing: '0.05em',
+                          flex: 1,
+                          minWidth: 0,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {workspaceInfo.label
+                          ? workspaceInfo.label.includes('/')
+                            ? workspaceInfo.label.split('/').filter(Boolean).pop()?.toUpperCase()
+                            : workspaceInfo.label.toUpperCase()
+                          : 'PROJECT-IDE'}
+                      </span>
 
-                      <div className="explorer-quick-actions" onClick={(e) => e.stopPropagation()} style={{ gap: 4, marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+                      <div
+                        className="explorer-quick-actions"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          gap: 4,
+                          marginLeft: 'auto',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                      >
                         <button
                           type="button"
                           title="新建文件"
                           style={{ padding: 4 }}
                           onClick={() => fileTreeRef.current?.createFile()}
                         >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          >
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h9" />
                             <polyline points="14 2 14 8 20 8" />
                             <path d="M20 15V8" />
@@ -1368,7 +1614,14 @@ export function App() {
                           style={{ padding: 4 }}
                           onClick={() => fileTreeRef.current?.createFolder()}
                         >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          >
                             <path d="M4 22h11" />
                             <path d="M4 22a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v7" />
                             <line x1="15" y1="18" x2="21" y2="18" />
@@ -1387,7 +1640,14 @@ export function App() {
                             })();
                           }}
                         >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          >
                             <polyline points="23 4 23 10 17 10"></polyline>
                             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                           </svg>
@@ -1395,7 +1655,10 @@ export function App() {
                       </div>
                     </div>
                     {workspaceExpanded && (
-                      <div className="explorer-section-body explorer-tree-body" style={{ flex: 1, minHeight: 0 }}>
+                      <div
+                        className="explorer-section-body explorer-tree-body"
+                        style={{ flex: 1, minHeight: 0 }}
+                      >
                         <FileTree
                           ref={fileTreeRef}
                           workspace={workspace}
@@ -1431,7 +1694,7 @@ export function App() {
                   onDiscardPath={handleDiscardPath}
                   onShowToast={showToast}
                 />
-              ) : leftPanel === 'search' as any ? (
+              ) : leftPanel === ('search' as any) ? (
                 <SearchPanel
                   onOpenFile={(p) => void openFile(p)}
                   onRevealLine={(l) => setRevealLine(l)}
@@ -1602,29 +1865,31 @@ export function App() {
                     ...tabs.filter((t) => t.path !== activePath),
                   ]
                     .filter(
-                      (t) =>
-                        t.language !== 'image' &&
-                        !t.previewUrl &&
-                        !isUntitledPath(t.path),
+                      (t) => t.language !== 'image' && !t.previewUrl && !isUntitledPath(t.path),
                     )
                     .map((t) => ({ path: t.path, content: t.content }))}
                   selection={editorSelection}
+                  cursor={
+                    activePath
+                      ? { path: activePath, line: cursorLine, column: cursorCol }
+                      : undefined
+                  }
                   onPendingDiff={onPendingDiff}
                   sessionMessages={messages}
                   onMessagesChange={setMessages}
-                onSessionChange={setSessionId}
-                permissionMode={permissionMode}
-                onPermissionModeChange={(m) => void changePermissionMode(m)}
-                contextWindowTokens={contextWindowTokens}
-                diffs={diffs}
-                onAcceptAllDiffs={() => void acceptAll()}
-                onRejectAllDiffs={() => {
-                  diffs.forEach((d) => void rejectDiff(d.id));
-                }}
-                onSelectDiff={(id) => {
-                  setScmDiff(null);
-                  setActiveDiffId(id);
-                }}
+                  onSessionChange={setSessionId}
+                  permissionMode={permissionMode}
+                  onPermissionModeChange={(m) => void changePermissionMode(m)}
+                  contextWindowTokens={contextWindowTokens}
+                  diffs={diffs}
+                  onAcceptAllDiffs={() => void acceptAll()}
+                  onRejectAllDiffs={() => {
+                    diffs.forEach((d) => void rejectDiff(d.id));
+                  }}
+                  onSelectDiff={(id) => {
+                    setScmDiff(null);
+                    setActiveDiffId(id);
+                  }}
                   onOpenSettings={() => setSettingsOpen(true)}
                   onSwitchWorkspace={handleSwitchWorkspacePath}
                   models={models}
@@ -1664,7 +1929,7 @@ export function App() {
               </button>
             </div>
             <div className="extension-modal-body">
-              <ExtensionPanel 
+              <ExtensionPanel
                 onOpenExtension={(extId) => {
                   setCurrentExtensionId(extId);
                   setExtensionPanelOpen(false);
@@ -1753,7 +2018,7 @@ export function App() {
         onSelectLanguage={(lang) => {
           if (!activePath) return;
           setTabs((prev) =>
-            prev.map((t) => (t.path === activePath ? { ...t, language: lang } : t))
+            prev.map((t) => (t.path === activePath ? { ...t, language: lang } : t)),
           );
         }}
       />
@@ -1784,10 +2049,10 @@ export function App() {
                   t.type === 'success'
                     ? '#4caf50'
                     : t.type === 'error'
-                    ? '#f44336'
-                    : t.type === 'warn'
-                    ? '#ff9800'
-                    : '#2196f3'
+                      ? '#f44336'
+                      : t.type === 'warn'
+                        ? '#ff9800'
+                        : '#2196f3'
                 }`,
                 borderRadius: 6,
                 padding: '10px 14px',
@@ -1800,11 +2065,21 @@ export function App() {
               }}
             >
               <span style={{ fontSize: 14 }}>
-                {t.type === 'success' ? '✓' : t.type === 'error' ? '✕' : t.type === 'warn' ? '⚠️' : 'ℹ️'}
+                {t.type === 'success'
+                  ? '✓'
+                  : t.type === 'error'
+                    ? '✕'
+                    : t.type === 'warn'
+                      ? '⚠️'
+                      : 'ℹ️'}
               </span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600 }}>{t.title}</div>
-                {t.detail && <div style={{ color: 'var(--muted)', marginTop: 2, fontSize: 11 }}>{t.detail}</div>}
+                {t.detail && (
+                  <div style={{ color: 'var(--muted)', marginTop: 2, fontSize: 11 }}>
+                    {t.detail}
+                  </div>
+                )}
               </div>
             </div>
           ))}

@@ -33,6 +33,7 @@ export interface AgentRunOptions {
   backend?: WorkspaceBackend;
   openFiles?: Array<{ path: string; content: string }>;
   selection?: string;
+  cursor?: { path: string; line: number; column: number };
   history?: ChatMessage[];
   attachments?: ChatAttachment[];
   applyImmediately?: boolean;
@@ -47,6 +48,9 @@ export interface AgentRunOptions {
 
 const MAX_OPEN_FILE_CHARS = 12_000;
 const MAX_LINES_PER_FILE = 200;
+/** 光标附近上下文：前后各 N 行，控制在几 KB 内，避免整文件占满 context */
+const CURSOR_LINES_BEFORE = 30;
+const CURSOR_LINES_AFTER = 30;
 
 function sliceFileContent(content: string, budget: number): { text: string; truncated: boolean } {
   const lines = content.split('\n');
@@ -58,6 +62,13 @@ function sliceFileContent(content: string, budget: number): { text: string; trun
     };
   }
   return { text: limited.slice(0, budget), truncated: true };
+}
+
+/** 提取光标附近的文件片段（带行号），用于精确理解「当前正在看哪」 */
+function formatCursorContext(cursor?: AgentRunOptions['cursor']): string {
+  if (!cursor?.path || !cursor.line) return '';
+  const target = cursor;
+  return `\nCursor position: ${target.path}:${target.line}:${target.column}\n`;
 }
 
 function formatOpenFilesBlock(openFiles?: AgentRunOptions['openFiles']): string {
@@ -74,9 +85,7 @@ function formatOpenFilesBlock(openFiles?: AgentRunOptions['openFiles']): string 
     if (budget <= 0) break;
     const { text, truncated } = sliceFileContent(f.content, budget);
     budget -= text.length;
-    bodies.push(
-      `### ${f.path}${truncated ? ' (truncated)' : ''}\n\`\`\`\n${text}\n\`\`\``,
-    );
+    bodies.push(`### ${f.path}${truncated ? ' (truncated)' : ''}\n\`\`\`\n${text}\n\`\`\``);
   }
 
   return `Open files (paths):\n${paths}\n\nOpen file contents (active first; truncated):\n${bodies.join('\n\n') || '(none)'}`;
@@ -87,12 +96,21 @@ function buildSystemPrompt(options: {
   mode: AgentMode;
   openFiles?: AgentRunOptions['openFiles'];
   selection?: string;
+  cursor?: AgentRunOptions['cursor'];
   skillsText?: string;
   planContext?: PlanContext;
   backendKind?: string;
 }): string {
-  const { workspaceRoot, mode, openFiles, selection, skillsText, planContext, backendKind } =
-    options;
+  const {
+    workspaceRoot,
+    mode,
+    openFiles,
+    selection,
+    cursor,
+    skillsText,
+    planContext,
+    backendKind,
+  } = options;
   const selectionBlock = selection
     ? `\nCurrent selection:\n\`\`\`\n${selection.slice(0, 4000)}\n\`\`\`\n`
     : '';
@@ -139,14 +157,16 @@ ${planContext.todos.map((t) => `- [${t.status}] ${t.id}: ${t.content}`).join('\n
   return `${modeBlock}
 Workspace root: ${workspaceRoot} (${backendKind ?? 'local'})
 ${formatOpenFilesBlock(openFiles)}
-${selectionBlock}${planExecBlock}${skillsBlock}`;
+${formatCursorContext(cursor)}${selectionBlock}${planExecBlock}${skillsBlock}`;
 }
 
 /**
  * Fallback: when the model does not support native tool_calls, parse
  * ```json tool blocks of shape {"name":"...","arguments":{...}}
  */
-export function parseXmlToolCalls(content: string): Array<{ id: string; name: string; args: string }> {
+export function parseXmlToolCalls(
+  content: string,
+): Array<{ id: string; name: string; args: string }> {
   const results: Array<{ id: string; name: string; args: string }> = [];
   const re = /```json\s*tool\s*([\s\S]*?)```/gi;
   let m: RegExpExecArray | null;
@@ -197,7 +217,9 @@ export function parsePlanProposal(content: string): PlanProposal | null {
   }
 }
 
-export async function runAgent(options: AgentRunOptions): Promise<{ finalText: string; diffs: PendingDiff[] }> {
+export async function runAgent(
+  options: AgentRunOptions,
+): Promise<{ finalText: string; diffs: PendingDiff[] }> {
   const {
     prompt,
     workspaceRoot,
@@ -216,7 +238,7 @@ export async function runAgent(options: AgentRunOptions): Promise<{ finalText: s
   } = options;
 
   const backend = options.backend ?? new LocalFsBackend(workspaceRoot);
-  
+
   // Get current model/provider config
   let providerConfig: ProviderConfig;
   if (options.modelProfile) {
@@ -249,7 +271,7 @@ export async function runAgent(options: AgentRunOptions): Promise<{ finalText: s
       };
     }
   }
-  
+
   const client = new UnifiedLlmClient(providerConfig);
 
   const getPermissionMode = (): AppSettings['permissionMode'] =>
@@ -312,7 +334,7 @@ export async function runAgent(options: AgentRunOptions): Promise<{ finalText: s
         fileBlocks.push(`\n\n--- 附件图片: ${att.name} ---`);
         if (att.dataUrl) {
           const match = att.dataUrl.match(/^data:([^;]+);base64,/);
-          const mediaType = match ? match[1] : (att.mimeType || 'image/png');
+          const mediaType = match ? match[1] : att.mimeType || 'image/png';
           images.push({ dataUrl: att.dataUrl, mediaType });
         }
       }
@@ -336,6 +358,7 @@ export async function runAgent(options: AgentRunOptions): Promise<{ finalText: s
         mode,
         openFiles,
         selection,
+        cursor: options.cursor,
         skillsText,
         planContext,
         backendKind: backend.kind,
@@ -400,9 +423,8 @@ export async function runAgent(options: AgentRunOptions): Promise<{ finalText: s
             throw new Error('cancelled');
           }
           if (/tools|tool_choice|400/.test(msg)) {
-            const result = await client.chatStreamCollect(
-              { messages, signal },
-              (token) => onEvent({ type: 'token', text: token }),
+            const result = await client.chatStreamCollect({ messages, signal }, (token) =>
+              onEvent({ type: 'token', text: token }),
             );
             assistant = result.message;
             if (result.usage?.totalTokens != null) {
@@ -503,9 +525,11 @@ export async function runAgent(options: AgentRunOptions): Promise<{ finalText: s
           const MAX_TOOL_RESULT_LENGTH = 8000;
           let toolResultContent = result.content;
           if (toolResultContent.length > MAX_TOOL_RESULT_LENGTH) {
-            toolResultContent = toolResultContent.slice(0, MAX_TOOL_RESULT_LENGTH) + `\n\n[输出已截断，原长度: ${toolResultContent.length} 字符]`;
+            toolResultContent =
+              toolResultContent.slice(0, MAX_TOOL_RESULT_LENGTH) +
+              `\n\n[输出已截断，原长度: ${toolResultContent.length} 字符]`;
           }
-          
+
           onEvent({
             type: 'tool_result',
             id: call.id,

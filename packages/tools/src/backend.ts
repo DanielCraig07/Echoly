@@ -19,6 +19,12 @@ export interface WorkspaceBackend {
   root: string;
   listDir(relPath?: string): Promise<DirEntry[]>;
   readFile(relPath: string): Promise<string>;
+  /** Read a 1-based line range. When offset/limit omitted, returns whole file (subject to size cap). */
+  readFileLines(
+    relPath: string,
+    offset?: number,
+    limit?: number,
+  ): Promise<{ lines: string[]; total: number; offset: number; truncated: boolean }>;
   writeFile(relPath: string, content: string): Promise<void>;
   mkdir(relPath: string): Promise<void>;
   rename(fromRel: string, toRel: string): Promise<void>;
@@ -83,9 +89,38 @@ export class LocalFsBackend implements WorkspaceBackend {
     const stat = await fs.stat(abs);
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
     if (stat.size > MAX_FILE_SIZE) {
-      throw new Error(`File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 10MB): ${relPath}`);
+      throw new Error(
+        `File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 10MB): ${relPath}`,
+      );
     }
     return fs.readFile(abs, 'utf8');
+  }
+
+  async readFileLines(
+    relPath: string,
+    offset?: number,
+    limit?: number,
+  ): Promise<{ lines: string[]; total: number; offset: number; truncated: boolean }> {
+    const abs = this.resolve(relPath);
+    const stat = await fs.stat(abs);
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB for line-range reads
+    if (stat.size > MAX_FILE_SIZE) {
+      throw new Error(
+        `File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB): ${relPath}`,
+      );
+    }
+    const text = await fs.readFile(abs, 'utf8');
+    const allLines = text.split(/\r?\n/);
+    const total = allLines.length;
+    const start = Math.max((offset ?? 1) - 1, 0);
+    const end = limit != null ? Math.min(start + limit, total) : total;
+    const slice = allLines.slice(start, end);
+    return {
+      lines: slice,
+      total,
+      offset: start + 1,
+      truncated: end < total,
+    };
   }
 
   async readFileBuffer(relPath: string): Promise<Buffer> {
@@ -94,7 +129,9 @@ export class LocalFsBackend implements WorkspaceBackend {
     const stat = await fs.stat(abs);
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB（Buffer 允许更大）
     if (stat.size > MAX_FILE_SIZE) {
-      throw new Error(`File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB): ${relPath}`);
+      throw new Error(
+        `File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB): ${relPath}`,
+      );
     }
     return fs.readFile(abs);
   }

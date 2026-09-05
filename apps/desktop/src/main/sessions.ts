@@ -38,9 +38,10 @@ export class SessionStore {
       const lastMsg = msgs[msgs.length - 1]?.content || '';
       const ws = session.workspacePath || '';
       // 构建指纹：工作区 + 消息数 + 标题 + 首条和末条内容
-      const fingerprint = msgs.length === 0
-        ? `empty_${session.id}`
-        : `${ws}##${msgs.length}##${session.title}##${firstMsg.slice(0, 100)}##${lastMsg.slice(0, 100)}`;
+      const fingerprint =
+        msgs.length === 0
+          ? `empty_${session.id}`
+          : `${ws}##${msgs.length}##${session.title}##${firstMsg.slice(0, 100)}##${lastMsg.slice(0, 100)}`;
 
       if (seenFingerprints.has(fingerprint)) {
         // 已有相同内容的最新会话，清理磁盘上的冗余重复文件

@@ -3,12 +3,16 @@
   "displayName": "Deepseek Intranet Connector",
   "description": "连接 Cursor IDE 到内网 Deepseek 模型服务器 (192.168.10.241:8002)",
   "version": "1.0.0",
-  "publisher": "tsingtec",
+  "publisher": "echoly",
   "engines": {
     "vscode": "^1.96.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [

@@ -63,9 +63,10 @@ export function StatusBar({
     };
   }, [showLangPicker]);
 
-  const filteredLanguages = COMMON_LANGUAGES.filter((l) =>
-    l.label.toLowerCase().includes(langSearch.toLowerCase()) ||
-    l.id.toLowerCase().includes(langSearch.toLowerCase()),
+  const filteredLanguages = COMMON_LANGUAGES.filter(
+    (l) =>
+      l.label.toLowerCase().includes(langSearch.toLowerCase()) ||
+      l.id.toLowerCase().includes(langSearch.toLowerCase()),
   );
 
   return (
@@ -78,7 +79,14 @@ export function StatusBar({
           <button
             type="button"
             className="status-item status-branch-btn"
-            style={{ background: 'none', border: 'none', color: 'inherit', font: 'inherit', cursor: 'pointer', padding: 0 }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'inherit',
+              font: 'inherit',
+              cursor: 'pointer',
+              padding: 0,
+            }}
             title="点击切换 Git 分支 / Tag 标签"
             onClick={onOpenBranchSwitcher}
           >
@@ -113,7 +121,14 @@ export function StatusBar({
           <button
             type="button"
             className="status-item status-lang-btn"
-            style={{ background: 'none', border: 'none', color: 'inherit', font: 'inherit', cursor: 'pointer', padding: '0 4px' }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'inherit',
+              font: 'inherit',
+              cursor: 'pointer',
+              padding: '0 4px',
+            }}
             onClick={() => {
               setShowLangPicker((v) => !v);
               setLangSearch('');

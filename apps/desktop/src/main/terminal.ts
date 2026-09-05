@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { BrowserWindow } from 'electron';
+import { spawn as ptySpawn, type IPty } from 'node-pty';
 import type { TerminalCreateOptions } from '@deepseek-ide/shared';
 import type { SshSessionManager } from './ssh/SshSessionManager';
 
 interface LocalHandle {
   kind: 'local';
-  stdin: NodeJS.WritableStream;
+  pty: IPty;
   kill: () => void;
 }
 type SshHandle = {
@@ -22,8 +22,8 @@ type SshHandle = {
 type TermHandle = LocalHandle | SshHandle;
 
 /**
- * Terminal service – uses a plain pipe-based shell (no PTY) for local shells.
- * Runs zsh in non-interactive/non-login mode to avoid TTY read errors.
+ * Terminal service – uses a real PTY (node-pty) for local shells so TUI programs
+ * (vim, htop, ssh, interactive scripts) work correctly, with resize support.
  * Shell prompt and echo are handled on the renderer side.
  */
 export class TerminalService {
@@ -35,7 +35,7 @@ export class TerminalService {
   constructor(
     private readonly getWindow: () => BrowserWindow | null,
     private readonly getCwd: () => string,
-  ) { }
+  ) {}
 
   setSshManager(ssh: SshSessionManager): void {
     this.ssh = ssh;
@@ -91,10 +91,12 @@ export class TerminalService {
     const projectRoot = this.findProjectRoot(newRoot);
     const safeCwd = projectRoot.replace(/'/g, "'\\''");
     for (const [, t] of this.terminals) {
-      if (t.kind === 'local' && !(t.stdin as any).destroyed) {
+      if (t.kind === 'local') {
         try {
-          t.stdin.write(`cd '${safeCwd}'\n`);
-        } catch { /* ignore */ }
+          t.pty.write(`cd '${safeCwd}'\n`);
+        } catch {
+          /* ignore */
+        }
       }
     }
   }
@@ -125,50 +127,17 @@ export class TerminalService {
   private createLocal(cwdRel?: string, cols?: number, rows?: number): { id: string } {
     const id = randomUUID();
     const isWin = process.platform === 'win32';
-    const shell = isWin ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/zsh');
+    const shell = isWin ? process.env.COMSPEC || 'cmd.exe' : process.env.SHELL || '/bin/zsh';
     const cwd = this.resolveLocalCwd(cwdRel);
-    const isZsh = !isWin && (shell.endsWith('/zsh') || shell === 'zsh');
-    const initialCols = Math.max(100, cols || 100);
+    const initialCols = Math.max(80, cols || 80);
     const initialRows = Math.max(24, rows || 24);
 
-    let spawnArgs: string[] = [];
-    let extraEnv: Record<string, string> = {};
-    let zdotDir: string | null = null;
-
-    if (!isWin && isZsh) {
-      // zsh with -i tries to initialize ZLE (line editor) which requires a real
-      // PTY. Since we use pipes, we disable ZLE via a temp ZDOTDIR/.zshrc.
-      // This gives us an interactive shell (prompts, aliases, builtins) without
-      // the "error on TTY read: Input/output error" crash.
-      try {
-        zdotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ide-zsh-'));
-        const safeCwd = cwd.replace(/'/g, "'\\''");
-        const zshrc = [
-          '# IDE injected rc \u2014 disables ZLE so zsh works over pipes',
-          'unsetopt ZLE 2>/dev/null || true',
-          'setopt NO_ZLE 2>/dev/null || true',
-          '# Source user rc for aliases, PATH, functions etc.',
-          '[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" 2>/dev/null || true',
-          '# Re-disable ZLE in case user rc re-enabled it',
-          'unsetopt ZLE 2>/dev/null || true',
-          "alias ll='ls -la 2>/dev/null || ls -la' 2>/dev/null || true",
-          "PS1='%F{green}%n@%m%f %F{yellow}%1~%f %# '",
-          `cd '${safeCwd}'`,
-        ].join('\n');
-        fs.writeFileSync(path.join(zdotDir, '.zshrc'), zshrc, 'utf8');
-        extraEnv = { ZDOTDIR: zdotDir };
-        spawnArgs = ['-i'];
-      } catch {
-        // fallback: just no args if we can't create temp dir
-        spawnArgs = [];
-      }
-    } else if (!isWin) {
-      // bash / sh: -i is generally safe with pipes
-      spawnArgs = ['-i'];
-      extraEnv = { PS1: '\\u@\\h \\w\\$ ' };
-    }
-
-    const child = spawn(shell, spawnArgs, {
+    // spawn a real PTY. node-pty ships prebuilt native binaries per platform, so
+    // TUI apps (vim/htop/ssh) and resize work correctly.
+    const pty = ptySpawn(shell, [], {
+      name: 'xterm-256color',
+      cols: initialCols,
+      rows: initialRows,
       cwd,
       env: {
         ...process.env,
@@ -176,55 +145,40 @@ export class TerminalService {
         HOME: process.env.HOME || os.homedir(),
         TERM: 'xterm-256color',
         COLORTERM: 'truecolor',
-        COLUMNS: String(initialCols),
-        LINES: String(initialRows),
         LANG: process.env.LANG || 'en_US.UTF-8',
         SHLVL: '1',
         // Enable colored ls output on macOS (CLICOLOR) and Linux (LS_COLORS)
         CLICOLOR: '1',
         CLICOLOR_FORCE: '1',
         LSCOLORS: 'Gxfxcxdxbxegedabagacad',
-        LS_COLORS: 'di=1;36:ln=1;35:so=1;32:pi=33:ex=0;31:bd=1;33:cd=1;33:su=41;30:sg=43;30:tw=1;34:ow=1;34:*.zip=1;31:*.tar=1;31:*.gz=1;31:*.png=35:*.jpg=35:*.gif=35:*.mp4=35:*.mov=35:*.pdf=31:*.md=0;31:*.json=0;31:*.html=0;31:*.js=0;31:*.ts=0;31',
-        ...extraEnv,
+        LS_COLORS:
+          'di=1;36:ln=1;35:so=1;32:pi=33:ex=0;31:bd=1;33:cd=1;33:su=41;30:sg=43;30:tw=1;34:ow=1;34:*.zip=1;31:*.tar=1;31:*.gz=1;31:*.png=35:*.jpg=35:*.gif=35:*.mp4=35:*.mov=35:*.pdf=31:*.md=0;31:*.json=0;31:*.html=0;31:*.js=0;31:*.ts=0;31',
       },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
     });
 
-    child.stdin.setDefaultEncoding('utf8');
-    const decoder = new TextDecoder('utf-8');
-
-    child.stdout.on('data', (d: Buffer) => {
-      this.sendToWindow('terminal:data', { id, data: decoder.decode(d) });
+    pty.onData((data: string) => {
+      this.sendToWindow('terminal:data', { id, data });
     });
-    child.stderr.on('data', (d: Buffer) => {
-      this.sendToWindow('terminal:data', { id, data: decoder.decode(d) });
-    });
-    child.on('close', (code) => {
-      // Clean up temp ZDOTDIR
-      if (zdotDir) {
-        try { fs.rmSync(zdotDir, { recursive: true, force: true }); } catch { /* ignore */ }
-      }
-      this.sendToWindow('terminal:exit', { id, exitCode: code ?? 0 });
+    pty.onExit(({ exitCode }) => {
+      this.sendToWindow('terminal:exit', { id, exitCode: exitCode ?? 0 });
       this.terminals.delete(id);
-    });
-    child.on('error', (err) => {
-      this.sendToWindow('terminal:data', {
-        id,
-        data: `\r\n[shell error] ${err.message}\r\n`,
-      });
     });
 
     const handle: LocalHandle = {
       kind: 'local',
-      stdin: child.stdin,
-      kill: () => { try { child.kill(); } catch { /* ignore */ } },
+      pty,
+      kill: () => {
+        try {
+          pty.kill();
+        } catch {
+          /* ignore */
+        }
+      },
     };
     this.terminals.set(id, handle);
 
     return { id };
   }
-
 
   private createSsh(cwdRel?: string): { id: string } {
     const id = randomUUID();
@@ -274,10 +228,11 @@ export class TerminalService {
     const t = this.terminals.get(id);
     if (!t) return;
     if (t.kind === 'local') {
-      // Translate \r -> \n for pipe-based shell (no PTY)
-      const payload = data.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      if (!(t.stdin as any).destroyed) {
-        t.stdin.write(payload);
+      // PTY takes raw bytes; forward as-is (no \r -> \n translation needed)
+      try {
+        t.pty.write(data);
+      } catch {
+        /* ignore */
       }
     } else {
       t.write(data);
@@ -287,7 +242,9 @@ export class TerminalService {
   resize(id: string, cols: number, rows: number): void {
     if (cols < 40 || rows < 5) return;
     const t = this.terminals.get(id);
-    if (t?.kind === 'ssh') t.resize(cols, rows);
+    if (!t) return;
+    if (t.kind === 'local') t.pty.resize(cols, rows);
+    else t.resize(cols, rows);
   }
 
   dispose(id: string): void {

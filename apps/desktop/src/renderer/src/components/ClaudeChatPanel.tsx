@@ -23,7 +23,10 @@ interface AgentEvent {
   [key: string]: any;
 }
 
-export function ClaudeChatPanel({ viewId = 'claudeVSCodeSidebar', workspace }: ClaudeChatPanelProps) {
+export function ClaudeChatPanel({
+  viewId = 'claudeVSCodeSidebar',
+  workspace,
+}: ClaudeChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,16 +42,16 @@ export function ClaudeChatPanel({ viewId = 'claudeVSCodeSidebar', workspace }: C
   // 监听 Agent 事件
   useEffect(() => {
     console.log('[ClaudeChatPanel] Setting up agent event listener');
-    
+
     const cleanup = window.ide.onAgentEvent((event: AgentEvent) => {
       console.log('[ClaudeChatPanel] Agent event received:', event.type, event);
-      
+
       if (event.type === 'text') {
         // 流式文本输出
         currentAssistantMessageRef.current += event.content || '';
-        
+
         // 更新最后一条助手消息
-        setMessages(prev => {
+        setMessages((prev) => {
           const lastMsg = prev[prev.length - 1];
           if (lastMsg && lastMsg.role === 'assistant') {
             return [
@@ -73,7 +76,7 @@ export function ClaudeChatPanel({ viewId = 'claudeVSCodeSidebar', workspace }: C
       } else if (event.type === 'error') {
         console.error('[ClaudeChatPanel] Agent error:', event);
         setLoading(false);
-        setMessages(prev => [
+        setMessages((prev) => [
           ...prev,
           {
             id: Date.now().toString(),
@@ -101,14 +104,14 @@ export function ClaudeChatPanel({ viewId = 'claudeVSCodeSidebar', workspace }: C
     };
 
     const userInput = input;
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
     currentAssistantMessageRef.current = '';
 
     try {
       console.log('[ClaudeChatPanel] Starting agent...');
-      
+
       // 启动 Agent，返回 runId
       const result = await window.ide.startAgent({
         prompt: userInput,
@@ -120,11 +123,10 @@ export function ClaudeChatPanel({ viewId = 'claudeVSCodeSidebar', workspace }: C
       console.log('[ClaudeChatPanel] Agent started, runId:', result.runId);
 
       // 等待一小段时间，让事件监听器有时间接收初始事件
-      await new Promise(resolve => setTimeout(resolve, 100));
-
+      await new Promise((resolve) => setTimeout(resolve, 100));
     } catch (err: any) {
       console.error('[ClaudeChatPanel] Error:', err);
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
@@ -155,21 +157,17 @@ export function ClaudeChatPanel({ viewId = 'claudeVSCodeSidebar', workspace }: C
             <div className="empty-hint">输入消息开始对话，Claude 将帮助你完成编程任务</div>
           </div>
         )}
-        
-        {messages.map(msg => (
+
+        {messages.map((msg) => (
           <div key={msg.id} className={`message message-${msg.role}`}>
-            <div className="message-avatar">
-              {msg.role === 'user' ? '👤' : '🤖'}
-            </div>
+            <div className="message-avatar">{msg.role === 'user' ? '👤' : '🤖'}</div>
             <div className="message-content">
               <div className="message-text">{msg.content}</div>
-              <div className="message-time">
-                {new Date(msg.timestamp).toLocaleTimeString()}
-              </div>
+              <div className="message-time">{new Date(msg.timestamp).toLocaleTimeString()}</div>
             </div>
           </div>
         ))}
-        
+
         {loading && (
           <div className="message message-assistant">
             <div className="message-avatar">🤖</div>
@@ -182,7 +180,7 @@ export function ClaudeChatPanel({ viewId = 'claudeVSCodeSidebar', workspace }: C
             </div>
           </div>
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -191,7 +189,7 @@ export function ClaudeChatPanel({ viewId = 'claudeVSCodeSidebar', workspace }: C
         <textarea
           className="claude-chat-input"
           value={input}
-          onChange={e => setInput(e.target.value)}
+          onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
           rows={3}

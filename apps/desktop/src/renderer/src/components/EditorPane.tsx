@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import type { editor as MonacoEditor } from 'monaco-editor';
-import type { GitStatusEntry, GitStatusResult, OpenTab, PendingDiff, UiTheme } from '@deepseek-ide/shared';
+import type {
+  GitStatusEntry,
+  GitStatusResult,
+  OpenTab,
+  PendingDiff,
+  UiTheme,
+} from '@deepseek-ide/shared';
 import { isImagePath, isUntitledPath, languageFromPath, untitledTabLabel } from '../utils';
 import { RenderFileTreeIcon } from './FileTree';
 import { MarkdownMessage } from './MarkdownMessage';
 import { WelcomeView } from './WelcomeView';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
-
-
-
-
-
-
 
 interface Props {
   tabs: OpenTab[];
@@ -51,7 +51,8 @@ interface Props {
 }
 
 function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
-  if (!path || typeof path !== 'string' || !entries || !Array.isArray(entries) || !entries.length) return null;
+  if (!path || typeof path !== 'string' || !entries || !Array.isArray(entries) || !entries.length)
+    return null;
   const norm = path.replace(/\\/g, '/');
   try {
     const matched = entries.find((e) => e && e.path === norm);
@@ -64,8 +65,6 @@ function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
     return null;
   }
 }
-
-
 
 interface TabContextMenuState {
   x: number;
@@ -116,8 +115,13 @@ export function EditorPane({
   const pendingReveal = useRef<number | null>(null);
 
   const [selectedText, setSelectedText] = useState('');
-  const [selectionRange, setSelectionRange] = useState<{ startLine: number; endLine: number } | null>(null);
-  const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(null);
+  const [selectionRange, setSelectionRange] = useState<{
+    startLine: number;
+    endLine: number;
+  } | null>(null);
+  const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(
+    null,
+  );
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const [mdEditorRatio, setMdEditorRatio] = useState<number>(0.5);
@@ -172,7 +176,9 @@ export function EditorPane({
 
   const handleInlineAiSubmit = useCallback(() => {
     if (!inlinePrompt.trim() || !active) return;
-    const rangeText = selectionRange ? ` 第 ${selectionRange.startLine}-${selectionRange.endLine} 行` : '';
+    const rangeText = selectionRange
+      ? ` 第 ${selectionRange.startLine}-${selectionRange.endLine} 行`
+      : '';
     const promptText = `请修改当前文件 \`${active.path}\`${rangeText}：\n需求：${inlinePrompt.trim()}\n\n当前选区代码：\n\`\`\`${active.language || ''}\n${selectedText}\n\`\`\``;
     onAddToChat?.(promptText);
     setShowInlineAi(false);
@@ -185,7 +191,9 @@ export function EditorPane({
   }, []);
 
   const [showMdPreview, setShowMdPreview] = useState(false);
-  const [gitDiffData, setGitDiffData] = useState<{ original: string; modified: string } | null>(null);
+  const [gitDiffData, setGitDiffData] = useState<{ original: string; modified: string } | null>(
+    null,
+  );
   const [mdPreviewScrollTo, setMdPreviewScrollTo] = useState<string | null>(null);
   const mdPreviewRef = useRef<HTMLDivElement>(null);
   const decorationsRef = useRef<string[]>([]);
@@ -248,7 +256,10 @@ export function EditorPane({
 
   useEffect(() => {
     if (editorRef.current && blameDecorationsRef.current.length > 0) {
-      blameDecorationsRef.current = editorRef.current.deltaDecorations(blameDecorationsRef.current, []);
+      blameDecorationsRef.current = editorRef.current.deltaDecorations(
+        blameDecorationsRef.current,
+        [],
+      );
     }
   }, [activePath]);
 
@@ -272,7 +283,11 @@ export function EditorPane({
 
   useEffect(() => {
     if (activeTabRef.current) {
-      activeTabRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      activeTabRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest',
+      });
     }
   }, [activePath]);
 
@@ -287,18 +302,19 @@ export function EditorPane({
       setGitDiffData(null);
       return;
     }
-    void window.ide.gitDiff(activePath, false).then((res) => {
-      if (res.ok) {
-        setGitDiffData({ original: res.original, modified: res.modified });
-      } else {
+    void window.ide
+      .gitDiff(activePath, false)
+      .then((res) => {
+        if (res.ok) {
+          setGitDiffData({ original: res.original, modified: res.modified });
+        } else {
+          setGitDiffData(null);
+        }
+      })
+      .catch(() => {
         setGitDiffData(null);
-      }
-    }).catch(() => {
-      setGitDiffData(null);
-    });
+      });
   }, [activePath, activeGitMeta]);
-
-
 
   useEffect(() => {
     if (revealLine != null && revealLine > 0) {
@@ -375,7 +391,8 @@ export function EditorPane({
     const decorations: MonacoEditor.IModelDeltaDecoration[] = [];
     const ranges: Array<{ start: number; end: number }> = [];
     let rangeStart = -1;
-    let oi = 0, mi = 0;
+    let oi = 0,
+      mi = 0;
     while (oi < origLines.length || mi < modLines.length) {
       if (oi < origLines.length && mi < modLines.length && origLines[oi] === modLines[mi]) {
         // End a modified range
@@ -383,7 +400,8 @@ export function EditorPane({
           ranges.push({ start: rangeStart, end: mi });
           rangeStart = -1;
         }
-        oi++; mi++;
+        oi++;
+        mi++;
       } else if (oi < origLines.length && mi < modLines.length) {
         // Modified
         if (rangeStart < 0) rangeStart = mi + 1;
@@ -395,8 +413,12 @@ export function EditorPane({
             glyphMarginClassName: 'git-gutter-glyph',
           },
         });
-        oi++; mi++;
-      } else if (mi < modLines.length && (oi >= origLines.length || !origLines.slice(oi, oi + 10).includes(modLines[mi]))) {
+        oi++;
+        mi++;
+      } else if (
+        mi < modLines.length &&
+        (oi >= origLines.length || !origLines.slice(oi, oi + 10).includes(modLines[mi]))
+      ) {
         // Added line
         if (rangeStart < 0) rangeStart = mi + 1;
         decorations.push({
@@ -413,7 +435,12 @@ export function EditorPane({
         if (rangeStart < 0) rangeStart = mi + 1;
         const delLine = Math.min(mi + 1, modLines.length);
         decorations.push({
-          range: { startLineNumber: Math.max(delLine, 1), startColumn: 1, endLineNumber: Math.max(delLine, 1), endColumn: 1 },
+          range: {
+            startLineNumber: Math.max(delLine, 1),
+            startColumn: 1,
+            endLineNumber: Math.max(delLine, 1),
+            endColumn: 1,
+          },
           options: {
             isWholeLine: true,
             linesDecorationsClassName: 'git-gutter-deleted',
@@ -444,7 +471,8 @@ export function EditorPane({
     const modLines = (active.content || gitDiffData.modified).split('\n');
     const targetL = gitInlineDiffLine;
 
-    let oi = 0, mi = 0;
+    let oi = 0,
+      mi = 0;
     let currentHunk: { modStart: number; modEnd: number; origLines: string[] } | null = null;
     let matchingHunk: { modStart: number; modEnd: number; origLines: string[] } | null = null;
 
@@ -457,7 +485,8 @@ export function EditorPane({
           }
           currentHunk = null;
         }
-        oi++; mi++;
+        oi++;
+        mi++;
       } else {
         if (!currentHunk) {
           currentHunk = { modStart: mi + 1, modEnd: mi + 1, origLines: [] };
@@ -467,8 +496,12 @@ export function EditorPane({
 
         if (oi < origLines.length && mi < modLines.length) {
           currentHunk.origLines.push(origLines[oi]);
-          oi++; mi++;
-        } else if (mi < modLines.length && (oi >= origLines.length || !origLines.slice(oi, oi + 10).includes(modLines[mi]))) {
+          oi++;
+          mi++;
+        } else if (
+          mi < modLines.length &&
+          (oi >= origLines.length || !origLines.slice(oi, oi + 10).includes(modLines[mi]))
+        ) {
           mi++;
         } else if (oi < origLines.length) {
           currentHunk.origLines.push(origLines[oi]);
@@ -477,7 +510,12 @@ export function EditorPane({
       }
     }
 
-    if (currentHunk && !matchingHunk && targetL >= currentHunk.modStart && targetL <= currentHunk.modEnd) {
+    if (
+      currentHunk &&
+      !matchingHunk &&
+      targetL >= currentHunk.modStart &&
+      targetL <= currentHunk.modEnd
+    ) {
       matchingHunk = currentHunk;
     }
 
@@ -543,7 +581,6 @@ export function EditorPane({
     setContextMenu(null);
   };
 
-
   const handleCopyPath = async (targetPath: string, relative = false) => {
     try {
       if (relative) {
@@ -579,8 +616,8 @@ export function EditorPane({
       selectionRange && selectionRange.startLine === selectionRange.endLine
         ? `L${selectionRange.startLine}`
         : selectionRange
-        ? `L${selectionRange.startLine}-L${selectionRange.endLine}`
-        : '';
+          ? `L${selectionRange.startLine}-L${selectionRange.endLine}`
+          : '';
     const refToken = `@${active.path}${rangeLabel ? `:${rangeLabel}` : ''}`;
     onAddToChat?.(refToken);
   };
@@ -740,10 +777,27 @@ export function EditorPane({
                 await window.ide.gitStage([previewDiff.path]);
                 onRefreshGitStatus?.();
               }}
-              style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                padding: 4,
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               className="icon-btn"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
@@ -756,10 +810,27 @@ export function EditorPane({
               onClick={() => {
                 onDiscardPath?.(previewDiff.path);
               }}
-              style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                padding: 4,
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               className="icon-btn"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                 <path d="M3 3v5h5" />
               </svg>
@@ -775,10 +846,27 @@ export function EditorPane({
                   onPreviewGitDiff?.(modifiedFiles[nextIdx].path);
                 }
               }}
-              style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                padding: 4,
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               className="icon-btn"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <polyline points="19 12 12 19 5 12" />
               </svg>
@@ -794,10 +882,27 @@ export function EditorPane({
                   onPreviewGitDiff?.(modifiedFiles[prevIdx].path);
                 }
               }}
-              style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                padding: 4,
+                borderRadius: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               className="icon-btn"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="12" y1="19" x2="12" y2="5" />
                 <polyline points="5 12 12 5 19 12" />
               </svg>
@@ -809,10 +914,27 @@ export function EditorPane({
                 type="button"
                 title="关闭预览"
                 onClick={onCloseDiff}
-                style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  borderRadius: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
                 className="icon-btn"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -830,7 +952,8 @@ export function EditorPane({
               setTimeout(() => {
                 const changes = diffEd.getLineChanges();
                 if (changes && changes.length > 0) {
-                  const line = changes[0].modifiedStartLineNumber || changes[0].originalStartLineNumber || 1;
+                  const line =
+                    changes[0].modifiedStartLineNumber || changes[0].originalStartLineNumber || 1;
                   diffEd.getModifiedEditor().revealLineInCenter(line);
                 }
               }, 150);
@@ -868,77 +991,85 @@ export function EditorPane({
   return (
     <div className="editor-area" onClick={() => setContextMenu(null)}>
       {tabs.length > 0 && (
-      <div
-        className="tabs"
-        onDoubleClick={(e) => {
-          if ((e.target as HTMLElement).closest('.tab')) return;
-          onNewUntitled?.();
-        }}
-        title={onNewUntitled ? '双击空白处新建文本文件' : undefined}
-      >
-        {tabs.map((tab) => {
-          const fileName = isUntitledPath(tab.path)
-            ? untitledTabLabel(tab.path)
-            : tab.path.split('/').pop() || tab.path;
-          const gitMeta = getTabGitMeta(tab.path, gitStatus?.entries);
-          const isActive = tab.path === activePath;
-          return (
-            <button
-              key={tab.path}
-              ref={isActive ? activeTabRef : null}
-              className={`tab ${isActive ? 'active' : ''}`}
-              onClick={() => onSelectTab(tab.path)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setContextMenu({
-                  x: e.clientX,
-                  y: e.clientY,
-                  targetPath: tab.path,
-                });
-              }}
-            >
-              <RenderFileTreeIcon name={fileName} isDirectory={false} />
-              <span style={{ color: gitMeta?.color }}>{fileName}</span>
-              {gitMeta?.label && (
-                <span
-                  className="tab-git-badge"
-                  style={{ color: gitMeta.color, cursor: 'pointer', padding: '0 4px', borderRadius: 2 }}
-                  title="点击查看 Git 对比"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (tab.path === activePath) {
-                      const curLine = editorRef.current?.getPosition()?.lineNumber || 1;
-                      setGitInlineDiffLine(curLine);
-                    } else {
-                      onSelectTab(tab.path);
-                      setTimeout(() => setGitInlineDiffLine(1), 100);
-                    }
-                  }}
-                >
-                  {gitMeta.label}
-                </span>
-              )}
-              {tab.dirty && <span className="dirty-dot">•</span>}
-              <span
-                onClick={(e) => {
+        <div
+          className="tabs"
+          onDoubleClick={(e) => {
+            if ((e.target as HTMLElement).closest('.tab')) return;
+            onNewUntitled?.();
+          }}
+          title={onNewUntitled ? '双击空白处新建文本文件' : undefined}
+        >
+          {tabs.map((tab) => {
+            const fileName = isUntitledPath(tab.path)
+              ? untitledTabLabel(tab.path)
+              : tab.path.split('/').pop() || tab.path;
+            const gitMeta = getTabGitMeta(tab.path, gitStatus?.entries);
+            const isActive = tab.path === activePath;
+            return (
+              <button
+                key={tab.path}
+                ref={isActive ? activeTabRef : null}
+                className={`tab ${isActive ? 'active' : ''}`}
+                onClick={() => onSelectTab(tab.path)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
                   e.stopPropagation();
-                  onCloseTab(tab.path);
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    targetPath: tab.path,
+                  });
                 }}
               >
-                ×
-              </span>
-            </button>
-          );
-        })}
-        <div className="tabs-rest" aria-hidden />
-      </div>
+                <RenderFileTreeIcon name={fileName} isDirectory={false} />
+                <span style={{ color: gitMeta?.color }}>{fileName}</span>
+                {gitMeta?.label && (
+                  <span
+                    className="tab-git-badge"
+                    style={{
+                      color: gitMeta.color,
+                      cursor: 'pointer',
+                      padding: '0 4px',
+                      borderRadius: 2,
+                    }}
+                    title="点击查看 Git 对比"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (tab.path === activePath) {
+                        const curLine = editorRef.current?.getPosition()?.lineNumber || 1;
+                        setGitInlineDiffLine(curLine);
+                      } else {
+                        onSelectTab(tab.path);
+                        setTimeout(() => setGitInlineDiffLine(1), 100);
+                      }
+                    }}
+                  >
+                    {gitMeta.label}
+                  </span>
+                )}
+                {tab.dirty && <span className="dirty-dot">•</span>}
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCloseTab(tab.path);
+                  }}
+                >
+                  ×
+                </span>
+              </button>
+            );
+          })}
+          <div className="tabs-rest" aria-hidden />
+        </div>
       )}
 
       {/* Breadcrumb Navigation Bar (Match User Screenshot 2) */}
       {typeof activePath === 'string' && activePath.trim().length > 0 && (
         <div className="editor-breadcrumb">
-          {(isUntitledPath(activePath) ? [untitledTabLabel(activePath)] : activePath.split('/')).map((part, i, arr) => (
+          {(isUntitledPath(activePath)
+            ? [untitledTabLabel(activePath)]
+            : activePath.split('/')
+          ).map((part, i, arr) => (
             <span key={i} className="crumb-item">
               <span>{part}</span>
               {i < arr.length - 1 && <span className="crumb-sep">&gt;</span>}
@@ -1031,7 +1162,10 @@ export function EditorPane({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="inline-ai-header">
-              <span className="inline-ai-title">✦ 行内 AI 编辑 {selectionRange ? `(行 ${selectionRange.startLine}-${selectionRange.endLine})` : ''}</span>
+              <span className="inline-ai-title">
+                ✦ 行内 AI 编辑{' '}
+                {selectionRange ? `(行 ${selectionRange.startLine}-${selectionRange.endLine})` : ''}
+              </span>
               <button
                 type="button"
                 className="inline-ai-close"
@@ -1068,10 +1202,30 @@ export function EditorPane({
               </button>
             </div>
             <div className="inline-ai-tags">
-              <span className="inline-ai-tag" onClick={() => handleQuickPrompt('优化并简化此段代码结构')}>优化结构</span>
-              <span className="inline-ai-tag" onClick={() => handleQuickPrompt('为选区代码添加清晰的中文注释')}>添加注释</span>
-              <span className="inline-ai-tag" onClick={() => handleQuickPrompt('增强入参校验与异常捕获逻辑')}>错误处理</span>
-              <span className="inline-ai-tag" onClick={() => handleQuickPrompt('为此代码编写对应的单元测试用例')}>编写单测</span>
+              <span
+                className="inline-ai-tag"
+                onClick={() => handleQuickPrompt('优化并简化此段代码结构')}
+              >
+                优化结构
+              </span>
+              <span
+                className="inline-ai-tag"
+                onClick={() => handleQuickPrompt('为选区代码添加清晰的中文注释')}
+              >
+                添加注释
+              </span>
+              <span
+                className="inline-ai-tag"
+                onClick={() => handleQuickPrompt('增强入参校验与异常捕获逻辑')}
+              >
+                错误处理
+              </span>
+              <span
+                className="inline-ai-tag"
+                onClick={() => handleQuickPrompt('为此代码编写对应的单元测试用例')}
+              >
+                编写单测
+              </span>
             </div>
           </div>
         )}
@@ -1149,7 +1303,7 @@ export function EditorPane({
                       const line = e.target.position?.lineNumber;
                       if (line && modifiedRangesRef.current.length > 0) {
                         const isModifiedLine = modifiedRangesRef.current.some(
-                          (r) => line >= r.start && line <= r.end
+                          (r) => line >= r.start && line <= r.end,
                         );
                         if (isModifiedLine) {
                           setGitInlineDiffLine(line);
@@ -1199,7 +1353,12 @@ export function EditorPane({
               onMouseDown={startMdResize}
               title="拖动调整预览宽度"
             />
-            <div className="md-preview-panel" ref={mdPreviewRef} onScroll={handlePreviewScroll} style={{ flex: 1 }}>
+            <div
+              className="md-preview-panel"
+              ref={mdPreviewRef}
+              onScroll={handlePreviewScroll}
+              style={{ flex: 1 }}
+            >
               <MarkdownMessage content={active.content} />
             </div>
           </div>
@@ -1270,7 +1429,16 @@ export function EditorPane({
               onMouseDown={startSplitResize}
               title="拖动调整双栏宽度"
             />
-            <div style={{ width: `${(1 - splitRatio) * 100}%`, height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1px solid var(--border)' }}>
+            <div
+              style={{
+                width: `${(1 - splitRatio) * 100}%`,
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                borderLeft: '1px solid var(--border)',
+              }}
+            >
               <div className="split-secondary-header">
                 <span className="split-label">拆分窗格</span>
                 <select
@@ -1279,7 +1447,9 @@ export function EditorPane({
                   className="split-file-selector"
                 >
                   {tabs.map((t) => {
-                    const name = isUntitledPath(t.path) ? untitledTabLabel(t.path) : t.path.split('/').pop() || t.path;
+                    const name = isUntitledPath(t.path)
+                      ? untitledTabLabel(t.path)
+                      : t.path.split('/').pop() || t.path;
                     return (
                       <option key={t.path} value={t.path}>
                         {name}
@@ -1299,7 +1469,11 @@ export function EditorPane({
               <div style={{ flex: 1, position: 'relative' }}>
                 {splitActive && (
                   <Editor
-                    path={splitActive.path === active.path ? splitActive.path + ':split' : splitActive.path}
+                    path={
+                      splitActive.path === active.path
+                        ? splitActive.path + ':split'
+                        : splitActive.path
+                    }
                     value={splitActive.content}
                     language={splitActive.language}
                     theme={monacoTheme}
@@ -1323,88 +1497,99 @@ export function EditorPane({
             </div>
           </div>
         ) : active ? (
-          <Editor
-            path={active.path}
-            value={active.content}
-            language={active.language}
-            theme={monacoTheme}
-            onChange={(v) => {
-              if (suppressChangeRef.current) {
-                suppressChangeRef.current = false;
-                return;
-              }
-              onChangeContent(active.path, v ?? '');
-            }}
-            onMount={(ed) => {
-              editorRef.current = ed;
-              ed.onDidChangeCursorSelection(() => {
-                if (isMouseDownRef.current) {
-                  updateSelectionTextOnly(ed);
-                } else {
-                  updateSelectionAndCoords(ed);
+          active.isLargeFile ? (
+            <div className="large-file-placeholder">
+              <div className="large-file-icon">📄</div>
+              <div className="large-file-title">{active.path.split('/').pop() || active.path}</div>
+              <div className="large-file-hint">
+                文件较大（&gt;2MB），为避免编辑器卡顿未加载全文。可直接运行终端/搜索或让 Agent
+                按行读取。
+              </div>
+            </div>
+          ) : (
+            <Editor
+              path={active.path}
+              value={active.content}
+              language={active.language}
+              theme={monacoTheme}
+              onChange={(v) => {
+                if (suppressChangeRef.current) {
+                  suppressChangeRef.current = false;
+                  return;
                 }
-              });
-              ed.onDidScrollChange(() => {
-                if (!isMouseDownRef.current) {
-                  updateSelectionAndCoords(ed);
-                }
-              });
-              ed.onDidChangeCursorPosition((e) => {
-                onCursorChange?.(e.position.lineNumber, e.position.column);
-                updateGitBlame(e.position.lineNumber);
-              });
-              // Git gutter click handler — GUTTER_LINE_NUMBERS = 4, GUTTER_GLYPH_MARGIN = 3
-              ed.onMouseDown((e) => {
-                isMouseDownRef.current = true;
-                setSelectionCoords(null);
-                if (e.target.type === 4 || e.target.type === 3) {
-                  const line = e.target.position?.lineNumber;
-                  if (line && modifiedRangesRef.current.length > 0) {
-                    const isModifiedLine = modifiedRangesRef.current.some(
-                      (r) => line >= r.start && line <= r.end
-                    );
-                    if (isModifiedLine) {
-                      setGitInlineDiffLine(line);
+                onChangeContent(active.path, v ?? '');
+              }}
+              onMount={(ed) => {
+                editorRef.current = ed;
+                ed.onDidChangeCursorSelection(() => {
+                  if (isMouseDownRef.current) {
+                    updateSelectionTextOnly(ed);
+                  } else {
+                    updateSelectionAndCoords(ed);
+                  }
+                });
+                ed.onDidScrollChange(() => {
+                  if (!isMouseDownRef.current) {
+                    updateSelectionAndCoords(ed);
+                  }
+                });
+                ed.onDidChangeCursorPosition((e) => {
+                  onCursorChange?.(e.position.lineNumber, e.position.column);
+                  updateGitBlame(e.position.lineNumber);
+                });
+                // Git gutter click handler — GUTTER_LINE_NUMBERS = 4, GUTTER_GLYPH_MARGIN = 3
+                ed.onMouseDown((e) => {
+                  isMouseDownRef.current = true;
+                  setSelectionCoords(null);
+                  if (e.target.type === 4 || e.target.type === 3) {
+                    const line = e.target.position?.lineNumber;
+                    if (line && modifiedRangesRef.current.length > 0) {
+                      const isModifiedLine = modifiedRangesRef.current.some(
+                        (r) => line >= r.start && line <= r.end,
+                      );
+                      if (isModifiedLine) {
+                        setGitInlineDiffLine(line);
+                      }
                     }
                   }
-                }
-              });
-              ed.onMouseUp(() => {
-                isMouseDownRef.current = false;
+                });
+                ed.onMouseUp(() => {
+                  isMouseDownRef.current = false;
+                  updateSelectionAndCoords(ed);
+                });
                 updateSelectionAndCoords(ed);
-              });
-              updateSelectionAndCoords(ed);
 
-              if (pendingReveal.current != null) {
-                const line = pendingReveal.current;
-                pendingReveal.current = null;
-                ed.revealLineInCenter(line);
-                ed.setPosition({ lineNumber: line, column: 1 });
-                ed.focus();
-              }
-            }}
-            options={{
-              fontSize: 13,
-              minimap: { enabled: false },
-              automaticLayout: true,
-              wordWrap: wordWrap ? 'on' : 'off',
-              lineNumbersMinChars: 4,
-              lineDecorationsWidth: 10,
-              glyphMargin: false,
-              folding: true,
-              overviewRulerLanes: 0,
-              overviewRulerBorder: false,
-              scrollbar: {
-                vertical: 'visible',
-                horizontal: 'auto',
-                verticalScrollbarSize: 8,
-                horizontalScrollbarSize: 8,
-                verticalSliderSize: 8,
-                horizontalSliderSize: 8,
-                useShadows: false,
-              },
-            }}
-          />
+                if (pendingReveal.current != null) {
+                  const line = pendingReveal.current;
+                  pendingReveal.current = null;
+                  ed.revealLineInCenter(line);
+                  ed.setPosition({ lineNumber: line, column: 1 });
+                  ed.focus();
+                }
+              }}
+              options={{
+                fontSize: 13,
+                minimap: { enabled: false },
+                automaticLayout: true,
+                wordWrap: wordWrap ? 'on' : 'off',
+                lineNumbersMinChars: 4,
+                lineDecorationsWidth: 10,
+                glyphMargin: false,
+                folding: true,
+                overviewRulerLanes: 0,
+                overviewRulerBorder: false,
+                scrollbar: {
+                  vertical: 'visible',
+                  horizontal: 'auto',
+                  verticalScrollbarSize: 8,
+                  horizontalScrollbarSize: 8,
+                  verticalSliderSize: 8,
+                  horizontalSliderSize: 8,
+                  useShadows: false,
+                },
+              }}
+            />
+          )
         ) : !workspace ? (
           <WelcomeView
             onPickLocal={() => onPickLocal?.()}
@@ -1472,7 +1657,7 @@ export function EditorPane({
                   Git 本地更改(工作树) - 第{' '}
                   {(() => {
                     const idx = modifiedRangesRef.current.findIndex(
-                      (r) => gitInlineDiffLine >= r.start && gitInlineDiffLine <= r.end
+                      (r) => gitInlineDiffLine >= r.start && gitInlineDiffLine <= r.end,
                     );
                     return idx !== -1 ? idx + 1 : 1;
                   })()}{' '}
@@ -1501,7 +1686,14 @@ export function EditorPane({
                   }}
                   className="icon-btn"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
@@ -1526,7 +1718,14 @@ export function EditorPane({
                   }}
                   className="icon-btn"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                     <path d="M3 3v5h5" />
                   </svg>
@@ -1539,7 +1738,7 @@ export function EditorPane({
                   onClick={() => {
                     if (modifiedRangesRef.current.length > 0) {
                       const curIdx = modifiedRangesRef.current.findIndex(
-                        (r) => gitInlineDiffLine >= r.start && gitInlineDiffLine <= r.end
+                        (r) => gitInlineDiffLine >= r.start && gitInlineDiffLine <= r.end,
                       );
                       const nextIdx = (curIdx + 1) % modifiedRangesRef.current.length;
                       const targetL = modifiedRangesRef.current[nextIdx].start;
@@ -1559,7 +1758,14 @@ export function EditorPane({
                   }}
                   className="icon-btn"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <polyline points="19 12 12 19 5 12" />
                   </svg>
@@ -1572,7 +1778,7 @@ export function EditorPane({
                   onClick={() => {
                     if (modifiedRangesRef.current.length > 0) {
                       const curIdx = modifiedRangesRef.current.findIndex(
-                        (r) => gitInlineDiffLine >= r.start && gitInlineDiffLine <= r.end
+                        (r) => gitInlineDiffLine >= r.start && gitInlineDiffLine <= r.end,
                       );
                       const prevIdx =
                         (curIdx - 1 + modifiedRangesRef.current.length) %
@@ -1594,7 +1800,14 @@ export function EditorPane({
                   }}
                   className="icon-btn"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <line x1="12" y1="19" x2="12" y2="5" />
                     <polyline points="5 12 12 5 19 12" />
                   </svg>
@@ -1617,7 +1830,14 @@ export function EditorPane({
                   }}
                   className="icon-btn"
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <line x1="18" y1="6" x2="6" y2="18" />
                     <line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
@@ -1629,7 +1849,11 @@ export function EditorPane({
             <div style={{ maxHeight: 300, overflowY: 'auto', overflowX: 'auto' }}>
               {(() => {
                 if (!gitDiffData) {
-                  return <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>加载对比数据中...</div>;
+                  return (
+                    <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>
+                      加载对比数据中...
+                    </div>
+                  );
                 }
                 const origLines = gitDiffData.original.split('\n');
                 const modLines = gitDiffData.modified.split('\n');
@@ -1647,7 +1871,12 @@ export function EditorPane({
                   const modContent = modLines[i];
                   const origContent = origLines[i];
                   if (origContent === modContent) {
-                    rows.push({ type: 'same', origNum: i + 1, modNum: i + 1, content: modContent || '' });
+                    rows.push({
+                      type: 'same',
+                      origNum: i + 1,
+                      modNum: i + 1,
+                      content: modContent || '',
+                    });
                   } else {
                     if (origContent !== undefined) {
                       rows.push({ type: 'del', origNum: i + 1, content: origContent });
@@ -1684,7 +1913,8 @@ export function EditorPane({
                     while (
                       suffixLen < oldStr.length - prefixLen &&
                       suffixLen < newStr.length - prefixLen &&
-                      oldStr[oldStr.length - 1 - suffixLen] === newStr[newStr.length - 1 - suffixLen]
+                      oldStr[oldStr.length - 1 - suffixLen] ===
+                        newStr[newStr.length - 1 - suffixLen]
                     ) {
                       suffixLen++;
                     }
@@ -1731,8 +1961,8 @@ export function EditorPane({
                           row.type === 'del'
                             ? 'rgba(244, 67, 54, 0.25)'
                             : row.type === 'add'
-                            ? 'rgba(76, 175, 80, 0.25)'
-                            : 'transparent',
+                              ? 'rgba(76, 175, 80, 0.25)'
+                              : 'transparent',
                         fontSize: 12,
                         fontFamily: 'Consolas, Monaco, monospace',
                       }}
@@ -1805,18 +2035,27 @@ export function EditorPane({
 
           <div className="menu-divider" />
 
-          <div className="menu-item" onClick={() => void handleCopyPath(contextMenu.targetPath, false)}>
+          <div
+            className="menu-item"
+            onClick={() => void handleCopyPath(contextMenu.targetPath, false)}
+          >
             <span>复制绝对路径</span>
             <span className="shortcut">⌥⌘C</span>
           </div>
-          <div className="menu-item" onClick={() => void handleCopyPath(contextMenu.targetPath, true)}>
+          <div
+            className="menu-item"
+            onClick={() => void handleCopyPath(contextMenu.targetPath, true)}
+          >
             <span>复制相对路径</span>
             <span className="shortcut">⌥⇧⌘C</span>
           </div>
 
           <div className="menu-divider" />
 
-          <div className="menu-item" onClick={() => void handleShowInFinder(contextMenu.targetPath)}>
+          <div
+            className="menu-item"
+            onClick={() => void handleShowInFinder(contextMenu.targetPath)}
+          >
             <span>在 Finder / 资源管理器中显示</span>
             <span className="shortcut">⌥⌘R</span>
           </div>

@@ -58,20 +58,15 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
   // 过滤 actions 动作列表
   const actionHits = actions.filter((act) => {
     if (!query.trim() || query === '>') return true;
-    const cleanQ = query.startsWith('>') ? query.slice(1).trim().toLowerCase() : query.trim().toLowerCase();
+    const cleanQ = query.startsWith('>')
+      ? query.slice(1).trim().toLowerCase()
+      : query.trim().toLowerCase();
     if (!cleanQ) return true;
-    return (
-      act.title.toLowerCase().includes(cleanQ) ||
-      act.category.toLowerCase().includes(cleanQ)
-    );
+    return act.title.toLowerCase().includes(cleanQ) || act.category.toLowerCase().includes(cleanQ);
   });
 
   const hitsCount =
-    mode === 'files'
-      ? fileHits.length
-      : mode === 'actions'
-        ? actionHits.length
-        : codeHits.length;
+    mode === 'files' ? fileHits.length : mode === 'actions' ? actionHits.length : codeHits.length;
 
   useEffect(() => {
     if (!enabled) {
@@ -200,25 +195,42 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
             setQuery('');
           }}
         >
-          <div
-            className="cmd-palette-modal"
-            ref={rootRef}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="cmd-palette-modal" ref={rootRef} onClick={(e) => e.stopPropagation()}>
             {/* 顶部搜索输入与模式切换 */}
             <div className="cmd-palette-header">
               <div className="cmd-palette-icon">
                 {mode === 'actions' ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
                 ) : mode === 'files' ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
                   </svg>
                 ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <circle cx="11" cy="11" r="8" />
                     <line x1="21" y1="21" x2="16.65" y2="16.65" />
                   </svg>
@@ -364,7 +376,15 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                         onClick={() => selectFile(h.path)}
                       >
                         <div className="cmd-item-left">
-                          <svg className="cmd-file-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                          <svg
+                            className="cmd-file-icon"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                          >
                             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                             <polyline points="14 2 14 8 20 8" />
                           </svg>

@@ -51,13 +51,13 @@ export interface LoadedExtension {
 export async function extractVsix(vsixPath: string, targetDir: string): Promise<string> {
   console.log(`[extractVsix] 开始解压: ${vsixPath}`);
   console.log(`[extractVsix] 目标目录: ${targetDir}`);
-  
+
   // 如果目标目录已存在，先删除（避免 unzip 等待覆盖确认）
   if (await exists(targetDir)) {
     console.log(`[extractVsix] 目标目录已存在，先清理...`);
     await fs.rm(targetDir, { recursive: true, force: true });
   }
-  
+
   // 创建目标目录
   await fs.mkdir(targetDir, { recursive: true });
 
@@ -70,25 +70,25 @@ export async function extractVsix(vsixPath: string, targetDir: string): Promise<
     console.log(`[extractVsix] 执行 unzip 命令...`);
     // macOS 和 Linux 使用 unzip，-o 自动覆盖，-q 静默模式，增加超时为 5 分钟（300秒）
     const { spawn } = require('child_process');
-    
+
     await new Promise<void>((resolve, reject) => {
       const unzip = spawn('unzip', ['-o', '-q', vsixPath, '-d', targetDir]);
       let stderr = '';
-      
+
       const timeout = setTimeout(() => {
         unzip.kill('SIGTERM');
         reject(new Error('解压超时（5分钟）'));
       }, 300000);
-      
+
       unzip.stderr.on('data', (data: Buffer) => {
         stderr += data.toString();
       });
-      
+
       unzip.on('error', (err: Error) => {
         clearTimeout(timeout);
         reject(err);
       });
-      
+
       unzip.on('close', (code: number | null) => {
         clearTimeout(timeout);
         if (code === 0) {
@@ -104,7 +104,7 @@ export async function extractVsix(vsixPath: string, targetDir: string): Promise<
   }
 
   console.log(`[extractVsix] 解压完成，检查目录结构...`);
-  
+
   // .vsix 内部结构：extension/ 文件夹包含实际扩展内容
   const extensionDir = path.join(targetDir, 'extension');
   if (await exists(extensionDir)) {
@@ -150,11 +150,13 @@ export async function loadExtensionModule(extensionPath: string, mainFile: strin
  */
 export async function loadExtension(extensionPath: string): Promise<LoadedExtension> {
   console.log(`[loadExtension] 开始加载扩展: ${extensionPath}`);
-  
+
   // 加载清单
   console.log(`[loadExtension] 读取 package.json...`);
   const manifest = await loadManifest(extensionPath);
-  console.log(`[loadExtension] 扩展名: ${manifest.displayName || manifest.name}, 版本: ${manifest.version}`);
+  console.log(
+    `[loadExtension] 扩展名: ${manifest.displayName || manifest.name}, 版本: ${manifest.version}`,
+  );
 
   // 加载主模块（如果有）
   let mainModule: any;
@@ -197,39 +199,43 @@ export async function loadExtensionFromVsix(
  */
 export async function downloadClaudeCodeExtension(
   targetPath: string,
-  onProgress?: (progress: { percent: number; downloaded: number; total: number }) => void
+  onProgress?: (progress: { percent: number; downloaded: number; total: number }) => void,
 ): Promise<string> {
   const extensionId = 'Anthropic.claude-code';
   const downloadUrl = `https://marketplace.visualstudio.com/_apis/public/gallery/publishers/Anthropic/vsextensions/claude-code/latest/vspackage`;
   const vsixPath = path.join(targetPath, 'claude-code.vsix');
-  
+
   const maxRetries = 3;
   let lastError: Error | null = null;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`Downloading ${extensionId} from VS Code Marketplace... (尝试 ${attempt}/${maxRetries})`);
+      console.log(
+        `Downloading ${extensionId} from VS Code Marketplace... (尝试 ${attempt}/${maxRetries})`,
+      );
       return await downloadWithProgress(downloadUrl, vsixPath, onProgress);
     } catch (err: any) {
       lastError = err;
       console.error(`下载失败 (尝试 ${attempt}/${maxRetries}):`, err.message);
-      
+
       // 删除部分下载的文件
       try {
         await fs.unlink(vsixPath);
       } catch {}
-      
+
       // 如果不是最后一次尝试，等待后重试
       if (attempt < maxRetries) {
         const waitTime = attempt * 2000; // 2秒, 4秒
         console.log(`等待 ${waitTime / 1000} 秒后重试...`);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
       }
     }
   }
-  
+
   // 所有重试都失败了
-  throw new Error(`下载失败（已重试 ${maxRetries} 次）: ${lastError?.message}\n\n建议：\n1. 检查网络连接\n2. 使用"从路径加载"手动安装`);
+  throw new Error(
+    `下载失败（已重试 ${maxRetries} 次）: ${lastError?.message}\n\n建议：\n1. 检查网络连接\n2. 使用"从路径加载"手动安装`,
+  );
 }
 
 /**
@@ -238,30 +244,24 @@ export async function downloadClaudeCodeExtension(
 async function downloadWithProgress(
   downloadUrl: string,
   vsixPath: string,
-  onProgress?: (progress: { percent: number; downloaded: number; total: number }) => void
+  onProgress?: (progress: { percent: number; downloaded: number; total: number }) => void,
 ): Promise<string> {
-  
   try {
     // 使用 curl 标准输出来解析进度（包含总大小）
     const { spawn } = require('child_process');
-    
+
     return await new Promise<string>((resolve, reject) => {
       // 不使用静默模式，解析 curl 的进度输出
-      const curl = spawn('curl', [
-        '-L',
-        downloadUrl,
-        '-o',
-        vsixPath
-      ]);
+      const curl = spawn('curl', ['-L', downloadUrl, '-o', vsixPath]);
 
       let totalSize = 0;
       let stderr = '';
-      
+
       // curl 的进度输出在 stderr
       curl.stderr.on('data', (data: Buffer) => {
         const chunk = data.toString();
         stderr += chunk;
-        
+
         // 解析 curl 进度输出格式：
         // "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"
         // "                                 Dload  Upload   Total   Spent    Left  Speed"
@@ -277,23 +277,23 @@ async function downloadWithProgress(
             const totalUnit = match[3] || '';
             const downloadedNum = parseFloat(match[4]);
             const downloadedUnit = match[5] || '';
-            
+
             // 转换单位为字节
-            const unitMultiplier: any = { '': 1, 'k': 1024, 'M': 1024 * 1024, 'G': 1024 * 1024 * 1024 };
+            const unitMultiplier: any = { '': 1, k: 1024, M: 1024 * 1024, G: 1024 * 1024 * 1024 };
             const newTotalSize = Math.floor(totalSizeNum * (unitMultiplier[totalUnit] || 1));
             const downloaded = Math.floor(downloadedNum * (unitMultiplier[downloadedUnit] || 1));
-            
+
             // 更新总大小（只在有效时更新）
             if (newTotalSize > 0) {
               totalSize = newTotalSize;
             }
-            
+
             // 报告进度（即使是 0% 也报告，便于 UI 显示"下载中"状态）
             if (onProgress) {
-              onProgress({ 
-                percent: Math.min(percent, 100), 
-                downloaded, 
-                total: totalSize > 0 ? totalSize : downloaded * 2 // 如果总大小未知，估算为已下载的2倍
+              onProgress({
+                percent: Math.min(percent, 100),
+                downloaded,
+                total: totalSize > 0 ? totalSize : downloaded * 2, // 如果总大小未知，估算为已下载的2倍
               });
             }
           }
@@ -314,26 +314,32 @@ async function downloadWithProgress(
           // 获取真实的文件大小
           const stat = await fs.stat(vsixPath);
           const actualSize = stat.size;
-          
+
           // 验证文件大小（Claude Code 扩展至少 50MB）
           if (actualSize < 50 * 1024 * 1024) {
-            throw new Error(`下载的文件太小 (${(actualSize / 1024 / 1024).toFixed(1)}MB)，可能下载不完整`);
+            throw new Error(
+              `下载的文件太小 (${(actualSize / 1024 / 1024).toFixed(1)}MB)，可能下载不完整`,
+            );
           }
-          
+
           // 验证 ZIP 文件头（.vsix 是 ZIP 格式）
           const buffer = await fs.readFile(vsixPath);
           const zipSignature = buffer.slice(0, 4);
           // ZIP 文件头: 50 4B 03 04 (PK\x03\x04)
-          if (zipSignature[0] !== 0x50 || zipSignature[1] !== 0x4B || 
-              zipSignature[2] !== 0x03 || zipSignature[3] !== 0x04) {
+          if (
+            zipSignature[0] !== 0x50 ||
+            zipSignature[1] !== 0x4b ||
+            zipSignature[2] !== 0x03 ||
+            zipSignature[3] !== 0x04
+          ) {
             throw new Error('下载的文件不是有效的 ZIP 文件（文件头损坏）');
           }
-          
+
           // 最终进度 100%，使用真实文件大小
           if (onProgress) {
             onProgress({ percent: 100, downloaded: actualSize, total: actualSize });
           }
-          
+
           console.log(`Downloaded to ${vsixPath} (${(actualSize / 1024 / 1024).toFixed(1)}MB)`);
           resolve(vsixPath);
         } catch (err: any) {
@@ -350,7 +356,7 @@ async function downloadWithProgress(
     try {
       await fs.unlink(vsixPath);
     } catch {}
-    
+
     throw new Error(`下载失败: ${err.message}`);
   }
 }

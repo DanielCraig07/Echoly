@@ -11,10 +11,7 @@ export interface StatusBarHandle {
 }
 
 export function createStatusBar(): StatusBarHandle {
-  const item = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Left,
-    100,
-  );
+  const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   item.name = 'Deepseek Status';
   return { item };
 }

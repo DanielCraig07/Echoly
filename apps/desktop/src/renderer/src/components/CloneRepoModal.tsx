@@ -89,7 +89,12 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                   onChange={(e) => setParentDir(e.target.value)}
                   placeholder="选择克隆到的本地目录"
                 />
-                <button type="button" className="btn" onClick={() => void pickDir()} disabled={busy}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void pickDir()}
+                  disabled={busy}
+                >
                   选择…
                 </button>
               </div>

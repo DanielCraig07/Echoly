@@ -58,8 +58,7 @@ export function SshConnectModal({
         if (initialServer) {
           const matched = merged.find(
             (p) =>
-              initialServer.includes(p.host) ||
-              (p.username && initialServer.includes(p.username)),
+              initialServer.includes(p.host) || (p.username && initialServer.includes(p.username)),
           );
           if (matched) {
             setHost(matched.host);
@@ -202,7 +201,12 @@ export function SshConnectModal({
                     : '选择已有服务器（含 ~/.ssh/config），或添加新连接'}
                 </p>
               </div>
-              <button type="button" className="settings-close-btn" onClick={onClose} aria-label="关闭">
+              <button
+                type="button"
+                className="settings-close-btn"
+                onClick={onClose}
+                aria-label="关闭"
+              >
                 ×
               </button>
             </header>
@@ -355,10 +359,19 @@ export function SshConnectModal({
               <div>
                 <h2>选择远程目录</h2>
                 <p className="ide-modal-desc">
-                  已连接 <strong>{username}@{host}</strong> — 选择或输入工作区路径
+                  已连接{' '}
+                  <strong>
+                    {username}@{host}
+                  </strong>{' '}
+                  — 选择或输入工作区路径
                 </p>
               </div>
-              <button type="button" className="settings-close-btn" onClick={onClose} aria-label="关闭">
+              <button
+                type="button"
+                className="settings-close-btn"
+                onClick={onClose}
+                aria-label="关闭"
+              >
                 ×
               </button>
             </header>
@@ -407,9 +420,7 @@ export function SshConnectModal({
                 <div className="remote-dir-list">
                   {dirLoading && <div className="remote-dir-empty">正在读取远程目录…</div>}
                   {!dirLoading && remoteDirs.length === 0 && (
-                    <div className="remote-dir-empty">
-                      当前目录下无子文件夹，可直接打开此路径
-                    </div>
+                    <div className="remote-dir-empty">当前目录下无子文件夹，可直接打开此路径</div>
                   )}
                   {!dirLoading &&
                     remoteDirs.map((dir) => (
@@ -434,7 +445,12 @@ export function SshConnectModal({
             </div>
 
             <footer className="ide-modal-footer">
-              <button type="button" className="ghost" onClick={() => setStep('credentials')} disabled={busy}>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => setStep('credentials')}
+                disabled={busy}
+              >
                 返回
               </button>
               <button

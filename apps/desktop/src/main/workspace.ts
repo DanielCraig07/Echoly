@@ -1,8 +1,5 @@
 import type { FileTreeNode, WorkspaceInfo, WorkspaceKind } from '@deepseek-ide/shared';
-import {
-  LocalFsBackend,
-  type WorkspaceBackend,
-} from '@deepseek-ide/tools';
+import { LocalFsBackend, type WorkspaceBackend } from '@deepseek-ide/tools';
 
 const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',
@@ -93,10 +90,7 @@ export class WorkspaceService {
     const SKIP = new Set(['node_modules', '.git', '.DS_Store']);
 
     /** Compact-merge: collapse single-child-dir chains like VS Code. */
-    async function compact(
-      name: string,
-      p: string,
-    ): Promise<{ name: string; path: string }> {
+    async function compact(name: string, p: string): Promise<{ name: string; path: string }> {
       let curName = name;
       let curPath = p;
       for (let i = 0; i < 8; i++) {
@@ -123,9 +117,8 @@ export class WorkspaceService {
     for (const entry of entries) {
       if (SKIP.has(entry.name)) continue;
 
-      let childPath = (!relPath || relPath === '.')
-        ? entry.name
-        : `${relPath.replace(/\/$/, '')}/${entry.name}`;
+      let childPath =
+        !relPath || relPath === '.' ? entry.name : `${relPath.replace(/\/$/, '')}/${entry.name}`;
       childPath = childPath.replace(/\\/g, '/');
 
       let displayName = entry.name;

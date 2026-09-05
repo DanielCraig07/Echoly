@@ -19,14 +19,12 @@ export function ThinkingBlock({ thinking }: Props) {
       <div className="thinking-header" onClick={() => setExpanded(!expanded)}>
         <span className="thinking-icon">💭</span>
         <span className="thinking-title">Extended Thinking</span>
-        <span className="thinking-badge">{thinking.length} step{thinking.length > 1 ? 's' : ''}</span>
-        {hasMore && (
-          <button className="thinking-toggle">
-            {expanded ? '折叠' : '展开'}
-          </button>
-        )}
+        <span className="thinking-badge">
+          {thinking.length} step{thinking.length > 1 ? 's' : ''}
+        </span>
+        {hasMore && <button className="thinking-toggle">{expanded ? '折叠' : '展开'}</button>}
       </div>
-      
+
       <div className={`thinking-content ${expanded ? 'expanded' : 'collapsed'}`}>
         {expanded ? (
           thinking.map((step, i) => (
@@ -36,7 +34,10 @@ export function ThinkingBlock({ thinking }: Props) {
             </div>
           ))
         ) : (
-          <div className="thinking-preview">{preview}{hasMore && '...'}</div>
+          <div className="thinking-preview">
+            {preview}
+            {hasMore && '...'}
+          </div>
         )}
       </div>
     </div>

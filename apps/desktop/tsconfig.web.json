@@ -12,9 +12,5 @@
       "@renderer/*": ["./src/renderer/src/*"]
     }
   },
-  "include": [
-    "src/renderer/src/**/*",
-    "src/renderer/*.d.ts",
-    "../../packages/shared/src/**/*"
-  ]
+  "include": ["src/renderer/src/**/*", "src/renderer/*.d.ts", "../../packages/shared/src/**/*"]
 }

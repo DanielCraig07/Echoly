@@ -57,10 +57,11 @@ function summarizeArgs(args?: string): string {
     const obj = JSON.parse(args) as Record<string, unknown>;
     const keys = Object.keys(obj);
     if (!keys.length) return '';
-    
+
     // 尝试构建更有意义的摘要
     const parts: string[] = [];
-    for (const key of keys.slice(0, 3)) { // 最多显示3个参数
+    for (const key of keys.slice(0, 3)) {
+      // 最多显示3个参数
       const val = obj[key];
       if (typeof val === 'string' && val.length > 0) {
         const short = val.length > 40 ? `${val.slice(0, 40)}…` : val;
@@ -69,12 +70,12 @@ function summarizeArgs(args?: string): string {
         parts.push(`${key}=${val}`);
       }
     }
-    
+
     if (parts.length > 0) {
       const summary = parts.join(', ');
       return summary.length > 80 ? `${summary.slice(0, 80)}…` : summary;
     }
-    
+
     // 回退到旧逻辑
     const first = keys[0];
     const val = obj[first];
@@ -83,7 +84,7 @@ function summarizeArgs(args?: string): string {
         ? val.length > 60
           ? `${val.slice(0, 60)}…`
           : val
-        : JSON.stringify(val)?.slice(0, 60) ?? '';
+        : (JSON.stringify(val)?.slice(0, 60) ?? '');
     return `${first}: ${short}`;
   } catch {
     return args.length > 80 ? `${args.slice(0, 80)}…` : args;
@@ -165,11 +166,7 @@ function CollapsibleBlock({
   const preRef = useRef<HTMLPreElement | null>(null);
   const total = lineCount(text);
   const needsCollapse = total > maxLines || text.length > 900;
-  const { shown, hidden } = collapseText(
-    text,
-    maxLines,
-    live && !expanded ? 'tail' : 'head',
-  );
+  const { shown, hidden } = collapseText(text, maxLines, live && !expanded ? 'tail' : 'head');
   const display = !needsCollapse || expanded ? text : shown;
 
   useEffect(() => {
@@ -208,10 +205,16 @@ function CollapsibleBlock({
 
 export function stripAnsi(text: string): string {
   if (!text) return '';
-  return text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+  return text.replace(
+    /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
+    '',
+  );
 }
 
-export function parseTerminalResult(content: string): { exitCode: number | null; cleanOutput: string } {
+export function parseTerminalResult(content: string): {
+  exitCode: number | null;
+  cleanOutput: string;
+} {
   if (!content) return { exitCode: null, cleanOutput: '' };
   const match = content.match(/^exit=(\d+)\n?([\s\S]*)$/);
   if (match) {
@@ -343,7 +346,11 @@ export function TerminalExecutionView({
 
         {status !== 'running' && exitCode !== null && (
           <div className={`terminal-exit-banner ${exitCode === 0 ? 'success' : 'error'}`}>
-            <span>{exitCode === 0 ? '✔ 进程正常退出 (exit code 0)' : `✘ 进程异常退出 (exit code ${exitCode})`}</span>
+            <span>
+              {exitCode === 0
+                ? '✔ 进程正常退出 (exit code 0)'
+                : `✘ 进程异常退出 (exit code ${exitCode})`}
+            </span>
           </div>
         )}
       </div>
@@ -356,9 +363,7 @@ export function TerminalExecutionView({
             className="terminal-expand-bottom-btn"
             onClick={() => setExpanded(!expanded)}
           >
-            {expanded
-              ? '▴ 收起输出过程'
-              : `▾ 展开查看全部执行过程（共 ${totalLines} 行输出）`}
+            {expanded ? '▴ 收起输出过程' : `▾ 展开查看全部执行过程（共 ${totalLines} 行输出）`}
           </button>
         </div>
       )}
@@ -375,7 +380,7 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
   const open =
     userToggled !== null
       ? userToggled
-      : status === 'running' || 
+      : status === 'running' ||
         status === 'error' || // 失败或正在执行的工具调用默认展开具体过程
         (isTerminal && !!message.content);
 
@@ -392,8 +397,7 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
     return () => clearInterval(interval);
   }, [status, message.createdAt]);
 
-  const statusClass =
-    status === 'running' ? ' running' : status === 'error' ? ' error' : ' done';
+  const statusClass = status === 'running' ? ' running' : status === 'error' ? ' error' : ' done';
   const statusText =
     status === 'running'
       ? `正在执行${elapsedSec > 0 ? ` (${elapsedSec}s)` : '…'}`
@@ -433,9 +437,7 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
             {isTerminal ? `$ ${summary}` : summary}
           </span>
         )}
-        <span className="tool-call-chevron">
-          {open ? '▴ 收起过程' : '▾ 展开查看具体过程'}
-        </span>
+        <span className="tool-call-chevron">{open ? '▴ 收起过程' : '▾ 展开查看具体过程'}</span>
       </button>
 
       {open && (
@@ -489,4 +491,3 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
     </div>
   );
 }
-

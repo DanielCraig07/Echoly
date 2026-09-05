@@ -2,11 +2,7 @@ import { Client, type SFTPWrapper, type ClientChannel } from 'ssh2';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type {
-  SshConnectRequest,
-  SshConnectResult,
-  SshProfile,
-} from '@deepseek-ide/shared';
+import type { SshConnectRequest, SshConnectResult, SshProfile } from '@deepseek-ide/shared';
 import type { CommandResult, DirEntry, WorkspaceBackend } from '@deepseek-ide/tools';
 import type { WorkspaceService } from '../workspace';
 import type { WindowSession } from '../windowRegistry';
@@ -21,7 +17,10 @@ function posixJoin(root: string, relPath = '.'): string {
     if (cleaned === rootN || cleaned.startsWith(`${rootN}/`)) return cleaned;
     throw new Error(`Path escapes remote workspace: ${relPath}`);
   }
-  const parts = [...root.split('/').filter(Boolean), ...cleaned.split('/').filter((p) => p && p !== '.')];
+  const parts = [
+    ...root.split('/').filter(Boolean),
+    ...cleaned.split('/').filter((p) => p && p !== '.'),
+  ];
   const out: string[] = [];
   for (const p of parts) {
     if (p === '..') {
@@ -85,7 +84,9 @@ export class SftpBackend implements WorkspaceBackend {
     });
     const MAX_SIZE = 10 * 1024 * 1024; // 10MB
     if (stat.size > MAX_SIZE) {
-      throw new Error(`SSH 文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB > 10MB): ${relPath}`);
+      throw new Error(
+        `SSH 文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB > 10MB): ${relPath}`,
+      );
     }
 
     return await new Promise((resolve, reject) => {
@@ -113,6 +114,24 @@ export class SftpBackend implements WorkspaceBackend {
     });
   }
 
+  async readFileLines(
+    relPath: string,
+    offset?: number,
+    limit?: number,
+  ): Promise<{ lines: string[]; total: number; offset: number; truncated: boolean }> {
+    const text = await this.readFile(relPath);
+    const allLines = text.split(/\r?\n/);
+    const total = allLines.length;
+    const start = Math.max((offset ?? 1) - 1, 0);
+    const end = limit != null ? Math.min(start + limit, total) : total;
+    return {
+      lines: allLines.slice(start, end),
+      total,
+      offset: start + 1,
+      truncated: end < total,
+    };
+  }
+
   async readFileBuffer(relPath: string): Promise<Buffer> {
     const abs = this.resolve(relPath);
     // 检查文件大小
@@ -124,7 +143,9 @@ export class SftpBackend implements WorkspaceBackend {
     });
     const MAX_SIZE = 50 * 1024 * 1024; // 50MB
     if (stat.size > MAX_SIZE) {
-      throw new Error(`SSH 文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB): ${relPath}`);
+      throw new Error(
+        `SSH 文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB): ${relPath}`,
+      );
     }
 
     return await new Promise((resolve, reject) => {
@@ -594,7 +615,12 @@ export class SshSessionManager {
           remotePath: remoteRoot,
         };
         const withoutDup = profiles.filter(
-          (p) => !(p.host === profile.host && p.username === profile.username && p.port === profile.port),
+          (p) =>
+            !(
+              p.host === profile.host &&
+              p.username === profile.username &&
+              p.port === profile.port
+            ),
         );
         withoutDup.push(profile);
         await this.saveProfiles(withoutDup);
@@ -641,22 +667,25 @@ export class SshSessionManager {
 
       abs = abs.replace(/\\/g, '/').replace(/\/$/, '') || '/';
 
-      const entries = await new Promise<Array<{ name: string; isDirectory: boolean; path: string }>>(
-        (resolve, reject) => {
-          live.sftp.readdir(abs, (err, list) => {
-            if (err) return reject(err);
-            const dirs = list
-              .filter((e) => (e.attrs.mode & 0o170000) === 0o040000 && e.filename !== '.' && e.filename !== '..')
-              .map((e) => ({
-                name: e.filename,
-                isDirectory: true,
-                path: abs === '/' ? `/${e.filename}` : `${abs}/${e.filename}`,
-              }))
-              .sort((a, b) => a.name.localeCompare(b.name));
-            resolve(dirs);
-          });
-        },
-      );
+      const entries = await new Promise<
+        Array<{ name: string; isDirectory: boolean; path: string }>
+      >((resolve, reject) => {
+        live.sftp.readdir(abs, (err, list) => {
+          if (err) return reject(err);
+          const dirs = list
+            .filter(
+              (e) =>
+                (e.attrs.mode & 0o170000) === 0o040000 && e.filename !== '.' && e.filename !== '..',
+            )
+            .map((e) => ({
+              name: e.filename,
+              isDirectory: true,
+              path: abs === '/' ? `/${e.filename}` : `${abs}/${e.filename}`,
+            }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+          resolve(dirs);
+        });
+      });
 
       return { ok: true, entries, currentPath: abs };
     } catch (err) {
@@ -681,7 +710,11 @@ export class SshSessionManager {
       const wrapped = `cd ${shellQuote(root)} && ${command}`;
       live.client.exec(wrapped, (err, stream) => {
         if (err) {
-          if (err.message.includes('not open') || err.message.includes('closed') || err.message.includes('ended')) {
+          if (
+            err.message.includes('not open') ||
+            err.message.includes('closed') ||
+            err.message.includes('ended')
+          ) {
             const wId = live.webContentsId;
             if (wId >= 0) this.live.delete(wId);
           }
@@ -712,7 +745,10 @@ export class SshSessionManager {
     });
   }
 
-  openShell(onData: (data: string) => void, onClose: (code: number) => void): {
+  openShell(
+    onData: (data: string) => void,
+    onClose: (code: number) => void,
+  ): {
     write: (data: string) => void;
     resize: (cols: number, rows: number) => void;
     close: () => void;
@@ -744,4 +780,3 @@ export class SshSessionManager {
     };
   }
 }
-

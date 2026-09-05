@@ -69,7 +69,14 @@ interface SessionProps {
   initialCommand?: string;
 }
 
-function TerminalSession({ active, visible = true, terminalKind, uiTheme, cwd, initialCommand }: SessionProps) {
+function TerminalSession({
+  active,
+  visible = true,
+  terminalKind,
+  uiTheme,
+  cwd,
+  initialCommand,
+}: SessionProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -87,8 +94,7 @@ function TerminalSession({ active, visible = true, terminalKind, uiTheme, cwd, i
       convertEol: true,
       cursorBlink: true,
       fontSize: 12,
-      fontFamily:
-        '"Cascadia Code", Consolas, "Microsoft YaHei Mono", "Microsoft YaHei", monospace',
+      fontFamily: '"Cascadia Code", Consolas, "Microsoft YaHei Mono", "Microsoft YaHei", monospace',
       theme: terminalTheme(uiTheme),
       cols: 80,
       rows: 24,
@@ -148,7 +154,7 @@ function TerminalSession({ active, visible = true, terminalKind, uiTheme, cwd, i
         void window.ide.writeTerminal(id, data);
       });
 
-      let resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
+      const resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
         if (activeRef.current && visibleRef.current) {
           syncSize(id);
         }
@@ -238,7 +244,13 @@ function TerminalSession({ active, visible = true, terminalKind, uiTheme, cwd, i
   );
 }
 
-export function TerminalPanel({ terminalKind, uiTheme, openRequest, visible = true, onCollapse }: Props) {
+export function TerminalPanel({
+  terminalKind,
+  uiTheme,
+  openRequest,
+  visible = true,
+  onCollapse,
+}: Props) {
   const seqRef = useRef(1);
   const bootRef = useRef<TermTab | null>(null);
   if (!bootRef.current) bootRef.current = makeTab(1);
@@ -283,11 +295,24 @@ export function TerminalPanel({ terminalKind, uiTheme, openRequest, visible = tr
   const kindLabel = terminalKind === 'ssh' ? 'SSH 远程' : '本地';
 
   return (
-    <div className="bottom-section terminal-panel" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+    <div
+      className="bottom-section terminal-panel"
+      style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+    >
       <div className="terminal-toolbar">
         <div className="terminal-toolbar-left">
           <div className="terminal-brand">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="terminal-brand-icon">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="terminal-brand-icon"
+            >
               <polyline points="4 17 10 11 4 5" />
               <line x1="12" y1="19" x2="20" y2="19" />
             </svg>
@@ -337,7 +362,16 @@ export function TerminalPanel({ terminalKind, uiTheme, openRequest, visible = tr
             title="新建终端"
             onClick={() => addTerminal()}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
@@ -352,7 +386,16 @@ export function TerminalPanel({ terminalKind, uiTheme, openRequest, visible = tr
               onClick={onCollapse}
               title="折叠终端"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>

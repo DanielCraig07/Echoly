@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Quality gate
+        run: |
+          npm run typecheck
+          npm run lint
+          npm test
+
+      - name: Package macOS arm64 DMG (publish to release)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run pack:mac:arm64 -- --publish always
+
+      - name: Upload mac artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: echoly-mac-arm64
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest-mac.yml
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Package Windows x64 NSIS (publish to release)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run pack -- --publish always
+
+      - name: Upload win artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: echoly-win-x64
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml

@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react';
-import type { AppSettings, PermissionMode, SkillInfo, AiProvider, ModelProfile, ModelProviderType } from '@deepseek-ide/shared';
-import { PERMISSION_MODE_LABELS, AI_PROVIDER_LABELS, DEFAULT_PROVIDERS, DEFAULT_MODELS } from '@deepseek-ide/shared';
+import type {
+  AppSettings,
+  PermissionMode,
+  SkillInfo,
+  AiProvider,
+  ModelProfile,
+  ModelProviderType,
+  UpdateFeedConfig,
+} from '@deepseek-ide/shared';
+import {
+  PERMISSION_MODE_LABELS,
+  AI_PROVIDER_LABELS,
+  DEFAULT_PROVIDERS,
+  DEFAULT_MODELS,
+} from '@deepseek-ide/shared';
+import { useI18n, setLocale as persistLocale } from '../i18n';
 
 interface Props {
   open: boolean;
@@ -8,12 +22,7 @@ interface Props {
   onSaved?: (settings: AppSettings) => void;
 }
 
-const PERMISSION_ORDER: PermissionMode[] = [
-  'allow_all_extreme',
-  'allow_all',
-  'ask',
-  'deny_all',
-];
+const PERMISSION_ORDER: PermissionMode[] = ['allow_all_extreme', 'allow_all', 'ask', 'deny_all'];
 
 const PERMISSION_HINTS: Record<PermissionMode, string> = {
   allow_all_extreme: '写操作与终端自动放行，ask_user 也不弹窗。',
@@ -23,6 +32,7 @@ const PERMISSION_HINTS: Record<PermissionMode, string> = {
 };
 
 export function SettingsModal({ open, onClose, onSaved }: Props) {
+  const { locale, setLocale } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [probe, setProbe] = useState<string>('');
   const [probing, setProbing] = useState(false);
@@ -32,7 +42,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
   const [editingModel, setEditingModel] = useState<ModelProfile | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [modelProbingId, setModelProbingId] = useState<string | null>(null);
-  const [modelProbeResults, setModelProbeResults] = useState<Record<string, { ok: boolean; detail: string }>>({});
+  const [modelProbeResults, setModelProbeResults] = useState<
+    Record<string, { ok: boolean; detail: string }>
+  >({});
 
   const MODEL_PRESETS: Array<{
     label: string;
@@ -104,7 +116,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
   ];
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'models' | 'runtime' | 'general' | 'skills'>('models');
+  const [activeTab, setActiveTab] = useState<
+    'models' | 'runtime' | 'general' | 'skills' | 'update'
+  >('models');
   const [showApiKey, setShowApiKey] = useState(false);
 
   async function probeSingleModel(model: ModelProfile): Promise<void> {
@@ -217,6 +231,25 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
     setSkills(await window.ide.listSkills());
   }
 
+  async function checkUpdateNow(): Promise<void> {
+    if (!settings) return;
+    // 先保存当前更新配置，再触发检查，确保 token / owner / repo 已生效
+    const next = await window.ide.saveSettings(settings);
+    setSettings(next);
+    const res = await window.ide.checkUpdate();
+    if (!res.ok) {
+      alert(`检查更新失败：${res.detail || '未知错误'}`);
+    } else {
+      alert('已启动更新检查，请留意下载进度。');
+    }
+  }
+
+  /** 返回一个非空的 updateFeed，避免 spread undefined 导致类型不完整。 */
+  function feedWith(patch: Partial<UpdateFeedConfig>): UpdateFeedConfig {
+    const base: UpdateFeedConfig = settings?.updateFeed ?? { provider: 'github' };
+    return { ...base, ...patch };
+  }
+
   return (
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-modal modern-settings" onClick={(e) => e.stopPropagation()}>
@@ -282,6 +315,18 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                 <span className="nav-sub">Cursor / 本地技能</span>
               </div>
             </button>
+
+            <button
+              type="button"
+              className={`settings-nav-item ${activeTab === 'update' ? 'active' : ''}`}
+              onClick={() => setActiveTab('update')}
+            >
+              <span className="nav-icon">🔄</span>
+              <div className="nav-text">
+                <span className="nav-title">软件更新</span>
+                <span className="nav-sub">在线更新配置</span>
+              </div>
+            </button>
           </aside>
 
           {/* 右侧面板内容 */}
@@ -293,7 +338,8 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                   <div>
                     <h3 className="panel-h3">AI 模型管理与端点</h3>
                     <p className="panel-desc">
-                      支持 DeepSeek、Claude、OpenAI (GPT) 及本地 Ollama 兼容端点，随时在聊天中按需切换。
+                      支持 DeepSeek、Claude、OpenAI (GPT) 及本地 Ollama
+                      兼容端点，随时在聊天中按需切换。
                     </p>
                   </div>
                   <button
@@ -321,7 +367,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                     <div className="model-edit-box-header">
                       <div className="edit-title">
                         <span className="edit-dot" />
-                        <strong>{isCreatingNew ? '配置新 AI 模型' : `编辑模型: ${editingModel.name}`}</strong>
+                        <strong>
+                          {isCreatingNew ? '配置新 AI 模型' : `编辑模型: ${editingModel.name}`}
+                        </strong>
                       </div>
                       <div className="preset-quick-select">
                         <span className="preset-label">快速套用预设:</span>
@@ -343,9 +391,13 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                           }}
                           defaultValue=""
                         >
-                          <option value="" disabled>选择预设模板填充…</option>
+                          <option value="" disabled>
+                            选择预设模板填充…
+                          </option>
                           {MODEL_PRESETS.map((p) => (
-                            <option key={p.label} value={p.label}>{p.label}</option>
+                            <option key={p.label} value={p.label}>
+                              {p.label}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -363,7 +415,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                           }}
                         >
                           {(Object.keys(AI_PROVIDER_LABELS) as ModelProviderType[]).map((k) => (
-                            <option key={k} value={k}>{AI_PROVIDER_LABELS[k]}</option>
+                            <option key={k} value={k}>
+                              {AI_PROVIDER_LABELS[k]}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -373,7 +427,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                           className="modern-input"
                           value={editingModel.name}
                           placeholder="例如：DeepSeek (内网) 或 GPT-4o"
-                          onChange={(e) => setEditingModel({ ...editingModel, name: e.target.value })}
+                          onChange={(e) =>
+                            setEditingModel({ ...editingModel, name: e.target.value })
+                          }
                         />
                       </div>
                     </div>
@@ -384,7 +440,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                         className="modern-input mono-font"
                         value={editingModel.baseUrl}
                         placeholder="例如：https://api.deepseek.com 或 http://192.168.10.241:8002"
-                        onChange={(e) => setEditingModel({ ...editingModel, baseUrl: e.target.value })}
+                        onChange={(e) =>
+                          setEditingModel({ ...editingModel, baseUrl: e.target.value })
+                        }
                       />
                     </div>
 
@@ -395,11 +453,19 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                           className="modern-input mono-font"
                           value={editingModel.model}
                           placeholder="如 deepseek-v4-flash, gpt-4o, claude-3-7-sonnet"
-                          onChange={(e) => setEditingModel({ ...editingModel, model: e.target.value })}
+                          onChange={(e) =>
+                            setEditingModel({ ...editingModel, model: e.target.value })
+                          }
                         />
                       </div>
                       <div className="settings-row">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
                           <label>API Key</label>
                           <button
                             type="button"
@@ -413,13 +479,21 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                           type={showApiKey ? 'text' : 'password'}
                           className="modern-input mono-font"
                           value={editingModel.apiKey}
-                          placeholder={editingModel.provider === 'deepseek' ? '内网可留空，官方 API 必填' : '填入对应的 API Key'}
-                          onChange={(e) => setEditingModel({ ...editingModel, apiKey: e.target.value })}
+                          placeholder={
+                            editingModel.provider === 'deepseek'
+                              ? '内网可留空，官方 API 必填'
+                              : '填入对应的 API Key'
+                          }
+                          onChange={(e) =>
+                            setEditingModel({ ...editingModel, apiKey: e.target.value })
+                          }
                         />
                       </div>
                     </div>
 
-                    {(editingModel.provider === 'anthropic' || editingModel.model.includes('reasoner') || editingModel.model.includes('r1')) && (
+                    {(editingModel.provider === 'anthropic' ||
+                      editingModel.model.includes('reasoner') ||
+                      editingModel.model.includes('r1')) && (
                       <div className="settings-grid-2 thinking-config-row">
                         <div className="settings-row">
                           <label>深度思考模式 (Extended Thinking)</label>
@@ -427,7 +501,12 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                             <input
                               type="checkbox"
                               checked={editingModel.enableThinking !== false}
-                              onChange={(e) => setEditingModel({ ...editingModel, enableThinking: e.target.checked })}
+                              onChange={(e) =>
+                                setEditingModel({
+                                  ...editingModel,
+                                  enableThinking: e.target.checked,
+                                })
+                              }
                             />
                             <span>启用推理思考过程输出</span>
                           </label>
@@ -440,7 +519,12 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                             min="1000"
                             step="1000"
                             value={editingModel.thinkingTokens || 8000}
-                            onChange={(e) => setEditingModel({ ...editingModel, thinkingTokens: Number(e.target.value) || 8000 })}
+                            onChange={(e) =>
+                              setEditingModel({
+                                ...editingModel,
+                                thinkingTokens: Number(e.target.value) || 8000,
+                              })
+                            }
                           />
                         </div>
                       </div>
@@ -450,8 +534,13 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                       <label className="modern-checkbox-label">
                         <input
                           type="checkbox"
-                          checked={editingModel.isDefault === true || settings.activeModelId === editingModel.id}
-                          onChange={(e) => setEditingModel({ ...editingModel, isDefault: e.target.checked })}
+                          checked={
+                            editingModel.isDefault === true ||
+                            settings.activeModelId === editingModel.id
+                          }
+                          onChange={(e) =>
+                            setEditingModel({ ...editingModel, isDefault: e.target.checked })
+                          }
                         />
                         <span>设为当前默认优先模型</span>
                       </label>
@@ -464,10 +553,21 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                         >
                           {modelProbingId === editingModel.id ? '正在连接测试…' : '⚡ 连通性测试'}
                         </button>
-                        <button type="button" className="cancel-btn" onClick={() => { setEditingModel(null); setIsCreatingNew(false); }}>
+                        <button
+                          type="button"
+                          className="cancel-btn"
+                          onClick={() => {
+                            setEditingModel(null);
+                            setIsCreatingNew(false);
+                          }}
+                        >
                           取消
                         </button>
-                        <button type="button" className="primary save-model-btn" onClick={() => handleSaveEditingModel(editingModel)}>
+                        <button
+                          type="button"
+                          className="primary save-model-btn"
+                          onClick={() => handleSaveEditingModel(editingModel)}
+                        >
                           保存配置
                         </button>
                       </div>
@@ -482,7 +582,10 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                     const probeRes = modelProbeResults[m.id];
                     const isProbing = modelProbingId === m.id;
                     return (
-                      <div key={m.id} className={`modern-model-card ${isActive ? 'is-active' : ''}`}>
+                      <div
+                        key={m.id}
+                        className={`modern-model-card ${isActive ? 'is-active' : ''}`}
+                      >
                         <div className="model-card-left">
                           <div className={`model-provider-badge prov-${m.provider}`}>
                             {m.provider === 'anthropic'
@@ -497,12 +600,16 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                             <div className="model-name-line">
                               <span className="model-display-name">{m.name}</span>
                               {isActive && <span className="active-glow-pill">★ 默认选中</span>}
-                              {m.enableThinking && <span className="thinking-pill">⚡ 深度思考</span>}
+                              {m.enableThinking && (
+                                <span className="thinking-pill">⚡ 深度思考</span>
+                              )}
                             </div>
                             <div className="model-meta-line">
                               <code className="model-id-code">{m.model}</code>
                               <span className="meta-sep">•</span>
-                              <span className="model-endpoint-text" title={m.baseUrl}>{m.baseUrl}</span>
+                              <span className="model-endpoint-text" title={m.baseUrl}>
+                                {m.baseUrl}
+                              </span>
                               <span className="meta-sep">•</span>
                               {m.apiKey ? (
                                 <span className="key-state has-key">已配置密钥</span>
@@ -511,7 +618,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                               )}
                             </div>
                             {probeRes && (
-                              <div className={`probe-result-bubble ${probeRes.ok ? 'probe-success' : 'probe-error'}`}>
+                              <div
+                                className={`probe-result-bubble ${probeRes.ok ? 'probe-success' : 'probe-error'}`}
+                              >
                                 <span className="probe-icon">{probeRes.ok ? '✓' : '✕'}</span>
                                 <span className="probe-text">
                                   {probeRes.ok ? '连通性正常' : `探测异常: ${probeRes.detail}`}
@@ -576,7 +685,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                 <div className="panel-title-bar">
                   <div>
                     <h3 className="panel-h3">运行与推理参数</h3>
-                    <p className="panel-desc">精细调节模型生成多样性、Agent 自主执行深度及上下文记忆容量。</p>
+                    <p className="panel-desc">
+                      精细调节模型生成多样性、Agent 自主执行深度及上下文记忆容量。
+                    </p>
                   </div>
                 </div>
 
@@ -586,7 +697,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                       <strong>采样温度 (Temperature)</strong>
                       <span className="card-current-val">{settings.temperature}</span>
                     </div>
-                    <p className="setting-card-desc">控制输出的随机性。数值越小越精确严谨（建议编程设为 0.0 - 0.2）。</p>
+                    <p className="setting-card-desc">
+                      控制输出的随机性。数值越小越精确严谨（建议编程设为 0.0 - 0.2）。
+                    </p>
                     <input
                       type="range"
                       min="0"
@@ -594,7 +707,9 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                       step="0.05"
                       className="modern-range"
                       value={settings.temperature}
-                      onChange={(e) => setSettings({ ...settings, temperature: Number(e.target.value) || 0 })}
+                      onChange={(e) =>
+                        setSettings({ ...settings, temperature: Number(e.target.value) || 0 })
+                      }
                     />
                   </div>
 
@@ -603,30 +718,43 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                       <strong>Max Agent Steps (自主执行步数上限)</strong>
                       <span className="card-current-val">{settings.maxAgentSteps} 步</span>
                     </div>
-                    <p className="setting-card-desc">单次任务中 AI 连续执行工具（读写文件、运行命令）的最大循环次数。</p>
+                    <p className="setting-card-desc">
+                      单次任务中 AI 连续执行工具（读写文件、运行命令）的最大循环次数。
+                    </p>
                     <input
                       type="number"
                       min="5"
                       max="200"
                       className="modern-input"
                       value={settings.maxAgentSteps}
-                      onChange={(e) => setSettings({ ...settings, maxAgentSteps: Number(e.target.value) || 50 })}
+                      onChange={(e) =>
+                        setSettings({ ...settings, maxAgentSteps: Number(e.target.value) || 50 })
+                      }
                     />
                   </div>
 
                   <div className="setting-card">
                     <div className="setting-card-title">
                       <strong>上下文窗口容量 (Context Window Tokens)</strong>
-                      <span className="card-current-val">{settings.contextWindowTokens.toLocaleString()} tokens</span>
+                      <span className="card-current-val">
+                        {settings.contextWindowTokens.toLocaleString()} tokens
+                      </span>
                     </div>
-                    <p className="setting-card-desc">超出此限制将自动进行会话历史精简压缩，防止请求超出模型容量限制。</p>
+                    <p className="setting-card-desc">
+                      超出此限制将自动进行会话历史精简压缩，防止请求超出模型容量限制。
+                    </p>
                     <input
                       type="number"
                       min="4000"
                       step="4000"
                       className="modern-input"
                       value={settings.contextWindowTokens}
-                      onChange={(e) => setSettings({ ...settings, contextWindowTokens: Number(e.target.value) || 128000 })}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          contextWindowTokens: Number(e.target.value) || 128000,
+                        })
+                      }
                     />
                   </div>
                 </div>
@@ -639,11 +767,31 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                 <div className="panel-title-bar">
                   <div>
                     <h3 className="panel-h3">外观与工作流权限</h3>
-                    <p className="panel-desc">设置 IDE 视觉主题、自动保存以及 AI 工具调用执行时的授权安全策略。</p>
+                    <p className="panel-desc">
+                      设置 IDE 视觉主题、自动保存以及 AI 工具调用执行时的授权安全策略。
+                    </p>
                   </div>
                 </div>
 
                 <div className="modern-card-group">
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>界面语言 (Language)</strong>
+                    </div>
+                    <select
+                      className="modern-select"
+                      value={locale}
+                      onChange={(e) => {
+                        const l = e.target.value as 'zh' | 'en';
+                        persistLocale(l);
+                        setLocale(l);
+                      }}
+                    >
+                      <option value="zh">中文</option>
+                      <option value="en">English</option>
+                    </select>
+                  </div>
+
                   <div className="setting-card">
                     <div className="setting-card-title">
                       <strong>界面主题 (Theme)</strong>
@@ -661,7 +809,7 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                         onClick={() => setSettings({ ...settings, theme: 'light' })}
                       >
                         <div className="theme-preview light-preview" />
-                        <span>浅色雅致 Light · TSINGTEC</span>
+                        <span>浅色雅致 Light</span>
                       </div>
                     </div>
                   </div>
@@ -670,14 +818,23 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                     <div className="setting-card-title">
                       <strong>工具执行安全策略 (Permission Mode)</strong>
                     </div>
-                    <p className="setting-card-desc">控制 AI 在尝试修改本地代码或在终端执行命令时的放行准则。</p>
+                    <p className="setting-card-desc">
+                      控制 AI 在尝试修改本地代码或在终端执行命令时的放行准则。
+                    </p>
                     <select
                       className="modern-select"
                       value={settings.permissionMode}
-                      onChange={(e) => setSettings({ ...settings, permissionMode: e.target.value as PermissionMode })}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          permissionMode: e.target.value as PermissionMode,
+                        })
+                      }
                     >
                       {PERMISSION_ORDER.map((m) => (
-                        <option key={m} value={m}>{PERMISSION_MODE_LABELS[m]}</option>
+                        <option key={m} value={m}>
+                          {PERMISSION_MODE_LABELS[m]}
+                        </option>
                       ))}
                     </select>
                     <div className="perm-hint-bubble">
@@ -686,7 +843,10 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                   </div>
 
                   <div className="setting-card">
-                    <label className="modern-checkbox-label" style={{ fontSize: 13, fontWeight: 500 }}>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
                       <input
                         type="checkbox"
                         checked={settings.autoSave === true}
@@ -705,9 +865,15 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                 <div className="panel-title-bar">
                   <div>
                     <h3 className="panel-h3">Skills 技能扩展库</h3>
-                    <p className="panel-desc">兼容 Cursor frontmatter 技能协议，赋予 AI 专属的代码生成与工程工作流能力。</p>
+                    <p className="panel-desc">
+                      兼容 Cursor frontmatter 技能协议，赋予 AI 专属的代码生成与工程工作流能力。
+                    </p>
                   </div>
-                  <button type="button" className="open-skills-btn" onClick={() => void openSkills()}>
+                  <button
+                    type="button"
+                    className="open-skills-btn"
+                    onClick={() => void openSkills()}
+                  >
                     📂 打开用户 Skills 目录
                   </button>
                 </div>
@@ -724,7 +890,8 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                     <span className="empty-icon">🧩</span>
                     <p>当前未发现已安装的 Skills</p>
                     <span className="empty-sub">
-                      可将技能放置在 <code>.cursor/skills/*/SKILL.md</code> 或 <code>.deepseek/skills/*/SKILL.md</code>
+                      可将技能放置在 <code>.cursor/skills/*/SKILL.md</code> 或{' '}
+                      <code>.deepseek/skills/*/SKILL.md</code>
                     </span>
                   </div>
                 ) : (
@@ -740,6 +907,128 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* 5. 软件更新 Tab */}
+            {activeTab === 'update' && (
+              <div className="settings-panel-section">
+                <div className="panel-title-bar">
+                  <div>
+                    <h3 className="panel-h3">在线更新</h3>
+                    <p className="panel-desc">
+                      配置在线自动更新源。私有 GitHub
+                      仓库需填写访问令牌（Token），令牌仅保存在本机且加密存储。
+                    </p>
+                  </div>
+                </div>
+
+                <div className="modern-card-group">
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>更新源 (Provider)</strong>
+                    </div>
+                    <select
+                      className="modern-select"
+                      value={settings.updateFeed?.provider ?? 'github'}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          updateFeed: feedWith({
+                            provider: e.target.value as 'github' | 'generic',
+                          }),
+                        })
+                      }
+                    >
+                      <option value="github">GitHub Releases</option>
+                      <option value="generic">自建服务器 (Generic)</option>
+                    </select>
+                  </div>
+
+                  {settings.updateFeed?.provider === 'github' && (
+                    <>
+                      <div className="setting-card">
+                        <div className="setting-card-title">
+                          <strong>仓库 Owner / Repo</strong>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                          <input
+                            className="modern-input"
+                            placeholder="Owner，如 DanielCraig07"
+                            value={settings.updateFeed?.owner ?? ''}
+                            onChange={(e) =>
+                              setSettings({
+                                ...settings,
+                                updateFeed: feedWith({ owner: e.target.value }),
+                              })
+                            }
+                          />
+                          <input
+                            className="modern-input"
+                            placeholder="Repo，如 Echoly"
+                            value={settings.updateFeed?.repo ?? ''}
+                            onChange={(e) =>
+                              setSettings({
+                                ...settings,
+                                updateFeed: feedWith({ repo: e.target.value }),
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                      <div className="setting-card">
+                        <div className="setting-card-title">
+                          <strong>访问令牌 (Token)</strong>
+                        </div>
+                        <p className="setting-card-desc">
+                          用于私有仓库拉取更新（GitHub PAT，需该仓库 Contents: Read
+                          权限）。留空表示公开仓库。
+                        </p>
+                        <input
+                          className="modern-input"
+                          type="password"
+                          placeholder="ghp_… / github_pat_…"
+                          value={settings.updateFeed?.token ?? ''}
+                          onChange={(e) =>
+                            setSettings({
+                              ...settings,
+                              updateFeed: feedWith({ token: e.target.value }),
+                            })
+                          }
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {settings.updateFeed?.provider === 'generic' && (
+                    <div className="setting-card">
+                      <div className="setting-card-title">
+                        <strong>更新服务器地址</strong>
+                      </div>
+                      <input
+                        className="modern-input"
+                        placeholder="https://updates.example.com/echoly/"
+                        value={settings.updateFeed?.genericUrl ?? ''}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            updateFeed: feedWith({ genericUrl: e.target.value }),
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+
+                  <div className="setting-card">
+                    <button
+                      type="button"
+                      className="primary save-all-btn"
+                      onClick={() => void checkUpdateNow()}
+                    >
+                      🔄 立即检查更新
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </main>
@@ -775,4 +1064,3 @@ export function SettingsModal({ open, onClose, onSaved }: Props) {
     </div>
   );
 }
-

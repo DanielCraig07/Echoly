@@ -136,7 +136,11 @@ async function readFileTool(
   return { content: truncate(numbered) };
 }
 
-async function writeFileTool(ctx: ToolContext, relPath: string, content: string): Promise<ToolResult> {
+async function writeFileTool(
+  ctx: ToolContext,
+  relPath: string,
+  content: string,
+): Promise<ToolResult> {
   const backend = backendOf(ctx);
   let original = '';
   try {
@@ -222,11 +226,7 @@ async function applyPatchTool(
   };
 }
 
-async function globFiles(
-  ctx: ToolContext,
-  pattern: string,
-  maxResults = 200,
-): Promise<ToolResult> {
+async function globFiles(ctx: ToolContext, pattern: string, maxResults = 200): Promise<ToolResult> {
   const matches = await globFilesByPattern(backendOf(ctx), pattern, maxResults);
   return { content: matches.join('\n') || '(no files)' };
 }
@@ -284,6 +284,21 @@ export async function executeTool(
       case 'read_file': {
         const args = parseArgs<{ path: string; offset?: number; limit?: number }>(rawArgs);
         return await readFileTool(ctx, args.path, args.offset, args.limit);
+      }
+      case 'read_file_lines': {
+        const args = parseArgs<{ path: string; offset?: number; limit?: number }>(rawArgs);
+        const backend = backendOf(ctx);
+        const { lines, total, offset, truncated } = await backend.readFileLines(
+          args.path,
+          args.offset,
+          args.limit ?? 200,
+        );
+        const numbered = lines.map((line, i) => `${offset + i}|${line}`).join('\n');
+        return {
+          content: truncate(
+            `${numbered}${truncated ? `\n...[truncated, ${total} lines total]` : ''}`,
+          ),
+        };
       }
       case 'write_file': {
         const args = parseArgs<{ path: string; content: string }>(rawArgs);
@@ -351,7 +366,10 @@ export async function executeTool(
         }
         const kind = args.kind ?? 'other';
         const options = Array.isArray(args.options)
-          ? args.options.map((o) => String(o).trim()).filter(Boolean).slice(0, 8)
+          ? args.options
+              .map((o) => String(o).trim())
+              .filter(Boolean)
+              .slice(0, 8)
           : undefined;
         const result = await ctx.requestConfirm({
           title: args.title,

@@ -234,7 +234,10 @@ export class LlmClient {
               toolCalls[idx] = {
                 id: tc.id ?? `call_${idx}`,
                 type: 'function',
-                function: { name: tc.function?.name ?? '', arguments: tc.function?.arguments ?? '' },
+                function: {
+                  name: tc.function?.name ?? '',
+                  arguments: tc.function?.arguments ?? '',
+                },
               };
             } else {
               if (tc.id) toolCalls[idx].id = tc.id;

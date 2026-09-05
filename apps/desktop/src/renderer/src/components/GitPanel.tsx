@@ -15,7 +15,11 @@ interface Props {
   onPreviewDiff: (diff: PendingDiff | null) => void;
   onDiscardPath?: (path: string | string[]) => void;
   onOpenFile?: (path: string) => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 function statusLabel(entry: GitStatusEntry): string {
@@ -109,7 +113,9 @@ function GitTreeItemView({
             {collapsed ? '▸' : '▾'}
           </span>
           <RenderFileTreeIcon name={node.name} isDirectory={true} />
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span
+            style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
             {node.name}
           </span>
           {!staged && (
@@ -132,7 +138,14 @@ function GitTreeItemView({
               }}
               className="icon-btn"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                 <path d="M3 3v5h5" />
               </svg>
@@ -206,7 +219,14 @@ function GitTreeItemView({
           }}
           className="icon-btn"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          >
             <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
             <path d="M3 3v5h5" />
           </svg>
@@ -277,7 +297,7 @@ function analyzeGitGraph(commits: GitCommitEntry[]): GraphAnalysis {
       for (let i = 1; i < parents.length; i++) {
         const p = parents[i];
         if (!lanes.includes(p)) {
-          let empty = lanes.indexOf(null);
+          const empty = lanes.indexOf(null);
           if (empty === -1) {
             lanes.push(p);
           } else {
@@ -435,17 +455,37 @@ function GitGraphRowSvg({
       {paths}
       {isMerge ? (
         <g>
-          <circle cx={cx} cy={Y_MID} r={6.5} fill="var(--bg-main, #1e1e1e)" stroke={cColor} strokeWidth={2} />
+          <circle
+            cx={cx}
+            cy={Y_MID}
+            r={6.5}
+            fill="var(--bg-main, #1e1e1e)"
+            stroke={cColor}
+            strokeWidth={2}
+          />
           <circle cx={cx} cy={Y_MID} r={2.5} fill={cColor} />
         </g>
       ) : (
-        <circle cx={cx} cy={Y_MID} r={4.5} fill={cColor} stroke="var(--bg-main, #1e1e1e)" strokeWidth={1.5} />
+        <circle
+          cx={cx}
+          cy={Y_MID}
+          r={4.5}
+          fill={cColor}
+          stroke="var(--bg-main, #1e1e1e)"
+          strokeWidth={1.5}
+        />
       )}
     </svg>
   );
 }
 
-export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFile, onShowToast }: Props) {
+export function GitPanel({
+  workspaceInfo,
+  onPreviewDiff,
+  onDiscardPath,
+  onOpenFile,
+  onShowToast,
+}: Props) {
   const [status, setStatus] = useState<GitStatusResult | null>(null);
   const [branches, setBranches] = useState<GitBranchInfo[]>([]);
   const [commits, setCommits] = useState<GitCommitEntry[]>([]);
@@ -568,7 +608,7 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
   const runGitAction = async (
     title: string,
     action: () => Promise<{ ok: boolean; detail?: string }>,
-    successMsg?: string
+    successMsg?: string,
   ) => {
     setShowMoreMenu(false);
     onShowToast?.(`正在执行: ${title}...`, undefined, 'info');
@@ -759,7 +799,14 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
             color: 'var(--accent, #6a4da2)',
           }}
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          >
             <circle cx="18" cy="18" r="3" />
             <circle cx="6" cy="6" r="3" />
             <path d="M6 9v12" />
@@ -776,7 +823,9 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 220 }}>
+        <div
+          style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 220 }}
+        >
           <button
             type="button"
             disabled={busy}
@@ -845,7 +894,17 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
   const untracked = status?.entries.filter((f: GitStatusEntry) => f.untracked) || [];
 
   return (
-    <div className="git-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, position: 'relative' }}>
+    <div
+      className="git-panel"
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+        position: 'relative',
+      }}
+    >
       {/* 1. Header Line - Height 30px matching Search & Explorer */}
       <div
         className="git-panel-header"
@@ -859,8 +918,21 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
           alignItems: 'center',
         }}
       >
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>▾</span> 源代码
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            color: 'var(--text)',
+            letterSpacing: '0.05em',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>
+            ▾
+          </span>{' '}
+          源代码
         </div>
 
         {/* Header Actions: 1. Tree structure toggle, 2. Refresh, 3. More (...) dropdown */}
@@ -879,17 +951,35 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
             }}
           >
             {displayMode === 'tree' ? (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M4 4h4v4H4zM12 16h4v4h-4zM12 8h8M12 8v12M8 6h4" />
               </svg>
             ) : (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="8" y1="6" x2="21" y2="6"/>
-                <line x1="8" y1="12" x2="21" y2="12"/>
-                <line x1="8" y1="18" x2="21" y2="18"/>
-                <line x1="3" y1="6" x2="3.01" y2="6"/>
-                <line x1="3" y1="12" x2="3.01" y2="12"/>
-                <line x1="3" y1="18" x2="3.01" y2="18"/>
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="8" y1="6" x2="21" y2="6" />
+                <line x1="8" y1="12" x2="21" y2="12" />
+                <line x1="8" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" />
+                <line x1="3" y1="12" x2="3.01" y2="12" />
+                <line x1="3" y1="18" x2="3.01" y2="18" />
               </svg>
             )}
           </button>
@@ -897,9 +987,22 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
             type="button"
             title="刷新"
             onClick={() => void refresh()}
-            style={{ padding: 4, background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+            style={{
+              padding: 4,
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
               <polyline points="23 4 23 10 17 10" />
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>
@@ -909,7 +1012,14 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
             type="button"
             title="更多操作"
             onClick={() => setShowMoreMenu((v) => !v)}
-            style={{ padding: 4, background: showMoreMenu ? 'var(--bg-hover)' : 'transparent', border: 'none', color: 'var(--muted)', borderRadius: 4, cursor: 'pointer' }}
+            style={{
+              padding: 4,
+              background: showMoreMenu ? 'var(--bg-hover)' : 'transparent',
+              border: 'none',
+              color: 'var(--muted)',
+              borderRadius: 4,
+              cursor: 'pointer',
+            }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
@@ -941,7 +1051,12 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
           <div
             className="search-result-item"
             onClick={() => setDisplayMode((m) => (m === 'tree' ? 'list' : 'tree'))}
-            style={{ padding: '6px 12px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
           >
             <span>查看和排序 ({displayMode === 'tree' ? '树状' : '列表'})</span>
             <span>▸</span>
@@ -973,7 +1088,10 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
               void runGitAction('Git 克隆', async () => {
                 const url = prompt('请输入 Git 远程仓库地址 (URL):');
                 if (!url?.trim()) return { ok: false, detail: '取消输入' };
-                return window.ide.cloneRepo({ url: url.trim(), parentDir: workspaceInfo?.root || '' });
+                return window.ide.cloneRepo({
+                  url: url.trim(),
+                  parentDir: workspaceInfo?.root || '',
+                });
               })
             }
             style={{ padding: '6px 12px', cursor: 'pointer' }}
@@ -1022,7 +1140,12 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
                 return window.ide.gitCommit(msg);
               })
             }
-            style={{ padding: '6px 12px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
           >
             <span>提交</span>
             <span>▸</span>
@@ -1044,7 +1167,12 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
                 return { ok: true, detail: '已放弃所有本地修改' };
               })
             }
-            style={{ padding: '6px 12px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
           >
             <span>更改 (放弃所有修改)</span>
             <span>▸</span>
@@ -1060,7 +1188,12 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
                 return window.ide.gitPush();
               })
             }
-            style={{ padding: '6px 12px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
           >
             <span>拉取，推送</span>
             <span>▸</span>
@@ -1076,7 +1209,12 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
                 return window.ide.gitCreateBranch(b.trim(), true);
               })
             }
-            style={{ padding: '6px 12px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
           >
             <span>分支 (新建分支)</span>
             <span>▸</span>
@@ -1087,10 +1225,18 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
             className="search-result-item"
             onClick={() =>
               void runGitAction('远程仓库信息', async () => {
-                return { ok: true, detail: `当前跟踪远程仓库: origin (${branches[0]?.name || 'main'})` };
+                return {
+                  ok: true,
+                  detail: `当前跟踪远程仓库: origin (${branches[0]?.name || 'main'})`,
+                };
               })
             }
-            style={{ padding: '6px 12px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
           >
             <span>远程</span>
             <span>▸</span>
@@ -1107,7 +1253,12 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
                 return { ok: true, detail: `已暂存 ${entries.length} 个文件的修改` };
               })
             }
-            style={{ padding: '6px 12px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
           >
             <span>存储 (Stash)</span>
             <span>▸</span>
@@ -1123,7 +1274,12 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
                 return { ok: true, detail: `创建标签 ${tag.trim()} 成功` };
               })
             }
-            style={{ padding: '6px 12px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
           >
             <span>标记 (Tag)</span>
             <span>▸</span>
@@ -1136,10 +1292,15 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
               onShowToast?.(
                 'Git 工作树状态',
                 `当前工作树干净与否: ${status?.entries.length ? `有 ${status.entries.length} 项变动` : '干净 (Clean)'}`,
-                'info'
+                'info',
               )
             }
-            style={{ padding: '6px 12px', display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+            style={{
+              padding: '6px 12px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+            }}
           >
             <span>工作树</span>
             <span>▸</span>
@@ -1155,7 +1316,7 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
               onShowToast?.(
                 'GIT 输出日志',
                 `当前 HEAD: ${status?.branch || 'main'} | 未暂存: ${working.length} | 已暂存: ${staged.length}`,
-                'info'
+                'info',
               );
             }}
             style={{ padding: '6px 12px', cursor: 'pointer' }}
@@ -1166,7 +1327,15 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
       )}
 
       {/* 3. Commit Input Box */}
-      <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--border)' }}>
+      <div
+        style={{
+          padding: '8px 12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
         <div style={{ position: 'relative' }}>
           <input
             className="git-commit-input"
@@ -1197,7 +1366,13 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
               }
             }}
           />
-          <svg style={{ position: 'absolute', right: 8, top: 8, color: 'var(--muted)' }} width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <svg
+            style={{ position: 'absolute', right: 8, top: 8, color: 'var(--muted)' }}
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+          >
             <path d="M8 0l2.3 5.7L16 8l-5.7 2.3L8 16l-2.3-5.7L0 8l5.7-2.3z" />
           </svg>
         </div>
@@ -1307,7 +1482,14 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
 
       {/* Error Message Alert */}
       {error && (
-        <div style={{ padding: '6px 12px', background: 'rgba(244, 67, 54, 0.1)', color: '#f44336', fontSize: 11 }}>
+        <div
+          style={{
+            padding: '6px 12px',
+            background: 'rgba(244, 67, 54, 0.1)',
+            color: '#f44336',
+            fontSize: 11,
+          }}
+        >
           {error}
         </div>
       )}
@@ -1317,207 +1499,370 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
         {/* Staged Section */}
         {staged.length > 0 && (
           <div style={{ borderBottom: '1px solid var(--border)' }}>
-            <div style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, color: 'var(--muted)', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div
+              style={{
+                padding: '4px 12px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--muted)',
+                background: 'rgba(255,255,255,0.02)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
               <span>已暂存的更改 ({staged.length})</span>
               <button
                 type="button"
-                onClick={() => void runOp(() => window.ide.gitUnstage(staged.map((e: GitStatusEntry) => e.path)))}
-                style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer' }}
+                onClick={() =>
+                  void runOp(() => window.ide.gitUnstage(staged.map((e: GitStatusEntry) => e.path)))
+                }
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--accent)',
+                  fontSize: 11,
+                  cursor: 'pointer',
+                }}
               >
                 取消暂存全部
               </button>
             </div>
-            {displayMode === 'tree' ? (
-              buildGitTree(staged).map((node) => (
-                <GitTreeItemView
-                  key={node.path}
-                  node={node}
-                  staged={true}
-                  onPreview={(f) => void preview(f, true)}
-                  onDiscard={() => {}}
-                />
-              ))
-            ) : (
-              staged.map((f: GitStatusEntry) => (
-                <div
-                  key={f.path}
-                  onClick={() => void preview(f, true)}
-                  style={{
-                    height: 24,
-                    padding: '0 12px 0 20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 12,
-                    cursor: 'pointer',
-                    boxSizing: 'border-box',
-                  }}
-                  className="search-result-item"
-                >
-                  <RenderFileTreeIcon name={f.path.split('/').pop() || f.path} isDirectory={false} />
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.path}</span>
-                  <span style={{ color: '#4caf50', fontSize: 11, fontWeight: 'bold' }}>{statusLabel(f)}</span>
-                </div>
-              ))
-            )}
+            {displayMode === 'tree'
+              ? buildGitTree(staged).map((node) => (
+                  <GitTreeItemView
+                    key={node.path}
+                    node={node}
+                    staged={true}
+                    onPreview={(f) => void preview(f, true)}
+                    onDiscard={() => {}}
+                  />
+                ))
+              : staged.map((f: GitStatusEntry) => (
+                  <div
+                    key={f.path}
+                    onClick={() => void preview(f, true)}
+                    style={{
+                      height: 24,
+                      padding: '0 12px 0 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      boxSizing: 'border-box',
+                    }}
+                    className="search-result-item"
+                  >
+                    <RenderFileTreeIcon
+                      name={f.path.split('/').pop() || f.path}
+                      isDirectory={false}
+                    />
+                    <span
+                      style={{
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {f.path}
+                    </span>
+                    <span style={{ color: '#4caf50', fontSize: 11, fontWeight: 'bold' }}>
+                      {statusLabel(f)}
+                    </span>
+                  </div>
+                ))}
           </div>
         )}
 
         {/* Working Section */}
         {working.length > 0 && (
           <div style={{ borderBottom: '1px solid var(--border)' }}>
-            <div style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, color: 'var(--muted)', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div
+              style={{
+                padding: '4px 12px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--muted)',
+                background: 'rgba(255,255,255,0.02)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
               <span>更改 ({working.length})</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button
                   type="button"
                   title="放弃所有更改"
                   onClick={() => void handleDiscard(working.map((e: GitStatusEntry) => e.path))}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2, padding: 4, borderRadius: 4 }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--muted)',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    padding: 4,
+                    borderRadius: 4,
+                  }}
                   className="icon-btn"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                     <path d="M3 3v5h5" />
                   </svg>
                 </button>
                 <button
                   type="button"
-                  onClick={() => void runOp(() => window.ide.gitStage(working.map((e: GitStatusEntry) => e.path)))}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer' }}
+                  onClick={() =>
+                    void runOp(() =>
+                      window.ide.gitStage(working.map((e: GitStatusEntry) => e.path)),
+                    )
+                  }
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--accent)',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                  }}
                 >
                   暂存全部
                 </button>
               </div>
             </div>
 
-            {displayMode === 'tree' ? (
-              buildGitTree(working).map((node) => (
-                <GitTreeItemView
-                  key={node.path}
-                  node={node}
-                  staged={false}
-                  onPreview={(f) => void preview(f, false)}
-                  onDiscard={(p) => handleDiscard(p)}
-                />
-              ))
-            ) : (
-              working.map((f: GitStatusEntry) => (
-                <div
-                  key={f.path}
-                  onClick={() => void preview(f, false)}
-                  style={{
-                    height: 24,
-                    padding: '0 12px 0 20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 12,
-                    cursor: 'pointer',
-                    boxSizing: 'border-box',
-                  }}
-                  className="search-result-item"
-                >
-                  <RenderFileTreeIcon name={f.path.split('/').pop() || f.path} isDirectory={false} />
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.path}</span>
-                  <span style={{ color: '#e5a54b', fontSize: 11, fontWeight: 'bold' }}>{statusLabel(f)}</span>
-                  <button
-                    type="button"
-                    title="放弃更改"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDiscard(f.path);
+            {displayMode === 'tree'
+              ? buildGitTree(working).map((node) => (
+                  <GitTreeItemView
+                    key={node.path}
+                    node={node}
+                    staged={false}
+                    onPreview={(f) => void preview(f, false)}
+                    onDiscard={(p) => handleDiscard(p)}
+                  />
+                ))
+              : working.map((f: GitStatusEntry) => (
+                  <div
+                    key={f.path}
+                    onClick={() => void preview(f, false)}
+                    style={{
+                      height: 24,
+                      padding: '0 12px 0 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      boxSizing: 'border-box',
                     }}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'flex', alignItems: 'center' }}
-                    className="icon-btn"
+                    className="search-result-item"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                      <path d="M3 3v5h5" />
-                    </svg>
-                  </button>
-                </div>
-              ))
-            )}
+                    <RenderFileTreeIcon
+                      name={f.path.split('/').pop() || f.path}
+                      isDirectory={false}
+                    />
+                    <span
+                      style={{
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {f.path}
+                    </span>
+                    <span style={{ color: '#e5a54b', fontSize: 11, fontWeight: 'bold' }}>
+                      {statusLabel(f)}
+                    </span>
+                    <button
+                      type="button"
+                      title="放弃更改"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDiscard(f.path);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--muted)',
+                        cursor: 'pointer',
+                        padding: 4,
+                        borderRadius: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      className="icon-btn"
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                      >
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                        <path d="M3 3v5h5" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
           </div>
         )}
 
         {/* Untracked Section */}
         {untracked.length > 0 && (
           <div style={{ borderBottom: '1px solid var(--border)' }}>
-            <div style={{ padding: '4px 12px', fontSize: 11, fontWeight: 600, color: 'var(--muted)', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div
+              style={{
+                padding: '4px 12px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--muted)',
+                background: 'rgba(255,255,255,0.02)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
               <span>未跟踪的文件 ({untracked.length})</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button
                   type="button"
                   title="放弃所有未跟踪更改"
                   onClick={() => void handleDiscard(untracked.map((e: GitStatusEntry) => e.path))}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2, padding: 4, borderRadius: 4 }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--muted)',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    padding: 4,
+                    borderRadius: 4,
+                  }}
                   className="icon-btn"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                     <path d="M3 3v5h5" />
                   </svg>
                 </button>
                 <button
                   type="button"
-                  onClick={() => void runOp(() => window.ide.gitStage(untracked.map((e: GitStatusEntry) => e.path)))}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer' }}
+                  onClick={() =>
+                    void runOp(() =>
+                      window.ide.gitStage(untracked.map((e: GitStatusEntry) => e.path)),
+                    )
+                  }
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--accent)',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                  }}
                 >
                   暂存全部
                 </button>
               </div>
             </div>
 
-            {displayMode === 'tree' ? (
-              buildGitTree(untracked).map((node) => (
-                <GitTreeItemView
-                  key={node.path}
-                  node={node}
-                  staged={false}
-                  onPreview={(f) => void preview(f, false)}
-                  onDiscard={(p) => handleDiscard(p)}
-                />
-              ))
-            ) : (
-              untracked.map((f: GitStatusEntry) => (
-                <div
-                  key={f.path}
-                  onClick={() => void preview(f, false)}
-                  style={{
-                    height: 24,
-                    padding: '0 12px 0 20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 12,
-                    cursor: 'pointer',
-                    boxSizing: 'border-box',
-                  }}
-                  className="search-result-item"
-                >
-                  <RenderFileTreeIcon name={f.path.split('/').pop() || f.path} isDirectory={false} />
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.path}</span>
-                  <span style={{ color: '#888', fontSize: 11, fontWeight: 'bold' }}>U</span>
-                  <button
-                    type="button"
-                    title="放弃更改"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDiscard(f.path);
+            {displayMode === 'tree'
+              ? buildGitTree(untracked).map((node) => (
+                  <GitTreeItemView
+                    key={node.path}
+                    node={node}
+                    staged={false}
+                    onPreview={(f) => void preview(f, false)}
+                    onDiscard={(p) => handleDiscard(p)}
+                  />
+                ))
+              : untracked.map((f: GitStatusEntry) => (
+                  <div
+                    key={f.path}
+                    onClick={() => void preview(f, false)}
+                    style={{
+                      height: 24,
+                      padding: '0 12px 0 20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      boxSizing: 'border-box',
                     }}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4, borderRadius: 4, display: 'flex', alignItems: 'center' }}
-                    className="icon-btn"
+                    className="search-result-item"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                      <path d="M3 3v5h5" />
-                    </svg>
-                  </button>
-                </div>
-              ))
-            )}
+                    <RenderFileTreeIcon
+                      name={f.path.split('/').pop() || f.path}
+                      isDirectory={false}
+                    />
+                    <span
+                      style={{
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {f.path}
+                    </span>
+                    <span style={{ color: '#888', fontSize: 11, fontWeight: 'bold' }}>U</span>
+                    <button
+                      type="button"
+                      title="放弃更改"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDiscard(f.path);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--muted)',
+                        cursor: 'pointer',
+                        padding: 4,
+                        borderRadius: 4,
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      className="icon-btn"
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                      >
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                        <path d="M3 3v5h5" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
           </div>
         )}
       </div>
@@ -1531,7 +1876,14 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
       />
 
       {/* 6. Resizable 图形 Section - Git Commit Graph (VS Code Style) */}
-      <div style={{ height: isGraphCollapsed ? 'auto' : graphHeight, display: 'flex', flexDirection: 'column', minHeight: isGraphCollapsed ? 'auto' : 80 }}>
+      <div
+        style={{
+          height: isGraphCollapsed ? 'auto' : graphHeight,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: isGraphCollapsed ? 'auto' : 80,
+        }}
+      >
         <div
           onClick={() => setIsGraphCollapsed((v) => !v)}
           style={{
@@ -1555,18 +1907,51 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
               {isGraphCollapsed ? '›' : '▾'}
             </span>
             <span style={{ color: 'var(--text)', fontWeight: 600 }}>图形</span>
-            <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>({commits.length})</span>
+            <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
+              ({commits.length})
+            </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }} onClick={(e) => e.stopPropagation()}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'pointer', color: 'var(--accent)' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><line x1="3" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="21" y2="12"/></svg>
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+                cursor: 'pointer',
+                color: 'var(--accent)',
+              }}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <line x1="3" y1="12" x2="9" y2="12" />
+                <line x1="15" y1="12" x2="21" y2="12" />
+              </svg>
               自动
             </span>
             <button
               type="button"
               onClick={() => void refresh()}
               title="刷新提交图谱"
-              style={{ background: 'transparent', border: 'none', padding: 0, margin: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'inherit' }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                margin: 0,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                color: 'inherit',
+              }}
             >
               <svg
                 width="14"
@@ -1576,15 +1961,24 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
                 stroke="currentColor"
                 strokeWidth="1.5"
               >
-                <polyline points="23 4 23 10 17 10"/>
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
               </svg>
             </button>
           </div>
         </div>
 
         {!isGraphCollapsed && (
-          <div style={{ flex: 1, overflowY: 'auto', padding: '2px 0', fontSize: 12, display: 'flex', flexDirection: 'column' }}>
+          <div
+            style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '2px 0',
+              fontSize: 12,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
             {commits.length > 0 ? (
               commits.map((c, i) => {
                 const isSelected = selectedCommitHash === c.hash;
@@ -1691,14 +2085,31 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
                           marginBottom: 4,
                         }}
                       >
-                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--muted)',
+                            fontWeight: 600,
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
                           <span>提交的文件变更明细 ({selectedCommitFiles.length}):</span>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, opacity: 0.7 }}>{c.shortHash}</span>
+                          <span
+                            style={{ fontFamily: 'var(--font-mono)', fontSize: 10, opacity: 0.7 }}
+                          >
+                            {c.shortHash}
+                          </span>
                         </div>
                         {loadingDetails ? (
-                          <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>加载文件明细中...</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>
+                            加载文件明细中...
+                          </div>
                         ) : selectedCommitFiles.length === 0 ? (
-                          <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>暂无文件变更</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>
+                            暂无文件变更
+                          </div>
                         ) : (
                           selectedCommitFiles.map((f: GitCommitFileChange) => (
                             <div
@@ -1720,13 +2131,29 @@ export function GitPanel({ workspaceInfo, onPreviewDiff, onDiscardPath, onOpenFi
                               className="search-result-item"
                               title="点击查看对比 Diff"
                             >
-                              <RenderFileTreeIcon name={f.path.split('/').pop() || f.path} isDirectory={false} />
-                              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }}>
+                              <RenderFileTreeIcon
+                                name={f.path.split('/').pop() || f.path}
+                                isDirectory={false}
+                              />
+                              <span
+                                style={{
+                                  flex: 1,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  color: 'var(--text)',
+                                }}
+                              >
                                 {f.path}
                               </span>
                               <span
                                 style={{
-                                  color: f.status === 'A' ? '#4caf50' : f.status === 'D' ? '#f44336' : '#e5a54b',
+                                  color:
+                                    f.status === 'A'
+                                      ? '#4caf50'
+                                      : f.status === 'D'
+                                        ? '#f44336'
+                                        : '#e5a54b',
                                   fontWeight: 'bold',
                                   fontSize: 11,
                                 }}

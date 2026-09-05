@@ -61,9 +61,7 @@ export async function discoverSkills(options: {
   const found: LoadedSkill[] = [];
   if (options.workspaceRoot) {
     for (const rel of ['.cursor/skills', '.deepseek/skills']) {
-      found.push(
-        ...(await loadSkillsFromRoot(path.join(options.workspaceRoot, rel), 'workspace')),
-      );
+      found.push(...(await loadSkillsFromRoot(path.join(options.workspaceRoot, rel), 'workspace')));
     }
   }
   if (options.userSkillsDir) {
@@ -105,7 +103,10 @@ export function selectSkillsForPrompt(
     return { skill, score };
   });
   scored.sort((a, b) => b.score - a.score);
-  const picked = scored.filter((s) => s.score > 0).slice(0, max).map((s) => s.skill);
+  const picked = scored
+    .filter((s) => s.score > 0)
+    .slice(0, max)
+    .map((s) => s.skill);
   if (picked.length) return picked;
   return skills.slice(0, Math.min(1, max));
 }

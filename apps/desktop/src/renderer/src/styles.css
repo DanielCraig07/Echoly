@@ -47,13 +47,13 @@
   --shadow-jump: 0 4px 16px rgba(0, 0, 0, 0.4);
   --overlay: rgba(0, 0, 0, 0.6);
   --usage-fill: var(--accent);
-  --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --font-ui: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
   --ui-font-size: 12px;
   color-scheme: dark;
 }
 
-/* TSINGTEC Light · 清华紫 + 白，蓝色点缀 */
+/* Echoly Light · 清华紫 + 白，蓝色点缀 */
 [data-theme='light'] {
   --bg: #f7f5fb;
   --bg-elevated: #ffffff;
@@ -339,7 +339,8 @@ textarea:focus {
   margin: 2px 0;
 }
 
-.titlebar-menu-item:hover, .titlebar-menu-item.active {
+.titlebar-menu-item:hover,
+.titlebar-menu-item.active {
   background: var(--bg-hover);
 }
 
@@ -431,8 +432,12 @@ textarea:focus {
    Modern Command Palette (全局动作指令面板模态浮层)
    ========================================================================== */
 @keyframes cmdFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes cmdSlideDown {
@@ -467,7 +472,10 @@ textarea:focus {
   background: linear-gradient(180deg, #1c1d26 0%, #15161c 100%);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 14px;
-  box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06), 0 0 24px rgba(168, 85, 247, 0.1);
+  box-shadow:
+    0 24px 60px -10px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 0 24px rgba(168, 85, 247, 0.1);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -988,7 +996,6 @@ textarea:focus {
   color: var(--muted);
 }
 
-
 .git-actions button,
 .git-commit-box button,
 .git-section-title button,
@@ -1262,7 +1269,9 @@ body.resizing.resizing-row {
 
 .file-node-dir.active {
   background-color: var(--bg-hover) !important;
-  box-shadow: inset 2px 0 0 var(--accent), 0 2px 4px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    inset 2px 0 0 var(--accent),
+    0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .tree-indent-guide {
@@ -1290,8 +1299,6 @@ body.resizing.resizing-row {
 .file-node.active {
   box-shadow: inset 2px 0 0 var(--accent);
 }
-
-
 
 .file-inline-edit {
   cursor: default;
@@ -1454,6 +1461,38 @@ body.resizing.resizing-row {
   background: var(--bg-editor);
 }
 
+/* ── 大文件占位提示：文件过大未加载全文 ── */
+.large-file-placeholder {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: var(--bg-editor);
+  text-align: center;
+}
+
+.large-file-icon {
+  font-size: 48px;
+  opacity: 0.7;
+}
+
+.large-file-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.large-file-hint {
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
 .image-preview-stage {
   flex: 1;
   min-height: 0;
@@ -1468,7 +1507,11 @@ body.resizing.resizing-row {
     linear-gradient(45deg, transparent 75%, var(--bg-hover) 75%),
     linear-gradient(-45deg, transparent 75%, var(--bg-hover) 75%);
   background-size: 16px 16px;
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
   background-color: var(--bg-editor);
 }
 
@@ -1662,7 +1705,9 @@ body.resizing.resizing-row {
   padding: 10px 14px 14px;
   border-radius: 12px;
   box-shadow: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .msg.assistant:hover {
@@ -1742,7 +1787,9 @@ body.resizing.resizing-row {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .msg-action-btn:hover {
@@ -1880,7 +1927,10 @@ body.resizing.resizing-row {
   cursor: pointer;
   border-radius: 6px;
   max-width: 100%;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .reasoning-step-toggle:hover {
@@ -1938,12 +1988,24 @@ body.resizing.resizing-row {
   animation: reasoningPulse 1.4s infinite;
 }
 
-.ellipsis-dot:nth-child(2) { animation-delay: 0.2s; }
-.ellipsis-dot:nth-child(3) { animation-delay: 0.4s; }
+.ellipsis-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.ellipsis-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes reasoningPulse {
-  0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
-  40% { opacity: 0.7; transform: scale(1); }
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
 }
 
 .reasoning-step-body {
@@ -1970,8 +2032,14 @@ body.resizing.resizing-row {
 }
 
 @keyframes reasoningBodyIn {
-  from { opacity: 0; transform: translateY(-2px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ── Tool call card (esp. run_terminal) ── */
@@ -2043,7 +2111,9 @@ body.resizing.resizing-row {
 }
 
 @keyframes toolSpin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .tool-call-title {
@@ -2238,7 +2308,6 @@ body.resizing.resizing-row {
   max-height: 240px;
 }
 
-
 /* ── Worked-for-group: collapsible summary of a step's tool calls + reasoning ── */
 .worked-for-group {
   margin: 6px 0 10px;
@@ -2257,7 +2326,9 @@ body.resizing.resizing-row {
   font-weight: 500;
   cursor: pointer;
   user-select: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .worked-for-toggle:hover {
@@ -2280,8 +2351,12 @@ body.resizing.resizing-row {
 }
 
 @keyframes workedForSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .worked-for-chevron {
@@ -2295,7 +2370,6 @@ body.resizing.resizing-row {
   border-left: 2px solid var(--border);
   animation: reasoningBodyIn 0.15s ease-out;
 }
-
 
 /* ── Think / reasoning block (<think> tags inside a final markdown message) ── */
 /* Visually aligned with .reasoning-step so "thinking" always looks the same */
@@ -2316,7 +2390,10 @@ body.resizing.resizing-row {
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .think-toggle:hover {
@@ -2352,12 +2429,10 @@ body.resizing.resizing-row {
   animation: reasoningBodyIn 0.15s ease-out;
 }
 
-
 /* Hide <hr> elements - model reasoning uses --- as separators which become unwanted lines */
 .md-body hr {
   display: none;
 }
-
 
 .tool-card {
   border: 1px solid var(--border-tool);
@@ -2464,7 +2539,10 @@ body.resizing.resizing-row {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .chat-input-box:focus-within {
@@ -2492,7 +2570,6 @@ body.resizing.resizing-row {
   gap: 8px;
   align-items: center;
 }
-
 
 .status-pill {
   font-size: 12px;
@@ -3224,14 +3301,11 @@ body.resizing.resizing-row {
   margin-right: 4px;
 }
 
-
-
 .editor-breadcrumb .crumb-sep {
   opacity: 0.4;
   font-size: 10px;
   margin: 0 2px;
 }
-
 
 .explorer-wrapper {
   display: flex;
@@ -3372,7 +3446,6 @@ body.resizing.resizing-row {
   height: 100%;
 }
 
-
 .diff-item {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -3426,7 +3499,9 @@ body.resizing.resizing-row {
   background: #181920;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3618,7 +3693,9 @@ body.resizing.resizing-row {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 16px rgba(168, 85, 247, 0.08);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    0 0 16px rgba(168, 85, 247, 0.08);
 }
 
 .model-edit-box-header {
@@ -3715,7 +3792,7 @@ body.resizing.resizing-row {
   user-select: none;
 }
 
-.modern-checkbox-label input[type="checkbox"] {
+.modern-checkbox-label input[type='checkbox'] {
   width: 15px;
   height: 15px;
   cursor: pointer;
@@ -4252,7 +4329,9 @@ body.resizing.resizing-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .settings-close-btn:hover {
@@ -4324,7 +4403,7 @@ body.resizing.resizing-row {
   user-select: none;
 }
 
-.checkbox-label input[type="checkbox"] {
+.checkbox-label input[type='checkbox'] {
   width: 18px;
   height: 18px;
   cursor: pointer;
@@ -4691,8 +4770,11 @@ body.resizing.resizing-row {
   overflow: auto;
   padding: 48px 40px 64px;
   box-sizing: border-box;
-  background:
-    radial-gradient(ellipse 80% 50% at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%);
+  background: radial-gradient(
+    ellipse 80% 50% at 50% 0%,
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    transparent 70%
+  );
 }
 
 .welcome-view-inner {
@@ -4743,7 +4825,9 @@ body.resizing.resizing-row {
   border-radius: 8px;
   color: var(--text);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .welcome-choice-row:hover {
@@ -5054,7 +5138,6 @@ body.resizing.resizing-row {
   background: rgba(244, 67, 54, 0.15);
 }
 
-
 .probe-ok {
   color: var(--ok);
   font-size: 12px;
@@ -5134,7 +5217,6 @@ body.resizing.resizing-row {
   color: #fff;
 }
 
-
 /* ── Session Modal (弹窗) ─────────────────────────────────── */
 .modal-overlay {
   position: fixed;
@@ -5163,13 +5245,23 @@ body.resizing.resizing-row {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes scaleUp {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .session-modal-header {
@@ -5509,7 +5601,6 @@ body.resizing.resizing-row {
   width: 100%;
 }
 
-
 /* ── Chat Session Tabs (多会话 Tab 栏) ────────────────────────── */
 .chat-tabs-bar {
   display: flex;
@@ -5566,9 +5657,15 @@ body.resizing.resizing-row {
 }
 
 @keyframes pulse {
-  0% { opacity: 0.4; }
-  50% { opacity: 1; }
-  100% { opacity: 0.4; }
+  0% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.4;
+  }
 }
 
 .chat-tab-close {
@@ -5643,8 +5740,13 @@ body.resizing.resizing-row {
   padding: 3px 8px;
   cursor: pointer;
   user-select: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 8px var(--accent-soft, rgba(76, 141, 255, 0.2));
-  transition: transform 0.12s ease, box-shadow 0.15s ease, background 0.15s ease;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    0 0 8px var(--accent-soft, rgba(76, 141, 255, 0.2));
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
   animation: fadeInPop 0.12s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: auto;
 }
@@ -5726,7 +5828,9 @@ body.resizing.resizing-row {
 .monaco-editor .margin-view-overlays .git-line-modified,
 .monaco-editor .margin-view-overlays .git-line-deleted {
   cursor: pointer !important;
-  transition: width 0.15s ease, transform 0.15s ease !important;
+  transition:
+    width 0.15s ease,
+    transform 0.15s ease !important;
 }
 
 .monaco-editor .margin-view-overlays .cgmr:hover,
@@ -5796,14 +5900,10 @@ body.resizing.resizing-row {
   background: rgba(255, 255, 255, 0.45) !important;
 }
 
-
-
-
 .chat-tab-close:hover {
   color: var(--fg);
   background: rgba(255, 255, 255, 0.15);
 }
-
 
 .plan-panel {
   margin: 0 12px 8px;
@@ -6212,7 +6312,9 @@ body.resizing.resizing-row {
   border-radius: 8px;
   color: var(--text);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .open-ws-choice:hover {
@@ -6389,7 +6491,9 @@ body.resizing.resizing-row {
   margin-left: 3px;
   border-radius: 2px;
   cursor: pointer !important;
-  transition: width 0.15s ease, margin-left 0.15s ease !important;
+  transition:
+    width 0.15s ease,
+    margin-left 0.15s ease !important;
 }
 
 .git-gutter-deleted {
@@ -6398,7 +6502,9 @@ body.resizing.resizing-row {
   margin-left: 3px;
   border-radius: 2px;
   cursor: pointer !important;
-  transition: width 0.15s ease, margin-left 0.15s ease !important;
+  transition:
+    width 0.15s ease,
+    margin-left 0.15s ease !important;
 }
 
 .git-gutter-modified {
@@ -6407,7 +6513,9 @@ body.resizing.resizing-row {
   margin-left: 3px;
   border-radius: 2px;
   cursor: pointer !important;
-  transition: width 0.15s ease, margin-left 0.15s ease !important;
+  transition:
+    width 0.15s ease,
+    margin-left 0.15s ease !important;
 }
 
 .git-gutter-added:hover,
@@ -6436,7 +6544,7 @@ body.resizing.resizing-row {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -6483,8 +6591,12 @@ body.resizing.resizing-row {
   font-weight: bold;
   text-align: center;
 }
-.git-inline-diff-line.add .git-inline-diff-gutter { color: #3fb950; }
-.git-inline-diff-line.del .git-inline-diff-gutter { color: #f85149; }
+.git-inline-diff-line.add .git-inline-diff-gutter {
+  color: #3fb950;
+}
+.git-inline-diff-line.del .git-inline-diff-gutter {
+  color: #f85149;
+}
 .git-inline-diff-num {
   width: 30px;
   flex-shrink: 0;
@@ -6610,7 +6722,9 @@ body.resizing.resizing-row {
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 4px;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 
 .chat-diff-action-right .btn-reject-all:hover {
@@ -6827,7 +6941,9 @@ body.resizing.resizing-row {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .error-message {
@@ -6901,8 +7017,14 @@ body.resizing.resizing-row {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .message-avatar {
@@ -6975,7 +7097,9 @@ body.resizing.resizing-row {
 }
 
 @keyframes bounce {
-  0%, 80%, 100% {
+  0%,
+  80%,
+  100% {
     transform: scale(0);
   }
   40% {
@@ -7160,7 +7284,9 @@ body.resizing.resizing-row {
   max-width: 180px;
   max-height: 130px;
   background: rgba(0, 0, 0, 0.25);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .chat-msg-attachment-img-card:hover {
@@ -7309,9 +7435,15 @@ body.resizing.resizing-row {
   display: inline-block;
 }
 
-.terminal-exec-dots .dot-red { background: #ff5f56; }
-.terminal-exec-dots .dot-yellow { background: #ffbd2e; }
-.terminal-exec-dots .dot-green { background: #27c93f; }
+.terminal-exec-dots .dot-red {
+  background: #ff5f56;
+}
+.terminal-exec-dots .dot-yellow {
+  background: #ffbd2e;
+}
+.terminal-exec-dots .dot-green {
+  background: #27c93f;
+}
 
 .terminal-exec-title {
   margin-left: 6px;
@@ -7450,8 +7582,13 @@ body.resizing.resizing-row {
 }
 
 @keyframes termCursorBlink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 .terminal-empty-text {
@@ -8348,6 +8485,3 @@ body.resizing.resizing-row {
   user-select: none;
   pointer-events: none;
 }
-
-
-

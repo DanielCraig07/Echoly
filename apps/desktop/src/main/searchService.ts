@@ -18,7 +18,7 @@ export class SearchService {
   private pathCache: PathCacheEntry | null = null;
   private readonly CACHE_TTL_MS = 30_000; // 30 秒路径缓存
 
-  constructor(private readonly resolveWorkspace: () => WorkspaceService) { }
+  constructor(private readonly resolveWorkspace: () => WorkspaceService) {}
 
   private get workspace(): WorkspaceService {
     return this.resolveWorkspace();
@@ -87,4 +87,3 @@ export class SearchService {
     return await searchViaBackend(backend, query, opts);
   }
 }
-

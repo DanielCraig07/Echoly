@@ -1,16 +1,6 @@
 import type { ChatSession, WorkspaceInfo, WorkspaceKind } from '@deepseek-ide/shared';
 
-const IMAGE_EXTS = new Set([
-  'png',
-  'jpg',
-  'jpeg',
-  'gif',
-  'webp',
-  'bmp',
-  'ico',
-  'svg',
-  'avif',
-]);
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'avif']);
 
 export function isImagePath(filePath: string): boolean {
   if (isUntitledPath(filePath)) return false;

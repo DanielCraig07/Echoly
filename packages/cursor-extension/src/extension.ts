@@ -1,7 +1,13 @@
 import * as vscode from 'vscode';
 import { createStatusBar, updateStatusBar, showStatusMenu, StatusBarState } from './statusBar';
 import { configureIntranetModel } from './configurer';
-import { probeCommand, configureCommand, showSettingsCommand, startProxyCommand, stopProxyCommand } from './commands';
+import {
+  probeCommand,
+  configureCommand,
+  showSettingsCommand,
+  startProxyCommand,
+  stopProxyCommand,
+} from './commands';
 
 export function activate(context: vscode.ExtensionContext): void {
   const statusBar = createStatusBar();
@@ -12,15 +18,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 注册命令
   context.subscriptions.push(
-    vscode.commands.registerCommand('deepseek-cursor.probe', () =>
-      probeCommand(statusBar),
-    ),
+    vscode.commands.registerCommand('deepseek-cursor.probe', () => probeCommand(statusBar)),
     vscode.commands.registerCommand('deepseek-cursor.configure', async () => {
       await configureCommand(statusBar);
     }),
-    vscode.commands.registerCommand('deepseek-cursor.showSettings', () =>
-      showSettingsCommand(),
-    ),
+    vscode.commands.registerCommand('deepseek-cursor.showSettings', () => showSettingsCommand()),
     vscode.commands.registerCommand('deepseek-cursor.startProxy', async () => {
       await startProxyCommand(statusBar);
     }),
@@ -32,9 +34,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 状态栏点击弹出菜单
   statusBar.item.command = 'deepseek-cursor._showMenu';
   context.subscriptions.push(
-    vscode.commands.registerCommand('deepseek-cursor._showMenu', () =>
-      showStatusMenu(),
-    ),
+    vscode.commands.registerCommand('deepseek-cursor._showMenu', () => showStatusMenu()),
   );
 
   // 启动时自动探测

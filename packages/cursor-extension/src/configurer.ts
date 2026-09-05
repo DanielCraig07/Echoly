@@ -63,9 +63,7 @@ export async function configureIntranetModel(): Promise<{
   let selectedModel = settings.model;
   if (result.models && result.models.length > 0) {
     // 默认选中配置中的模型，如果不在列表中则用第一个
-    const defaultModel = result.models.includes(settings.model)
-      ? settings.model
-      : result.models[0];
+    const defaultModel = result.models.includes(settings.model) ? settings.model : result.models[0];
 
     const pickResult = await vscode.window.showQuickPick(result.models, {
       placeHolder: '选择模型',
@@ -87,21 +85,9 @@ export async function configureIntranetModel(): Promise<{
 
   try {
     // 写入 Cursor 的 AI base URL（Cursor 使用这些设置项来路由 AI 请求）
-    await cursorConfig.update(
-      'cursor.general.aiBase.url',
-      settings.baseUrl,
-      target,
-    );
-    await cursorConfig.update(
-      'cursor.general.aiBase.model',
-      selectedModel,
-      target,
-    );
-    await cursorConfig.update(
-      'cursor.general.aiBase.apiKey',
-      settings.apiKey || undefined,
-      target,
-    );
+    await cursorConfig.update('cursor.general.aiBase.url', settings.baseUrl, target);
+    await cursorConfig.update('cursor.general.aiBase.model', selectedModel, target);
+    await cursorConfig.update('cursor.general.aiBase.apiKey', settings.apiKey || undefined, target);
 
     return {
       success: true,

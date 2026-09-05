@@ -56,7 +56,14 @@ export function OpenWorkspaceModal({
               }}
             >
               <span className="open-ws-choice-mark" aria-hidden>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
                   <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
                 </svg>
               </span>
@@ -74,7 +81,14 @@ export function OpenWorkspaceModal({
               }}
             >
               <span className="open-ws-choice-mark" aria-hidden>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
                   <circle cx="12" cy="12" r="9" />
                   <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
                 </svg>
@@ -93,7 +107,14 @@ export function OpenWorkspaceModal({
               }}
             >
               <span className="open-ws-choice-mark" aria-hidden>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                >
                   <path d="M12 3v12" />
                   <path d="m8 11 4 4 4-4" />
                   <path d="M5 19h14" />
@@ -108,9 +129,15 @@ export function OpenWorkspaceModal({
 
           <section className="open-ws-recent">
             <div className="open-ws-recent-header">
-              <span>最近打开{recentWorkspaces.length > 0 ? ` · ${recentWorkspaces.length}` : ''}</span>
+              <span>
+                最近打开{recentWorkspaces.length > 0 ? ` · ${recentWorkspaces.length}` : ''}
+              </span>
               {recentWorkspaces.length > 0 && onClearRecent && (
-                <button type="button" className="ghost open-ws-recent-clear" onClick={onClearRecent}>
+                <button
+                  type="button"
+                  className="ghost open-ws-recent-clear"
+                  onClick={onClearRecent}
+                >
                   清空
                 </button>
               )}

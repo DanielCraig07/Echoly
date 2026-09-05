@@ -52,7 +52,9 @@ const vsixName = `${pkg.name}-${pkg.version}.vsix`;
 const vsixPath = join(tmpDir, vsixName);
 if (existsSync(vsixPath)) {
   cpSync(vsixPath, OUT_VSIX);
-  console.log(`✅ VSIX 已生成: ${OUT_VSIX} (${(readFileSync(OUT_VSIX).length / 1024).toFixed(1)} KB)`);
+  console.log(
+    `✅ VSIX 已生成: ${OUT_VSIX} (${(readFileSync(OUT_VSIX).length / 1024).toFixed(1)} KB)`,
+  );
 } else {
   console.error(`❌ 未找到 VSIX 文件: ${vsixPath}`);
   process.exit(1);

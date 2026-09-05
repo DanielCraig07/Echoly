@@ -52,8 +52,7 @@ export function registerIpc(deps: {
   const windowFromEvent = (event: { sender: WebContents }): BrowserWindow | null =>
     BrowserWindow.fromWebContents(event.sender) ?? getWindow();
 
-  const run = <T>(event: { sender: WebContents }, fn: () => T): T =>
-    registry.run(event.sender, fn);
+  const run = <T>(event: { sender: WebContents }, fn: () => T): T => registry.run(event.sender, fn);
 
   ipcMain.handle('window:openNew', async (_e, targetPath?: string) => {
     const { createWindow } = await import('./index');
@@ -167,20 +166,21 @@ export function registerIpc(deps: {
     if (result.canceled || !result.filePaths[0]) return null;
     return result.filePaths[0];
   });
-  
-  ipcMain.handle('dialog:pickFile', async (event, filters?: { name: string; extensions: string[] }[]) => {
-    const win = windowFromEvent(event);
-    const result = await dialog.showOpenDialog(win!, { 
-      properties: ['openFile'],
-      filters: filters || []
-    });
-    if (result.canceled || !result.filePaths[0]) return null;
-    return result.filePaths[0];
-  });
 
-  ipcMain.handle('agent:start', (e, payload) =>
-    run(e, () => agents.start(payload, e.sender)),
+  ipcMain.handle(
+    'dialog:pickFile',
+    async (event, filters?: { name: string; extensions: string[] }[]) => {
+      const win = windowFromEvent(event);
+      const result = await dialog.showOpenDialog(win!, {
+        properties: ['openFile'],
+        filters: filters || [],
+      });
+      if (result.canceled || !result.filePaths[0]) return null;
+      return result.filePaths[0];
+    },
   );
+
+  ipcMain.handle('agent:start', (e, payload) => run(e, () => agents.start(payload, e.sender)));
   ipcMain.handle('agent:cancel', (_e, runId: string) => agents.cancel(runId));
   ipcMain.handle(
     'agent:respondConfirm',
@@ -206,9 +206,7 @@ export function registerIpc(deps: {
       registry.current().diffs.reject(id);
     }),
   );
-  ipcMain.handle('diff:acceptAll', (e) =>
-    run(e, () => registry.current().diffs.acceptAll()),
-  );
+  ipcMain.handle('diff:acceptAll', (e) => run(e, () => registry.current().diffs.acceptAll()));
 
   ipcMain.handle('session:list', () => sessions.list());
   ipcMain.handle('session:get', (_e, id: string) => sessions.get(id));
@@ -235,9 +233,7 @@ export function registerIpc(deps: {
   ipcMain.handle('git:pull', (e) => run(e, () => git.pull()));
   ipcMain.handle('git:push', (e) => run(e, () => git.push()));
   ipcMain.handle('git:history', (e, maxCount?: number) => run(e, () => git.history(maxCount)));
-  ipcMain.handle('git:commitDetails', (e, hash: string) =>
-    run(e, () => git.commitDetails(hash)),
-  );
+  ipcMain.handle('git:commitDetails', (e, hash: string) => run(e, () => git.commitDetails(hash)));
   ipcMain.handle('git:fileHistory', (e, path: string, maxCount?: number) =>
     run(e, () => git.fileHistory(path, maxCount)),
   );
@@ -255,9 +251,7 @@ export function registerIpc(deps: {
     run(e, () => search.searchCode(req)),
   );
 
-  ipcMain.handle('ssh:connect', (e, req: SshConnectRequest) =>
-    run(e, () => ssh.connect(req)),
-  );
+  ipcMain.handle('ssh:connect', (e, req: SshConnectRequest) => run(e, () => ssh.connect(req)));
   ipcMain.handle('ssh:disconnect', (e) => run(e, () => ssh.disconnect()));
   ipcMain.handle('ssh:listProfiles', () => ssh.listProfiles());
   ipcMain.handle('ssh:listLocalConfig', () => ssh.listLocalConfig());

@@ -43,7 +43,11 @@ export class DiffStore {
 export function appendRunTrace(userDataPath: string, runId: string, line: string): void {
   const dir = path.join(userDataPath, 'traces');
   fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(path.join(dir, `${runId}.log`), `${new Date().toISOString()} ${line}\n`, 'utf8');
+  fs.appendFileSync(
+    path.join(dir, `${runId}.log`),
+    `${new Date().toISOString()} ${line}\n`,
+    'utf8',
+  );
 }
 
 export type WindowGetter = () => BrowserWindow | null;

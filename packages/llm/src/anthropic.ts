@@ -55,7 +55,7 @@ function convertToAnthropicMessages(messages: ChatMessage[]): AnthropicMessage[]
     .filter((m) => m.role !== 'system')
     .map((m) => {
       const content: AnthropicMessage['content'] = [];
-      
+
       // Handle text content
       if (m.content) {
         content.push({ type: 'text', text: m.content });
@@ -71,18 +71,19 @@ function convertToAnthropicMessages(messages: ChatMessage[]): AnthropicMessage[]
             type: 'image',
             source: {
               type: 'base64',
-              media_type: (img.mediaType || 'image/png') as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+              media_type: (img.mediaType || 'image/png') as
+                'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
               data: rawBase64,
             },
           } as any);
         }
       }
-      
+
       // Handle thinking blocks
       if (m.thinking?.length) {
         content.push(...m.thinking);
       }
-      
+
       // Handle tool calls (from assistant)
       if (m.tool_calls) {
         for (const tc of m.tool_calls) {
@@ -94,7 +95,7 @@ function convertToAnthropicMessages(messages: ChatMessage[]): AnthropicMessage[]
           });
         }
       }
-      
+
       // Handle tool results (from tool role)
       if (m.role === 'tool' && m.tool_call_id && m.content) {
         content.push({
@@ -103,7 +104,7 @@ function convertToAnthropicMessages(messages: ChatMessage[]): AnthropicMessage[]
           content: m.content,
         });
       }
-      
+
       return {
         role: m.role === 'user' ? 'user' : 'assistant',
         content,
@@ -125,11 +126,11 @@ function convertFromAnthropicMessage(response: any): ChatMessage {
     role: 'assistant',
     content: '',
   };
-  
+
   const thinking: ThinkingBlock[] = [];
   const textParts: string[] = [];
   const toolCalls: NonNullable<ChatMessage['tool_calls']> = [];
-  
+
   for (const block of response.content || []) {
     if (block.type === 'text') {
       textParts.push(block.text);
@@ -146,11 +147,11 @@ function convertFromAnthropicMessage(response: any): ChatMessage {
       });
     }
   }
-  
+
   message.content = textParts.join('\n') || null;
   if (thinking.length) message.thinking = thinking;
   if (toolCalls.length) message.tool_calls = toolCalls;
-  
+
   return message;
 }
 
@@ -200,7 +201,7 @@ export class AnthropicClient {
 
     if (system) body.system = system;
     if (tools) body.tools = tools;
-    
+
     // Enable Extended Thinking
     if (this.enableThinking) {
       body.thinking = {
@@ -240,7 +241,7 @@ export class AnthropicClient {
 
     if (system) body.system = system;
     if (tools) body.tools = tools;
-    
+
     if (this.enableThinking) {
       body.thinking = {
         type: 'enabled',
@@ -267,7 +268,7 @@ export class AnthropicClient {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-    
+
     const thinking: ThinkingBlock[] = [];
     const textParts: string[] = [];
     const toolCalls: NonNullable<ChatMessage['tool_calls']> = [];
@@ -276,7 +277,7 @@ export class AnthropicClient {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      
+
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? '';
@@ -284,7 +285,7 @@ export class AnthropicClient {
       for (const rawLine of lines) {
         const line = rawLine.trim();
         if (!line.startsWith('data:')) continue;
-        
+
         const payload = line.slice(5).trim();
         if (!payload) continue;
 
@@ -347,14 +348,14 @@ export class AnthropicClient {
   ): Promise<AnthropicChatResult> {
     const gen = this.chatStream(params);
     let final: AnthropicChatResult | null = null;
-    
+
     while (true) {
       const next = await gen.next();
       if (next.done) {
         final = next.value;
         break;
       }
-      
+
       const event = next.value;
       if (event.type === 'content_block_delta') {
         const delta = event.delta;
@@ -365,7 +366,7 @@ export class AnthropicClient {
         }
       }
     }
-    
+
     if (!final) {
       throw new Error('stream ended without message');
     }

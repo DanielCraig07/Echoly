@@ -67,16 +67,16 @@ export class ExtensionManager {
   private async loadInstalledExtensions(): Promise<void> {
     try {
       const entries = await fs.readdir(this.extensionsDir, { withFileTypes: true });
-      
+
       for (const entry of entries) {
         if (entry.isDirectory()) {
           const extensionPath = path.join(this.extensionsDir, entry.name, 'extension');
-          
+
           // 检查是否有 extension 子目录（.vsix 解压后的结构）
           try {
             await fs.access(path.join(extensionPath, 'package.json'));
             console.log(`Auto-loading extension: ${entry.name}`);
-            
+
             // 异步加载，不阻塞启动
             this.loadExtensionFromPath(extensionPath).catch((err) => {
               console.error(`Failed to auto-load extension ${entry.name}:`, err.message);
@@ -99,19 +99,18 @@ export class ExtensionManager {
       console.log('Installing Claude Code extension...');
 
       // 下载扩展，带进度回调
-      const vsixPath = await downloadClaudeCodeExtension(
-        this.extensionsDir,
-        (progress) => {
-          // 广播下载进度到所有渲染进程
-          this.broadcastToRenderers('extension:download-progress', progress);
-        }
-      );
+      const vsixPath = await downloadClaudeCodeExtension(this.extensionsDir, (progress) => {
+        // 广播下载进度到所有渲染进程
+        this.broadcastToRenderers('extension:download-progress', progress);
+      });
 
       // 解压并加载
       const extractDir = path.join(this.extensionsDir, 'claude-code');
       const extension = await loadExtensionFromVsix(vsixPath, extractDir);
 
-      console.log(`Claude Code extension loaded: ${extension.manifest.displayName} v${extension.manifest.version}`);
+      console.log(
+        `Claude Code extension loaded: ${extension.manifest.displayName} v${extension.manifest.version}`,
+      );
 
       // 激活扩展
       await this.extensionHost.activateExtension(extension);
@@ -129,38 +128,38 @@ export class ExtensionManager {
   async loadExtensionFromPath(extensionPath: string): Promise<void> {
     // 规范化路径
     const normalizedPath = path.resolve(extensionPath);
-    
+
     // 检查是否已加载
     if (this.loadedExtensionPaths.has(normalizedPath)) {
       console.log(`Extension already loaded: ${normalizedPath}`);
       return;
     }
-    
+
     try {
       let extension: any;
       let finalPath = normalizedPath;
-      
+
       // 检查是否是 .vsix 文件
       if (extensionPath.endsWith('.vsix')) {
         // 解压到 extensions 目录
         const extensionName = path.basename(extensionPath, '.vsix');
         const extractDir = path.join(this.extensionsDir, extensionName);
-        
+
         console.log(`Loading .vsix file: ${extensionPath}`);
         console.log(`Extract to: ${extractDir}`);
-        
+
         extension = await loadExtensionFromVsix(extensionPath, extractDir);
         finalPath = path.join(extractDir, 'extension');
       } else {
         // 直接加载目录
         extension = await loadExtension(extensionPath);
       }
-      
+
       await this.extensionHost.activateExtension(extension);
-      
+
       // 标记为已加载
       this.loadedExtensionPaths.add(finalPath);
-      
+
       console.log(`Extension loaded and activated: ${extension.manifest.displayName}`);
     } catch (err) {
       console.error(`Failed to load extension from ${extensionPath}:`, err);
@@ -196,7 +195,7 @@ export class ExtensionManager {
     // 创建模拟的 webviewView 对象
     let htmlContent = '';
     let webviewOptions: any = {};
-    
+
     const mockWebview = {
       get html() {
         return htmlContent;
@@ -232,7 +231,7 @@ export class ExtensionManager {
         } else {
           filePath = String(uri);
         }
-        
+
         // 确保路径是绝对路径
         if (!filePath.startsWith('/')) {
           // 如果是相对路径，拼接扩展目录
@@ -241,7 +240,7 @@ export class ExtensionManager {
             filePath = require('path').join(providerInfo.extensionPath, filePath);
           }
         }
-        
+
         // 转换为 file:// URL
         const fileUrl = `file://${filePath}`;
         console.log('[asWebviewUri] Convert:', uri, '->', fileUrl);
@@ -267,36 +266,51 @@ export class ExtensionManager {
       try {
         await provider.resolveWebviewView(mockWebviewView, {}, { isCancellationRequested: false });
         htmlContent = mockWebview.html;
-        console.log(`[resolveWebviewView] Final HTML length for ${viewId}: ${htmlContent?.length || 0}`);
-        
+        console.log(
+          `[resolveWebviewView] Final HTML length for ${viewId}: ${htmlContent?.length || 0}`,
+        );
+
         // 修复 Claude 扩展的资源路径
         // 将 <link href="file:///.../extension" 替换为 file:///.../extension/webview/index.css
         // 将 <script src="file:///.../extension" 替换为 file:///.../extension/webview/index.js
         const path = require('path');
-        const extensionDirPath = path.join(providerInfo.extensionPath, 'extensions', 'Anthropic.claude-code-2.1.234@darwin-arm64', 'extension');
+        const extensionDirPath = path.join(
+          providerInfo.extensionPath,
+          'extensions',
+          'Anthropic.claude-code-2.1.234@darwin-arm64',
+          'extension',
+        );
         const extensionDirUrl = `file://${extensionDirPath}`;
-        
+
         console.log(`[resolveWebviewView] Fixing resource paths for: ${extensionDirUrl}`);
-        
+
         // 替换 link 标签
         htmlContent = htmlContent.replace(
-          new RegExp(`<link([^>]*?)href="${extensionDirUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"([^>]*?)>`, 'g'),
-          `<link$1href="file://${extensionDirPath}/webview/index.css"$2>`
+          new RegExp(
+            `<link([^>]*?)href="${extensionDirUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"([^>]*?)>`,
+            'g',
+          ),
+          `<link$1href="file://${extensionDirPath}/webview/index.css"$2>`,
         );
-        
+
         // 替换 script 标签
         htmlContent = htmlContent.replace(
-          new RegExp(`<script([^>]*?)src="${extensionDirUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"([^>]*?)>`, 'g'),
-          `<script$1src="file://${extensionDirPath}/webview/index.js"$2>`
+          new RegExp(
+            `<script([^>]*?)src="${extensionDirUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"([^>]*?)>`,
+            'g',
+          ),
+          `<script$1src="file://${extensionDirPath}/webview/index.js"$2>`,
         );
-        
-        console.log(`[resolveWebviewView] HTML after path fix, length: ${htmlContent?.length || 0}`);
-        
+
+        console.log(
+          `[resolveWebviewView] HTML after path fix, length: ${htmlContent?.length || 0}`,
+        );
+
         // 提取 nonce 值
         const nonceMatch = htmlContent.match(/nonce-([a-f0-9]+)/);
         const nonce = nonceMatch ? nonceMatch[1] : '';
         console.log(`[resolveWebviewView] Extracted nonce: ${nonce}`);
-        
+
         // 注入 VSCode webview API（使用相同的 nonce）
         const vscodeApiScript = `
 <script nonce="${nonce}">
@@ -321,19 +335,24 @@ export class ExtensionManager {
   console.log('[VSCode API] acquireVsCodeApi injected');
 })();
 </script>`;
-        
+
         // 在第一个 script 标签前注入 API（确保最先执行）
         const firstScriptMatch = htmlContent.match(/<script[^>]*nonce/);
         if (firstScriptMatch) {
-          htmlContent = htmlContent.replace(firstScriptMatch[0], `${vscodeApiScript}\n    ${firstScriptMatch[0]}`);
+          htmlContent = htmlContent.replace(
+            firstScriptMatch[0],
+            `${vscodeApiScript}\n    ${firstScriptMatch[0]}`,
+          );
         } else {
           // 如果找不到 script 标签，就在 head 结束前注入
           htmlContent = htmlContent.replace('</head>', `${vscodeApiScript}</head>`);
         }
-        
+
         // 调试：保存 HTML 并打印预览
-        console.log(`[resolveWebviewView] HTML preview:\n${htmlContent.substring(0, 500)}\n...\n${htmlContent.substring(Math.max(0, htmlContent.length - 200))}`);
-        
+        console.log(
+          `[resolveWebviewView] HTML preview:\n${htmlContent.substring(0, 500)}\n...\n${htmlContent.substring(Math.max(0, htmlContent.length - 200))}`,
+        );
+
         try {
           const fs = require('fs');
           const { app } = require('electron');
@@ -357,7 +376,7 @@ export class ExtensionManager {
    */
   private async handleCommand(command: string, ...args: any[]): Promise<any> {
     console.log(`Extension command: ${command}`, args);
-    
+
     // 将命令广播到所有渲染进程
     this.broadcastToRenderers('extension:command', { command, args });
 
@@ -387,10 +406,17 @@ export class ExtensionManager {
   /**
    * 处理 WebviewView 提供者注册
    */
-  private handleWebviewViewRegister(viewId: string, provider: any, extensionPath: string, options?: any): void {
-    console.log(`[ExtensionManager] WebviewView provider registered: ${viewId}, extensionPath: ${extensionPath}`);
+  private handleWebviewViewRegister(
+    viewId: string,
+    provider: any,
+    extensionPath: string,
+    options?: any,
+  ): void {
+    console.log(
+      `[ExtensionManager] WebviewView provider registered: ${viewId}, extensionPath: ${extensionPath}`,
+    );
     this.webviewViewProviders.set(viewId, { provider, options, extensionPath });
-    
+
     // 通知渲染进程有新的 webview 可用
     this.broadcastToRenderers('extension:webview-registered', { viewId });
   }
@@ -438,7 +464,9 @@ export class ExtensionManager {
     ipcMain.handle('extension:resolve-webview', async (_event, viewId: string) => {
       try {
         const html = await this.resolveWebviewView(viewId);
-        return { success: true, html };
+        // 返回真实写入路径（渲染进程不应硬编码 userData 目录）
+        const filePath = path.join(app.getPath('userData'), `webview-${viewId}.html`);
+        return { success: true, html, filePath };
       } catch (err: any) {
         return { success: false, error: err.message };
       }

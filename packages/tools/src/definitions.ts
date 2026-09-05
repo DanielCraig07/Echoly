@@ -36,6 +36,23 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'read_file_lines',
+      description:
+        'Read a 1-based line range of a file (cheaper than read_file for large files). Returns numbered lines plus total line count.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Relative file path' },
+          offset: { type: 'integer', description: '1-based start line (default 1)' },
+          limit: { type: 'integer', description: 'Max number of lines to return (default 200)' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'write_file',
       description:
         'Create or overwrite a text file with full content. Prefer apply_patch for edits.',
@@ -149,6 +166,7 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
 export const READONLY_TOOL_NAMES = new Set([
   'list_dir',
   'read_file',
+  'read_file_lines',
   'search_code',
   'glob_files',
   'ask_user',

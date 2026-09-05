@@ -14,7 +14,10 @@ declare global {
     extensions: {
       installClaudeCode(): Promise<{ success: boolean; error?: string }>;
       loadFromPath(extensionPath: string): Promise<{ success: boolean; error?: string }>;
-      executeCommand(command: string, ...args: any[]): Promise<{ success: boolean; result?: any; error?: string }>;
+      executeCommand(
+        command: string,
+        ...args: any[]
+      ): Promise<{ success: boolean; result?: any; error?: string }>;
       getLoadedExtensions(): Promise<{ success: boolean; extensions?: string[] }>;
       onCommand(callback: (data: { command: string; args: any[] }) => void): () => void;
       onMessage(callback: (message: any) => void): () => void;
@@ -27,7 +30,11 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
   const [extensions, setExtensions] = useState<string[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [downloadProgress, setDownloadProgress] = useState<{ percent: number; downloaded: number; total: number } | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    percent: number;
+    downloaded: number;
+    total: number;
+  } | null>(null);
 
   // 加载已安装的扩展
   useEffect(() => {
@@ -45,9 +52,10 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     });
 
     // 监听下载进度
-    const cleanup3 = window.ide.onDownloadProgress?.((progress) => {
-      setDownloadProgress(progress);
-    }) || (() => {});
+    const cleanup3 =
+      window.ide.onDownloadProgress?.((progress) => {
+        setDownloadProgress(progress);
+      }) || (() => {});
 
     return () => {
       cleanup1();
@@ -104,18 +112,16 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
   const handleLoadFromPath = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       // 使用 Electron 的文件选择对话框
-      const filePath = await window.ide.pickFile([
-        { name: 'VSCode 扩展', extensions: ['vsix'] }
-      ]);
-      
+      const filePath = await window.ide.pickFile([{ name: 'VSCode 扩展', extensions: ['vsix'] }]);
+
       if (!filePath) {
         setLoading(false);
         return;
       }
-      
+
       const result = await window.extensions.loadFromPath(filePath);
       if (result.success) {
         await loadExtensions();
@@ -151,7 +157,11 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
               disabled={loading || extensions.includes('Anthropic.claude-code')}
               className="extension-btn primary"
             >
-              {loading ? '安装中...' : extensions.includes('Anthropic.claude-code') ? '已安装' : '在线安装'}
+              {loading
+                ? '安装中...'
+                : extensions.includes('Anthropic.claude-code')
+                  ? '已安装'
+                  : '在线安装'}
             </button>
             <button
               type="button"
@@ -162,24 +172,21 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
               从路径加载
             </button>
           </div>
-          
+
           {/* 下载进度 */}
           {downloadProgress && (
             <div className="download-progress">
               <div className="progress-bar">
-                <div 
-                  className="progress-fill" 
-                  style={{ width: `${downloadProgress.percent}%` }}
-                />
+                <div className="progress-fill" style={{ width: `${downloadProgress.percent}%` }} />
               </div>
               <div className="progress-text">
-                {downloadProgress.percent.toFixed(1)}% 
-                ({(downloadProgress.downloaded / 1024 / 1024).toFixed(1)}MB / 
+                {downloadProgress.percent.toFixed(1)}% (
+                {(downloadProgress.downloaded / 1024 / 1024).toFixed(1)}MB /
                 {(downloadProgress.total / 1024 / 1024).toFixed(1)}MB)
               </div>
             </div>
           )}
-          
+
           {error && <div className="extension-error">{error}</div>}
         </section>
 
@@ -220,9 +227,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
               {messages.map((msg, idx) => (
                 <div key={idx} className="extension-message">
                   <span className="extension-message-type">[{msg.type}]</span>
-                  <span className="extension-message-text">
-                    {JSON.stringify(msg, null, 2)}
-                  </span>
+                  <span className="extension-message-text">{JSON.stringify(msg, null, 2)}</span>
                 </div>
               ))}
             </div>

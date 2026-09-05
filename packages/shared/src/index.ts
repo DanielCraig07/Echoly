@@ -132,12 +132,12 @@ export interface AppSettings {
   currentProvider: AiProvider;
   /** Provider-specific configurations (legacy) */
   providers: Record<AiProvider, ProviderConfig>;
-  
+
   /** @deprecated Legacy fields - migrated to providers */
   baseUrl?: string;
   model?: string;
   apiKey?: string;
-  
+
   temperature: number;
   maxAgentSteps: number;
   /** @deprecated Prefer permissionMode; kept for migration. */
@@ -147,10 +147,24 @@ export interface AppSettings {
   permissionMode: PermissionMode;
   contextWindowTokens: number;
   layout: LayoutSettings;
-  /** UI color theme. Default dark; light uses TSINGTEC white/purple. */
+  /** UI color theme. Default dark; light uses Echoly white/purple. */
   theme: UiTheme;
   /** Debounced write on editor change when enabled. */
   autoSave: boolean;
+  /** 自动更新源配置。未配置时禁用自动更新。 */
+  updateFeed?: UpdateFeedConfig | null;
+}
+
+export interface UpdateFeedConfig {
+  provider: 'github' | 'generic';
+  /** github 仓库 owner（默认 DanielCraig07） */
+  owner?: string;
+  /** github 仓库名（默认 Echoly） */
+  repo?: string;
+  /** generic 静态服务器地址（内网推荐） */
+  genericUrl?: string;
+  /** 私有仓库下载令牌（GitHub PAT）。用于从私有 Release 拉取更新，仅存本机。 */
+  token?: string;
 }
 
 export const DEFAULT_LAYOUT: LayoutSettings = {
@@ -177,7 +191,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   baseUrl: DEFAULT_LLM_BASE_URL,
   model: DEFAULT_LLM_MODEL,
   apiKey: '',
-  
+
   temperature: 0.2,
   maxAgentSteps: 50,
   autoApproveReadonlyTerminal: true,
@@ -187,12 +201,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   layout: { ...DEFAULT_LAYOUT },
   theme: 'dark',
   autoSave: false,
+  updateFeed: null,
 };
 
 /** Migrate legacy settings to new provider and model structure */
 export function migrateToProviderSettings(raw: Partial<AppSettings>): AppSettings {
   const base = { ...DEFAULT_SETTINGS };
-  
+
   // If old format detected, migrate to new structure
   if (raw.baseUrl || raw.model || raw.apiKey) {
     const legacyProvider: ProviderConfig = {
@@ -204,12 +219,12 @@ export function migrateToProviderSettings(raw: Partial<AppSettings>): AppSetting
     base.providers.custom = legacyProvider;
     base.currentProvider = 'custom';
   }
-  
+
   // Merge with existing provider configs
   if (raw.providers) {
     base.providers = { ...base.providers, ...raw.providers };
   }
-  
+
   if (raw.currentProvider) {
     base.currentProvider = raw.currentProvider;
   }
@@ -275,7 +290,7 @@ export function migrateToProviderSettings(raw: Partial<AppSettings>): AppSetting
     const defaultModel = base.models.find((m) => m.isDefault);
     base.activeModelId = defaultModel ? defaultModel.id : base.models[0]?.id || 'deepseek-local';
   }
-  
+
   return base;
 }
 
@@ -497,6 +512,8 @@ export interface OpenTab {
   dirty: boolean;
   /** Data URL for image preview tabs (png/jpg/…); content stays empty. */
   previewUrl?: string;
+  /** Large file (>2MB): content is intentionally left empty to avoid editor stalls. */
+  isLargeFile?: boolean;
 }
 
 export interface ChatAttachment {
@@ -630,7 +647,6 @@ export interface GitBlameLineResult {
   line?: number;
 }
 
-
 export interface GitOpResult {
   ok: boolean;
   detail: string;
@@ -643,7 +659,6 @@ export interface RecentWorkspaceItem {
   kind?: 'local' | 'ssh';
   sshServer?: string;
 }
-
 
 export interface SearchFileHit {
   path: string;
@@ -756,6 +771,7 @@ export interface IpcApi {
     planContext?: PlanContext;
     openFiles?: Array<{ path: string; content: string }>;
     selection?: string;
+    cursor?: { path: string; line: number; column: number };
     history?: ChatMessage[];
     attachments?: ChatAttachment[];
   }) => Promise<{ runId: string }>;
@@ -770,7 +786,12 @@ export interface IpcApi {
   getSession: (id: string) => Promise<ChatSession | null>;
   saveSession: (session: ChatSession) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
-  probeLlm: (options?: { baseUrl?: string; apiKey?: string; model?: string; provider?: string }) => Promise<{ ok: boolean; detail: string; models?: string[] }>;
+  probeLlm: (options?: {
+    baseUrl?: string;
+    apiKey?: string;
+    model?: string;
+    provider?: string;
+  }) => Promise<{ ok: boolean; detail: string; models?: string[] }>;
   listSkills: () => Promise<SkillInfo[]>;
   openUserSkillsDir: () => Promise<string>;
   cloneRepo: (req: GitCloneRequest) => Promise<GitCloneResult>;
@@ -781,7 +802,12 @@ export interface IpcApi {
   gitCommit: (message: string, amend?: boolean) => Promise<GitOpResult>;
   gitDiscard: (paths: string[]) => Promise<GitOpResult>;
   gitDiff: (path: string, staged?: boolean) => Promise<GitDiffResult>;
-  gitBranches: () => Promise<{ ok: boolean; detail?: string; branches: GitBranchInfo[]; tags?: string[] }>;
+  gitBranches: () => Promise<{
+    ok: boolean;
+    detail?: string;
+    branches: GitBranchInfo[];
+    tags?: string[];
+  }>;
   gitCheckout: (branch: string) => Promise<GitOpResult>;
   gitCreateBranch: (name: string, checkout?: boolean) => Promise<GitOpResult>;
   gitPull: () => Promise<GitOpResult>;
@@ -799,7 +825,9 @@ export interface IpcApi {
   listSshProfiles: () => Promise<SshProfile[]>;
   listLocalSshConfig: () => Promise<SshProfile[]>;
   deleteSshProfile: (id: string) => Promise<void>;
-  listRemoteDir: (remotePath?: string) => Promise<{ ok: boolean; entries?: RemoteDirEntry[]; currentPath?: string; detail?: string }>;
+  listRemoteDir: (
+    remotePath?: string,
+  ) => Promise<{ ok: boolean; entries?: RemoteDirEntry[]; currentPath?: string; detail?: string }>;
   createTerminal: (options?: TerminalCreateOptions) => Promise<{ id: string }>;
   writeTerminal: (id: string, data: string) => Promise<void>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>;
@@ -811,9 +839,17 @@ export interface IpcApi {
   onTerminalExit: (cb: (payload: { id: string; exitCode: number }) => void) => () => void;
   onWorkspaceChanged: (cb: (info: WorkspaceInfo) => void) => () => void;
   onGitCloneLog: (cb: (line: string) => void) => () => void;
-  onDownloadProgress: (cb: (progress: { percent: number; downloaded: number; total: number }) => void) => () => void;
+  onDownloadProgress: (
+    cb: (progress: { percent: number; downloaded: number; total: number }) => void,
+  ) => () => void;
   onExtensionWebviewRegistered: (cb: (data: { viewId: string }) => void) => () => void;
-  extensionResolveWebview: (viewId: string) => Promise<{ success: boolean; html?: string; error?: string }>;
+  extensionResolveWebview: (
+    viewId: string,
+  ) => Promise<{ success: boolean; html?: string; filePath?: string; error?: string }>;
+  /** 检查更新（需已配置 updateFeed） */
+  checkUpdate: () => Promise<{ ok: boolean; detail?: string }>;
+  /** 获取更新状态 */
+  getUpdateState: () => Promise<{ checked: boolean; feed: unknown }>;
 }
 
 declare global {

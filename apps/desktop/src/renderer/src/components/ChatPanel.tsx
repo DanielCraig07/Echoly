@@ -18,16 +18,17 @@ import { buildSessionWorkspaceMeta, uid } from '../utils';
 import { buildAgentHistory } from '../chatHistory';
 import { MarkdownMessage } from './MarkdownMessage';
 import { PlanPanel } from './PlanPanel';
-import { ToolCallCard, commandFromArgs } from './ToolCallCard';
-import { ReasoningStep } from './ReasoningStep';
 import { SessionModal } from './SessionModal';
 import { ThinkingBlock } from './ThinkingBlock';
+import { WorkedForGroup } from './chat/WorkedForGroup';
+import { CollapsibleUserContent } from './chat/CollapsibleUserContent';
 
 interface Props {
   workspace: string | null;
   workspaceInfo?: WorkspaceInfo;
   openFiles: Array<{ path: string; content: string }>;
   selection?: string;
+  cursor?: { path: string; line: number; column: number };
   onPendingDiff: (event: Extract<AgentEvent, { type: 'pending_diff' }>) => void;
   sessionMessages: ChatSessionMessage[];
   onMessagesChange: (messages: ChatSessionMessage[]) => void;
@@ -79,12 +80,7 @@ const MODE_LABEL: Record<AgentMode, string> = {
   agent: 'Agent',
 };
 
-const PERMISSION_ORDER: PermissionMode[] = [
-  'allow_all_extreme',
-  'allow_all',
-  'ask',
-  'deny_all',
-];
+const PERMISSION_ORDER: PermissionMode[] = ['allow_all_extreme', 'allow_all', 'ask', 'deny_all'];
 
 const PERMISSION_SHORT_LABELS: Record<PermissionMode, string> = {
   allow_all_extreme: '全放行·极',
@@ -138,104 +134,6 @@ function formatFileSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function WorkedForGroup({
-  messages,
-  isStreaming,
-}: {
-  messages: ChatSessionMessage[];
-  isStreaming: boolean;
-}) {
-  const [userToggled, setUserToggled] = useState<boolean | null>(null);
-  const [, setTick] = useState(0);
-
-  // Live timer tick when streaming
-  useEffect(() => {
-    if (!isStreaming) return;
-    const timer = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(timer);
-  }, [isStreaming]);
-
-  if (messages.length === 0) return null;
-
-  const runningTerminal = messages.find(
-    (m) => m.role === 'tool' && m.toolName === 'run_terminal' && m.toolStatus === 'running',
-  );
-  const runningCmd = runningTerminal ? commandFromArgs(runningTerminal.toolArgs) : null;
-  const hasTerminal = messages.some((m) => m.role === 'tool' && m.toolName === 'run_terminal');
-
-  // Auto-expand if a terminal is running or live streaming unless explicitly collapsed
-  const open = userToggled !== null ? userToggled : (isStreaming || Boolean(runningTerminal));
-
-  const firstTime = messages[0].createdAt || Date.now();
-  const lastTime = messages[messages.length - 1].createdAt || Date.now();
-  const elapsedMs = isStreaming
-    ? Math.max(1000, Date.now() - firstTime)
-    : Math.max(1000, lastTime - firstTime);
-
-  const formatDuration = (ms: number) => {
-    const sec = Math.round(ms / 1000);
-    if (sec < 60) return `${sec}s`;
-    const min = Math.floor(sec / 60);
-    const remSec = sec % 60;
-    return remSec > 0 ? `${min}m ${remSec}s` : `${min}m`;
-  };
-
-  const durationLabel = formatDuration(elapsedMs);
-
-  return (
-    <div className={`worked-for-group${open ? ' open' : ''}`}>
-      <button
-        type="button"
-        className="worked-for-toggle"
-        onClick={() => setUserToggled(!open)}
-        title={open ? '点击收起执行过程' : '点击展开查看具体执行过程'}
-      >
-        <span className={`worked-for-icon${isStreaming ? ' spinning' : ''}`}>
-          {isStreaming ? '◐' : '✓'}
-        </span>
-        <span>
-          {isStreaming ? (
-            runningCmd ? (
-              <>
-                <span className="worked-for-running-title">正在执行终端命令:</span>
-                <code className="worked-for-cmd-inline" title={runningCmd}>
-                  $ {runningCmd.length > 36 ? `${runningCmd.slice(0, 36)}…` : runningCmd}
-                </code>
-                <span className="worked-for-timer">({durationLabel})</span>
-              </>
-            ) : (
-              `正在处理 (${durationLabel})`
-            )
-          ) : hasTerminal ? (
-            `终端执行与过程 (${messages.length} 步，耗时 ${durationLabel})`
-          ) : (
-            `处理过程 (${messages.length} 步，耗时 ${durationLabel})`
-          )}
-        </span>
-        <span className="worked-for-chevron">
-          {open ? '▼ 收起过程' : '› 展开查看具体过程'}
-        </span>
-      </button>
-
-      {open && (
-        <div className="worked-for-body">
-          {messages.map((m) =>
-            m.role === 'tool' ? (
-              <ToolCallCard key={m.id} message={m} />
-            ) : (
-              <ReasoningStep
-                key={m.id}
-                content={m.content}
-                isStreaming={isStreaming}
-              />
-            ),
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function getProviderBadge(provider?: string) {
   switch (provider) {
     case 'deepseek':
@@ -249,7 +147,10 @@ function getProviderBadge(provider?: string) {
   }
 }
 
-function computeLineDiffStats(original?: string, modified?: string): { added: number; deleted: number } {
+function computeLineDiffStats(
+  original?: string,
+  modified?: string,
+): { added: number; deleted: number } {
   const origText = original ?? '';
   const modText = modified ?? '';
   if (!origText) {
@@ -299,73 +200,14 @@ function computeLineDiffStats(original?: string, modified?: string): { added: nu
   return { added, deleted };
 }
 
-const USER_BUBBLE_COLLAPSED_MAX_PX = 120;
-
-/** Sticky user bubble body: clamp tall pastes with expand / collapse. */
-function CollapsibleUserContent({ content }: { content: string }) {
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [overflows, setOverflows] = useState(false);
-
-  useEffect(() => {
-    setExpanded(false);
-  }, [content]);
-
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-
-    const measure = () => {
-      // Measure unconstrained height so a collapsed max-height does not hide overflow.
-      const prevMax = el.style.maxHeight;
-      el.style.maxHeight = 'none';
-      const full = el.scrollHeight;
-      el.style.maxHeight = prevMax;
-      setOverflows(full > USER_BUBBLE_COLLAPSED_MAX_PX + 4);
-    };
-
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [content]);
-
-  return (
-    <div className={`msg-user-collapse${expanded ? ' expanded' : ''}${overflows ? ' overflows' : ''}`}>
-      <div
-        ref={bodyRef}
-        className="msg-content-user"
-        style={
-          !expanded && overflows
-            ? { maxHeight: USER_BUBBLE_COLLAPSED_MAX_PX }
-            : undefined
-        }
-      >
-        {content}
-      </div>
-      {overflows && (
-        <button
-          type="button"
-          className="msg-user-expand-btn"
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? '收起' : '展开全部'}
-        </button>
-      )}
-    </div>
-  );
-}
-
 // ChatPanel Component
-const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props> = (
-  props,
-  ref,
-) => {
+const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props> = (props, ref) => {
   const {
     workspace,
     workspaceInfo,
     openFiles,
     selection,
+    cursor,
     onPendingDiff,
     sessionMessages,
     onMessagesChange,
@@ -431,7 +273,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
   }, []);
-
 
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
@@ -505,86 +346,96 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     [updateTab],
   );
 
-  const processFiles = useCallback(async (files: File[]) => {
-    const currentTabId = activeTabIdRef.current;
-    if (!currentTabId) return;
-    const newAttachments: ChatAttachment[] = [];
+  const processFiles = useCallback(
+    async (files: File[]) => {
+      const currentTabId = activeTabIdRef.current;
+      if (!currentTabId) return;
+      const newAttachments: ChatAttachment[] = [];
 
-    for (const file of files) {
-      const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
+      for (const file of files) {
+        const isImage =
+          file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
 
-      if (isImage) {
-        try {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          newAttachments.push({
-            id: uid(),
-            name: file.name || 'image.png',
-            type: 'image',
-            mimeType: file.type || 'image/png',
-            size: file.size,
-            dataUrl,
-          });
-        } catch (err) {
-          console.error('Failed to read image file:', err);
-        }
-      } else {
-        if (file.size > 5 * 1024 * 1024) {
-          alert(`文件 ${file.name} 超过 5MB 限制`);
-          continue;
-        }
-        try {
-          const text = await file.text();
-          newAttachments.push({
-            id: uid(),
-            name: file.name,
-            type: 'file',
-            mimeType: file.type || 'text/plain',
-            size: file.size,
-            content: text,
-          });
-        } catch (err) {
-          console.error('Failed to read text file:', err);
+        if (isImage) {
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+            newAttachments.push({
+              id: uid(),
+              name: file.name || 'image.png',
+              type: 'image',
+              mimeType: file.type || 'image/png',
+              size: file.size,
+              dataUrl,
+            });
+          } catch (err) {
+            console.error('Failed to read image file:', err);
+          }
+        } else {
+          if (file.size > 5 * 1024 * 1024) {
+            alert(`文件 ${file.name} 超过 5MB 限制`);
+            continue;
+          }
+          try {
+            const text = await file.text();
+            newAttachments.push({
+              id: uid(),
+              name: file.name,
+              type: 'file',
+              mimeType: file.type || 'text/plain',
+              size: file.size,
+              content: text,
+            });
+          } catch (err) {
+            console.error('Failed to read text file:', err);
+          }
         }
       }
-    }
 
-    if (newAttachments.length > 0) {
+      if (newAttachments.length > 0) {
+        updateTab(currentTabId, (t) => ({
+          ...t,
+          attachments: [...(t.attachments || []), ...newAttachments],
+        }));
+      }
+    },
+    [updateTab],
+  );
+
+  const handleRemoveAttachment = useCallback(
+    (id: string) => {
+      const currentTabId = activeTabIdRef.current;
+      if (!currentTabId) return;
       updateTab(currentTabId, (t) => ({
         ...t,
-        attachments: [...(t.attachments || []), ...newAttachments],
+        attachments: (t.attachments || []).filter((a) => a.id !== id),
       }));
-    }
-  }, [updateTab]);
+    },
+    [updateTab],
+  );
 
-  const handleRemoveAttachment = useCallback((id: string) => {
-    const currentTabId = activeTabIdRef.current;
-    if (!currentTabId) return;
-    updateTab(currentTabId, (t) => ({
-      ...t,
-      attachments: (t.attachments || []).filter((a) => a.id !== id),
-    }));
-  }, [updateTab]);
-
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    const files: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.kind === 'file') {
-        const file = item.getAsFile();
-        if (file) files.push(file);
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const files: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
       }
-    }
-    if (files.length > 0) {
-      void processFiles(files);
-    }
-  }, [processFiles]);
+      if (files.length > 0) {
+        void processFiles(files);
+      }
+    },
+    [processFiles],
+  );
 
   // Sync active tab messages to parent prop
   useEffect(() => {
@@ -631,7 +482,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     setTimeout(doScroll, 40);
   }, []);
 
-  const lastUserMsgId = [...(activeTab?.messages ?? [])].reverse().find((m) => m.role === 'user')?.id;
+  const lastUserMsgId = [...(activeTab?.messages ?? [])]
+    .reverse()
+    .find((m) => m.role === 'user')?.id;
   const prevLastUserMsgIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
@@ -687,7 +540,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     if (stickRef.current) {
       scrollToBottom();
     }
-  }, [activeTab?.messages, activeTab?.streaming, activeTab?.plan, activeTab?.awaitingContinue, scrollToBottom]);
+  }, [
+    activeTab?.messages,
+    activeTab?.streaming,
+    activeTab?.plan,
+    activeTab?.awaitingContinue,
+    scrollToBottom,
+  ]);
 
   useImperativeHandle(ref, () => ({
     insertPath(pathOrRef: string) {
@@ -701,7 +560,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         return { ...t, input: nextInput };
       });
     },
-
 
     startFreshWithPath(path: string) {
       const newTab = createEmptyTab();
@@ -772,7 +630,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       if (!targetTab) return;
 
       updateTab(targetTab.id, (t) => {
-        let next = { ...t };
+        const next = { ...t };
         switch (event.type) {
           case 'status':
             next.status = event.status;
@@ -857,7 +715,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           }
           case 'tool_result': {
             const existingIdx = next.messages.findIndex(
-              (m) => m.role === 'tool' && (m.toolCallId === event.id || (m.toolName === event.name && m.toolStatus === 'running')),
+              (m) =>
+                m.role === 'tool' &&
+                (m.toolCallId === event.id ||
+                  (m.toolName === event.name && m.toolStatus === 'running')),
             );
             if (existingIdx >= 0) {
               const msgs = [...next.messages];
@@ -985,7 +846,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const rawPrompt = (overridePrompt ?? activeTab.input).trim();
     const currentAttachments = activeTab.attachments || [];
     if (!rawPrompt && currentAttachments.length === 0) return;
-    const prompt = rawPrompt || (currentAttachments.some((a) => a.type === 'image') ? '请分析图片' : '请分析附件');
+    const prompt =
+      rawPrompt ||
+      (currentAttachments.some((a) => a.type === 'image') ? '请分析图片' : '请分析附件');
     const runMode = overrideMode ?? activeTab.mode;
 
     const userMsg: ChatSessionMessage = {
@@ -1019,13 +882,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const planContext =
       runMode === 'agent' && ctxSource
         ? {
-          title: ctxSource.title,
-          summary: ctxSource.summary,
-          todos: ctxSource.todos,
-        }
+            title: ctxSource.title,
+            summary: ctxSource.summary,
+            todos: ctxSource.todos,
+          }
         : undefined;
 
-    const effectiveModelId = activeTab.modelId || activeModelId || (models[0]?.id ?? 'deepseek-local');
+    const effectiveModelId =
+      activeTab.modelId || activeModelId || (models[0]?.id ?? 'deepseek-local');
 
     const { runId: id } = await window.ide.startAgent({
       prompt,
@@ -1034,6 +898,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       planContext,
       openFiles,
       selection: selection?.trim() || undefined,
+      cursor,
       history,
       attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
     });
@@ -1131,13 +996,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
   const handleLoadSessionFromModal = (session: ChatSession) => {
     const currentKey =
-      workspaceInfo?.kind === 'ssh'
-        ? workspaceInfo.label || workspace || ''
-        : workspace || '';
+      workspaceInfo?.kind === 'ssh' ? workspaceInfo.label || workspace || '' : workspace || '';
     const needsSwitch = Boolean(
       session.workspacePath &&
-        session.workspacePath !== currentKey &&
-        session.workspacePath !== workspace,
+      session.workspacePath !== currentKey &&
+      session.workspacePath !== workspace,
     );
     if (needsSwitch && session.workspacePath) {
       // Workspace change effect will open this session after switch completes.
@@ -1157,10 +1020,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   };
 
   const handleRenameSession = (id: string, newTitle: string) => {
-
-    setTabs((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, title: newTitle } : t)),
-    );
+    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, title: newTitle } : t)));
   };
 
   const windowTokens = activeTab?.contextUsage?.windowTokens ?? contextWindowTokens;
@@ -1170,27 +1030,73 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   return (
     <div className="chat-panel">
       {/* Title Bar Header with Tabs */}
-      <div className="panel-title chat-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 12px', borderBottom: '1px solid var(--border)' }}>
-        <div className="chat-tabs-bar" style={{ display: 'flex', flex: 1, overflowX: 'auto', borderBottom: 'none', padding: '8px 0 0' }}>
+      <div
+        className="panel-title chat-title-row"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '0 12px',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <div
+          className="chat-tabs-bar"
+          style={{
+            display: 'flex',
+            flex: 1,
+            overflowX: 'auto',
+            borderBottom: 'none',
+            padding: '8px 0 0',
+          }}
+        >
           {tabs.map((t) => {
-            const isRunning = t.status !== 'idle' && t.status !== 'done' && t.status !== 'error' && t.status !== 'cancelled';
+            const isRunning =
+              t.status !== 'idle' &&
+              t.status !== 'done' &&
+              t.status !== 'error' &&
+              t.status !== 'cancelled';
             return (
               <div
                 key={t.id}
                 className={`chat-tab-item${t.id === activeTabId ? ' active' : ''}`}
                 onClick={() => setActiveTabId(t.id)}
                 title={t.title}
-                style={{ padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderRadius: '8px 8px 0 0', background: t.id === activeTabId ? 'var(--bg)' : 'transparent', color: t.id === activeTabId ? 'var(--text)' : 'var(--muted)', borderBottom: t.id === activeTabId ? '2px solid var(--accent, #007acc)' : '2px solid transparent', opacity: t.id === activeTabId ? 1 : 0.6 }}
+                style={{
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  borderRadius: '8px 8px 0 0',
+                  background: t.id === activeTabId ? 'var(--bg)' : 'transparent',
+                  color: t.id === activeTabId ? 'var(--text)' : 'var(--muted)',
+                  borderBottom:
+                    t.id === activeTabId
+                      ? '2px solid var(--accent, #007acc)'
+                      : '2px solid transparent',
+                  opacity: t.id === activeTabId ? 1 : 0.6,
+                }}
               >
                 {isRunning && <span className="chat-tab-running-dot" title="运行中…" />}
-                <span className="chat-tab-title" style={{ fontSize: 12 }}>{t.title || 'New Chat'}</span>
+                <span className="chat-tab-title" style={{ fontSize: 12 }}>
+                  {t.title || 'New Chat'}
+                </span>
                 {tabs.length > 1 && (
                   <button
                     type="button"
                     className="chat-tab-close"
                     onClick={(e) => handleCloseTab(t.id, e)}
                     title="关闭 Tab"
-                    style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 10, padding: 2, opacity: 0.6 }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'inherit',
+                      cursor: 'pointer',
+                      fontSize: 10,
+                      padding: 2,
+                      opacity: 0.6,
+                    }}
                   >
                     ✕
                   </button>
@@ -1199,15 +1105,22 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             );
           })}
         </div>
-        
-        <div className="chat-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 4, paddingBottom: 4 }}>
-          <button
-            type="button"
-            className="icon-btn"
-            title="新建对话"
-            onClick={handleNewTab}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+
+        <div
+          className="chat-header-actions"
+          style={{ display: 'flex', alignItems: 'center', gap: 4, paddingBottom: 4 }}
+        >
+          <button type="button" className="icon-btn" title="新建对话" onClick={handleNewTab}>
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M12 5v14M5 12h14" />
             </svg>
           </button>
@@ -1217,7 +1130,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             title="历史会话"
             onClick={() => setShowHistoryModal(true)}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
               <path d="M12 7v5l4 2" />
@@ -1231,13 +1153,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         <div className="chat-messages" ref={messagesElRef}>
           {(() => {
             const msgs = activeTab?.messages ?? [];
-            const isRunning =
-              activeTab
-                ? activeTab.status !== 'idle' &&
-                  activeTab.status !== 'done' &&
-                  activeTab.status !== 'error' &&
-                  activeTab.status !== 'cancelled'
-                : false;
+            const isRunning = activeTab
+              ? activeTab.status !== 'idle' &&
+                activeTab.status !== 'done' &&
+                activeTab.status !== 'error' &&
+                activeTab.status !== 'cancelled'
+              : false;
 
             // File-tree style turns: each user bubble is the sticky "folder";
             // everything until the next user message is the scrollable "files".
@@ -1317,9 +1238,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     AI
                   </div>
                 </div>
-                {(m as any).thinking?.length > 0 && <ThinkingBlock thinking={(m as any).thinking} />}
+                {(m as any).thinking?.length > 0 && (
+                  <ThinkingBlock thinking={(m as any).thinking} />
+                )}
                 <MarkdownMessage content={m.content} />
-                <div className="msg-footer" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                <div
+                  className="msg-footer"
+                  style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}
+                >
                   <div className="msg-actions">
                     <button
                       type="button"
@@ -1334,7 +1260,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               </div>
             );
 
-            const renderTurnBody = (body: ChatSessionMessage[], turnKey: string, turnIsLive: boolean) => {
+            const renderTurnBody = (
+              body: ChatSessionMessage[],
+              turnKey: string,
+              turnIsLive: boolean,
+            ) => {
               const bodyEls: React.ReactNode[] = [];
               let pendingGroup: ChatSessionMessage[] = [];
 
@@ -1383,10 +1313,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               return (
                 <div key={turnKey} className="chat-turn">
                   {turn.user && (
-                    <div
-                      className="chat-turn-folder"
-                      style={{ zIndex: 10 + turnIdx }}
-                    >
+                    <div className="chat-turn-folder" style={{ zIndex: 10 + turnIdx }}>
                       {renderUserBubble(turn.user)}
                     </div>
                   )}
@@ -1432,8 +1359,22 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   onClick={() => onSelectDiff?.(d.id)}
                   title={`点击查看 ${d.path} 差异`}
                 >
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ color: 'var(--warn)', flexShrink: 0 }}>
-                    <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    style={{ color: 'var(--warn)', flexShrink: 0 }}
+                  >
+                    <rect
+                      x="2"
+                      y="2"
+                      width="12"
+                      height="12"
+                      rx="2"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    />
                     <circle cx="8" cy="8" r="2" fill="currentColor" />
                   </svg>
                   <span className="diff-stats">
@@ -1449,30 +1390,51 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
           <div className="chat-diff-action-bar">
             <div className="chat-diff-action-left">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ opacity: 0.7 }}
+              >
                 <path d="M19 12H5M12 19l-7-7 7-7" />
               </svg>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ opacity: 0.7 }}
+              >
                 <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
                 <polyline points="14 2 14 8 20 8" />
               </svg>
               <span className="count-text">{diffs.length} Files With Changes</span>
             </div>
             <div className="chat-diff-action-right">
-              <button
-                type="button"
-                className="btn-reject-all"
-                onClick={onRejectAllDiffs}
-              >
+              <button type="button" className="btn-reject-all" onClick={onRejectAllDiffs}>
                 Reject all
               </button>
-              <button
-                type="button"
-                className="btn-accept-all"
-                onClick={onAcceptAllDiffs}
-              >
+              <button type="button" className="btn-accept-all" onClick={onAcceptAllDiffs}>
                 Accept all
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M6 9l6 6 6-6" />
                 </svg>
               </button>
@@ -1509,8 +1471,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 value={confirmAnswer}
                 placeholder="输入回答后提交…"
                 onChange={(e) => setConfirmAnswer(e.target.value)}
-                onCompositionStart={() => { isComposingRef.current = true; }}
-                onCompositionEnd={() => { isComposingRef.current = false; }}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                }}
+                onCompositionEnd={() => {
+                  isComposingRef.current = false;
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
                     e.preventDefault();
@@ -1566,16 +1532,19 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       )}
 
       {/* Input Box */}
-      <div className="chat-input" style={{ padding: '0 12px 12px', borderTop: 'none', background: 'transparent' }}>
+      <div
+        className="chat-input"
+        style={{ padding: '0 12px 12px', borderTop: 'none', background: 'transparent' }}
+      >
         <div
           className={`chat-input-box${isDragging ? ' drag-over' : ''}`}
-          style={{ 
+          style={{
             background: 'var(--bg-lighter)',
             borderRadius: 16,
             border: isDragging ? '1px dashed var(--accent)' : '1px solid var(--border)',
             display: 'flex',
             flexDirection: 'column',
-            padding: '8px 12px'
+            padding: '8px 12px',
           }}
           onDragOver={(e) => {
             e.preventDefault();
@@ -1628,7 +1597,15 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             ref={textareaRef}
             className="chat-textarea-custom"
             value={activeTab?.input ?? ''}
-            style={{ border: 'none', background: 'transparent', outline: 'none', minHeight: '52px', resize: 'none', fontSize: 'var(--ui-font-size, 12px)', color: 'var(--text)' }}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              outline: 'none',
+              minHeight: '52px',
+              resize: 'none',
+              fontSize: 'var(--ui-font-size, 12px)',
+              color: 'var(--text)',
+            }}
             placeholder={
               activeTab?.mode === 'ask'
                 ? '提问关于代码的问题…（可添加图片/文件，Enter 发送）'
@@ -1637,8 +1614,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   : '描述任务…（可添加图片/文件，Enter 发送，Shift+Enter 换行）'
             }
             onChange={(e) => updateTab(activeTab.id, (t) => ({ ...t, input: e.target.value }))}
-            onCompositionStart={() => { isComposingRef.current = true; }}
-            onCompositionEnd={() => { isComposingRef.current = false; }}
+            onCompositionStart={() => {
+              isComposingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              isComposingRef.current = false;
+            }}
             onPaste={handlePaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
@@ -1668,7 +1649,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 title="添加附件（图片/文件）"
                 onClick={() => fileInputRef.current?.click()}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.48-8.48" />
                 </svg>
               </button>
@@ -1676,7 +1666,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               {/* Model Selector Dropdown */}
               <div className="chat-model-selector-wrapper" ref={modelDropdownRef}>
                 {(() => {
-                  const currentModelId = activeTab?.modelId || activeModelId || models[0]?.id || 'deepseek-local';
+                  const currentModelId =
+                    activeTab?.modelId || activeModelId || models[0]?.id || 'deepseek-local';
                   const currentModel = models.find((m) => m.id === currentModelId) || models[0];
                   const badge = getProviderBadge(currentModel?.provider);
                   return (
@@ -1687,10 +1678,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         onClick={() => setModelDropdownOpen((v) => !v)}
                         title={`当前模型: ${currentModel?.name || currentModelId} (${currentModel?.model || ''})`}
                       >
-                        <span
-                          className="chat-model-dot"
-                          style={{ backgroundColor: badge.color }}
-                        />
+                        <span className="chat-model-dot" style={{ backgroundColor: badge.color }} />
                         <span className="chat-model-name">
                           {currentModel?.name || currentModelId}
                         </span>
@@ -1736,7 +1724,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                                         <span className="chat-model-item-title">{m.name}</span>
                                         <span
                                           className="chat-model-provider-badge"
-                                          style={{ color: mBadge.color, backgroundColor: mBadge.bg }}
+                                          style={{
+                                            color: mBadge.color,
+                                            backgroundColor: mBadge.bg,
+                                          }}
                                         >
                                           {mBadge.label}
                                         </span>
@@ -1759,21 +1750,35 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               </div>
 
               {/* Mode Selectors */}
-              <div className="chat-toolbar-select-pill" title={`模式: ${MODE_LABEL[activeTab?.mode || 'agent']}`}>
-                <select 
+              <div
+                className="chat-toolbar-select-pill"
+                title={`模式: ${MODE_LABEL[activeTab?.mode || 'agent']}`}
+              >
+                <select
                   value={activeTab?.mode || 'agent'}
                   disabled={!!activeTab?.runId}
-                  onChange={(e) => updateTab(activeTab.id, (t) => ({ ...t, mode: e.target.value as AgentMode }))}
+                  onChange={(e) =>
+                    updateTab(activeTab.id, (t) => ({ ...t, mode: e.target.value as AgentMode }))
+                  }
                 >
-                  <option value="agent" style={{ background: 'var(--bg)' }}>Agent</option>
-                  <option value="ask" style={{ background: 'var(--bg)' }}>Ask</option>
-                  <option value="plan" style={{ background: 'var(--bg)' }}>Plan</option>
+                  <option value="agent" style={{ background: 'var(--bg)' }}>
+                    Agent
+                  </option>
+                  <option value="ask" style={{ background: 'var(--bg)' }}>
+                    Ask
+                  </option>
+                  <option value="plan" style={{ background: 'var(--bg)' }}>
+                    Plan
+                  </option>
                 </select>
                 <span className="chat-pill-arrow">▾</span>
               </div>
 
               {/* Permission Selector */}
-              <div className="chat-toolbar-select-pill" title={`权限: ${PERMISSION_MODE_LABELS[permissionMode]}`}>
+              <div
+                className="chat-toolbar-select-pill"
+                title={`权限: ${PERMISSION_MODE_LABELS[permissionMode]}`}
+              >
                 <select
                   value={permissionMode}
                   onChange={(e) => onPermissionModeChange(e.target.value as PermissionMode)}
@@ -1787,20 +1792,44 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 <span className="chat-pill-arrow">▾</span>
               </div>
             </div>
-            
+
             <div className="chat-toolbar-right">
               {/* Context progress circle */}
               {windowTokens > 0 && (
-                <div title={`上下文使用率: ${usagePct.toFixed(0)}% (${formatTokens(usedTokens)} / ${formatTokens(windowTokens)})`} style={{ position: 'relative', width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <svg viewBox="0 0 36 36" style={{ width: 15, height: 15, transform: 'rotate(-90deg)' }}>
-                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255, 255, 255, 0.1)" strokeWidth="4" />
-                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray={`${usagePct}, 100`} />
+                <div
+                  title={`上下文使用率: ${usagePct.toFixed(0)}% (${formatTokens(usedTokens)} / ${formatTokens(windowTokens)})`}
+                  style={{
+                    position: 'relative',
+                    width: 14,
+                    height: 14,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <svg
+                    viewBox="0 0 36 36"
+                    style={{ width: 15, height: 15, transform: 'rotate(-90deg)' }}
+                  >
+                    <path
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none"
+                      stroke="rgba(255, 255, 255, 0.1)"
+                      strokeWidth="4"
+                    />
+                    <path
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      strokeDasharray={`${usagePct}, 100`}
+                    />
                   </svg>
                 </div>
               )}
               {/* Send / Stop */}
-              {!!activeTab?.runId ? (
-                <button 
+              {activeTab?.runId ? (
+                <button
                   type="button"
                   className="chat-action-circle-btn stop"
                   onClick={() => void cancel()}
@@ -1811,13 +1840,22 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   </svg>
                 </button>
               ) : (
-                <button 
+                <button
                   type="button"
                   className="chat-action-circle-btn send"
                   onClick={() => void send()}
                   title="发送"
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <line x1="12" y1="19" x2="12" y2="5" />
                     <polyline points="5 12 12 5 19 12" />
                   </svg>
@@ -1856,7 +1894,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           </div>
         </div>
       )}
-
     </div>
   );
 };

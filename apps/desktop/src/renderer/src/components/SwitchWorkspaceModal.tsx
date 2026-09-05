@@ -19,12 +19,19 @@ export function SwitchWorkspaceModal({
 
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-modal switch-workspace-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+      <div
+        className="settings-modal switch-workspace-modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 460 }}
+      >
         <h2>打开工作区</h2>
         <p className="muted" style={{ marginTop: 6, fontSize: 13 }}>
           要如何在 IDE 中打开「<strong style={{ color: 'var(--fg)' }}>{folderName}</strong>」？
         </p>
-        <p className="muted" style={{ fontSize: 12, opacity: 0.7, marginBottom: 20, wordBreak: 'break-all' }}>
+        <p
+          className="muted"
+          style={{ fontSize: 12, opacity: 0.7, marginBottom: 20, wordBreak: 'break-all' }}
+        >
           {targetPath}
         </p>
 

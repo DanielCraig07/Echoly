@@ -12,11 +12,7 @@ import type {
 } from '@deepseek-ide/shared';
 import { runAgent } from '@deepseek-ide/agent';
 import { probeLlm } from '@deepseek-ide/llm';
-import {
-  discoverSkills,
-  formatSkillsForPrompt,
-  selectSkillsForPrompt,
-} from '@deepseek-ide/skills';
+import { discoverSkills, formatSkillsForPrompt, selectSkillsForPrompt } from '@deepseek-ide/skills';
 import type { SettingsStore } from './settings';
 import { appendRunTrace, type WindowGetter } from './diffStore';
 import type { WindowRegistry } from './windowRegistry';
@@ -76,7 +72,8 @@ export class AgentService {
   }
 
   async listSkills() {
-    const session = this.deps.registry.tryCurrent() ?? this.deps.registry.resolve(this.deps.getWindow);
+    const session =
+      this.deps.registry.tryCurrent() ?? this.deps.registry.resolve(this.deps.getWindow);
     const workspaceRoot =
       session.workspace.getKind() === 'local' ? session.workspace.getRoot() : null;
     const skills = await discoverSkills({
@@ -152,7 +149,11 @@ export class AgentService {
       if (!shouldAutoApproveConfirm(mode, pending.kind)) continue;
       this.confirms.delete(id);
       pending.resolve(true);
-      this.emit(pending.runId, { type: 'confirm_resolved', requestId: id, reason: 'auto_approved' });
+      this.emit(pending.runId, {
+        type: 'confirm_resolved',
+        requestId: id,
+        reason: 'auto_approved',
+      });
       this.emit(pending.runId, { type: 'status', status: 'tool_running' });
     }
   }
@@ -191,6 +192,7 @@ export class AgentService {
       planContext?: PlanContext;
       openFiles?: Array<{ path: string; content: string }>;
       selection?: string;
+      cursor?: { path: string; line: number; column: number };
       history?: ChatMessage[];
       attachments?: ChatAttachment[];
     },
@@ -244,8 +246,7 @@ export class AgentService {
 
     void (async () => {
       try {
-        const workspaceForSkills =
-          workspace.getKind() === 'local' ? workspaceRoot : null;
+        const workspaceForSkills = workspace.getKind() === 'local' ? workspaceRoot : null;
         const allSkills = await discoverSkills({
           workspaceRoot: workspaceForSkills,
           userSkillsDir: this.userSkillsDir(),
@@ -267,6 +268,7 @@ export class AgentService {
           skillsText,
           openFiles: payload.openFiles,
           selection: payload.selection,
+          cursor: payload.cursor,
           history: payload.history,
           attachments: payload.attachments,
           applyImmediately: false,

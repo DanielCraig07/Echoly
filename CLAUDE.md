@@ -46,7 +46,7 @@ apps/desktop/         Electron app (electron-vite)
   src/renderer/        - React 18 UI
     App.tsx            - Root layout: resizable panels (explorer/editor/bottom), toolbar, modals
     utils.ts           - UI helpers (time formatting, theme, path display)
-    
+
 packages/
   shared/              - Type definitions (AppSettings, PermissionMode, PendingDiff, etc.), IPC API contract
   llm/                 - OpenAI-compatible HTTP client: chat completion, streaming, model listing, tool probe
@@ -58,6 +58,7 @@ packages/
 ## Architecture flow
 
 ### Agent tool loop (`packages/agent/src/index.ts`)
+
 1. Build system prompt with tools, skills, workspace context
 2. Call LLM with conversation history + tool definitions
 3. Parse response: native `tool_calls` or fallback ` ```json tool` code block
@@ -66,16 +67,20 @@ packages/
 6. On 400/tool errors: retry without tools once
 
 Three modes:
+
 - **Ask**: readonly tools only (list_dir, read_file, search_code, glob_files, ask_user)
 - **Plan**: readonly + structured ` ```plan` JSON output for todos
 - **Agent**: all tools including write_file, apply_patch, run_terminal
 
 ### IPC flow
+
 - **Preload** (`contextBridge`) → **IPC handlers** (ipc.ts) → **backing services** (agentService.ts, gitService.ts, workspace.ts, etc.)
 - All main↔renderer communication goes through typed `IpcApi` interface defined in `packages/shared`
 
 ### Tools & permissions (`packages/tools/src/`)
+
 8 tools: `list_dir`, `read_file`, `write_file`, `apply_patch`, `search_code`, `glob_files`, `run_terminal`, `ask_user`
+
 - File operations jailed to workspace root via `pathJail.ts`
 - Local: `node:fs`; SSH: `ssh2` SFTP
 - Search: prefers `rg`, falls back to JS traversal
@@ -83,25 +88,26 @@ Three modes:
 
 ## Key renderer components
 
-| Component | Purpose |
-|-----------|---------|
-| `App.tsx` | Root layout: resizable panels (explorer/editor/chat/bottom panel with terminal+diff), toolbar |
-| `ChatPanel.tsx` | Chat message list, input, mode selector (Ask/Plan/Agent), permission display, session list |
-| `EditorPane.tsx` | Monaco editor multi-tab, top search file jumping with line highlight |
-| `FileTree.tsx` | Sidebar file tree w/ ignore rules context menu |
-| `GitPanel.tsx` | Source Control: status, stage/unstage, commit, branch switch/create, pull/push, discard, diff |
-| `TerminalPanel.tsx` | Local (GBK) / SSH (UTF-8) terminal via xterm.js |
-| `TopSearchBar.tsx` | Cursor-style Ctrl+P (files) + Ctrl+Shift+F (code search) |
-| `DiffPanel.tsx` | Diff review from tool output: accept/reject per hunk |
-| `StatusBar.tsx` | Bottom bar: workspace type, mode, permission level, context tokens, agent steps |
-| `SessionDrawer.tsx` / `SessionModal.tsx` | Session history & management |
-| `PlanPanel.tsx` | Structured plan/todo display for Plan mode |
-| `ToolCallCard.tsx` | Agent tool call display with animated step indicators |
-| `ReasoningStep.tsx` | Expandable reasoning chain display |
+| Component                                | Purpose                                                                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `App.tsx`                                | Root layout: resizable panels (explorer/editor/chat/bottom panel with terminal+diff), toolbar |
+| `ChatPanel.tsx`                          | Chat message list, input, mode selector (Ask/Plan/Agent), permission display, session list    |
+| `EditorPane.tsx`                         | Monaco editor multi-tab, top search file jumping with line highlight                          |
+| `FileTree.tsx`                           | Sidebar file tree w/ ignore rules context menu                                                |
+| `GitPanel.tsx`                           | Source Control: status, stage/unstage, commit, branch switch/create, pull/push, discard, diff |
+| `TerminalPanel.tsx`                      | Local (GBK) / SSH (UTF-8) terminal via xterm.js                                               |
+| `TopSearchBar.tsx`                       | Cursor-style Ctrl+P (files) + Ctrl+Shift+F (code search)                                      |
+| `DiffPanel.tsx`                          | Diff review from tool output: accept/reject per hunk                                          |
+| `StatusBar.tsx`                          | Bottom bar: workspace type, mode, permission level, context tokens, agent steps               |
+| `SessionDrawer.tsx` / `SessionModal.tsx` | Session history & management                                                                  |
+| `PlanPanel.tsx`                          | Structured plan/todo display for Plan mode                                                    |
+| `ToolCallCard.tsx`                       | Agent tool call display with animated step indicators                                         |
+| `ReasoningStep.tsx`                      | Expandable reasoning chain display                                                            |
 
 ## Electron-vite config
 
 Three build targets in `electron.vite.config.ts`:
+
 - **main**: `src/main/index.ts` (includes workspace packages as bundled deps)
 - **preload**: `src/preload/index.ts`
 - **renderer**: React + `@renderer/` alias
@@ -119,11 +125,13 @@ Only supported in local workspaces. `gitService.ts` uses child_process (not simp
 ## Skills system
 
 Scans three locations for `SKILL.md` files:
+
 - `.cursor/skills/<name>/SKILL.md`
 - `.deepseek/skills/<name>/SKILL.md`
 - user data dir `skills/<name>/SKILL.md`
 
 Frontmatter format (Cursor-compatible):
+
 ```markdown
 ---
 name: skill-name
@@ -135,15 +143,15 @@ Top-scoring skills (matched against user prompt) are injected into the agent sys
 
 ## Default settings
 
-| Item               | Default                         |
-| ------------------ | ------------------------------- |
-| baseUrl            | `http://192.168.10.241:8002`  |
-| model              | `deepseek-v4`                 |
-| temperature        | `0.2`                          |
-| maxAgentSteps      | `50`                           |
-| permissionMode     | `ask`                          |
-| contextWindowTokens| `128000`                       |
-| theme              | `dark`                         |
+| Item                | Default                      |
+| ------------------- | ---------------------------- |
+| baseUrl             | `http://192.168.10.241:8002` |
+| model               | `deepseek-v4`                |
+| temperature         | `0.2`                        |
+| maxAgentSteps       | `50`                         |
+| permissionMode      | `ask`                        |
+| contextWindowTokens | `128000`                     |
+| theme               | `dark`                       |
 
 Settings stored in Electron `userData/settings.json`.
 

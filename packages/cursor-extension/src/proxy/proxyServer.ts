@@ -7,18 +7,12 @@ export interface ProxyManager {
   isRunning(): boolean;
 }
 
-export function createProxyManager(
-  port: number,
-  targetBaseUrl: string,
-): ProxyManager {
+export function createProxyManager(port: number, targetBaseUrl: string): ProxyManager {
   const normalizedTarget = targetBaseUrl.replace(/\/+$/, '');
   let server: http.Server | null = null;
   let running = false;
 
-  function handleRequest(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): void {
+  function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
     // Health check
     if (req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -42,8 +36,7 @@ export function createProxyManager(
     };
 
     // Handle streaming (for chat completions)
-    const isStreaming = req.method === 'POST' &&
-      parsedUrl.pathname === '/v1/chat/completions';
+    const isStreaming = req.method === 'POST' && parsedUrl.pathname === '/v1/chat/completions';
 
     const proxyReq = http.request(options, (proxyRes) => {
       if (isStreaming) {
@@ -64,12 +57,14 @@ export function createProxyManager(
 
     proxyReq.on('error', (err) => {
       res.writeHead(502, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        error: {
-          message: `Proxy error: ${err.message}`,
-          type: 'proxy_error',
-        },
-      }));
+      res.end(
+        JSON.stringify({
+          error: {
+            message: `Proxy error: ${err.message}`,
+            type: 'proxy_error',
+          },
+        }),
+      );
     });
 
     // Forward request body

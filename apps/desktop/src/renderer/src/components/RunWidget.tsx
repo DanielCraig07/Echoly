@@ -11,6 +11,108 @@ interface Props {
 interface ScriptOption {
   name: string;
   command: string;
+  /** 来源描述，用于下拉分组展示 */
+  source: 'npm' | 'makefile' | 'cargo' | 'python' | 'go' | 'generic';
+}
+
+/** 常见 npm 脚本优先级：作为默认选中 */
+const NPM_PRIORITY = ['dev', 'start', 'serve', 'build', 'test'];
+
+/** 尝试从文件内容中解析运行配置（多语言） */
+async function detectScripts(workspace: string): Promise<ScriptOption[]> {
+  const tryRead = async (p: string): Promise<string | null> => {
+    try {
+      const content = await window.ide.readFile(p);
+      return content || null;
+    } catch {
+      return null;
+    }
+  };
+
+  // 1) package.json — npm scripts
+  const pkg = await tryRead('package.json');
+  if (pkg) {
+    try {
+      const parsed = JSON.parse(pkg);
+      if (parsed && typeof parsed.scripts === 'object') {
+        const opts: ScriptOption[] = Object.keys(parsed.scripts).map((key) => ({
+          name: key,
+          command: `npm run ${key}`,
+          source: 'npm',
+        }));
+        if (opts.length > 0) return opts;
+      }
+    } catch {
+      /* fallthrough */
+    }
+  }
+
+  // 2) Makefile — make targets
+  const makefile = await tryRead('Makefile');
+  if (makefile) {
+    const targets: ScriptOption[] = [];
+    for (const line of makefile.split(/\r?\n/)) {
+      const m = line.match(/^([a-zA-Z0-9_.-]+)\s*:\s*(.*)$/);
+      // 过滤掉看似规则/变量定义的（以 . 开头或含 = 推断变量）
+      if (m && !m[1].startsWith('.') && !/^[A-Z0-9_]+$/.test(m[1])) {
+        targets.push({ name: m[1], command: `make ${m[1]}`, source: 'makefile' });
+      }
+    }
+    if (targets.length > 0) return targets.slice(0, 10);
+  }
+
+  // 3) Cargo.toml — cargo 任务
+  const cargo = await tryRead('Cargo.toml');
+  if (cargo) {
+    const targets: ScriptOption[] = [];
+    const m = cargo.match(/^\[alias\]\s*([\s\S]*?)(?=^\[|\s*$)/m);
+    if (m && m[1]) {
+      for (const line of m[1].split(/\r?\n/)) {
+        const kv = line.match(/^\s*([a-zA-Z0-9_.-]+)\s*=\s*"(.+)"\s*$/);
+        if (kv) targets.push({ name: kv[1], command: `cargo ${kv[1]}`, source: 'cargo' });
+      }
+    }
+    if (targets.length > 0) return targets;
+    // 无 alias，给基础命令
+    targets.push(
+      { name: 'build', command: 'cargo build', source: 'cargo' },
+      { name: 'run', command: 'cargo run', source: 'cargo' },
+      { name: 'test', command: 'cargo test', source: 'cargo' },
+    );
+    return targets;
+  }
+
+  // 4) pyproject.toml — python 常用
+  const pyproject = await tryRead('pyproject.toml');
+  if (pyproject) {
+    const targets: ScriptOption[] = [];
+    const m = pyproject.match(/\[tool\.poetry\.scripts\]\s*([\s\S]*?)(?=^\[|\s*$)/m);
+    if (m && m[1]) {
+      for (const line of m[1].split(/\r?\n/)) {
+        const kv = line.match(/^\s*([a-zA-Z0-9_.-]+)\s*=\s*"(.+)"\s*$/);
+        if (kv) targets.push({ name: kv[1], command: kv[2], source: 'python' });
+      }
+    }
+    if (targets.length > 0) return targets;
+  }
+
+  // 5) go.mod — Go 项目常用命令
+  const gomod = await tryRead('go.mod');
+  if (gomod) {
+    return [
+      { name: 'run', command: 'go run .', source: 'go' },
+      { name: 'build', command: 'go build ./...', source: 'go' },
+      { name: 'test', command: 'go test ./...', source: 'go' },
+    ];
+  }
+
+  // 兜底：通用 npm 默认
+  return [
+    { name: 'dev', command: 'npm run dev', source: 'generic' },
+    { name: 'build', command: 'npm run build', source: 'generic' },
+    { name: 'test', command: 'npm test', source: 'generic' },
+    { name: 'start', command: 'npm start', source: 'generic' },
+  ];
 }
 
 export function RunWidget({
@@ -21,40 +123,28 @@ export function RunWidget({
   onExpandBottom,
 }: Props) {
   const [scripts, setScripts] = useState<ScriptOption[]>([
-    { name: 'dev', command: 'npm run dev' },
-    { name: 'build', command: 'npm run build' },
-    { name: 'test', command: 'npm test' },
-    { name: 'start', command: 'npm start' },
+    { name: 'dev', command: 'npm run dev', source: 'generic' },
+    { name: 'build', command: 'npm run build', source: 'generic' },
+    { name: 'test', command: 'npm test', source: 'generic' },
+    { name: 'start', command: 'npm start', source: 'generic' },
   ]);
   const [selectedScript, setSelectedScript] = useState<string>('dev');
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 尝试自动读取工程根目录的 package.json 中的 scripts
+  // 尝试自动检测工程根目录的运行配置（npm / Makefile / Cargo / Python / Go）
   useEffect(() => {
     if (!workspace) return;
     let isMounted = true;
     (async () => {
-      try {
-        const pkgContent = await window.ide.readFile('package.json');
-        if (!isMounted || !pkgContent) return;
-        const parsed = JSON.parse(pkgContent);
-        if (parsed && typeof parsed.scripts === 'object') {
-          const loaded: ScriptOption[] = Object.keys(parsed.scripts).map((key) => ({
-            name: key,
-            command: `npm run ${key}`,
-          }));
-          if (loaded.length > 0) {
-            setScripts(loaded);
-            // 优先选择常见开发命令
-            const priority = ['dev', 'start', 'serve', 'build', 'test'];
-            const best = priority.find((p) => loaded.some((s) => s.name === p)) || loaded[0].name;
-            setSelectedScript(best);
-          }
-        }
-      } catch {
-        // 无 package.json 或非 node 项目，使用通用默认脚本
+      const loaded = await detectScripts(workspace);
+      if (!isMounted) return;
+      if (loaded.length > 0) {
+        setScripts(loaded);
+        // 优先选择常见开发命令
+        const best = NPM_PRIORITY.find((p) => loaded.some((s) => s.name === p)) || loaded[0].name;
+        setSelectedScript(best);
       }
     })();
     return () => {
@@ -143,7 +233,14 @@ export function RunWidget({
             }}
           />
         )}
-        <span style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span
+          style={{
+            maxWidth: 110,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
           {selectedScript}
         </span>
         <span style={{ fontSize: 9, opacity: 0.6 }}>▾</span>
@@ -181,7 +278,7 @@ export function RunWidget({
           </div>
           {scripts.map((s) => (
             <div
-              key={s.name}
+              key={`${s.source}-${s.name}`}
               onClick={() => {
                 setSelectedScript(s.name);
                 setDropdownOpen(false);
