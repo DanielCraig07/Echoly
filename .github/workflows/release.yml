@@ -31,7 +31,7 @@ jobs:
       - name: Package macOS arm64 DMG (publish to release)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run pack:mac:arm64 -- --publish always
+        run: npm run pack:mac:publish
 
       - name: Upload mac artifacts
         if: always()
@@ -59,7 +59,7 @@ jobs:
       - name: Package Windows x64 NSIS (publish to release)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run pack -- --publish always
+        run: npm run pack:win:publish
 
       - name: Upload win artifacts
         if: always()

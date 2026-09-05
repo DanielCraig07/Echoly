@@ -10,6 +10,8 @@
     "build": "electron-vite build",
     "pack": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --x64 --config.electronVersion=35.7.5",
     "pack:win32": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --ia32 --config.electronVersion=35.7.5 --config.electronDist=electron-dist-cache/win32-ia32",
+    "pack:win:publish": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --x64 --config.electronVersion=35.7.5 --publish always",
+    "pack:mac:publish": "npm run build && node ../../scripts/fix-pty-perms.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64 --config.electronVersion=35.7.5 --publish always && rm -rf release/mac release/mac-arm64 release/mac-x64",
     "pack:mac": "npm run build && node ../../scripts/fix-pty-perms.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
     "pack:mac:arm64": "npm run build && node ../../scripts/fix-pty-perms.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64 --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
     "pack:mac:x64": "npm run build && node ../../scripts/fix-pty-perms.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --x64 --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
