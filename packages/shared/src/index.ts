@@ -652,6 +652,42 @@ export interface GitOpResult {
   detail: string;
 }
 
+export interface GitRemoteInfo {
+  name: string;
+  url: string;
+}
+
+export interface GitRemotesResult {
+  ok: boolean;
+  detail?: string;
+  remotes: GitRemoteInfo[];
+}
+
+export interface GitStashEntry {
+  index: number;
+  message: string;
+}
+
+export type GitStashAction = 'push' | 'pop' | 'apply' | 'drop' | 'list';
+
+export interface GitStashResult {
+  ok: boolean;
+  detail?: string;
+  stashes?: GitStashEntry[];
+}
+
+export interface GitTagsResult {
+  ok: boolean;
+  detail?: string;
+  tags: string[];
+}
+
+export interface GitOutputResult {
+  ok: boolean;
+  detail?: string;
+  lines: string[];
+}
+
 export interface RecentWorkspaceItem {
   path: string;
   name: string;
@@ -812,6 +848,12 @@ export interface IpcApi {
   gitCreateBranch: (name: string, checkout?: boolean) => Promise<GitOpResult>;
   gitPull: () => Promise<GitOpResult>;
   gitPush: () => Promise<GitOpResult>;
+  gitFetch: () => Promise<GitOpResult>;
+  gitRemotes: () => Promise<GitRemotesResult>;
+  gitStash: (action: GitStashAction, message?: string) => Promise<GitStashResult>;
+  gitTags: () => Promise<GitTagsResult>;
+  gitCreateTag: (name: string, message?: string) => Promise<GitOpResult>;
+  gitOutput: (maxCount?: number) => Promise<GitOutputResult>;
   gitHistory: (maxCount?: number) => Promise<GitHistoryResult>;
   gitCommitDetails: (hash: string) => Promise<GitCommitDetailResult>;
   gitFileHistory: (path: string, maxCount?: number) => Promise<GitHistoryResult>;
@@ -846,8 +888,17 @@ export interface IpcApi {
   extensionResolveWebview: (
     viewId: string,
   ) => Promise<{ success: boolean; html?: string; filePath?: string; error?: string }>;
-  /** 检查更新（需已配置 updateFeed） */
-  checkUpdate: () => Promise<{ ok: boolean; detail?: string }>;
+  /** 检查更新（仅探测，不下载）。返回是否需更新 + 版本说明。 */
+  checkUpdate: () => Promise<{
+    ok: boolean;
+    hasUpdate?: boolean;
+    version?: string;
+    current?: string;
+    releaseNotes?: string;
+    detail?: string;
+  }>;
+  /** 确认后下载并安装：下载 → 打开安装包 → 退出当前应用。 */
+  downloadUpdate: () => Promise<{ ok: boolean; detail?: string }>;
   /** 获取更新状态 */
   getUpdateState: () => Promise<{ checked: boolean; feed: unknown }>;
   /** 更新下载进度事件：phase=download 时带 loaded/total/percent */

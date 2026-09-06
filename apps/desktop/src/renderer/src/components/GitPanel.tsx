@@ -1033,57 +1033,65 @@ export function GitPanel({
         <div
           ref={moreMenuRef}
           onClick={() => setShowMoreMenu(false)}
-          style={{
-            position: 'absolute',
-            top: 36,
-            right: 12,
-            zIndex: 1000,
-            background: 'var(--bg-lighter, #252526)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-            width: 180,
-            padding: '4px 0',
-            fontSize: 12,
-            color: 'var(--text)',
-          }}
+          className="git-more-menu"
         >
           <div
-            className="search-result-item"
+            className="git-more-menu-item"
             onClick={() => setDisplayMode((m) => (m === 'tree' ? 'list' : 'tree'))}
-            style={{
-              padding: '6px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
           >
             <span>查看和排序 ({displayMode === 'tree' ? '树状' : '列表'})</span>
-            <span>▸</span>
+            <span className="chev">▸</span>
           </div>
-          <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+          <div className="git-more-menu-sep" />
+
+          <div className="git-more-menu-heading">同步</div>
 
           {/* 拉取 */}
           <div
-            className="search-result-item"
+            className="git-more-menu-item"
             onClick={() => void runGitAction('Git 拉取', () => window.ide.gitPull())}
-            style={{ padding: '6px 12px', cursor: 'pointer' }}
           >
             拉取
           </div>
 
           {/* 推送 */}
           <div
-            className="search-result-item"
+            className="git-more-menu-item"
             onClick={() => void runGitAction('Git 推送', () => window.ide.gitPush())}
-            style={{ padding: '6px 12px', cursor: 'pointer' }}
           >
             推送
           </div>
 
+          {/* 拉取，推送 */}
+          <div
+            className="git-more-menu-item"
+            onClick={() =>
+              void runGitAction('Git 同步 (Pull & Push)', async () => {
+                const p = await window.ide.gitPull();
+                if (!p.ok) return p;
+                return window.ide.gitPush();
+              })
+            }
+          >
+            <span>拉取，推送</span>
+            <span className="chev">▸</span>
+          </div>
+
+          {/* 抓取 */}
+          <div
+            className="git-more-menu-item"
+            onClick={() => void runGitAction('Git 抓取 (Fetch)', () => window.ide.gitFetch())}
+          >
+            抓取
+          </div>
+
+          <div className="git-more-menu-sep" />
+
+          <div className="git-more-menu-heading">仓库</div>
+
           {/* 克隆 */}
           <div
-            className="search-result-item"
+            className="git-more-menu-item"
             onClick={() =>
               void runGitAction('Git 克隆', async () => {
                 const url = prompt('请输入 Git 远程仓库地址 (URL):');
@@ -1094,14 +1102,47 @@ export function GitPanel({
                 });
               })
             }
-            style={{ padding: '6px 12px', cursor: 'pointer' }}
           >
             克隆
           </div>
 
+          {/* 远程 */}
+          <div
+            className="git-more-menu-item"
+            onClick={() =>
+              void runGitAction('Git 远程仓库', async () => {
+                const res = await window.ide.gitRemotes();
+                if (!res.ok) return res;
+                if (res.remotes.length === 0) {
+                  return { ok: true, detail: '当前项目尚未配置任何远程仓库' };
+                }
+                const detail = res.remotes.map((r) => `${r.name} → ${r.url}`).join('\n');
+                return { ok: true, detail };
+              })
+            }
+          >
+            <span>远程</span>
+            <span className="chev">▸</span>
+          </div>
+
+          {/* 分支 */}
+          <div
+            className="git-more-menu-item"
+            onClick={() =>
+              void runGitAction('新建分支', async () => {
+                const b = prompt('请输入新分支名称:');
+                if (!b?.trim()) return { ok: false, detail: '取消输入' };
+                return window.ide.gitCreateBranch(b.trim(), true);
+              })
+            }
+          >
+            <span>分支 (新建分支)</span>
+            <span className="chev">▸</span>
+          </div>
+
           {/* 签出到... */}
           <div
-            className="search-result-item"
+            className="git-more-menu-item"
             onClick={() =>
               void runGitAction('Git 切换分支', async () => {
                 const br = prompt('请输入要签出的目标分支名:');
@@ -1109,30 +1150,33 @@ export function GitPanel({
                 return window.ide.gitCheckout(br.trim());
               })
             }
-            style={{ padding: '6px 12px', cursor: 'pointer' }}
           >
             签出到...
           </div>
 
-          {/* 抓取 */}
+          {/* 标记 */}
           <div
-            className="search-result-item"
+            className="git-more-menu-item"
             onClick={() =>
-              void runGitAction('Git 抓取 (Fetch)', async () => {
-                const st = await window.ide.gitStatus();
-                return { ok: st.ok, detail: st.detail || '已成功抓取最新仓库状态' };
+              void runGitAction('创建 Git Tag 标记', async () => {
+                const tag = prompt('请输入标签名称 (Tag name, 如 v1.0.0):');
+                if (!tag?.trim()) return { ok: false, detail: '取消输入' };
+                const msg = prompt('请输入标签说明 (可选):');
+                return window.ide.gitCreateTag(tag.trim(), msg?.trim() || undefined);
               })
             }
-            style={{ padding: '6px 12px', cursor: 'pointer' }}
           >
-            抓取
+            <span>标记 (Tag)</span>
+            <span className="chev">▸</span>
           </div>
 
-          <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+          <div className="git-more-menu-sep" />
+
+          <div className="git-more-menu-heading">本地变更</div>
 
           {/* 提交 */}
           <div
-            className="search-result-item"
+            className="git-more-menu-item"
             onClick={() =>
               void runGitAction('Git 提交', async () => {
                 const msg = message.trim() || prompt('请输入提交信息 (Commit Message):');
@@ -1140,20 +1184,34 @@ export function GitPanel({
                 return window.ide.gitCommit(msg);
               })
             }
-            style={{
-              padding: '6px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
           >
             <span>提交</span>
-            <span>▸</span>
+            <span className="chev">▸</span>
+          </div>
+
+          {/* 存储 */}
+          <div
+            className="git-more-menu-item"
+            onClick={() =>
+              void runGitAction('Git 存储 (Stash)', async () => {
+                const entries = status?.entries || [];
+                if (entries.length === 0) {
+                  return { ok: true, detail: '工作区干净，没有需要暂存 (stash) 的修改' };
+                }
+                const res = await window.ide.gitStash('push', message?.trim() || undefined);
+                if (!res.ok) return res;
+                const count = res.stashes?.length ?? 0;
+                return { ok: true, detail: `已存入 ${count} 个 stash` };
+              })
+            }
+          >
+            <span>存储 (Stash)</span>
+            <span className="chev">▸</span>
           </div>
 
           {/* 更改 */}
           <div
-            className="search-result-item"
+            className="git-more-menu-item"
             onClick={() =>
               void runGitAction('放弃全部修改', async () => {
                 if (!confirm('确定要放弃工作区中的所有修改吗？此操作不可逆！')) {
@@ -1167,159 +1225,45 @@ export function GitPanel({
                 return { ok: true, detail: '已放弃所有本地修改' };
               })
             }
-            style={{
-              padding: '6px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
           >
             <span>更改 (放弃所有修改)</span>
-            <span>▸</span>
-          </div>
-
-          {/* 拉取，推送 */}
-          <div
-            className="search-result-item"
-            onClick={() =>
-              void runGitAction('Git 同步 (Pull & Push)', async () => {
-                const p = await window.ide.gitPull();
-                if (!p.ok) return p;
-                return window.ide.gitPush();
-              })
-            }
-            style={{
-              padding: '6px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
-          >
-            <span>拉取，推送</span>
-            <span>▸</span>
-          </div>
-
-          {/* 分支 */}
-          <div
-            className="search-result-item"
-            onClick={() =>
-              void runGitAction('新建分支', async () => {
-                const b = prompt('请输入新分支名称:');
-                if (!b?.trim()) return { ok: false, detail: '取消输入' };
-                return window.ide.gitCreateBranch(b.trim(), true);
-              })
-            }
-            style={{
-              padding: '6px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
-          >
-            <span>分支 (新建分支)</span>
-            <span>▸</span>
-          </div>
-
-          {/* 远程 */}
-          <div
-            className="search-result-item"
-            onClick={() =>
-              void runGitAction('远程仓库信息', async () => {
-                return {
-                  ok: true,
-                  detail: `当前跟踪远程仓库: origin (${branches[0]?.name || 'main'})`,
-                };
-              })
-            }
-            style={{
-              padding: '6px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
-          >
-            <span>远程</span>
-            <span>▸</span>
-          </div>
-
-          {/* 存储 */}
-          <div
-            className="search-result-item"
-            onClick={() =>
-              void runGitAction('Git 暂存存储 (Stash)', async () => {
-                const entries = status?.entries || [];
-                if (entries.length === 0) return { ok: true, detail: '没有可暂存的修改' };
-                await window.ide.gitStage(entries.map((e) => e.path));
-                return { ok: true, detail: `已暂存 ${entries.length} 个文件的修改` };
-              })
-            }
-            style={{
-              padding: '6px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
-          >
-            <span>存储 (Stash)</span>
-            <span>▸</span>
-          </div>
-
-          {/* 标记 */}
-          <div
-            className="search-result-item"
-            onClick={() =>
-              void runGitAction('创建 Git Tag 标记', async () => {
-                const tag = prompt('请输入标签名称 (Tag name, 如 v1.0.0):');
-                if (!tag?.trim()) return { ok: false, detail: '取消输入' };
-                return { ok: true, detail: `创建标签 ${tag.trim()} 成功` };
-              })
-            }
-            style={{
-              padding: '6px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
-          >
-            <span>标记 (Tag)</span>
-            <span>▸</span>
+            <span className="chev">▸</span>
           </div>
 
           {/* 工作树 */}
           <div
-            className="search-result-item"
+            className="git-more-menu-item"
             onClick={() =>
-              onShowToast?.(
-                'Git 工作树状态',
-                `当前工作树干净与否: ${status?.entries.length ? `有 ${status.entries.length} 项变动` : '干净 (Clean)'}`,
-                'info',
-              )
+              void runGitAction('Git 工作树', async () => {
+                const res = await window.ide.gitStatus();
+                const detail = res.ok
+                  ? `当前分支 ${res.branch || 'main'}，${
+                      res.entries.length
+                        ? `有 ${res.entries.length} 项变动`
+                        : '工作树干净 (Clean)'
+                    }`
+                  : res.detail || '无法读取工作树状态';
+                return { ok: res.ok, detail };
+              })
             }
-            style={{
-              padding: '6px 12px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-            }}
           >
             <span>工作树</span>
-            <span>▸</span>
+            <span className="chev">▸</span>
           </div>
 
-          <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+          <div className="git-more-menu-sep" />
 
           {/* 显示 GIT 输出 */}
           <div
-            className="search-result-item"
-            onClick={() => {
-              setShowMoreMenu(false);
-              onShowToast?.(
-                'GIT 输出日志',
-                `当前 HEAD: ${status?.branch || 'main'} | 未暂存: ${working.length} | 已暂存: ${staged.length}`,
-                'info',
-              );
-            }}
-            style={{ padding: '6px 12px', cursor: 'pointer' }}
+            className="git-more-menu-item"
+            onClick={() =>
+              void runGitAction('GIT 输出日志', async () => {
+                const res = await window.ide.gitOutput(50);
+                if (!res.ok) return res;
+                if (res.lines.length === 0) return { ok: true, detail: '暂无 git 输出记录' };
+                return { ok: true, detail: res.lines.join('\n') };
+              })
+            }
           >
             显示 GIT 输出
           </div>

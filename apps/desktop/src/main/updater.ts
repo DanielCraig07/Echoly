@@ -127,8 +127,22 @@ interface GhReleaseAsset {
 interface GhRelease {
   tag_name: string;
   name: string | null;
+  body?: string | null;
   assets: GhReleaseAsset[];
   html_url: string;
+}
+
+/** 检查结果：仅探测，不下载。 */
+interface UpdateProbe {
+  hasUpdate: boolean;
+  version?: string;
+  current?: string;
+  releaseNotes?: string;
+  detail?: string;
+  /** 用于后续 downloadAndInstall 的目标资产（前端不感知）。 */
+  target?: GhReleaseAsset;
+  owner?: string;
+  repo?: string;
 }
 
 /** 解析 electron-builder 的 latest-mac.yml（仅取所需字段）。 */
@@ -150,40 +164,39 @@ function sha512base64(buf: Buffer): string {
   return createHash('sha512').update(buf).digest('base64');
 }
 
-async function checkGitHub(
-  cfg: UpdateFeedConfig,
-): Promise<{ ok: boolean; detail: string; version?: string }> {
+/** 仅探测是否有新版本，返回版本说明与目标资产，不发起下载。 */
+async function probeUpdate(cfg: UpdateFeedConfig): Promise<UpdateProbe> {
   const owner = cfg.owner || GH_OWNER;
   const repo = cfg.repo || GH_REPO;
   const token = cfg.token;
 
-  // 1) 最新 release
   let release: GhRelease;
   try {
     release = await ghJson<GhRelease>(`/repos/${owner}/${repo}/releases/latest`, token);
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    return { ok: false, detail: `无法获取版本：${detail}` };
+    return {
+      hasUpdate: false,
+      detail: `无法获取版本：${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 
   const channelFile = process.platform === 'darwin' ? 'latest-mac.yml' : 'latest.yml';
   const ymlAsset = release.assets.find((a) => a.name === channelFile);
   if (!ymlAsset) {
-    return { ok: false, detail: `发布资产缺少 ${channelFile}` };
+    return { hasUpdate: false, detail: `发布资产缺少 ${channelFile}` };
   }
 
-  // 2) 下载并解析 latest-*.yml
   let ymlText: string;
   try {
     ymlText = (await ghAsset(ymlAsset.id, token)).toString('utf8');
   } catch (err) {
     return {
-      ok: false,
+      hasUpdate: false,
       detail: `读取更新清单失败：${err instanceof Error ? err.message : String(err)}`,
     };
   }
   const info = parseLatestYml(ymlText);
-  if (!info) return { ok: false, detail: '更新清单格式无法解析' };
+  if (!info) return { hasUpdate: false, detail: '更新清单格式无法解析' };
 
   const current = app.getVersion();
   const isNewer = (() => {
@@ -192,39 +205,65 @@ async function checkGitHub(
   })();
 
   if (!isNewer) {
-    return { ok: true, detail: `已是最新版本（${current}）`, version: current };
+    return { hasUpdate: false, current, detail: `已是最新版本（${current}）` };
   }
 
-  // 3) 下载 DMG / 安装包资产
   const pkgAsset = release.assets.find((a) => a.name === info.url);
   if (!pkgAsset) {
-    return { ok: false, detail: `未找到安装包资产 ${info.url}` };
+    return { hasUpdate: false, detail: `未找到安装包资产 ${info.url}` };
   }
 
+  return {
+    hasUpdate: true,
+    version: info.version,
+    current,
+    releaseNotes: release.body || '',
+    target: pkgAsset,
+    owner,
+    repo,
+  };
+}
+
+/** 下载并安装：先保存到本地，再打开安装包，然后彻底退出当前应用。 */
+async function downloadAndInstall(cfg: UpdateFeedConfig): Promise<{ ok: boolean; detail: string }> {
+  const owner = cfg.owner || GH_OWNER;
+  const repo = cfg.repo || GH_REPO;
+  const token = cfg.token;
+
+  const probe = await probeUpdate(cfg);
+  if (!probe.hasUpdate || !probe.target) {
+    return { ok: false, detail: probe.detail || '未发现新版本' };
+  }
+
+  const pkgAsset = probe.target;
   logger.info(
-    `[updater] 发现新版本 ${info.version}，开始下载 ${pkgAsset.name} (${(pkgAsset.size / 1024 / 1024).toFixed(1)}MB)`,
+    `[updater] 开始下载 ${pkgAsset.name} (${(pkgAsset.size / 1024 / 1024).toFixed(1)}MB)`,
   );
-  // 下载时上报进度，供渲染层显示进度条
+
+  // 下载并上报进度
   const buf = await ghAsset(pkgAsset.id, token, (loaded, total) =>
     emitProgress(loaded, total, 'download'),
   );
   emitProgress(1, 1, 'done');
 
-  // 4) 校验 sha512（electron-builder 的 sha512 是 base64）
-  if (info.sha512) {
+  // 校验 sha512（electron-builder 的 sha512 是 base64）
+  const sha512 = await readSha512FromLatestYml(owner, repo, token);
+  if (sha512) {
     const actual = sha512base64(buf);
-    if (actual !== info.sha512) {
+    if (actual !== sha512) {
       logger.error('[updater] sha512 校验失败');
       return { ok: false, detail: '安装包校验失败（sha512 不匹配）' };
     }
   }
 
-  // 5) 保存到临时目录并打开安装包
+  // 保存到用户数据目录
   const downloads = path.join(app.getPath('userData'), 'downloads');
   fs.mkdirSync(downloads, { recursive: true });
   const dest = path.join(downloads, pkgAsset.name);
   fs.writeFileSync(dest, buf);
 
+  // 打开安装包（macOS 挂载 DMG / Windows 启动 Setup.exe）。
+  // 安装包进程独立于本应用，之后彻底退出当前应用，避免"应用正在运行"导致安装失败。
   const { shell } = await import('electron');
   try {
     await shell.openPath(dest);
@@ -232,16 +271,40 @@ async function checkGitHub(
     /* ignore */
   }
 
-  return {
-    ok: true,
-    detail: `检测到新版本 ${info.version}，安装包已下载并打开。`,
-    version: info.version,
-  };
+  // 稍等片刻让安装进程启动，再退出应用
+  setTimeout(() => {
+    try {
+      app.exit(0);
+    } catch {
+      /* ignore */
+    }
+  }, 800);
+
+  return { ok: true, detail: `新版本 ${probe.version} 已下载，正在打开安装程序并退出当前应用。` };
+}
+
+/** 读取远端 latest-*.yml 里的 sha512（用于下载后校验）。 */
+async function readSha512FromLatestYml(
+  owner: string,
+  repo: string,
+  token?: string,
+): Promise<string> {
+  try {
+    const channelFile = process.platform === 'darwin' ? 'latest-mac.yml' : 'latest.yml';
+    const release = await ghJson<GhRelease>(`/repos/${owner}/${repo}/releases/latest`, token);
+    const ymlAsset = release.assets.find((a) => a.name === channelFile);
+    if (!ymlAsset) return '';
+    const text = (await ghAsset(ymlAsset.id, token)).toString('utf8');
+    return text.match(/sha512:\s*(\S+)/)?.[1] || '';
+  } catch {
+    return '';
+  }
 }
 
 export function initUpdater(getUpdateFeed: () => UpdateFeedConfig | null): void {
   configureUpdater(getUpdateFeed());
 
+  // 1) 仅探测：返回是否有新版本 + 版本说明（不下载）
   ipcMain.handle('updater:check', async () => {
     const cfg = getUpdateFeed();
     if (!cfg) return { ok: false, detail: '未配置更新源' };
@@ -249,20 +312,52 @@ export function initUpdater(getUpdateFeed: () => UpdateFeedConfig | null): void 
 
     try {
       if (cfg.provider === 'github') {
-        const result = await checkGitHub(cfg);
-        checked = result.ok;
-        return result;
+        const result = await probeUpdate(cfg);
+        checked = result.hasUpdate;
+        return {
+          ok: true,
+          hasUpdate: result.hasUpdate,
+          version: result.version,
+          current: result.current,
+          releaseNotes: result.releaseNotes || '',
+          detail: result.detail || '',
+        };
       }
       if (cfg.genericUrl) {
+        // generic 走 electron-updater 检查（会把下载也一并开始），这里仅尽可能返回可用性
         autoUpdater.setFeedURL({ provider: 'generic', url: cfg.genericUrl });
-        await autoUpdater.checkForUpdates();
+        const info = await autoUpdater.checkForUpdates();
         checked = true;
-        return { ok: true, detail: '' };
+        return { ok: true, hasUpdate: !!info, detail: '' };
       }
       return { ok: false, detail: '未知更新源' };
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       logger.error('[updater] check failed', detail);
+      return { ok: false, detail };
+    }
+  });
+
+  // 2) 确认后再下载并安装：下载 → 打开安装包 → 退出当前应用
+  ipcMain.handle('updater:download', async () => {
+    const cfg = getUpdateFeed();
+    if (!cfg) return { ok: false, detail: '未配置更新源' };
+    feed = cfg;
+
+    try {
+      if (cfg.provider === 'github') {
+        return await downloadAndInstall(cfg);
+      }
+      if (cfg.genericUrl) {
+        autoUpdater.setFeedURL({ provider: 'generic', url: cfg.genericUrl });
+        await autoUpdater.checkForUpdates();
+        autoUpdater.quitAndInstall();
+        return { ok: true, detail: '开始下载并安装。' };
+      }
+      return { ok: false, detail: '未知更新源' };
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      logger.error('[updater] download failed', detail);
       return { ok: false, detail };
     }
   });

@@ -256,28 +256,30 @@ export function RunWidget({
             position: 'absolute',
             top: 'calc(100% + 4px)',
             left: 0,
-            minWidth: 160,
+            minWidth: 200,
+            maxWidth: 260,
+            maxHeight: 320,
+            overflowY: 'auto',
             background: 'var(--bg-elevated, #25232d)',
             border: '1px solid var(--border)',
-            borderRadius: 6,
-            boxShadow: '0 6px 16px rgba(0,0,0,0.3)',
+            borderRadius: 8,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
             zIndex: 100,
             padding: 4,
           }}
         >
           <div
             style={{
-              fontSize: 10,
+              fontSize: 10.5,
               color: 'var(--muted)',
-              padding: '4px 8px',
+              padding: '6px 10px 7px',
               borderBottom: '1px solid var(--border)',
               marginBottom: 4,
               fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
+              letterSpacing: '0.04em',
             }}
           >
-            运行配置 (Scripts)
+            运行配置
           </div>
           {scripts.map((s) => (
             <div
@@ -289,8 +291,8 @@ export function RunWidget({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '5px 8px',
+                gap: 12,
+                padding: '5px 10px',
                 borderRadius: 4,
                 cursor: 'pointer',
                 fontSize: 12,
@@ -303,8 +305,28 @@ export function RunWidget({
                   s.name === selectedScript ? 'var(--bg-hover)' : 'transparent')
               }
             >
-              <span style={{ fontWeight: 600 }}>{s.name}</span>
-              <span style={{ fontSize: 10, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
+              <span
+                style={{
+                  fontWeight: 600,
+                  minWidth: 48,
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {s.name}
+              </span>
+              <span
+                style={{
+                  fontSize: 10.5,
+                  color: 'var(--muted)',
+                  fontFamily: 'var(--font-mono)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
                 {s.command}
               </span>
             </div>

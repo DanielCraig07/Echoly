@@ -308,7 +308,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
           padding: 8px 16px;
           border: 1px solid var(--border);
           border-radius: 6px;
-          background: var(--panel);
+          background: var(--bg-panel);
           color: var(--text);
           font-size: 14px;
           cursor: pointer;
@@ -316,7 +316,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
         }
 
         .extension-btn:hover:not(:disabled) {
-          background: var(--panel-hover);
+          background: var(--bg-hover);
           border-color: var(--accent);
         }
 
@@ -368,7 +368,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
           padding: 12px;
           margin-bottom: 8px;
           border-radius: 6px;
-          background: var(--panel);
+          background: var(--bg-panel);
           border: 1px solid var(--border);
         }
 
@@ -381,7 +381,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
           max-height: 300px;
           overflow-y: auto;
           padding: 12px;
-          background: var(--panel);
+          background: var(--bg-panel);
           border: 1px solid var(--border);
           border-radius: 6px;
           font-family: monospace;

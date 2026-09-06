@@ -12,8 +12,15 @@ import type {
   GitHistoryResult,
   GitBlameLineResult,
   GitOpResult,
+  GitOutputResult,
+  GitRemoteInfo,
+  GitRemotesResult,
+  GitStashAction,
+  GitStashEntry,
+  GitStashResult,
   GitStatusEntry,
   GitStatusResult,
+  GitTagsResult,
 } from '@deepseek-ide/shared';
 import type { SshSessionManager } from './ssh/SshSessionManager';
 import type { WorkspaceService } from './workspace';
@@ -785,5 +792,175 @@ export class GitService {
       modified: modRes.code === 0 ? modRes.stdout : '',
       staged: false,
     };
+  }
+
+  // ── 新增：抓取 (fetch) ──
+  async fetch(): Promise<GitOpResult> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) return gate;
+    const { root } = gate as { root: string };
+    const res = await this.runGit(['fetch', '--prune', '--all'], root);
+    if (res.error) return { ok: false, detail: res.error };
+    if (res.code !== 0) {
+      // 没有配置远程时 git fetch 会报错，回到更友好的提示
+      return {
+        ok: false,
+        detail: (res.stderr || res.stdout || 'fetch 失败').trim(),
+      };
+    }
+    return { ok: true, detail: res.stderr.trim() || res.stdout.trim() || 'fetch 完成' };
+  }
+
+  // ── 新增：列出远程 (git remote -v) ──
+  async remotes(): Promise<GitRemotesResult> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return { ok: false, detail: gate.detail, remotes: [] };
+    }
+    const { root } = gate as { root: string };
+    const res = await this.runGit(['remote', '-v'], root);
+    if (res.code !== 0) {
+      return { ok: false, detail: res.stderr.trim() || '无法获取远程仓库', remotes: [] };
+    }
+    const remotes: GitRemoteInfo[] = [];
+    const seen = new Set<string>();
+    for (const line of res.stdout.split('\n')) {
+      const m = line.match(/^(\S+)\s+(\S+)/);
+      if (!m) continue;
+      const name = m[1];
+      const url = m[2];
+      if (!seen.has(name)) {
+        seen.add(name);
+        remotes.push({ name, url });
+      }
+    }
+    return { ok: true, remotes };
+  }
+
+  // ── 新增：存储 (stash) ──
+  async stash(action: GitStashAction, message?: string): Promise<GitStashResult> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return { ok: false, detail: gate.detail, stashes: [] };
+    }
+    const { root } = gate as { root: string };
+
+    const listNow = (): Promise<GitStashEntry[]> => {
+      const list = this.runGit(['stash', 'list', '--pretty=format:%gd%x09%gs'], root);
+      return list.then((r) => {
+        if (r.code !== 0) return [];
+        const stashes: GitStashEntry[] = [];
+        for (const line of r.stdout.split('\n')) {
+          const t = line.trim();
+          if (!t) continue;
+          const idx = t.indexOf('\t');
+          const tag = idx >= 0 ? t.slice(0, idx) : t;
+          const msg = idx >= 0 ? t.slice(idx + 1) : '';
+          const m = tag.match(/stash@\{(\d+)\}/);
+          const index = m ? parseInt(m[1], 10) : stashes.length;
+          stashes.push({ index, message: msg });
+        }
+        return stashes;
+      });
+    };
+
+    if (action === 'list') {
+      const stashes = await listNow();
+      return { ok: true, stashes };
+    }
+
+    if (action === 'push') {
+      const args = ['stash', 'push'];
+      if (message?.trim()) args.push('-m', message.trim());
+      args.push('--include-untracked');
+      const res = await this.runGit(args, root);
+      if (res.error) return { ok: false, detail: res.error, stashes: [] };
+      if (res.code !== 0) {
+        return { ok: false, detail: res.stderr.trim() || 'stash push 失败', stashes: [] };
+      }
+      const stashes = await listNow();
+      return { ok: true, detail: res.stdout.trim() || '已暂存修改', stashes };
+    }
+
+    if (action === 'pop' || action === 'apply') {
+      const args = ['stash', action];
+      const res = await this.runGit(args, root);
+      if (res.error) return { ok: false, detail: res.error, stashes: [] };
+      if (res.code !== 0) {
+        return { ok: false, detail: res.stderr.trim() || `stash ${action} 失败`, stashes: [] };
+      }
+      const stashes = await listNow();
+      return {
+        ok: true,
+        detail: res.stdout.trim() || `stash ${action} 完成`,
+        stashes,
+      };
+    }
+
+    // drop
+    const args = message?.trim() ? ['stash', 'drop', message.trim()] : ['stash', 'drop'];
+    const res = await this.runGit(args, root);
+    if (res.error) return { ok: false, detail: res.error, stashes: [] };
+    if (res.code !== 0) {
+      return { ok: false, detail: res.stderr.trim() || 'stash drop 失败', stashes: [] };
+    }
+    const stashes = await listNow();
+    return { ok: true, detail: res.stdout.trim() || '已删除一个 stash', stashes };
+  }
+
+  // ── 新增：列出标签 (git tag) ──
+  async tags(): Promise<GitTagsResult> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return { ok: false, detail: gate.detail, tags: [] };
+    }
+    const { root } = gate as { root: string };
+    const res = await this.runGit(['tag', '--list'], root);
+    if (res.code !== 0) {
+      return { ok: false, detail: res.stderr.trim() || '无法获取标签', tags: [] };
+    }
+    const tags = res.stdout
+      .split('\n')
+      .map((t) => t.trim())
+      .filter(Boolean);
+    return { ok: true, tags };
+  }
+
+  // ── 新增：创建标签 (git tag -a -m) ──
+  async createTag(name: string, message?: string): Promise<GitOpResult> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) return gate;
+    const { root } = gate as { root: string };
+    if (!name.trim()) return { ok: false, detail: '标签名不能为空' };
+    const args = ['tag'];
+    if (message?.trim()) {
+      args.push('-a', name.trim(), '-m', message.trim());
+    } else {
+      args.push(name.trim());
+    }
+    const res = await this.runGit(args, root);
+    if (res.error) return { ok: false, detail: res.error };
+    if (res.code !== 0) {
+      return { ok: false, detail: res.stderr.trim() || '创建标签失败' };
+    }
+    return { ok: true, detail: `已创建标签 ${name.trim()}` };
+  }
+
+  // ── 新增：git 输出日志 (最近 N 条 reflog) ──
+  async output(maxCount = 50): Promise<GitOutputResult> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return { ok: false, detail: gate.detail, lines: [] };
+    }
+    const { root } = gate as { root: string };
+    const res = await this.runGit(
+      ['reflog', '-n', String(Math.max(1, maxCount)), '--date=relative'],
+      root,
+    );
+    if (res.code !== 0) {
+      return { ok: false, detail: res.stderr.trim() || '无法获取 Git 输出', lines: [] };
+    }
+    const lines = res.stdout.split('\n').filter((l) => l.trim().length > 0);
+    return { ok: true, lines };
   }
 }

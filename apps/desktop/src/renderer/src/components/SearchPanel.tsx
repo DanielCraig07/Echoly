@@ -194,11 +194,19 @@ function SearchTreeNodeView({
               className="search-result-item"
             >
               <span
-                style={{ color: 'var(--accent)', fontSize: 11, minWidth: 24, textAlign: 'right' }}
+                style={{ color: 'var(--accent)', fontSize: 11, minWidth: 24, textAlign: 'right', flexShrink: 0 }}
               >
                 {hit.line}:
               </span>
-              <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span
+                style={{
+                  flex: '1 1 auto',
+                  minWidth: 0,
+                  color: 'var(--text)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
                 {highlightMatch(hit.preview, query)}
               </span>
             </div>
@@ -415,7 +423,16 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
   return (
     <div
       className="search-panel"
-      style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+        minWidth: 0,
+        width: '100%',
+        overflow: 'hidden',
+      }}
     >
       {/* 1. Header Bar */}
       <div
@@ -446,7 +463,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           </span>{' '}
           搜索
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           <button
             type="button"
             title="刷新搜索"
@@ -457,6 +474,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               border: 'none',
               color: 'var(--muted)',
               cursor: 'pointer',
+              flexShrink: 0,
             }}
           >
             <svg
@@ -615,10 +633,13 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索 (使用 ↑↓ 查看历史记录)"
+              placeholder="搜索 (↑↓ 历史)"
+              title="搜索 (使用 ↑↓ 查看历史记录)"
               style={{
-                width: '100%',
+                flex: 1,
+                minWidth: 0,
                 padding: '6px 8px',
+                paddingRight: 86,
                 background: 'transparent',
                 border: 'none',
                 color: 'var(--text)',
@@ -842,7 +863,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
       </div>
 
       {/* 3. Search Results Summary & List / Tree View */}
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0, minWidth: 0 }}>
         {loading && (
           <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>Searching...</div>
         )}
@@ -903,11 +924,22 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                           userSelect: 'none',
                         }}
                       >
-                        <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                        <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>
                           {isCollapsed ? '▸' : '▾'}
                         </span>
                         <RenderFileTreeIcon name={group.fileName} isDirectory={false} />
-                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: 'var(--text)',
+                            flexShrink: 0,
+                            maxWidth: '40%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
                           {group.fileName}
                         </span>
                         {group.dirPath && (
@@ -915,6 +947,8 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                             style={{
                               fontSize: 11,
                               color: 'var(--muted)',
+                              flex: '1 1 auto',
+                              minWidth: 0,
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
@@ -926,6 +960,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                         <span
                           style={{
                             marginLeft: 'auto',
+                            flexShrink: 0,
                             fontSize: 11,
                             background: 'var(--bg-hover)',
                             padding: '1px 6px',

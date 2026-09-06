@@ -1583,161 +1583,176 @@ export function App() {
                   </svg>
                 </button>
               </div>
-              {leftPanel === 'explorer' ? (
-                <div className="explorer-wrapper">
-                  {/* 1. 工作区根节点折叠组: ∨ project-IDE */}
+              <div
+                className="explorer-wrapper"
+                style={{
+                  display: leftPanel === 'explorer' ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                  height: '100%',
+                }}
+              >
+                <div
+                  className="explorer-section"
+                  style={{
+                    flex: workspaceExpanded ? 1 : 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: 0,
+                  }}
+                >
                   <div
-                    className="explorer-section"
+                    className="explorer-section-title idea-project-title"
                     style={{
-                      flex: workspaceExpanded ? 1 : 'none',
+                      height: 30,
+                      boxSizing: 'border-box',
+                      padding: '0 10px',
+                      borderBottom: '1px solid var(--border)',
                       display: 'flex',
-                      flexDirection: 'column',
-                      minHeight: 0,
+                      alignItems: 'center',
                     }}
+                    onClick={() => setWorkspaceExpanded((v) => !v)}
                   >
-                    <div
-                      className="explorer-section-title idea-project-title"
+                    <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      {workspaceExpanded ? '▾' : '▸'}
+                    </span>
+                    <span
+                      title={workspaceInfo.label || 'PROJECT-IDE'}
                       style={{
-                        height: 30,
-                        boxSizing: 'border-box',
-                        padding: '0 10px',
-                        borderBottom: '1px solid var(--border)',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: 'var(--text)',
+                        letterSpacing: '0.05em',
+                        flex: 1,
+                        minWidth: 0,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {workspaceInfo.label
+                        ? workspaceInfo.label.includes('/')
+                          ? workspaceInfo.label.split('/').filter(Boolean).pop()?.toUpperCase()
+                          : workspaceInfo.label.toUpperCase()
+                        : 'PROJECT-IDE'}
+                    </span>
+
+                    <div
+                      className="explorer-quick-actions"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        gap: 4,
+                        marginLeft: 'auto',
                         display: 'flex',
                         alignItems: 'center',
                       }}
-                      onClick={() => setWorkspaceExpanded((v) => !v)}
                     >
-                      <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>
-                        {workspaceExpanded ? '▾' : '▸'}
-                      </span>
-                      <span
-                        title={workspaceInfo.label || 'PROJECT-IDE'}
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: 'var(--text)',
-                          letterSpacing: '0.05em',
-                          flex: 1,
-                          minWidth: 0,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
+                      <button
+                        type="button"
+                        title="新建文件"
+                        style={{ padding: 4 }}
+                        onClick={() => fileTreeRef.current?.createFile()}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h9" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <path d="M20 15V8" />
+                          <line x1="15" y1="18" x2="21" y2="18" />
+                          <line x1="18" y1="15" x2="18" y2="21" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        title="新建文件夹"
+                        style={{ padding: 4 }}
+                        onClick={() => fileTreeRef.current?.createFolder()}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
+                          <path d="M4 22h11" />
+                          <path d="M4 22a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v7" />
+                          <line x1="15" y1="18" x2="21" y2="18" />
+                          <line x1="18" y1="15" x2="18" y2="21" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        title="刷新文件树"
+                        style={{ padding: 4 }}
+                        onClick={() => {
+                          setTreeRefreshKey((k) => k + 1);
+                          void (async () => {
+                            const res = await window.ide.gitStatus();
+                            setGitStatus(res);
+                          })();
                         }}
                       >
-                        {workspaceInfo.label
-                          ? workspaceInfo.label.includes('/')
-                            ? workspaceInfo.label.split('/').filter(Boolean).pop()?.toUpperCase()
-                            : workspaceInfo.label.toUpperCase()
-                          : 'PROJECT-IDE'}
-                      </span>
-
-                      <div
-                        className="explorer-quick-actions"
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          gap: 4,
-                          marginLeft: 'auto',
-                          display: 'flex',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <button
-                          type="button"
-                          title="新建文件"
-                          style={{ padding: 4 }}
-                          onClick={() => fileTreeRef.current?.createFile()}
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
                         >
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                          >
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h9" />
-                            <polyline points="14 2 14 8 20 8" />
-                            <path d="M20 15V8" />
-                            <line x1="15" y1="18" x2="21" y2="18" />
-                            <line x1="18" y1="15" x2="18" y2="21" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          title="新建文件夹"
-                          style={{ padding: 4 }}
-                          onClick={() => fileTreeRef.current?.createFolder()}
-                        >
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                          >
-                            <path d="M4 22h11" />
-                            <path d="M4 22a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v7" />
-                            <line x1="15" y1="18" x2="21" y2="18" />
-                            <line x1="18" y1="15" x2="18" y2="21" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          title="刷新文件树"
-                          style={{ padding: 4 }}
-                          onClick={() => {
-                            setTreeRefreshKey((k) => k + 1);
-                            void (async () => {
-                              const res = await window.ide.gitStatus();
-                              setGitStatus(res);
-                            })();
-                          }}
-                        >
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                          >
-                            <polyline points="23 4 23 10 17 10"></polyline>
-                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                          </svg>
-                        </button>
-                      </div>
+                          <polyline points="23 4 23 10 17 10"></polyline>
+                          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                      </button>
                     </div>
-                    {workspaceExpanded && (
-                      <div
-                        className="explorer-section-body explorer-tree-body"
-                        style={{ flex: 1, minHeight: 0 }}
-                      >
-                        <FileTree
-                          ref={fileTreeRef}
-                          workspace={workspace}
-                          activePath={activePath}
-                          selectedNode={selectedNode}
-                          onSelectNode={setSelectedNode}
-                          gitStatus={gitStatus}
-                          refreshKey={treeRefreshKey}
-                          onViewFileHistory={(p) => void handleViewFileHistory(p)}
-                          onOpenFile={(p) => void openFile(p)}
-                          onOpenTerminal={(cwd) => {
-                            terminalNonce.current += 1;
-                            setLayout((l) => ({ ...l, bottomPanelExpanded: true }));
-                          }}
-                          onAddToChat={(path) => chatRef.current?.insertPath(path)}
-                          onAddToNewChat={(path) => {
-                            setMessages([]);
-                            chatRef.current?.startFreshWithPath(path);
-                          }}
-                        />
-                      </div>
-                    )}
                   </div>
+                  {workspaceExpanded && (
+                    <div
+                      className="explorer-section-body explorer-tree-body"
+                      style={{ flex: 1, minHeight: 0 }}
+                    >
+                      <FileTree
+                        ref={fileTreeRef}
+                        workspace={workspace}
+                        activePath={activePath}
+                        selectedNode={selectedNode}
+                        onSelectNode={setSelectedNode}
+                        gitStatus={gitStatus}
+                        refreshKey={treeRefreshKey}
+                        onViewFileHistory={(p) => void handleViewFileHistory(p)}
+                        onOpenFile={(p) => void openFile(p)}
+                        onOpenTerminal={(cwd) => {
+                          terminalNonce.current += 1;
+                          setLayout((l) => ({ ...l, bottomPanelExpanded: true }));
+                        }}
+                        onAddToChat={(path) => chatRef.current?.insertPath(path)}
+                        onAddToNewChat={(path) => {
+                          setMessages([]);
+                          chatRef.current?.startFreshWithPath(path);
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
-              ) : leftPanel === 'git' ? (
+              </div>
+              {/* Git / Search 面板：始终挂载但按需显隐，以保留内部状态（搜索词、选中提交等） */}
+              <div
+                className="git-panel"
+                style={{
+                  display: leftPanel === 'git' ? 'flex' : 'none',
+                  minHeight: 0,
+                  overflow: 'auto',
+                  height: '100%',
+                }}
+              >
                 <GitPanel
                   workspaceInfo={workspaceInfo}
                   onOpenFile={(p) => void openFile(p)}
@@ -1748,12 +1763,23 @@ export function App() {
                   onDiscardPath={handleDiscardPath}
                   onShowToast={showToast}
                 />
-              ) : leftPanel === ('search' as any) ? (
+              </div>
+              <div
+                className="search-panel"
+                style={{
+                  display: leftPanel === ('search' as any) ? 'flex' : 'none',
+                  minHeight: 0,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  height: '100%',
+                  width: '100%',
+                }}
+              >
                 <SearchPanel
                   onOpenFile={(p) => void openFile(p)}
                   onRevealLine={(l) => setRevealLine(l)}
                 />
-              ) : null}
+              </div>
             </aside>
 
             <div

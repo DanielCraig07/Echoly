@@ -125,6 +125,24 @@ export function EditorPane({
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const [mdEditorRatio, setMdEditorRatio] = useState<number>(0.5);
+  // 滚动节流：滚动时会触发 onDidScrollChange 并调用 updateSelectionAndCoords，
+  // 其内部会做 getScrolledVisiblePosition/getBoundingClientRect 并 setState(selectionCoords)，
+  // 高频滚动下会持续重渲染导致卡顿。这里用 requestAnimationFrame 合并每次滚动的更新。
+  const scrollRafRef = useRef<number | null>(null);
+  const scheduleCoordsUpdate = useCallback((fn: () => void) => {
+    if (scrollRafRef.current != null) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      fn();
+    });
+  }, []);
+
+  // 组件卸载时取消挂起的滚动更新，避免泄漏
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current != null) cancelAnimationFrame(scrollRafRef.current);
+    };
+  }, []);
 
   const startMdResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -680,6 +698,14 @@ export function EditorPane({
       return;
     }
 
+    repositionSelectionCoords(ed);
+  }, []);
+
+  // 轻量版：滚动时只重算浮层坐标，避免重复 getValueInRange / 触发父级 setState。
+  // 与 updateSelectionAndCoords 分开，滚动时走这个更省。
+  const repositionSelectionCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
+    const sel = ed.getSelection();
+    if (!sel || sel.isEmpty()) return;
     try {
       const endPos = sel.getEndPosition();
       const visiblePos = ed.getScrolledVisiblePosition(endPos);
@@ -961,6 +987,7 @@ export function EditorPane({
             options={{
               readOnly: true,
               renderSideBySide: true,
+              smoothScrolling: true,
               renderOverviewRuler: false,
               overviewRulerLanes: 0,
               overviewRulerBorder: false,
@@ -1279,9 +1306,9 @@ export function EditorPane({
                     }
                   });
                   ed.onDidScrollChange(() => {
-                    if (!isMouseDownRef.current) {
-                      updateSelectionAndCoords(ed);
-                    }
+                    if (isMouseDownRef.current) return;
+                    // 滚动触发，用 rAF 合并，避免频繁 setState 重渲染造成卡顿
+                    scheduleCoordsUpdate(() => repositionSelectionCoords(ed));
                   });
                   ed.onDidChangeCursorPosition((e) => {
                     onCursorChange?.(e.position.lineNumber, e.position.column);
@@ -1329,6 +1356,7 @@ export function EditorPane({
                   fontSize: 13,
                   minimap: { enabled: false },
                   automaticLayout: true,
+                  smoothScrolling: true,
                   wordWrap: wordWrap ? 'on' : 'off',
                   lineNumbersMinChars: 4,
                   lineDecorationsWidth: 10,
@@ -1391,9 +1419,8 @@ export function EditorPane({
                     }
                   });
                   ed.onDidScrollChange(() => {
-                    if (!isMouseDownRef.current) {
-                      updateSelectionAndCoords(ed);
-                    }
+                    if (isMouseDownRef.current) return;
+                    scheduleCoordsUpdate(() => repositionSelectionCoords(ed));
                   });
                   ed.onDidChangeCursorPosition((e) => {
                     onCursorChange?.(e.position.lineNumber, e.position.column);
@@ -1413,6 +1440,7 @@ export function EditorPane({
                   fontSize: 13,
                   minimap: { enabled: false },
                   automaticLayout: true,
+                  smoothScrolling: true,
                   wordWrap: wordWrap ? 'on' : 'off',
                   lineNumbersMinChars: 4,
                   scrollbar: {
@@ -1482,6 +1510,7 @@ export function EditorPane({
                       fontSize: 13,
                       minimap: { enabled: false },
                       automaticLayout: true,
+                      smoothScrolling: true,
                       wordWrap: wordWrap ? 'on' : 'off',
                       lineNumbersMinChars: 4,
                       scrollbar: {
@@ -1529,9 +1558,8 @@ export function EditorPane({
                   }
                 });
                 ed.onDidScrollChange(() => {
-                  if (!isMouseDownRef.current) {
-                    updateSelectionAndCoords(ed);
-                  }
+                  if (isMouseDownRef.current) return;
+                  scheduleCoordsUpdate(() => repositionSelectionCoords(ed));
                 });
                 ed.onDidChangeCursorPosition((e) => {
                   onCursorChange?.(e.position.lineNumber, e.position.column);
@@ -1571,6 +1599,7 @@ export function EditorPane({
                 fontSize: 13,
                 minimap: { enabled: false },
                 automaticLayout: true,
+                smoothScrolling: true,
                 wordWrap: wordWrap ? 'on' : 'off',
                 lineNumbersMinChars: 4,
                 lineDecorationsWidth: 10,

@@ -15,7 +15,7 @@
   --bg-tabs: #181818;
   --bg-editor: #1e1e1e;
   --bg-bottom: #181818;
-  --bg-modal: #1f1f1f;
+  --bg-modal: #181818;
   --bg-jump: #232323;
   --bg-confirm: #282419;
   --bg-continue: #1b2028;
@@ -468,9 +468,8 @@ textarea:focus {
 .cmd-palette-modal {
   width: min(680px, 92vw);
   max-height: min(580px, 76vh);
-  background: #181920;
-  background: linear-gradient(180deg, #1c1d26 0%, #15161c 100%);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow:
     0 24px 60px -10px rgba(0, 0, 0, 0.75),
@@ -487,8 +486,8 @@ textarea:focus {
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.015);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-modal) 98%, var(--bg-hover));
 }
 
 .cmd-palette-icon {
@@ -3499,8 +3498,8 @@ body.resizing.resizing-row {
   min-width: 720px;
   min-height: 480px;
   resize: both;
-  background: #181920;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.7),
@@ -3515,8 +3514,8 @@ body.resizing.resizing-row {
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.015);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-modal) 98%, var(--bg-hover));
   flex-shrink: 0;
 }
 
@@ -5243,10 +5242,10 @@ body.resizing.resizing-row {
   width: 680px;
   max-width: 90vw;
   max-height: 80vh;
-  background: var(--bg-panel, #1e1e1e);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-jump);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -6925,10 +6924,10 @@ body.resizing.resizing-row {
   max-width: 90vw;
   height: 600px;
   max-height: 85vh;
-  background: var(--panel);
+  background: var(--bg-modal);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-jump);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -6980,7 +6979,7 @@ body.resizing.resizing-row {
 /* ExtensionPanel 内部样式调整 */
 .extension-modal-body .extension-panel {
   height: 100%;
-  background: var(--panel);
+  background: var(--bg-modal);
 }
 
 .extension-modal-body .extension-panel-header {
@@ -6997,10 +6996,11 @@ body.resizing.resizing-row {
   width: 90vw;
   max-width: 900px;
   height: 85vh;
-  background: var(--panel);
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-jump);
   display: flex;
   flex-direction: column;
 }
@@ -8654,3 +8654,61 @@ body.resizing.resizing-row {
   user-select: none;
   pointer-events: none;
 }
+
+/* GitPanel "更多操作" 下拉菜单 */
+.git-more-menu {
+  position: absolute;
+  top: 36px;
+  right: 12px;
+  z-index: 1000;
+  min-width: 210px;
+  max-height: 72vh;
+  overflow-y: auto;
+  background: var(--bg-modal);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-jump);
+  padding: 5px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.git-more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text);
+  transition: background 0.12s ease, color 0.12s ease;
+  user-select: none;
+}
+
+.git-more-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.git-more-menu-item .chev {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.git-more-menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 5px 0;
+}
+
+.git-more-menu-heading {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 6px 10px 3px;
+  user-select: none;
+}
+

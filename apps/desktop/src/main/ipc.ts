@@ -5,6 +5,7 @@ import type {
   AppSettings,
   ChatSession,
   GitCloneRequest,
+  GitStashAction,
   SearchCodeRequest,
   SshConnectRequest,
   TerminalCreateOptions,
@@ -232,6 +233,14 @@ export function registerIpc(deps: {
   );
   ipcMain.handle('git:pull', (e) => run(e, () => git.pull()));
   ipcMain.handle('git:push', (e) => run(e, () => git.push()));
+  ipcMain.handle('git:fetch', (e) => run(e, () => git.fetch()));
+  ipcMain.handle('git:remotes', (e) => run(e, () => git.remotes()));
+  ipcMain.handle('git:stash', (e, action, message?) => run(e, () => git.stash(action, message)));
+  ipcMain.handle('git:tags', (e) => run(e, () => git.tags()));
+  ipcMain.handle('git:createTag', (e, name: string, message?: string) =>
+    run(e, () => git.createTag(name, message)),
+  );
+  ipcMain.handle('git:output', (e, maxCount?: number) => run(e, () => git.output(maxCount)));
   ipcMain.handle('git:history', (e, maxCount?: number) => run(e, () => git.history(maxCount)));
   ipcMain.handle('git:commitDetails', (e, hash: string) => run(e, () => git.commitDetails(hash)));
   ipcMain.handle('git:fileHistory', (e, path: string, maxCount?: number) =>

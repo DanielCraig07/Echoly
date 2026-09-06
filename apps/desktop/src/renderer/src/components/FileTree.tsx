@@ -1144,9 +1144,10 @@ function TreeNode({
 
   useEffect(() => {
     if (activePath === node.path && nodeRef.current) {
-      // Small timeout to allow directory expansion to finish rendering
+      // Small timeout to allow directory expansion to finish rendering。
+      // 用 'auto' 代替 'smooth'：smooth 滚动会在切换/刷新时产生长时间动画，拖慢感知。
       setTimeout(() => {
-        nodeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        nodeRef.current?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
       }, 50);
     }
   }, [activePath, node.path]);

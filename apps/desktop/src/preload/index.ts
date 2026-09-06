@@ -4,6 +4,7 @@ import type {
   AppSettings,
   ChatSession,
   GitCloneRequest,
+  GitStashAction,
   IpcApi,
   AppMenuId,
   MenuCommand,
@@ -66,6 +67,12 @@ const api: IpcApi = {
   gitCreateBranch: (name, checkout) => ipcRenderer.invoke('git:createBranch', name, checkout),
   gitPull: () => ipcRenderer.invoke('git:pull'),
   gitPush: () => ipcRenderer.invoke('git:push'),
+  gitFetch: () => ipcRenderer.invoke('git:fetch'),
+  gitRemotes: () => ipcRenderer.invoke('git:remotes'),
+  gitStash: (action, message) => ipcRenderer.invoke('git:stash', action, message),
+  gitTags: () => ipcRenderer.invoke('git:tags'),
+  gitCreateTag: (name, message) => ipcRenderer.invoke('git:createTag', name, message),
+  gitOutput: (maxCount) => ipcRenderer.invoke('git:output', maxCount),
   gitHistory: (maxCount) => ipcRenderer.invoke('git:history', maxCount),
   gitCommitDetails: (hash) => ipcRenderer.invoke('git:commitDetails', hash),
   gitFileHistory: (path, maxCount) => ipcRenderer.invoke('git:fileHistory', path, maxCount),
@@ -134,6 +141,7 @@ const api: IpcApi = {
   },
   extensionResolveWebview: (viewId) => ipcRenderer.invoke('extension:resolve-webview', viewId),
   checkUpdate: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   getUpdateState: () => ipcRenderer.invoke('updater:getState'),
   onUpdateProgress: (cb) => {
     const listener = (

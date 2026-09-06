@@ -60,6 +60,14 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
   const [updateMsg, setUpdateMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null,
   );
+  // 待确认的更新信息（有新版本时触发确认弹窗）
+  const [pendingUpdate, setPendingUpdate] = useState<{
+    version: string;
+    notes: string;
+    current: string;
+  } | null>(null);
+  // 确认更新：开始下载 → 打开安装包 → 退出应用
+  const [downloading, setDownloading] = useState(false);
   useEffect(() => {
     const unsub = window.ide.onUpdateProgress((p) => {
       setUpdating(p.phase === 'done' ? null : { phase: 'download', percent: p.percent });
@@ -271,9 +279,31 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
     const res = await window.ide.checkUpdate();
     if (!res.ok) {
       setUpdateMsg({ type: 'error', text: `${t('settings.update.checkFail')}${res.detail || ''}` });
-    } else {
-      setUpdateMsg({ type: 'success', text: res.detail || t('settings.update.checkOk') });
+      return;
     }
+    if (!res.hasUpdate) {
+      setUpdateMsg({ type: 'success', text: res.detail || t('settings.update.checkOk') });
+      return;
+    }
+    // 有新版本：弹窗确认，展示版本号与更新说明
+    setPendingUpdate({
+      version: res.version || '',
+      notes: res.releaseNotes || '',
+      current: res.current || '',
+    });
+  }
+
+  // 待确认的更新信息（有新版本时触发确认弹窗）
+  async function confirmUpdate(): Promise<void> {
+    if (!pendingUpdate) return;
+    setDownloading(true);
+    setPendingUpdate(null);
+    const res = await window.ide.downloadUpdate();
+    if (!res.ok) {
+      setUpdateMsg({ type: 'error', text: res.detail || '下载失败' });
+      setDownloading(false);
+    }
+    // 成功时主进程会退出应用，无需处理
   }
 
   /** 返回一个非空的 updateFeed，避免 spread undefined 导致类型不完整。 */
@@ -1108,6 +1138,70 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
             </button>
           </div>
         </div>
+
+        {/* 新版本确认弹窗 */}
+        {pendingUpdate && (
+          <div className="modal-overlay" style={{ zIndex: 9999 }}>
+            <div className="session-modal-content" style={{ width: 420 }}>
+              <div className="settings-header" style={{ borderBottom: '1px solid var(--border)' }}>
+                <h3 style={{ margin: 0 }}>{t('settings.update.confirmTitle')}</h3>
+              </div>
+              <div style={{ padding: 16, maxHeight: 300, overflowY: 'auto', fontSize: 13 }}>
+                <div style={{ marginBottom: 8 }}>
+                  {t('settings.update.versionLabel')}{' '}
+                  <strong style={{ color: 'var(--accent)' }}>{pendingUpdate.version}</strong>
+                  {pendingUpdate.current && (
+                    <span style={{ color: 'var(--muted)', marginLeft: 8 }}>
+                      {t('settings.update.currentLabel')} {pendingUpdate.current}
+                    </span>
+                  )}
+                </div>
+                {pendingUpdate.notes ? (
+                  <div
+                    style={{
+                      whiteSpace: 'pre-wrap',
+                      color: 'var(--text)',
+                      lineHeight: 1.6,
+                      background: 'var(--bg-hover)',
+                      borderRadius: 8,
+                      padding: 12,
+                    }}
+                  >
+                    {pendingUpdate.notes}
+                  </div>
+                ) : (
+                  <div style={{ color: 'var(--muted)' }}>{t('settings.update.noNotes')}</div>
+                )}
+              </div>
+              <div
+                className="footer-actions"
+                style={{
+                  padding: 12,
+                  justifyContent: 'flex-end',
+                  gap: 8,
+                  borderTop: '1px solid var(--border)',
+                }}
+              >
+                <button
+                  type="button"
+                  className="cancel-btn"
+                  disabled={downloading}
+                  onClick={() => setPendingUpdate(null)}
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="primary save-all-btn"
+                  disabled={downloading}
+                  onClick={() => void confirmUpdate()}
+                >
+                  {downloading ? t('settings.update.downloading') : t('settings.update.confirmBtn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

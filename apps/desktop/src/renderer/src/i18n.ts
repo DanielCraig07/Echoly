@@ -96,6 +96,11 @@ const DICT: Record<string, { zh: string; en: string }> = {
   },
   'settings.update.checkFail': { zh: '检查更新失败：', en: 'Update check failed: ' },
   'settings.update.downloading': { zh: '下载更新中', en: 'Downloading update' },
+  'settings.update.confirmTitle': { zh: '发现新版本', en: 'New Version Available' },
+  'settings.update.versionLabel': { zh: '新版本：', en: 'Version:' },
+  'settings.update.currentLabel': { zh: '当前版本', en: 'Current:' },
+  'settings.update.confirmBtn': { zh: '是，立即更新', en: 'Yes, Update Now' },
+  'settings.update.noNotes': { zh: '（该版本暂无更新说明）', en: '(No release notes)' },
 
   // 通用
   'common.close': { zh: '关闭', en: 'Close' },
