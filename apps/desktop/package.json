@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ide/desktop",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "private": true,
   "description": "Echoly Desktop App",
   "author": "Echoly",
@@ -71,12 +71,10 @@
       }
     ],
     "win": {
-      "icon": "resources/icon.ico",
       "target": [
         "nsis",
         "dir"
       ],
-      "signAndEditExecutable": false,
       "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "nsis": {

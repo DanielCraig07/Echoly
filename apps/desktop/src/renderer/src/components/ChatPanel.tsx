@@ -89,6 +89,79 @@ const PERMISSION_SHORT_LABELS: Record<PermissionMode, string> = {
   deny_all: '只读',
 };
 
+/**
+ * 与模型选择按钮同款外观的下拉控件。用于「模式 / 权限」等选项，
+ * 取代原生 <select>，从而在 Windows 上与右侧模型选择按钮视觉完全一致
+ * （同样的 pill、hover、弹出菜单与选中态）。
+ */
+interface PillEntry<T extends string> {
+  value: T;
+  /** 关闭态按钮上显示的文本（短标签）。 */
+  label: string;
+  /** 菜单项显示的文本，缺省时与 label 一致（如权限项可写完整说明）。 */
+  menuLabel?: string;
+}
+
+function ChatToolbarPill<T extends string>(props: {
+  value: T;
+  options: ReadonlyArray<PillEntry<T>>;
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  title?: string;
+}): React.JSX.Element {
+  const { value, options, onChange, disabled, title } = props;
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const current = options.find((o) => o.value === value);
+
+  return (
+    <div className="chat-model-selector-wrapper" ref={ref}>
+      <button
+        type="button"
+        className="chat-model-selector-btn"
+        disabled={disabled}
+        title={title}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="chat-model-name">{current?.label ?? String(value)}</span>
+        <span className="chat-model-arrow">▾</span>
+      </button>
+      {open && (
+        <div className="chat-model-dropdown-menu compact">
+          <div className="chat-model-dropdown-list">
+            {options.map((opt) => {
+              const selected = opt.value === value;
+              return (
+                <div
+                  key={opt.value}
+                  className={`chat-model-dropdown-item${selected ? ' selected' : ''}`}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="chat-model-item-title">{opt.menuLabel ?? opt.label}</span>
+                  {selected && <span className="chat-model-check">✓</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const STICK_THRESHOLD_PX = 80;
 
 function createEmptyTab(id?: string, title = 'New Chat'): SessionTab {
@@ -1749,48 +1822,29 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 })()}
               </div>
 
-              {/* Mode Selectors */}
-              <div
-                className="chat-toolbar-select-pill"
+              {/* Mode Selector（自定义下拉，与模型选择同款外观） */}
+              <ChatToolbarPill
+                value={activeTab?.mode || 'agent'}
+                disabled={!!activeTab?.runId}
                 title={`模式: ${MODE_LABEL[activeTab?.mode || 'agent']}`}
-              >
-                <select
-                  value={activeTab?.mode || 'agent'}
-                  disabled={!!activeTab?.runId}
-                  onChange={(e) =>
-                    updateTab(activeTab.id, (t) => ({ ...t, mode: e.target.value as AgentMode }))
-                  }
-                >
-                  <option value="agent" style={{ background: 'var(--bg)' }}>
-                    Agent
-                  </option>
-                  <option value="ask" style={{ background: 'var(--bg)' }}>
-                    Ask
-                  </option>
-                  <option value="plan" style={{ background: 'var(--bg)' }}>
-                    Plan
-                  </option>
-                </select>
-                <span className="chat-pill-arrow">▾</span>
-              </div>
+                options={[
+                  { value: 'agent', label: 'Agent' },
+                  { value: 'ask', label: 'Ask' },
+                  { value: 'plan', label: 'Plan' },
+                ]}
+                onChange={(mode) => updateTab(activeTab.id, (t) => ({ ...t, mode }))}
+              />
 
-              {/* Permission Selector */}
-              <div
-                className="chat-toolbar-select-pill"
+              {/* Permission Selector（自定义下拉，与模型选择同款外观） */}
+              <ChatToolbarPill
+                value={permissionMode}
                 title={`权限: ${PERMISSION_MODE_LABELS[permissionMode]}`}
-              >
-                <select
-                  value={permissionMode}
-                  onChange={(e) => onPermissionModeChange(e.target.value as PermissionMode)}
-                >
-                  {PERMISSION_ORDER.map((m) => (
-                    <option key={m} value={m} style={{ background: 'var(--bg)' }}>
-                      {PERMISSION_SHORT_LABELS[m]}
-                    </option>
-                  ))}
-                </select>
-                <span className="chat-pill-arrow">▾</span>
-              </div>
+                options={PERMISSION_ORDER.map((m) => ({
+                  value: m,
+                  label: PERMISSION_SHORT_LABELS[m],
+                }))}
+                onChange={(m) => onPermissionModeChange(m)}
+              />
             </div>
 
             <div className="chat-toolbar-right">
