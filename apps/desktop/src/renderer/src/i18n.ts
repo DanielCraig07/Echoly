@@ -90,6 +90,7 @@ const DICT: Record<string, { zh: string; en: string }> = {
   },
   'settings.update.genericUrl': { zh: '更新服务器地址', en: 'Update Server URL' },
   'settings.update.check': { zh: '🔄 立即检查更新', en: '🔄 Check for Updates' },
+  'settings.update.checking': { zh: '正在检查更新…', en: 'Checking for updates…' },
   'settings.update.checkOk': {
     zh: '已启动更新检查，请留意下载进度。',
     en: 'Update check started, watch download progress.',

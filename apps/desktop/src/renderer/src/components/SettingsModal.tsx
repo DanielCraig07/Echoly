@@ -68,6 +68,8 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
   } | null>(null);
   // 确认更新：开始下载 → 打开安装包 → 退出应用
   const [downloading, setDownloading] = useState(false);
+  // 检查更新请求进行中：禁用按钮并显示「正在检查更新…」
+  const [checking, setChecking] = useState(false);
   useEffect(() => {
     const unsub = window.ide.onUpdateProgress((p) => {
       setUpdating(p.phase === 'done' ? null : { phase: 'download', percent: p.percent });
@@ -271,26 +273,34 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
   }
 
   async function checkUpdateNow(): Promise<void> {
-    if (!settings) return;
+    if (!settings || checking) return;
     setUpdateMsg(null);
-    // 先保存当前更新配置，再触发检查，确保 token / owner / repo 已生效
-    const next = await window.ide.saveSettings(settings);
-    setSettings(next);
-    const res = await window.ide.checkUpdate();
-    if (!res.ok) {
-      setUpdateMsg({ type: 'error', text: `${t('settings.update.checkFail')}${res.detail || ''}` });
-      return;
+    setChecking(true);
+    try {
+      // 先保存当前更新配置，再触发检查，确保 token / owner / repo 已生效
+      const next = await window.ide.saveSettings(settings);
+      setSettings(next);
+      const res = await window.ide.checkUpdate();
+      if (!res.ok) {
+        setUpdateMsg({
+          type: 'error',
+          text: `${t('settings.update.checkFail')}${res.detail || ''}`,
+        });
+        return;
+      }
+      if (!res.hasUpdate) {
+        setUpdateMsg({ type: 'success', text: res.detail || t('settings.update.checkOk') });
+        return;
+      }
+      // 有新版本：弹窗确认，展示版本号与更新说明
+      setPendingUpdate({
+        version: res.version || '',
+        notes: res.releaseNotes || '',
+        current: res.current || '',
+      });
+    } finally {
+      setChecking(false);
     }
-    if (!res.hasUpdate) {
-      setUpdateMsg({ type: 'success', text: res.detail || t('settings.update.checkOk') });
-      return;
-    }
-    // 有新版本：弹窗确认，展示版本号与更新说明
-    setPendingUpdate({
-      version: res.version || '',
-      notes: res.releaseNotes || '',
-      current: res.current || '',
-    });
   }
 
   // 待确认的更新信息（有新版本时触发确认弹窗）
@@ -1080,8 +1090,9 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                       type="button"
                       className="primary save-all-btn"
                       onClick={() => void checkUpdateNow()}
+                      disabled={checking || downloading}
                     >
-                      {t('settings.update.check')}
+                      {checking ? t('settings.update.checking') : t('settings.update.check')}
                     </button>
                     {updateMsg && (
                       <div
