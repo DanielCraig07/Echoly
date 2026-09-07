@@ -83,6 +83,7 @@ function TerminalSession({
       convertEol: true,
       cursorBlink: true,
       fontSize: 12,
+      lineHeight: 1.25,
       fontFamily: '"Cascadia Code", Consolas, "Microsoft YaHei Mono", "Microsoft YaHei", monospace',
       theme: terminalTheme(uiTheme),
       cols: 80,

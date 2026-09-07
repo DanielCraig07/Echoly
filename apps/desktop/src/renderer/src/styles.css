@@ -1401,39 +1401,143 @@ body.resizing.resizing-row {
 
 .tabs {
   display: flex;
-  gap: 2px;
+  gap: 0;
   overflow-x: auto;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-tabs);
+  overflow-y: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #181818;
   height: 35px;
   box-sizing: border-box;
+}
+
+.tabs::-webkit-scrollbar {
+  height: 2px;
+}
+
+.tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tabs::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 1px;
+  transition: background 0.2s ease;
+}
+
+.tabs:hover::-webkit-scrollbar-thumb,
+.tabs.tabs-scrolling::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.tabs::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.45);
 }
 
 .tabs-rest {
   flex: 1 1 auto;
   min-width: 48px;
   height: 100%;
+  background: #181818;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  height: 100%;
+  gap: 6px;
+  padding: 0 10px;
+  height: 35px;
   border: none;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
+  border-top: 2px solid transparent;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #181818;
+  color: #9d9d9d;
   white-space: nowrap;
   font-size: 13px;
   box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.tab:hover {
+  background: #1f1f1f;
+  color: #cccccc;
 }
 
 .tab.active {
-  background: var(--bg-editor);
-  color: var(--text);
-  border-bottom: 2px solid var(--accent);
+  background: var(--bg-editor, #1e1e1e);
+  color: #ffffff;
+  border-top: 2px solid var(--accent, #007acc);
+  border-bottom: 1px solid var(--bg-editor, #1e1e1e);
+}
+
+.tab .tab-title {
+  display: inline-block;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.tab .tab-git-badge {
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 2px;
+  padding: 0 2px;
+  line-height: 1;
+  display: inline-block;
+  user-select: none;
+}
+
+.tab .tab-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  margin-left: 2px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s ease, background 0.1s ease, color 0.1s ease;
+}
+
+.tab.active .tab-close-btn {
+  opacity: 0.8;
+}
+
+.tab:hover .tab-close-btn {
+  opacity: 0.8;
+}
+
+.tab .tab-close-btn:hover {
+  opacity: 1 !important;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.tab .tab-close-btn.is-dirty {
+  opacity: 1;
+}
+
+.tab .tab-close-btn.is-dirty .close-icon {
+  display: none;
+}
+
+.tab .tab-close-btn.is-dirty:hover .close-icon {
+  display: block;
+}
+
+.tab .tab-close-btn.is-dirty:hover .dirty-dot {
+  display: none;
+}
+
+.tab .tab-close-btn .dirty-dot {
+  font-size: 15px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.7);
+  display: block;
 }
 
 .editor-area {
@@ -1599,7 +1703,7 @@ body.resizing.resizing-row {
   top: 0;
   z-index: 10;
   background-color: var(--bg-panel) !important;
-  padding: 10px 10px 8px 4px;
+  padding: 10px 14px 8px 14px;
   border: none;
   box-shadow: none;
 }
@@ -1608,7 +1712,7 @@ body.resizing.resizing-row {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 8px 10px 16px 4px;
+  padding: 8px 14px 16px 14px;
 }
 
 .jump-latest-btn {
@@ -2307,67 +2411,254 @@ body.resizing.resizing-row {
   max-height: 240px;
 }
 
-/* ── Worked-for-group: collapsible summary of a step's tool calls + reasoning ── */
-.worked-for-group {
-  margin: 6px 0 10px;
+/* ── Worked-for-group & Agent Timeline: timeline summary of a step's tool calls + reasoning ── */
+.worked-for-group-container {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0 8px;
+  user-select: none;
 }
 
-.worked-for-toggle {
+.worked-for-summary-header {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  border-radius: 7px;
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-size: 11.5px;
-  font-weight: 500;
+  padding: 3px 6px;
+  margin-left: -2px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 450;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  text-align: left;
   cursor: pointer;
-  user-select: none;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
+  transition: background 0.12s ease, color 0.12s ease;
+  width: fit-content;
+  max-width: 100%;
 }
 
-.worked-for-toggle:hover {
-  background: var(--bg-hover-strong);
-  border-color: var(--accent);
+.worked-for-summary-header:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
 }
 
-.worked-for-group.open .worked-for-toggle {
-  border-color: var(--accent);
+.worked-for-summary-header.is-streaming {
+  color: #cbd5e1;
 }
 
-.worked-for-icon {
-  font-size: 11px;
-  color: var(--accent);
-  display: inline-block;
-}
-
-.worked-for-icon.spinning {
-  animation: workedForSpin 1s linear infinite;
-}
-
-@keyframes workedForSpin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.worked-for-label {
+  color: inherit;
+  white-space: nowrap;
 }
 
 .worked-for-chevron {
-  font-size: 10px;
-  color: var(--muted);
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1;
+  display: inline-block;
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease;
 }
 
-.worked-for-body {
-  margin-top: 8px;
-  padding-left: 10px;
-  border-left: 2px solid var(--border);
-  animation: reasoningBodyIn 0.15s ease-out;
+.worked-for-summary-header:hover .worked-for-chevron {
+  color: #cbd5e1;
+}
+
+.worked-for-chevron.open {
+  transform: rotate(90deg);
+  color: #94a3b8;
+}
+
+.agent-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5px;
+  margin: 4px 0 6px 4px;
+  padding: 2px 0 2px 8px;
+  border-left: 1.5px solid rgba(255, 255, 255, 0.08);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  user-select: none;
+}
+
+.agent-timeline-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-timeline-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 450;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.agent-timeline-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+}
+
+.agent-timeline-header.is-running {
+  color: #e2e8f0;
+}
+
+.agent-timeline-action {
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+.agent-timeline-filename {
+  color: #f1f5f9;
+  font-weight: 550;
+}
+
+.agent-timeline-filename.clickable {
+  cursor: pointer;
+}
+
+.agent-timeline-filename.clickable:hover {
+  text-decoration: underline;
+  color: #38bdf8;
+}
+
+.agent-timeline-cmd {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.agent-timeline-diff-add {
+  color: #4ade80;
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+.agent-timeline-diff-del {
+  color: #f87171;
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  font-weight: 600;
+  margin-left: 1px;
+}
+
+.agent-timeline-chevron {
+  color: #64748b;
+  font-size: 13px;
+  margin-left: 2px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  transition: transform 0.14s ease, color 0.12s ease;
+}
+
+.agent-timeline-header:hover .agent-timeline-chevron {
+  color: #94a3b8;
+}
+
+.agent-timeline-chevron.open {
+  transform: rotate(90deg);
+}
+
+.agent-timeline-details {
+  padding-left: 24px;
+  margin: 3px 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3.5px;
+  animation: fadeInPop 0.12s ease-out;
+}
+
+.agent-timeline-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+  padding: 1px 0;
+}
+
+.agent-timeline-sub-action {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.agent-timeline-sub-range {
+  color: #64748b;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
+.agent-timeline-card-wrapper {
+  padding-left: 20px;
+  margin: 4px 0 8px;
+  animation: fadeInPop 0.12s ease-out;
+}
+
+.agent-timeline-thinking-box {
+  padding: 10px 14px;
+  margin: 4px 0 8px 20px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #cbd5e1;
+  max-height: 280px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  animation: fadeInPop 0.12s ease-out;
+}
+
+.agent-timeline-working {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.agent-timeline-working-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+  animation: agentWorkingPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes agentWorkingPulse {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.worked-for-group {
+  margin: 6px 0 10px;
 }
 
 /* ── Think / reasoning block (<think> tags inside a final markdown message) ── */
@@ -3410,18 +3701,38 @@ body.resizing.resizing-row {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  padding: 4px 6px;
+  padding: 0;
   cursor: text;
   overflow: hidden;
+  position: relative;
 }
 
 .terminal-host .xterm {
   height: 100%;
-  padding: 0;
+  padding: 4px 8px;
+  box-sizing: border-box;
 }
 
 .terminal-host .xterm-viewport {
   overflow-y: auto !important;
+}
+
+.terminal-host .xterm-viewport::-webkit-scrollbar {
+  width: 4px;
+  height: 3px;
+}
+
+.terminal-host .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-host .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+
+.terminal-host .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .terminal-host .xterm-screen {
@@ -4154,6 +4465,72 @@ body.resizing.resizing-row {
   background: rgba(167, 139, 250, 0.08);
   color: #fff;
   box-shadow: 0 0 12px rgba(167, 139, 250, 0.15);
+}
+
+.theme-card.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  position: relative;
+}
+
+.theme-card.disabled:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.2);
+  transform: none;
+}
+
+.theme-card-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.theme-card-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+.theme-card-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: rgba(24, 24, 28, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f1f5f9;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  z-index: 100;
+}
+
+.theme-card-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(24, 24, 28, 0.96);
+}
+
+.theme-card.disabled:hover .theme-card-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .theme-preview {
@@ -5741,42 +6118,95 @@ body.resizing.resizing-row {
   z-index: 99;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  background: var(--bg-elevated, #22242a);
-  border: 1px solid var(--accent, #4c8dff);
-  border-radius: 12px;
-  padding: 3px 8px;
-  cursor: pointer;
+  gap: 2px;
+  background: rgba(24, 24, 28, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 2px;
   user-select: none;
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.4),
-    0 0 8px var(--accent-soft, rgba(76, 141, 255, 0.2));
+    0 6px 20px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(0, 0, 0, 0.3);
   transition:
-    transform 0.12s ease,
+    transform 0.14s cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 0.15s ease,
-    background 0.15s ease;
-  animation: fadeInPop 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+    border-color 0.15s ease;
+  animation: fadeInPop 0.14s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: auto;
 }
 
 .selection-float-widget.compact:hover {
-  background: var(--accent, #4c8dff);
-  transform: scale(1.06);
-  box-shadow: 0 4px 16px rgba(76, 141, 255, 0.4);
+  border-color: rgba(167, 139, 250, 0.45);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.55),
+    0 0 12px rgba(167, 139, 250, 0.2);
 }
 
-.selection-float-widget.compact:active {
-  transform: scale(0.95);
-}
-
-.selection-float-widget.compact .selection-ai-badge {
-  font-size: 11px;
-  font-weight: 700;
-  color: #ffffff;
-  display: flex;
+.selection-ai-btn,
+.selection-ai-inline-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  letter-spacing: 0.04em;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e2e8f0;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    transform 0.08s ease;
+  line-height: 1.2;
+}
+
+.selection-ai-btn:hover,
+.selection-ai-inline-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.selection-ai-btn:active,
+.selection-ai-inline-btn:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.selection-ai-sparkle-icon {
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 3px rgba(167, 139, 250, 0.5));
+}
+
+.selection-ai-divider {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 1px;
+}
+
+.selection-ai-kbd {
+  display: inline-block;
+  font-family: var(--font-mono, monospace);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  padding: 1px 3.5px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.selection-ai-inline-btn:hover .selection-ai-kbd {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 @keyframes fadeInPop {
@@ -5793,8 +6223,16 @@ body.resizing.resizing-row {
 /* ── Fine-tuned Chat Tabs Bar & Slim Scrollbars ───────────── */
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 3px;
+}
+
+::-webkit-scrollbar:horizontal {
+  height: 3px !important;
+}
+
+::-webkit-scrollbar:vertical {
+  width: 5px !important;
 }
 
 ::-webkit-scrollbar-track {
@@ -5803,15 +6241,15 @@ body.resizing.resizing-row {
 
 ::-webkit-scrollbar-thumb {
   background: transparent;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 *:hover::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.18);
 }
 
 *:hover::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.35);
 }
 
 /* Slim Monaco Editor Scrollbars (Hidden by default, fade in on hover) */
@@ -5877,28 +6315,28 @@ body.resizing.resizing-row {
 
 .monaco-editor .scrollbar.vertical,
 .monaco-diff-editor .monaco-editor .scrollbar.vertical {
-  width: 6px !important;
+  width: 5px !important;
 }
 
 .monaco-editor .scrollbar.horizontal,
 .monaco-diff-editor .monaco-editor .scrollbar.horizontal {
-  height: 6px !important;
+  height: 3px !important;
 }
 
 .monaco-editor .scrollbar.vertical .slider,
 .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider {
-  width: 6px !important;
+  width: 5px !important;
   left: 0 !important;
-  border-radius: 3px !important;
-  background: rgba(255, 255, 255, 0.25) !important;
+  border-radius: 2px !important;
+  background: rgba(255, 255, 255, 0.2) !important;
 }
 
 .monaco-editor .scrollbar.horizontal .slider,
 .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider {
-  height: 6px !important;
+  height: 3px !important;
   top: 0 !important;
-  border-radius: 3px !important;
-  background: rgba(255, 255, 255, 0.25) !important;
+  border-radius: 2px !important;
+  background: rgba(255, 255, 255, 0.2) !important;
 }
 
 .monaco-editor .scrollbar.vertical .slider:hover,
@@ -5909,44 +6347,65 @@ body.resizing.resizing-row {
 }
 
 /* ── Monaco 查找/替换小组件 (Find Widget) 美化 ───────────────────────────────
-   默认样式是硬编码的灰白块，在深色主题下显得扎眼。这里统一重绘为贴合 IDE
-   深色风格的圆角浮层。注意：只改颜色/边框/圆角，不要改 padding/height/gap，
-   否则会破坏 Monaco 内部对 find/replace 两行的测高布局，导致替换输入框被挡。 */
+   深色主题圆角浮层，去处突兀边框，优化搜索交互视觉 */
 .monaco-editor .find-widget {
-  background: var(--bg-modal) !important;
-  border: 1px solid var(--border) !important;
+  background: rgba(28, 28, 32, 0.96) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
   border-radius: 8px !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35) !important;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(0, 0, 0, 0.2) !important;
   overflow: visible !important;
   color: var(--text) !important;
-  top: 12px !important;
+  top: 10px !important;
+  right: 18px !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox {
-  background: var(--bg-input) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 5px !important;
+  background: rgba(16, 16, 18, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 6px !important;
   box-shadow: none !important;
+  transition: border-color 0.15s, box-shadow 0.15s !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox .input {
   color: var(--text) !important;
   background: transparent !important;
+  font-size: 12px !important;
+  padding: 2px 6px !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 2px var(--accent-soft) !important;
+  border-color: rgba(96, 165, 250, 0.7) !important;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2) !important;
+}
+
+/* 左侧展开/折叠替换栏的按钮（> 符号） */
+.monaco-editor .find-widget .left .button,
+.monaco-editor .find-widget .button.codicon-find-collapsed,
+.monaco-editor .find-widget .button.codicon-find-expanded {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 4px !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+  box-shadow: none !important;
+  transition: background 0.12s, color 0.12s !important;
+}
+
+.monaco-editor .find-widget .left .button:hover,
+.monaco-editor .find-widget .button.codicon-find-collapsed:hover,
+.monaco-editor .find-widget .button.codicon-find-expanded:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
 }
 
 .monaco-editor .find-widget .find-part,
 .monaco-editor .find-widget .replace-part {
   cursor: text;
-}
-
-.monaco-editor .find-widget .find-part,
-.monaco-editor .find-widget .replace-part {
-  gap: 4px !important;
+  gap: 6px !important;
   align-items: center !important;
 }
 
@@ -5955,65 +6414,169 @@ body.resizing.resizing-row {
   flex: 1 1 auto !important;
 }
 
+/* 匹配计数 8 of 15 */
+.monaco-editor .find-widget .matchesCount {
+  color: rgba(255, 255, 255, 0.55) !important;
+  font-size: 11.5px !important;
+  font-family: var(--font-mono, monospace) !important;
+  padding: 0 4px !important;
+  letter-spacing: -0.01em !important;
+}
+
+/* 输入框内部的 Aa / ab / .* 切换按钮 */
+.monaco-editor .find-widget .monaco-custom-checkbox,
+.monaco-editor .find-widget .button {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 4px !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  transition: background 0.12s, color 0.12s !important;
+}
+
+.monaco-editor .find-widget .monaco-custom-checkbox:hover,
+.monaco-editor .find-widget .button:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.monaco-editor .find-widget .monaco-custom-checkbox.checked,
+.monaco-editor .find-widget .button.checked {
+  background: rgba(59, 130, 246, 0.22) !important;
+  color: #60a5fa !important;
+  border: 1px solid rgba(96, 165, 250, 0.4) !important;
+}
+
+/* 导航与动作按钮组 (↑ / ↓ / ≡ / ✕) */
 .monaco-editor .find-widget .find-actions,
 .monaco-editor .find-widget .monaco-action-bar {
-  color: var(--muted) !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.monaco-editor .find-widget .monaco-action-bar .action-item {
+  margin: 0 1px !important;
 }
 
 .monaco-editor .find-widget .monaco-action-bar .action-label,
-.monaco-editor .find-widget .find-widget .action-item .action-label {
-  color: var(--muted) !important;
+.monaco-editor .find-widget .find-actions .action-item .action-label {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  border-radius: 4px !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  transition: background 0.12s, color 0.12s !important;
 }
 
 .monaco-editor .find-widget .monaco-action-bar .action-item:hover .action-label,
 .monaco-editor .find-widget .find-actions .action-item:hover .action-label {
-  color: var(--text) !important;
-  background-color: var(--bg-hover) !important;
-  border-radius: 4px !important;
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.1) !important;
 }
 
-.monaco-editor .find-widget .button {
-  background: var(--bg-hover) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 5px !important;
-  color: var(--text) !important;
+.monaco-editor .find-widget .monaco-action-bar .action-item:focus .action-label,
+.monaco-editor .find-widget .monaco-action-bar .action-item.focused .action-label,
+.monaco-editor .find-widget .monaco-action-bar .action-item.active .action-label,
+.monaco-editor .find-widget .monaco-action-bar .action-label:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
 }
 
-.monaco-editor .find-widget .button:hover {
-  background: var(--bg-hover-strong) !important;
-  border-color: var(--accent) !important;
-}
-
-.monaco-editor .find-widget .button.checked {
-  background: var(--accent-soft) !important;
-  border-color: var(--accent) !important;
-  color: var(--accent-light) !important;
+.monaco-editor .find-widget .monaco-action-bar .action-item.disabled .action-label {
+  opacity: 0.3 !important;
+  cursor: default !important;
 }
 
 /* 匹配/选中亮色 */
 .monaco-editor .findMatch {
-  background: rgba(76, 141, 255, 0.3) !important;
-  outline: 1px solid var(--accent) !important;
+  background: rgba(76, 141, 255, 0.28) !important;
+  outline: 1px solid rgba(96, 165, 250, 0.6) !important;
 }
 .monaco-editor .currentFindMatch {
   background: rgba(76, 141, 255, 0.55) !important;
-  outline: 1px solid var(--accent-light) !important;
+  outline: 1px solid #60a5fa !important;
 }
 
 /* 关闭按钮 */
 .monaco-editor .find-widget .close-button {
-  color: var(--muted) !important;
-}
-.monaco-editor .find-widget .close-button:hover {
-  color: var(--text) !important;
-  background: var(--bg-hover) !important;
+  color: rgba(255, 255, 255, 0.5) !important;
   border-radius: 4px !important;
 }
+.monaco-editor .find-widget .close-button:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
 
-/* 查找输入框里的提示占位（Find / Replace / No results 文字与输入框对齐） */
-.monaco-editor .find-widget .monaco-inputbox .input::placeholder,
-.monaco-editor .find-widget .monaco-inputbox .input {
+/* 查找输入框里的提示占位 */
+.monaco-editor .find-widget .monaco-inputbox .input::placeholder {
   font-size: 12px !important;
+  color: rgba(255, 255, 255, 0.35) !important;
+}
+
+/* 彻底隐藏搜索和替换小组件内部的滚动条 (包括输入框、替换框和侧边滑块) */
+.monaco-editor .find-widget .scrollbar,
+.monaco-editor .find-widget .scrollbar.vertical,
+.monaco-editor .find-widget .scrollbar.horizontal,
+.monaco-editor .find-widget .monaco-scrollable-element .scrollbar,
+.monaco-editor .find-widget .monaco-scrollable-element .scrollbar.vertical,
+.monaco-editor .find-widget .monaco-scrollable-element .scrollbar.horizontal,
+.monaco-editor .find-widget ::-webkit-scrollbar,
+.monaco-editor .find-widget textarea::-webkit-scrollbar,
+.monaco-editor .find-widget input::-webkit-scrollbar {
+  display: none !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
+.monaco-editor .find-widget .monaco-scrollable-element {
+  scrollbar-width: none !important;
+  overflow: hidden !important;
+}
+
+.monaco-editor .find-widget .monaco-inputbox,
+.monaco-editor .find-widget .monaco-inputbox .wrapper,
+.monaco-editor .find-widget textarea.input,
+.monaco-editor .find-widget input.input {
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+}
+
+/* 侧边栏全局搜索与替换面板滚动条：默认不显示，仅悬浮时平滑呈现细滑块 */
+.search-panel ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.search-panel ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.search-panel ::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 2px;
+  transition: background 0.2s ease;
+}
+
+.search-panel:hover ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.search-panel ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.search-panel input::-webkit-scrollbar,
+.search-panel textarea::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* 更新下载进度条 */
@@ -8448,43 +9011,6 @@ body.resizing.resizing-row {
 
 .split-close-btn:hover {
   color: var(--text);
-}
-
-/* Inline AI Edit Widget (Cmd+K) */
-.selection-float-widget {
-  position: absolute;
-  z-index: 999;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: #252526;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 2px 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  user-select: none;
-}
-
-.selection-ai-badge {
-  font-size: 11px;
-  color: var(--accent);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.selection-ai-inline-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 4px;
-  padding: 1px 4px;
-  font-size: 10px;
-  font-family: var(--font-mono);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.selection-ai-inline-btn:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.15);
 }
 
 .inline-ai-widget {

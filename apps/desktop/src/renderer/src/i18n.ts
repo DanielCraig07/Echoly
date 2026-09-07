@@ -62,6 +62,11 @@ const DICT: Record<string, { zh: string; en: string }> = {
   'settings.theme': { zh: '界面主题 (Theme)', en: 'Interface Theme' },
   'settings.theme.dark': { zh: '深色极客 Dark (默认)', en: 'Dark (default)' },
   'settings.theme.light': { zh: '浅色雅致 Light', en: 'Light' },
+  'settings.theme.light.disabledHint': {
+    zh: '🚧 浅色主题正在深度适配优化中，暂未开放，敬请期待！',
+    en: '🚧 Light theme is currently under optimization, coming soon!',
+  },
+  'settings.theme.adapting': { zh: '适配中', en: 'Coming Soon' },
   'settings.autosave': { zh: '代码编辑自动保存到磁盘', en: 'Auto-save edits to disk' },
   'settings.permission': { zh: '工具执行安全策略 (Permission Mode)', en: 'Tool Permission Mode' },
   'settings.permissionDesc': {

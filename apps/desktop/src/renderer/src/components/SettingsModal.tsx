@@ -878,11 +878,17 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                         <span>{t('settings.theme.dark')}</span>
                       </div>
                       <div
-                        className={`theme-card ${settings.theme === 'light' ? 'selected' : ''}`}
-                        onClick={() => setSettings({ ...settings, theme: 'light' })}
+                        className="theme-card disabled"
+                        title={t('settings.theme.light.disabledHint')}
                       >
                         <div className="theme-preview light-preview" />
-                        <span>{t('settings.theme.light')}</span>
+                        <div className="theme-card-label-row">
+                          <span>{t('settings.theme.light')}</span>
+                          <span className="theme-card-tag">{t('settings.theme.adapting')}</span>
+                        </div>
+                        <div className="theme-card-tooltip">
+                          {t('settings.theme.light.disabledHint')}
+                        </div>
                       </div>
                     </div>
                   </div>

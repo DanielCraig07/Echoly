@@ -40,6 +40,7 @@ interface Props {
   onAcceptAllDiffs?: () => void;
   onRejectAllDiffs?: () => void;
   onSelectDiff?: (id: string) => void;
+  onOpenFile?: (path: string) => void;
   onOpenSettings?: () => void;
   onSwitchWorkspace?: (path: string) => void;
   models?: ModelProfile[];
@@ -292,6 +293,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     onAcceptAllDiffs,
     onRejectAllDiffs,
     onSelectDiff,
+    onOpenFile,
     onOpenSettings,
     onSwitchWorkspace,
     models = [],
@@ -632,6 +634,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         const nextInput = !trimmed ? `${token} ` : `${trimmed} ${token} `;
         return { ...t, input: nextInput };
       });
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const len = textareaRef.current.value.length;
+          textareaRef.current.setSelectionRange(len, len);
+        }
+      }, 50);
     },
 
     startFreshWithPath(path: string) {
@@ -824,6 +833,17 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 .join('\n')
                 .trim();
               if (displayContent) {
+                // Prevent duplicate consecutive or recent identical intermediate thought bubbles
+                const lastAssistantMsg = [...next.messages]
+                  .reverse()
+                  .find((m) => m.role === 'assistant');
+                if (
+                  lastAssistantMsg &&
+                  lastAssistantMsg.isIntermediate &&
+                  lastAssistantMsg.content === displayContent
+                ) {
+                  break;
+                }
                 next.messages = [
                   ...next.messages,
                   {
@@ -1345,7 +1365,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 if (pendingGroup.length === 0) return;
                 let trailingAssistant: ChatSessionMessage | null = null;
                 const lastMsg = pendingGroup[pendingGroup.length - 1];
-                if (lastMsg && lastMsg.role === 'assistant' && lastMsg.content?.trim()) {
+                if (
+                  lastMsg &&
+                  lastMsg.role === 'assistant' &&
+                  !lastMsg.isIntermediate &&
+                  lastMsg.content?.trim()
+                ) {
                   trailingAssistant = pendingGroup.pop()!;
                 }
                 if (pendingGroup.length > 0) {
@@ -1354,6 +1379,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                       key={key}
                       messages={pendingGroup}
                       isStreaming={Boolean(isRunning && turnIsLive && isLiveGroup)}
+                      onOpenFile={onOpenFile}
                     />,
                   );
                 }

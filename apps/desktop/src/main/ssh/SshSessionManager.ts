@@ -373,6 +373,10 @@ interface LiveSsh {
   sftp: SFTPWrapper;
   workspace: WorkspaceService;
   webContentsId: number;
+  host?: string;
+  port?: number;
+  username?: string;
+  browseOnly?: boolean;
 }
 
 /**
@@ -498,7 +502,7 @@ export class SshSessionManager {
     const live = this.live.get(webContentsId);
     if (!live) return;
     this.live.delete(webContentsId);
-    if (live.workspace.getKind() === 'ssh') {
+    if (!live.browseOnly && live.workspace.getKind() === 'ssh') {
       live.workspace.clearRemote();
     }
     try {
@@ -514,9 +518,71 @@ export class SshSessionManager {
     const workspace = windowSession.workspace;
     const webContentsId = windowSession.webContentsId;
 
+    const port = req.port ?? 22;
+    const browseOnly = req.browseOnly === true;
+
+    // 检查当前窗口是否已有连向相同服务器的活动连接
+    const existingLive = webContentsId >= 0 ? this.live.get(webContentsId) : null;
+    const isSameServer =
+      existingLive &&
+      existingLive.host === req.host &&
+      existingLive.port === port &&
+      existingLive.username === req.username;
+
+    if (isSameServer && existingLive) {
+      if (browseOnly) {
+        return { ok: true, detail: `已连接 ${existingLive.username}@${existingLive.host}` };
+      }
+
+      // 复用已有连接，正式打开指定的工作区目录
+      let remoteRoot = req.remotePath?.trim() || '';
+      if (!remoteRoot) {
+        remoteRoot = await new Promise<string>((resolve) => {
+          existingLive.client.exec('pwd', (err, stream) => {
+            if (err) return resolve(`/home/${req.username}`);
+            let out = '';
+            stream.on('data', (d: Buffer) => {
+              out += d.toString('utf8');
+            });
+            stream.on('close', () => resolve(out.trim() || `/home/${req.username}`));
+          });
+        });
+      }
+      remoteRoot = remoteRoot.replace(/\\/g, '/').replace(/\/$/, '') || '/';
+
+      const backend = new SftpBackend(remoteRoot, existingLive.client, existingLive.sftp);
+      const label = `ssh ${req.username}@${req.host}:${remoteRoot}`;
+      workspace.setRemoteBackend(backend, label);
+      existingLive.browseOnly = false;
+
+      if (req.saveProfile) {
+        const profiles = await this.listProfiles();
+        const profile: SshProfile = {
+          id: randomUUID(),
+          name: req.profileName || `${req.username}@${req.host}`,
+          host: req.host,
+          port,
+          username: req.username,
+          privateKeyPath: req.privateKeyPath,
+          remotePath: remoteRoot,
+        };
+        const withoutDup = profiles.filter(
+          (p) =>
+            !(
+              p.host === profile.host &&
+              p.username === profile.username &&
+              p.port === profile.port
+            ),
+        );
+        withoutDup.push(profile);
+        await this.saveProfiles(withoutDup);
+      }
+
+      return { ok: true, root: remoteRoot, label, detail: `已连接 ${label}` };
+    }
+
     this.disconnectWindow(webContentsId);
 
-    const port = req.port ?? 22;
     let privateKey: Buffer | undefined;
     if (req.privateKeyPath) {
       try {
@@ -581,11 +647,19 @@ export class SshSessionManager {
       }
       remoteRoot = remoteRoot.replace(/\\/g, '/').replace(/\/$/, '') || '/';
 
-      const backend = new SftpBackend(remoteRoot, client, sftp);
       const label = `ssh ${req.username}@${req.host}:${remoteRoot}`;
-      workspace.setRemoteBackend(backend, label);
+
       if (webContentsId >= 0) {
-        this.live.set(webContentsId, { client, sftp, workspace, webContentsId });
+        this.live.set(webContentsId, {
+          client,
+          sftp,
+          workspace,
+          webContentsId,
+          host: req.host,
+          port,
+          username: req.username,
+          browseOnly,
+        });
       }
 
       // 注册常驻连接生命周期监听，网络中断时及时释放，避免连接僵死
@@ -603,30 +677,41 @@ export class SshSessionManager {
         cleanupDeadConnection();
       });
 
-      if (req.saveProfile) {
-        const profiles = await this.listProfiles();
-        const profile: SshProfile = {
-          id: randomUUID(),
-          name: req.profileName || `${req.username}@${req.host}`,
-          host: req.host,
-          port,
-          username: req.username,
-          privateKeyPath: req.privateKeyPath,
-          remotePath: remoteRoot,
-        };
-        const withoutDup = profiles.filter(
-          (p) =>
-            !(
-              p.host === profile.host &&
-              p.username === profile.username &&
-              p.port === profile.port
-            ),
-        );
-        withoutDup.push(profile);
-        await this.saveProfiles(withoutDup);
+      // 仅当非 browseOnly 模式时才真正切换工作区并保存配置
+      if (!browseOnly) {
+        const backend = new SftpBackend(remoteRoot, client, sftp);
+        workspace.setRemoteBackend(backend, label);
+
+        if (req.saveProfile) {
+          const profiles = await this.listProfiles();
+          const profile: SshProfile = {
+            id: randomUUID(),
+            name: req.profileName || `${req.username}@${req.host}`,
+            host: req.host,
+            port,
+            username: req.username,
+            privateKeyPath: req.privateKeyPath,
+            remotePath: remoteRoot,
+          };
+          const withoutDup = profiles.filter(
+            (p) =>
+              !(
+                p.host === profile.host &&
+                p.username === profile.username &&
+                p.port === profile.port
+              ),
+          );
+          withoutDup.push(profile);
+          await this.saveProfiles(withoutDup);
+        }
       }
 
-      return { ok: true, root: remoteRoot, label, detail: `已连接 ${label}` };
+      return {
+        ok: true,
+        root: browseOnly ? undefined : remoteRoot,
+        label: browseOnly ? undefined : label,
+        detail: `已连接 ${label}`,
+      };
     } catch (err) {
       try {
         client.end();

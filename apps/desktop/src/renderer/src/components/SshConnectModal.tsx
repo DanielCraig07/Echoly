@@ -123,6 +123,7 @@ export function SshConnectModal({
       passphrase: passphrase || undefined,
       remotePath: targetPath || undefined,
       saveProfile: false,
+      browseOnly: true,
     });
 
     setBusy(false);
@@ -150,6 +151,7 @@ export function SshConnectModal({
       remotePath: remotePath.trim(),
       saveProfile,
       profileName: profileName || undefined,
+      browseOnly: false,
     });
     setBusy(false);
     if (!result.ok) {
@@ -184,8 +186,15 @@ export function SshConnectModal({
 
   const folderLabel = remotePath.split('/').filter(Boolean).pop() || remotePath || '/';
 
+  const handleClose = () => {
+    if (step === 'pick_directory') {
+      void window.ide.sshDisconnect();
+    }
+    onClose();
+  };
+
   return (
-    <div className="settings-overlay" onClick={onClose}>
+    <div className="settings-overlay" onClick={handleClose}>
       <div
         className={`ide-modal${step === 'pick_directory' || showForm ? ' ide-modal-md' : ''}`}
         onClick={(e) => e.stopPropagation()}
@@ -204,7 +213,7 @@ export function SshConnectModal({
               <button
                 type="button"
                 className="settings-close-btn"
-                onClick={onClose}
+                onClick={handleClose}
                 aria-label="关闭"
               >
                 ×
@@ -324,7 +333,7 @@ export function SshConnectModal({
             <footer className="ide-modal-footer">
               {!showForm && profiles.length > 0 ? (
                 <>
-                  <button type="button" className="ghost" onClick={onClose} disabled={busy}>
+                  <button type="button" className="ghost" onClick={handleClose} disabled={busy}>
                     取消
                   </button>
                   <button type="button" className="primary" onClick={() => setShowForm(true)}>
@@ -336,7 +345,7 @@ export function SshConnectModal({
                   <button
                     type="button"
                     className="ghost"
-                    onClick={() => (profiles.length > 0 ? setShowForm(false) : onClose())}
+                    onClick={() => (profiles.length > 0 ? setShowForm(false) : handleClose())}
                     disabled={busy}
                   >
                     {profiles.length > 0 ? '返回列表' : '取消'}
@@ -369,7 +378,7 @@ export function SshConnectModal({
               <button
                 type="button"
                 className="settings-close-btn"
-                onClick={onClose}
+                onClick={handleClose}
                 aria-label="关闭"
               >
                 ×
@@ -448,7 +457,10 @@ export function SshConnectModal({
               <button
                 type="button"
                 className="ghost"
-                onClick={() => setStep('credentials')}
+                onClick={() => {
+                  void window.ide.sshDisconnect();
+                  setStep('credentials');
+                }}
                 disabled={busy}
               >
                 返回

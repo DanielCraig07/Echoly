@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
-import type { editor as MonacoEditor } from 'monaco-editor';
+import { KeyMod, KeyCode, type editor as MonacoEditor } from 'monaco-editor';
 import type {
   GitStatusEntry,
   GitStatusResult,
@@ -55,11 +55,13 @@ function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
     return null;
   const norm = path.replace(/\\/g, '/');
   try {
-    const matched = entries.find((e) => e && e.path === norm);
+    const matched = entries.find(
+      (e) => e && (e.path === norm || norm.endsWith('/' + e.path.replace(/\\/g, '/'))),
+    );
     if (!matched) return null;
-    if (matched.untracked) return { label: 'U', color: '#4caf50' };
-    if (matched.staged) return { label: 'A', color: '#4caf50' };
-    if (matched.workTree && matched.workTree.trim()) return { label: 'M', color: '#e5a54b' };
+    if (matched.untracked) return { label: 'U', color: '#73c991' };
+    if (matched.staged) return { label: 'A', color: '#73c991' };
+    if (matched.workTree && matched.workTree.trim()) return { label: 'M', color: '#e2c08d' };
     return null;
   } catch {
     return null;
@@ -111,10 +113,27 @@ export function EditorPane({
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const onSelectionChangeRef = useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const onAddToChatRef = useRef(onAddToChat);
+  onAddToChatRef.current = onAddToChat;
+  const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
+  const cmdKey = isMac ? '⌘' : 'Ctrl+';
   const monacoTheme = uiTheme === 'light' ? 'vs' : 'custom-dark';
   const pendingReveal = useRef<number | null>(null);
 
   const [selectedText, setSelectedText] = useState('');
+  const [tabsScrolling, setTabsScrolling] = useState(false);
+  const tabsScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTabsScroll = () => {
+    setTabsScrolling(true);
+    if (tabsScrollTimeoutRef.current) clearTimeout(tabsScrollTimeoutRef.current);
+    tabsScrollTimeoutRef.current = setTimeout(() => {
+      setTabsScrolling(false);
+    }, 800);
+  };
+
   const [selectionRange, setSelectionRange] = useState<{
     startLine: number;
     endLine: number;
@@ -705,7 +724,7 @@ export function EditorPane({
   // 与 updateSelectionAndCoords 分开，滚动时走这个更省。
   const repositionSelectionCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
     const sel = ed.getSelection();
-    if (!sel || sel.isEmpty()) return;
+    if (!sel) return;
     try {
       const endPos = sel.getEndPosition();
       const visiblePos = ed.getScrolledVisiblePosition(endPos);
@@ -721,7 +740,7 @@ export function EditorPane({
           : editorRect.top - containerRect.top + visiblePos.top - 28;
 
         setSelectionCoords({
-          left: Math.max(10, Math.min(left, containerRect.width - 65)),
+          left: Math.max(10, Math.min(left, containerRect.width - 170)),
           top: Math.max(8, Math.min(top, containerRect.height - 35)),
         });
       }
@@ -729,6 +748,68 @@ export function EditorPane({
       // ignore
     }
   }, []);
+
+  const openInlineAiForEditor = useCallback(
+    (ed: MonacoEditor.IStandaloneCodeEditor) => {
+      const sel = ed.getSelection();
+      const model = ed.getModel();
+      if (model && sel) {
+        if (!sel.isEmpty()) {
+          const text = model.getValueInRange(sel);
+          setSelectedText(text);
+          setSelectionRange({
+            startLine: sel.startLineNumber,
+            endLine: sel.endLineNumber,
+          });
+        } else {
+          // If no selection range, select current line
+          const lineNum = sel.positionLineNumber;
+          const lineContent = model.getLineContent(lineNum);
+          setSelectedText(lineContent);
+          setSelectionRange({
+            startLine: lineNum,
+            endLine: lineNum,
+          });
+        }
+      }
+      repositionSelectionCoords(ed);
+      setShowInlineAi(true);
+      setTimeout(() => {
+        inlineInputRef.current?.focus();
+        inlineInputRef.current?.select();
+      }, 50);
+    },
+    [repositionSelectionCoords],
+  );
+
+  const triggerAddToChatForEditor = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
+    const curActive = activeRef.current;
+    if (!curActive?.path) return;
+    const sel = ed.getSelection();
+    const model = ed.getModel();
+    let rangeLabel = '';
+    if (model && sel && !sel.isEmpty()) {
+      rangeLabel =
+        sel.startLineNumber === sel.endLineNumber
+          ? `L${sel.startLineNumber}`
+          : `L${sel.startLineNumber}-L${sel.endLineNumber}`;
+    }
+    const refToken = `@${curActive.path}${rangeLabel ? `:${rangeLabel}` : ''}`;
+    onAddToChatRef.current?.(refToken);
+    setSelectionCoords(null);
+  }, []);
+
+  const setupEditorKeybindings = useCallback(
+    (ed: MonacoEditor.IStandaloneCodeEditor) => {
+      ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyK, () => {
+        openInlineAiForEditor(ed);
+      });
+      ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyL, () => {
+        triggerAddToChatForEditor(ed);
+      });
+    },
+    [openInlineAiForEditor, triggerAddToChatForEditor],
+  );
 
   useEffect(() => {
     const handleGlobalMouseUp = () => {
@@ -747,20 +828,33 @@ export function EditorPane({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        if (selectedText && selectedText.trim().length > 0) {
-          e.preventDefault();
-          setShowInlineAi(true);
-          setTimeout(() => inlineInputRef.current?.focus(), 50);
-        }
-      }
       if (e.key === 'Escape' && showInlineAi) {
         setShowInlineAi(false);
+        editorRef.current?.focus();
+        return;
+      }
+
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      if (!isCmdOrCtrl) return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'k') {
+        if (editorRef.current && activeRef.current?.path) {
+          e.preventDefault();
+          e.stopPropagation();
+          openInlineAiForEditor(editorRef.current);
+        }
+      } else if (key === 'l') {
+        if (editorRef.current && activeRef.current?.path) {
+          e.preventDefault();
+          e.stopPropagation();
+          triggerAddToChatForEditor(editorRef.current);
+        }
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedText, showInlineAi]);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [showInlineAi, openInlineAiForEditor, triggerAddToChatForEditor]);
 
   if (previewDiff) {
     const lang = languageFromPath(previewDiff.path);
@@ -1003,9 +1097,9 @@ export function EditorPane({
                 vertical: 'visible',
                 horizontal: 'auto',
                 verticalScrollbarSize: 4,
-                horizontalScrollbarSize: 4,
+                horizontalScrollbarSize: 3,
                 verticalSliderSize: 4,
-                horizontalSliderSize: 4,
+                horizontalSliderSize: 3,
                 useShadows: false,
               },
             }}
@@ -1019,7 +1113,8 @@ export function EditorPane({
     <div className="editor-area" onClick={() => setContextMenu(null)}>
       {tabs.length > 0 && (
         <div
-          className="tabs"
+          className={`tabs ${tabsScrolling ? 'tabs-scrolling' : ''}`}
+          onScroll={handleTabsScroll}
           onDoubleClick={(e) => {
             if ((e.target as HTMLElement).closest('.tab')) return;
             onNewUntitled?.();
@@ -1049,15 +1144,14 @@ export function EditorPane({
                 }}
               >
                 <RenderFileTreeIcon name={fileName} isDirectory={false} />
-                <span style={{ color: gitMeta?.color }}>{fileName}</span>
+                <span className="tab-title" style={{ color: gitMeta?.color }}>
+                  {fileName}
+                </span>
                 {gitMeta?.label && (
                   <span
                     className="tab-git-badge"
                     style={{
                       color: gitMeta.color,
-                      cursor: 'pointer',
-                      padding: '0 4px',
-                      borderRadius: 2,
                     }}
                     title="点击查看 Git 对比"
                     onClick={(e) => {
@@ -1074,14 +1168,18 @@ export function EditorPane({
                     {gitMeta.label}
                   </span>
                 )}
-                {tab.dirty && <span className="dirty-dot">•</span>}
                 <span
+                  className={`tab-close-btn${tab.dirty ? ' is-dirty' : ''}`}
+                  title={tab.dirty ? '未保存 (点击关闭)' : '关闭'}
                   onClick={(e) => {
                     e.stopPropagation();
                     onCloseTab(tab.path);
                   }}
                 >
-                  ×
+                  {tab.dirty && <span className="dirty-dot">•</span>}
+                  <svg className="close-icon" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z" />
+                  </svg>
                 </span>
               </button>
             );
@@ -1149,32 +1247,69 @@ export function EditorPane({
               left: `${selectionCoords.left}px`,
               top: `${selectionCoords.top}px`,
             }}
-            title="引用选中文本到 AI 会话 (快捷键 Cmd+K 打开行内 AI 编辑)"
           >
-            <span
-              className="selection-ai-badge"
+            <button
+              type="button"
+              className="selection-ai-btn"
               onMouseDown={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                handleAddToChat(e);
-                setSelectionCoords(null);
+                if (editorRef.current) {
+                  triggerAddToChatForEditor(editorRef.current);
+                } else {
+                  handleAddToChat(e);
+                  setSelectionCoords(null);
+                }
               }}
-              title="添加到 AI 聊天会话"
+              title={`添加到 AI 会话提问 (${cmdKey}L)`}
             >
-              ✦ AI
-            </span>
-            <span
+              <svg
+                className="selection-ai-sparkle-icon"
+                viewBox="0 0 16 16"
+                width="13"
+                height="13"
+                fill="none"
+              >
+                <path
+                  d="M8 1.5C8.3 4.8 11.2 7.7 14.5 8C11.2 8.3 8.3 11.2 8 14.5C7.7 11.2 4.8 8.3 1.5 8C4.8 7.7 7.7 4.8 8 1.5Z"
+                  fill="url(#ai-sparkle-grad)"
+                />
+                <defs>
+                  <linearGradient
+                    id="ai-sparkle-grad"
+                    x1="1.5"
+                    y1="1.5"
+                    x2="14.5"
+                    y2="14.5"
+                    gradientUnits="userSpaceOnUse"
+                  >
+                    <stop stopColor="#a78bfa" />
+                    <stop offset="1" stopColor="#38bdf8" />
+                  </linearGradient>
+                </defs>
+              </svg>
+              <span>AI 提问</span>
+              <kbd className="selection-ai-kbd">{cmdKey} L</kbd>
+            </button>
+            <div className="selection-ai-divider" />
+            <button
+              type="button"
               className="selection-ai-inline-btn"
               onMouseDown={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setShowInlineAi(true);
-                setTimeout(() => inlineInputRef.current?.focus(), 50);
+                if (editorRef.current) {
+                  openInlineAiForEditor(editorRef.current);
+                } else {
+                  setShowInlineAi(true);
+                  setTimeout(() => inlineInputRef.current?.focus(), 50);
+                }
               }}
-              title="行内 AI 智能编辑 (Cmd+K)"
+              title={`行内智能编辑 (${cmdKey}K)`}
             >
-              ⌘K
-            </span>
+              <span>编辑</span>
+              <kbd className="selection-ai-kbd">{cmdKey} K</kbd>
+            </button>
           </div>
         )}
 
@@ -1297,6 +1432,7 @@ export function EditorPane({
                 onChange={(v) => onChangeContent(active.path, v ?? '')}
                 onMount={(ed) => {
                   editorRef.current = ed;
+                  setupEditorKeybindings(ed);
                   setupEditorScrollSync(ed);
                   ed.onDidChangeCursorSelection(() => {
                     if (isMouseDownRef.current) {
@@ -1367,10 +1503,10 @@ export function EditorPane({
                   scrollbar: {
                     vertical: 'visible',
                     horizontal: 'auto',
-                    verticalScrollbarSize: 8,
-                    horizontalScrollbarSize: 8,
-                    verticalSliderSize: 8,
-                    horizontalSliderSize: 8,
+                    verticalScrollbarSize: 4,
+                    horizontalScrollbarSize: 3,
+                    verticalSliderSize: 4,
+                    horizontalSliderSize: 3,
                     useShadows: false,
                   },
                 }}
@@ -1411,6 +1547,7 @@ export function EditorPane({
                 }}
                 onMount={(ed) => {
                   editorRef.current = ed;
+                  setupEditorKeybindings(ed);
                   ed.onDidChangeCursorSelection(() => {
                     if (isMouseDownRef.current) {
                       updateSelectionTextOnly(ed);
@@ -1446,8 +1583,8 @@ export function EditorPane({
                   scrollbar: {
                     vertical: 'visible',
                     horizontal: 'auto',
-                    verticalScrollbarSize: 8,
-                    horizontalScrollbarSize: 8,
+                    verticalScrollbarSize: 4,
+                    horizontalScrollbarSize: 3,
                   },
                 }}
               />
@@ -1506,6 +1643,9 @@ export function EditorPane({
                     language={splitActive.language}
                     theme={monacoTheme}
                     onChange={(v) => onChangeContent(splitActive.path, v ?? '')}
+                    onMount={(ed) => {
+                      setupEditorKeybindings(ed);
+                    }}
                     options={{
                       fontSize: 13,
                       minimap: { enabled: false },
@@ -1516,8 +1656,8 @@ export function EditorPane({
                       scrollbar: {
                         vertical: 'visible',
                         horizontal: 'auto',
-                        verticalScrollbarSize: 8,
-                        horizontalScrollbarSize: 8,
+                        verticalScrollbarSize: 4,
+                        horizontalScrollbarSize: 3,
                       },
                     }}
                   />
@@ -1550,6 +1690,7 @@ export function EditorPane({
               }}
               onMount={(ed) => {
                 editorRef.current = ed;
+                setupEditorKeybindings(ed);
                 ed.onDidChangeCursorSelection(() => {
                   if (isMouseDownRef.current) {
                     updateSelectionTextOnly(ed);
@@ -1610,10 +1751,10 @@ export function EditorPane({
                 scrollbar: {
                   vertical: 'visible',
                   horizontal: 'auto',
-                  verticalScrollbarSize: 8,
-                  horizontalScrollbarSize: 8,
-                  verticalSliderSize: 8,
-                  horizontalSliderSize: 8,
+                  verticalScrollbarSize: 4,
+                  horizontalScrollbarSize: 3,
+                  verticalSliderSize: 4,
+                  horizontalSliderSize: 3,
                   useShadows: false,
                 },
               }}
@@ -1943,7 +2084,7 @@ export function EditorPane({
                       suffixLen < oldStr.length - prefixLen &&
                       suffixLen < newStr.length - prefixLen &&
                       oldStr[oldStr.length - 1 - suffixLen] ===
-                        newStr[newStr.length - 1 - suffixLen]
+                      newStr[newStr.length - 1 - suffixLen]
                     ) {
                       suffixLen++;
                     }

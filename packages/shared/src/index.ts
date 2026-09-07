@@ -732,6 +732,7 @@ export interface SshConnectRequest {
   remotePath?: string;
   saveProfile?: boolean;
   profileName?: string;
+  browseOnly?: boolean;
 }
 
 export interface SshProfile {

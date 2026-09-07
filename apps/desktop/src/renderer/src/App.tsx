@@ -1311,6 +1311,7 @@ export function App() {
           {/* IDEA 风格运行配置工具条（移至右侧） */}
           <RunWidget
             workspace={workspace}
+            activePath={activePath}
             isBottomExpanded={layout.bottomPanelExpanded === true}
             onExpandBottom={() => {
               const next = { ...layout, bottomPanelExpanded: true };
@@ -1970,6 +1971,7 @@ export function App() {
                     setScmDiff(null);
                     setActiveDiffId(id);
                   }}
+                  onOpenFile={(p) => void openFile(p)}
                   onOpenSettings={() => setSettingsOpen(true)}
                   onSwitchWorkspace={handleSwitchWorkspacePath}
                   models={models}

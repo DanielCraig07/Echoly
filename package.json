@@ -1,6 +1,6 @@
 {
   "name": "echoly",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "description": "Echoly - AI-first Modern Intelligent IDE",
   "workspaces": [
@@ -25,7 +25,9 @@
     "format:check": "prettier --check .",
     "probe-llm": "npm run probe -w @deepseek-ide/llm",
     "build-cursor-ext": "npm run build -w packages/cursor-extension",
-    "package-cursor-ext": "npm run build -w packages/cursor-extension && node scripts/package-cursor-ext.js"
+    "package-cursor-ext": "npm run build -w packages/cursor-extension && node scripts/package-cursor-ext.js",
+    "sync-version": "node scripts/sync-version.js",
+    "release": "node scripts/release.js"
   },
   "engines": {
     "node": ">=20"
@@ -38,5 +40,14 @@
     "typescript-eslint": "^8.69.0",
     "vite": "^5.4.11",
     "vitest": "^4.1.11"
+  },
+  "allowScripts": {
+    "electron@35.7.5": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.1": true,
+    "esbuild@0.21.5": true,
+    "node-pty@1.1.0": true,
+    "cpu-features@0.0.10": true,
+    "ssh2@1.17.0": true
   }
 }

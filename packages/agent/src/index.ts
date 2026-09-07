@@ -118,10 +118,13 @@ function buildSystemPrompt(options: {
   const sharedRules = `## Behavior
 - Reply in the same language the user uses (default Chinese if unclear).
 - Explore before editing: prefer search_code / glob_files / read_file / list_dir, then apply_patch or write_file.
+- STRICTLY FORBIDDEN: Calling the same tool with identical arguments repeatedly. Once a file is read or a query is searched, analyze the information already in context.
+- If a file's content was truncated, do NOT re-read the whole file with read_file; use read_file_lines with specific line offsets, or use search_code.
 - Keep tool arguments valid JSON. On tool failure, read the error and retry or change strategy.
 - For destructive or ambiguous actions, use ask_user (or wait for confirmation flows).
 - Be concise in final answers; cite paths when referring to code. During long work, give short progress notes.
-- Do not invent file contents you have not read.`;
+- Do not invent file contents you have not read.
+- When you have sufficient information to answer the user's request, STOP calling tools immediately and output your final response.`;
 
   const modeBlock =
     mode === 'ask'
@@ -373,6 +376,11 @@ export async function runAgent(
   let step = 0;
   let limit = chunkSize;
 
+  // Loop Breaker: Track tool call signatures and intermediate reasoning to stop infinite loops
+  const toolCallKeyHistory: string[] = [];
+  let lastIntermediateContent = '';
+  let consecutiveStuckSteps = 0;
+
   const emitContextUsage = (usedTokens: number, source: 'api' | 'estimate') => {
     onEvent({
       type: 'context_usage',
@@ -394,12 +402,15 @@ export async function runAgent(
         onEvent({ type: 'status', status: 'thinking' });
         emitContextUsage(estimateTokensFromMessages(messages), 'estimate');
 
+        // If the model is repeatedly stuck in a tool loop, remove tools to force text conclusion
+        const effectiveTools = consecutiveStuckSteps >= 2 ? undefined : tools;
+
         let assistant: ChatMessage;
         try {
           const result = await client.chatStreamCollect(
             {
               messages,
-              tools,
+              tools: effectiveTools,
               signal,
             },
             (token) => onEvent({ type: 'token', text: token }),
@@ -445,7 +456,7 @@ export async function runAgent(
             args: tc.function.arguments,
           })) ?? [];
 
-        if (!toolCalls.length && assistant.content) {
+        if (!toolCalls.length && assistant.content && consecutiveStuckSteps < 2) {
           toolCalls = parseXmlToolCalls(assistant.content);
         }
 
@@ -483,7 +494,11 @@ export async function runAgent(
             .join('\n')
             .trim();
           if (displayContent) {
-            onEvent({ type: 'assistant_message', content: displayContent });
+            // Deduplicate consecutive identical intermediate thoughts to prevent UI message flood
+            if (displayContent !== lastIntermediateContent) {
+              onEvent({ type: 'assistant_message', content: displayContent });
+              lastIntermediateContent = displayContent;
+            }
           }
         }
 
@@ -513,6 +528,58 @@ export async function runAgent(
           } catch {
             parsedArgs = call.args;
           }
+
+          // Loop Breaker: calculate normalized signature of this call
+          let normalizedArgKey =
+            typeof call.args === 'string' ? call.args.trim() : JSON.stringify(call.args ?? {});
+          try {
+            if (parsedArgs && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs)) {
+              normalizedArgKey = JSON.stringify(
+                Object.keys(parsedArgs as Record<string, unknown>)
+                  .sort()
+                  .reduce((acc, k) => {
+                    acc[k] = (parsedArgs as Record<string, unknown>)[k];
+                    return acc;
+                  }, {} as Record<string, unknown>),
+              );
+            }
+          } catch {
+            // fallback
+          }
+          const callSignature = `${call.name}::${normalizedArgKey}`;
+          const recentCalls = toolCallKeyHistory.slice(-6);
+          const repeatCount = recentCalls.filter((sig) => sig === callSignature).length;
+          toolCallKeyHistory.push(callSignature);
+
+          // Circuit Breaker Activated!
+          if (repeatCount >= 2) {
+            consecutiveStuckSteps++;
+            const circuitBreakerMsg =
+              `[系统熔断警告]: 检测到你已连续多次使用完全相同的参数调用工具 "${call.name}"。\n` +
+              `为防止死循环，该工具调用已被系统直接拦截并终止执行。\n` +
+              `【严禁再次重复调用该工具及相同参数】！\n` +
+              `请立刻根据上下文中已获取的信息完成综合分析，直接向用户输出最终答复；如果必须继续，请更换其它工具或指定新的参数。`;
+
+            onEvent({ type: 'tool_start', id: call.id, name: call.name, args: parsedArgs });
+            onEvent({
+              type: 'tool_result',
+              id: call.id,
+              name: call.name,
+              result: circuitBreakerMsg,
+              isError: true,
+            });
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: circuitBreakerMsg,
+            });
+            continue;
+          }
+
+          if (repeatCount === 0) {
+            consecutiveStuckSteps = 0;
+          }
+
           onEvent({ type: 'status', status: 'tool_running' });
           onEvent({ type: 'tool_start', id: call.id, name: call.name, args: parsedArgs });
           const result = await executeTool(call.name, call.args, {
@@ -527,7 +594,13 @@ export async function runAgent(
           if (toolResultContent.length > MAX_TOOL_RESULT_LENGTH) {
             toolResultContent =
               toolResultContent.slice(0, MAX_TOOL_RESULT_LENGTH) +
-              `\n\n[输出已截断，原长度: ${toolResultContent.length} 字符]`;
+              `\n\n[输出已截断，原长度: ${toolResultContent.length} 字符。若需读取后续内容，请使用 read_file_lines 指定起始行号 offset，切勿重新使用 read_file 重复读取整文件]`;
+          }
+
+          // If this is the 2nd identical call in recent history, append a gentle warning to nip the loop in the bud
+          if (repeatCount === 1) {
+            toolResultContent +=
+              `\n\n[系统提示]: 你刚刚已读取过完全相同的内容。严禁再次以相同参数调用 ${call.name} 工具。请直接根据已获得的数据进行思考与总结。`;
           }
 
           onEvent({

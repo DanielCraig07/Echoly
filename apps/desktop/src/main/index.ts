@@ -29,11 +29,11 @@ app.setName('Echoly');
 // 初始化日志与崩溃上报（最早调用）
 initLogging();
 
-// 单实例锁：避免同机同时启动多个实例，重复实例聚焦现有窗口
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
+// 单实例锁：避免同机同时启动多个生产实例；开发环境下不与已安装的应用冲突
+const gotSingleInstanceLock = !app.isPackaged || app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
-} else {
+} else if (app.isPackaged) {
   app.on('second-instance', (_event, _argv, _workingDirectory) => {
     // 另一实例启动时，聚焦已有主窗口
     if (mainWindow) {

@@ -863,7 +863,10 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
       </div>
 
       {/* 3. Search Results Summary & List / Tree View */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0, minWidth: 0 }}>
+      <div
+        className="search-results-scroll"
+        style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0, minWidth: 0 }}
+      >
         {loading && (
           <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>Searching...</div>
         )}
