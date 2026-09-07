@@ -151,6 +151,8 @@ export interface AppSettings {
   theme: UiTheme;
   /** Debounced write on editor change when enabled. */
   autoSave: boolean;
+  /** 是否在编辑器光标所在行常驻显示 Git Blame 提交信息。默认 true。 */
+  gitBlameInline?: boolean;
   /** 自动更新源配置。未配置时禁用自动更新。 */
   updateFeed?: UpdateFeedConfig | null;
 }
@@ -201,6 +203,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   layout: { ...DEFAULT_LAYOUT },
   theme: 'dark',
   autoSave: false,
+  gitBlameInline: true,
   updateFeed: null,
 };
 
@@ -911,6 +914,27 @@ export interface IpcApi {
       percent: number;
     }) => void,
   ) => () => void;
+
+  /** LSP 语言服务器跳转到定义 */
+  lspGetDefinition: (
+    filePath: string,
+    line: number,
+    column: number,
+  ) => Promise<LspLocation[]>;
+  /** LSP 语言服务器同步文档内容 */
+  lspNotifyDocument: (
+    filePath: string,
+    content: string,
+    languageId?: string,
+  ) => Promise<void>;
+}
+
+export interface LspLocation {
+  path: string;
+  line: number;
+  column: number;
+  endLine?: number;
+  endColumn?: number;
 }
 
 declare global {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { KeyMod, KeyCode, type editor as MonacoEditor } from 'monaco-editor';
 import type {
@@ -10,9 +10,10 @@ import type {
 } from '@deepseek-ide/shared';
 import { isImagePath, isUntitledPath, languageFromPath, untitledTabLabel } from '../utils';
 import { RenderFileTreeIcon } from './FileTree';
-import { MarkdownMessage } from './MarkdownMessage';
+import { MarkdownMessage, extractMarkdownHeadings, type MarkdownHeadingItem } from './MarkdownMessage';
 import { WelcomeView } from './WelcomeView';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
+import { setupCmdClickGesture, navigateBack, highlightJumpLocation, navigationStack, type PeekResult } from '../services/symbolNavigation';
 
 interface Props {
   tabs: OpenTab[];
@@ -25,10 +26,11 @@ interface Props {
   onCloseSaved?: () => void;
   onCloseAll?: () => void;
   onNewUntitled?: () => void;
-  onChangeContent: (path: string, content: string) => void;
+  onChangeContent: (path: string, content: string, markDirty?: boolean) => void;
   onSelectionChange?: (text: string) => void;
   onCursorChange?: (line: number, col: number) => void;
   onAddToChat?: (text: string) => void;
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
   previewDiff: PendingDiff | null;
   onCloseDiff?: () => void;
   wordWrap?: boolean;
@@ -37,7 +39,9 @@ interface Props {
   onDiscardPath?: (path: string) => void;
   onRefreshGitStatus?: () => void;
   revealLine?: number | null;
+  revealColumn?: number | null;
   uiTheme: UiTheme;
+  gitBlameInline?: boolean;
   /** When there is no open workspace, show the quick-start welcome screen instead of a plain hint. */
   workspace?: string | null;
   onPickLocal?: () => void;
@@ -53,11 +57,13 @@ interface Props {
 function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
   if (!path || typeof path !== 'string' || !entries || !Array.isArray(entries) || !entries.length)
     return null;
-  const norm = path.replace(/\\/g, '/');
+  const norm = path.replace(/\\/g, '/').replace(/^\/+/, '');
   try {
-    const matched = entries.find(
-      (e) => e && (e.path === norm || norm.endsWith('/' + e.path.replace(/\\/g, '/'))),
-    );
+    const matched = entries.find((e) => {
+      if (!e?.path) return false;
+      const ep = e.path.replace(/\\/g, '/').replace(/^\/+/, '');
+      return ep === norm || norm.endsWith('/' + ep) || ep.endsWith('/' + norm);
+    });
     if (!matched) return null;
     if (matched.untracked) return { label: 'U', color: '#73c991' };
     if (matched.staged) return { label: 'A', color: '#73c991' };
@@ -66,6 +72,144 @@ function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
   } catch {
     return null;
   }
+}
+
+interface GitLineDiff {
+  type: 'added' | 'modified' | 'deleted';
+  startLine: number;
+  endLine: number;
+}
+
+function computeLineDiffs(originalText: string, modifiedText: string): GitLineDiff[] {
+  const origLines = originalText.replace(/\r/g, '').split('\n');
+  const modLines = modifiedText.replace(/\r/g, '').split('\n');
+
+  const N = origLines.length;
+  const M = modLines.length;
+
+  let start = 0;
+  while (start < N && start < M && origLines[start] === modLines[start]) {
+    start++;
+  }
+
+  let origEnd = N - 1;
+  let modEnd = M - 1;
+  while (origEnd >= start && modEnd >= start && origLines[origEnd] === modLines[modEnd]) {
+    origEnd--;
+    modEnd--;
+  }
+
+  const subOrig = origLines.slice(start, origEnd + 1);
+  const subMod = modLines.slice(start, modEnd + 1);
+
+  const subN = subOrig.length;
+  const subM = subMod.length;
+
+  const diffs: GitLineDiff[] = [];
+
+  if (subN === 0 && subM === 0) {
+    return diffs;
+  }
+
+  if (subN === 0 && subM > 0) {
+    diffs.push({
+      type: 'added',
+      startLine: start + 1,
+      endLine: start + subM,
+    });
+    return diffs;
+  }
+
+  if (subN > 0 && subM === 0) {
+    diffs.push({
+      type: 'deleted',
+      startLine: Math.max(1, start),
+      endLine: Math.max(1, start),
+    });
+    return diffs;
+  }
+
+  // Standard DP LCS for the sub-range
+  const dp: number[][] = Array.from({ length: subN + 1 }, () => new Array(subM + 1).fill(0));
+  for (let i = 1; i <= subN; i++) {
+    for (let j = 1; j <= subM; j++) {
+      if (subOrig[i - 1] === subMod[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  let i = subN;
+  let j = subM;
+  type DiffOp = { type: 'equal' | 'added' | 'deleted'; origIdx: number; modIdx: number };
+  const ops: DiffOp[] = [];
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && subOrig[i - 1] === subMod[j - 1]) {
+      ops.push({ type: 'equal', origIdx: i - 1, modIdx: j - 1 });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.push({ type: 'added', origIdx: i, modIdx: j - 1 });
+      j--;
+    } else {
+      ops.push({ type: 'deleted', origIdx: i - 1, modIdx: j });
+      i--;
+    }
+  }
+
+  ops.reverse();
+
+  // Group consecutive non-equal ops into hunks
+  let k = 0;
+  while (k < ops.length) {
+    if (ops[k].type === 'equal') {
+      k++;
+      continue;
+    }
+
+    let delCount = 0;
+    let addCount = 0;
+    const hunkStartMod = ops[k].modIdx;
+    let firstModIdx = -1;
+    let lastModIdx = -1;
+
+    while (k < ops.length && ops[k].type !== 'equal') {
+      if (ops[k].type === 'deleted') {
+        delCount++;
+      } else if (ops[k].type === 'added') {
+        addCount++;
+        if (firstModIdx === -1) firstModIdx = ops[k].modIdx;
+        lastModIdx = ops[k].modIdx;
+      }
+      k++;
+    }
+
+    if (delCount > 0 && addCount > 0) {
+      diffs.push({
+        type: 'modified',
+        startLine: start + (firstModIdx >= 0 ? firstModIdx : hunkStartMod) + 1,
+        endLine: start + (lastModIdx >= 0 ? lastModIdx : hunkStartMod) + 1,
+      });
+    } else if (addCount > 0) {
+      diffs.push({
+        type: 'added',
+        startLine: start + firstModIdx + 1,
+        endLine: start + lastModIdx + 1,
+      });
+    } else if (delCount > 0) {
+      const lineNum = Math.min(M, Math.max(1, start + hunkStartMod + 1));
+      diffs.push({
+        type: 'deleted',
+        startLine: lineNum,
+        endLine: lineNum,
+      });
+    }
+  }
+
+  return diffs;
 }
 
 interface TabContextMenuState {
@@ -90,6 +234,7 @@ export function EditorPane({
   onSelectionChange,
   onCursorChange,
   onAddToChat,
+  onOpenFile,
   previewDiff,
   onCloseDiff,
   wordWrap = false,
@@ -98,7 +243,9 @@ export function EditorPane({
   onDiscardPath,
   onRefreshGitStatus,
   revealLine,
+  revealColumn,
   uiTheme,
+  gitBlameInline = true,
   workspace,
   onPickLocal,
   onPickSsh,
@@ -117,10 +264,40 @@ export function EditorPane({
   activeRef.current = active;
   const onAddToChatRef = useRef(onAddToChat);
   onAddToChatRef.current = onAddToChat;
+  const onOpenFileRef = useRef(onOpenFile);
+  onOpenFileRef.current = onOpenFile;
   const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
   const cmdKey = isMac ? '⌘' : 'Ctrl+';
+  const pendingRevealColumn = useRef<number | null>(null);
+  // Peek panel state: shown when there are multiple definition results
+  const [peekResults, setPeekResults] = useState<PeekResult[]>([]);
+  const [peekSymbol, setPeekSymbol] = useState<string>('');
+  const [peekVisible, setPeekVisible] = useState(false);
   const monacoTheme = uiTheme === 'light' ? 'vs' : 'custom-dark';
   const pendingReveal = useRef<number | null>(null);
+
+  const lastCursorPosRef = useRef<{ path: string; line: number; column: number } | null>(null);
+  const isNavigatingBackRef = useRef(false);
+  const navigatingBackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const markNavigatingBack = useCallback(() => {
+    isNavigatingBackRef.current = true;
+    if (navigatingBackTimerRef.current) clearTimeout(navigatingBackTimerRef.current);
+    navigatingBackTimerRef.current = setTimeout(() => {
+      isNavigatingBackRef.current = false;
+    }, 600);
+  }, []);
+
+  const trackCursorJump = useCallback((path: string | null | undefined, line: number, column: number) => {
+    if (!path || isNavigatingBackRef.current) return;
+    const prev = lastCursorPosRef.current;
+    if (prev) {
+      if (prev.path !== path || Math.abs(prev.line - line) >= 5) {
+        navigationStack.push(prev);
+      }
+    }
+    lastCursorPosRef.current = { path, line, column };
+  }, []);
 
   const [selectedText, setSelectedText] = useState('');
   const [tabsScrolling, setTabsScrolling] = useState(false);
@@ -228,6 +405,9 @@ export function EditorPane({
   }, []);
 
   const [showMdPreview, setShowMdPreview] = useState(false);
+  const [showToc, setShowToc] = useState(false);
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
+  const tocListRef = useRef<HTMLDivElement>(null);
   const [gitDiffData, setGitDiffData] = useState<{ original: string; modified: string } | null>(
     null,
   );
@@ -236,87 +416,126 @@ export function EditorPane({
   const decorationsRef = useRef<string[]>([]);
   const blameDecorationsRef = useRef<string[]>([]);
   const blameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentBlameLineRef = useRef<number | null>(null);
+  const blameCacheRef = useRef<Map<string, { text: string; lineNumber: number }>>(new Map());
   const [gitInlineDiffLine, setGitInlineDiffLine] = useState<number | null>(null);
   const isSyncingScrollRef = useRef(false);
 
-  const updateGitBlame = useCallback(
-    (lineNumber: number) => {
-      if (blameTimerRef.current) clearTimeout(blameTimerRef.current);
-      blameTimerRef.current = setTimeout(async () => {
-        const ed = editorRef.current;
-        if (!ed || !activePath || activePath.startsWith('untitled:')) {
-          if (ed && blameDecorationsRef.current.length > 0) {
-            blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, []);
-          }
-          return;
-        }
-        const model = ed.getModel();
-        if (!model || lineNumber > model.getLineCount()) return;
+  const applyBlameDecoration = useCallback(
+    (ed: MonacoEditor.IStandaloneCodeEditor, lineNumber: number, text: string) => {
+      const model = ed.getModel();
+      if (!model || lineNumber > model.getLineCount() || lineNumber < 1) return;
+      const maxCol = model.getLineMaxColumn(lineNumber);
 
-        try {
-          const res = await window.ide.gitBlameLine(activePath, lineNumber);
-          if (!res.ok || !res.commit) {
-            blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, []);
-            return;
-          }
-          const maxCol = model.getLineMaxColumn(lineNumber);
-          const c = res.commit;
-          const msg = c.message.length > 40 ? c.message.slice(0, 38) + '…' : c.message;
-          const text = `  ${c.author}, ${c.relativeDate || c.date} • ${msg}`;
-
-          blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, [
-            {
-              range: {
-                startLineNumber: lineNumber,
-                startColumn: maxCol,
-                endLineNumber: lineNumber,
-                endColumn: maxCol,
-              },
-              options: {
-                isWholeLine: false,
-                after: {
-                  content: text,
-                  inlineClassName: 'monaco-inline-git-blame',
-                },
-              },
+      blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, [
+        {
+          range: {
+            startLineNumber: lineNumber,
+            startColumn: maxCol,
+            endLineNumber: lineNumber,
+            endColumn: maxCol,
+          },
+          options: {
+            isWholeLine: false,
+            showIfCollapsed: true,
+            stickiness: 1, // TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
+            after: {
+              content: text,
+              inlineClassName: 'monaco-inline-git-blame',
             },
-          ]);
-        } catch {
-          if (ed) {
-            blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, []);
-          }
-        }
-      }, 250);
+          },
+        },
+      ]);
     },
-    [activePath],
+    [],
   );
 
+  const updateGitBlame = useCallback(
+    (lineNumber: number, immediate = false) => {
+      currentBlameLineRef.current = lineNumber;
+      const ed = editorRef.current;
+      if (!gitBlameInline) {
+        if (ed && blameDecorationsRef.current.length > 0) {
+          blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, []);
+        }
+        return;
+      }
+      if (blameTimerRef.current) clearTimeout(blameTimerRef.current);
+
+      if (!ed || !activePath || activePath.startsWith('untitled:')) {
+        if (ed && blameDecorationsRef.current.length > 0) {
+          blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, []);
+        }
+        return;
+      }
+
+      // Check cache first for instantaneous 0ms display on cursor move
+      const cacheKey = `${activePath}:${lineNumber}`;
+      const cached = blameCacheRef.current.get(cacheKey);
+      if (cached) {
+        applyBlameDecoration(ed, lineNumber, cached.text);
+      }
+
+      const runFetch = async () => {
+        if (!editorRef.current || currentBlameLineRef.current !== lineNumber) return;
+        try {
+          const res = await window.ide.gitBlameLine(activePath, lineNumber);
+          if (currentBlameLineRef.current !== lineNumber) return;
+
+          let text = '';
+          if (res && res.ok && res.commit && res.commit.hash && !/^0+$/.test(res.commit.hash)) {
+            const c = res.commit;
+            const cleanMsg = (c.message || '').replace(/[\r\n]+/g, ' ').trim();
+            const msg = cleanMsg.length > 40 ? cleanMsg.slice(0, 38) + '…' : cleanMsg;
+            text = `   ${c.author}, ${c.relativeDate || c.date || '已提交'} • ${msg}`;
+          } else {
+            text = '   You, 未提交的更改 • 未保存或未提交的修改';
+          }
+
+          blameCacheRef.current.set(cacheKey, { text, lineNumber });
+          if (editorRef.current) {
+            applyBlameDecoration(editorRef.current, lineNumber, text);
+          }
+        } catch {
+          const fallback = '   You, 未提交的更改 • 未保存或未提交的修改';
+          if (editorRef.current && currentBlameLineRef.current === lineNumber) {
+            applyBlameDecoration(editorRef.current, lineNumber, fallback);
+          }
+        }
+      };
+
+      if (immediate || cached) {
+        void runFetch();
+      } else {
+        blameTimerRef.current = setTimeout(runFetch, 80);
+      }
+    },
+    [activePath, gitBlameInline, applyBlameDecoration],
+  );
+
+  const updateGitBlameRef = useRef(updateGitBlame);
+  updateGitBlameRef.current = updateGitBlame;
+
+  // Whenever active file, content or gitBlameInline setting changes, re-apply blame so it stays permanently on cursor line!
   useEffect(() => {
-    if (editorRef.current && blameDecorationsRef.current.length > 0) {
-      blameDecorationsRef.current = editorRef.current.deltaDecorations(
-        blameDecorationsRef.current,
-        [],
-      );
+    const ed = editorRef.current;
+    if (!ed) return;
+    if (!gitBlameInline) {
+      if (blameDecorationsRef.current.length > 0) {
+        blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, []);
+      }
+      return;
     }
-  }, [activePath]);
+    const pos = ed.getPosition();
+    const line = pos?.lineNumber ?? currentBlameLineRef.current;
+    if (line != null && line > 0) {
+      updateGitBlameRef.current(line, true);
+    }
+  }, [activePath, active?.content, gitBlameInline]);
 
   // Track which line ranges are modified (for inline diff popup on gutter click)
   const modifiedRangesRef = useRef<Array<{ start: number; end: number }>>([]);
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
-  // Suppress onChange echoes when content is set programmatically (e.g. accept diff)
-  const suppressChangeRef = useRef(false);
-  const prevActiveContentRef = useRef<string | null>(null);
-
-  // When active tab's content changes externally (e.g. accept diff), suppress the
-  // next onChange echo so it doesn't overwrite the programmatic update.
-  useEffect(() => {
-    if (!active) return;
-    if (prevActiveContentRef.current !== null && prevActiveContentRef.current !== active.content) {
-      // Content changed from outside; the Monaco model update will fire onChange once — suppress it
-      suppressChangeRef.current = true;
-    }
-    prevActiveContentRef.current = active.content;
-  });
 
   useEffect(() => {
     if (activeTabRef.current) {
@@ -329,42 +548,65 @@ export function EditorPane({
   }, [activePath]);
 
   const isMarkdown = Boolean(activePath?.endsWith('.md'));
+  const activeLanguage = useMemo(() => {
+    if (!active) return 'plaintext';
+    if (active.language && active.language !== 'plaintext') return active.language;
+    return languageFromPath(active.path);
+  }, [active]);
+  const splitActiveLanguage = useMemo(() => {
+    if (!splitActive) return 'plaintext';
+    if (splitActive.language && splitActive.language !== 'plaintext') return splitActive.language;
+    return languageFromPath(splitActive.path);
+  }, [splitActive]);
+  const mdHeadings = useMemo(() => {
+    if (!active || !isMarkdown) return [];
+    return extractMarkdownHeadings(active.content);
+  }, [active?.content, isMarkdown]);
   const isImage = Boolean(
     active && (active.language === 'image' || active.previewUrl || isImagePath(active.path)),
   );
   const activeGitMeta = getTabGitMeta(activePath, gitStatus?.entries);
 
   useEffect(() => {
-    if (!activePath || !activeGitMeta || !window.ide.gitDiff) {
+    if (!activePath || activePath.startsWith('untitled:') || isImage || !window.ide?.gitDiff) {
       setGitDiffData(null);
       return;
     }
-    void window.ide
+    let cancelled = false;
+    window.ide
       .gitDiff(activePath, false)
       .then((res) => {
-        if (res.ok) {
+        if (cancelled) return;
+        if (res && res.ok) {
           setGitDiffData({ original: res.original, modified: res.modified });
         } else {
           setGitDiffData(null);
         }
       })
       .catch(() => {
-        setGitDiffData(null);
+        if (!cancelled) setGitDiffData(null);
       });
-  }, [activePath, activeGitMeta]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activePath, gitStatus, isImage]);
 
   useEffect(() => {
     if (revealLine != null && revealLine > 0) {
+      const col = revealColumn ?? 1;
       pendingReveal.current = revealLine;
+      pendingRevealColumn.current = col;
       const ed = editorRef.current;
       if (ed) {
         ed.revealLineInCenter(revealLine);
-        ed.setPosition({ lineNumber: revealLine, column: 1 });
+        ed.setPosition({ lineNumber: revealLine, column: col });
         ed.focus();
+        highlightJumpLocation(ed, revealLine);
         pendingReveal.current = null;
+        pendingRevealColumn.current = null;
       }
     }
-  }, [revealLine, activePath]);
+  }, [revealLine, revealColumn, activePath]);
 
   const setupEditorScrollSync = (ed: MonacoEditor.IStandaloneCodeEditor) => {
     ed.onDidScrollChange((e) => {
@@ -392,7 +634,56 @@ export function EditorPane({
     });
   };
 
+  const updateActiveHeading = useCallback(() => {
+    const previewEl = mdPreviewRef.current;
+    if (!previewEl || mdHeadings.length === 0) return;
+
+    // Check if scrolled near bottom: highlight the last heading
+    if (previewEl.scrollHeight - previewEl.scrollTop - previewEl.clientHeight < 40) {
+      setActiveHeadingId(mdHeadings[mdHeadings.length - 1].id);
+      return;
+    }
+
+    const containerRect = previewEl.getBoundingClientRect();
+    const threshold = containerRect.top + 90;
+
+    let currentId: string | null = null;
+    for (const h of mdHeadings) {
+      const el = previewEl.querySelector(`#${CSS.escape(h.id)}`);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= threshold) {
+          currentId = h.id;
+        } else {
+          break;
+        }
+      }
+    }
+
+    if (!currentId && mdHeadings.length > 0) {
+      currentId = mdHeadings[0].id;
+    }
+    setActiveHeadingId(currentId);
+  }, [mdHeadings]);
+
+  // Sync active heading on preview / TOC toggle
+  useEffect(() => {
+    if (showMdPreview && showToc) {
+      updateActiveHeading();
+    }
+  }, [showMdPreview, showToc, updateActiveHeading]);
+
+  // Keep active item visible inside TOC floating list
+  useEffect(() => {
+    if (!showToc || !activeHeadingId) return;
+    const activeItem = tocListRef.current?.querySelector('.md-toc-item.active');
+    if (activeItem) {
+      activeItem.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [activeHeadingId, showToc]);
+
   const handlePreviewScroll = () => {
+    updateActiveHeading();
     if (isSyncingScrollRef.current) return;
     const previewEl = mdPreviewRef.current;
     const ed = editorRef.current;
@@ -413,92 +704,61 @@ export function EditorPane({
     }
   };
 
-  // Apply git decorations (gutter indicators) from diff data
+  // Apply git decorations (gutter indicators & overview ruler) from diff data
   useEffect(() => {
     const ed = editorRef.current;
     if (!ed || !gitDiffData) {
-      if (ed && !gitDiffData) {
+      if (ed) {
         decorationsRef.current = ed.deltaDecorations(decorationsRef.current, []);
       }
       modifiedRangesRef.current = [];
       return;
     }
-    const origLines = gitDiffData.original.split('\n');
-    const modLines = gitDiffData.modified.split('\n');
+
+    const originalText = gitDiffData.original;
+    const currentText = active?.content ?? gitDiffData.modified;
+    const diffs = computeLineDiffs(originalText, currentText);
+
     const decorations: MonacoEditor.IModelDeltaDecoration[] = [];
     const ranges: Array<{ start: number; end: number }> = [];
-    let rangeStart = -1;
-    let oi = 0,
-      mi = 0;
-    while (oi < origLines.length || mi < modLines.length) {
-      if (oi < origLines.length && mi < modLines.length && origLines[oi] === modLines[mi]) {
-        // End a modified range
-        if (rangeStart >= 0) {
-          ranges.push({ start: rangeStart, end: mi });
-          rangeStart = -1;
-        }
-        oi++;
-        mi++;
-      } else if (oi < origLines.length && mi < modLines.length) {
-        // Modified
-        if (rangeStart < 0) rangeStart = mi + 1;
-        decorations.push({
-          range: { startLineNumber: mi + 1, startColumn: 1, endLineNumber: mi + 1, endColumn: 1 },
-          options: {
-            isWholeLine: true,
-            linesDecorationsClassName: 'git-gutter-modified',
-            glyphMarginClassName: 'git-gutter-glyph',
+
+    for (const diff of diffs) {
+      ranges.push({ start: diff.startLine, end: diff.endLine });
+      decorations.push({
+        range: {
+          startLineNumber: diff.startLine,
+          startColumn: 1,
+          endLineNumber: diff.endLine,
+          endColumn: 1,
+        },
+        options: {
+          isWholeLine: true,
+          linesDecorationsClassName: `git-gutter-${diff.type}`,
+          glyphMarginClassName: 'git-gutter-glyph',
+          overviewRuler: {
+            color:
+              diff.type === 'added'
+                ? '#2ea043'
+                : diff.type === 'deleted'
+                  ? '#f85149'
+                  : '#e2c08d',
+            position: 7, // OverviewRulerLane.Full
           },
-        });
-        oi++;
-        mi++;
-      } else if (
-        mi < modLines.length &&
-        (oi >= origLines.length || !origLines.slice(oi, oi + 10).includes(modLines[mi]))
-      ) {
-        // Added line
-        if (rangeStart < 0) rangeStart = mi + 1;
-        decorations.push({
-          range: { startLineNumber: mi + 1, startColumn: 1, endLineNumber: mi + 1, endColumn: 1 },
-          options: {
-            isWholeLine: true,
-            linesDecorationsClassName: 'git-gutter-added',
-            glyphMarginClassName: 'git-gutter-glyph',
-          },
-        });
-        mi++;
-      } else if (oi < origLines.length) {
-        // Deleted line
-        if (rangeStart < 0) rangeStart = mi + 1;
-        const delLine = Math.min(mi + 1, modLines.length);
-        decorations.push({
-          range: {
-            startLineNumber: Math.max(delLine, 1),
-            startColumn: 1,
-            endLineNumber: Math.max(delLine, 1),
-            endColumn: 1,
-          },
-          options: {
-            isWholeLine: true,
-            linesDecorationsClassName: 'git-gutter-deleted',
-            glyphMarginClassName: 'git-gutter-glyph',
-          },
-        });
-        oi++;
-      } else {
-        break;
-      }
+        },
+      });
     }
-    if (rangeStart >= 0) ranges.push({ start: rangeStart, end: modLines.length });
+
     modifiedRangesRef.current = ranges;
     decorationsRef.current = ed.deltaDecorations(decorationsRef.current, decorations);
-  }, [gitDiffData]);
+  }, [gitDiffData, active?.content]);
 
   useEffect(() => {
     if (!active) {
       onSelectionChangeRef.current?.('');
       setSelectedText('');
     }
+    // Close peek panel whenever the active file changes
+    setPeekVisible(false);
   }, [active]);
 
   // Single-Hunk Discard Handler (reverts ONLY the target modified hunk, leaving other changes in the file intact)
@@ -565,8 +825,9 @@ export function EditorPane({
     ];
 
     const newContent = newModLines.join('\n');
-    onChangeContent(active.path, newContent);
     await window.ide.writeFile(active.path, newContent);
+    const isNowClean = Boolean(gitDiffData && newContent === gitDiffData.original);
+    onChangeContent(active.path, newContent, !isNowClean);
     onRefreshGitStatus?.();
     setGitInlineDiffLine(null);
   };
@@ -800,15 +1061,90 @@ export function EditorPane({
   }, []);
 
   const setupEditorKeybindings = useCallback(
-    (ed: MonacoEditor.IStandaloneCodeEditor) => {
+    (ed: MonacoEditor.IStandaloneCodeEditor, onOpenFileRef?: { current?: typeof onOpenFile }) => {
       ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyK, () => {
         openInlineAiForEditor(ed);
       });
       ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyL, () => {
         triggerAddToChatForEditor(ed);
       });
+      // Go back through jump history:
+      // 1. macOS: Ctrl+- (Control + Minus, standard VS Code navigate back. NOT Cmd+- which zooms out!)
+      ed.addCommand(KeyMod.WinCtrl | KeyCode.Minus, () => {
+        markNavigatingBack();
+        const fn = onOpenFileRef?.current ?? onOpenFile;
+        if (fn) {
+          navigateBack(
+            {
+              onOpenFile: fn,
+              getWorkspaceRoot: () => workspace,
+              getCurrentPath: () => activeRef.current?.path ?? null,
+              getCurrentPosition: () => {
+                const pos = ed.getPosition();
+                return pos ? { line: pos.lineNumber, column: pos.column } : null;
+              },
+            },
+            ed
+          );
+        }
+      });
+      // 2. Cmd+[ (standard Mac back navigation in browsers, Xcode, etc.)
+      ed.addCommand(KeyMod.CtrlCmd | KeyCode.BracketLeft, () => {
+        markNavigatingBack();
+        const fn = onOpenFileRef?.current ?? onOpenFile;
+        if (fn) {
+          navigateBack(
+            {
+              onOpenFile: fn,
+              getWorkspaceRoot: () => workspace,
+              getCurrentPath: () => activeRef.current?.path ?? null,
+              getCurrentPosition: () => {
+                const pos = ed.getPosition();
+                return pos ? { line: pos.lineNumber, column: pos.column } : null;
+              },
+            },
+            ed
+          );
+        }
+      });
+      // 3. Windows/Linux: Alt+LeftArrow
+      ed.addCommand(KeyMod.Alt | KeyCode.LeftArrow, () => {
+        if (!navigator.platform.toUpperCase().includes('MAC')) {
+          markNavigatingBack();
+          const fn = onOpenFileRef?.current ?? onOpenFile;
+          if (fn) {
+            navigateBack(
+              {
+                onOpenFile: fn,
+                getWorkspaceRoot: () => workspace,
+                getCurrentPath: () => activeRef.current?.path ?? null,
+                getCurrentPosition: () => {
+                  const pos = ed.getPosition();
+                  return pos ? { line: pos.lineNumber, column: pos.column } : null;
+                },
+              },
+              ed
+            );
+          }
+        }
+      });
+      // When switching to another file tab via navigation, reveal line as soon as new model attaches
+      ed.onDidChangeModel(() => {
+        if (pendingReveal.current != null) {
+          const line = pendingReveal.current;
+          const col = pendingRevealColumn.current ?? 1;
+          pendingReveal.current = null;
+          pendingRevealColumn.current = null;
+          requestAnimationFrame(() => {
+            ed.revealLineInCenter(line);
+            ed.setPosition({ lineNumber: line, column: col });
+            ed.focus();
+            highlightJumpLocation(ed, line);
+          });
+        }
+      });
     },
-    [openInlineAiForEditor, triggerAddToChatForEditor],
+    [openInlineAiForEditor, triggerAddToChatForEditor, workspace, onOpenFile],
   );
 
   useEffect(() => {
@@ -828,10 +1164,17 @@ export function EditorPane({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && showInlineAi) {
-        setShowInlineAi(false);
-        editorRef.current?.focus();
-        return;
+      if (e.key === 'Escape') {
+        if (peekVisible) {
+          setPeekVisible(false);
+          editorRef.current?.focus();
+          return;
+        }
+        if (showInlineAi) {
+          setShowInlineAi(false);
+          editorRef.current?.focus();
+          return;
+        }
       }
 
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
@@ -854,7 +1197,7 @@ export function EditorPane({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [showInlineAi, openInlineAiForEditor, triggerAddToChatForEditor]);
+  }, [showInlineAi, peekVisible, openInlineAiForEditor, triggerAddToChatForEditor]);
 
   if (previewDiff) {
     const lang = languageFromPath(previewDiff.path);
@@ -1201,13 +1544,105 @@ export function EditorPane({
             </span>
           ))}
           <div className="editor-breadcrumb-actions">
+            <button
+              type="button"
+              className="editor-breadcrumb-btn breadcrumb-nav-back-btn"
+              title="返回跳转前位置 (⌃- 或 ⌘[)"
+              onClick={() => {
+                markNavigatingBack();
+                const fn = onOpenFileRef?.current ?? onOpenFile;
+                if (fn) {
+                  navigateBack(
+                    {
+                      onOpenFile: fn,
+                      getWorkspaceRoot: () => workspace,
+                      getCurrentPath: () => activeRef.current?.path ?? null,
+                      getCurrentPosition: () => {
+                        const pos = editorRef.current?.getPosition();
+                        return pos ? { line: pos.lineNumber, column: pos.column } : null;
+                      },
+                    },
+                    editorRef.current
+                  );
+                }
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ verticalAlign: -1 }}>
+                <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
+              </svg>
+              <span>返回</span>
+            </button>
             {isMarkdown && (
               <button
                 type="button"
                 className={`md-preview-btn${showMdPreview ? ' active' : ''}`}
                 onClick={() => setShowMdPreview((v) => !v)}
               >
-                {showMdPreview ? '编辑' : '预览'}
+                {showMdPreview ? (
+                  <>
+                    <svg
+                      width="12.5"
+                      height="12.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ marginRight: 4, verticalAlign: -1 }}
+                    >
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                    编辑
+                  </>
+                ) : (
+                  <>
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ marginRight: 4, verticalAlign: -2 }}
+                    >
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    预览
+                  </>
+                )}
+              </button>
+            )}
+            {isMarkdown && showMdPreview && (
+              <button
+                type="button"
+                className={`editor-breadcrumb-btn${showToc ? ' active' : ''}`}
+                onClick={() => setShowToc((v) => !v)}
+                title={showToc ? '收起目录大纲' : '展开目录大纲'}
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ marginRight: 5, verticalAlign: -2 }}
+                >
+                  <line x1="9" y1="6" x2="20" y2="6" />
+                  <line x1="9" y1="12" x2="20" y2="12" />
+                  <line x1="9" y1="18" x2="20" y2="18" />
+                  <circle cx="4" cy="6" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="12" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="18" r="1.5" fill="currentColor" />
+                </svg>
+                目录{mdHeadings.length > 0 ? ` (${mdHeadings.length})` : ''}
               </button>
             )}
             {onToggleWordWrap && (
@@ -1392,6 +1827,86 @@ export function EditorPane({
           </div>
         )}
 
+        {/* ── Definition Peek Panel: shown when Cmd+Click finds multiple results ── */}
+        {peekVisible && peekResults.length > 0 && (
+          <div
+            className="def-peek-panel"
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 50,
+              background: 'var(--bg-surface, #1e1e2e)',
+              borderTop: '1px solid var(--border, #333)',
+              maxHeight: 220,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 -4px 16px rgba(0,0,0,0.35)',
+            }}
+          >
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '5px 12px 4px',
+              borderBottom: '1px solid var(--border, #333)',
+              flexShrink: 0,
+            }}>
+              <span style={{ fontSize: 11, color: 'var(--muted, #888)', fontWeight: 600, letterSpacing: '0.03em' }}>
+                "{peekSymbol}" 的 {peekResults.length} 个定义 — 点击跳转 &nbsp;|&nbsp; Alt+← 返回
+              </span>
+              <button
+                type="button"
+                onClick={() => setPeekVisible(false)}
+                style={{
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: 'var(--muted, #888)', fontSize: 16, lineHeight: 1, padding: '0 2px',
+                }}
+                title="关闭 (Esc)"
+              >
+                ×
+              </button>
+            </div>
+            {/* Results list */}
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {peekResults.map((r, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className="def-peek-item"
+                  onClick={() => {
+                    setPeekVisible(false);
+                    onOpenFile?.(r.path, r.line, r.column);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    gap: 8,
+                    width: '100%',
+                    padding: '5px 14px',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: '1px solid var(--border-subtle, rgba(255,255,255,0.05))',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    color: 'var(--text, #cdd6f4)',
+                    fontSize: 12,
+                    fontFamily: 'var(--font-mono, monospace)',
+                  }}
+                >
+                  <span style={{ color: 'var(--accent, #89b4fa)', flexShrink: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>
+                    {r.path}
+                  </span>
+                  <span style={{ color: 'var(--muted, #888)', flexShrink: 0 }}>:{r.line}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {active && isImage ? (
           <div className="image-preview-pane">
             {active.previewUrl ? (
@@ -1425,15 +1940,45 @@ export function EditorPane({
               }}
             >
               <Editor
-                path={active.path}
+                path={workspace && !active.path.startsWith('/') ? `${workspace.replace(/[/\\]+$/, '')}/${active.path}` : active.path}
                 value={active.content}
-                language={active.language}
+                language={activeLanguage}
                 theme={monacoTheme}
-                onChange={(v) => onChangeContent(active.path, v ?? '')}
+                onChange={(v) => {
+                  const content = v ?? '';
+                  onChangeContent(active.path, content);
+                  if (activeLanguage === 'python' && window.ide?.lspNotifyDocument) {
+                    void window.ide.lspNotifyDocument(active.path, content, 'python');
+                  }
+                }}
                 onMount={(ed) => {
                   editorRef.current = ed;
-                  setupEditorKeybindings(ed);
+                  if (activeLanguage === 'python' && window.ide?.lspNotifyDocument) {
+                    void window.ide.lspNotifyDocument(active.path, active.content, 'python');
+                  }
+                  // We use a ref wrapper so the keybinding closure always uses the latest onOpenFile
+                  const onOpenFileRef = { current: onOpenFile };
+                  setupEditorKeybindings(ed, onOpenFileRef);
                   setupEditorScrollSync(ed);
+                  const cmdClickGesture = setupCmdClickGesture(ed, {
+                    getWorkspaceRoot: () => workspace,
+                    onOpenFile: (targetPath, line, col) => {
+                      onOpenFile?.(targetPath, line, col);
+                    },
+                    onShowPeekResults: (results, symbol) => {
+                      setPeekResults(results);
+                      setPeekSymbol(symbol);
+                      setPeekVisible(true);
+                    },
+                    getCurrentPath: () => activeRef.current?.path ?? null,
+                    getCurrentPosition: () => {
+                      const pos = ed.getPosition();
+                      return pos ? { line: pos.lineNumber, column: pos.column } : null;
+                    },
+                  });
+                  ed.onDidDispose(() => {
+                    cmdClickGesture.dispose();
+                  });
                   ed.onDidChangeCursorSelection(() => {
                     if (isMouseDownRef.current) {
                       updateSelectionTextOnly(ed);
@@ -1448,7 +1993,7 @@ export function EditorPane({
                   });
                   ed.onDidChangeCursorPosition((e) => {
                     onCursorChange?.(e.position.lineNumber, e.position.column);
-                    updateGitBlame(e.position.lineNumber);
+                    updateGitBlameRef.current(e.position.lineNumber);
                     // Track cursor line text for md preview sync
                     if (showMdPreview && isMarkdown) {
                       const model = ed.getModel();
@@ -1460,6 +2005,9 @@ export function EditorPane({
                   });
                   // Git gutter click handler — GUTTER_LINE_NUMBERS = 4, GUTTER_GLYPH_MARGIN = 3
                   ed.onMouseDown((e) => {
+                    if (e.event.metaKey || e.event.ctrlKey) {
+                      return;
+                    }
                     isMouseDownRef.current = true;
                     setSelectionCoords(null);
                     if (e.target.type === 4 || e.target.type === 3) {
@@ -1482,9 +2030,11 @@ export function EditorPane({
 
                   if (pendingReveal.current != null) {
                     const line = pendingReveal.current;
+                    const col = pendingRevealColumn.current ?? 1;
                     pendingReveal.current = null;
+                    pendingRevealColumn.current = null;
                     ed.revealLineInCenter(line);
-                    ed.setPosition({ lineNumber: line, column: 1 });
+                    ed.setPosition({ lineNumber: line, column: col });
                     ed.focus();
                   }
                 }}
@@ -1500,6 +2050,17 @@ export function EditorPane({
                   folding: true,
                   overviewRulerLanes: 0,
                   overviewRulerBorder: false,
+                  multiCursorModifier: 'alt',
+                  links: true,
+                  gotoLocation: {
+                    multiple: 'goto',
+                    multipleDefinitions: 'peek',
+                    multipleReferences: 'peek',
+                    multipleDeclarations: 'peek',
+                    multipleImplementations: 'goto',
+                    multipleTypeDefinitions: 'goto',
+                  },
+                  scrollBeyondLastColumn: 0,
                   scrollbar: {
                     vertical: 'visible',
                     horizontal: 'auto',
@@ -1517,13 +2078,61 @@ export function EditorPane({
               onMouseDown={startMdResize}
               title="拖动调整预览宽度"
             />
-            <div
-              className="md-preview-panel"
-              ref={mdPreviewRef}
-              onScroll={handlePreviewScroll}
-              style={{ flex: 1 }}
-            >
-              <MarkdownMessage content={active.content} />
+            <div className="md-preview-container">
+              <div
+                className="md-preview-panel"
+                ref={mdPreviewRef}
+                onScroll={handlePreviewScroll}
+              >
+                <MarkdownMessage content={active.content} />
+              </div>
+              {showToc && (
+                <div className="md-toc-floating-panel">
+                  <div className="md-toc-header">
+                    <span className="md-toc-title">文档大纲 ({mdHeadings.length})</span>
+                    <button
+                      type="button"
+                      className="md-toc-close-btn"
+                      onClick={() => setShowToc(false)}
+                      title="关闭大纲"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {mdHeadings.length === 0 ? (
+                    <div className="md-toc-empty">暂无标题大纲</div>
+                  ) : (
+                    <div className="md-toc-list" ref={tocListRef}>
+                      {mdHeadings.map((h, idx) => {
+                        const isActive = activeHeadingId === h.id;
+                        return (
+                          <div
+                            key={`${h.id}-${idx}`}
+                            className={`md-toc-item level-${h.level}${isActive ? ' active' : ''}`}
+                            onClick={() => {
+                              setActiveHeadingId(h.id);
+                              if (mdPreviewRef.current) {
+                                const el = mdPreviewRef.current.querySelector(`#${CSS.escape(h.id)}`);
+                                if (el) {
+                                  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }
+                              }
+                              if (editorRef.current) {
+                                editorRef.current.revealLineInCenter(h.line);
+                                editorRef.current.setPosition({ lineNumber: h.line, column: 1 });
+                              }
+                            }}
+                            title={`第 ${h.line} 行: ${h.text}`}
+                          >
+                            <span className="md-toc-bullet" />
+                            <span className="md-toc-text">{h.text}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ) : active && isSplit ? (
@@ -1536,13 +2145,9 @@ export function EditorPane({
               <Editor
                 path={active.path}
                 value={active.content}
-                language={active.language}
+                language={activeLanguage}
                 theme={monacoTheme}
                 onChange={(v) => {
-                  if (suppressChangeRef.current) {
-                    suppressChangeRef.current = false;
-                    return;
-                  }
                   onChangeContent(active.path, v ?? '');
                 }}
                 onMount={(ed) => {
@@ -1561,7 +2166,7 @@ export function EditorPane({
                   });
                   ed.onDidChangeCursorPosition((e) => {
                     onCursorChange?.(e.position.lineNumber, e.position.column);
-                    updateGitBlame(e.position.lineNumber);
+                    updateGitBlameRef.current(e.position.lineNumber);
                   });
                   ed.onMouseDown(() => {
                     isMouseDownRef.current = true;
@@ -1579,6 +2184,7 @@ export function EditorPane({
                   automaticLayout: true,
                   smoothScrolling: true,
                   wordWrap: wordWrap ? 'on' : 'off',
+                  scrollBeyondLastColumn: 0,
                   lineNumbersMinChars: 4,
                   scrollbar: {
                     vertical: 'visible',
@@ -1640,7 +2246,7 @@ export function EditorPane({
                         : splitActive.path
                     }
                     value={splitActive.content}
-                    language={splitActive.language}
+                    language={splitActiveLanguage}
                     theme={monacoTheme}
                     onChange={(v) => onChangeContent(splitActive.path, v ?? '')}
                     onMount={(ed) => {
@@ -1652,6 +2258,7 @@ export function EditorPane({
                       automaticLayout: true,
                       smoothScrolling: true,
                       wordWrap: wordWrap ? 'on' : 'off',
+                      scrollBeyondLastColumn: 0,
                       lineNumbersMinChars: 4,
                       scrollbar: {
                         vertical: 'visible',
@@ -1679,18 +2286,34 @@ export function EditorPane({
             <Editor
               path={active.path}
               value={active.content}
-              language={active.language}
+              language={activeLanguage}
               theme={monacoTheme}
               onChange={(v) => {
-                if (suppressChangeRef.current) {
-                  suppressChangeRef.current = false;
-                  return;
-                }
                 onChangeContent(active.path, v ?? '');
               }}
               onMount={(ed) => {
                 editorRef.current = ed;
                 setupEditorKeybindings(ed);
+                const cmdClickGesture = setupCmdClickGesture(ed, {
+                  getWorkspaceRoot: () => workspace,
+                  onOpenFile: (targetPath, line, col) => {
+                    const fn = onOpenFileRef?.current ?? onOpenFile;
+                    fn?.(targetPath, line, col);
+                  },
+                  onShowPeekResults: (results, symbol) => {
+                    setPeekResults(results);
+                    setPeekSymbol(symbol);
+                    setPeekVisible(true);
+                  },
+                  getCurrentPath: () => activeRef.current?.path ?? null,
+                  getCurrentPosition: () => {
+                    const pos = ed.getPosition();
+                    return pos ? { line: pos.lineNumber, column: pos.column } : null;
+                  },
+                });
+                ed.onDidDispose(() => {
+                  cmdClickGesture.dispose();
+                });
                 ed.onDidChangeCursorSelection(() => {
                   if (isMouseDownRef.current) {
                     updateSelectionTextOnly(ed);
@@ -1704,10 +2327,14 @@ export function EditorPane({
                 });
                 ed.onDidChangeCursorPosition((e) => {
                   onCursorChange?.(e.position.lineNumber, e.position.column);
-                  updateGitBlame(e.position.lineNumber);
+                  updateGitBlameRef.current(e.position.lineNumber);
+                  trackCursorJump(activeRef.current?.path, e.position.lineNumber, e.position.column);
                 });
                 // Git gutter click handler — GUTTER_LINE_NUMBERS = 4, GUTTER_GLYPH_MARGIN = 3
                 ed.onMouseDown((e) => {
+                  if (e.event.metaKey || e.event.ctrlKey) {
+                    return;
+                  }
                   isMouseDownRef.current = true;
                   setSelectionCoords(null);
                   if (e.target.type === 4 || e.target.type === 3) {
@@ -1727,6 +2354,10 @@ export function EditorPane({
                   updateSelectionAndCoords(ed);
                 });
                 updateSelectionAndCoords(ed);
+                const initPos = ed.getPosition();
+                if (initPos) {
+                  updateGitBlameRef.current(initPos.lineNumber, true);
+                }
 
                 if (pendingReveal.current != null) {
                   const line = pendingReveal.current;
@@ -1742,12 +2373,23 @@ export function EditorPane({
                 automaticLayout: true,
                 smoothScrolling: true,
                 wordWrap: wordWrap ? 'on' : 'off',
+                scrollBeyondLastColumn: 0,
                 lineNumbersMinChars: 4,
                 lineDecorationsWidth: 10,
                 glyphMargin: false,
                 folding: true,
-                overviewRulerLanes: 0,
+                overviewRulerLanes: 2,
                 overviewRulerBorder: false,
+                multiCursorModifier: 'alt',
+                links: true,
+                gotoLocation: {
+                  multiple: 'peek',
+                  multipleDefinitions: 'peek',
+                  multipleReferences: 'peek',
+                  multipleDeclarations: 'peek',
+                  multipleImplementations: 'peek',
+                  multipleTypeDefinitions: 'peek',
+                },
                 scrollbar: {
                   vertical: 'visible',
                   horizontal: 'auto',
@@ -2185,6 +2827,21 @@ export function EditorPane({
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
+          {getTabGitMeta(contextMenu.targetPath, gitStatus?.entries) && (
+            <>
+              <div
+                className="menu-item menu-item-danger"
+                onClick={() => {
+                  onDiscardPath?.(contextMenu.targetPath);
+                  setContextMenu(null);
+                }}
+              >
+                <span>放弃修改 (Discard Changes)</span>
+                <span className="shortcut">⟲</span>
+              </div>
+              <div className="menu-divider" />
+            </>
+          )}
           <div className="menu-item" onClick={() => handleCloseTab(contextMenu.targetPath)}>
             <span>关闭</span>
             <span className="shortcut">⌘W</span>

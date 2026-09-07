@@ -1,7 +1,42 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import mermaid from 'mermaid';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-c';
+import 'prismjs/components/prism-cpp';
+import 'prismjs/components/prism-csharp';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-diff';
+import 'prismjs/components/prism-docker';
+import 'prismjs/components/prism-go';
+import 'prismjs/components/prism-graphql';
+import 'prismjs/components/prism-ini';
+import 'prismjs/components/prism-java';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-json5';
+import 'prismjs/components/prism-kotlin';
+import 'prismjs/components/prism-lua';
+import 'prismjs/components/prism-makefile';
+import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-markup-templating';
+import 'prismjs/components/prism-php';
+import 'prismjs/components/prism-powershell';
+import 'prismjs/components/prism-protobuf';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-ruby';
+import 'prismjs/components/prism-rust';
+import 'prismjs/components/prism-scss';
+import 'prismjs/components/prism-sql';
+import 'prismjs/components/prism-swift';
+import 'prismjs/components/prism-toml';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-yaml';
+
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 /** Split content into think blocks and main text. */
 function parseThinkBlocks(text: string): { thinkContent: string; mainContent: string } {
@@ -26,6 +61,13 @@ function parseThinkBlocks(text: string): { thinkContent: string; mainContent: st
     thinkContent: thinkParts.join('\n\n').trim(),
     mainContent: mainContent.trim(),
   };
+}
+
+/** Preprocess block math ($$...$$) into ```math code blocks */
+function preprocessMath(text: string): string {
+  return text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+    return `\n\`\`\`math\n${math.trim()}\n\`\`\`\n`;
+  });
 }
 
 /** Close unclosed fences so streaming markdown still renders. */
@@ -137,18 +179,221 @@ function MermaidBlock({ chart }: { chart: string }) {
   );
 }
 
-const markdownComponents = {
-  code({ node, inline, className, children, ...props }: any) {
-    const match = /language-(\w+)/.exec(className || '');
-    const lang = match ? match[1].toLowerCase() : '';
-    if (!inline && lang === 'mermaid') {
-      return <MermaidBlock chart={String(children).replace(/\n$/, '')} />;
+function KatexBlock({ math }: { math: string }) {
+  const html = useMemo(() => {
+    try {
+      return katex.renderToString(math.trim(), {
+        displayMode: true,
+        throwOnError: false,
+      });
+    } catch (err: any) {
+      return `<span style="color:#ef4444">${err?.message || 'Formula error'}</span>`;
     }
+  }, [math]);
+
+  return <div className="md-katex-block" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function highlightCode(code: string, language: string): string {
+  const lang = (language || '').toLowerCase().trim();
+  const aliasMap: Record<string, string> = {
+    js: 'javascript',
+    ts: 'typescript',
+    py: 'python',
+    sh: 'bash',
+    shell: 'bash',
+    zsh: 'bash',
+    yml: 'yaml',
+    dockerfile: 'docker',
+    docker: 'docker',
+    golang: 'go',
+    rs: 'rust',
+    cs: 'csharp',
+    'c++': 'cpp',
+    'c#': 'csharp',
+    rb: 'ruby',
+    kt: 'kotlin',
+    ps1: 'powershell',
+    proto: 'protobuf',
+    env: 'ini',
+    make: 'makefile',
+    dockerignore: 'ini',
+    gitignore: 'ini',
+  };
+  const targetLang = aliasMap[lang] || lang;
+  const grammar = Prism.languages[targetLang];
+  if (grammar) {
+    try {
+      return Prism.highlight(code, grammar, targetLang);
+    } catch {
+      // fallback to escaped code
+    }
+  }
+  return code
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function CodeBlock({ language, code }: { language: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  const highlightedHtml = useMemo(() => {
+    return highlightCode(code, language);
+  }, [code, language]);
+
+  return (
+    <div className="md-code-block">
+      <div className="md-code-header">
+        <span className="md-code-lang">{language || 'text'}</span>
+        <button
+          type="button"
+          className="md-code-copy-btn"
+          onClick={handleCopy}
+          title="复制代码"
+        >
+          {copied ? '✓ 已复制' : '📋 复制'}
+        </button>
+      </div>
+      <pre className="md-code-pre">
+        <code
+          className={`language-${language || 'none'}`}
+          dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        />
+      </pre>
+    </div>
+  );
+}
+
+export interface MarkdownHeadingItem {
+  id: string;
+  level: number;
+  text: string;
+  line: number;
+}
+
+export function extractNodeText(node: any): string {
+  if (!node) return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractNodeText).join('');
+  if (node.props?.children) return extractNodeText(node.props.children);
+  return '';
+}
+
+export function slugifyHeading(text: string): string {
+  const clean = text.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '');
+  return `heading-${clean || 'section'}`;
+}
+
+export function extractMarkdownHeadings(content: string): MarkdownHeadingItem[] {
+  if (!content) return [];
+  const lines = content.split('\n');
+  const headings: MarkdownHeadingItem[] = [];
+  let inCodeBlock = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) continue;
+
+    const match = line.match(/^(#{1,6})\s+(.+)$/);
+    if (match) {
+      const level = match[1].length;
+      const cleanText = match[2]
+        .replace(/[*_`~]/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .trim();
+      if (cleanText) {
+        const id = slugifyHeading(cleanText);
+        headings.push({
+          id,
+          level,
+          text: cleanText,
+          line: i + 1,
+        });
+      }
+    }
+  }
+  return headings;
+}
+
+const markdownComponents = {
+  pre({ children }: any) {
+    const codeElement = React.isValidElement(children)
+      ? children
+      : Array.isArray(children) && React.isValidElement(children[0])
+        ? children[0]
+        : null;
+
+    if (codeElement) {
+      const codeProps = codeElement.props as any;
+      const className = codeProps?.className || '';
+      const match = /language-(\w+)/.exec(className);
+      const lang = match ? match[1].toLowerCase() : '';
+      const rawCode =
+        typeof codeProps?.children === 'string'
+          ? codeProps.children
+          : Array.isArray(codeProps?.children)
+            ? codeProps.children.join('')
+            : String(codeProps?.children || '');
+
+      if (lang === 'mermaid') {
+        return <MermaidBlock chart={rawCode.trim()} />;
+      }
+
+      if (['math', 'katex', 'latex'].includes(lang)) {
+        return <KatexBlock math={rawCode.trim()} />;
+      }
+
+      return <CodeBlock language={lang} code={rawCode.replace(/\n$/, '')} />;
+    }
+
+    return <pre className="md-code-pre">{children}</pre>;
+  },
+  code({ node, className, children, ...props }: any) {
     return (
-      <code className={className} {...props}>
+      <code className={`md-inline-code ${className || ''}`} {...props}>
         {children}
       </code>
     );
+  },
+  table({ children }: any) {
+    return (
+      <div className="md-table-wrapper">
+        <table className="md-table">{children}</table>
+      </div>
+    );
+  },
+  h1({ children, ...props }: any) {
+    const text = extractNodeText(children);
+    const id = slugifyHeading(text);
+    return <h1 id={id} {...props}>{children}</h1>;
+  },
+  h2({ children, ...props }: any) {
+    const text = extractNodeText(children);
+    const id = slugifyHeading(text);
+    return <h2 id={id} {...props}>{children}</h2>;
+  },
+  h3({ children, ...props }: any) {
+    const text = extractNodeText(children);
+    const id = slugifyHeading(text);
+    return <h3 id={id} {...props}>{children}</h3>;
+  },
+  h4({ children, ...props }: any) {
+    const text = extractNodeText(children);
+    const id = slugifyHeading(text);
+    return <h4 id={id} {...props}>{children}</h4>;
   },
   strong({ node, children, ...props }: any) {
     return (
@@ -170,7 +415,8 @@ export function MarkdownMessage({ content, streaming }: { content: string; strea
   const [thinkExpanded, setThinkExpanded] = useState(false);
 
   const { thinkContent, mainContent } = parseThinkBlocks(content);
-  const source = streaming ? stabilizeMarkdown(mainContent) : mainContent;
+  const mathProcessed = preprocessMath(mainContent);
+  const source = streaming ? stabilizeMarkdown(mathProcessed) : mathProcessed;
 
   return (
     <div className={`md-body${streaming ? ' streaming' : ''}`}>
@@ -188,7 +434,7 @@ export function MarkdownMessage({ content, streaming }: { content: string; strea
           {thinkExpanded && (
             <div className="think-content">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {thinkContent}
+                {preprocessMath(thinkContent)}
               </ReactMarkdown>
             </div>
           )}

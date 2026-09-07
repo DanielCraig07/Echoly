@@ -283,6 +283,7 @@ export class GitService {
       if (ab[3]) behind = Number(ab[3]);
     }
 
+    await this.runGit(['update-index', '-q', '--refresh'], root);
     const porcelain = await this.runGit(['status', '--porcelain=v1', '-uall'], root);
     const entries: GitStatusEntry[] = [];
     for (const line of porcelain.stdout.split(/\r?\n/)) {
@@ -376,26 +377,36 @@ export class GitService {
     const { root } = gate as { root: string };
     if (!paths.length) return { ok: false, detail: '未指定文件' };
 
-    const isAll = paths.some((p) => !p || p === '.' || p === 'ALL' || p === 'all');
+    const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+    const cleanInputPaths = paths.map((p) => {
+      let posix = p.replace(/\\/g, '/').replace(/^\/+/, '');
+      if (normRoot && posix.startsWith(normRoot)) {
+        posix = posix.slice(normRoot.length).replace(/^\/+/, '');
+      }
+      return posix;
+    });
+
+    const isAll = cleanInputPaths.some((p) => !p || p === '.' || p === 'ALL' || p === 'all');
     if (isAll) {
       await this.runGit(['reset', 'HEAD', '.'], root);
       await this.runGit(['checkout', 'HEAD', '.'], root);
       await this.runGit(['checkout', '--', '.'], root);
       await this.runGit(['clean', '-fd'], root);
+      await this.runGit(['update-index', '-q', '--refresh'], root);
       return { ok: true, detail: '已还原所有改动' };
     }
 
     const status = await this.status();
     const targetEntries = new Set<GitStatusEntry>();
 
-    for (const p of paths) {
-      const norm = p.endsWith('/') ? p.slice(0, -1) : p;
+    for (const cp of cleanInputPaths) {
       for (const entry of status.entries) {
+        const ep = entry.path.replace(/\\/g, '/').replace(/^\/+/, '');
         if (
-          entry.path === norm ||
-          entry.path.startsWith(norm + '/') ||
-          norm.endsWith('/' + entry.path) ||
-          entry.path.endsWith('/' + norm)
+          ep === cp ||
+          ep.startsWith(cp + '/') ||
+          cp.endsWith('/' + ep) ||
+          ep.endsWith('/' + cp)
         ) {
           targetEntries.add(entry);
         }
@@ -408,17 +419,23 @@ export class GitService {
       if (e.untracked) untracked.push(e.path);
       else tracked.push(e.path);
     }
+    // Also include cleanInputPaths that may not have appeared in status
+    for (const cp of cleanInputPaths) {
+      if (!tracked.includes(cp) && !untracked.includes(cp)) {
+        tracked.push(cp);
+      }
+    }
 
     if (tracked.length) {
       await this.runGit(['reset', 'HEAD', '--', ...tracked], root);
       const res = await this.runGit(['checkout', 'HEAD', '--', ...tracked], root);
       if (res.code !== 0) {
-        const alt = await this.runGit(
-          ['restore', '--staged', '--worktree', '--', ...tracked],
-          root,
-        );
+        const alt = await this.runGit(['checkout', '--', ...tracked], root);
         if (alt.code !== 0) {
-          await this.runGit(['checkout', '--', ...tracked], root);
+          await this.runGit(
+            ['restore', '--staged', '--worktree', '--', ...tracked],
+            root,
+          );
         }
       }
     }
@@ -426,16 +443,8 @@ export class GitService {
       await this.runGit(['clean', '-fd', '--', ...untracked], root);
     }
 
-    // Fallback: if targetEntries didn't match via path string but paths were provided
-    if (!tracked.length && !untracked.length && paths.length > 0) {
-      const cleanPaths = paths.filter(Boolean);
-      if (cleanPaths.length > 0) {
-        await this.runGit(['reset', 'HEAD', '--', ...cleanPaths], root);
-        await this.runGit(['checkout', 'HEAD', '--', ...cleanPaths], root);
-        await this.runGit(['checkout', '--', ...cleanPaths], root);
-        await this.runGit(['clean', '-fd', '--', ...cleanPaths], root);
-      }
-    }
+    // Refresh index so status immediately returns clean
+    await this.runGit(['update-index', '-q', '--refresh'], root);
 
     return { ok: true, detail: `已还原改动` };
   }
@@ -453,23 +462,16 @@ export class GitService {
       };
     }
     const { root } = gate as { root: string };
-    const posix = relPath.replace(/\\/g, '/');
-
-    // untracked: original empty, modified = file content
-    const status = await this.status();
-    const entry = status.entries.find((e) => e.path === posix);
-    if (entry?.untracked) {
-      let modified = '';
-      try {
-        modified = await this.workspace.readFile(posix);
-      } catch {
-        modified = '';
+    let posix = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (root) {
+      const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+      if (posix.startsWith(normRoot)) {
+        posix = posix.slice(normRoot.length).replace(/^\/+/, '');
       }
-      return { ok: true, path: posix, original: '', modified, staged: false };
     }
 
-    let original = '';
     if (staged) {
+      let original = '';
       const head = await this.runGit(['show', `HEAD:${posix}`], root);
       if (head.code === 0) original = head.stdout;
       const cached = await this.runGit(['show', `:0:${posix}`], root);
@@ -477,20 +479,50 @@ export class GitService {
       return { ok: true, path: posix, original, modified, staged: true };
     }
 
-    // unstaged: compare index (or HEAD) vs worktree
+    // unstaged: fast path to fetch index or HEAD
+    let original = '';
+    let isTracked = false;
     const indexShow = await this.runGit(['show', `:0:${posix}`], root);
     if (indexShow.code === 0) {
       original = indexShow.stdout;
+      isTracked = true;
     } else {
       const head = await this.runGit(['show', `HEAD:${posix}`], root);
-      if (head.code === 0) original = head.stdout;
+      if (head.code === 0) {
+        original = head.stdout;
+        isTracked = true;
+      }
     }
+
+    // If not found directly, check git status entries for untracked or renamed path
+    if (!isTracked) {
+      try {
+        const status = await this.status();
+        const entry = status.entries.find((e) => {
+          const ep = e.path.replace(/\\/g, '/').replace(/^\/+/, '');
+          return ep === posix || posix.endsWith('/' + ep) || ep.endsWith('/' + posix);
+        });
+        if (entry && !entry.untracked) {
+          const entryShow = await this.runGit(['show', `:0:${entry.path}`], root);
+          if (entryShow.code === 0) {
+            original = entryShow.stdout;
+          } else {
+            const headShow = await this.runGit(['show', `HEAD:${entry.path}`], root);
+            if (headShow.code === 0) original = headShow.stdout;
+          }
+        }
+      } catch {
+        // status fallback failed, treat as untracked/new
+      }
+    }
+
     let modified = '';
     try {
       modified = await this.workspace.readFile(posix);
     } catch {
       modified = '';
     }
+
     return { ok: true, path: posix, original, modified, staged: false };
   }
 
@@ -701,15 +733,44 @@ export class GitService {
       return { ok: false, detail: gate.detail };
     }
     const { root } = gate as { root: string };
-    const res = await this.runGit(['blame', `-L${line},${line}`, '--porcelain', filePath], root);
+    let posix = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (root) {
+      const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+      if (posix.startsWith(normRoot)) {
+        posix = posix.slice(normRoot.length).replace(/^\/+/, '');
+      }
+    }
+    const res = await this.runGit(['blame', `-L${line},${line}`, '--porcelain', posix], root);
     if (res.code !== 0 || !res.stdout.trim()) {
-      return { ok: false, detail: res.stderr.trim() || '无法获取该行 Blame 信息' };
+      return {
+        ok: true,
+        line,
+        commit: {
+          hash: '0000000',
+          shortHash: '0000000',
+          author: 'You',
+          date: '',
+          relativeDate: '未提交的更改',
+          message: '未保存或未提交的修改',
+        },
+      };
     }
     const lines = res.stdout.split('\n');
     const firstLine = lines[0] || '';
     const hash = firstLine.split(' ')[0] || '';
     if (!hash || /^0+$/.test(hash)) {
-      return { ok: false, detail: '未提交的更改' };
+      return {
+        ok: true,
+        line,
+        commit: {
+          hash: '0000000',
+          shortHash: '0000000',
+          author: 'You',
+          date: '',
+          relativeDate: '未提交的更改',
+          message: '未保存或未提交的修改',
+        },
+      };
     }
     let author = 'You';
     let summary = '';
@@ -737,7 +798,7 @@ export class GitService {
         author,
         date: authorTime ? new Date(authorTime).toLocaleDateString() : '',
         relativeDate: relDate,
-        message: summary,
+        message: summary.replace(/[\r\n]+/g, ' ').trim() || '无提交说明',
       },
     };
   }

@@ -64,7 +64,7 @@ jsDefaults.setDiagnosticsOptions({
 tsDefaults.setEagerModelSync(true);
 jsDefaults.setEagerModelSync(true);
 
-// 自定义与图2完全一致的编辑区深色主题 (#1E1E1E)
+// 自定义与工作区完全一致的编辑区与 Peek Widget 深色主题
 monaco.editor.defineTheme('custom-dark', {
   base: 'vs-dark',
   inherit: true,
@@ -72,5 +72,20 @@ monaco.editor.defineTheme('custom-dark', {
   colors: {
     'editor.background': '#1E1E1E',
     'editorGutter.background': '#1E1E1E',
+    // 覆盖 Monaco 默认刺眼的深蓝 (#001f4d) Peek View，与深色 IDE 保持一致
+    'peekView.border': '#007acc',
+    'peekViewEditor.background': '#181818',
+    'peekViewEditorGutter.background': '#181818',
+    'peekViewEditor.matchHighlightBackground': '#ea5c004d',
+    'peekViewResult.background': '#202020',
+    'peekViewResult.fileForeground': '#ffffff',
+    'peekViewResult.lineForeground': '#9ca3af',
+    'peekViewResult.matchHighlightBackground': '#ea5c004d',
+    'peekViewResult.selectionBackground': '#094771',
+    'peekViewResult.selectionForeground': '#ffffff',
+    'peekViewTitle.background': '#1e1e1e',
+    'peekViewTitleDescription.foreground': '#9ca3af',
+    'peekViewTitleLabel.foreground': '#ffffff',
   },
 });
+

@@ -17,10 +17,85 @@ export function untitledTabLabel(filePath: string): string {
 }
 
 export function languageFromPath(filePath: string): string {
-  if (isUntitledPath(filePath)) return 'plaintext';
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  if (!filePath || isUntitledPath(filePath)) return 'plaintext';
+
+  // Normalize path and extract filename
+  const normalized = filePath.replace(/\\/g, '/');
+  const filename = normalized.split('/').pop()?.trim() || '';
+  const lower = filename.toLowerCase();
+
+  // 1. Dockerfile & Containerfile variants
+  if (
+    lower === 'dockerfile' ||
+    lower.startsWith('dockerfile.') ||
+    lower.endsWith('.dockerfile') ||
+    lower === 'containerfile' ||
+    lower.startsWith('containerfile.') ||
+    lower.endsWith('.containerfile')
+  ) {
+    return 'dockerfile';
+  }
+
+  // 2. Makefile variants
+  if (
+    lower === 'makefile' ||
+    lower === 'gnumakefile' ||
+    lower.startsWith('makefile.') ||
+    lower.endsWith('.mk')
+  ) {
+    return 'makefile';
+  }
+
+  // 3. Ruby special files
+  if (lower === 'gemfile' || lower === 'rakefile' || lower === 'podfile' || lower === 'vagrantfile') {
+    return 'ruby';
+  }
+
+  // 4. Shell & dotfiles
+  if (
+    lower === '.bashrc' ||
+    lower === '.bash_profile' ||
+    lower === '.bash_aliases' ||
+    lower === '.bash_logout' ||
+    lower === '.zshrc' ||
+    lower === '.zshenv' ||
+    lower === '.zprofile' ||
+    lower === '.profile'
+  ) {
+    return 'shell';
+  }
+
+  // 5. Config files (ini format in Monaco)
+  if (
+    lower === '.env' ||
+    lower.startsWith('.env.') ||
+    lower === '.gitignore' ||
+    lower === '.gitattributes' ||
+    lower === '.gitmodules' ||
+    lower === '.gitconfig' ||
+    lower === '.editorconfig' ||
+    lower === '.dockerignore' ||
+    lower === '.npmrc' ||
+    lower === '.yarnrc' ||
+    lower === '.eslintignore' ||
+    lower === '.prettierignore'
+  ) {
+    return 'ini';
+  }
+
+  // 6. CMake
+  if (lower === 'cmakelists.txt') {
+    return 'cmake';
+  }
+
+  // 7. Extensions
+  const parts = filename.split('.');
+  const ext = parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+
   if (IMAGE_EXTS.has(ext)) return 'image';
+
   const map: Record<string, string> = {
+    // TypeScript & JavaScript
     ts: 'typescript',
     tsx: 'typescript',
     cts: 'typescript',
@@ -29,36 +104,125 @@ export function languageFromPath(filePath: string): string {
     jsx: 'javascript',
     cjs: 'javascript',
     mjs: 'javascript',
+
+    // Web & Markup
+    html: 'html',
+    htm: 'html',
+    wxml: 'html',
+    vue: 'html',
+    svelte: 'html',
+    css: 'css',
+    wxss: 'css',
+    wxs: 'javascript',
+    scss: 'scss',
+    sass: 'scss',
+    less: 'less',
+    xml: 'xml',
+    svg: 'xml',
+    md: 'markdown',
+    markdown: 'markdown',
+    mdx: 'mdx',
+
+    // Config & Data
     json: 'json',
     json5: 'json',
     jsonc: 'json',
-    md: 'markdown',
-    css: 'css',
-    wxml: 'html',
-    wxss: 'css',
-    wxs: 'javascript',
-    vue: 'html',
-    scss: 'scss',
-    less: 'less',
-    html: 'html',
-    htm: 'html',
-    py: 'python',
-    rs: 'rust',
-    go: 'go',
-    java: 'java',
-    c: 'c',
-    cpp: 'cpp',
-    h: 'cpp',
     yml: 'yaml',
     yaml: 'yaml',
+    toml: 'ini',
+    ini: 'ini',
+    cfg: 'ini',
+    conf: 'ini',
+    properties: 'ini',
+    inf: 'ini',
+
+    // Shell & Scripts
     sh: 'shell',
     bash: 'shell',
     zsh: 'shell',
+    ksh: 'shell',
+    csh: 'shell',
     ps1: 'powershell',
+    psm1: 'powershell',
+    psd1: 'powershell',
+    bat: 'bat',
+    cmd: 'bat',
+
+    // Systems & Compiled Languages
+    c: 'c',
+    h: 'c',
+    cpp: 'cpp',
+    hpp: 'cpp',
+    cc: 'cpp',
+    cxx: 'cpp',
+    hh: 'cpp',
+    hxx: 'cpp',
+    cs: 'csharp',
+    csx: 'csharp',
+    java: 'java',
+    jav: 'java',
+    go: 'go',
+    rs: 'rust',
+    swift: 'swift',
+    kt: 'kotlin',
+    kts: 'kotlin',
+
+    // Scripting & Dynamic Languages
+    py: 'python',
+    pyw: 'python',
+    wsgi: 'python',
+    rb: 'ruby',
+    rbw: 'ruby',
+    gemspec: 'ruby',
+    php: 'php',
+    phtml: 'php',
+    php3: 'php',
+    php4: 'php',
+    php5: 'php',
+    lua: 'lua',
+    r: 'r',
+    pl: 'perl',
+    pm: 'perl',
+    dart: 'dart',
+    scala: 'scala',
+    sc: 'scala',
+    clj: 'clojure',
+    cljs: 'clojure',
+    cljc: 'clojure',
+    edn: 'clojure',
+    ex: 'elixir',
+    exs: 'elixir',
+    m: 'objective-c',
+    mm: 'objective-c',
+    fs: 'fsharp',
+    fsi: 'fsharp',
+    fsx: 'fsharp',
+
+    // Database & Query
     sql: 'sql',
-    xml: 'xml',
-    toml: 'ini',
+    mysql: 'mysql',
+    pgsql: 'pgsql',
+    graphql: 'graphql',
+    gql: 'graphql',
+
+    // Containers, DevOps & Infra
+    dockerfile: 'dockerfile',
+    containerfile: 'dockerfile',
+    tf: 'hcl',
+    tfvars: 'hcl',
+    hcl: 'hcl',
+
+    // Protocols & Schemas
+    proto: 'protobuf',
+    protobuf: 'protobuf',
+    sol: 'solidity',
+
+    // Others
+    diff: 'diff',
+    patch: 'diff',
+    cmake: 'cmake',
   };
+
   return map[ext] ?? 'plaintext';
 }
 

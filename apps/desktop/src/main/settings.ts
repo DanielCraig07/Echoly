@@ -136,6 +136,7 @@ function normalize(raw: Partial<AppSettings>): AppSettings {
     layout: normalizeLayout(raw.layout),
     theme,
     autoSave: raw.autoSave === true,
+    gitBlameInline: raw.gitBlameInline !== false,
   };
 }
 

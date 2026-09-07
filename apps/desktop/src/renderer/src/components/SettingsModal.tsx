@@ -934,6 +934,21 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                       <span>代码编辑自动保存到磁盘 (编辑停止约 0.8 秒后写入)</span>
                     </label>
                   </div>
+                  <div className="setting-control-group" style={{ marginTop: 12 }}>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.gitBlameInline !== false}
+                        onChange={(e) =>
+                          setSettings({ ...settings, gitBlameInline: e.target.checked })
+                        }
+                      />
+                      <span>光标所在行常驻显示 Git Blame (提交人、时间与提交摘要)</span>
+                    </label>
+                  </div>
                 </div>
               </div>
             )}

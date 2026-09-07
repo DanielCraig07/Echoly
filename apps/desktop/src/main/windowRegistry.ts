@@ -2,13 +2,19 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { BrowserWindow, type WebContents } from 'electron';
 import { WorkspaceService } from './workspace';
 import { DiffStore } from './diffStore';
+import { LspService } from './lspService';
 
 /** Per-BrowserWindow workspace + diffs (multi-window isolation). */
 export class WindowSession {
   readonly workspace = new WorkspaceService();
   readonly diffs = new DiffStore(this.workspace);
+  readonly lsp = new LspService(() => this.workspace);
 
   constructor(readonly webContentsId: number) {}
+
+  dispose(): void {
+    this.lsp.dispose();
+  }
 }
 
 /**
@@ -40,6 +46,12 @@ export class WindowRegistry {
       if (win) win.webContents.send('workspace:changed', info);
     });
     wc.once('destroyed', () => {
+      const s = this.sessions.get(id);
+      try {
+        s?.dispose();
+      } catch {
+        // ignore
+      }
       this.sessions.delete(id);
       try {
         this.disposeHook?.(id);

@@ -1902,10 +1902,11 @@ body.resizing.resizing-row {
 
 .md-body {
   font-size: var(--ui-font-size, 14px);
-  font-family: var(--font-ui);
-  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.68;
   word-break: break-word;
-  color: var(--text);
+  color: #e2e8f0;
+  letter-spacing: 0.01em;
 }
 
 .md-body.streaming {
@@ -1924,85 +1925,731 @@ body.resizing.resizing-row {
 [data-theme='light'] .md-body b,
 [data-theme='light'] .think-content strong,
 [data-theme='light'] .think-content b {
-  color: #111827 !important;
+  color: #0f172a !important;
 }
 
 .md-body p {
-  margin: 0 0 0.75em;
+  margin: 0 0 0.85em;
+  line-height: 1.68;
 }
 
 .md-body p:last-child {
   margin-bottom: 0;
 }
 
-.md-body h1,
-.md-body h2 {
-  margin: 1.1em 0 0.5em;
-  font-size: 1.15em;
-  font-weight: 600;
-  color: var(--text);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 4px;
+.md-body h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 1.3em 0 0.6em;
+  color: #f8fafc;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 8px;
+  letter-spacing: -0.015em;
 }
 
-.md-body h3,
-.md-body h4 {
-  margin: 0.9em 0 0.4em;
-  font-size: 1.05em;
+.md-body h2 {
+  font-size: 1.28em;
+  font-weight: 650;
+  margin: 1.2em 0 0.5em;
+  color: #f1f5f9;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.md-body h3 {
+  font-size: 1.14em;
   font-weight: 600;
-  color: var(--text);
+  margin: 1.05em 0 0.4em;
+  color: #e2e8f0;
+}
+
+.md-body h4 {
+  font-size: 1.04em;
+  font-weight: 600;
+  margin: 0.9em 0 0.35em;
+  color: #cbd5e1;
+}
+
+.md-body > :first-child {
+  margin-top: 0 !important;
 }
 
 .md-body ul,
 .md-body ol {
-  margin: 0.4em 0 0.8em;
-  padding-left: 1.4em;
-  line-height: 1.6;
+  margin: 0.5em 0 0.9em;
+  padding-left: 1.5em;
+  line-height: 1.68;
 }
 
 .md-body li {
-  margin-bottom: 0.3em;
+  margin-bottom: 0.35em;
 }
 
-.md-body code {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  background: var(--bg-code, rgba(255, 255, 255, 0.06));
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 2px 6px;
-  color: var(--accent-light, #a78bfa);
+.md-body li::marker {
+  color: #94a3b8;
 }
 
-.md-body pre {
-  margin: 0.8em 0;
-  padding: 12px 14px;
-  overflow-x: hidden;
-  white-space: pre-wrap;
-  word-break: break-word;
-  background: var(--bg-code, #141820);
-  border: 1px solid var(--border);
+.md-body li > ul,
+.md-body li > ol {
+  margin: 0.25em 0 0.4em;
+  padding-left: 1.3em;
+}
+
+/* ── Inline Code: Seamless, refined, neutral (matches VS Code / GitHub Markdown) ── */
+.md-body code:not(.md-code-pre code),
+.md-inline-code {
+  font-family: ui-monospace, 'SF Mono', Monaco, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.88em;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 1.5px 5px;
+  margin: 0 1.5px;
+  color: #e4e4e7;
+  font-weight: 450;
+  vertical-align: baseline;
+  transition: background 0.12s ease;
+}
+
+.md-body code:not(.md-code-pre code):hover,
+.md-inline-code:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* When inline code is inside headings (e.g. ## `sinks.yaml` 对象存储) */
+.md-body h1 code,
+.md-body h2 code,
+.md-body h3 code,
+.md-body h4 code {
+  color: inherit !important;
+  font-size: 0.88em;
+  font-weight: inherit;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 1px 5px;
+}
+
+[data-theme='light'] .md-body code:not(.md-code-pre code),
+[data-theme='light'] .md-inline-code {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #18181b;
+}
+
+/* ── Code Blocks: Header bar with language pill + 1-click copy ── */
+.md-code-block {
+  margin: 12px 0 16px;
+  background: #161616;
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.md-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  user-select: none;
+}
+
+.md-code-lang {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #71717a;
+}
+
+.md-code-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  color: #71717a;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.md-code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e4e4e7;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.md-code-pre,
+.md-body pre {
+  margin: 0;
+  padding: 12px 16px;
+  overflow-x: auto;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  white-space: pre;
+  word-break: normal;
+}
+
+.md-code-pre code,
+.md-body pre code {
+  font-family: ui-monospace, 'SF Mono', Monaco, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #d4d4d8;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* ── Tables: Structured, clean borders, header highlight, cell padding ── */
+.md-table-wrapper {
+  overflow-x: auto;
+  margin: 14px 0 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.015);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.md-body pre code {
-  border: none;
-  background: transparent;
-  padding: 0;
-  color: var(--text);
-  line-height: 1.45;
+.md-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
+.md-table th {
+  background: rgba(255, 255, 255, 0.035);
+  color: #e4e4e7;
+  font-weight: 600;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+
+.md-table th:last-child {
+  border-right: none;
+}
+
+.md-table td {
+  padding: 8px 14px;
+  color: #d4d4d8;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: middle;
+}
+
+.md-table td:last-child {
+  border-right: none;
+}
+
+.md-table tr:last-child td {
+  border-bottom: none;
+}
+
+.md-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme='light'] .md-table-wrapper {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: #fafafa;
+}
+
+[data-theme='light'] .md-table th {
+  background: rgba(0, 0, 0, 0.035);
+  color: #18181b;
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+  border-right-color: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme='light'] .md-table td {
+  color: #3f3f46;
+  border-bottom-color: rgba(0, 0, 0, 0.05);
+  border-right-color: rgba(0, 0, 0, 0.04);
+}
+
+/* ── Blockquotes ── */
 .md-body blockquote {
-  margin: 0.5em 0;
-  padding-left: 10px;
-  border-left: 3px solid var(--border-quote);
-  color: var(--muted);
+  margin: 12px 0 16px;
+  padding: 8px 14px;
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 0 6px 6px 0;
+  color: #a1a1aa;
 }
 
+.md-body blockquote p {
+  margin-bottom: 0.4em;
+}
+
+.md-body blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Links ── */
 .md-body a {
-  color: var(--accent);
+  color: #60a5fa;
+  text-decoration: none;
+  transition: color 0.12s ease;
+}
+
+.md-body a:hover {
+  color: #93c5fd;
+  text-decoration: underline;
+}
+
+/* ── Task list checkboxes ── */
+.md-body input[type='checkbox'] {
+  margin: 0 6px 0 0;
+  accent-color: var(--accent, #4c8dff);
+  vertical-align: -1.5px;
+  cursor: pointer;
+}
+
+/* ── Markdown images ── */
+.md-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 12px 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  display: block;
+}
+
+/* ── Foldable details & summary ── */
+.md-body details {
+  margin: 10px 0;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+
+.md-body summary {
+  cursor: pointer;
+  font-weight: 550;
+  color: #d4d4d8;
+  user-select: none;
+  outline: none;
+}
+
+.md-body summary:hover {
+  color: #ffffff;
+}
+
+/* ── Code & Table Scrollbars ── */
+.md-code-pre::-webkit-scrollbar,
+.md-table-wrapper::-webkit-scrollbar {
+  height: 5px;
+  width: 5px;
+}
+
+.md-code-pre::-webkit-scrollbar-track,
+.md-table-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.md-code-pre::-webkit-scrollbar-thumb,
+.md-table-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.md-code-pre::-webkit-scrollbar-thumb:hover,
+.md-table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ── Prism Syntax Highlighting (Dark Theme / One Dark) ── */
+.md-code-pre .token.comment,
+.md-code-pre .token.prolog,
+.md-code-pre .token.doctype,
+.md-code-pre .token.cdata {
+  color: #5c6370;
+  font-style: italic;
+}
+
+.md-code-pre .token.punctuation {
+  color: #abb2bf;
+}
+
+.md-code-pre .token.property,
+.md-code-pre .token.tag,
+.md-code-pre .token.boolean,
+.md-code-pre .token.number,
+.md-code-pre .token.constant,
+.md-code-pre .token.symbol,
+.md-code-pre .token.deleted {
+  color: #d19a66;
+}
+
+.md-code-pre .token.selector,
+.md-code-pre .token.attr-name,
+.md-code-pre .token.string,
+.md-code-pre .token.char,
+.md-code-pre .token.builtin,
+.md-code-pre .token.inserted {
+  color: #98c379;
+}
+
+.md-code-pre .token.operator,
+.md-code-pre .token.entity,
+.md-code-pre .token.url,
+.md-code-pre .language-css .token.string,
+.md-code-pre .style .token.string {
+  color: #56b6c2;
+}
+
+.md-code-pre .token.atrule,
+.md-code-pre .token.attr-value,
+.md-code-pre .token.keyword,
+.md-code-pre .token.instruction,
+.md-code-pre .token.instruction .token.property {
+  color: #c678dd;
+  font-weight: 600;
+}
+
+.md-code-pre .token.function,
+.md-code-pre .token.class-name {
+  color: #61afef;
+}
+
+.md-code-pre .token.regex,
+.md-code-pre .token.important,
+.md-code-pre .token.variable {
+  color: #e06c75;
+}
+
+.md-code-pre .token.important,
+.md-code-pre .token.bold {
+  font-weight: 600;
+}
+
+.md-code-pre .token.italic {
+  font-style: italic;
+}
+
+/* ── Prism Syntax Highlighting (Light Theme) ── */
+[data-theme='light'] .md-code-pre .token.comment,
+[data-theme='light'] .md-code-pre .token.prolog,
+[data-theme='light'] .md-code-pre .token.doctype,
+[data-theme='light'] .md-code-pre .token.cdata {
+  color: #a0a1a7;
+}
+
+[data-theme='light'] .md-code-pre .token.punctuation {
+  color: #383a42;
+}
+
+[data-theme='light'] .md-code-pre .token.property,
+[data-theme='light'] .md-code-pre .token.tag,
+[data-theme='light'] .md-code-pre .token.boolean,
+[data-theme='light'] .md-code-pre .token.number,
+[data-theme='light'] .md-code-pre .token.constant,
+[data-theme='light'] .md-code-pre .token.symbol {
+  color: #986801;
+}
+
+[data-theme='light'] .md-code-pre .token.selector,
+[data-theme='light'] .md-code-pre .token.attr-name,
+[data-theme='light'] .md-code-pre .token.string,
+[data-theme='light'] .md-code-pre .token.char,
+[data-theme='light'] .md-code-pre .token.builtin {
+  color: #50a14f;
+}
+
+[data-theme='light'] .md-code-pre .token.operator,
+[data-theme='light'] .md-code-pre .token.entity,
+[data-theme='light'] .md-code-pre .token.url {
+  color: #0184bc;
+}
+
+[data-theme='light'] .md-code-pre .token.atrule,
+[data-theme='light'] .md-code-pre .token.attr-value,
+[data-theme='light'] .md-code-pre .token.keyword,
+[data-theme='light'] .md-code-pre .token.instruction,
+[data-theme='light'] .md-code-pre .token.instruction .token.property {
+  color: #a626a4;
+  font-weight: 600;
+}
+
+[data-theme='light'] .md-code-pre .token.function,
+[data-theme='light'] .md-code-pre .token.class-name {
+  color: #4078f2;
+}
+
+[data-theme='light'] .md-code-pre .token.regex,
+[data-theme='light'] .md-code-pre .token.variable {
+  color: #e45649;
+}
+
+/* ── KaTeX Math Formula Styling ── */
+.md-katex-block {
+  margin: 14px 0 16px;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  overflow-x: auto;
+  text-align: center;
+  color: #e4e4e7;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.md-katex-block::-webkit-scrollbar {
+  height: 4px;
+}
+
+.md-katex-block::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.md-katex-block .katex-display {
+  margin: 0.4em 0;
+}
+
+.md-katex-error {
+  color: #f87171;
+  font-size: 12px;
+  font-family: ui-monospace, 'SF Mono', monospace;
+  padding: 6px 12px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 6px;
+  display: inline-block;
+  text-align: left;
+}
+
+[data-theme='light'] .md-katex-block {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #1e293b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* ── Markdown TOC Outline Floating Panel ── */
+.md-toc-floating-panel {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  width: 260px;
+  max-height: calc(100% - 32px);
+  background: rgba(24, 24, 27, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  overflow: hidden;
+  animation: mdTocFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes mdTocFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.md-toc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.md-toc-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e4e4e7;
+  letter-spacing: 0.3px;
+}
+
+.md-toc-close-btn {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.md-toc-close-btn:hover {
+  color: #f43f5e;
+  background: rgba(244, 63, 94, 0.12);
+}
+
+.md-toc-list {
+  padding: 8px 6px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.md-toc-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.md-toc-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.md-toc-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.md-toc-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #38bdf8;
+}
+
+.md-toc-item.level-1 {
+  font-weight: 600;
+  color: #d4d4d8;
+  padding-left: 8px;
+}
+
+.md-toc-item.level-2 {
+  padding-left: 18px;
+  font-size: 11.5px;
+}
+
+.md-toc-item.level-3 {
+  padding-left: 28px;
+  font-size: 11px;
+  color: #71717a;
+}
+
+.md-toc-item.level-4,
+.md-toc-item.level-5,
+.md-toc-item.level-6 {
+  padding-left: 38px;
+  font-size: 11px;
+  color: #52525b;
+}
+
+.md-toc-bullet {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #71717a;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.md-toc-item:hover .md-toc-bullet {
+  background: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+}
+
+.md-toc-item.active {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.md-toc-item.active .md-toc-bullet {
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.85);
+  transform: scale(1.3);
+}
+
+.md-toc-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-toc-empty {
+  padding: 18px 14px;
+  text-align: center;
+  font-size: 11.5px;
+  color: #71717a;
+}
+
+[data-theme='light'] .md-toc-floating-panel {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='light'] .md-toc-header {
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme='light'] .md-toc-title {
+  color: #18181b;
+}
+
+[data-theme='light'] .md-toc-item {
+  color: #52525b;
+}
+
+[data-theme='light'] .md-toc-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #0284c7;
+}
+
+[data-theme='light'] .md-toc-item.active {
+  background: rgba(2, 132, 199, 0.1);
+  color: #0284c7;
+  font-weight: 600;
+}
+
+[data-theme='light'] .md-toc-item.active .md-toc-bullet {
+  background: #0284c7;
+  box-shadow: 0 0 8px rgba(2, 132, 199, 0.65);
+  transform: scale(1.3);
+}
+
+[data-theme='light'] .md-toc-item.level-1 {
+  color: #18181b;
+}
+
+[data-theme='light'] .md-toc-item:hover .md-toc-bullet {
+  background: #0284c7;
+  box-shadow: 0 0 6px rgba(2, 132, 199, 0.5);
 }
 
 /* ── Reasoning step (intermediate assistant message before tool call) ── */
@@ -3399,13 +4046,29 @@ body.resizing.resizing-row {
   background: var(--accent);
 }
 
+.md-preview-container {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .md-preview-panel {
+  flex: 1;
+  width: 100%;
   height: 100%;
   min-width: 120px;
   background: var(--bg-editor);
   overflow-y: auto;
-  padding: 20px 24px;
+  padding: 28px 36px;
   box-sizing: border-box;
+}
+
+.md-preview-panel > .md-body {
+  max-width: 880px;
+  margin: 0 auto;
 }
 
 .mermaid-wrapper {
@@ -6100,6 +6763,15 @@ body.resizing.resizing-row {
   color: #ffffff;
 }
 
+.tab-context-menu .menu-item.menu-item-danger {
+  color: #f85149;
+}
+
+.tab-context-menu .menu-item.menu-item-danger:hover {
+  background: #da3633;
+  color: #ffffff;
+}
+
 .tab-context-menu .shortcut {
   font-size: 11px;
   opacity: 0.6;
@@ -6304,12 +6976,24 @@ body.resizing.resizing-row {
   transition: opacity 0.2s ease-in-out !important;
 }
 
-.monaco-editor:hover .scrollbar.vertical,
-.monaco-editor:hover .scrollbar.horizontal,
-.monaco-diff-editor:hover .scrollbar.vertical,
-.monaco-diff-editor:hover .scrollbar.horizontal,
-.monaco-diff-editor:hover .monaco-editor .scrollbar.vertical,
-.monaco-diff-editor:hover .monaco-editor .scrollbar.horizontal {
+/* 仅在内容实际可滚动时才在 hover 时显示，不可滚动时保持完全隐藏 */
+.monaco-editor .scrollbar.invisible,
+.monaco-diff-editor .scrollbar.invisible,
+.monaco-editor:hover .scrollbar.invisible,
+.monaco-diff-editor:hover .scrollbar.invisible,
+.monaco-diff-editor:hover .monaco-editor .scrollbar.invisible {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  display: none !important;
+}
+
+.monaco-editor:hover .scrollbar.vertical:not(.invisible),
+.monaco-editor:hover .scrollbar.horizontal:not(.invisible),
+.monaco-diff-editor:hover .scrollbar.vertical:not(.invisible),
+.monaco-diff-editor:hover .scrollbar.horizontal:not(.invisible),
+.monaco-diff-editor:hover .monaco-editor .scrollbar.vertical:not(.invisible),
+.monaco-diff-editor:hover .monaco-editor .scrollbar.horizontal:not(.invisible) {
   opacity: 1 !important;
 }
 
@@ -7205,44 +7889,42 @@ body.resizing.resizing-row {
 }
 
 /* Git gutter indicators in editor line number area */
-.git-gutter-added {
-  background: #2ea043;
+.git-gutter-added,
+.git-gutter-deleted,
+.git-gutter-modified {
+  display: block !important;
+  height: 100% !important;
   width: 4px !important;
-  margin-left: 3px;
-  border-radius: 2px;
+  margin-left: 3px !important;
+  border-radius: 2px !important;
   cursor: pointer !important;
+  box-sizing: border-box !important;
   transition:
     width 0.15s ease,
     margin-left 0.15s ease !important;
+}
+
+.git-gutter-added {
+  background: #2ea043 !important;
 }
 
 .git-gutter-deleted {
-  background: #f85149;
-  width: 4px !important;
-  margin-left: 3px;
-  border-radius: 2px;
-  cursor: pointer !important;
-  transition:
-    width 0.15s ease,
-    margin-left 0.15s ease !important;
+  background: transparent !important;
+  border-left: 4px solid #f85149 !important;
+  border-top: 4px solid transparent !important;
+  border-bottom: 4px solid transparent !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin-top: 5px !important;
 }
 
 .git-gutter-modified {
-  background: #d29922;
-  width: 4px !important;
-  margin-left: 3px;
-  border-radius: 2px;
-  cursor: pointer !important;
-  transition:
-    width 0.15s ease,
-    margin-left 0.15s ease !important;
+  background: #e2c08d !important;
 }
 
 .git-gutter-added:hover,
-.git-gutter-deleted:hover,
 .git-gutter-modified:hover,
 .monaco-editor .margin-view-overlays .line-decorations:hover .git-gutter-added,
-.monaco-editor .margin-view-overlays .line-decorations:hover .git-gutter-deleted,
 .monaco-editor .margin-view-overlays .line-decorations:hover .git-gutter-modified {
   cursor: pointer !important;
   width: 6px !important;
@@ -8952,6 +9634,14 @@ body.resizing.resizing-row {
   color: var(--accent);
 }
 
+.breadcrumb-nav-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
 /* Split Editor */
 .split-editor-layout {
   position: relative;
@@ -9198,13 +9888,17 @@ body.resizing.resizing-row {
 
 /* Monaco Inline Git Blame (IDEA / GitLens 质感) */
 .monaco-inline-git-blame {
-  opacity: 0.42;
-  font-size: 11px;
-  font-style: italic;
-  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
-  margin-left: 14px;
-  user-select: none;
-  pointer-events: none;
+  color: #8b949e !important;
+  opacity: 0.82 !important;
+  font-size: 12px !important;
+  font-style: italic !important;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif) !important;
+  padding-left: 20px !important;
+  user-select: none !important;
+  pointer-events: none !important;
+  display: inline !important;
+  vertical-align: baseline !important;
+  white-space: pre !important;
 }
 
 /* GitPanel "更多操作" 下拉菜单 */
@@ -9262,5 +9956,392 @@ body.resizing.resizing-row {
   font-weight: 600;
   padding: 6px 10px 3px;
   user-select: none;
+}
+
+/* Monaco Definition Link & Jump Styles */
+.monaco-editor .cmd-click-hover-link {
+  text-decoration: underline !important;
+  cursor: pointer !important;
+  color: var(--accent, #38bdf8) !important;
+}
+
+.monaco-editor .symbol-jump-highlight {
+  background: rgba(56, 189, 248, 0.22) !important;
+  border-radius: 3px;
+  animation: symbol-jump-fade 1.6s ease-out forwards;
+}
+
+@keyframes symbol-jump-fade {
+  0% {
+    background: rgba(56, 189, 248, 0.45);
+  }
+  60% {
+    background: rgba(56, 189, 248, 0.25);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* Definition Peek Panel (multi-result picker) */
+.def-peek-panel {
+  user-select: none;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.def-peek-item {
+  transition: background 0.1s ease;
+}
+
+.def-peek-item:hover,
+.def-peek-item:focus-visible {
+  background: rgba(255, 255, 255, 0.06) !important;
+  outline: none;
+}
+
+.def-peek-item:active {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* ==========================================================================
+   Monaco Native Peek View (References & Multi-definition Preview)
+   ========================================================================== */
+
+.monaco-editor .zone-widget .peekview-widget {
+  border-top: 1px solid #007acc !important;
+  border-bottom: 1px solid #007acc !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .head {
+  background-color: #1e1e1e !important;
+  border-bottom: 1px solid #2d2d2d !important;
+  height: 28px !important;
+  line-height: 28px !important;
+  padding: 0 8px !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .head .peekview-title {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+  font-size: 12px !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .head .peekview-title .filename {
+  font-weight: 600 !important;
+  color: #ffffff !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .head .peekview-title .dirname {
+  opacity: 0.65 !important;
+  font-size: 11px !important;
+  margin-left: 6px !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .head .peekview-title .meta {
+  opacity: 0.75 !important;
+  font-size: 11px !important;
+  margin-left: 8px !important;
+}
+
+/* Left preview editor container - replace navy blue (#001f4d) with sleek dark (#181818) */
+.monaco-editor .zone-widget .peekview-widget .body .editor {
+  background-color: #181818 !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .editor .monaco-editor,
+.monaco-editor .zone-widget .peekview-widget .body .editor .monaco-editor-background,
+.monaco-editor .zone-widget .peekview-widget .body .editor .inputarea {
+  background-color: #181818 !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .editor .margin {
+  background-color: #181818 !important;
+}
+
+/* Right reference list / tree - compact, elegant font matching IDE */
+.monaco-editor .zone-widget .peekview-widget .body .tree {
+  background-color: #202020 !important;
+  border-left: 1px solid #2d2d2d !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list {
+  background-color: #202020 !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row {
+  font-size: 11.5px !important;
+  line-height: 20px !important;
+  color: #cccccc !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row.selected {
+  background-color: #094771 !important;
+  color: #ffffff !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row .file {
+  font-size: 11.5px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  font-weight: 500 !important;
+  color: #e5e7eb !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row .dirname {
+  font-size: 10.5px !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  opacity: 0.65 !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row .lineno {
+  font-size: 10.5px !important;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace !important;
+  opacity: 0.6 !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row .text {
+  font-size: 11.5px !important;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace !important;
+}
+
+.monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row .count {
+  font-size: 10px !important;
+  border-radius: 9px !important;
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  color: #cccccc !important;
+  padding: 1px 6px !important;
+}
+
+/* ==========================================================================
+   Switch Workspace Modal Modern Redesign
+   ========================================================================== */
+
+.switch-workspace-overlay {
+  background: rgba(0, 0, 0, 0.65) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.switch-workspace-dialog {
+  max-width: 480px !important;
+  width: 100% !important;
+  background: #1e1e22 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+  padding: 22px !important;
+  color: #f3f4f6 !important;
+  animation: modalPopIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.switch-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.switch-workspace-header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.switch-workspace-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.switch-workspace-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.switch-workspace-subtitle {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.switch-workspace-target-name {
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.switch-workspace-close-btn {
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.switch-workspace-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.switch-workspace-path-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: #9ca3af;
+}
+
+.switch-workspace-path-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switch-workspace-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.switch-workspace-option-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #f3f4f6;
+  width: 100%;
+}
+
+.switch-workspace-option-card:hover {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.switch-workspace-option-card.primary {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.22);
+}
+
+.switch-workspace-option-card.primary:hover {
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.55);
+}
+
+.switch-workspace-option-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.switch-workspace-option-icon.secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: #d1d5db;
+}
+
+.switch-workspace-option-card:hover .switch-workspace-option-icon {
+  transform: scale(1.05);
+}
+
+.switch-workspace-option-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.switch-workspace-option-title {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 2px;
+}
+
+.switch-workspace-option-desc {
+  font-size: 11.5px;
+  color: #9ca3af;
+}
+
+.switch-workspace-option-arrow {
+  color: #6b7280;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+.switch-workspace-option-card:hover .switch-workspace-option-arrow {
+  color: #60a5fa;
+  transform: translateX(2px);
+}
+
+.switch-workspace-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.switch-workspace-cancel-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #9ca3af;
+  padding: 6px 16px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.switch-workspace-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.2);
 }
 

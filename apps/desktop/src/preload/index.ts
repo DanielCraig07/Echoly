@@ -151,6 +151,10 @@ const api: IpcApi = {
     ipcRenderer.on('updater:progress', listener);
     return () => ipcRenderer.removeListener('updater:progress', listener);
   },
+  lspGetDefinition: (filePath, line, column) =>
+    ipcRenderer.invoke('lsp:getDefinition', filePath, line, column),
+  lspNotifyDocument: (filePath, content, languageId) =>
+    ipcRenderer.invoke('lsp:notifyDocument', filePath, content, languageId),
 };
 
 contextBridge.exposeInMainWorld('ide', api);

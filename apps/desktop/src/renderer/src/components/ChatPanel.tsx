@@ -1577,9 +1577,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   isComposingRef.current = false;
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
-                    e.preventDefault();
-                    if (confirmAnswer.trim()) void answerConfirm(true, confirmAnswer);
+                  if (e.key === 'Enter') {
+                    if ((e.metaKey || e.ctrlKey || e.shiftKey) && !isComposingRef.current) {
+                      e.preventDefault();
+                      setConfirmAnswer((prev) => prev + '\n');
+                      return;
+                    }
+                    if (!isComposingRef.current) {
+                      e.preventDefault();
+                      if (confirmAnswer.trim()) void answerConfirm(true, confirmAnswer);
+                    }
                   }
                 }}
               />
@@ -1707,10 +1714,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             }}
             placeholder={
               activeTab?.mode === 'ask'
-                ? '提问关于代码的问题…（可添加图片/文件，Enter 发送）'
+                ? '提问关于代码的问题…（Enter 发送，Cmd/Ctrl+Enter 或 Shift+Enter 换行）'
                 : activeTab?.mode === 'plan'
-                  ? '描述目标，生成可执行计划…（可添加图片/文件，Enter 发送）'
-                  : '描述任务…（可添加图片/文件，Enter 发送，Shift+Enter 换行）'
+                  ? '描述目标，生成可执行计划…（Enter 发送，Cmd/Ctrl+Enter 或 Shift+Enter 换行）'
+                  : '描述任务…（Enter 发送，Cmd/Ctrl+Enter 或 Shift+Enter 换行）'
             }
             onChange={(e) => updateTab(activeTab.id, (t) => ({ ...t, input: e.target.value }))}
             onCompositionStart={() => {
@@ -1721,9 +1728,30 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             }}
             onPaste={handlePaste}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
-                e.preventDefault();
-                void send();
+              if (e.key === 'Enter') {
+                if ((e.metaKey || e.ctrlKey) && !isComposingRef.current) {
+                  // Cmd/Ctrl + Enter: insert newline at cursor
+                  e.preventDefault();
+                  const target = e.currentTarget;
+                  const start = target.selectionStart;
+                  const end = target.selectionEnd;
+                  const val = target.value;
+                  const nextVal = val.substring(0, start) + '\n' + val.substring(end);
+                  updateTab(activeTab.id, (t) => ({ ...t, input: nextVal }));
+                  requestAnimationFrame(() => {
+                    target.selectionStart = target.selectionEnd = start + 1;
+                  });
+                  return;
+                }
+                if (e.shiftKey) {
+                  // Shift + Enter: native newline in textarea
+                  return;
+                }
+                if (!e.shiftKey && !e.metaKey && !e.ctrlKey && !isComposingRef.current) {
+                  // Plain Enter: send message
+                  e.preventDefault();
+                  void send();
+                }
               }
             }}
           />

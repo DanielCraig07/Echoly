@@ -56,6 +56,7 @@ import {
   loadWorkspaceOpenFiles,
   saveWorkspaceOpenFiles,
 } from './workspaceSession';
+import { setupSymbolNavigation } from './services/symbolNavigation';
 
 type ResizeAxis = 'explorer' | 'chat' | 'bottom';
 type LeftPanel = 'explorer' | 'git';
@@ -179,6 +180,7 @@ export function App() {
   const [editorSelection, setEditorSelection] = useState('');
   const [uiTheme, setUiTheme] = useState<UiTheme>(DEFAULT_SETTINGS.theme);
   const [autoSave, setAutoSave] = useState(DEFAULT_SETTINGS.autoSave);
+  const [gitBlameInline, setGitBlameInline] = useState(DEFAULT_SETTINGS.gitBlameInline ?? true);
   const [models, setModels] = useState<ModelProfile[]>(DEFAULT_MODELS);
   const [activeModelId, setActiveModelId] = useState<string>('deepseek-local');
   const [layout, setLayout] = useState<LayoutSettings>({ ...DEFAULT_LAYOUT });
@@ -209,6 +211,9 @@ export function App() {
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('explorer');
   const [scmDiff, setScmDiff] = useState<PendingDiff | null>(null);
   const [revealLine, setRevealLine] = useState<number | null>(null);
+  const [revealColumn, setRevealColumn] = useState<number | null>(null);
+  const cursorLineRef = useRef(1);
+  const cursorColRef = useRef(1);
   const searchRef = useRef<TopSearchBarHandle>(null);
   const fileTreeRef = useRef<FileTreeHandle>(null);
 
@@ -251,46 +256,67 @@ export function App() {
         ? ['.']
         : [p];
 
+    // Cancel pending auto-save timers for discarded paths so stale buffer content is not written back!
+    const isAll = pathsToDiscard.some((dp) => !dp || dp === '.' || dp === 'ALL' || dp === 'all');
+    if (isAll) {
+      for (const timer of autoSaveTimers.current.values()) clearTimeout(timer);
+      autoSaveTimers.current.clear();
+    } else {
+      for (const dp of pathsToDiscard) {
+        const normDp = dp.replace(/\\/g, '/').replace(/^\/+/, '');
+        for (const [k, timer] of autoSaveTimers.current.entries()) {
+          const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
+          if (normK === normDp || normK.endsWith('/' + normDp) || normDp.endsWith('/' + normK)) {
+            clearTimeout(timer);
+            autoSaveTimers.current.delete(k);
+          }
+        }
+      }
+    }
+
     await window.ide.gitDiscard(pathsToDiscard);
+
+    // Reload affected open tabs from disk
+    const affectedTabs = tabsRef.current.filter((tab) => {
+      if (isAll) return true;
+      const normTp = tab.path.replace(/\\/g, '/').replace(/^\/+/, '');
+      return pathsToDiscard.some((dp) => {
+        const normDp = dp.replace(/\\/g, '/').replace(/^\/+/, '');
+        return normTp === normDp || normTp.endsWith('/' + normDp) || normDp.endsWith('/' + normTp);
+      });
+    });
+
+    for (const tab of affectedTabs) {
+      if (tab.language === 'image' || tab.previewUrl || isImagePath(tab.path)) {
+        try {
+          const previewUrl = await window.ide.readFileDataUrl(tab.path);
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.path === tab.path ? { ...t, dirty: false, previewUrl } : t,
+            ),
+          );
+        } catch {
+          setTabs((prev) => prev.filter((t) => t.path !== tab.path));
+        }
+      } else {
+        try {
+          const freshContent = await window.ide.readFile(tab.path);
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.path === tab.path ? { ...t, content: freshContent, dirty: false } : t,
+            ),
+          );
+        } catch {
+          setTabs((prev) => prev.filter((t) => t.path !== tab.path));
+        }
+      }
+    }
+
     const res = await window.ide.gitStatus();
     if (res.ok) setGitStatus(res);
+    setTreeRefreshKey((k) => k + 1);
     setScmDiff(null);
-
-    setTabs((currentTabs) => {
-      currentTabs.forEach((tab) => {
-        if (tab.language === 'image' || tab.previewUrl || isImagePath(tab.path)) {
-          window.ide
-            .readFileDataUrl(tab.path)
-            .then((previewUrl) => {
-              setTabs((prev) =>
-                prev.map((t) =>
-                  t.path === tab.path
-                    ? { ...t, content: '', language: 'image', dirty: false, previewUrl }
-                    : t,
-                ),
-              );
-            })
-            .catch(() => {
-              setTabs((prev) => prev.filter((t) => t.path !== tab.path));
-            });
-          return;
-        }
-        window.ide
-          .readFile(tab.path)
-          .then((freshContent) => {
-            setTabs((prev) =>
-              prev.map((t) =>
-                t.path === tab.path ? { ...t, content: freshContent, dirty: false } : t,
-              ),
-            );
-          })
-          .catch(() => {
-            // Untracked file deleted by discard
-            setTabs((prev) => prev.filter((t) => t.path !== tab.path));
-          });
-      });
-      return currentTabs;
-    });
+    showToast('✓ 已放弃修改', '已恢复至 Git 最新提交版本', 'success');
   };
 
   const handlePreviewGitDiff = async (path: string) => {
@@ -632,6 +658,7 @@ export function App() {
     setLayout({ ...DEFAULT_LAYOUT, ...s.layout });
     setUiTheme(s.theme ?? 'dark');
     setAutoSave(s.autoSave === true);
+    setGitBlameInline(s.gitBlameInline !== false);
     if (s.models && Array.isArray(s.models) && s.models.length > 0) {
       setModels(s.models);
     }
@@ -776,17 +803,33 @@ export function App() {
     applySettings(next);
   }
 
-  const openFile = useCallback(async (path: string, line?: number) => {
+  const openFile = useCallback(async (rawPath: string, line?: number, col?: number) => {
     setScmDiff(null);
     setActiveDiffId(null);
-    let alreadyOpen = false;
-    setTabs((prev) => {
-      alreadyOpen = prev.some((t) => t.path === path);
-      return prev;
+    const ws = workspaceRef.current;
+    let path = rawPath.replace(/\\/g, '/');
+    if (/^\/[a-zA-Z]:/.test(path)) path = path.slice(1);
+    if (ws) {
+      const normWs = ws.replace(/\\/g, '/').replace(/\/+$/, '');
+      if (path.startsWith(normWs)) {
+        path = path.slice(normWs.length).replace(/^\/+/, '');
+      }
+    }
+    const normPath = path;
+    const existingTab = tabsRef.current.find((t) => {
+      const tp = t.path.replace(/\\/g, '/');
+      return tp === normPath || tp.endsWith('/' + normPath) || normPath.endsWith('/' + tp);
     });
-    if (alreadyOpen) {
-      setActivePath(path);
-      if (line != null && line > 0) setRevealLine(line);
+    if (existingTab) {
+      setActivePath(existingTab.path);
+      activePathRef.current = existingTab.path;
+      if (line != null && line > 0) {
+        setRevealLine(null);
+        setRevealColumn(col ?? null);
+        requestAnimationFrame(() => {
+          setRevealLine(line);
+        });
+      }
       return;
     }
     if (isImagePath(path)) {
@@ -812,7 +855,33 @@ export function App() {
       setActivePath(path);
       return;
     }
-    const content = await window.ide.readFile(path);
+    let content = '';
+    try {
+      content = await window.ide.readFile(path);
+    } catch (err) {
+      // If relative path didn't hit directly, search for file across workspace (e.g. Java package path)
+      let resolved = false;
+      if (window.ide.searchFiles) {
+        const fileName = path.split('/').pop() || path;
+        try {
+          const hits = await window.ide.searchFiles(fileName, 5);
+          const matched = hits.find(
+            (h) => h.path === path || h.path.endsWith('/' + path) || h.path.endsWith(fileName)
+          );
+          if (matched) {
+            content = await window.ide.readFile(matched.path);
+            path = matched.path;
+            resolved = true;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (!resolved) {
+        console.warn('[navigation] cannot open file:', path, err instanceof Error ? err.message : err);
+        return;
+      }
+    }
     // 大文件：超过 2MB 时不整段塞进 Monaco，避免渲染卡顿；仅提示并留空，待 agent/其它流程按需处理
     const isLarge = content.length > 2 * 1024 * 1024;
     setTabs((prev) => {
@@ -829,8 +898,29 @@ export function App() {
       ];
     });
     setActivePath(path);
-    if (line != null && line > 0) setRevealLine(line);
+    activePathRef.current = path;
+    if (line != null && line > 0) {
+      setRevealLine(null);
+      setRevealColumn(col ?? null);
+      setTimeout(() => setRevealLine(line), 10);
+    }
   }, []);
+
+  // Initialize dual-tier symbol navigation (F12 definition jump, Shift+F12 references, and cross-tab opener)
+  useEffect(() => {
+    const nav = setupSymbolNavigation({
+      getWorkspaceRoot: () => workspaceRef.current,
+      onOpenFile: (targetPath, line, col) => {
+        void openFile(targetPath, line, col);
+      },
+      getCurrentPath: () => activePathRef.current,
+      getCurrentPosition: () => ({
+        line: cursorLineRef.current,
+        column: cursorColRef.current,
+      }),
+    });
+    return () => nav.dispose();
+  }, [openFile]);
 
   async function pickWorkspace(): Promise<void> {
     const root = await window.ide.pickWorkspace();
@@ -907,6 +997,9 @@ export function App() {
     }
     await window.ide.writeFile(tab.path, tab.content);
     setTabs((prev) => prev.map((t) => (t.path === tab.path ? { ...t, dirty: false } : t)));
+    void window.ide.gitStatus().then((res) => {
+      if (res.ok) setGitStatus(res);
+    });
   }, [saveUntitledAs]);
 
   const createUntitledTab = useCallback(() => {
@@ -927,10 +1020,25 @@ export function App() {
     setTabs((prev) =>
       prev.map((t) => (t.path === path && t.content === content ? { ...t, dirty: false } : t)),
     );
+    void window.ide.gitStatus().then((res) => {
+      if (res.ok) setGitStatus(res);
+    });
   }, []);
 
-  function onChangeContent(path: string, content: string): void {
-    setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, content, dirty: true } : t)));
+  function onChangeContent(path: string, content: string, markDirty = true): void {
+    setTabs((prev) => {
+      const tab = prev.find((t) => t.path === path);
+      if (tab && tab.content === content && tab.dirty === markDirty) return prev;
+      return prev.map((t) => (t.path === path ? { ...t, content, dirty: markDirty } : t));
+    });
+    if (!markDirty) {
+      const prevTimer = autoSaveTimers.current.get(path);
+      if (prevTimer) {
+        clearTimeout(prevTimer);
+        autoSaveTimers.current.delete(path);
+      }
+      return;
+    }
     if (isUntitledPath(path) || !autoSaveRef.current) return;
     const prevTimer = autoSaveTimers.current.get(path);
     if (prevTimer) clearTimeout(prevTimer);
@@ -1045,19 +1153,7 @@ export function App() {
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        void (async () => {
-          setTabs((current) => {
-            const tab = current.find((t) => t.path === activePath);
-            if (tab) {
-              void window.ide.writeFile(tab.path, tab.content).then(() => {
-                setTabs((prev) =>
-                  prev.map((t) => (t.path === tab.path ? { ...t, dirty: false } : t)),
-                );
-              });
-            }
-            return current;
-          });
-        })();
+        void saveActive();
         return;
       }
       if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
@@ -1729,6 +1825,7 @@ export function App() {
                         gitStatus={gitStatus}
                         refreshKey={treeRefreshKey}
                         onViewFileHistory={(p) => void handleViewFileHistory(p)}
+                        onDiscardPath={(p) => void handleDiscardPath(p)}
                         onOpenFile={(p) => void openFile(p)}
                         onOpenTerminal={(cwd) => {
                           terminalNonce.current += 1;
@@ -1797,6 +1894,9 @@ export function App() {
             tabs={tabs}
             activePath={activePath}
             gitStatus={gitStatus}
+            onOpenFile={(path, line, col) => {
+              void openFile(path, line, col);
+            }}
             onSelectTab={(path) => {
               setScmDiff(null);
               setActivePath(path);
@@ -1849,6 +1949,8 @@ export function App() {
             onCursorChange={(line, col) => {
               setCursorLine(line);
               setCursorCol(col);
+              cursorLineRef.current = line;
+              cursorColRef.current = col;
             }}
             onAddToChat={(text) => chatRef.current?.insertPath(text)}
             previewDiff={previewDiff}
@@ -1868,7 +1970,9 @@ export function App() {
               if (res.ok) setGitStatus(res);
             }}
             revealLine={revealLine}
+            revealColumn={revealColumn}
             uiTheme={uiTheme}
+            gitBlameInline={gitBlameInline}
             workspace={workspace}
             onPickLocal={() => void pickWorkspace()}
             onPickSsh={() => {

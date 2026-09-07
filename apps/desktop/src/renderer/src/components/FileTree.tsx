@@ -57,11 +57,12 @@ function basename(relPath: string): string {
 interface MenuProps {
   state: ContextMenuState;
   clipboard: PathClipboard;
+  gitStatus?: GitStatusResult | null;
   onClose: () => void;
   onAction: (action: string) => void;
 }
 
-function FileTreeContextMenu({ state, clipboard, onClose, onAction }: MenuProps) {
+function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const isBlank = state.target.kind === 'blank';
   const node = state.target.kind === 'node' ? state.target.node : null;
@@ -135,6 +136,18 @@ function FileTreeContextMenu({ state, clipboard, onClose, onAction }: MenuProps)
   if (node && !isDir) {
     items.push(sep('s7'));
     items.push(item('git-history', 'Git: View File History'));
+  }
+  const hasGitChange = Boolean(
+    node &&
+      gitStatus?.entries?.some((e) => {
+        const ep = e.path.replace(/\\/g, '/');
+        const np = node.path.replace(/\\/g, '/');
+        return ep === np || (isDir && ep.startsWith(np + '/'));
+      }),
+  );
+  if (hasGitChange) {
+    items.push(sep('s-git'));
+    items.push(item('git-discard', '放弃更改 (Discard Changes)...', { danger: true }));
   }
   if (node) {
     items.push(sep('s5'));
@@ -539,6 +552,7 @@ interface Props extends FileTreeHandlers {
   selectedNode?: { path: string; isDirectory: boolean } | null;
   gitStatus?: GitStatusResult | null;
   onViewFileHistory?: (path: string) => void;
+  onDiscardPath?: (path: string) => void;
   refreshKey: number;
 }
 
@@ -549,6 +563,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     selectedNode = null,
     gitStatus,
     onViewFileHistory,
+    onDiscardPath,
     onOpenFile,
     onOpenTerminal,
     onAddToChat,
@@ -757,6 +772,12 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
         case 'git-history':
           if (node) onViewFileHistory?.(node.path);
           break;
+        case 'git-discard':
+          if (node) {
+            onDiscardPath?.(node.path);
+            bump();
+          }
+          break;
         case 'copy-abs':
           if (node) {
             const abs = await window.ide.resolveAbsolutePath(node.path);
@@ -827,6 +848,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
         <FileTreeContextMenu
           state={menu}
           clipboard={clipboard}
+          gitStatus={gitStatus}
           onClose={() => setMenu(null)}
           onAction={(a) => void handleAction(a)}
         />

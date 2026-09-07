@@ -283,4 +283,13 @@ export function registerIpc(deps: {
     if (!win || win.isDestroyed()) return;
     popupAppMenu(id, win);
   });
+
+  ipcMain.handle('lsp:getDefinition', (e, filePath: string, line: number, column: number) =>
+    run(e, () => registry.current().lsp.getDefinition(filePath, line, column)),
+  );
+  ipcMain.handle(
+    'lsp:notifyDocument',
+    (e, filePath: string, content: string, languageId?: string) =>
+      run(e, () => registry.current().lsp.notifyDocument(filePath, content, languageId)),
+  );
 }
