@@ -3076,7 +3076,7 @@ body.resizing.resizing-row {
   background: transparent;
   border: none;
   outline: none;
-  color: #94a3b8;
+  color: var(--muted, #888888);
   font-size: 13px;
   font-weight: 450;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -3088,12 +3088,12 @@ body.resizing.resizing-row {
 }
 
 .worked-for-summary-header:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e2e8f0;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  color: var(--text, #ffffff);
 }
 
 .worked-for-summary-header.is-streaming {
-  color: #cbd5e1;
+  color: var(--muted-strong, #aaaaaa);
 }
 
 .worked-for-label {
@@ -3103,19 +3103,19 @@ body.resizing.resizing-row {
 
 .worked-for-chevron {
   font-size: 13px;
-  color: #64748b;
+  color: var(--muted, #888888);
   line-height: 1;
   display: inline-block;
   transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease;
 }
 
 .worked-for-summary-header:hover .worked-for-chevron {
-  color: #cbd5e1;
+  color: var(--text, #ffffff);
 }
 
 .worked-for-chevron.open {
   transform: rotate(90deg);
-  color: #94a3b8;
+  color: var(--muted-strong, #aaaaaa);
 }
 
 .agent-timeline {
@@ -3259,16 +3259,243 @@ body.resizing.resizing-row {
   animation: fadeInPop 0.12s ease-out;
 }
 
+/* ── Antigravity / Cursor 风格的 AI 执行过程时间线与 In/Out 卡片 ── */
+.agent-timeline-stream {
+  position: relative;
+  margin: 8px 0 14px 6px;
+  padding-left: 22px;
+}
+
+.agent-timeline-stream::before {
+  content: '';
+  position: absolute;
+  left: 3.5px;
+  top: 10px;
+  bottom: 12px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.agent-timeline-node {
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.agent-timeline-node:last-child {
+  margin-bottom: 0;
+}
+
+.agent-timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.agent-timeline-dot {
+  position: absolute;
+  left: -22px;
+  top: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3ecf8e;
+  box-sizing: border-box;
+}
+
+.agent-timeline-dot.is-running {
+  background: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.8);
+  animation: agentWorkingPulse 1.4s ease-in-out infinite;
+}
+
+.agent-timeline-dot.is-error {
+  background: #f87171;
+}
+
+.agent-timeline-dot.is-thought {
+  background: #71717a;
+}
+
+.agent-timeline-header-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: #d4d4d8;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background 0.1s ease;
+}
+
+.agent-timeline-header-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.agent-timeline-badge {
+  color: var(--text, #ffffff);
+  font-weight: 600;
+  font-size: 13px;
+  margin-right: 4px;
+}
+
+.agent-timeline-title {
+  color: var(--muted-strong, #d4d4d8);
+  font-size: 13px;
+  font-weight: 400;
+  word-break: break-word;
+}
+
+.agent-timeline-title.clickable:hover {
+  text-decoration: underline;
+  color: #38bdf8;
+}
+
+.tool-inout-box {
+  margin: 6px 0 10px 0;
+  background: color-mix(in srgb, var(--bg-elevated, #222222) 65%, transparent);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  overflow: hidden;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  animation: fadeInPop 0.12s ease-out;
+}
+
+.tool-inout-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 12px;
+  gap: 12px;
+  position: relative;
+  transition: background 0.1s ease;
+}
+
+.tool-inout-row.is-clickable {
+  cursor: pointer;
+}
+
+.tool-inout-row:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.035));
+}
+
+.tool-inout-row.has-border {
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+}
+
+.tool-inout-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted, #71717a);
+  min-width: 28px;
+  user-select: none;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.tool-inout-content {
+  flex: 1;
+  min-width: 0;
+  color: var(--text, #d4d4d8);
+  word-break: break-all;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
+
+.tool-inout-content.collapsed-single {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-inout-content.collapsed-multi {
+  max-height: 80px;
+  overflow: hidden;
+  position: relative;
+  -webkit-mask-image: linear-gradient(180deg, #000 65%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 65%, transparent 100%);
+}
+
+.tool-inout-content.expanded-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.tool-inout-empty {
+  color: var(--muted, #71717a);
+  font-style: italic;
+  user-select: none;
+}
+
+.tool-inout-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.tool-inout-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted, #a1a1aa);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.75;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  user-select: none;
+}
+
+.tool-inout-toggle-btn:hover {
+  opacity: 1;
+  color: #38bdf8;
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+
+.tool-inout-copy-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted, #71717a);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.tool-inout-row:hover .tool-inout-copy-btn {
+  opacity: 0.8;
+}
+
+.tool-inout-copy-btn:hover {
+  opacity: 1;
+  color: var(--text, #e2e8f0);
+}
+
 .agent-timeline-thinking-box {
   padding: 10px 14px;
-  margin: 4px 0 8px 20px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 8px;
+  margin: 6px 0 10px 0;
+  background: color-mix(in srgb, var(--bg-elevated, #222222) 65%, transparent);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
   font-size: 12.5px;
   line-height: 1.6;
-  color: #cbd5e1;
-  max-height: 280px;
+  color: var(--muted-strong, #cbd5e1);
+  max-height: 320px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -7896,7 +8123,7 @@ body.resizing.resizing-row {
   height: 100% !important;
   width: 4px !important;
   margin-left: 3px !important;
-  border-radius: 2px !important;
+  border-radius: 0 !important; /* 无圆角：连续多行自然拼接为一条竖线 */
   cursor: pointer !important;
   box-sizing: border-box !important;
   transition:
@@ -9886,19 +10113,21 @@ body.resizing.resizing-row {
   color: var(--muted);
 }
 
-/* Monaco Inline Git Blame (IDEA / GitLens 质感) */
+/* Monaco Inline Git Blame (IDEA / GitLens 质感)
+   以 ContentWidget 浮层渲染（绝对定位，位于文本坐标系之外），
+   光标无法进入 blame 文本，行尾停留位置不受影响。 */
 .monaco-inline-git-blame {
   color: #8b949e !important;
   opacity: 0.82 !important;
   font-size: 12px !important;
   font-style: italic !important;
   font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif) !important;
-  padding-left: 20px !important;
+  margin-left: 24px !important;
+  padding-left: 0 !important;
   user-select: none !important;
   pointer-events: none !important;
-  display: inline !important;
-  vertical-align: baseline !important;
   white-space: pre !important;
+  /* ContentWidget 定位接管布局，display 保持默认（不能是 inline） */
 }
 
 /* GitPanel "更多操作" 下拉菜单 */

@@ -94,7 +94,7 @@ async function ghAsset(
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let loaded = 0;
-  for (;;) {
+  for (; ;) {
     const { done, value } = await reader.read();
     if (done) break;
     if (value) {

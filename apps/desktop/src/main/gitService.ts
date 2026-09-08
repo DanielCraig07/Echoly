@@ -283,7 +283,7 @@ export class GitService {
       if (ab[3]) behind = Number(ab[3]);
     }
 
-    await this.runGit(['update-index', '-q', '--refresh'], root);
+    await this.runGit(['update-index', '-q', '--really-refresh'], root);
     const porcelain = await this.runGit(['status', '--porcelain=v1', '-uall'], root);
     const entries: GitStatusEntry[] = [];
     for (const line of porcelain.stdout.split(/\r?\n/)) {
@@ -305,6 +305,48 @@ export class GitService {
         staged,
         untracked,
       });
+    }
+
+    // 与编辑器 gutter 的内容级比较保持一致：过滤「仅换行符（CRLF/LF）不同」和「仅权限位（mode）变化」
+    // 的伪修改。gutter 的 computeLineDiffs 只比较内容（并剥离 \r），对这两类文件显示为无改动；
+    // 若此处仍按字节级报 M，就会出现「编辑区干净但文件树/Tab 常驻 M」的割裂状态。
+    // 以 HEAD 为基准（与 diff() 的 gutter 基准一致）：--ignore-cr-at-eol 忽略行尾 CR 差异，
+    // --numstat 输出 增删行数，0/0 表示无内容变化（mode-only），不在名单里表示无差异。
+    const workTreeModified = entries.filter(
+      (e) => !e.untracked && e.workTree && e.workTree !== ' ',
+    );
+    if (workTreeModified.length > 0) {
+      const realDiff = await this.runGit(
+        ['diff', 'HEAD', '--ignore-cr-at-eol', '--numstat', '--'],
+        root,
+      );
+      if (realDiff.code === 0) {
+        // path -> 是否有真实内容增删（--ignore-cr-at-eol 已忽略行尾 CR；二进制 "-" 视为真实改动）
+        const realDiffPaths = new Set<string>();
+        for (const line of realDiff.stdout.split(/\r?\n/)) {
+          if (!line.trim()) continue;
+          const parts = line.split('\t');
+          if (parts.length < 3) continue;
+          const [added, deleted, ...rest] = parts;
+          const path = rest.join('\t').replace(/^"|"$/g, '').replace(/\\/g, '/').trim();
+          if (!path) continue;
+          // "0 0" = mode-only 变化（无内容增删），不视为真实改动
+          if (!(added === '0' && deleted === '0')) {
+            realDiffPaths.add(path);
+          }
+        }
+        for (const e of workTreeModified) {
+          if (!realDiffPaths.has(e.path)) {
+            e.workTree = ' ';
+          }
+        }
+        // workTree 清空后既非暂存也非未跟踪的条目，整体移除
+        const filtered = entries.filter(
+          (e) => e.untracked || e.staged || (e.workTree && e.workTree !== ' '),
+        );
+        entries.length = 0;
+        entries.push(...filtered);
+      }
     }
 
     return {
@@ -389,9 +431,10 @@ export class GitService {
     const isAll = cleanInputPaths.some((p) => !p || p === '.' || p === 'ALL' || p === 'all');
     if (isAll) {
       await this.runGit(['reset', 'HEAD', '.'], root);
-      await this.runGit(['checkout', 'HEAD', '.'], root);
-      await this.runGit(['checkout', '--', '.'], root);
+      await this.runGit(['checkout', '-f', 'HEAD', '--', '.'], root);
+      await this.runGit(['checkout', '-f', '--', '.'], root);
       await this.runGit(['clean', '-fd'], root);
+      await this.runGit(['update-index', '-q', '--really-refresh'], root);
       await this.runGit(['update-index', '-q', '--refresh'], root);
       return { ok: true, detail: '已还原所有改动' };
     }
@@ -419,34 +462,101 @@ export class GitService {
       if (e.untracked) untracked.push(e.path);
       else tracked.push(e.path);
     }
-    // Also include cleanInputPaths that may not have appeared in status
+    // Include input paths not explicitly detected in status
     for (const cp of cleanInputPaths) {
       if (!tracked.includes(cp) && !untracked.includes(cp)) {
         tracked.push(cp);
       }
     }
 
-    if (tracked.length) {
-      await this.runGit(['reset', 'HEAD', '--', ...tracked], root);
-      const res = await this.runGit(['checkout', 'HEAD', '--', ...tracked], root);
-      if (res.code !== 0) {
-        const alt = await this.runGit(['checkout', '--', ...tracked], root);
-        if (alt.code !== 0) {
-          await this.runGit(
-            ['restore', '--staged', '--worktree', '--', ...tracked],
-            root,
-          );
+    const failures: string[] = [];
+
+    // 1. 处理已跟踪文件的还原
+    for (const filePath of tracked) {
+      // a. 从暂存区重置
+      await this.runGit(['reset', 'HEAD', '--', filePath], root);
+      // b. 强制检出 HEAD 内容覆盖工作区
+      const coHead = await this.runGit(['checkout', '-f', 'HEAD', '--', filePath], root);
+      if (coHead.code !== 0) {
+        await this.runGit(['checkout', '-f', '--', filePath], root);
+        await this.runGit(['restore', '--staged', '--worktree', '--', filePath], root);
+      }
+
+      // c. 权限位 (File Mode) 纠正：
+      // 在 Linux / SSH 模式下，文件权限（如 100755 vs 100644）若不一致会导致永久显示 M
+      try {
+        const lsTree = await this.runGit(['ls-tree', 'HEAD', '--', filePath], root);
+        if (lsTree.code === 0 && lsTree.stdout.trim()) {
+          const modeMatch = lsTree.stdout.trim().match(/^(\d+)\s+/);
+          if (modeMatch && modeMatch[1]) {
+            const expectedMode = modeMatch[1]; // 例如 '100644' 或 '100755'
+            const isExecutable = expectedMode === '100755';
+            const chmodNum = isExecutable ? '755' : '644';
+            if (this.workspace.getKind() === 'ssh' && this.ssh) {
+              await this.ssh.runCommand(`chmod ${chmodNum} '${filePath.replace(/'/g, "'\\''")}'`);
+            } else if (process.platform !== 'win32') {
+              try {
+                const fsModule = await import('fs/promises');
+                const pathModule = await import('path');
+                const absPath = pathModule.resolve(root, filePath);
+                await fsModule.chmod(absPath, isExecutable ? 0o755 : 0o644);
+              } catch {
+                // ignore local chmod failures
+              }
+            }
+            await this.runGit(['update-index', isExecutable ? '--chmod=+x' : '--chmod=-x', filePath], root);
+          }
+        }
+      } catch {
+        // ignore mode query failure
+      }
+
+      // d. 刷新索引
+      await this.runGit(['update-index', '-q', '--refresh', '--', filePath], root);
+      await this.runGit(['update-index', '-q', '--really-refresh', '--', filePath], root);
+    }
+
+    // 2. 处理未跟踪文件的清理
+    if (untracked.length) {
+      const cleanRes = await this.runGit(['clean', '-fd', '--', ...untracked], root);
+      if (cleanRes.code !== 0) {
+        // 尝试通过 workspace 接口直接删除
+        for (const u of untracked) {
+          try {
+            await this.workspace.remove(u);
+          } catch {
+            failures.push(`clean: ${cleanRes.stderr.trim() || '删除未跟踪文件失败'}`);
+          }
         }
       }
     }
-    if (untracked.length) {
-      await this.runGit(['clean', '-fd', '--', ...untracked], root);
-    }
 
-    // Refresh index so status immediately returns clean
+    // 3. 全局刷新索引
+    await this.runGit(['update-index', '-q', '--really-refresh'], root);
     await this.runGit(['update-index', '-q', '--refresh'], root);
 
-    return { ok: true, detail: `已还原改动` };
+    // 4. 最终复查：放弃后若 Git 仍报告目标文件有改动，返回失败详情供前端提示
+    const finalVerify = await this.status();
+    if (finalVerify.ok && finalVerify.isRepo) {
+      const remainingDirty = finalVerify.entries.filter((e) => {
+        const ep = e.path.replace(/\\/g, '/').replace(/^\/+/, '');
+        return cleanInputPaths.some(
+          (cp) => ep === cp || ep.startsWith(cp + '/') || cp.endsWith('/' + ep) || ep.endsWith('/' + cp),
+        );
+      });
+      if (remainingDirty.length > 0) {
+        return {
+          ok: false,
+          detail: `放弃后文件仍有改动: ${remainingDirty.map((d) => d.path).join(', ')}`,
+        };
+      }
+    }
+
+    if (failures.length > 0) {
+      return { ok: false, detail: failures.join('; ') };
+    }
+
+    return { ok: true, detail: '已还原改动' };
   }
 
   async diff(relPath: string, staged = false): Promise<GitDiffResult> {
@@ -479,17 +589,17 @@ export class GitService {
       return { ok: true, path: posix, original, modified, staged: true };
     }
 
-    // unstaged: fast path to fetch index or HEAD
+    // unstaged: 优先以 HEAD 为基准版本，使得自最新 commit 以来的修改在编辑器左侧 gutter 均能准确呈现变动色条
     let original = '';
     let isTracked = false;
-    const indexShow = await this.runGit(['show', `:0:${posix}`], root);
-    if (indexShow.code === 0) {
-      original = indexShow.stdout;
+    const headShow = await this.runGit(['show', `HEAD:${posix}`], root);
+    if (headShow.code === 0) {
+      original = headShow.stdout;
       isTracked = true;
     } else {
-      const head = await this.runGit(['show', `HEAD:${posix}`], root);
-      if (head.code === 0) {
-        original = head.stdout;
+      const indexShow = await this.runGit(['show', `:0:${posix}`], root);
+      if (indexShow.code === 0) {
+        original = indexShow.stdout;
         isTracked = true;
       }
     }
@@ -503,12 +613,16 @@ export class GitService {
           return ep === posix || posix.endsWith('/' + ep) || ep.endsWith('/' + posix);
         });
         if (entry && !entry.untracked) {
-          const entryShow = await this.runGit(['show', `:0:${entry.path}`], root);
-          if (entryShow.code === 0) {
-            original = entryShow.stdout;
+          const headShow = await this.runGit(['show', `HEAD:${entry.path}`], root);
+          if (headShow.code === 0) {
+            original = headShow.stdout;
+            isTracked = true;
           } else {
-            const headShow = await this.runGit(['show', `HEAD:${entry.path}`], root);
-            if (headShow.code === 0) original = headShow.stdout;
+            const indexShow = await this.runGit(['show', `:0:${entry.path}`], root);
+            if (indexShow.code === 0) {
+              original = indexShow.stdout;
+              isTracked = true;
+            }
           }
         }
       } catch {

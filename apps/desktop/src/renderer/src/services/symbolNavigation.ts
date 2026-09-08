@@ -528,25 +528,33 @@ export function resolveRelativeImport(currentFilePath: string, moduleSpecifier: 
  * Temporarily highlights the destination line after a jump with a pulse animation.
  */
 export function highlightJumpLocation(editor: monaco.editor.IStandaloneCodeEditor, line: number) {
-  const model = editor.getModel();
-  if (!model) return;
-  const maxCol = model.getLineMaxColumn(line);
-  const decs = editor.createDecorationsCollection([
-    {
-      range: new monaco.Range(line, 1, line, maxCol),
-      options: {
-        isWholeLine: true,
-        className: 'symbol-jump-highlight',
-      },
-    },
-  ]);
-  setTimeout(() => {
-    try {
-      decs.clear();
-    } catch {
-      // editor might be disposed
+  try {
+    const model = editor.getModel();
+    if (!model) return;
+    const lineCount = model.getLineCount();
+    if (typeof line !== 'number' || isNaN(line) || line < 1 || line > lineCount) {
+      return;
     }
-  }, 1600);
+    const maxCol = model.getLineMaxColumn(line);
+    const decs = editor.createDecorationsCollection([
+      {
+        range: new monaco.Range(line, 1, line, maxCol),
+        options: {
+          isWholeLine: true,
+          className: 'symbol-jump-highlight',
+        },
+      },
+    ]);
+    setTimeout(() => {
+      try {
+        decs.clear();
+      } catch {
+        // editor might be disposed
+      }
+    }, 1600);
+  } catch {
+    // 防御性保护，避免任何 Monaco 内部计算导致的渲染崩溃
+  }
 }
 
 const preloadingUris = new Set<string>();

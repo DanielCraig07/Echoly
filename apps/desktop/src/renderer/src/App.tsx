@@ -198,6 +198,9 @@ export function App() {
   const skipOpenFilesPersistRef = useRef(false);
   const openFilesPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Paths currently being discarded: within suppression window, Monaco's onChange
+  // will NOT trigger auto-save or mark dirty, preventing discarded files from being saved back.
+  const suppressAutoSaveUntilRef = useRef<Map<string, number>>(new Map());
   const shellRef = useRef<HTMLDivElement>(null);
   const middleColRef = useRef<HTMLDivElement>(null);
   const saveLayoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -212,6 +215,8 @@ export function App() {
   const [scmDiff, setScmDiff] = useState<PendingDiff | null>(null);
   const [revealLine, setRevealLine] = useState<number | null>(null);
   const [revealColumn, setRevealColumn] = useState<number | null>(null);
+  // nonce 单调递增，每次点击跳转时自增，保证 EditorPane 的 revealLine effect 必定触发
+  const [revealNonce, setRevealNonce] = useState(0);
   const cursorLineRef = useRef(1);
   const cursorColRef = useRef(1);
   const searchRef = useRef<TopSearchBarHandle>(null);
@@ -248,16 +253,52 @@ export function App() {
     [],
   );
 
-  const handleDiscardPath = async (p: string | string[]) => {
-    const isArray = Array.isArray(p);
-    const pathsToDiscard = isArray
-      ? p
-      : !p || p === '.' || p === 'ALL' || p === 'all'
-        ? ['.']
-        : [p];
 
-    // Cancel pending auto-save timers for discarded paths so stale buffer content is not written back!
-    const isAll = pathsToDiscard.some((dp) => !dp || dp === '.' || dp === 'ALL' || dp === 'all');
+  // 判断某个路径是否处于“放弃修改抑制期”（防止 Monaco onChange 触发 auto-save 误将已放弃的内容又写回磁盘）
+  const isPathSuppressed = useCallback((path: string): boolean => {
+    if (!path) return false;
+    const norm = path.replace(/\\/g, '/').replace(/^\/+/, '');
+    const now = Date.now();
+    for (const [suppressedPath, until] of suppressAutoSaveUntilRef.current.entries()) {
+      if (now >= until) continue;
+      const normSuppressed = suppressedPath.replace(/\\/g, '/').replace(/^\/+/, '');
+      if (
+        norm === normSuppressed ||
+        norm.endsWith('/' + normSuppressed) ||
+        normSuppressed.endsWith('/' + norm)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
+  const handleDiscardPath = async (pathOrPaths: string | string[]) => {
+    const isAll =
+      !pathOrPaths ||
+      pathOrPaths === '.' ||
+      pathOrPaths === 'ALL' ||
+      pathOrPaths === 'all' ||
+      (Array.isArray(pathOrPaths) &&
+        pathOrPaths.some((p) => !p || p === '.' || p === 'ALL' || p === 'all'));
+
+    const pathsToDiscard = (Array.isArray(pathOrPaths) ? pathOrPaths : [pathOrPaths]).filter(Boolean);
+
+    // 1. 立即锁定抑制窗口（3000ms），阻止任何 Monaco onChange 重绘误触发写盘
+    const suppressUntilTime = Date.now() + 3000;
+    if (isAll) {
+      for (const t of tabsRef.current) {
+        suppressAutoSaveUntilRef.current.set(t.path, suppressUntilTime);
+      }
+    } else {
+      for (const dp of pathsToDiscard) {
+        suppressAutoSaveUntilRef.current.set(dp, suppressUntilTime);
+        const cleanDp = dp.replace(/\\/g, '/').replace(/^\/+/, '');
+        suppressAutoSaveUntilRef.current.set(cleanDp, suppressUntilTime);
+      }
+    }
+
+    // 2. 清除所有待保存定时器
     if (isAll) {
       for (const timer of autoSaveTimers.current.values()) clearTimeout(timer);
       autoSaveTimers.current.clear();
@@ -274,9 +315,30 @@ export function App() {
       }
     }
 
-    await window.ide.gitDiscard(pathsToDiscard);
+    // 3. 立即从本地 gitStatus.entries 中过滤移除目标文件，实现毫秒级消除 M 标识
+    setGitStatus((prev) => {
+      if (!prev || !prev.entries?.length) return prev;
+      if (isAll) return { ...prev, entries: [] };
+      const cleanTargets = pathsToDiscard.map((p) => p.replace(/\\/g, '/').replace(/^\/+/, ''));
+      const remaining = prev.entries.filter((e) => {
+        const ep = e.path.replace(/\\/g, '/').replace(/^\/+/, '');
+        return !cleanTargets.some(
+          (tp) => ep === tp || ep.endsWith('/' + tp) || tp.endsWith('/' + ep),
+        );
+      });
+      return { ...prev, entries: remaining };
+    });
 
-    // Reload affected open tabs from disk
+    // 4. 调用后端 git 服务还原文件
+    const discardRes = await window.ide.gitDiscard(pathsToDiscard);
+    if (discardRes && !discardRes.ok) {
+      showToast('放弃修改失败', discardRes.detail || 'Git 还原失败', 'error');
+      const curStatus = await window.ide.gitStatus();
+      if (curStatus.ok) setGitStatus(curStatus);
+      return;
+    }
+
+    // 5. 重新读取磁盘真实内容更新 affectedTabs
     const affectedTabs = tabsRef.current.filter((tab) => {
       if (isAll) return true;
       const normTp = tab.path.replace(/\\/g, '/').replace(/^\/+/, '');
@@ -287,6 +349,12 @@ export function App() {
     });
 
     for (const tab of affectedTabs) {
+      const prevTimer = autoSaveTimers.current.get(tab.path);
+      if (prevTimer) {
+        clearTimeout(prevTimer);
+        autoSaveTimers.current.delete(tab.path);
+      }
+      suppressAutoSaveUntilRef.current.set(tab.path, Date.now() + 3000);
       if (tab.language === 'image' || tab.previewUrl || isImagePath(tab.path)) {
         try {
           const previewUrl = await window.ide.readFileDataUrl(tab.path);
@@ -312,11 +380,23 @@ export function App() {
       }
     }
 
+    // 6. 等待 Monaco 重绘事件沉淀后刷新状态
+    await new Promise((r) => setTimeout(r, 200));
+
     const res = await window.ide.gitStatus();
-    if (res.ok) setGitStatus(res);
+    if (res.ok) {
+      setGitStatus(res);
+    }
     setTreeRefreshKey((k) => k + 1);
     setScmDiff(null);
     showToast('✓ 已放弃修改', '已恢复至 Git 最新提交版本', 'success');
+
+    // 二次确认刷新：消除延迟残留
+    setTimeout(async () => {
+      const secondRes = await window.ide.gitStatus();
+      if (secondRes.ok) setGitStatus(secondRes);
+      setTreeRefreshKey((k) => k + 1);
+    }, 600);
   };
 
   const handlePreviewGitDiff = async (path: string) => {
@@ -824,11 +904,10 @@ export function App() {
       setActivePath(existingTab.path);
       activePathRef.current = existingTab.path;
       if (line != null && line > 0) {
-        setRevealLine(null);
+        // nonce 自增保证 effect 必定重新触发，即使行号相同也能跳转
+        setRevealNonce((n) => n + 1);
         setRevealColumn(col ?? null);
-        requestAnimationFrame(() => {
-          setRevealLine(line);
-        });
+        setRevealLine(line);
       }
       return;
     }
@@ -900,7 +979,7 @@ export function App() {
     setActivePath(path);
     activePathRef.current = path;
     if (line != null && line > 0) {
-      setRevealLine(null);
+      setRevealNonce((n) => n + 1);
       setRevealColumn(col ?? null);
       setTimeout(() => setRevealLine(line), 10);
     }
@@ -998,8 +1077,19 @@ export function App() {
     await window.ide.writeFile(tab.path, tab.content);
     setTabs((prev) => prev.map((t) => (t.path === tab.path ? { ...t, dirty: false } : t)));
     void window.ide.gitStatus().then((res) => {
-      if (res.ok) setGitStatus(res);
+      if (res.ok) {
+        setGitStatus(res);
+        setTreeRefreshKey((k) => k + 1);
+      }
     });
+    // 延迟二次同步，保证底层 stat 刷新后无改动时 M 标识立即消失
+    setTimeout(async () => {
+      const res = await window.ide.gitStatus();
+      if (res.ok) {
+        setGitStatus(res);
+        setTreeRefreshKey((k) => k + 1);
+      }
+    }, 300);
   }, [saveUntitledAs]);
 
   const createUntitledTab = useCallback(() => {
@@ -1021,32 +1111,94 @@ export function App() {
       prev.map((t) => (t.path === path && t.content === content ? { ...t, dirty: false } : t)),
     );
     void window.ide.gitStatus().then((res) => {
-      if (res.ok) setGitStatus(res);
+      if (res.ok) {
+        setGitStatus(res);
+        setTreeRefreshKey((k) => k + 1);
+      }
     });
+    // 延迟二次同步，保证底层 stat 刷新后无改动时 M 标识立即消失
+    setTimeout(async () => {
+      const res = await window.ide.gitStatus();
+      if (res.ok) {
+        setGitStatus(res);
+        setTreeRefreshKey((k) => k + 1);
+      }
+    }, 300);
   }, []);
 
   function onChangeContent(path: string, content: string, markDirty = true): void {
-    setTabs((prev) => {
-      const tab = prev.find((t) => t.path === path);
-      if (tab && tab.content === content && tab.dirty === markDirty) return prev;
-      return prev.map((t) => (t.path === path ? { ...t, content, dirty: markDirty } : t));
-    });
-    if (!markDirty) {
-      const prevTimer = autoSaveTimers.current.get(path);
-      if (prevTimer) {
-        clearTimeout(prevTimer);
-        autoSaveTimers.current.delete(path);
+    // 处于抑制期的路径（刚执行过放弃修改），严格拦截 Monaco 重绘产生的 onChange，保证 dirty=false 且绝不写盘
+    if (isPathSuppressed(path)) {
+      setTabs((prev) => {
+        const normP = path.replace(/\\/g, '/').replace(/^\/+/, '');
+        return prev.map((t) => {
+          const tp = t.path.replace(/\\/g, '/').replace(/^\/+/, '');
+          if (tp === normP || tp.endsWith('/' + normP) || normP.endsWith('/' + tp)) {
+            return { ...t, content, dirty: false };
+          }
+          return t;
+        });
+      });
+      for (const [k, timer] of autoSaveTimers.current.entries()) {
+        const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
+        const normP = path.replace(/\\/g, '/').replace(/^\/+/, '');
+        if (normK === normP || normK.endsWith('/' + normP) || normP.endsWith('/' + normK)) {
+          clearTimeout(timer);
+          autoSaveTimers.current.delete(k);
+        }
       }
       return;
     }
+
+    const normTarget = path.replace(/\\/g, '/').replace(/^\/+/, '');
+    const currentTab = tabsRef.current.find((t) => {
+      const tp = t.path.replace(/\\/g, '/').replace(/^\/+/, '');
+      return tp === normTarget || tp.endsWith('/' + normTarget) || normTarget.endsWith('/' + tp);
+    });
+
+    // 如果内容未曾改变且未标记为 dirty，直接忽略，避免空写盘
+    if (currentTab && currentTab.content === content && !currentTab.dirty && !markDirty) {
+      return;
+    }
+
+    setTabs((prev) => {
+      return prev.map((t) => {
+        const tp = t.path.replace(/\\/g, '/').replace(/^\/+/, '');
+        if (tp === normTarget || tp.endsWith('/' + normTarget) || normTarget.endsWith('/' + tp)) {
+          return { ...t, content, dirty: markDirty };
+        }
+        return t;
+      });
+    });
+
+    if (!markDirty) {
+      for (const [k, timer] of autoSaveTimers.current.entries()) {
+        const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
+        if (normK === normTarget || normK.endsWith('/' + normTarget) || normTarget.endsWith('/' + normK)) {
+          clearTimeout(timer);
+          autoSaveTimers.current.delete(k);
+        }
+      }
+      return;
+    }
+
     if (isUntitledPath(path) || !autoSaveRef.current) return;
-    const prevTimer = autoSaveTimers.current.get(path);
-    if (prevTimer) clearTimeout(prevTimer);
+
+    for (const [k, timer] of autoSaveTimers.current.entries()) {
+      const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
+      if (normK === normTarget || normK.endsWith('/' + normTarget) || normTarget.endsWith('/' + normK)) {
+        clearTimeout(timer);
+        autoSaveTimers.current.delete(k);
+      }
+    }
+
     autoSaveTimers.current.set(
       path,
       setTimeout(() => {
         autoSaveTimers.current.delete(path);
-        void savePath(path, content);
+        if (!isPathSuppressed(path)) {
+          void savePath(path, content);
+        }
       }, 800),
     );
   }
@@ -1874,8 +2026,7 @@ export function App() {
                 }}
               >
                 <SearchPanel
-                  onOpenFile={(p) => void openFile(p)}
-                  onRevealLine={(l) => setRevealLine(l)}
+                  onOpenFile={(p, l) => void openFile(p, l)}
                 />
               </div>
             </aside>
@@ -1971,6 +2122,7 @@ export function App() {
             }}
             revealLine={revealLine}
             revealColumn={revealColumn}
+            revealNonce={revealNonce}
             uiTheme={uiTheme}
             gitBlameInline={gitBlameInline}
             workspace={workspace}
@@ -2075,7 +2227,7 @@ export function App() {
                     setScmDiff(null);
                     setActiveDiffId(id);
                   }}
-                  onOpenFile={(p) => void openFile(p)}
+                  onOpenFile={(p, l) => void openFile(p, l)}
                   onOpenSettings={() => setSettingsOpen(true)}
                   onSwitchWorkspace={handleSwitchWorkspacePath}
                   models={models}

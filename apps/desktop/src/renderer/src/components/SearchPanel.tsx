@@ -3,7 +3,7 @@ import type { SearchCodeHit } from '@deepseek-ide/shared';
 import { RenderFileTreeIcon } from './FileTree';
 
 interface Props {
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, line?: number) => void;
   onRevealLine?: (line: number) => void;
 }
 
@@ -72,7 +72,7 @@ function SearchTreeNodeView({
   isCaseSensitive: boolean;
   collapsedMap: Record<string, boolean>;
   toggleCollapse: (path: string) => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, line?: number) => void;
   onRevealLine?: (line: number) => void;
   highlightMatch: (text: string, q: string) => React.ReactNode;
 }) {
@@ -174,8 +174,9 @@ function SearchTreeNodeView({
             <div
               key={`${hit.path}-${hit.line}-${idx}`}
               onClick={() => {
-                onOpenFile(hit.path);
-                if (onRevealLine) onRevealLine(hit.line);
+                // 直接将行号传给 onOpenFile，由调用方(openFile)统一处理时序
+                // 避免 onOpenFile(path) + 立即 onRevealLine(line) 的时序竞争
+                onOpenFile(hit.path, hit.line);
               }}
               style={{
                 display: 'flex',
@@ -982,7 +983,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                             <div
                               key={`${hit.path}-${hit.line}-${idx}`}
                               onClick={() => {
-                                onOpenFile(hit.path);
+                                onOpenFile(hit.path, hit.line);
                                 if (onRevealLine) onRevealLine(hit.line);
                               }}
                               style={{

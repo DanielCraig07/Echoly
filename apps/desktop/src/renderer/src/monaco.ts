@@ -72,6 +72,9 @@ monaco.editor.defineTheme('custom-dark', {
   colors: {
     'editor.background': '#1E1E1E',
     'editorGutter.background': '#1E1E1E',
+    // 行号颜色：与暗色主题和谐，避免过亮/过暗
+    'editorLineNumber.foreground': '#4a5568',          // 普通行号 —— 深灰蓝，低调不抢眼
+    'editorLineNumber.activeForeground': '#a0aec0',    // 当前行行号 —— 亮灰，清晰可见
     // 覆盖 Monaco 默认刺眼的深蓝 (#001f4d) Peek View，与深色 IDE 保持一致
     'peekView.border': '#007acc',
     'peekViewEditor.background': '#181818',

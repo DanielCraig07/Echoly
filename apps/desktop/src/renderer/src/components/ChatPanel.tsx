@@ -40,7 +40,7 @@ interface Props {
   onAcceptAllDiffs?: () => void;
   onRejectAllDiffs?: () => void;
   onSelectDiff?: (id: string) => void;
-  onOpenFile?: (path: string) => void;
+  onOpenFile?: (path: string, line?: number) => void;
   onOpenSettings?: () => void;
   onSwitchWorkspace?: (path: string) => void;
   models?: ModelProfile[];

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
-import { KeyMod, KeyCode, type editor as MonacoEditor } from 'monaco-editor';
+import { KeyMod, KeyCode, editor as MonacoEditor } from 'monaco-editor';
 import type {
   GitStatusEntry,
   GitStatusResult,
@@ -40,6 +40,7 @@ interface Props {
   onRefreshGitStatus?: () => void;
   revealLine?: number | null;
   revealColumn?: number | null;
+  revealNonce?: number; // 单调递增计数器，保证每次跳转请求都触发 effect
   uiTheme: UiTheme;
   gitBlameInline?: boolean;
   /** When there is no open workspace, show the quick-start welcome screen instead of a plain hint. */
@@ -244,6 +245,7 @@ export function EditorPane({
   onRefreshGitStatus,
   revealLine,
   revealColumn,
+  revealNonce = 0,
   uiTheme,
   gitBlameInline = true,
   workspace,
@@ -258,6 +260,9 @@ export function EditorPane({
 }: Props) {
   const active = tabs.find((t) => t.path === activePath) ?? null;
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const splitEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  // setEOL 对齐行尾期间为 true，用于拦截因此触发的 onChange 回声（避免误标脏/触发写盘）
+  const eolAligningRef = useRef(false);
   const onSelectionChangeRef = useRef(onSelectionChange);
   onSelectionChangeRef.current = onSelectionChange;
   const activeRef = useRef(active);
@@ -333,12 +338,33 @@ export function EditorPane({
     });
   }, []);
 
+  // 行内 Blame 用 ContentWidget（绝对定位浮层）而非注入文本实现：
+  // 注入文本会计入视图行的 getLineMaxColumn，End 键/点击行尾会把光标移进
+  // blame 文本内部（“光标停在行尾后几个字符”）。ContentWidget 完全在文本
+  // 坐标系之外，光标无法进入，同时仍然锚定在行尾渲染。
+  const removeBlameWidget = useCallback(() => {
+    const widget = blameWidgetRef.current;
+    const ed = blameOwnerEditorRef.current;
+    if (widget && ed) {
+      try {
+        ed.removeContentWidget(widget);
+      } catch {
+        // 编辑器可能已销毁
+      }
+    }
+    blameWidgetRef.current = null;
+    blameWidgetPosRef.current = null;
+    blameOwnerEditorRef.current = null;
+  }, []);
+
   // 组件卸载时取消挂起的滚动更新，避免泄漏
   useEffect(() => {
     return () => {
       if (scrollRafRef.current != null) cancelAnimationFrame(scrollRafRef.current);
+      if (blameTimerRef.current) clearTimeout(blameTimerRef.current);
+      removeBlameWidget();
     };
-  }, []);
+  }, [removeBlameWidget]);
 
   const startMdResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -414,12 +440,16 @@ export function EditorPane({
   const [mdPreviewScrollTo, setMdPreviewScrollTo] = useState<string | null>(null);
   const mdPreviewRef = useRef<HTMLDivElement>(null);
   const decorationsRef = useRef<string[]>([]);
-  const blameDecorationsRef = useRef<string[]>([]);
+  const blameWidgetRef = useRef<MonacoEditor.IContentWidget | null>(null);
+  const blameWidgetPosRef = useRef<MonacoEditor.IContentWidgetPosition | null>(null);
+  const blameOwnerEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const blameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentBlameLineRef = useRef<number | null>(null);
   const blameCacheRef = useRef<Map<string, { text: string; lineNumber: number }>>(new Map());
   const [gitInlineDiffLine, setGitInlineDiffLine] = useState<number | null>(null);
   const isSyncingScrollRef = useRef(false);
+
+
 
   const applyBlameDecoration = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor, lineNumber: number, text: string) => {
@@ -427,27 +457,29 @@ export function EditorPane({
       if (!model || lineNumber > model.getLineCount() || lineNumber < 1) return;
       const maxCol = model.getLineMaxColumn(lineNumber);
 
-      blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, [
-        {
-          range: {
-            startLineNumber: lineNumber,
-            startColumn: maxCol,
-            endLineNumber: lineNumber,
-            endColumn: maxCol,
-          },
-          options: {
-            isWholeLine: false,
-            showIfCollapsed: true,
-            stickiness: 1, // TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
-            after: {
-              content: text,
-              inlineClassName: 'monaco-inline-git-blame',
-            },
-          },
-        },
-      ]);
+      blameWidgetPosRef.current = {
+        position: { lineNumber, column: maxCol },
+        preference: [MonacoEditor.ContentWidgetPositionPreference.EXACT],
+      };
+
+      if (!blameWidgetRef.current || blameOwnerEditorRef.current !== ed) {
+        removeBlameWidget();
+        const domNode = document.createElement('div');
+        domNode.className = 'monaco-inline-git-blame';
+        const widget: MonacoEditor.IContentWidget = {
+          getId: () => 'echoly-git-blame-inline',
+          getDomNode: () => domNode,
+          getPosition: () => blameWidgetPosRef.current,
+        };
+        ed.addContentWidget(widget);
+        blameWidgetRef.current = widget;
+        blameOwnerEditorRef.current = ed;
+      }
+
+      blameWidgetRef.current.getDomNode().textContent = text;
+      ed.layoutContentWidget(blameWidgetRef.current);
     },
-    [],
+    [removeBlameWidget],
   );
 
   const updateGitBlame = useCallback(
@@ -455,17 +487,13 @@ export function EditorPane({
       currentBlameLineRef.current = lineNumber;
       const ed = editorRef.current;
       if (!gitBlameInline) {
-        if (ed && blameDecorationsRef.current.length > 0) {
-          blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, []);
-        }
+        removeBlameWidget();
         return;
       }
       if (blameTimerRef.current) clearTimeout(blameTimerRef.current);
 
       if (!ed || !activePath || activePath.startsWith('untitled:')) {
-        if (ed && blameDecorationsRef.current.length > 0) {
-          blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, []);
-        }
+        removeBlameWidget();
         return;
       }
 
@@ -487,9 +515,9 @@ export function EditorPane({
             const c = res.commit;
             const cleanMsg = (c.message || '').replace(/[\r\n]+/g, ' ').trim();
             const msg = cleanMsg.length > 40 ? cleanMsg.slice(0, 38) + '…' : cleanMsg;
-            text = `   ${c.author}, ${c.relativeDate || c.date || '已提交'} • ${msg}`;
+            text = `${c.author}, ${c.relativeDate || c.date || '已提交'} • ${msg}`;
           } else {
-            text = '   You, 未提交的更改 • 未保存或未提交的修改';
+            text = 'You, 未提交的更改 • 未保存或未提交的修改';
           }
 
           blameCacheRef.current.set(cacheKey, { text, lineNumber });
@@ -497,7 +525,7 @@ export function EditorPane({
             applyBlameDecoration(editorRef.current, lineNumber, text);
           }
         } catch {
-          const fallback = '   You, 未提交的更改 • 未保存或未提交的修改';
+          const fallback = 'You, 未提交的更改 • 未保存或未提交的修改';
           if (editorRef.current && currentBlameLineRef.current === lineNumber) {
             applyBlameDecoration(editorRef.current, lineNumber, fallback);
           }
@@ -521,17 +549,17 @@ export function EditorPane({
     const ed = editorRef.current;
     if (!ed) return;
     if (!gitBlameInline) {
-      if (blameDecorationsRef.current.length > 0) {
-        blameDecorationsRef.current = ed.deltaDecorations(blameDecorationsRef.current, []);
-      }
+      removeBlameWidget();
       return;
     }
+    // 状态或内容变更时立即清除缓存，避免恢复后依然展示旧的“未提交的修改”
+    blameCacheRef.current.clear();
     const pos = ed.getPosition();
     const line = pos?.lineNumber ?? currentBlameLineRef.current;
     if (line != null && line > 0) {
       updateGitBlameRef.current(line, true);
     }
-  }, [activePath, active?.content, gitBlameInline]);
+  }, [activePath, active?.content, gitBlameInline, gitStatus, removeBlameWidget]);
 
   // Track which line ranges are modified (for inline diff popup on gutter click)
   const modifiedRangesRef = useRef<Array<{ start: number; end: number }>>([]);
@@ -589,7 +617,42 @@ export function EditorPane({
     return () => {
       cancelled = true;
     };
-  }, [activePath, gitStatus, isImage]);
+  }, [activePath, gitStatus, isImage, active?.dirty]);
+
+  // 外部重载内容（放弃修改 / Agent 改写文件 / 磁盘同步）时，@monaco-editor/react 通过 executeEdits
+  // 写入新内容，而 Monaco 的 applyEdits 会把插入文本的行尾规范化为 model 既有 EOL。
+  // 若 model 为 CRLF 而磁盘内容是 LF，model.getValue() 将返回 CRLF，后续任何一次保存都会
+  // 把整个文件的换行符改写，造成 git 永久报 M 而 gutter（比较时剥离 \r）却显示无差异。
+  // 这里在内容更新后把 model EOL 对齐为最新内容的 EOL，从源头消除这种字节级偏移。
+  const alignModelEol = useCallback(
+    (ed: MonacoEditor.IStandaloneCodeEditor | null, content?: string) => {
+      const model = ed?.getModel();
+      if (!model || model.isDisposed()) return;
+      if (typeof content !== 'string' || content.length === 0) return;
+      const wantCrlf = content.includes('\r\n');
+      const isCrlf = model.getEOL() === '\r\n';
+      if (wantCrlf === isCrlf) return;
+      // 仅当内容除行尾外完全一致时才对齐，避免干扰正在进行中的真实编辑
+      if (model.getValue().replace(/\r\n/g, '\n') !== content.replace(/\r\n/g, '\n')) return;
+      eolAligningRef.current = true;
+      try {
+        model.setEOL(
+          wantCrlf ? MonacoEditor.EndOfLineSequence.CRLF : MonacoEditor.EndOfLineSequence.LF,
+        );
+      } finally {
+        eolAligningRef.current = false;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    alignModelEol(editorRef.current, active?.content);
+  }, [active?.path, active?.content, alignModelEol]);
+
+  useEffect(() => {
+    alignModelEol(splitEditorRef.current, splitActive?.content);
+  }, [splitActive?.path, splitActive?.content, alignModelEol]);
 
   useEffect(() => {
     if (revealLine != null && revealLine > 0) {
@@ -598,15 +661,29 @@ export function EditorPane({
       pendingRevealColumn.current = col;
       const ed = editorRef.current;
       if (ed) {
-        ed.revealLineInCenter(revealLine);
-        ed.setPosition({ lineNumber: revealLine, column: col });
-        ed.focus();
-        highlightJumpLocation(ed, revealLine);
-        pendingReveal.current = null;
-        pendingRevealColumn.current = null;
+        const model = ed.getModel();
+        const modelUri = model?.uri?.path || '';
+        const currentActive = (activePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+        const isMatchingModel =
+          Boolean(model) &&
+          (modelUri.endsWith(currentActive) || currentActive.endsWith(modelUri.replace(/^\/+/, '')));
+
+        if (isMatchingModel && model && revealLine <= model.getLineCount()) {
+          try {
+            ed.revealLineInCenter(revealLine);
+            ed.setPosition({ lineNumber: revealLine, column: col });
+            ed.focus();
+            highlightJumpLocation(ed, revealLine);
+            pendingReveal.current = null;
+            pendingRevealColumn.current = null;
+          } catch {
+            // ignore
+          }
+        }
       }
     }
-  }, [revealLine, revealColumn, activePath]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealLine, revealColumn, activePath, revealNonce]);
 
   const setupEditorScrollSync = (ed: MonacoEditor.IStandaloneCodeEditor) => {
     ed.onDidScrollChange((e) => {
@@ -1945,6 +2022,7 @@ export function EditorPane({
                 language={activeLanguage}
                 theme={monacoTheme}
                 onChange={(v) => {
+                  if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
                   const content = v ?? '';
                   onChangeContent(active.path, content);
                   if (activeLanguage === 'python' && window.ide?.lspNotifyDocument) {
@@ -2040,6 +2118,9 @@ export function EditorPane({
                 }}
                 options={{
                   fontSize: 13,
+                  fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
+                  fontWeight: '400',
+                  disableMonospaceOptimizations: true,
                   minimap: { enabled: false },
                   automaticLayout: true,
                   smoothScrolling: true,
@@ -2148,6 +2229,7 @@ export function EditorPane({
                 language={activeLanguage}
                 theme={monacoTheme}
                 onChange={(v) => {
+                  if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
                   onChangeContent(active.path, v ?? '');
                 }}
                 onMount={(ed) => {
@@ -2248,8 +2330,12 @@ export function EditorPane({
                     value={splitActive.content}
                     language={splitActiveLanguage}
                     theme={monacoTheme}
-                    onChange={(v) => onChangeContent(splitActive.path, v ?? '')}
+                    onChange={(v) => {
+                      if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
+                      onChangeContent(splitActive.path, v ?? '');
+                    }}
                     onMount={(ed) => {
+                      splitEditorRef.current = ed;
                       setupEditorKeybindings(ed);
                     }}
                     options={{
@@ -2289,10 +2375,21 @@ export function EditorPane({
               language={activeLanguage}
               theme={monacoTheme}
               onChange={(v) => {
+                if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
                 onChangeContent(active.path, v ?? '');
               }}
-              onMount={(ed) => {
+              onMount={(ed, monaco) => {
                 editorRef.current = ed;
+                try {
+                  monaco?.editor?.remeasureFonts?.();
+                  if (typeof document !== 'undefined' && document.fonts?.ready) {
+                    document.fonts.ready.then(() => {
+                      monaco?.editor?.remeasureFonts?.();
+                    });
+                  }
+                } catch {
+                  // ignore
+                }
                 setupEditorKeybindings(ed);
                 const cmdClickGesture = setupCmdClickGesture(ed, {
                   getWorkspaceRoot: () => workspace,
@@ -2369,6 +2466,9 @@ export function EditorPane({
               }}
               options={{
                 fontSize: 13,
+                fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
+                fontWeight: '400',
+                disableMonospaceOptimizations: true,
                 minimap: { enabled: false },
                 automaticLayout: true,
                 smoothScrolling: true,
