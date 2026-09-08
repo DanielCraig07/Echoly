@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import type {
   AgentEvent,
   AgentMode,
@@ -981,8 +981,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           }
         : undefined;
 
+    const connectedModels = models.filter((m) => m.lastProbeOk === true);
+    const chosenModel = models.find((m) => m.id === (activeTab.modelId || activeModelId));
     const effectiveModelId =
-      activeTab.modelId || activeModelId || (models[0]?.id ?? 'deepseek-local');
+      (chosenModel?.lastProbeOk ? chosenModel.id : undefined) ||
+      connectedModels[0]?.id ||
+      activeTab.modelId ||
+      activeModelId ||
+      (models[0]?.id ?? 'deepseek-local');
 
     const { runId: id } = await window.ide.startAgent({
       prompt,
@@ -1793,17 +1799,38 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               {/* Model Selector Dropdown */}
               <div className="chat-model-selector-wrapper" ref={modelDropdownRef}>
                 {(() => {
-                  const currentModelId =
-                    activeTab?.modelId || activeModelId || models[0]?.id || 'deepseek-local';
+                  const connectedModels = models.filter((m) => m.lastProbeOk === true);
+                  const hasConnectedModels = connectedModels.length > 0;
+
+                  // 如果偏好模型连通正常则使用它；若偏好模型未连通且有连通正常的模型，自动选用第一个连通正常的模型
+                  const preferredId = activeTab?.modelId || activeModelId;
+                  const preferredModel = models.find((m) => m.id === preferredId);
+
+                  let currentModelId = preferredId || (models[0]?.id ?? 'deepseek-local');
+                  if (hasConnectedModels) {
+                    if (!preferredModel || !preferredModel.lastProbeOk) {
+                      currentModelId = connectedModels[0].id;
+                    }
+                  }
+
                   const currentModel = models.find((m) => m.id === currentModelId) || models[0];
                   const badge = getProviderBadge(currentModel?.provider);
+                  const isCurrentHealthy = currentModel?.lastProbeOk === true;
+
+                  // 连通正常的模型排在最前，未连通的排在后面
+                  const sortedModels = [...models].sort((a, b) => {
+                    const aOk = a.lastProbeOk === true ? 1 : 0;
+                    const bOk = b.lastProbeOk === true ? 1 : 0;
+                    return bOk - aOk;
+                  });
+
                   return (
                     <>
                       <button
                         type="button"
                         className="chat-model-selector-btn"
                         onClick={() => setModelDropdownOpen((v) => !v)}
-                        title={`当前模型: ${currentModel?.name || currentModelId} (${currentModel?.model || ''})`}
+                        title={`当前模型: ${currentModel?.name || currentModelId} (${currentModel?.model || ''})${isCurrentHealthy ? ' [连通正常]' : ' [未通过连通测试]'}`}
                       >
                         <span className="chat-model-dot" style={{ backgroundColor: badge.color }} />
                         <span className="chat-model-name">
@@ -1827,45 +1854,83 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                               ⚙ 管理模型
                             </button>
                           </div>
+                          {!hasConnectedModels && (
+                            <div className="chat-model-dropdown-alert">
+                              ⚠️ 暂无连通正常的模型，请点击右上角【管理模型】测试连通性。
+                            </div>
+                          )}
                           <div className="chat-model-dropdown-list">
-                            {models.map((m) => {
+                            {sortedModels.map((m, idx) => {
+                              const isHealthy = m.lastProbeOk === true;
                               const isSelected = m.id === currentModelId;
                               const mBadge = getProviderBadge(m.provider);
+                              // 只要有连通正常的模型，未通过连通测试的模型完全不可选
+                              const isDisabled = hasConnectedModels && !isHealthy;
+                              const showDivider =
+                                hasConnectedModels &&
+                                !isHealthy &&
+                                (idx === 0 || sortedModels[idx - 1].lastProbeOk === true);
+
                               return (
-                                <div
-                                  key={m.id}
-                                  className={`chat-model-dropdown-item${isSelected ? ' selected' : ''}`}
-                                  onClick={() => {
-                                    updateTab(activeTab.id, (t) => ({ ...t, modelId: m.id }));
-                                    onActiveModelChange?.(m.id);
-                                    setModelDropdownOpen(false);
-                                  }}
-                                >
-                                  <div className="chat-model-item-left">
-                                    <span
-                                      className="chat-model-item-dot"
-                                      style={{ backgroundColor: mBadge.color }}
-                                    />
-                                    <div className="chat-model-item-meta">
-                                      <div className="chat-model-item-name-row">
-                                        <span className="chat-model-item-title">{m.name}</span>
-                                        <span
-                                          className="chat-model-provider-badge"
-                                          style={{
-                                            color: mBadge.color,
-                                            backgroundColor: mBadge.bg,
-                                          }}
-                                        >
-                                          {mBadge.label}
-                                        </span>
-                                      </div>
-                                      <div className="chat-model-item-sub">
-                                        {m.model} {m.enableThinking ? '· 思考模式' : ''}
+                                <React.Fragment key={m.id}>
+                                  {showDivider && (
+                                    <div className="chat-model-dropdown-divider">
+                                      <span>未通过连通测试 (不可选)</span>
+                                    </div>
+                                  )}
+                                  <div
+                                    className={`chat-model-dropdown-item${isSelected ? ' selected' : ''}${isDisabled ? ' disabled' : ''}`}
+                                    title={
+                                      isDisabled
+                                        ? '该模型未通过连通测试，不可选择。请前往【管理模型】测试通过后再使用。'
+                                        : isHealthy
+                                          ? '连通测试正常，可选用'
+                                          : undefined
+                                    }
+                                    onClick={() => {
+                                      if (isDisabled) return;
+                                      updateTab(activeTab.id, (t) => ({ ...t, modelId: m.id }));
+                                      onActiveModelChange?.(m.id);
+                                      setModelDropdownOpen(false);
+                                    }}
+                                  >
+                                    <div className="chat-model-item-left">
+                                      <span
+                                        className="chat-model-item-dot"
+                                        style={{ backgroundColor: mBadge.color }}
+                                      />
+                                      <div className="chat-model-item-meta">
+                                        <div className="chat-model-item-name-row">
+                                          <span className="chat-model-item-title">{m.name}</span>
+                                          <span
+                                            className="chat-model-provider-badge"
+                                            style={{
+                                              color: mBadge.color,
+                                              backgroundColor: mBadge.bg,
+                                            }}
+                                          >
+                                            {mBadge.label}
+                                          </span>
+                                        </div>
+                                        <div className="chat-model-item-sub">
+                                          {m.model} {m.enableThinking ? '· 思考模式' : ''}
+                                        </div>
                                       </div>
                                     </div>
+                                    <div className="chat-model-status-group">
+                                      {isHealthy ? (
+                                        <span className="chat-model-connected-badge">
+                                          ● 正常
+                                        </span>
+                                      ) : (
+                                        <span className="chat-model-untested-badge">
+                                          未连通·不可选
+                                        </span>
+                                      )}
+                                      {isSelected && <span className="chat-model-check">✓</span>}
+                                    </div>
                                   </div>
-                                  {isSelected && <span className="chat-model-check">✓</span>}
-                                </div>
+                                </React.Fragment>
                               );
                             })}
                           </div>

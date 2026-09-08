@@ -103,6 +103,7 @@ export class AgentService {
     let baseUrl = options?.baseUrl;
     let apiKey = options?.apiKey;
     let model = options?.model;
+    let provider = options?.provider;
 
     if (!baseUrl) {
       const activeModel = s.models?.find((m) => m.id === s.activeModelId);
@@ -110,6 +111,7 @@ export class AgentService {
         baseUrl = activeModel.baseUrl;
         apiKey = activeModel.apiKey;
         model = activeModel.model;
+        provider = activeModel.provider;
       } else {
         const currentProvider = s.currentProvider || 'deepseek';
         const providerConfig = s.providers?.[currentProvider] || {
@@ -121,6 +123,7 @@ export class AgentService {
         baseUrl = providerConfig.baseUrl;
         apiKey = providerConfig.apiKey;
         model = providerConfig.model;
+        provider = providerConfig.provider;
       }
     }
 
@@ -128,6 +131,7 @@ export class AgentService {
       baseUrl: baseUrl || 'http://192.168.10.241:8002',
       apiKey: apiKey || '',
       model: model || 'deepseek-v4-flash',
+      provider: provider || 'deepseek',
     });
   }
 

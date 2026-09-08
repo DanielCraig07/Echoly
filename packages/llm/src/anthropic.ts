@@ -155,12 +155,47 @@ function convertFromAnthropicMessage(response: any): ChatMessage {
   return message;
 }
 
+export function formatLlmErrorMessage(status: number, rawText: string): string {
+  let detail = '';
+  try {
+    const parsed = JSON.parse(rawText);
+    detail =
+      parsed.error?.message ||
+      parsed.message ||
+      parsed.error?.detail ||
+      (typeof parsed.error === 'string' ? parsed.error : '');
+  } catch {
+    detail = rawText.trim();
+  }
+
+  let statusText = `HTTP ${status}`;
+  if (status === 401) statusText += ' (认证失败)';
+  else if (status === 403) statusText += ' (权限拒绝)';
+  else if (status === 404) statusText += ' (端点不存在)';
+  else if (status === 429) statusText += ' (频次受限/余额不足)';
+  else if (status >= 500) statusText += ' (服务端异常)';
+
+  if (detail) {
+    if (detail.length > 250) {
+      detail = detail.slice(0, 250) + '...';
+    }
+    return `${statusText}: ${detail}`;
+  }
+  return `${statusText}: 请求失败`;
+}
+
 function buildHeaders(apiKey: string): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
+    'anthropic-beta': 'claude-code-20250219,interleaved-thinking-2025-05-14',
+    'User-Agent': 'claude-cli/2.1.158 (external, cli)',
   };
+  if (apiKey) {
+    headers['x-api-key'] = apiKey;
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+  return headers;
 }
 
 function extractSystemPrompt(messages: ChatMessage[]): string {
@@ -178,7 +213,10 @@ export class AnthropicClient {
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: AnthropicClientOptions) {
-    this.baseUrl = (options.baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
+    this.baseUrl = (options.baseUrl || 'https://api.anthropic.com')
+      .trim()
+      .replace(/\/+$/, '')
+      .replace(/\/v1$/, '');
     this.apiKey = options.apiKey;
     this.model = options.model || 'claude-sonnet-4-20250514';
     this.temperature = options.temperature ?? 0.2;
@@ -219,7 +257,7 @@ export class AnthropicClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Anthropic API failed (${res.status}): ${text}`);
+      throw new Error(formatLlmErrorMessage(res.status, text));
     }
 
     const data = await res.json();
@@ -258,7 +296,7 @@ export class AnthropicClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Anthropic stream failed (${res.status}): ${text}`);
+      throw new Error(formatLlmErrorMessage(res.status, text));
     }
 
     if (!res.body) {

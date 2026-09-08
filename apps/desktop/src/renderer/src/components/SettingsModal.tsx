@@ -138,6 +138,15 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
       model: 'claude-3-5-haiku-20241022',
     },
     {
+      label: 'AgentRouter (Claude 协议代理 / glm-5.3)',
+      provider: 'anthropic',
+      name: 'Claude 3.7 (AgentRouter)',
+      baseUrl: 'https://agentrouter.org',
+      model: 'glm-5.3',
+      enableThinking: true,
+      thinkingTokens: 8000,
+    },
+    {
       label: '自定义 (OpenAI 兼容接口 / 本地 Ollama)',
       provider: 'custom',
       name: '本地 Ollama 模型',
@@ -165,37 +174,90 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
         ...prev,
         [model.id]: { ok: res.ok, detail: res.detail },
       }));
+      setEditingModel((prev) =>
+        prev && prev.id === model.id ? { ...prev, lastProbeOk: res.ok } : prev,
+      );
+      if (settings?.models?.some((x) => x.id === model.id)) {
+        const updatedModels = settings.models.map((x) =>
+          x.id === model.id ? { ...x, lastProbeOk: res.ok } : x,
+        );
+        void persistSettings({ ...settings, models: updatedModels });
+      }
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       setModelProbeResults((prev) => ({
         ...prev,
-        [model.id]: { ok: false, detail: err instanceof Error ? err.message : String(err) },
+        [model.id]: { ok: false, detail: errMsg },
       }));
+      setEditingModel((prev) =>
+        prev && prev.id === model.id ? { ...prev, lastProbeOk: false } : prev,
+      );
+      if (settings?.models?.some((x) => x.id === model.id)) {
+        const updatedModels = settings.models.map((x) =>
+          x.id === model.id ? { ...x, lastProbeOk: false } : x,
+        );
+        void persistSettings({ ...settings, models: updatedModels });
+      }
     } finally {
       setModelProbingId(null);
     }
   }
 
+  async function persistSettings(newSettings: AppSettings) {
+    setSettings(newSettings);
+    try {
+      const saved = await window.ide.saveSettings(newSettings);
+      setSettings(saved);
+      onSaved?.(saved);
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    }
+  }
+
   function handleSaveEditingModel(m: ModelProfile) {
     if (!settings) return;
-    const exists = settings.models?.some((x) => x.id === m.id);
+    const probeRes = modelProbeResults[m.id];
+    const toSave: ModelProfile = {
+      ...m,
+      lastProbeOk: probeRes ? probeRes.ok : m.lastProbeOk,
+    };
+    const exists = settings.models?.some((x) => x.id === toSave.id);
     let nextModels = settings.models || [];
-    if (exists) {
-      nextModels = nextModels.map((x) => (x.id === m.id ? m : x));
+
+    if (toSave.isDefault) {
+      // 设为默认模型时，自动排在首位
+      const others = nextModels
+        .filter((x) => x.id !== toSave.id)
+        .map((x) => ({ ...x, isDefault: false }));
+      nextModels = [{ ...toSave, isDefault: true }, ...others];
     } else {
-      nextModels = [...nextModels, m];
+      if (exists) {
+        nextModels = nextModels.map((x) => (x.id === toSave.id ? toSave : x));
+      } else {
+        // 新增非默认模型时，插入在默认模型之后（排在第 2 位），确保新模型直接可见且整体顺序整洁
+        const defaultIdx = nextModels.findIndex(
+          (x) => x.isDefault || x.id === settings.activeModelId,
+        );
+        if (defaultIdx >= 0) {
+          nextModels = [
+            ...nextModels.slice(0, defaultIdx + 1),
+            toSave,
+            ...nextModels.slice(defaultIdx + 1),
+          ];
+        } else {
+          nextModels = [toSave, ...nextModels];
+        }
+      }
     }
-    // If set as default, update activeModelId and flags
-    let activeId = settings.activeModelId;
-    if (m.isDefault) {
-      activeId = m.id;
-      nextModels = nextModels.map((x) => ({ ...x, isDefault: x.id === m.id }));
-    }
-    setSettings({
+
+    const activeId = toSave.isDefault ? toSave.id : settings.activeModelId || nextModels[0]?.id;
+    const nextSettings: AppSettings = {
       ...settings,
       models: nextModels,
       activeModelId: activeId,
-      currentProvider: m.provider,
-    });
+      currentProvider: toSave.provider,
+    };
+    void persistSettings(nextSettings);
     setEditingModel(null);
     setIsCreatingNew(false);
   }
@@ -206,27 +268,48 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
     let nextActive = settings.activeModelId;
     if (nextActive === id) {
       nextActive = nextModels[0]?.id || '';
+      nextModels[0] = { ...nextModels[0], isDefault: true };
     }
-    setSettings({
+    const nextSettings: AppSettings = {
       ...settings,
       models: nextModels,
       activeModelId: nextActive,
-    });
+    };
+    void persistSettings(nextSettings);
   }
 
   function handleSetDefaultModel(id: string) {
     if (!settings) return;
-    const nextModels = settings.models.map((m) => ({
-      ...m,
-      isDefault: m.id === id,
-    }));
-    const target = settings.models.find((m) => m.id === id);
-    setSettings({
+    const target = settings.models?.find((m) => m.id === id);
+    if (!target) return;
+    const others = (settings.models || [])
+      .filter((m) => m.id !== id)
+      .map((m) => ({ ...m, isDefault: false }));
+    // 设为默认模型时自动排在第 1 位
+    const nextModels = [{ ...target, isDefault: true }, ...others];
+    const nextSettings: AppSettings = {
       ...settings,
       models: nextModels,
       activeModelId: id,
-      currentProvider: target?.provider || settings.currentProvider,
-    });
+      currentProvider: target.provider || settings.currentProvider,
+    };
+    void persistSettings(nextSettings);
+  }
+
+  function handleMoveModel(id: string, direction: 'up' | 'down') {
+    if (!settings?.models) return;
+    const list = [...settings.models];
+    const idx = list.findIndex((m) => m.id === id);
+    if (idx < 0) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= list.length) return;
+    const [item] = list.splice(idx, 1);
+    list.splice(targetIdx, 0, item);
+    const nextSettings: AppSettings = {
+      ...settings,
+      models: list,
+    };
+    void persistSettings(nextSettings);
   }
 
   useEffect(() => {
@@ -447,6 +530,12 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                         <strong>
                           {isCreatingNew ? '配置新 AI 模型' : `编辑模型: ${editingModel.name}`}
                         </strong>
+                        {((modelProbeResults[editingModel.id]?.ok) ||
+                          (!modelProbeResults[editingModel.id] && editingModel.lastProbeOk)) && (
+                          <span className="connected-pill" title="端点连通性测试正常">
+                            <span className="status-dot" /> 连通正常
+                          </span>
+                        )}
                       </div>
                       <div className="preset-quick-select">
                         <span className="preset-label">快速套用预设:</span>
@@ -607,6 +696,47 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                       </div>
                     )}
 
+                    {/* 编辑卡片内的即时连通性测试反馈（测试时或测试后立即呈现，无需等保存） */}
+                    {(modelProbingId === editingModel.id ||
+                      modelProbeResults[editingModel.id] ||
+                      editingModel.lastProbeOk) && (
+                      <div
+                        className={`probe-result-bubble ${
+                          modelProbingId === editingModel.id
+                            ? 'probe-testing'
+                            : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
+                              ? 'probe-success'
+                              : 'probe-error'
+                        }`}
+                        style={{
+                          margin: '12px 0 6px 0',
+                          padding: '8px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          borderRadius: 6,
+                          fontSize: 12,
+                          width: '100%',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        <span className="probe-icon">
+                          {modelProbingId === editingModel.id
+                            ? '⟳'
+                            : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
+                              ? '✓'
+                              : '✕'}
+                        </span>
+                        <span className="probe-text" style={{ wordBreak: 'break-all' }}>
+                          {modelProbingId === editingModel.id
+                            ? '正在进行端点连通性探测，请稍候…'
+                            : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
+                              ? `连通性正常: ${modelProbeResults[editingModel.id]?.detail || '端点连接畅通'}`
+                              : `连通性异常: ${modelProbeResults[editingModel.id]?.detail || '连接失败'}`}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="model-edit-box-footer">
                       <label className="modern-checkbox-label">
                         <input
@@ -654,7 +784,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
 
                 {/* 模型列表 */}
                 <div className="modern-model-list">
-                  {(settings.models || []).map((m) => {
+                  {(settings.models || []).map((m, mIdx) => {
                     const isActive = settings.activeModelId === m.id || m.isDefault;
                     const probeRes = modelProbeResults[m.id];
                     const isProbing = modelProbingId === m.id;
@@ -677,6 +807,11 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                             <div className="model-name-line">
                               <span className="model-display-name">{m.name}</span>
                               {isActive && <span className="active-glow-pill">★ 默认选中</span>}
+                              {((probeRes && probeRes.ok) || (!probeRes && m.lastProbeOk)) && (
+                                <span className="connected-pill" title="端点连通性测试正常">
+                                  <span className="status-dot" /> 连通正常
+                                </span>
+                              )}
                               {m.enableThinking && (
                                 <span className="thinking-pill">⚡ 深度思考</span>
                               )}
@@ -708,6 +843,26 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                         </div>
 
                         <div className="model-card-right-actions">
+                          {/* 排序上移/下移按钮 */}
+                          <button
+                            type="button"
+                            className="card-action-btn move-btn"
+                            title="上移排序"
+                            disabled={mIdx === 0}
+                            onClick={() => handleMoveModel(m.id, 'up')}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            className="card-action-btn move-btn"
+                            title="下移排序"
+                            disabled={mIdx === (settings.models?.length || 0) - 1}
+                            onClick={() => handleMoveModel(m.id, 'down')}
+                          >
+                            ↓
+                          </button>
+
                           <button
                             type="button"
                             className="card-action-btn probe-btn"
@@ -721,7 +876,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                             <button
                               type="button"
                               className="card-action-btn default-btn"
-                              title="设为默认模型"
+                              title="设为默认模型并置顶"
                               onClick={() => handleSetDefaultModel(m.id)}
                             >
                               ★ 设默认

@@ -23,6 +23,7 @@ export interface ModelProfile {
   enableThinking?: boolean;
   thinkingTokens?: number;
   isDefault?: boolean;
+  lastProbeOk?: boolean;
 }
 
 export const DEFAULT_MODELS: ModelProfile[] = [

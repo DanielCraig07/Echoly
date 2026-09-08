@@ -213,6 +213,285 @@ function computeLineDiffs(originalText: string, modifiedText: string): GitLineDi
   return diffs;
 }
 
+export interface InlineDiffOp {
+  type: 'same' | 'del' | 'add';
+  origNum?: number;
+  modNum?: number;
+  text: string;
+}
+
+export interface InlineDiffHunk {
+  id: number;
+  dels: InlineDiffOp[];
+  adds: InlineDiffOp[];
+  startOrigLine: number;
+  endOrigLine: number;
+  startModLine: number;
+  endModLine: number;
+  opsStartIndex: number;
+  opsEndIndex: number;
+}
+
+export function computeInlineHunks(
+  originalText: string,
+  modifiedText: string,
+): {
+  ops: InlineDiffOp[];
+  hunks: InlineDiffHunk[];
+} {
+  const origLines = originalText.replace(/\r/g, '').split('\n');
+  const modLines = modifiedText.replace(/\r/g, '').split('\n');
+
+  const N = origLines.length;
+  const M = modLines.length;
+
+  let start = 0;
+  while (start < N && start < M && origLines[start] === modLines[start]) {
+    start++;
+  }
+
+  let origEnd = N - 1;
+  let modEnd = M - 1;
+  while (origEnd >= start && modEnd >= start && origLines[origEnd] === modLines[modEnd]) {
+    origEnd--;
+    modEnd--;
+  }
+
+  const subOrig = origLines.slice(start, origEnd + 1);
+  const subMod = modLines.slice(start, modEnd + 1);
+  const subN = subOrig.length;
+  const subM = subMod.length;
+
+  const dp: number[][] = Array.from({ length: subN + 1 }, () => new Array(subM + 1).fill(0));
+  for (let i = 1; i <= subN; i++) {
+    for (let j = 1; j <= subM; j++) {
+      if (subOrig[i - 1] === subMod[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  let i = subN;
+  let j = subM;
+  const subOps: Array<{
+    type: 'same' | 'del' | 'add';
+    origSubIdx?: number;
+    modSubIdx?: number;
+    text: string;
+  }> = [];
+
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && subOrig[i - 1] === subMod[j - 1]) {
+      subOps.push({ type: 'same', origSubIdx: i - 1, modSubIdx: j - 1, text: subOrig[i - 1] });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      subOps.push({ type: 'add', modSubIdx: j - 1, text: subMod[j - 1] });
+      j--;
+    } else {
+      subOps.push({ type: 'del', origSubIdx: i - 1, text: subOrig[i - 1] });
+      i--;
+    }
+  }
+  subOps.reverse();
+
+  const ops: InlineDiffOp[] = [];
+  for (let k = 0; k < start; k++) {
+    ops.push({ type: 'same', origNum: k + 1, modNum: k + 1, text: origLines[k] });
+  }
+  for (const s of subOps) {
+    if (s.type === 'same') {
+      const origNum = start + s.origSubIdx! + 1;
+      const modNum = start + s.modSubIdx! + 1;
+      ops.push({ type: 'same', origNum, modNum, text: s.text });
+    } else if (s.type === 'del') {
+      const origNum = start + s.origSubIdx! + 1;
+      ops.push({ type: 'del', origNum, text: s.text });
+    } else {
+      const modNum = start + s.modSubIdx! + 1;
+      ops.push({ type: 'add', modNum, text: s.text });
+    }
+  }
+  for (let k = origEnd + 1; k < N; k++) {
+    const origNum = k + 1;
+    const modNum = modEnd + 1 + (k - origEnd);
+    ops.push({ type: 'same', origNum, modNum, text: origLines[k] });
+  }
+
+  const hunks: InlineDiffHunk[] = [];
+  let curHunk: InlineDiffHunk | null = null;
+
+  for (let k = 0; k < ops.length; k++) {
+    const op = ops[k];
+    if (op.type === 'same') {
+      if (curHunk) {
+        hunks.push(curHunk);
+        curHunk = null;
+      }
+    } else {
+      if (!curHunk) {
+        curHunk = {
+          id: hunks.length + 1,
+          dels: [],
+          adds: [],
+          startOrigLine: op.origNum ?? 1,
+          endOrigLine: op.origNum ?? 1,
+          startModLine: op.modNum ?? 1,
+          endModLine: op.modNum ?? 1,
+          opsStartIndex: k,
+          opsEndIndex: k,
+        };
+      }
+      if (op.type === 'del') {
+        curHunk.dels.push(op);
+        if (op.origNum != null) {
+          if (curHunk.dels.length === 1) curHunk.startOrigLine = op.origNum;
+          curHunk.endOrigLine = op.origNum;
+        }
+      } else {
+        curHunk.adds.push(op);
+        if (op.modNum != null) {
+          if (curHunk.adds.length === 1) curHunk.startModLine = op.modNum;
+          curHunk.endModLine = op.modNum;
+        }
+      }
+      curHunk.opsEndIndex = k;
+    }
+  }
+  if (curHunk) hunks.push(curHunk);
+
+  return { ops, hunks };
+}
+
+export function computeLineSimilarity(s1: string, s2: string): number {
+  if (s1 === s2) return 1;
+  if (!s1 || !s2) return 0;
+  const t1 = s1.trim();
+  const t2 = s2.trim();
+  if (t1 === t2) return 0.95;
+  let p = 0;
+  while (p < t1.length && p < t2.length && t1[p] === t2[p]) p++;
+  let s = 0;
+  while (s < t1.length - p && s < t2.length - p && t1[t1.length - 1 - s] === t2[t2.length - 1 - s]) s++;
+  return ((p + s) * 2) / (t1.length + t2.length);
+}
+
+export interface InlineDiffPart {
+  text: string;
+  isDiff: boolean;
+}
+
+export function computeLineTokenDiff(
+  oldStr: string,
+  newStr: string,
+): {
+  partsOld: InlineDiffPart[];
+  partsNew: InlineDiffPart[];
+} {
+  const t1 = oldStr.match(/(\s+|\w+|[^\w\s]+)/g) || [];
+  const t2 = newStr.match(/(\s+|\w+|[^\w\s]+)/g) || [];
+  const n = t1.length;
+  const m = t2.length;
+  if (n === 0 && m === 0) {
+    return { partsOld: [], partsNew: [] };
+  }
+  if (n === 0) {
+    return {
+      partsOld: [],
+      partsNew: [{ text: newStr, isDiff: true }],
+    };
+  }
+  if (m === 0) {
+    return {
+      partsOld: [{ text: oldStr, isDiff: true }],
+      partsNew: [],
+    };
+  }
+
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < m; j++) {
+      if (t1[i] === t2[j]) {
+        dp[i + 1][j + 1] = dp[i][j] + 1;
+      } else {
+        dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+  }
+
+  const matched1 = new Set<number>();
+  const matched2 = new Set<number>();
+  let i = n;
+  let j = m;
+  while (i > 0 && j > 0) {
+    if (t1[i - 1] === t2[j - 1]) {
+      matched1.add(i - 1);
+      matched2.add(j - 1);
+      i--;
+      j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+
+  const merge = (tokens: string[], matched: Set<number>): InlineDiffPart[] => {
+    const merged: InlineDiffPart[] = [];
+    for (let idx = 0; idx < tokens.length; idx++) {
+      const isDiff = !matched.has(idx);
+      if (merged.length > 0 && merged[merged.length - 1].isDiff === isDiff) {
+        merged[merged.length - 1].text += tokens[idx];
+      } else {
+        merged.push({ text: tokens[idx], isDiff });
+      }
+    }
+    return merged;
+  };
+
+  return {
+    partsOld: merge(t1, matched1),
+    partsNew: merge(t2, matched2),
+  };
+}
+
+export function computeWordDiff(
+  oldStr: string,
+  newStr: string,
+): {
+  prefix: string;
+  middleOld: string;
+  middleNew: string;
+  suffix: string;
+} {
+  let prefixLen = 0;
+  while (
+    prefixLen < oldStr.length &&
+    prefixLen < newStr.length &&
+    oldStr[prefixLen] === newStr[prefixLen]
+  ) {
+    prefixLen++;
+  }
+
+  let suffixLen = 0;
+  while (
+    suffixLen < oldStr.length - prefixLen &&
+    suffixLen < newStr.length - prefixLen &&
+    oldStr[oldStr.length - 1 - suffixLen] === newStr[newStr.length - 1 - suffixLen]
+  ) {
+    suffixLen++;
+  }
+
+  return {
+    prefix: oldStr.slice(0, prefixLen),
+    middleOld: oldStr.slice(prefixLen, oldStr.length - suffixLen),
+    middleNew: newStr.slice(prefixLen, newStr.length - suffixLen),
+    suffix: oldStr.slice(oldStr.length - suffixLen),
+  };
+}
+
 interface TabContextMenuState {
   x: number;
   y: number;
@@ -840,69 +1119,29 @@ export function EditorPane({
   // Single-Hunk Discard Handler (reverts ONLY the target modified hunk, leaving other changes in the file intact)
   const handleDiscardSingleHunk = async () => {
     if (!active?.path || !gitDiffData || gitInlineDiffLine == null) return;
-    const origLines = gitDiffData.original.split('\n');
-    const modLines = (active.content || gitDiffData.modified).split('\n');
+    const currentContent = active.content ?? gitDiffData.modified;
+    const { hunks } = computeInlineHunks(gitDiffData.original, currentContent);
     const targetL = gitInlineDiffLine;
 
-    let oi = 0,
-      mi = 0;
-    let currentHunk: { modStart: number; modEnd: number; origLines: string[] } | null = null;
-    let matchingHunk: { modStart: number; modEnd: number; origLines: string[] } | null = null;
-
-    while (oi < origLines.length || mi < modLines.length) {
-      if (oi < origLines.length && mi < modLines.length && origLines[oi] === modLines[mi]) {
-        if (currentHunk) {
-          if (targetL >= currentHunk.modStart && targetL <= currentHunk.modEnd) {
-            matchingHunk = currentHunk;
-            break;
-          }
-          currentHunk = null;
-        }
-        oi++;
-        mi++;
-      } else {
-        if (!currentHunk) {
-          currentHunk = { modStart: mi + 1, modEnd: mi + 1, origLines: [] };
-        } else {
-          currentHunk.modEnd = mi + 1;
-        }
-
-        if (oi < origLines.length && mi < modLines.length) {
-          currentHunk.origLines.push(origLines[oi]);
-          oi++;
-          mi++;
-        } else if (
-          mi < modLines.length &&
-          (oi >= origLines.length || !origLines.slice(oi, oi + 10).includes(modLines[mi]))
-        ) {
-          mi++;
-        } else if (oi < origLines.length) {
-          currentHunk.origLines.push(origLines[oi]);
-          oi++;
-        }
-      }
+    let targetHunk = hunks.find((h) => targetL >= h.startModLine && targetL <= h.endModLine);
+    if (!targetHunk && hunks.length > 0) {
+      targetHunk = [...hunks].sort(
+        (a, b) => Math.abs(a.startModLine - targetL) - Math.abs(b.startModLine - targetL),
+      )[0];
     }
+    if (!targetHunk) return;
 
-    if (
-      currentHunk &&
-      !matchingHunk &&
-      targetL >= currentHunk.modStart &&
-      targetL <= currentHunk.modEnd
-    ) {
-      matchingHunk = currentHunk;
-    }
-
-    if (!matchingHunk) return;
-
+    const modLines = currentContent.split('\n');
+    const origHunkLines = targetHunk.dels.map((d) => d.text);
     const newModLines = [
-      ...modLines.slice(0, matchingHunk.modStart - 1),
-      ...matchingHunk.origLines,
-      ...modLines.slice(matchingHunk.modEnd),
+      ...modLines.slice(0, Math.max(0, targetHunk.startModLine - 1)),
+      ...origHunkLines,
+      ...modLines.slice(targetHunk.endModLine),
     ];
 
     const newContent = newModLines.join('\n');
     await window.ide.writeFile(active.path, newContent);
-    const isNowClean = Boolean(gitDiffData && newContent === gitDiffData.original);
+    const isNowClean = Boolean(newContent === gitDiffData.original);
     onChangeContent(active.path, newContent, !isNowClean);
     onRefreshGitStatus?.();
     setGitInlineDiffLine(null);
@@ -2540,381 +2779,435 @@ export function EditorPane({
               borderBottom: '1px solid var(--border)',
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
               fontSize: 12,
-              fontFamily: 'Consolas, Monaco, monospace',
+              fontFamily: 'ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Monaco, Consolas, monospace',
               color: 'var(--text)',
               boxSizing: 'border-box',
             }}
             className="git-inline-diff-banner"
           >
-            {/* Header Action Bar */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                height: 32,
-                padding: '0 12px',
-                background: 'rgba(255, 255, 255, 0.04)',
-                borderBottom: '1px solid var(--border)',
-                fontSize: 12,
-                userSelect: 'none',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                <span style={{ fontWeight: 600, color: 'var(--text)' }}>
-                  {active.path.split('/').pop() || active.path}
-                </span>
-                <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                  Git 本地更改(工作树) - 第{' '}
-                  {(() => {
-                    const idx = modifiedRangesRef.current.findIndex(
-                      (r) => gitInlineDiffLine >= r.start && gitInlineDiffLine <= r.end,
-                    );
-                    return idx !== -1 ? idx + 1 : 1;
-                  })()}{' '}
-                  个更改(共 {Math.max(1, modifiedRangesRef.current.length)} 个)
-                </span>
-              </div>
+            {(() => {
+              if (!gitDiffData) {
+                return (
+                  <div style={{ padding: '12px 16px', color: 'var(--muted)' }}>
+                    正在加载改动对比数据...
+                  </div>
+                );
+              }
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                {/* 1. Stage button + */}
-                <button
-                  type="button"
-                  title="暂存更改"
-                  onClick={async () => {
-                    await window.ide.gitStage([active.path]);
-                    onRefreshGitStatus?.();
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--muted)',
-                    cursor: 'pointer',
-                    padding: 4,
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}
-                  className="icon-btn"
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </button>
+              const originalContent = gitDiffData.original;
+              const currentContent = active.content ?? gitDiffData.modified;
+              const { ops, hunks } = computeInlineHunks(originalContent, currentContent);
+              const targetL = gitInlineDiffLine || 1;
 
-                {/* 2. Discard button ⟲ (Reverts ONLY this single change hunk) */}
-                <button
-                  type="button"
-                  title="放弃此处更改"
-                  onClick={() => {
-                    void handleDiscardSingleHunk();
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--muted)',
-                    cursor: 'pointer',
-                    padding: 4,
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}
-                  className="icon-btn"
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                  >
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                </button>
+              let activeHunk = hunks.find(
+                (h) => targetL >= h.startModLine && targetL <= h.endModLine,
+              );
+              if (!activeHunk && hunks.length > 0) {
+                activeHunk = [...hunks].sort(
+                  (a, b) => Math.abs(a.startModLine - targetL) - Math.abs(b.startModLine - targetL),
+                )[0];
+              }
 
-                {/* 3. Next diff ↓ */}
-                <button
-                  type="button"
-                  title="下一个更改"
-                  onClick={() => {
-                    if (modifiedRangesRef.current.length > 0) {
-                      const curIdx = modifiedRangesRef.current.findIndex(
-                        (r) => gitInlineDiffLine >= r.start && gitInlineDiffLine <= r.end,
-                      );
-                      const nextIdx = (curIdx + 1) % modifiedRangesRef.current.length;
-                      const targetL = modifiedRangesRef.current[nextIdx].start;
-                      setGitInlineDiffLine(targetL);
-                      editorRef.current?.revealLineInCenter(targetL);
-                    }
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--muted)',
-                    cursor: 'pointer',
-                    padding: 4,
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}
-                  className="icon-btn"
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <polyline points="19 12 12 19 5 12" />
-                  </svg>
-                </button>
+              const currentHunkIdx = activeHunk ? hunks.indexOf(activeHunk) : 0;
+              const totalHunks = Math.max(1, hunks.length);
 
-                {/* 4. Previous diff ↑ */}
-                <button
-                  type="button"
-                  title="上一个更改"
-                  onClick={() => {
-                    if (modifiedRangesRef.current.length > 0) {
-                      const curIdx = modifiedRangesRef.current.findIndex(
-                        (r) => gitInlineDiffLine >= r.start && gitInlineDiffLine <= r.end,
-                      );
-                      const prevIdx =
-                        (curIdx - 1 + modifiedRangesRef.current.length) %
-                        modifiedRangesRef.current.length;
-                      const targetL = modifiedRangesRef.current[prevIdx].start;
-                      setGitInlineDiffLine(targetL);
-                      editorRef.current?.revealLineInCenter(targetL);
-                    }
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--muted)',
-                    cursor: 'pointer',
-                    padding: 4,
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}
-                  className="icon-btn"
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="12" y1="19" x2="12" y2="5" />
-                    <polyline points="5 12 12 5 19 12" />
-                  </svg>
-                </button>
+              // 组织当前 Hunk 及其上下 3 行上下文
+              const displayRows: Array<{
+                key: string;
+                type: 'same' | 'del' | 'add';
+                origNum?: number;
+                modNum?: number;
+                text: string;
+              }> = [];
 
-                {/* 5. Close ✕ */}
-                <button
-                  type="button"
-                  title="关闭"
-                  onClick={() => setGitInlineDiffLine(null)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--muted)',
-                    cursor: 'pointer',
-                    padding: 4,
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}
-                  className="icon-btn"
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {/* Dual Line Numbers & Code Diff Rows */}
-            <div style={{ maxHeight: 300, overflowY: 'auto', overflowX: 'auto' }}>
-              {(() => {
-                if (!gitDiffData) {
-                  return (
-                    <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>
-                      加载对比数据中...
-                    </div>
-                  );
+              if (activeHunk) {
+                // 1. 上文 3 行
+                const ctxTop = ops.slice(Math.max(0, activeHunk.opsStartIndex - 3), activeHunk.opsStartIndex);
+                for (let k = 0; k < ctxTop.length; k++) {
+                  const o = ctxTop[k];
+                  displayRows.push({
+                    key: `top_${k}_${o.origNum}_${o.modNum}`,
+                    type: 'same',
+                    origNum: o.origNum,
+                    modNum: o.modNum,
+                    text: o.text,
+                  });
                 }
-                const origLines = gitDiffData.original.split('\n');
-                const modLines = gitDiffData.modified.split('\n');
-                const targetL = gitInlineDiffLine || 1;
-                const start = Math.max(0, targetL - 4);
-                const end = Math.min(modLines.length, targetL + 4);
-                const rows: Array<{
-                  type: 'same' | 'add' | 'del';
-                  origNum?: number;
-                  modNum?: number;
-                  content: string;
-                }> = [];
+                // 2. 整块删除行
+                for (let k = 0; k < activeHunk.dels.length; k++) {
+                  const o = activeHunk.dels[k];
+                  displayRows.push({
+                    key: `del_${k}_${o.origNum}`,
+                    type: 'del',
+                    origNum: o.origNum,
+                    text: o.text,
+                  });
+                }
+                // 3. 整块新增行
+                for (let k = 0; k < activeHunk.adds.length; k++) {
+                  const o = activeHunk.adds[k];
+                  displayRows.push({
+                    key: `add_${k}_${o.modNum}`,
+                    type: 'add',
+                    modNum: o.modNum,
+                    text: o.text,
+                  });
+                }
+                // 4. 下文 3 行
+                const ctxBottom = ops.slice(activeHunk.opsEndIndex + 1, Math.min(ops.length, activeHunk.opsEndIndex + 4));
+                for (let k = 0; k < ctxBottom.length; k++) {
+                  const o = ctxBottom[k];
+                  displayRows.push({
+                    key: `btm_${k}_${o.origNum}_${o.modNum}`,
+                    type: 'same',
+                    origNum: o.origNum,
+                    modNum: o.modNum,
+                    text: o.text,
+                  });
+                }
+              }
 
-                for (let i = start; i < end; i++) {
-                  const modContent = modLines[i];
-                  const origContent = origLines[i];
-                  if (origContent === modContent) {
-                    rows.push({
-                      type: 'same',
-                      origNum: i + 1,
-                      modNum: i + 1,
-                      content: modContent || '',
-                    });
+              // 为当前改动块中的每一行计算行内改动差异 (Token/Word Diff)
+              const lineDiffPartsMap = new Map<string, InlineDiffPart[]>();
+
+              if (activeHunk) {
+                const dels = activeHunk.dels;
+                const adds = activeHunk.adds;
+
+                if (dels.length > 0 && adds.length > 0) {
+                  if (dels.length === adds.length) {
+                    // 数量相等时按行序 1-对-1 对应计算行内差异
+                    for (let k = 0; k < dels.length; k++) {
+                      const diff = computeLineTokenDiff(dels[k].text, adds[k].text);
+                      lineDiffPartsMap.set(`del_${k}_${dels[k].origNum}`, diff.partsOld);
+                      lineDiffPartsMap.set(`add_${k}_${adds[k].modNum}`, diff.partsNew);
+                    }
                   } else {
-                    if (origContent !== undefined) {
-                      rows.push({ type: 'del', origNum: i + 1, content: origContent });
-                    }
-                    if (modContent !== undefined) {
-                      rows.push({ type: 'add', modNum: i + 1, content: modContent });
+                    // 数量不等时基于行相似度最优贪心配对
+                    const matchedAddIdxs = new Set<number>();
+                    for (let di = 0; di < dels.length; di++) {
+                      let bestAi = -1;
+                      let bestSim = 0;
+                      for (let ai = 0; ai < adds.length; ai++) {
+                        if (matchedAddIdxs.has(ai)) continue;
+                        const sim = computeLineSimilarity(dels[di].text, adds[ai].text);
+                        if (sim > bestSim && sim >= 0.25) {
+                          bestSim = sim;
+                          bestAi = ai;
+                        }
+                      }
+                      if (bestAi >= 0) {
+                        matchedAddIdxs.add(bestAi);
+                        const diff = computeLineTokenDiff(dels[di].text, adds[bestAi].text);
+                        lineDiffPartsMap.set(`del_${di}_${dels[di].origNum}`, diff.partsOld);
+                        lineDiffPartsMap.set(`add_${bestAi}_${adds[bestAi].modNum}`, diff.partsNew);
+                      }
                     }
                   }
                 }
+              }
 
-                return rows.map((row, idx) => {
-                  let pairedContent: string | undefined;
-                  if (row.type === 'del' && rows[idx + 1] && rows[idx + 1].type === 'add') {
-                    pairedContent = rows[idx + 1].content;
-                  } else if (row.type === 'add' && rows[idx - 1] && rows[idx - 1].type === 'del') {
-                    pairedContent = rows[idx - 1].content;
-                  }
-
-                  const renderContent = () => {
-                    if (row.type === 'same' || !pairedContent) return row.content;
-                    const oldStr = row.type === 'del' ? row.content : pairedContent;
-                    const newStr = row.type === 'add' ? row.content : pairedContent;
-
-                    let prefixLen = 0;
-                    while (
-                      prefixLen < oldStr.length &&
-                      prefixLen < newStr.length &&
-                      oldStr[prefixLen] === newStr[prefixLen]
-                    ) {
-                      prefixLen++;
-                    }
-
-                    let suffixLen = 0;
-                    while (
-                      suffixLen < oldStr.length - prefixLen &&
-                      suffixLen < newStr.length - prefixLen &&
-                      oldStr[oldStr.length - 1 - suffixLen] ===
-                      newStr[newStr.length - 1 - suffixLen]
-                    ) {
-                      suffixLen++;
-                    }
-
-                    const currentStr = row.content;
-                    const prefix = currentStr.slice(0, prefixLen);
-                    const middle =
-                      row.type === 'del'
-                        ? oldStr.slice(prefixLen, oldStr.length - suffixLen)
-                        : newStr.slice(prefixLen, newStr.length - suffixLen);
-                    const suffix = currentStr.slice(currentStr.length - suffixLen);
-
-                    if (!middle) return row.content;
-                    const highlightBg =
-                      row.type === 'del' ? 'rgba(244, 67, 54, 0.65)' : 'rgba(76, 175, 80, 0.65)';
-
-                    return (
-                      <>
-                        <span>{prefix}</span>
-                        <span
-                          style={{
-                            background: highlightBg,
-                            borderRadius: 2,
-                            padding: '0 1px',
-                            boxShadow: `0 0 0 1px ${highlightBg}`,
-                          }}
-                        >
-                          {middle}
-                        </span>
-                        <span>{suffix}</span>
-                      </>
-                    );
-                  };
-
-                  return (
-                    <div
-                      key={idx}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        height: 20,
-                        lineHeight: '20px',
-                        background:
-                          row.type === 'del'
-                            ? 'rgba(244, 67, 54, 0.25)'
-                            : row.type === 'add'
-                              ? 'rgba(76, 175, 80, 0.25)'
-                              : 'transparent',
-                        fontSize: 12,
-                        fontFamily: 'Consolas, Monaco, monospace',
-                      }}
-                    >
-                      {/* Dual Line Numbers Column */}
-                      <div
-                        style={{
-                          width: 64,
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          padding: '0 8px',
-                          color: 'var(--muted)',
-                          borderRight: '1px solid rgba(255, 255, 255, 0.08)',
-                          userSelect: 'none',
-                          background: 'rgba(0, 0, 0, 0.2)',
-                          fontSize: 11,
-                          flexShrink: 0,
-                          boxSizing: 'border-box',
-                        }}
-                      >
-                        <span>{row.origNum ?? ''}</span>
-                        <span>{row.modNum ?? ''}</span>
-                      </div>
-
-                      {/* Code Content */}
-                      <div
-                        style={{
-                          paddingLeft: 12,
-                          whiteSpace: 'pre',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          flex: 1,
-                        }}
-                      >
-                        {renderContent()}
-                      </div>
+              return (
+                <>
+                  {/* Header Action Bar */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      height: 34,
+                      padding: '0 12px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      borderBottom: '1px solid var(--border)',
+                      fontSize: 12,
+                      userSelect: 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>
+                        {active.path.split('/').pop() || active.path}
+                      </span>
+                      <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                        Git 本地更改(工作树) - 第 {currentHunkIdx + 1} 个更改(共 {totalHunks} 个)
+                      </span>
                     </div>
-                  );
-                });
-              })()}
-            </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      {/* 1. Stage button + */}
+                      <button
+                        type="button"
+                        title="暂存文件更改"
+                        onClick={async () => {
+                          await window.ide.gitStage([active.path]);
+                          onRefreshGitStatus?.();
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--muted)',
+                          cursor: 'pointer',
+                          padding: 4,
+                          borderRadius: 4,
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        className="icon-btn"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                      </button>
+
+                      {/* 2. Discard button ⟲ (精准放弃当前改动块) */}
+                      <button
+                        type="button"
+                        title="放弃此块更改"
+                        onClick={() => {
+                          void handleDiscardSingleHunk();
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--muted)',
+                          cursor: 'pointer',
+                          padding: 4,
+                          borderRadius: 4,
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        className="icon-btn"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                          <path d="M3 3v5h5" />
+                        </svg>
+                      </button>
+
+                      {/* 3. Previous diff ↑ */}
+                      <button
+                        type="button"
+                        title="上一个更改"
+                        onClick={() => {
+                          if (hunks.length > 0) {
+                            const prevIdx = (currentHunkIdx - 1 + hunks.length) % hunks.length;
+                            const prevHunk = hunks[prevIdx];
+                            setGitInlineDiffLine(prevHunk.startModLine);
+                            editorRef.current?.revealLineInCenter(prevHunk.startModLine);
+                          }
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--muted)',
+                          cursor: 'pointer',
+                          padding: 4,
+                          borderRadius: 4,
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        className="icon-btn"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="12" y1="19" x2="12" y2="5" />
+                          <polyline points="5 12 12 5 19 12" />
+                        </svg>
+                      </button>
+
+                      {/* 4. Next diff ↓ */}
+                      <button
+                        type="button"
+                        title="下一个更改"
+                        onClick={() => {
+                          if (hunks.length > 0) {
+                            const nextIdx = (currentHunkIdx + 1) % hunks.length;
+                            const nextHunk = hunks[nextIdx];
+                            setGitInlineDiffLine(nextHunk.startModLine);
+                            editorRef.current?.revealLineInCenter(nextHunk.startModLine);
+                          }
+                        }}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--muted)',
+                          cursor: 'pointer',
+                          padding: 4,
+                          borderRadius: 4,
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        className="icon-btn"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <polyline points="19 12 12 19 5 12" />
+                        </svg>
+                      </button>
+
+                      {/* 5. Close ✕ */}
+                      <button
+                        type="button"
+                        title="关闭对比"
+                        onClick={() => setGitInlineDiffLine(null)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--muted)',
+                          cursor: 'pointer',
+                          padding: 4,
+                          borderRadius: 4,
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                        className="icon-btn"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Dual Line Numbers & Code Diff Rows */}
+                  <div style={{ maxHeight: 340, overflowY: 'auto', overflowX: 'auto', background: 'var(--bg-editor, #1e1e1e)' }}>
+                    {displayRows.length === 0 ? (
+                      <div style={{ padding: '12px 16px', color: 'var(--muted)' }}>
+                        当前未检测到行级改动
+                      </div>
+                    ) : (
+                      displayRows.map((row) => {
+                        const renderRowContent = () => {
+                          const parts = lineDiffPartsMap.get(row.key);
+                          if (parts && parts.length > 0) {
+                            const isDel = row.type === 'del';
+                            const diffBg = isDel ? 'rgba(248, 81, 73, 0.42)' : 'rgba(46, 160, 67, 0.42)';
+                            const diffColor = isDel ? '#ffdcd7' : '#aff5b4';
+                            return (
+                              <>
+                                {parts.map((p, pIdx) =>
+                                  p.isDiff ? (
+                                    <span
+                                      key={pIdx}
+                                      style={{
+                                        background: diffBg,
+                                        color: diffColor,
+                                        borderRadius: 2,
+                                        padding: '1px 2px',
+                                      }}
+                                    >
+                                      {p.text}
+                                    </span>
+                                  ) : (
+                                    <span key={pIdx}>{p.text}</span>
+                                  ),
+                                )}
+                              </>
+                            );
+                          }
+                          // 未配对的纯新增行或纯删除行
+                          if (row.type === 'del') {
+                            return <span style={{ color: '#ffdcd7' }}>{row.text}</span>;
+                          }
+                          if (row.type === 'add') {
+                            return <span style={{ color: '#aff5b4' }}>{row.text}</span>;
+                          }
+                          return row.text;
+                        };
+
+                        const isDel = row.type === 'del';
+                        const isAdd = row.type === 'add';
+
+                        return (
+                          <div
+                            key={row.key}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              minHeight: 22,
+                              lineHeight: '22px',
+                              background: isDel
+                                ? 'rgba(248, 81, 73, 0.12)'
+                                : isAdd
+                                  ? 'rgba(46, 160, 67, 0.12)'
+                                  : 'transparent',
+                              borderLeft: isDel
+                                ? '3px solid #f85149'
+                                : isAdd
+                                  ? '3px solid #3fb950'
+                                  : '3px solid transparent',
+                              fontSize: 12,
+                              boxSizing: 'border-box',
+                            }}
+                          >
+                            {/* 行号栏 Gutter */}
+                            <div
+                              style={{
+                                width: 88,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'flex-end',
+                                padding: '0 6px',
+                                color: 'var(--muted)',
+                                borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+                                userSelect: 'none',
+                                background: 'rgba(0, 0, 0, 0.22)',
+                                fontSize: 11,
+                                flexShrink: 0,
+                                boxSizing: 'border-box',
+                                gap: 6,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: 28,
+                                  textAlign: 'right',
+                                  color: isDel ? '#f85149' : undefined,
+                                }}
+                              >
+                                {row.origNum ?? ''}
+                              </span>
+                              <span
+                                style={{
+                                  width: 28,
+                                  textAlign: 'right',
+                                  color: isAdd ? '#3fb950' : undefined,
+                                }}
+                              >
+                                {row.modNum ?? ''}
+                              </span>
+                              <span
+                                style={{
+                                  width: 14,
+                                  textAlign: 'center',
+                                  fontWeight: 700,
+                                  color: isDel ? '#f85149' : isAdd ? '#3fb950' : 'transparent',
+                                }}
+                              >
+                                {isDel ? '-' : isAdd ? '+' : ' '}
+                              </span>
+                            </div>
+
+                            {/* 代码内容区域 */}
+                            <div
+                              style={{
+                                padding: '0 12px',
+                                whiteSpace: 'pre',
+                                overflow: 'visible',
+                                flex: 1,
+                                color: row.type === 'same' ? 'rgba(255, 255, 255, 0.65)' : 'var(--text, #e6edf3)',
+                              }}
+                            >
+                              {renderRowContent()}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>

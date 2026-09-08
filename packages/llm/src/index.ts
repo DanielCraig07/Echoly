@@ -9,7 +9,7 @@ import type {
   ProviderConfig,
 } from '@deepseek-ide/shared';
 import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from '@deepseek-ide/shared';
-import { AnthropicClient } from './anthropic';
+import { AnthropicClient, formatLlmErrorMessage } from './anthropic';
 
 export interface LlmClientOptions {
   baseUrl?: string;
@@ -33,12 +33,13 @@ export interface ChatStreamResult {
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, '');
+  return baseUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '');
 }
 
 function buildHeaders(apiKey?: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'User-Agent': 'claude-cli/2.1.158 (external, cli)',
   };
   if (apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;
@@ -130,7 +131,7 @@ export class LlmClient {
     });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`listModels failed (${res.status}): ${text}`);
+      throw new Error(`listModels: ${formatLlmErrorMessage(res.status, text)}`);
     }
     const data = (await res.json()) as { data?: Array<{ id: string }> };
     return (data.data ?? []).map((m) => m.id);
@@ -155,7 +156,7 @@ export class LlmClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`chat failed (${res.status}): ${text}`);
+      throw new Error(formatLlmErrorMessage(res.status, text));
     }
 
     const data = (await res.json()) as ChatCompletionResponse;
@@ -185,7 +186,7 @@ export class LlmClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`chatStream failed (${res.status}): ${text}`);
+      throw new Error(formatLlmErrorMessage(res.status, text));
     }
     if (!res.body) {
       throw new Error('chatStream response has no body');
@@ -356,20 +357,85 @@ export class UnifiedLlmClient {
 
 export { AnthropicClient };
 
-export async function probeLlm(options: LlmClientOptions = {}): Promise<{
+export interface ProbeLlmOptions extends LlmClientOptions {
+  provider?: AiProvider | string;
+  enableThinking?: boolean;
+  thinkingTokens?: number;
+}
+
+export async function probeLlm(options: ProbeLlmOptions = {}): Promise<{
   ok: boolean;
   detail: string;
   models?: string[];
   supportsTools?: boolean;
 }> {
+  if (options.provider === 'anthropic') {
+    const client = new AnthropicClient({
+      baseUrl: options.baseUrl,
+      apiKey: options.apiKey || '',
+      model: options.model,
+      enableThinking: options.enableThinking,
+      thinkingTokens: options.thinkingTokens,
+      fetchImpl: options.fetchImpl,
+    });
+    try {
+      const message = await client.chat({
+        messages: [{ role: 'user', content: 'Reply with exactly: pong' }],
+        temperature: 0,
+      });
+
+      let supportsTools = false;
+      try {
+        const toolMsg = await client.chat({
+          messages: [{ role: 'user', content: 'Call the ping tool once.' }],
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'ping',
+                description: 'A simple ping tool',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    note: { type: 'string' },
+                  },
+                },
+              },
+            },
+          ],
+        });
+        supportsTools = Boolean(toolMsg.tool_calls?.length);
+      } catch {
+        supportsTools = false;
+      }
+
+      const models = [
+        'claude-3-7-sonnet-20250219',
+        'claude-3-5-sonnet-20241022',
+        'claude-3-5-haiku-20241022',
+      ];
+
+      return {
+        ok: true,
+        detail: `连接成功; 返回内容=${JSON.stringify(message.content)}; 支持工具=${supportsTools}`,
+        models,
+        supportsTools,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        detail: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
   const client = new LlmClient(options);
   try {
     let models: string[] = [];
     try {
       models = await client.listModels();
-    } catch (err) {
+    } catch {
       models = [];
-      void err;
     }
 
     const message = await client.chat({
@@ -404,7 +470,7 @@ export async function probeLlm(options: LlmClientOptions = {}): Promise<{
 
     return {
       ok: true,
-      detail: `chat ok; content=${JSON.stringify(message.content)}; tools=${supportsTools}`,
+      detail: `连接成功; 返回内容=${JSON.stringify(message.content)}; 支持工具=${supportsTools}`,
       models,
       supportsTools,
     };
