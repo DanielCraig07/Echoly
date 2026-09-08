@@ -76,3 +76,23 @@ jobs:
             apps/desktop/release/*.exe
             apps/desktop/release/*.blockmap
             apps/desktop/release/latest.yml
+
+  publish:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish Draft Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "Publishing draft release for tag: $TAG..."
+          # 查找当前 tag 关联的 draft release 并取消 draft 状态
+          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -n 1)
+          if [ -n "$RELEASE_ID" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/releases/$RELEASE_ID" -f draft=false
+            echo "✓ Release $TAG (ID: $RELEASE_ID) published successfully!"
+          else
+            # 备选方案：尝试直接编辑 tag 对应的 release
+            gh release edit "$TAG" --draft=false || echo "Warning: Could not automatically publish release for $TAG"
+          fi
