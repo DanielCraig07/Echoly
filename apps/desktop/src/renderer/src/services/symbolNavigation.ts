@@ -1236,7 +1236,7 @@ export function setupCmdClickGesture(
   editor: monaco.editor.IStandaloneCodeEditor,
   opts: SymbolNavigationOptions
 ): { dispose: () => void } {
-  let linkDecorations = editor.createDecorationsCollection();
+  const linkDecorations = editor.createDecorationsCollection();
   let currentHoveredWord: string | null = null;
 
   const clearHoverLink = () => {

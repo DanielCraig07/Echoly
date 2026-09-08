@@ -682,7 +682,6 @@ export function EditorPane({
         }
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealLine, revealColumn, activePath, revealNonce]);
 
   const setupEditorScrollSync = (ed: MonacoEditor.IStandaloneCodeEditor) => {

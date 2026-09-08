@@ -165,7 +165,7 @@ export function parseJavaStructure(code: string): JavaParsedFile {
 
     // 5. Method declaration (handles both interface methods with ; and class methods with {)
     const methodMatch = line.match(
-      /(?:public|protected|private|static|final|abstract|default|synchronized|\s)*\s+([A-Za-z0-9_<>]+)\s+([a-zA-Z0-9_]+)\s*\([^)]*\)\s*(?:throws\s+[^{;]+)?[\{;]/
+      /(?:public|protected|private|static|final|abstract|default|synchronized|\s)*\s+([A-Za-z0-9_<>]+)\s+([a-zA-Z0-9_]+)\s*\([^)]*\)\s*(?:throws\s+[^{;]+)?[{;]/
     );
     if (methodMatch) {
       const methodName = methodMatch[2];
