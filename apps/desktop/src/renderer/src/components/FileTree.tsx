@@ -469,6 +469,22 @@ function FindInFolderModal({
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<string[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Esc key listener with capture phase
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [onClose]);
 
   useEffect(() => {
     let cancelled = false;
@@ -476,8 +492,13 @@ function FindInFolderModal({
       const entries = await window.ide.listDir(dir);
       for (const e of entries) {
         if (cancelled) return;
-        if (e.isDirectory) await walk(e.path, acc);
-        else acc.push(e.path);
+        const base = e.name || basename(e.path);
+        if (e.isDirectory) {
+          if (base === '.git' || base === 'node_modules' || base === '.next' || base === 'dist' || base === 'build') continue;
+          await walk(e.path, acc);
+        } else {
+          acc.push(e.path);
+        }
       }
     }
     setScanning(true);
@@ -501,38 +522,180 @@ function FindInFolderModal({
   const q = query.trim().toLowerCase();
   const filtered = q
     ? hits.filter((p) => basename(p).toLowerCase().includes(q) || p.toLowerCase().includes(q))
-    : hits.slice(0, 200);
+    : hits.slice(0, 300);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  // Keep selected item visible
+  useEffect(() => {
+    if (!listRef.current) return;
+    const activeItem = listRef.current.querySelector<HTMLElement>(
+      `[data-index="${selectedIndex}"]`,
+    );
+    if (activeItem) {
+      activeItem.scrollIntoView({ block: 'nearest' });
+    }
+  }, [selectedIndex]);
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : Math.max(0, filtered.length - 1)));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = filtered[selectedIndex];
+      if (target) {
+        onOpenFile(target);
+        onClose();
+      }
+    }
+  };
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
+    <div className="settings-overlay find-folder-overlay" onClick={onClose}>
       <div className="find-folder-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>在文件夹中查找</h2>
-        <p className="muted">{folderPath}</p>
-        <input
-          autoFocus
-          placeholder="按文件名过滤…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <div className="find-folder-results">
-          {scanning && <div className="muted">扫描中…</div>}
-          {!scanning && filtered.length === 0 && <div className="muted">无匹配文件</div>}
-          {filtered.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className="find-folder-hit"
-              onClick={() => {
-                onOpenFile(p);
-                onClose();
-              }}
+        <div className="find-folder-header">
+          <div className="find-folder-title-row">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="find-folder-header-icon"
             >
-              {p}
-            </button>
-          ))}
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              <circle cx="11" cy="11" r="3" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <h2 className="find-folder-title">在文件夹中查找</h2>
+            <span className="find-folder-path-tag" title={folderPath}>
+              {folderPath}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="find-folder-close-btn"
+            onClick={onClose}
+            title="关闭 (Esc)"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
-        <div className="settings-actions">
-          <button type="button" onClick={onClose}>
+
+        <div className="find-folder-search-box">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="find-folder-search-icon"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            ref={inputRef}
+            autoFocus
+            type="text"
+            className="find-folder-input"
+            placeholder="按文件名或路径过滤…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleInputKeyDown}
+          />
+          {query && (
+            <button
+              type="button"
+              className="find-folder-clear-btn"
+              onClick={() => {
+                setQuery('');
+                inputRef.current?.focus();
+              }}
+              title="清空"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        <div className="find-folder-results" ref={listRef}>
+          {scanning && (
+            <div className="find-folder-empty">
+              <span className="find-folder-spinner" />
+              <span>正在扫描文件夹文件…</span>
+            </div>
+          )}
+          {!scanning && filtered.length === 0 && (
+            <div className="find-folder-empty">
+              <span>{query ? '未找到匹配文件' : '文件夹内暂无文件'}</span>
+            </div>
+          )}
+          {!scanning &&
+            filtered.map((p, idx) => {
+              const isSelected = idx === selectedIndex;
+              const fileBase = basename(p);
+              const parentDir = parentOf(p);
+              return (
+                <div
+                  key={p}
+                  data-index={idx}
+                  className={`find-folder-hit ${isSelected ? 'selected' : ''}`}
+                  onClick={() => {
+                    onOpenFile(p);
+                    onClose();
+                  }}
+                  onMouseEnter={() => setSelectedIndex(idx)}
+                >
+                  <span className="find-folder-hit-icon">
+                    <RenderFileTreeIcon name={fileBase} isDirectory={false} />
+                  </span>
+                  <span className="find-folder-hit-name" title={fileBase}>
+                    {fileBase}
+                  </span>
+                  <span className="find-folder-hit-dir" title={p}>
+                    {parentDir === '.' ? '' : parentDir}
+                  </span>
+                </div>
+              );
+            })}
+        </div>
+
+        <div className="find-folder-footer">
+          <div className="find-folder-meta">
+            <span className="find-folder-count">
+              {scanning ? '扫描中…' : `共 ${filtered.length} 个文件`}
+            </span>
+            <span className="find-folder-tips">
+              <kbd>↑↓</kbd> 导航 <kbd>↵</kbd> 打开 <kbd>Esc</kbd> 关闭
+            </span>
+          </div>
+          <button type="button" className="find-folder-action-btn" onClick={onClose}>
             关闭
           </button>
         </div>

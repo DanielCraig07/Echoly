@@ -272,7 +272,7 @@ const enhancedPythonLanguage: monaco.languages.IMonarchLanguage = {
       { include: '@numbers' },
       { include: '@strings' },
       [/[,:;]/, 'delimiter'],
-      [/[{}\[\]()]/, '@brackets'],
+      [/[{}[\]()]/, '@brackets'],
 
       // 装饰器: @decorator, @staticmethod 等
       [/@[a-zA-Z_]\w*/, 'annotation'],
@@ -334,7 +334,7 @@ const enhancedPythonLanguage: monaco.languages.IMonarchLanguage = {
     ],
     numbers: [
       [/-?0x([abcdef]|[ABCDEF]|\d)+[lL]?/, 'number.hex'],
-      [/-?(\d*\.)?\d+([eE][+\-]?\d+)?[jJ]?[lL]?/, 'number'],
+      [/-?(\d*\.)?\d+([eE][-+]?\d+)?[jJ]?[lL]?/, 'number'],
     ],
     strings: [
       [/'$/, 'string.escape', '@popall'],
@@ -345,16 +345,16 @@ const enhancedPythonLanguage: monaco.languages.IMonarchLanguage = {
       [/"/, 'string.escape', '@dblStringBody'],
     ],
     fStringBody: [
-      [/[^\\'\{\}]+$/, 'string', '@popall'],
+      [/[^\\'{}]+$/, 'string', '@popall'],
       [/\{/, { token: 'delimiter.curly', next: '@fInterpolation' }],
-      [/[^\\'\{\}]+/, 'string'],
+      [/[^\\'{}]+/, 'string'],
       [/\\./, 'string.escape'],
       [/'/, 'string.escape', '@popall'],
     ],
     fDblStringBody: [
-      [/[^\\"\{\}]+$/, 'string', '@popall'],
+      [/[^\\"{}]+$/, 'string', '@popall'],
       [/\{/, { token: 'delimiter.curly', next: '@fInterpolation' }],
-      [/[^\\"\{\}]+/, 'string'],
+      [/[^\\"{}]+/, 'string'],
       [/\\./, 'string.escape'],
       [/"/, 'string.escape', '@popall'],
     ],
@@ -402,7 +402,7 @@ const enhancedJavaLanguage: monaco.languages.IMonarchLanguage = {
       { include: '@numbers' },
       { include: '@strings' },
       [/[,;.]/, 'delimiter'],
-      [/[{}\[\]()]/, '@brackets'],
+      [/[{}[\]()]/, '@brackets'],
 
       // 注解: @Override, @Autowired, @Component
       [/@\s*[a-zA-Z_$][\w$]*/, 'annotation'],
@@ -434,7 +434,7 @@ const enhancedJavaLanguage: monaco.languages.IMonarchLanguage = {
         },
       }],
 
-      [/[=><!~?:&|+\-*\/\^%]+/, 'operator'],
+      [/[=><!~?:&|+\-*^%/]+/, 'operator'],
     ],
     whitespace: [
       [/[ \t\r\n]+/, 'white'],
@@ -443,22 +443,22 @@ const enhancedJavaLanguage: monaco.languages.IMonarchLanguage = {
       [/\/\/.*$/, 'comment'],
     ],
     javadoc: [
-      [/[^\/*]+/, 'comment.doc'],
+      [/[^/*]+/, 'comment.doc'],
       [/\/\*/, 'comment.doc.invalid'],
       [/\*\//, 'comment.doc', '@pop'],
-      [/[\/*]/, 'comment.doc'],
+      [/[/*]/, 'comment.doc'],
     ],
     comment: [
-      [/[^\/*]+/, 'comment'],
+      [/[^/*]+/, 'comment'],
       [/\/\*/, 'comment.invalid'],
       [/\*\//, 'comment', '@pop'],
-      [/[\/*]/, 'comment'],
+      [/[/*]/, 'comment'],
     ],
     numbers: [
       [/0[xX][0-9a-fA-F_]+[Ll]?/, 'number.hex'],
       [/0[bB][01_]+[Ll]?/, 'number.binary'],
-      [/\d+[eE][\-+]?\d+[fFdD]?/, 'number.float'],
-      [/\d+\.\d*([eE][\-+]?\d+)?[fFdD]?/, 'number.float'],
+      [/\d+[eE][-+]?\d+[fFdD]?/, 'number.float'],
+      [/\d+\.\d*([eE][-+]?\d+)?[fFdD]?/, 'number.float'],
       [/\d+[lLfFdD]?/, 'number'],
     ],
     strings: [
