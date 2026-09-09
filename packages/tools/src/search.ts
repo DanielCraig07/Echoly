@@ -512,10 +512,122 @@ async function walkCollectFilePaths(backend: WorkspaceBackend, maxFiles = 5000):
   return files;
 }
 
+async function runLocalCommand(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  timeout = 4000,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(cmd, args, { cwd, timeout, stdio: ['ignore', 'pipe', 'ignore'] });
+      let stdout = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+        if (stdout.length > 600_000) {
+          child.kill();
+        }
+      });
+      child.on('error', () => resolve(null));
+      child.on('close', (code) => {
+        if (code === 0 || stdout.length > 0) resolve(stdout);
+        else resolve(null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * 本地极速文件收集：优先尝试 git ls-files 与 rg --files，数十毫秒级完成全工作区索引
+ */
+export async function collectFilePathsLocal(root: string, maxFiles = 5000): Promise<string[]> {
+  // 1. 尝试 git ls-files（极速 ~30ms，自动遵循 .gitignore）
+  try {
+    const gitOut = await runLocalCommand(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard'],
+      root,
+    );
+    if (gitOut && gitOut.trim()) {
+      const lines = gitOut
+        .split(/\r?\n/)
+        .map((s) => s.trim().replace(/^\.\//, '').replace(/\\/g, '/'))
+        .filter((s) => s && s !== '.');
+      if (lines.length > 0) {
+        return lines.slice(0, maxFiles);
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  // 2. 尝试 rg --files（极速 ~50ms，自动过滤常见大型无用目录）
+  try {
+    const rgOut = await runLocalCommand(
+      'rg',
+      [
+        '--files',
+        '--hidden',
+        '-g',
+        '!.git',
+        '-g',
+        '!node_modules',
+        '-g',
+        '!dist',
+        '-g',
+        '!out',
+        '-g',
+        '!build',
+        '-g',
+        '!.next',
+        '-g',
+        '!__pycache__',
+        '-g',
+        '!vendor',
+        '-g',
+        '!target',
+        '-g',
+        '!.venv',
+        '-g',
+        '!venv',
+        '--max-filesize',
+        '2M',
+      ],
+      root,
+    );
+    if (rgOut && rgOut.trim()) {
+      const lines = rgOut
+        .split(/\r?\n/)
+        .map((s) => s.trim().replace(/^\.\//, '').replace(/\\/g, '/'))
+        .filter((s) => s && s !== '.');
+      if (lines.length > 0) {
+        return lines.slice(0, maxFiles);
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  return [];
+}
+
 export async function collectFilePaths(
   backend: WorkspaceBackend,
   maxFiles = 5000,
 ): Promise<string[]> {
+  if (backend.kind === 'local' && backend.root) {
+    try {
+      const localFiles = await collectFilePathsLocal(backend.root, maxFiles);
+      if (localFiles && localFiles.length > 0) {
+        return localFiles;
+      }
+    } catch {
+      // fall through to walk
+    }
+  }
+
   if (backend.kind === 'ssh' && typeof backend.runCommand === 'function') {
     try {
       const remoteFiles = await collectFilePathsRemote(backend, maxFiles);

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { ChatSession } from '@deepseek-ide/shared';
 import { formatSessionWorkspaceLine } from '../utils';
 
@@ -65,6 +65,22 @@ export function SessionModal({
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (editingId) {
+          setEditingId(null);
+          return;
+        }
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [onClose, editingId]);
+
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setDeleting(id);
@@ -86,19 +102,33 @@ export function SessionModal({
     setEditTitle(s.title);
   };
 
+  const isSavingRenameRef = useRef(false);
+
   const handleSaveRename = async (id: string) => {
-    if (!editTitle.trim()) {
+    if (isSavingRenameRef.current) return;
+    isSavingRenameRef.current = true;
+    try {
+      const trimmed = editTitle.trim();
+      if (!trimmed) {
+        setEditingId(null);
+        return;
+      }
+      const target = sessions.find((s) => s.id === id);
+      if (target) {
+        const updated: ChatSession = {
+          ...target,
+          title: trimmed,
+          customTitle: true,
+          updatedAt: Date.now(),
+        };
+        await window.ide.saveSession(updated);
+        setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)));
+        onRenameSession?.(id, trimmed);
+      }
       setEditingId(null);
-      return;
+    } finally {
+      isSavingRenameRef.current = false;
     }
-    const target = sessions.find((s) => s.id === id);
-    if (target) {
-      const updated: ChatSession = { ...target, title: editTitle.trim(), updatedAt: Date.now() };
-      await window.ide.saveSession(updated);
-      setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)));
-      onRenameSession?.(id, editTitle.trim());
-    }
-    setEditingId(null);
   };
 
   const filteredSessions = sessions.filter((s) => {

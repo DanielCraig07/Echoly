@@ -57,6 +57,7 @@ export type ChatPanelHandle = {
 export interface SessionTab {
   id: string;
   title: string;
+  customTitle?: boolean;
   messages: ChatSessionMessage[];
   attachments?: ChatAttachment[];
   mode: AgentMode;
@@ -378,11 +379,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         // Auto-save to IPC if messages changed
         if (updated.messages.length > 0) {
           const firstUserMsg = updated.messages.find((m) => m.role === 'user');
-          const title = firstUserMsg ? firstUserMsg.content.slice(0, 40) : updated.title;
+          const title = updated.customTitle
+            ? updated.title
+            : firstUserMsg
+              ? firstUserMsg.content.slice(0, 40)
+              : updated.title;
           const meta = buildSessionWorkspaceMeta(workspaceInfoRef.current);
           void window.ide.saveSession({
             id: updated.id,
             title,
+            customTitle: updated.customTitle,
             messages: updated.messages,
             updatedAt: Date.now(),
             ...meta,
@@ -407,6 +413,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         return {
           ...t,
           input: msg.content,
+          attachments: msg.attachments && msg.attachments.length > 0 ? [...msg.attachments] : [],
           messages: truncated,
           streaming: '',
           runId: null,
@@ -664,6 +671,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     return {
       id: session.id,
       title: session.title,
+      customTitle: session.customTitle,
       messages: session.messages,
       attachments: [],
       mode: 'agent',
@@ -1119,7 +1127,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   };
 
   const handleRenameSession = (id: string, newTitle: string) => {
-    setTabs((prev) => prev.map((t) => (t.id === id ? { ...t, title: newTitle } : t)));
+    setTabs((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, title: newTitle, customTitle: true } : t)),
+    );
   };
 
   const windowTokens = activeTab?.contextUsage?.windowTokens ?? contextWindowTokens;
@@ -1129,56 +1139,41 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   return (
     <div className="chat-panel">
       {/* Title Bar Header with Tabs */}
-      <div
-        className="panel-title chat-title-row"
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '0 12px',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div
-          className="chat-tabs-bar"
-          style={{
-            display: 'flex',
-            flex: 1,
-            overflowX: 'auto',
-            borderBottom: 'none',
-            padding: '8px 0 0',
-          }}
-        >
+      <div className="panel-title chat-title-row">
+        <div className="chat-tabs-bar">
           {tabs.map((t) => {
             const isRunning =
               t.status !== 'idle' &&
               t.status !== 'done' &&
               t.status !== 'error' &&
               t.status !== 'cancelled';
+            const isActive = t.id === activeTabId;
             return (
               <div
                 key={t.id}
-                className={`chat-tab-item${t.id === activeTabId ? ' active' : ''}`}
+                className={`chat-tab-item${isActive ? ' active' : ''}`}
                 onClick={() => setActiveTabId(t.id)}
-                title={t.title}
-                style={{
-                  padding: '6px 12px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  borderRadius: '8px 8px 0 0',
-                  background: t.id === activeTabId ? 'var(--bg)' : 'transparent',
-                  color: t.id === activeTabId ? 'var(--text)' : 'var(--muted)',
-                  borderBottom:
-                    t.id === activeTabId
-                      ? '2px solid var(--accent, #007acc)'
-                      : '2px solid transparent',
-                  opacity: t.id === activeTabId ? 1 : 0.6,
-                }}
+                title={isActive ? (t.title || '当前对话') : `${t.title || '对话'} (点击切换)`}
               >
-                {isRunning && <span className="chat-tab-running-dot" title="运行中…" />}
-                <span className="chat-tab-title" style={{ fontSize: 12 }}>
+                <span className="chat-tab-icon" aria-hidden="true">
+                  {isRunning ? (
+                    <span className="chat-tab-running-dot" title="运行中…" />
+                  ) : (
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10a9.96 9.96 0 0 1-4.587-1.11L3 22l1.11-4.413A9.96 9.96 0 0 1 2 12 10 10 0 0 1 12 2z" />
+                    </svg>
+                  )}
+                </span>
+                <span className="chat-tab-title">
                   {t.title || 'New Chat'}
                 </span>
                 {tabs.length > 1 && (
@@ -1187,17 +1182,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     className="chat-tab-close"
                     onClick={(e) => handleCloseTab(t.id, e)}
                     title="关闭 Tab"
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'inherit',
-                      cursor: 'pointer',
-                      fontSize: 10,
-                      padding: 2,
-                      opacity: 0.6,
-                    }}
                   >
-                    ✕
+                    <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M1.293 1.293a1 1 0 0 1 1.414 0L8 6.586l5.293-5.293a1 1 0 1 1 1.414 1.414L9.414 8l5.293 5.293a1 1 0 0 1-1.414 1.414L8 9.414l-5.293 5.293a1 1 0 0 1-1.414-1.414L6.586 8 1.293 2.707a1 1 0 0 1 0-1.414z" />
+                    </svg>
                   </button>
                 )}
               </div>
@@ -1205,10 +1193,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           })}
         </div>
 
-        <div
-          className="chat-header-actions"
-          style={{ display: 'flex', alignItems: 'center', gap: 4, paddingBottom: 4 }}
-        >
+        <div className="chat-header-actions">
           <button type="button" className="icon-btn" title="新建对话" onClick={handleNewTab}>
             <svg
               width="15"
@@ -1418,7 +1403,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               return (
                 <div key={turnKey} className="chat-turn">
                   {turn.user && (
-                    <div className="chat-turn-folder" style={{ zIndex: 10 + turnIdx }}>
+                    <div className="chat-turn-folder">
                       {renderUserBubble(turn.user)}
                     </div>
                   )}
@@ -1901,7 +1886,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                                       />
                                       <div className="chat-model-item-meta">
                                         <div className="chat-model-item-name-row">
-                                          <span className="chat-model-item-title">{m.name}</span>
+                                          <span className="chat-model-item-title" title={m.name}>
+                                            {m.name}
+                                          </span>
                                           <span
                                             className="chat-model-provider-badge"
                                             style={{

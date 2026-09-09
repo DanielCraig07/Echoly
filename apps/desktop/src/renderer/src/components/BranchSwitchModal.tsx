@@ -67,6 +67,19 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
     }
   }, [selectedIndex]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   async function handleCheckout(target: string) {
@@ -137,13 +150,13 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0, 0, 0, 0.55)',
-        backdropFilter: 'blur(3px)',
+        background: 'transparent',
+        backdropFilter: 'none',
         zIndex: 9999,
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'flex-start',
-        paddingTop: '8vh',
+        paddingTop: '10vh',
       }}
     >
       <div
@@ -153,9 +166,9 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
           width: 540,
           maxWidth: '92vw',
           background: 'var(--bg-modal, #1f2026)',
-          border: '1px solid var(--border, #333)',
-          borderRadius: 8,
-          boxShadow: '0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+          border: '1px solid rgba(255, 255, 255, 0.14)',
+          borderRadius: 10,
+          boxShadow: '0 24px 64px -8px rgba(0, 0, 0, 0.8), 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
@@ -630,58 +643,18 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
             color: 'var(--muted, #888)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span>
-              <kbd
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  padding: '1px 4px',
-                  borderRadius: 3,
-                  fontFamily: 'monospace',
-                }}
-              >
-                ↑↓
-              </kbd>{' '}
-              移动
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <kbd className="cmd-mini-kbd">↑↓</kbd> 移动
             </span>
-            <span>
-              <kbd
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  padding: '1px 4px',
-                  borderRadius: 3,
-                  fontFamily: 'monospace',
-                }}
-              >
-                Enter
-              </kbd>{' '}
-              切换
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <kbd className="cmd-mini-kbd">Enter</kbd> 切换
             </span>
-            <span>
-              <kbd
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  padding: '1px 4px',
-                  borderRadius: 3,
-                  fontFamily: 'monospace',
-                }}
-              >
-                Tab
-              </kbd>{' '}
-              换页
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <kbd className="cmd-mini-kbd">Tab</kbd> 换页
             </span>
-            <span>
-              <kbd
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  padding: '1px 4px',
-                  borderRadius: 3,
-                  fontFamily: 'monospace',
-                }}
-              >
-                Esc
-              </kbd>{' '}
-              退出
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <kbd className="cmd-mini-kbd">Esc</kbd> 退出
             </span>
           </div>
 

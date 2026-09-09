@@ -31,7 +31,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { OpenWorkspaceModal } from './components/OpenWorkspaceModal';
 import { CloneRepoModal } from './components/CloneRepoModal';
 import { SshConnectModal } from './components/SshConnectModal';
-import { SwitchWorkspaceModal } from './components/SwitchWorkspaceModal';
+import { SwitchWorkspaceModal, type SwitchWorkspaceTarget } from './components/SwitchWorkspaceModal';
 import { BranchSwitchModal } from './components/BranchSwitchModal';
 import {
   TopSearchBar,
@@ -44,6 +44,7 @@ import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { GitPanel } from './components/GitPanel';
 import { SearchPanel } from './components/SearchPanel';
 import { StatusBar } from './components/StatusBar';
+import { GlobalTooltip } from './components/GlobalTooltip';
 import {
   isImagePath,
   isUntitledPath,
@@ -144,6 +145,9 @@ const workspaceFromQuery = (() => {
   }
 })();
 
+const isMac =
+  typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
+
 export function App() {
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfo>({
@@ -155,7 +159,7 @@ export function App() {
   const [activePath, setActivePath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [openWorkspaceOpen, setOpenWorkspaceOpen] = useState(false);
-  const [switchWorkspacePath, setSwitchWorkspacePath] = useState<string | null>(null);
+  const [switchTarget, setSwitchTarget] = useState<SwitchWorkspaceTarget | null>(null);
   const [branchModalOpen, setBranchModalOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
@@ -597,43 +601,37 @@ export function App() {
     [workspaceInfo.kind, persistOpenFilesForRoot, restoreOpenFilesForRoot],
   );
 
-  const requestWorkspaceSwitch = useCallback(
-    (path: string) => {
-      if (workspace && workspace !== path) {
-        setSwitchWorkspacePath(path);
-      } else {
-        void switchWorkspaceInCurrentWindow(path);
-      }
-    },
-    [workspace, switchWorkspaceInCurrentWindow],
-  );
-
-  const handleSwitchWorkspacePath = useCallback(
-    async (targetPath: string) => {
-      if (!targetPath || targetPath === workspace) return;
-
+  const openTargetInCurrentWindow = useCallback(
+    async (target: SwitchWorkspaceTarget) => {
+      if (!target.path) return;
       const isSsh =
-        targetPath.startsWith('ssh ') ||
-        targetPath.startsWith('ssh:') ||
-        targetPath.startsWith('ssh://') ||
-        /^[^@\s]+@[^:\s]+:/.test(targetPath);
+        target.kind === 'ssh' ||
+        !!target.sshServer ||
+        target.path.startsWith('ssh ') ||
+        target.path.startsWith('ssh:') ||
+        target.path.startsWith('ssh://') ||
+        /^[^@\s]+@[^:\s]+:/.test(target.path);
+
       if (isSsh) {
         let userHost = '';
         let hostOnly = '';
         const m =
-          targetPath.match(/^ssh\s+([^@\s]+@)?([^:/\s]+)/i) ||
-          targetPath.match(/^ssh:\/\/([^@/\s]+@)?([^:/\s]+)/i) ||
-          targetPath.match(/^([^@/\s]+@)?([^:/\s]+):/);
+          target.path.match(/^ssh\s+([^@\s]+@)?([^:/\s]+)/i) ||
+          target.path.match(/^ssh:\/\/([^@/\s]+@)?([^:/\s]+)/i) ||
+          target.path.match(/^([^@/\s]+@)?([^:/\s]+):/);
         if (m) {
           hostOnly = m[2] || '';
           userHost = (m[1] || '') + hostOnly;
         }
 
-        const remotePathMatch = targetPath.match(/:(.+)$/);
-        const remotePath = remotePathMatch?.[1]?.trim() || undefined;
+        const remotePathMatch = target.path.match(/:(.+)$/);
+        const remotePath =
+          remotePathMatch?.[1]?.trim() || (target.kind === 'ssh' ? target.path : undefined);
 
         const profiles = await window.ide.listSshProfiles().catch(() => []);
-        const matchedProfile = profiles.find((p) => {
+        const matchedProfile = profiles.find((p: any) => {
+          if (target.sshServer && (p.name === target.sshServer || p.host === target.sshServer))
+            return true;
           if (remotePath && p.remotePath === remotePath) return true;
           if (hostOnly && p.host === hostOnly) return true;
           if (userHost && `${p.username}@${p.host}` === userHost.replace(/^@/, '')) return true;
@@ -663,57 +661,86 @@ export function App() {
         }
 
         setSshTargetForModal({
-          server: userHost || hostOnly || undefined,
-          remotePath: remotePath || targetPath,
+          server: target.sshServer || userHost || hostOnly || undefined,
+          remotePath: remotePath || target.path,
         });
         setSshOpen(true);
       } else {
-        requestWorkspaceSwitch(targetPath);
+        await switchWorkspaceInCurrentWindow(target.path);
       }
     },
-    [workspace, requestWorkspaceSwitch, persistOpenFilesForRoot, restoreOpenFilesForRoot],
+    [persistOpenFilesForRoot, restoreOpenFilesForRoot, switchWorkspaceInCurrentWindow],
+  );
+
+  const openTargetInNewWindow = useCallback((target: SwitchWorkspaceTarget) => {
+    const isSsh = target.kind === 'ssh' || !!target.sshServer;
+    if (isSsh) {
+      const sshUri = target.sshServer ? `${target.sshServer}:${target.path}` : target.path;
+      void window.ide.openNewWindow(sshUri);
+    } else {
+      void window.ide.openNewWindow(target.path);
+    }
+  }, []);
+
+  const requestWorkspaceOpen = useCallback(
+    async (target: SwitchWorkspaceTarget) => {
+      const isSsh = target.kind === 'ssh' || !!target.sshServer;
+      const isSame =
+        workspace === target.path && workspaceInfo.kind === (isSsh ? 'ssh' : 'local');
+      if (isSame) return;
+
+      // 如果当前已有打开的工作区，且不是同一个，则弹出提示询问当前窗口还是新窗口打开
+      if (workspace) {
+        setSwitchTarget(target);
+        return;
+      }
+
+      // 否则直接在当前窗口打开
+      await openTargetInCurrentWindow(target);
+    },
+    [workspace, workspaceInfo.kind, openTargetInCurrentWindow],
+  );
+
+  const requestWorkspaceSwitch = useCallback(
+    (path: string) => {
+      void requestWorkspaceOpen({
+        path,
+        name: path.split(/[/\\\\]/).filter(Boolean).pop() || path,
+        kind: 'local',
+      });
+    },
+    [requestWorkspaceOpen],
+  );
+
+  const handleSwitchWorkspacePath = useCallback(
+    async (targetPath: string) => {
+      if (!targetPath || targetPath === workspace) return;
+      const isSsh =
+        targetPath.startsWith('ssh ') ||
+        targetPath.startsWith('ssh:') ||
+        targetPath.startsWith('ssh://') ||
+        /^[^@\s]+@[^:\s]+:/.test(targetPath);
+      void requestWorkspaceOpen({
+        path: targetPath,
+        name: targetPath.split(/[/\\\\]/).filter(Boolean).pop() || targetPath,
+        kind: isSsh ? 'ssh' : 'local',
+      });
+    },
+    [workspace, requestWorkspaceOpen],
   );
 
   const handleSelectRecentWorkspace = useCallback(
     async (item: RecentWorkspaceItem) => {
       const isSsh = item.kind === 'ssh' || !!item.sshServer || item.path.startsWith('ssh ');
-      if (isSsh) {
-        const profiles = await window.ide.listSshProfiles().catch(() => []);
-        const matchedProfile = profiles.find(
-          (p: any) =>
-            (item.sshServer && (p.name === item.sshServer || p.host === item.sshServer)) ||
-            p.remotePath === item.path,
-        );
-        if (matchedProfile) {
-          const res = await window.ide.sshConnect({
-            host: matchedProfile.host,
-            port: matchedProfile.port,
-            username: matchedProfile.username,
-            privateKeyPath: matchedProfile.privateKeyPath,
-            remotePath: item.path || matchedProfile.remotePath,
-          });
-          if (res.ok) {
-            const info = await window.ide.getWorkspaceInfo();
-            persistOpenFilesForRoot(workspaceRef.current);
-            setWorkspaceInfo(info);
-            setWorkspace(info.root);
-            setDiffs([]);
-            setScmDiff(null);
-            setTerminalKey((k) => k + 1);
-            await restoreOpenFilesForRoot(info.root);
-            return;
-          }
-        }
-        setSshTargetForModal({
-          server: item.sshServer,
-          remotePath: item.path,
-        });
-        setSshOpen(true);
-      } else {
-        requestWorkspaceSwitch(item.path);
-      }
+      void requestWorkspaceOpen({
+        path: item.path,
+        name: item.name || item.path.split(/[/\\\\]/).filter(Boolean).pop() || item.path,
+        kind: isSsh ? 'ssh' : 'local',
+        sshServer: item.sshServer,
+        rawItem: item,
+      });
     },
-    [requestWorkspaceSwitch, persistOpenFilesForRoot, restoreOpenFilesForRoot],
+    [requestWorkspaceOpen],
   );
 
   const handleRemoveRecentWorkspace = useCallback((path: string) => {
@@ -765,11 +792,15 @@ export function App() {
     void window.ide.getSettings().then(applySettings);
     if (isBlankNewWindow) {
       if (workspaceFromQuery) {
-        void window.ide.setWorkspace(workspaceFromQuery).then(async (root) => {
-          const info = await window.ide.getWorkspaceInfo();
-          setWorkspaceInfo(info);
-          setWorkspace(root);
-          await restoreOpenFilesForRoot(root);
+        const isSsh =
+          workspaceFromQuery.startsWith('ssh ') ||
+          workspaceFromQuery.startsWith('ssh:') ||
+          workspaceFromQuery.startsWith('ssh://') ||
+          /^[^@\s]+@[^:\s]+:/.test(workspaceFromQuery);
+        void openTargetInCurrentWindow({
+          path: workspaceFromQuery,
+          name: workspaceFromQuery.split(/[/\\\\]/).filter(Boolean).pop() || workspaceFromQuery,
+          kind: isSsh ? 'ssh' : 'local',
         });
       }
     } else {
@@ -795,7 +826,7 @@ export function App() {
       setLayout((prev) => ({ ...prev, bottomPanelExpanded: false }));
       void restoreOpenFilesForRoot(info.root);
     });
-  }, [applySettings, persistOpenFilesForRoot, restoreOpenFilesForRoot]);
+  }, [applySettings, persistOpenFilesForRoot, restoreOpenFilesForRoot, openTargetInCurrentWindow]);
 
   // Remember open tabs for the current project (debounced).
   useEffect(() => {
@@ -1331,6 +1362,7 @@ export function App() {
         j: 'cmd-toggle-terminal',
         o: 'cmd-switch-workspace',
         ',': 'cmd-open-settings',
+        r: 'cmd-reload-window',
       };
       const isMonacoFocused = (() => {
         const el = document.activeElement as HTMLElement | null;
@@ -1374,6 +1406,19 @@ export function App() {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [activePath]);
+
+  useEffect(() => {
+    if (!extensionPanelOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setExtensionPanelOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [extensionPanelOpen]);
 
   // Keep side-panel widths in sync with the app window's actual size (see
   // computeEffectiveLayoutWidths) instead of only reacting to splitter drags.
@@ -1532,6 +1577,16 @@ export function App() {
       shortcut: '',
       handler: () => setCloneOpen(true),
     },
+    {
+      id: 'cmd-reload-window',
+      title: '窗口: 重载窗口 (Reload Window)',
+      category: '窗口',
+      shortcut: 'Cmd+R',
+      handler: () => {
+        persistOpenFilesForRoot(workspaceRef.current);
+        window.location.reload();
+      },
+    },
   ];
 
   return (
@@ -1595,7 +1650,7 @@ export function App() {
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <span className="search-trigger-text">命令 / 搜索</span>
-            <kbd className="search-trigger-kbd">⌘P</kbd>
+            <kbd className="search-trigger-kbd">{isMac ? '⌘P' : 'Ctrl+P'}</kbd>
           </button>
 
           {/* 3个区域折叠/展开切换按钮 */}
@@ -2194,6 +2249,7 @@ export function App() {
               {/* 根据标签显示不同内容 */}
               {rightPanelTab === 'chat' && (
                 <ChatPanel
+                  key={`${workspaceInfo.kind}-${workspace || 'none'}`}
                   ref={chatRef}
                   workspace={workspace}
                   workspaceInfo={workspaceInfo}
@@ -2327,11 +2383,11 @@ export function App() {
       />
 
       <SwitchWorkspaceModal
-        open={!!switchWorkspacePath}
-        targetPath={switchWorkspacePath}
-        onClose={() => setSwitchWorkspacePath(null)}
-        onOpenCurrentWindow={(path) => void switchWorkspaceInCurrentWindow(path)}
-        onOpenNewWindow={(path) => void window.ide.openNewWindow(path)}
+        open={!!switchTarget}
+        target={switchTarget}
+        onClose={() => setSwitchTarget(null)}
+        onOpenCurrentWindow={(t) => void openTargetInCurrentWindow(t)}
+        onOpenNewWindow={(t) => void openTargetInNewWindow(t)}
       />
 
       <BranchSwitchModal
@@ -2424,6 +2480,7 @@ export function App() {
           ))}
         </div>
       )}
+      <GlobalTooltip />
     </div>
   );
 }

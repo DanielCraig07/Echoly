@@ -627,7 +627,8 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               background: 'var(--bg-input, #12161c)',
               border: '1px solid var(--border)',
               borderRadius: 6,
-              paddingRight: 80,
+              paddingRight: 74,
+              boxSizing: 'border-box',
             }}
           >
             <input
@@ -637,15 +638,14 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               placeholder="搜索 (↑↓ 历史)"
               title="搜索 (使用 ↑↓ 查看历史记录)"
               style={{
-                flex: 1,
-                minWidth: 0,
+                width: '100%',
                 padding: '6px 8px',
-                paddingRight: 86,
                 background: 'transparent',
                 border: 'none',
                 color: 'var(--text)',
                 fontSize: 12,
                 outline: 'none',
+                boxSizing: 'border-box',
               }}
             />
             {/* Action Toggles Inside Input */}
@@ -730,6 +730,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 border: '1px solid var(--border)',
                 borderRadius: 6,
                 paddingRight: 60,
+                boxSizing: 'border-box',
               }}
             >
               <input
@@ -745,6 +746,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                   color: 'var(--text)',
                   fontSize: 12,
                   outline: 'none',
+                  boxSizing: 'border-box',
                 }}
               />
               <div

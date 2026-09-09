@@ -21,6 +21,19 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
     return window.ide.onGitCloneLog((line) => setLog((prev) => prev + line));
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   async function pickDir(): Promise<void> {

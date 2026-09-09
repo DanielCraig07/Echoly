@@ -35,6 +35,19 @@ export function SshConnectModal({
   const [dirLoading, setDirLoading] = useState(false);
 
   useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, onClose]);
+
+  useEffect(() => {
     if (!open) {
       setShowForm(false);
       setStep('credentials');

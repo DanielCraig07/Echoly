@@ -21,6 +21,7 @@ export {
   searchFilesByQuery,
   globFilesByPattern,
   collectFilePaths,
+  collectFilePathsLocal,
   collectFilePathsRemote,
   filterAndScoreFiles,
   fuzzyScore,

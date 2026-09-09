@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 export interface RecentWorkspaceItem {
   path: string;
   name: string;
@@ -30,6 +32,19 @@ export function OpenWorkspaceModal({
   onRemoveRecent,
   onClearRecent,
 }: Props) {
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   return (

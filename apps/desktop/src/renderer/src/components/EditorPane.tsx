@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { KeyMod, KeyCode, editor as MonacoEditor } from 'monaco-editor';
 import type {
@@ -557,7 +557,7 @@ export function EditorPane({
   const [peekResults, setPeekResults] = useState<PeekResult[]>([]);
   const [peekSymbol, setPeekSymbol] = useState<string>('');
   const [peekVisible, setPeekVisible] = useState(false);
-  const monacoTheme = uiTheme === 'light' ? 'vs' : 'custom-dark';
+  const monacoTheme = uiTheme === 'light' ? 'custom-light' : 'custom-dark';
   const pendingReveal = useRef<number | null>(null);
 
   const lastCursorPosRef = useRef<{ path: string; line: number; column: number } | null>(null);
@@ -663,6 +663,41 @@ export function EditorPane({
   }, []);
 
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleDown = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('mousedown', handleDown);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      window.removeEventListener('mousedown', handleDown);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [contextMenu]);
+
+  useLayoutEffect(() => {
+    const el = contextMenuRef.current;
+    if (!el || !contextMenu) return;
+    const rect = el.getBoundingClientRect();
+    let x = contextMenu.x;
+    let y = contextMenu.y;
+    if (x + rect.width > window.innerWidth - 8) {
+      x = Math.max(8, window.innerWidth - rect.width - 8);
+    }
+    if (y + rect.height > window.innerHeight - 8) {
+      y = Math.max(8, window.innerHeight - rect.height - 8);
+    }
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+  }, [contextMenu]);
 
   // Split editor state
   const [isSplit, setIsSplit] = useState(false);
@@ -1748,8 +1783,9 @@ export function EditorPane({
               minimap: { enabled: false },
               lineNumbersMinChars: 4,
               lineDecorationsWidth: 10,
-              glyphMargin: false,
               folding: true,
+              occurrencesHighlight: 'off',
+              selectionHighlight: false,
               wordWrap: wordWrap ? 'on' : 'off',
               scrollbar: {
                 vertical: 'visible',
@@ -2371,6 +2407,8 @@ export function EditorPane({
                   overviewRulerBorder: false,
                   multiCursorModifier: 'alt',
                   links: true,
+                  occurrencesHighlight: 'off',
+                  selectionHighlight: false,
                   gotoLocation: {
                     multiple: 'goto',
                     multipleDefinitions: 'peek',
@@ -2503,6 +2541,8 @@ export function EditorPane({
                   minimap: { enabled: false },
                   automaticLayout: true,
                   smoothScrolling: true,
+                  occurrencesHighlight: 'off',
+                  selectionHighlight: false,
                   wordWrap: wordWrap ? 'on' : 'off',
                   scrollBeyondLastColumn: 0,
                   lineNumbersMinChars: 4,
@@ -2581,6 +2621,8 @@ export function EditorPane({
                       minimap: { enabled: false },
                       automaticLayout: true,
                       smoothScrolling: true,
+                      occurrencesHighlight: 'off',
+                      selectionHighlight: false,
                       wordWrap: wordWrap ? 'on' : 'off',
                       scrollBeyondLastColumn: 0,
                       lineNumbersMinChars: 4,
@@ -2707,6 +2749,7 @@ export function EditorPane({
                 fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
                 fontWeight: '400',
                 disableMonospaceOptimizations: true,
+                'semanticHighlighting.enabled': true,
                 minimap: { enabled: false },
                 automaticLayout: true,
                 smoothScrolling: true,
@@ -2720,6 +2763,8 @@ export function EditorPane({
                 overviewRulerBorder: false,
                 multiCursorModifier: 'alt',
                 links: true,
+                occurrencesHighlight: 'off',
+                selectionHighlight: false,
                 gotoLocation: {
                   multiple: 'peek',
                   multipleDefinitions: 'peek',
@@ -3212,9 +3257,10 @@ export function EditorPane({
         )}
       </div>
 
-      {/* Editor Tab Context Menu (VSCode style) */}
+      {/* Editor Tab Context Menu (VSCode / Modern macOS style) */}
       {contextMenu && (
         <div
+          ref={contextMenuRef}
           className="tab-context-menu"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
@@ -3228,28 +3274,66 @@ export function EditorPane({
                   setContextMenu(null);
                 }}
               >
-                <span>放弃修改 (Discard Changes)</span>
-                <span className="shortcut">⟲</span>
+                <div className="menu-item-left">
+                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                  <span>放弃修改 (Discard Changes)</span>
+                </div>
+                <kbd className="shortcut-badge">⟲</kbd>
               </div>
               <div className="menu-divider" />
             </>
           )}
           <div className="menu-item" onClick={() => handleCloseTab(contextMenu.targetPath)}>
-            <span>关闭</span>
-            <span className="shortcut">⌘W</span>
+            <div className="menu-item-left">
+              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+              <span>关闭</span>
+            </div>
+            <kbd className="shortcut-badge">{isMac ? '⌘W' : 'Ctrl+W'}</kbd>
           </div>
           <div className="menu-item" onClick={() => handleCloseOthers(contextMenu.targetPath)}>
-            <span>关闭其他</span>
-            <span className="shortcut">⌥⌘T</span>
+            <div className="menu-item-left">
+              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="13" height="13" rx="2" />
+                <path d="M9 17h10a2 2 0 0 0 2-2V9" />
+              </svg>
+              <span>关闭其他</span>
+            </div>
+            <kbd className="shortcut-badge">{isMac ? '⌥⌘T' : 'Alt+Ctrl+T'}</kbd>
           </div>
           <div className="menu-item" onClick={() => handleCloseRight(contextMenu.targetPath)}>
-            <span>关闭右侧标签页</span>
+            <div className="menu-item-left">
+              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="9 18 15 12 9 6" />
+                <line x1="19" y1="5" x2="19" y2="19" />
+              </svg>
+              <span>关闭右侧标签页</span>
+            </div>
           </div>
           <div className="menu-item" onClick={handleCloseSaved}>
-            <span>关闭已保存</span>
+            <div className="menu-item-left">
+              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+              <span>关闭已保存</span>
+            </div>
           </div>
           <div className="menu-item" onClick={handleCloseAll}>
-            <span>全部关闭</span>
+            <div className="menu-item-left">
+              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+              </svg>
+              <span>全部关闭</span>
+            </div>
           </div>
 
           <div className="menu-divider" />
@@ -3258,15 +3342,27 @@ export function EditorPane({
             className="menu-item"
             onClick={() => void handleCopyPath(contextMenu.targetPath, false)}
           >
-            <span>复制绝对路径</span>
-            <span className="shortcut">⌥⌘C</span>
+            <div className="menu-item-left">
+              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              <span>复制绝对路径</span>
+            </div>
+            <kbd className="shortcut-badge">{isMac ? '⌥⌘C' : 'Alt+Ctrl+C'}</kbd>
           </div>
           <div
             className="menu-item"
             onClick={() => void handleCopyPath(contextMenu.targetPath, true)}
           >
-            <span>复制相对路径</span>
-            <span className="shortcut">⌥⇧⌘C</span>
+            <div className="menu-item-left">
+              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
+              <span>复制相对路径</span>
+            </div>
+            <kbd className="shortcut-badge">{isMac ? '⌥⇧⌘C' : 'Alt+Shift+Ctrl+C'}</kbd>
           </div>
 
           <div className="menu-divider" />
@@ -3275,8 +3371,13 @@ export function EditorPane({
             className="menu-item"
             onClick={() => void handleShowInFinder(contextMenu.targetPath)}
           >
-            <span>在 Finder / 资源管理器中显示</span>
-            <span className="shortcut">⌥⌘R</span>
+            <div className="menu-item-left">
+              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+              <span>{isMac ? '在 Finder 中显示' : '在资源管理器中显示'}</span>
+            </div>
+            <kbd className="shortcut-badge">{isMac ? '⌥⌘R' : 'Alt+Ctrl+R'}</kbd>
           </div>
         </div>
       )}

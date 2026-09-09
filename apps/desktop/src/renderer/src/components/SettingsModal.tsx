@@ -51,6 +51,8 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
   const [modelProbeResults, setModelProbeResults] = useState<
     Record<string, { ok: boolean; detail: string }>
   >({});
+  // 待确认删除的模型
+  const [deletingModel, setDeletingModel] = useState<ModelProfile | null>(null);
   // 更新下载进度状态：下载中显示进度条，完成/失败后隐藏。
   // 注意：必须放在条件早退(if(!open||!settings) return null)之前，否则违反 Hook 规则。
   const [updating, setUpdating] = useState<{ phase: 'download' | 'done'; percent: number } | null>(
@@ -319,15 +321,27 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
     setProbe('');
   }, [open]);
 
-  // 按 Esc 关闭设置弹窗
+  // 按 Esc 关闭设置弹窗或删除确认弹窗
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (deletingModel) {
+          setDeletingModel(null);
+          return;
+        }
+        if (pendingUpdate && !downloading) {
+          setPendingUpdate(null);
+          return;
+        }
+        onClose();
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [open, onClose, deletingModel, pendingUpdate, downloading]);
 
   if (!open || !settings) return null;
 
@@ -521,278 +535,291 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                   </button>
                 </div>
 
-                {/* 编辑/新建模型浮动卡片 */}
-                {editingModel && (
-                  <div className="model-edit-box">
-                    <div className="model-edit-box-header">
-                      <div className="edit-title">
-                        <span className="edit-dot" />
-                        <strong>
-                          {isCreatingNew ? '配置新 AI 模型' : `编辑模型: ${editingModel.name}`}
-                        </strong>
-                        {((modelProbeResults[editingModel.id]?.ok) ||
-                          (!modelProbeResults[editingModel.id] && editingModel.lastProbeOk)) && (
-                          <span className="connected-pill" title="端点连通性测试正常">
-                            <span className="status-dot" /> 连通正常
-                          </span>
-                        )}
-                      </div>
-                      <div className="preset-quick-select">
-                        <span className="preset-label">快速套用预设:</span>
-                        <select
-                          className="preset-select"
-                          onChange={(e) => {
-                            const preset = MODEL_PRESETS.find((p) => p.label === e.target.value);
-                            if (preset) {
-                              setEditingModel({
-                                ...editingModel,
-                                provider: preset.provider,
-                                name: preset.name,
-                                baseUrl: preset.baseUrl,
-                                model: preset.model,
-                                enableThinking: preset.enableThinking,
-                                thinkingTokens: preset.thinkingTokens,
-                              });
-                            }
-                          }}
-                          defaultValue=""
-                        >
-                          <option value="" disabled>
-                            选择预设模板填充…
-                          </option>
-                          {MODEL_PRESETS.map((p) => (
-                            <option key={p.label} value={p.label}>
-                              {p.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="settings-grid-2">
-                      <div className="settings-row">
-                        <label>协议类型 (Provider)</label>
-                        <select
-                          className="modern-select"
-                          value={editingModel.provider}
-                          onChange={(e) => {
-                            const p = e.target.value as ModelProviderType;
-                            setEditingModel({ ...editingModel, provider: p });
-                          }}
-                        >
-                          {(Object.keys(AI_PROVIDER_LABELS) as ModelProviderType[]).map((k) => (
-                            <option key={k} value={k}>
-                              {AI_PROVIDER_LABELS[k]}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="settings-row">
-                        <label>显示别名 (Display Name)</label>
-                        <input
-                          className="modern-input"
-                          value={editingModel.name}
-                          placeholder="例如：DeepSeek (内网) 或 GPT-4o"
-                          onChange={(e) =>
-                            setEditingModel({ ...editingModel, name: e.target.value })
-                          }
-                        />
-                      </div>
-                    </div>
-
-                    <div className="settings-row">
-                      <label>API 接口地址 (Base URL)</label>
-                      <input
-                        className="modern-input mono-font"
-                        value={editingModel.baseUrl}
-                        placeholder="例如：https://api.deepseek.com 或 http://192.168.10.241:8002"
-                        onChange={(e) =>
-                          setEditingModel({ ...editingModel, baseUrl: e.target.value })
-                        }
-                      />
-                    </div>
-
-                    <div className="settings-grid-2">
-                      <div className="settings-row">
-                        <label>模型标识 (Model ID)</label>
-                        <input
-                          className="modern-input mono-font"
-                          value={editingModel.model}
-                          placeholder="如 deepseek-v4-flash, gpt-4o, claude-3-7-sonnet"
-                          onChange={(e) =>
-                            setEditingModel({ ...editingModel, model: e.target.value })
-                          }
-                        />
-                      </div>
-                      <div className="settings-row">
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                          }}
-                        >
-                          <label>API Key</label>
-                          <button
-                            type="button"
-                            className="toggle-eye-btn"
-                            onClick={() => setShowApiKey(!showApiKey)}
-                          >
-                            {showApiKey ? '隐藏 Key' : '显示 Key'}
-                          </button>
+                {/* 编辑/新建模型渲染函数 */}
+                {(() => {
+                  const renderModelEditBox = (isNew: boolean) => {
+                    if (!editingModel) return null;
+                    return (
+                      <div className="model-edit-box" key={editingModel.id}>
+                        <div className="model-edit-box-header">
+                          <div className="edit-title">
+                            <span className="edit-dot" />
+                            <strong>
+                              {isNew ? '配置新 AI 模型' : `编辑模型: ${editingModel.name}`}
+                            </strong>
+                            {((modelProbeResults[editingModel.id]?.ok) ||
+                              (!modelProbeResults[editingModel.id] && editingModel.lastProbeOk)) && (
+                              <span className="connected-pill" title="端点连通性测试正常">
+                                <span className="status-dot" /> 连通正常
+                              </span>
+                            )}
+                          </div>
+                          <div className="preset-quick-select">
+                            <span className="preset-label">快速套用预设:</span>
+                            <select
+                              className="preset-select"
+                              onChange={(e) => {
+                                const preset = MODEL_PRESETS.find((p) => p.label === e.target.value);
+                                if (preset) {
+                                  setEditingModel({
+                                    ...editingModel,
+                                    provider: preset.provider,
+                                    name: preset.name,
+                                    baseUrl: preset.baseUrl,
+                                    model: preset.model,
+                                    enableThinking: preset.enableThinking,
+                                    thinkingTokens: preset.thinkingTokens,
+                                  });
+                                }
+                              }}
+                              defaultValue=""
+                            >
+                              <option value="" disabled>
+                                选择预设模板填充…
+                              </option>
+                              {MODEL_PRESETS.map((p) => (
+                                <option key={p.label} value={p.label}>
+                                  {p.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
-                        <input
-                          type={showApiKey ? 'text' : 'password'}
-                          className="modern-input mono-font"
-                          value={editingModel.apiKey}
-                          placeholder={
-                            editingModel.provider === 'deepseek'
-                              ? '内网可留空，官方 API 必填'
-                              : '填入对应的 API Key'
-                          }
-                          onChange={(e) =>
-                            setEditingModel({ ...editingModel, apiKey: e.target.value })
-                          }
-                        />
-                      </div>
-                    </div>
 
-                    {(editingModel.provider === 'anthropic' ||
-                      editingModel.model.includes('reasoner') ||
-                      editingModel.model.includes('r1')) && (
-                      <div className="settings-grid-2 thinking-config-row">
-                        <div className="settings-row">
-                          <label>深度思考模式 (Extended Thinking)</label>
-                          <label className="modern-checkbox-label">
+                        <div className="settings-grid-2">
+                          <div className="settings-row">
+                            <label>协议类型 (Provider)</label>
+                            <select
+                              className="modern-select"
+                              value={editingModel.provider}
+                              onChange={(e) => {
+                                const p = e.target.value as ModelProviderType;
+                                setEditingModel({ ...editingModel, provider: p });
+                              }}
+                            >
+                              {(Object.keys(AI_PROVIDER_LABELS) as ModelProviderType[]).map((k) => (
+                                <option key={k} value={k}>
+                                  {AI_PROVIDER_LABELS[k]}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="settings-row">
+                            <label>显示别名 (Display Name)</label>
                             <input
-                              type="checkbox"
-                              checked={editingModel.enableThinking !== false}
+                              className="modern-input"
+                              value={editingModel.name}
+                              placeholder="例如：DeepSeek (内网) 或 GPT-4o"
                               onChange={(e) =>
-                                setEditingModel({
-                                  ...editingModel,
-                                  enableThinking: e.target.checked,
-                                })
+                                setEditingModel({ ...editingModel, name: e.target.value })
                               }
                             />
-                            <span>启用推理思考过程输出</span>
-                          </label>
+                          </div>
                         </div>
+
                         <div className="settings-row">
-                          <label>Thinking Tokens 上限</label>
+                          <label>API 接口地址 (Base URL)</label>
                           <input
-                            type="number"
-                            className="modern-input"
-                            min="1000"
-                            step="1000"
-                            value={editingModel.thinkingTokens || 8000}
+                            className="modern-input mono-font"
+                            value={editingModel.baseUrl}
+                            placeholder="例如：https://api.deepseek.com 或 http://192.168.10.241:8002"
                             onChange={(e) =>
-                              setEditingModel({
-                                ...editingModel,
-                                thinkingTokens: Number(e.target.value) || 8000,
-                              })
+                              setEditingModel({ ...editingModel, baseUrl: e.target.value })
                             }
                           />
                         </div>
-                      </div>
-                    )}
 
-                    {/* 编辑卡片内的即时连通性测试反馈（测试时或测试后立即呈现，无需等保存） */}
-                    {(modelProbingId === editingModel.id ||
-                      modelProbeResults[editingModel.id] ||
-                      editingModel.lastProbeOk) && (
-                      <div
-                        className={`probe-result-bubble ${
-                          modelProbingId === editingModel.id
-                            ? 'probe-testing'
-                            : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
-                              ? 'probe-success'
-                              : 'probe-error'
-                        }`}
-                        style={{
-                          margin: '12px 0 6px 0',
-                          padding: '8px 12px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          borderRadius: 6,
-                          fontSize: 12,
-                          width: '100%',
-                          boxSizing: 'border-box',
-                        }}
-                      >
-                        <span className="probe-icon">
-                          {modelProbingId === editingModel.id
-                            ? '⟳'
-                            : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
-                              ? '✓'
-                              : '✕'}
-                        </span>
-                        <span className="probe-text" style={{ wordBreak: 'break-all' }}>
-                          {modelProbingId === editingModel.id
-                            ? '正在进行端点连通性探测，请稍候…'
-                            : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
-                              ? `连通性正常: ${modelProbeResults[editingModel.id]?.detail || '端点连接畅通'}`
-                              : `连通性异常: ${modelProbeResults[editingModel.id]?.detail || '连接失败'}`}
-                        </span>
-                      </div>
-                    )}
+                        <div className="settings-grid-2">
+                          <div className="settings-row">
+                            <label>模型标识 (Model ID)</label>
+                            <input
+                              className="modern-input mono-font"
+                              value={editingModel.model}
+                              placeholder="如 deepseek-v4-flash, gpt-4o, claude-3-7-sonnet"
+                              onChange={(e) =>
+                                setEditingModel({ ...editingModel, model: e.target.value })
+                              }
+                            />
+                          </div>
+                          <div className="settings-row">
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                              }}
+                            >
+                              <label>API Key</label>
+                              <button
+                                type="button"
+                                className="toggle-eye-btn"
+                                onClick={() => setShowApiKey(!showApiKey)}
+                              >
+                                {showApiKey ? '隐藏 Key' : '显示 Key'}
+                              </button>
+                            </div>
+                            <input
+                              type={showApiKey ? 'text' : 'password'}
+                              className="modern-input mono-font"
+                              value={editingModel.apiKey || ''}
+                              placeholder={
+                                editingModel.provider === 'deepseek'
+                                  ? '内网可留空，官方 API 必填'
+                                  : '填入对应的 API Key（留空即免鉴权）'
+                              }
+                              onChange={(e) =>
+                                setEditingModel({ ...editingModel, apiKey: e.target.value })
+                              }
+                            />
+                          </div>
+                        </div>
 
-                    <div className="model-edit-box-footer">
-                      <label className="modern-checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={
-                            editingModel.isDefault === true ||
-                            settings.activeModelId === editingModel.id
+                        <div className="settings-grid-2 thinking-config-row">
+                          <div className="settings-row">
+                            <label>深度思考模式 (Extended Thinking)</label>
+                            <label className="modern-checkbox-label" style={{ marginTop: 4 }}>
+                              <input
+                                type="checkbox"
+                                checked={editingModel.enableThinking ?? false}
+                                onChange={(e) =>
+                                  setEditingModel({
+                                    ...editingModel,
+                                    enableThinking: e.target.checked,
+                                    thinkingTokens: editingModel.thinkingTokens || 8000,
+                                  })
+                                }
+                              />
+                              <span>启用推理思考过程输出</span>
+                            </label>
+                          </div>
+                          {editingModel.enableThinking && (
+                            <div className="settings-row">
+                              <label>Thinking Tokens 上限</label>
+                              <input
+                                type="number"
+                                className="modern-input mono-font"
+                                min="1000"
+                                max="64000"
+                                step="1000"
+                                value={editingModel.thinkingTokens || 8000}
+                                onChange={(e) =>
+                                  setEditingModel({
+                                    ...editingModel,
+                                    thinkingTokens: Number(e.target.value) || 8000,
+                                  })
+                                }
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 编辑卡片内的即时连通性测试反馈 */}
+                        {(modelProbingId === editingModel.id ||
+                          modelProbeResults[editingModel.id] ||
+                          editingModel.lastProbeOk) && (
+                          <div
+                            className={`probe-result-bubble ${
+                              modelProbingId === editingModel.id
+                                ? 'probe-testing'
+                                : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
+                                  ? 'probe-success'
+                                  : 'probe-error'
+                            }`}
+                            style={{
+                              margin: '12px 0 6px 0',
+                              padding: '8px 12px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              borderRadius: 6,
+                              fontSize: 12,
+                              width: '100%',
+                              boxSizing: 'border-box',
+                            }}
+                          >
+                            <span className="probe-icon">
+                              {modelProbingId === editingModel.id
+                                ? '⟳'
+                                : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
+                                  ? '✓'
+                                  : '✕'}
+                            </span>
+                            <span className="probe-text" style={{ wordBreak: 'break-all' }}>
+                              {modelProbingId === editingModel.id
+                                ? '正在进行端点连通性探测，请稍候…'
+                                : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
+                                  ? `连通性正常: ${modelProbeResults[editingModel.id]?.detail || '端点连接畅通'}`
+                                  : `连通性异常: ${modelProbeResults[editingModel.id]?.detail || '连接失败'}`}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="model-edit-box-footer">
+                          <label className="modern-checkbox-label">
+                            <input
+                              type="checkbox"
+                              checked={
+                                editingModel.isDefault === true ||
+                                settings.activeModelId === editingModel.id
+                              }
+                              onChange={(e) =>
+                                setEditingModel({ ...editingModel, isDefault: e.target.checked })
+                              }
+                            />
+                            <span>设为当前默认优先模型</span>
+                          </label>
+                          <div className="edit-btn-group">
+                            <button
+                              type="button"
+                              className="test-btn"
+                              disabled={modelProbingId === editingModel.id}
+                              onClick={() => void probeSingleModel(editingModel)}
+                            >
+                              {modelProbingId === editingModel.id ? '正在连接测试…' : '⚡ 连通性测试'}
+                            </button>
+                            <button
+                              type="button"
+                              className="cancel-btn"
+                              onClick={() => {
+                                setEditingModel(null);
+                                setIsCreatingNew(false);
+                              }}
+                            >
+                              取消
+                            </button>
+                            <button
+                              type="button"
+                              className="primary save-model-btn"
+                              onClick={() => handleSaveEditingModel(editingModel)}
+                            >
+                              保存配置
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <>
+                      {/* 仅在新建模型时在列表顶部渲染编辑框 */}
+                      {isCreatingNew && editingModel && renderModelEditBox(true)}
+
+                      {/* 模型列表 */}
+                      <div className="modern-model-list">
+                        {(settings.models || []).map((m, mIdx) => {
+                          // 如果正在编辑当前已有模型，则原地展开编辑表单，不展示重复卡片
+                          if (editingModel && !isCreatingNew && editingModel.id === m.id) {
+                            return renderModelEditBox(false);
                           }
-                          onChange={(e) =>
-                            setEditingModel({ ...editingModel, isDefault: e.target.checked })
-                          }
-                        />
-                        <span>设为当前默认优先模型</span>
-                      </label>
-                      <div className="edit-btn-group">
-                        <button
-                          type="button"
-                          className="test-btn"
-                          disabled={modelProbingId === editingModel.id}
-                          onClick={() => void probeSingleModel(editingModel)}
-                        >
-                          {modelProbingId === editingModel.id ? '正在连接测试…' : '⚡ 连通性测试'}
-                        </button>
-                        <button
-                          type="button"
-                          className="cancel-btn"
-                          onClick={() => {
-                            setEditingModel(null);
-                            setIsCreatingNew(false);
-                          }}
-                        >
-                          取消
-                        </button>
-                        <button
-                          type="button"
-                          className="primary save-model-btn"
-                          onClick={() => handleSaveEditingModel(editingModel)}
-                        >
-                          保存配置
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* 模型列表 */}
-                <div className="modern-model-list">
-                  {(settings.models || []).map((m, mIdx) => {
-                    const isActive = settings.activeModelId === m.id || m.isDefault;
-                    const probeRes = modelProbeResults[m.id];
-                    const isProbing = modelProbingId === m.id;
-                    return (
-                      <div
-                        key={m.id}
-                        className={`modern-model-card ${isActive ? 'is-active' : ''}`}
-                      >
+                          const isActive = settings.activeModelId === m.id || m.isDefault;
+                          const probeRes = modelProbeResults[m.id];
+                          const isProbing = modelProbingId === m.id;
+                          return (
+                            <div
+                              key={m.id}
+                              className={`modern-model-card ${isActive ? 'is-active' : ''}`}
+                            >
                         <div className="model-card-left">
                           <div className={`model-provider-badge prov-${m.provider}`}>
                             {m.provider === 'anthropic'
@@ -805,11 +832,16 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                           </div>
                           <div className="model-info-block">
                             <div className="model-name-line">
-                              <span className="model-display-name">{m.name}</span>
+                              <span className="model-display-name" title={m.name}>{m.name}</span>
                               {isActive && <span className="active-glow-pill">★ 默认选中</span>}
                               {((probeRes && probeRes.ok) || (!probeRes && m.lastProbeOk)) && (
                                 <span className="connected-pill" title="端点连通性测试正常">
                                   <span className="status-dot" /> 连通正常
+                                </span>
+                              )}
+                              {probeRes && !probeRes.ok && (
+                                <span className="probe-fail-pill" title={`探测异常: ${probeRes.detail || '端点连接失败'}`}>
+                                  ✕ 连通异常
                                 </span>
                               )}
                               {m.enableThinking && (
@@ -829,87 +861,89 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                                 <span className="key-state no-key">免密钥/未配置</span>
                               )}
                             </div>
-                            {probeRes && (
-                              <div
-                                className={`probe-result-bubble ${probeRes.ok ? 'probe-success' : 'probe-error'}`}
-                              >
-                                <span className="probe-icon">{probeRes.ok ? '✓' : '✕'}</span>
-                                <span className="probe-text">
-                                  {probeRes.ok ? '连通性正常' : `探测异常: ${probeRes.detail}`}
-                                </span>
-                              </div>
-                            )}
                           </div>
                         </div>
 
-                        <div className="model-card-right-actions">
-                          {/* 排序上移/下移按钮 */}
-                          <button
-                            type="button"
-                            className="card-action-btn move-btn"
-                            title="上移排序"
-                            disabled={mIdx === 0}
-                            onClick={() => handleMoveModel(m.id, 'up')}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            className="card-action-btn move-btn"
-                            title="下移排序"
-                            disabled={mIdx === (settings.models?.length || 0) - 1}
-                            onClick={() => handleMoveModel(m.id, 'down')}
-                          >
-                            ↓
-                          </button>
+                        <div className="model-card-right-column">
+                          {/* 右上角默认模型开关 */}
+                          <div className="model-card-top-right">
+                            <label
+                              className={`model-default-switch ${isActive ? 'is-active' : ''}`}
+                              title={isActive ? '当前默认优先模型' : '点击设为默认模型'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!isActive) handleSetDefaultModel(m.id);
+                              }}
+                            >
+                              <span className="switch-text">{isActive ? '默认模型' : '设为默认'}</span>
+                              <span className={`switch-pill ${isActive ? 'checked' : ''}`}>
+                                <span className="switch-thumb" />
+                              </span>
+                            </label>
+                          </div>
 
-                          <button
-                            type="button"
-                            className="card-action-btn probe-btn"
-                            title="连通性探测"
-                            disabled={isProbing}
-                            onClick={() => void probeSingleModel(m)}
-                          >
-                            {isProbing ? '探测中…' : '⚡ 探测'}
-                          </button>
-                          {!isActive && (
+                          {/* 操作按钮组 */}
+                          <div className="model-card-right-actions">
                             <button
                               type="button"
-                              className="card-action-btn default-btn"
-                              title="设为默认模型并置顶"
-                              onClick={() => handleSetDefaultModel(m.id)}
+                              className="card-action-btn move-btn"
+                              title="上移排序"
+                              disabled={mIdx === 0}
+                              onClick={() => handleMoveModel(m.id, 'up')}
                             >
-                              ★ 设默认
+                              ↑
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            className="card-action-btn edit-btn"
-                            title="编辑此模型参数"
-                            onClick={() => {
-                              setEditingModel({ ...m });
-                              setIsCreatingNew(false);
-                            }}
-                          >
-                            ✎ 编辑
-                          </button>
-                          {(settings.models?.length || 0) > 1 && (
                             <button
                               type="button"
-                              className="card-action-btn delete-btn"
-                              title="删除此模型"
-                              onClick={() => handleDeleteModel(m.id)}
+                              className="card-action-btn move-btn"
+                              title="下移排序"
+                              disabled={mIdx === (settings.models?.length || 0) - 1}
+                              onClick={() => handleMoveModel(m.id, 'down')}
                             >
-                              🗑
+                              ↓
                             </button>
-                          )}
+
+                            <button
+                              type="button"
+                              className="card-action-btn probe-btn"
+                              title="连通性探测"
+                              disabled={isProbing}
+                              onClick={() => void probeSingleModel(m)}
+                            >
+                              {isProbing ? '探测中…' : '⚡ 探测'}
+                            </button>
+                            <button
+                              type="button"
+                              className="card-action-btn edit-btn"
+                              title="编辑此模型参数"
+                              onClick={() => {
+                                setEditingModel({ ...m });
+                                setIsCreatingNew(false);
+                              }}
+                            >
+                              ✎ 编辑
+                            </button>
+                            {(settings.models?.length || 0) > 1 && (
+                              <button
+                                type="button"
+                                className="card-action-btn delete-btn"
+                                title="删除此模型"
+                                onClick={() => setDeletingModel(m)}
+                              >
+                                🗑
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            )}
+              </>
+            );
+          })()}
+        </div>
+      )}
 
             {/* 2. 运行与推理参数 Tab */}
             {activeTab === 'runtime' && (
@@ -1040,9 +1074,6 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                         <div className="theme-card-label-row">
                           <span>{t('settings.theme.light')}</span>
                           <span className="theme-card-tag">{t('settings.theme.adapting')}</span>
-                        </div>
-                        <div className="theme-card-tooltip">
-                          {t('settings.theme.light.disabledHint')}
                         </div>
                       </div>
                     </div>
@@ -1384,6 +1415,81 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                   onClick={() => void confirmUpdate()}
                 >
                   {downloading ? t('settings.update.downloading') : t('settings.update.confirmBtn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 删除模型确认弹窗 */}
+        {deletingModel && (
+          <div
+            className="confirm-delete-overlay"
+            onClick={() => setDeletingModel(null)}
+          >
+            <div
+              className="confirm-delete-dialog"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="confirm-delete-header">
+                <div className="confirm-delete-icon">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 6h18" />
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                    <line x1="10" y1="11" x2="10" y2="17" />
+                    <line x1="14" y1="11" x2="14" y2="17" />
+                  </svg>
+                </div>
+                <div className="confirm-delete-title-wrap">
+                  <h3 className="confirm-delete-title">确认删除此模型配置？</h3>
+                  <p className="confirm-delete-desc">
+                    删除后该模型将无法在对话中继续使用，此操作无法撤销。
+                  </p>
+                </div>
+              </div>
+
+              <div className="confirm-delete-card">
+                <div className="confirm-delete-model-name">
+                  <strong>{deletingModel.name}</strong>
+                  <code className="model-id-code">{deletingModel.model}</code>
+                </div>
+                <div className="confirm-delete-endpoint">
+                  {deletingModel.baseUrl}
+                </div>
+                {(deletingModel.id === settings?.activeModelId || deletingModel.isDefault) && (
+                  <div className="confirm-delete-warning">
+                    ⚠️ 当前模型为默认优先模型，删除后将自动将其他模型设为默认。
+                  </div>
+                )}
+              </div>
+
+              <div className="confirm-delete-actions">
+                <button
+                  type="button"
+                  className="cancel-btn"
+                  onClick={() => setDeletingModel(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="danger-confirm-btn"
+                  onClick={() => {
+                    handleDeleteModel(deletingModel.id);
+                    setDeletingModel(null);
+                  }}
+                >
+                  确认删除
                 </button>
               </div>
             </div>

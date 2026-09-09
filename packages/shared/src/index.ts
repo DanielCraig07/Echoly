@@ -550,6 +550,7 @@ export interface ChatSessionMessage {
 export interface ChatSession {
   id: string;
   title: string;
+  customTitle?: boolean;
   messages: ChatSessionMessage[];
   updatedAt: number;
   /** Stable workspace key: local abs path, or SSH label `ssh user@host:/path`. */

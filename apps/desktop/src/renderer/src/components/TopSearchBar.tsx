@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -29,6 +30,36 @@ interface Props {
   onOpenFile: (path: string, line?: number) => void;
 }
 
+const DEFAULT_PALETTE_SIZE = { width: 640, height: 440 };
+
+function formatShortcut(shortcut?: string, isMac?: boolean) {
+  if (!shortcut) return '';
+  if (!isMac) return shortcut;
+  return shortcut
+    .replace(/Cmd\+/g, '⌘')
+    .replace(/Command\+/g, '⌘')
+    .replace(/Shift\+/g, '⇧')
+    .replace(/Alt\+/g, '⌥')
+    .replace(/Option\+/g, '⌥')
+    .replace(/Ctrl\+/g, '⌃');
+}
+
+function getInitialPaletteSize(): { width: number; height: number } {
+  try {
+    const raw = localStorage.getItem('echoly_cmd_palette_size');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.width === 'number' && typeof parsed.height === 'number') {
+        return {
+          width: Math.max(460, Math.min(window.innerWidth - 32, parsed.width)),
+          height: Math.max(240, Math.min(window.innerHeight - 32, parsed.height)),
+        };
+      }
+    }
+  } catch {}
+  return DEFAULT_PALETTE_SIZE;
+}
+
 export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSearchBar(
   { enabled, actions = [], onOpenFile },
   ref,
@@ -40,17 +71,61 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
   const [fileHits, setFileHits] = useState<SearchFileHit[]>([]);
   const [codeHits, setCodeHits] = useState<SearchCodeHit[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [size, setSize] = useState(getInitialPaletteSize);
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
+
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const lastMousePosRef = useRef({ x: -1, y: -1 });
   const seq = useRef(0);
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = sizeRef.current.width;
+    const startH = sizeRef.current.height;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      const newW = Math.round(Math.max(460, Math.min(window.innerWidth - 40, startW + dx * 2)));
+      const newH = Math.round(Math.max(240, Math.min(window.innerHeight - 40, startH + dy * 2)));
+      sizeRef.current = { width: newW, height: newH };
+      setSize({ width: newW, height: newH });
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try {
+        localStorage.setItem('echoly_cmd_palette_size', JSON.stringify(sizeRef.current));
+      } catch {}
+    };
+
+    document.body.style.cursor = 'nwse-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  };
 
   useImperativeHandle(ref, () => ({
     focus: (nextMode?: SearchMode) => {
       if (nextMode) setMode(nextMode);
       setOpen(true);
+      setActiveIndex(0);
+      if (enabled) {
+        void window.ide.searchFiles('', 1);
+      }
       requestAnimationFrame(() => {
         inputRef.current?.focus();
         inputRef.current?.select();
+        bodyRef.current?.scrollTo({ top: 0, behavior: 'auto' });
       });
     },
   }));
@@ -67,6 +142,57 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
 
   const hitsCount =
     mode === 'files' ? fileHits.length : mode === 'actions' ? actionHits.length : codeHits.length;
+
+  interface CodeGroup {
+    path: string;
+    fileName: string;
+    dirName: string;
+    items: Array<{ hit: SearchCodeHit; flatIndex: number }>;
+  }
+
+  // 同一文件下的代码搜索结果自动合并到该文件下展示
+  const groupedCodeHits = useMemo<CodeGroup[]>(() => {
+    if (mode !== 'code' || codeHits.length === 0) return [];
+    const groups: CodeGroup[] = [];
+    const map = new Map<string, CodeGroup>();
+
+    codeHits.forEach((hit, flatIndex) => {
+      let group = map.get(hit.path);
+      if (!group) {
+        const fileName = hit.path.split('/').pop() || hit.path;
+        const lastSlash = hit.path.lastIndexOf('/');
+        const dirName = lastSlash > 0 ? hit.path.substring(0, lastSlash) : '';
+        group = {
+          path: hit.path,
+          fileName,
+          dirName,
+          items: [],
+        };
+        map.set(hit.path, group);
+        groups.push(group);
+      }
+      group.items.push({ hit, flatIndex });
+    });
+
+    return groups;
+  }, [mode, codeHits]);
+
+  const renderMatchPreview = (text: string, q: string) => {
+    const trimmed = text.trim();
+    const cleanQ = q.trim();
+    if (!cleanQ) return trimmed;
+    const lowerText = trimmed.toLowerCase();
+    const lowerQ = cleanQ.toLowerCase();
+    const idx = lowerText.indexOf(lowerQ);
+    if (idx === -1) return trimmed;
+    return (
+      <>
+        {trimmed.slice(0, idx)}
+        <span className="cmd-match-highlight">{trimmed.slice(idx, idx + cleanQ.length)}</span>
+        {trimmed.slice(idx + cleanQ.length)}
+      </>
+    );
+  };
 
   useEffect(() => {
     if (!enabled) {
@@ -91,6 +217,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
 
     const id = ++seq.current;
     setLoading(true);
+    const delay = mode === 'files' ? 40 : 120;
     const timer = setTimeout(() => {
       void (async () => {
         try {
@@ -119,17 +246,58 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
           if (id === seq.current) setLoading(false);
         }
       })();
-    }, 180);
+    }, delay);
     return () => clearTimeout(timer);
   }, [query, mode, enabled]);
 
+  // Scroll active item smoothly with breathing room padding to eliminate edge jump
   useEffect(() => {
+    const container = bodyRef.current;
+    if (!container) return;
+
+    if (activeIndex === 0) {
+      container.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const el = container.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`);
+    if (!el) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const buffer = 14; // breathing room
+
+    if (elRect.bottom + buffer > containerRect.bottom) {
+      const scrollAmount = elRect.bottom + buffer - containerRect.bottom;
+      container.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+    } else if (elRect.top - buffer < containerRect.top) {
+      const scrollAmount = elRect.top - buffer - containerRect.top;
+      container.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+    }
+  }, [activeIndex]);
+
+  const handleItemMouseMove = (i: number, e: React.MouseEvent) => {
+    if (
+      Math.abs(e.clientX - lastMousePosRef.current.x) > 1 ||
+      Math.abs(e.clientY - lastMousePosRef.current.y) > 1
+    ) {
+      lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+      if (activeIndex !== i) {
+        setActiveIndex(i);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+      }
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
+  }, [open]);
 
   const selectFile = useCallback(
     (path: string, line?: number) => {
@@ -176,10 +344,12 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
     }
   };
 
-  const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform);
+  const isMac =
+    typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
   const cmdKey = isMac ? '⌘' : 'Ctrl+';
 
   const handleTabSwitch = () => {
+    setActiveIndex(0);
     if (mode === 'actions') setMode('files');
     else if (mode === 'files') setMode('code');
     else setMode('actions');
@@ -189,89 +359,120 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
     <>
       {open && (
         <div
-          className="cmd-palette-backdrop"
-          onClick={() => {
-            setOpen(false);
-            setQuery('');
+          className="cmd-palette-modal"
+          ref={rootRef}
+          style={{
+            width: `${size.width}px`,
+            height: `${size.height}px`,
           }}
         >
-          <div className="cmd-palette-modal" ref={rootRef} onClick={(e) => e.stopPropagation()}>
-            {/* 顶部搜索输入与模式切换 */}
-            <div className="cmd-palette-header">
-              <div className="cmd-palette-icon">
-                {mode === 'actions' ? (
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
+          {/* 顶部搜索输入与模式切换 */}
+          <div className="cmd-palette-header">
+              <div className="cmd-input-box">
+                <div className="cmd-palette-icon">
+                  {loading ? (
+                    <div className="cmd-mini-spinner" />
+                  ) : mode === 'actions' ? (
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  ) : mode === 'files' ? (
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                  ) : (
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <circle cx="11" cy="11" r="8" />
+                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                  )}
+                </div>
+                <input
+                  ref={inputRef}
+                  className="cmd-palette-input"
+                  type="text"
+                  disabled={!enabled && mode !== 'actions'}
+                  placeholder={
+                    mode === 'actions'
+                      ? '输入关键词搜索全局动作与命令…'
+                      : mode === 'files'
+                        ? '搜索项目文件… (按 Tab 切换到命令模式)'
+                        : '搜索全文代码片段…'
+                  }
+                  value={query}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setQuery(val);
+                    if (val.startsWith('>') && mode !== 'actions') {
+                      setMode('actions');
+                    }
+                    setOpen(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Tab') {
+                      e.preventDefault();
+                      handleTabSwitch();
+                      return;
+                    }
+                    onKeyDown(e);
+                  }}
+                />
+                {query.length > 0 && (
+                  <button
+                    type="button"
+                    className="cmd-input-clear-btn"
+                    title="清空搜索"
+                    onClick={() => {
+                      setQuery('');
+                      setActiveIndex(0);
+                      inputRef.current?.focus();
+                    }}
                   >
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                ) : mode === 'files' ? (
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                  </svg>
-                ) : (
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  </svg>
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
                 )}
               </div>
-              <input
-                ref={inputRef}
-                className="cmd-palette-input"
-                type="search"
-                disabled={!enabled && mode !== 'actions'}
-                placeholder={
-                  mode === 'actions'
-                    ? '输入关键词搜索全局动作与命令…'
-                    : mode === 'files'
-                      ? '搜索项目文件… (按 Tab 切换到命令模式)'
-                      : '搜索全文代码片段…'
-                }
-                value={query}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setQuery(val);
-                  if (val.startsWith('>') && mode !== 'actions') {
-                    setMode('actions');
-                  }
-                  setOpen(true);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Tab') {
-                    e.preventDefault();
-                    handleTabSwitch();
-                    return;
-                  }
-                  onKeyDown(e);
-                }}
-              />
               <div className="cmd-palette-tabs">
                 <button
                   type="button"
                   className={`cmd-tab ${mode === 'actions' ? 'active' : ''}`}
                   onClick={() => {
                     setMode('actions');
+                    setActiveIndex(0);
                     inputRef.current?.focus();
                   }}
                 >
@@ -282,6 +483,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                   className={`cmd-tab ${mode === 'files' ? 'active' : ''}`}
                   onClick={() => {
                     setMode('files');
+                    setActiveIndex(0);
                     inputRef.current?.focus();
                   }}
                   disabled={!enabled}
@@ -293,6 +495,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                   className={`cmd-tab ${mode === 'code' ? 'active' : ''}`}
                   onClick={() => {
                     setMode('code');
+                    setActiveIndex(0);
                     inputRef.current?.focus();
                   }}
                   disabled={!enabled}
@@ -314,8 +517,8 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
             </div>
 
             {/* 结果列表区 */}
-            <div className="cmd-palette-body">
-              {loading && (
+            <div className="cmd-palette-body" ref={bodyRef}>
+              {loading && hitsCount === 0 && (
                 <div className="cmd-palette-state">
                   <div className="cmd-spinner" />
                   <span>正在全力搜索中…</span>
@@ -328,21 +531,22 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                 </div>
               )}
 
-              {!loading && hitsCount === 0 && (
+              {!loading && hitsCount === 0 && query.trim() && (
                 <div className="cmd-palette-state">
                   <span className="cmd-state-hint">未找到匹配的结果</span>
                 </div>
               )}
 
-              {!loading && mode === 'actions' && (
+              {mode === 'actions' && actionHits.length > 0 && (
                 <div className="cmd-palette-list">
                   {actionHits.map((act, i) => {
                     const isSelected = i === activeIndex;
                     return (
                       <div
                         key={act.id}
+                        data-index={i}
                         className={`cmd-item ${isSelected ? 'active' : ''}`}
-                        onMouseEnter={() => setActiveIndex(i)}
+                        onMouseMove={(e) => handleItemMouseMove(i, e)}
                         onClick={() => executeAction(act)}
                       >
                         <div className="cmd-item-left">
@@ -353,7 +557,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                         </div>
                         {act.shortcut && (
                           <div className="cmd-item-right">
-                            <kbd className="cmd-kbd">{act.shortcut}</kbd>
+                            <kbd className="cmd-kbd">{formatShortcut(act.shortcut, isMac)}</kbd>
                           </div>
                         )}
                       </div>
@@ -362,7 +566,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                 </div>
               )}
 
-              {!loading && mode === 'files' && (
+              {mode === 'files' && fileHits.length > 0 && (
                 <div className="cmd-palette-list">
                   {fileHits.map((h, i) => {
                     const isSelected = i === activeIndex;
@@ -371,8 +575,9 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                     return (
                       <div
                         key={h.path}
+                        data-index={i}
                         className={`cmd-item ${isSelected ? 'active' : ''}`}
-                        onMouseEnter={() => setActiveIndex(i)}
+                        onMouseMove={(e) => handleItemMouseMove(i, e)}
                         onClick={() => selectFile(h.path)}
                       >
                         <div className="cmd-item-left">
@@ -397,25 +602,54 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                 </div>
               )}
 
-              {!loading && mode === 'code' && (
-                <div className="cmd-palette-list">
-                  {codeHits.map((h, i) => {
-                    const isSelected = i === activeIndex;
-                    return (
+              {mode === 'code' && codeHits.length > 0 && (
+                <div className="cmd-code-groups">
+                  {groupedCodeHits.map((group) => (
+                    <div key={group.path} className="cmd-code-group">
                       <div
-                        key={`${h.path}:${h.line}:${i}`}
-                        className={`cmd-item cmd-code-item ${isSelected ? 'active' : ''}`}
-                        onMouseEnter={() => setActiveIndex(i)}
-                        onClick={() => selectFile(h.path, h.line)}
+                        className="cmd-code-group-header"
+                        onClick={() => selectFile(group.path, group.items[0]?.hit.line)}
+                        title={`打开文件 ${group.path}`}
                       >
-                        <div className="cmd-code-header">
-                          <span className="cmd-item-title">{h.path}</span>
-                          <span className="cmd-code-line">:{h.line}</span>
+                        <div className="cmd-code-group-info">
+                          <svg
+                            className="cmd-file-icon"
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                          >
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                          </svg>
+                          <span className="cmd-code-group-filename">{group.fileName}</span>
+                          {group.dirName && <span className="cmd-code-group-dir">{group.dirName}</span>}
                         </div>
-                        <div className="cmd-code-preview">{h.preview.trim()}</div>
+                        <span className="cmd-code-group-badge">{group.items.length} 处匹配</span>
                       </div>
-                    );
-                  })}
+                      <div className="cmd-code-group-items">
+                        {group.items.map(({ hit, flatIndex }) => {
+                          const isSelected = flatIndex === activeIndex;
+                          return (
+                            <div
+                              key={`${hit.path}:${hit.line}:${flatIndex}`}
+                              data-index={flatIndex}
+                              className={`cmd-item cmd-code-match-item ${isSelected ? 'active' : ''}`}
+                              onMouseMove={(e) => handleItemMouseMove(flatIndex, e)}
+                              onClick={() => selectFile(hit.path, hit.line)}
+                            >
+                              <span className="cmd-code-line-badge">:{hit.line}</span>
+                              <span className="cmd-code-preview-text">
+                                {renderMatchPreview(hit.preview, query)}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -442,12 +676,25 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                   ? `${actionHits.length} 个动作指令`
                   : mode === 'files'
                     ? `${fileHits.length} 个文件匹配`
-                    : `${codeHits.length} 处匹配代码`}
+                    : `${groupedCodeHits.length} 个文件 · ${codeHits.length} 处匹配代码`}
+              </div>
+              <div
+                className="cmd-resize-handle"
+                onMouseDown={handleResizeStart}
+                title="拖动右下角调整大小"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path
+                    d="M8.5 1.5L1.5 8.5M8.5 5L5 8.5M8.5 8.5L8.5 8.51"
+                    stroke="currentColor"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                  />
+                </svg>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </>
+        )}
+      </>
   );
 });

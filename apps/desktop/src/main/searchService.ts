@@ -32,8 +32,6 @@ export class SearchService {
   }
 
   async searchFiles(query: string, max = 50): Promise<SearchFileHit[]> {
-    const q = query.trim();
-    if (!q) return [];
     const backend = this.workspace.getBackend();
     if (!backend) return [];
 
@@ -53,6 +51,9 @@ export class SearchService {
         timestamp: now,
       };
     }
+
+    const q = query.trim();
+    if (!q) return [];
 
     const hits = filterAndScoreFiles(files, q, max);
     return hits.map((h) => ({ path: h.path, score: h.score }));
