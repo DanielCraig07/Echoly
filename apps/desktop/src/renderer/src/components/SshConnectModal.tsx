@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { RemoteDirEntry, SshProfile } from '@deepseek-ide/shared';
+import type { SwitchWorkspaceTarget } from './SwitchWorkspaceModal';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onConnected: (label: string) => void;
+  hasOpenWorkspace?: boolean;
+  isSwitchingWorkspace?: boolean;
+  onConfirmWorkspaceTarget?: (target: SwitchWorkspaceTarget) => void;
   initialServer?: string;
   initialRemotePath?: string;
 }
@@ -13,6 +18,9 @@ export function SshConnectModal({
   open,
   onClose,
   onConnected,
+  hasOpenWorkspace,
+  isSwitchingWorkspace,
+  onConfirmWorkspaceTarget,
   initialServer,
   initialRemotePath,
 }: Props) {
@@ -154,6 +162,48 @@ export function SshConnectModal({
     if (!remotePath.trim()) return;
     setBusy(true);
     setError('');
+
+    if (saveProfile) {
+      try {
+        await window.ide.saveSshProfile({
+          host,
+          port: Number(port) || 22,
+          username,
+          privateKeyPath: privateKeyPath || undefined,
+          remotePath: remotePath.trim(),
+          name: profileName || undefined,
+        });
+      } catch (err) {
+        console.warn('Failed to save SSH profile:', err);
+      }
+    }
+
+    const target: SwitchWorkspaceTarget = {
+      path: remotePath.trim(),
+      name: folderLabel,
+      kind: 'ssh',
+      sshServer: profileName || `${username}@${host}`,
+      rawItem: {
+        host,
+        port: Number(port) || 22,
+        username,
+        password: password || undefined,
+        privateKeyPath: privateKeyPath || undefined,
+        passphrase: passphrase || undefined,
+        remotePath: remotePath.trim(),
+        saveProfile,
+        profileName: profileName || undefined,
+        isTempBrowse: true,
+      },
+    };
+
+    if (!isSwitchingWorkspace && hasOpenWorkspace && onConfirmWorkspaceTarget) {
+      setBusy(false);
+      onClose();
+      onConfirmWorkspaceTarget(target);
+      return;
+    }
+
     const result = await window.ide.sshConnect({
       host,
       port: Number(port) || 22,
@@ -206,7 +256,9 @@ export function SshConnectModal({
     onClose();
   };
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div className="settings-overlay" onClick={handleClose}>
       <div
         className={`ide-modal${step === 'pick_directory' || showForm ? ' ide-modal-md' : ''}`}
@@ -490,6 +542,7 @@ export function SshConnectModal({
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

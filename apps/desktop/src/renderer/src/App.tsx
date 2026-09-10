@@ -33,6 +33,7 @@ import { CloneRepoModal } from './components/CloneRepoModal';
 import { SshConnectModal } from './components/SshConnectModal';
 import { SwitchWorkspaceModal, type SwitchWorkspaceTarget } from './components/SwitchWorkspaceModal';
 import { BranchSwitchModal } from './components/BranchSwitchModal';
+import { FileHistoryModal } from './components/FileHistoryModal';
 import {
   TopSearchBar,
   type TopSearchBarHandle,
@@ -148,6 +149,13 @@ const workspaceFromQuery = (() => {
 const isMac =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
 
+function normalizeWorkspacePath(p: string | null | undefined): string {
+  if (!p) return '';
+  let clean = p.trim().replace(/[/\\]+$/, '');
+  clean = clean.replace(/\\/g, '/');
+  return clean;
+}
+
 export function App() {
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfo>({
@@ -160,6 +168,8 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [openWorkspaceOpen, setOpenWorkspaceOpen] = useState(false);
   const [switchTarget, setSwitchTarget] = useState<SwitchWorkspaceTarget | null>(null);
+  const switchTargetRef = useRef<SwitchWorkspaceTarget | null>(null);
+  switchTargetRef.current = switchTarget;
   const [branchModalOpen, setBranchModalOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
@@ -185,6 +195,9 @@ export function App() {
   const [uiTheme, setUiTheme] = useState<UiTheme>(DEFAULT_SETTINGS.theme);
   const [autoSave, setAutoSave] = useState(DEFAULT_SETTINGS.autoSave);
   const [gitBlameInline, setGitBlameInline] = useState(DEFAULT_SETTINGS.gitBlameInline ?? true);
+  const [hoverDelay, setHoverDelay] = useState(DEFAULT_SETTINGS.hoverDelay ?? 500);
+  const [minimap, setMinimap] = useState(DEFAULT_SETTINGS.minimap !== false);
+  const [selectionAiFloat, setSelectionAiFloat] = useState(DEFAULT_SETTINGS.selectionAiFloat !== false);
   const [models, setModels] = useState<ModelProfile[]>(DEFAULT_MODELS);
   const [activeModelId, setActiveModelId] = useState<string>('deepseek-local');
   const [layout, setLayout] = useState<LayoutSettings>({ ...DEFAULT_LAYOUT });
@@ -232,6 +245,7 @@ export function App() {
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [timelineFile, setTimelineFile] = useState<string | null>(null);
   const [timelineCommits, setTimelineCommits] = useState<GitCommitEntry[]>([]);
+  const [fileHistoryModalPath, setFileHistoryModalPath] = useState<string | null>(null);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
@@ -441,20 +455,8 @@ export function App() {
     };
   }, [workspace]);
 
-  const handleViewFileHistory = useCallback(async (filePath: string) => {
-    setTimelineFile(filePath);
-    // 不展开时间线，保持默认折叠
-    setLeftPanel('explorer');
-    try {
-      const res = await window.ide.gitFileHistory(filePath, 50);
-      if (res.ok) {
-        setTimelineCommits(res.commits);
-      } else {
-        setTimelineCommits([]);
-      }
-    } catch {
-      setTimelineCommits([]);
-    }
+  const handleViewFileHistory = useCallback((filePath: string) => {
+    setFileHistoryModalPath(filePath);
   }, []);
 
   useEffect(() => {
@@ -628,6 +630,37 @@ export function App() {
         const remotePath =
           remotePathMatch?.[1]?.trim() || (target.kind === 'ssh' ? target.path : undefined);
 
+        // 1. 核心优化：若当前窗口已有活动 SSH 会话（或当前工作区就是同一 SSH 主机），直接秒级复用会话切换远程目录！
+        const activeSsh = await window.ide.sshGetActiveSession?.().catch(() => null);
+        const targetServer = target.sshServer || userHost || hostOnly || '';
+
+        if (activeSsh) {
+          const isSameHost =
+            !targetServer ||
+            targetServer.includes(activeSsh.host) ||
+            activeSsh.host.includes(targetServer) ||
+            targetServer.includes(activeSsh.username);
+
+          if (isSameHost) {
+            const nextRemote = remotePath || target.path;
+            const res = await window.ide.sshSwitchRemotePath(nextRemote);
+            if (res.ok) {
+              const info = await window.ide.getWorkspaceInfo();
+              persistOpenFilesForRoot(workspaceRef.current);
+              setWorkspaceInfo(info);
+              setWorkspace(info.root);
+              setDiffs([]);
+              setScmDiff(null);
+              setTerminalKey((k) => k + 1);
+              await restoreOpenFilesForRoot(info.root);
+              showToast('✓ 已切换远程工作区', `${info.root}`, 'success');
+              return;
+            } else {
+              showToast('✕ 切换远程工作区失败', res.detail, 'error');
+            }
+          }
+        }
+
         const profiles = await window.ide.listSshProfiles().catch(() => []);
         const matchedProfile = profiles.find((p: any) => {
           if (target.sshServer && (p.name === target.sshServer || p.host === target.sshServer))
@@ -656,6 +689,32 @@ export function App() {
             setScmDiff(null);
             setTerminalKey((k) => k + 1);
             await restoreOpenFilesForRoot(info.root);
+            showToast('✓ 已连接远程工作区', `${info.root}`, 'success');
+            return;
+          }
+        } else if (target.rawItem?.host) {
+          const res = await window.ide.sshConnect({
+            host: target.rawItem.host,
+            port: target.rawItem.port,
+            username: target.rawItem.username,
+            password: target.rawItem.password,
+            privateKeyPath: target.rawItem.privateKeyPath,
+            passphrase: target.rawItem.passphrase,
+            remotePath: remotePath || target.rawItem.remotePath,
+            saveProfile: target.rawItem.saveProfile,
+            profileName: target.rawItem.profileName,
+            browseOnly: false,
+          });
+          if (res.ok) {
+            const info = await window.ide.getWorkspaceInfo();
+            persistOpenFilesForRoot(workspaceRef.current);
+            setWorkspaceInfo(info);
+            setWorkspace(info.root);
+            setDiffs([]);
+            setScmDiff(null);
+            setTerminalKey((k) => k + 1);
+            await restoreOpenFilesForRoot(info.root);
+            showToast('✓ 已连接远程工作区', `${info.root}`, 'success');
             return;
           }
         }
@@ -669,7 +728,7 @@ export function App() {
         await switchWorkspaceInCurrentWindow(target.path);
       }
     },
-    [persistOpenFilesForRoot, restoreOpenFilesForRoot, switchWorkspaceInCurrentWindow],
+    [persistOpenFilesForRoot, restoreOpenFilesForRoot, switchWorkspaceInCurrentWindow, showToast],
   );
 
   const openTargetInNewWindow = useCallback((target: SwitchWorkspaceTarget) => {
@@ -685,11 +744,19 @@ export function App() {
   const requestWorkspaceOpen = useCallback(
     async (target: SwitchWorkspaceTarget) => {
       const isSsh = target.kind === 'ssh' || !!target.sshServer;
+      const normCurrent = normalizeWorkspacePath(workspace);
+      const normTarget = normalizeWorkspacePath(target.path);
+      const isSamePath =
+        isMac || navigator.userAgent.includes('Windows')
+          ? normCurrent.toLowerCase() === normTarget.toLowerCase()
+          : normCurrent === normTarget;
       const isSame =
-        workspace === target.path && workspaceInfo.kind === (isSsh ? 'ssh' : 'local');
+        Boolean(normCurrent && normTarget && isSamePath) &&
+        workspaceInfo.kind === (isSsh ? 'ssh' : 'local');
       if (isSame) return;
 
       // 如果当前已有打开的工作区，且不是同一个，则弹出提示询问当前窗口还是新窗口打开
+      // 在用户做出选择之前，当前窗口的一切状态（包括文件、终端、会话）绝对保持原样不动
       if (workspace) {
         setSwitchTarget(target);
         return;
@@ -766,6 +833,9 @@ export function App() {
     setUiTheme(s.theme ?? 'dark');
     setAutoSave(s.autoSave === true);
     setGitBlameInline(s.gitBlameInline !== false);
+    setHoverDelay(Math.max(500, s.hoverDelay ?? 500));
+    setMinimap(s.minimap !== false);
+    setSelectionAiFloat(s.selectionAiFloat !== false);
     if (s.models && Array.isArray(s.models) && s.models.length > 0) {
       setModels(s.models);
     }
@@ -1123,6 +1193,101 @@ export function App() {
     }, 300);
   }, [saveUntitledAs]);
 
+  const saveAsActive = useCallback(async (): Promise<void> => {
+    const path = activePathRef.current;
+    const tab = tabsRef.current.find((t) => t.path === path);
+    if (!tab || tab.language === 'image' || tab.previewUrl) return;
+    if (isUntitledPath(tab.path)) {
+      await saveUntitledAs(tab);
+      return;
+    }
+    const defaultName = tab.path.split(/[/\\]/).pop() || 'file.txt';
+    const ws = workspaceRef.current;
+    let defaultPath = defaultName;
+    if (ws) {
+      try {
+        const rootAbs = await window.ide.resolveAbsolutePath('.');
+        defaultPath = `${rootAbs.replace(/[/\\]$/, '')}/${defaultName}`;
+      } catch {
+        // keep bare defaultName
+      }
+    }
+    const dest = await window.ide.saveFileDialog(defaultPath);
+    if (!dest) return;
+
+    let relPath = dest.replace(/\\/g, '/');
+    if (ws) {
+      try {
+        const rootAbs = (await window.ide.resolveAbsolutePath('.'))
+          .replace(/\\/g, '/')
+          .replace(/\/+$/, '');
+        if (relPath === rootAbs || relPath.startsWith(`${rootAbs}/`)) {
+          relPath = relPath === rootAbs ? defaultName : relPath.slice(rootAbs.length + 1);
+        }
+      } catch {
+        // fallback
+      }
+    }
+    await window.ide.writeFile(relPath, tab.content);
+    setTabs((prev) => {
+      const exists = prev.some((t) => t.path === relPath);
+      if (exists) {
+        return prev.map((t) => (t.path === relPath ? { ...t, content: tab.content, dirty: false } : t));
+      }
+      return [...prev, { path: relPath, content: tab.content, dirty: false, language: languageFromPath(relPath) }];
+    });
+    setActivePath(relPath);
+    setTreeRefreshKey((k) => k + 1);
+  }, [saveUntitledAs]);
+
+  const saveAll = useCallback(async (): Promise<void> => {
+    const currentTabs = tabsRef.current;
+    const dirtyTabs = currentTabs.filter((t) => t.dirty && t.language !== 'image' && !t.previewUrl);
+    for (const tab of dirtyTabs) {
+      if (isUntitledPath(tab.path)) {
+        await saveUntitledAs(tab);
+      } else {
+        await window.ide.writeFile(tab.path, tab.content);
+      }
+    }
+    setTabs((prev) => prev.map((t) => (t.dirty ? { ...t, dirty: false } : t)));
+    void window.ide.gitStatus().then((res) => {
+      if (res.ok) {
+        setGitStatus(res);
+        setTreeRefreshKey((k) => k + 1);
+      }
+    });
+  }, [saveUntitledAs]);
+
+  const revertActiveFile = useCallback(async (): Promise<void> => {
+    const path = activePathRef.current;
+    if (!path || isUntitledPath(path)) return;
+    try {
+      const diskContent = await window.ide.readFile(path);
+      setTabs((prev) =>
+        prev.map((t) => (t.path === path ? { ...t, content: diskContent, dirty: false } : t)),
+      );
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const closeCurrentWorkspace = useCallback(async (): Promise<void> => {
+    if (workspaceRef.current) {
+      persistOpenFilesForRoot(workspaceRef.current);
+    }
+    if (workspaceInfo.kind === 'ssh') {
+      await window.ide.sshDisconnect();
+    }
+    await window.ide.setWorkspace('');
+    setWorkspace(null);
+    setWorkspaceInfo({ kind: 'local', root: null, label: '未打开工作区' });
+    setTabs([]);
+    setActivePath(null);
+    setDiffs([]);
+    setTerminalKey((k) => k + 1);
+  }, [workspaceInfo.kind, persistOpenFilesForRoot]);
+
   const createUntitledTab = useCallback(() => {
     setTabs((prev) => {
       let n = 1;
@@ -1252,7 +1417,8 @@ export function App() {
         return;
       }
       if (command.type === 'openWorkspaceModal') {
-        setOpenWorkspaceOpen(true);
+        if (switchTargetRef.current) return;
+        setOpenWorkspaceOpen((prev) => !prev);
         return;
       }
       if (command.type === 'newFile') {
@@ -1286,10 +1452,37 @@ export function App() {
           });
         return;
       }
-      if (command.type !== 'save') return;
-      void saveActive();
+      if (command.type === 'save') {
+        void saveActive();
+        return;
+      }
+      if (command.type === 'saveAs') {
+        void saveAsActive();
+        return;
+      }
+      if (command.type === 'saveAll') {
+        void saveAll();
+        return;
+      }
+      if (command.type === 'revertFile') {
+        void revertActiveFile();
+        return;
+      }
+      if (command.type === 'closeWorkspace') {
+        void closeCurrentWorkspace();
+        return;
+      }
     });
-  }, [openFile, requestWorkspaceSwitch, createUntitledTab, saveActive]);
+  }, [
+    openFile,
+    requestWorkspaceSwitch,
+    createUntitledTab,
+    saveActive,
+    saveAsActive,
+    saveAll,
+    revertActiveFile,
+    closeCurrentWorkspace,
+  ]);
 
   function onPendingDiff(event: Extract<AgentEvent, { type: 'pending_diff' }>): void {
     setDiffs((prev) => {
@@ -1550,6 +1743,31 @@ export function App() {
       handler: () => void handleDiscardPath('all'),
     },
     {
+      id: 'cmd-git-history',
+      title: 'Git: 查看当前文件提交历史',
+      category: 'Git',
+      shortcut: '',
+      handler: () => {
+        if (activePath) {
+          handleViewFileHistory(activePath);
+        } else {
+          showToast('无法查看文件历史', '请先在编辑器中打开一个文件', 'info');
+        }
+      },
+    },
+    {
+      id: 'cmd-git-log',
+      title: 'Git: 查看提交历史与图谱 (Commit Graph)',
+      category: 'Git',
+      shortcut: '',
+      handler: () => {
+        setLeftPanel('git');
+        const next = { ...layoutRef.current, leftPanelExpanded: true };
+        setLayout(next);
+        persistLayout(next);
+      },
+    },
+    {
       id: 'cmd-open-settings',
       title: '首选项: 打开 IDE 设置与多模型管理',
       category: '设置',
@@ -1561,7 +1779,10 @@ export function App() {
       title: '工作区: 打开或切换工作区目录',
       category: '工作区',
       shortcut: 'Cmd+O',
-      handler: () => setOpenWorkspaceOpen(true),
+      handler: () => {
+        if (switchTargetRef.current) return;
+        setOpenWorkspaceOpen((prev) => !prev);
+      },
     },
     {
       id: 'cmd-ssh-connect',
@@ -2192,6 +2413,9 @@ export function App() {
             onRemoveRecentWorkspace={handleRemoveRecentWorkspace}
             onClearRecentWorkspaces={handleClearRecentWorkspaces}
             onMoreWorkspaceHistory={() => setOpenWorkspaceOpen(true)}
+            hoverDelay={hoverDelay}
+            minimap={minimap}
+            selectionAiFloat={selectionAiFloat}
           />
 
           {workspace && layout.bottomPanelExpanded === true && (
@@ -2351,6 +2575,8 @@ export function App() {
         }}
         onPickClone={() => setCloneOpen(true)}
         recentWorkspaces={recentWorkspaces}
+        currentWorkspace={workspace}
+        currentWorkspaceInfo={workspaceInfo}
         onSelectRecent={(item) => void handleSelectRecentWorkspace(item)}
         onRemoveRecent={handleRemoveRecentWorkspace}
         onClearRecent={handleClearRecentWorkspaces}
@@ -2365,6 +2591,9 @@ export function App() {
         open={sshOpen}
         initialServer={sshTargetForModal?.server}
         initialRemotePath={sshTargetForModal?.remotePath}
+        isSwitchingWorkspace={!!sshTargetForModal}
+        hasOpenWorkspace={!!workspace}
+        onConfirmWorkspaceTarget={(t) => void requestWorkspaceOpen(t)}
         onClose={() => {
           setSshOpen(false);
           setSshTargetForModal(null);
@@ -2385,9 +2614,19 @@ export function App() {
       <SwitchWorkspaceModal
         open={!!switchTarget}
         target={switchTarget}
-        onClose={() => setSwitchTarget(null)}
+        onClose={() => {
+          if (switchTarget?.rawItem?.isTempBrowse) {
+            void window.ide.sshDisconnect();
+          }
+          setSwitchTarget(null);
+        }}
         onOpenCurrentWindow={(t) => void openTargetInCurrentWindow(t)}
-        onOpenNewWindow={(t) => void openTargetInNewWindow(t)}
+        onOpenNewWindow={(t) => {
+          if (t.rawItem?.isTempBrowse) {
+            void window.ide.sshDisconnect();
+          }
+          openTargetInNewWindow(t);
+        }}
       />
 
       <BranchSwitchModal
@@ -2400,6 +2639,15 @@ export function App() {
             setGitStatus(st);
             setTreeRefreshKey((k) => k + 1);
           })();
+        }}
+      />
+
+      <FileHistoryModal
+        filePath={fileHistoryModalPath}
+        onClose={() => setFileHistoryModalPath(null)}
+        onPreviewDiff={(diff) => {
+          setActiveDiffId(null);
+          setScmDiff(diff);
         }}
       />
 
@@ -2480,7 +2728,7 @@ export function App() {
           ))}
         </div>
       )}
-      <GlobalTooltip />
+      <GlobalTooltip delay={hoverDelay} />
     </div>
   );
 }

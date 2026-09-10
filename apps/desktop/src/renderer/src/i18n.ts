@@ -77,6 +77,19 @@ const DICT: Record<string, { zh: string; en: string }> = {
     zh: '设置 IDE 视觉主题、自动保存以及 AI 工具调用执行时的授权安全策略。',
     en: 'Set theme, auto-save and AI tool permission policy.',
   },
+  'settings.hoverDelay': { zh: '鼠标悬浮提示延迟 (Hover Delay)', en: 'Hover Tooltip Delay' },
+  'settings.hoverDelayDesc': {
+    zh: '控制界面元素悬停气泡及代码提示弹出的等待时间，单位毫秒（ms），最低 500ms。',
+    en: 'Delay before UI tooltips and code hover popups appear, in ms (minimum 500ms).',
+  },
+  'settings.minimap': {
+    zh: '开启编辑器右侧代码缩略图 (Minimap)',
+    en: 'Enable editor minimap on right side',
+  },
+  'settings.selectionAiFloat': {
+    zh: '选中文本时显示浮动 AI 提问/编辑快捷栏',
+    en: 'Show floating AI action bar on text selection',
+  },
 
   // 设置 - 更新
   'settings.update.title': { zh: '在线更新', en: 'Online Update' },

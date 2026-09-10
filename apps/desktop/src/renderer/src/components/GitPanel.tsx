@@ -3,6 +3,7 @@ import type {
   GitBranchInfo,
   GitCommitEntry,
   GitCommitFileChange,
+  GitHistoryResult,
   GitStatusEntry,
   GitStatusResult,
   PendingDiff,
@@ -479,6 +480,56 @@ function GitGraphRowSvg({
   );
 }
 
+function GitGraphExpandSvg({
+  rowIndex,
+  analysis,
+}: {
+  rowIndex: number;
+  analysis: GraphAnalysis;
+}) {
+  const { edges, maxLane } = analysis;
+  const LANE_WIDTH = 18;
+  const X_OFFSET = 12;
+  const svgWidth = X_OFFSET + (maxLane + 1) * LANE_WIDTH + 6;
+
+  // Active passing edges connecting through between rowIndex and rowIndex + 1
+  const passingEdges = edges.filter(
+    (e) => e.childRow <= rowIndex && rowIndex < e.parentRow,
+  );
+
+  return (
+    <div style={{ width: svgWidth, flexShrink: 0, position: 'relative', display: 'flex' }}>
+      <svg
+        width={svgWidth}
+        style={{
+          width: svgWidth,
+          height: '100%',
+          display: 'block',
+          overflow: 'visible',
+        }}
+        viewBox={`0 0 ${svgWidth} 100`}
+        preserveAspectRatio="none"
+      >
+        {passingEdges.map((e, idx) => {
+          const x = X_OFFSET + e.parentLane * LANE_WIDTH;
+          return (
+            <line
+              key={`exp-${idx}-${x}`}
+              x1={x}
+              y1={0}
+              x2={x}
+              y2={100}
+              vectorEffect="non-scaling-stroke"
+              stroke={e.color}
+              strokeWidth={2}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 export function GitPanel({
   workspaceInfo,
   onPreviewDiff,
@@ -489,6 +540,7 @@ export function GitPanel({
   const [status, setStatus] = useState<GitStatusResult | null>(null);
   const [branches, setBranches] = useState<GitBranchInfo[]>([]);
   const [commits, setCommits] = useState<GitCommitEntry[]>([]);
+  const [historyResult, setHistoryResult] = useState<GitHistoryResult | null>(null);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const [selectedCommitFiles, setSelectedCommitFiles] = useState<GitCommitFileChange[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -723,10 +775,12 @@ export function GitPanel({
     if (br.ok) setBranches(br.branches.filter((b) => !b.remote));
     else setBranches([]);
 
+    setHistoryResult(hist);
     if (hist.ok) setCommits(hist.commits);
     else setCommits([]);
 
     if (!st.ok && st.detail) setError(st.detail);
+    else if (!hist.ok && hist.detail && !hist.emptyRepo) setError(hist.detail);
     else setError(null);
   }, [workspaceInfo]);
 
@@ -816,10 +870,26 @@ export function GitPanel({
 
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>
-            尚未启用 Git 版本控制
+            {status.detail ? 'Git 访问或仓库检测异常' : '尚未启用 Git 版本控制'}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, maxWidth: 220 }}>
-            当前工作区不是 Git 仓库。初始化仓库后即可享受版本回滚、差异比对、分支管理等全部功能。
+          <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, maxWidth: 260 }}>
+            {status.detail ? (
+              <div
+                style={{
+                  color: '#e5a54b',
+                  wordBreak: 'break-all',
+                  background: 'rgba(229, 165, 75, 0.1)',
+                  padding: '8px 10px',
+                  borderRadius: 4,
+                  border: '1px solid rgba(229, 165, 75, 0.25)',
+                  textAlign: 'left',
+                }}
+              >
+                {status.detail}
+              </div>
+            ) : (
+              '当前工作区不是 Git 仓库。初始化仓库后即可享受版本回滚、差异比对、分支管理等全部功能。'
+            )}
           </div>
         </div>
 
@@ -1850,7 +1920,7 @@ export function GitPanel({
             <span className="chevron" style={{ fontSize: 11, color: 'var(--muted)', width: 10 }}>
               {isGraphCollapsed ? '›' : '▾'}
             </span>
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>图形</span>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Git 提交历史 / 图形</span>
             <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
               ({commits.length})
             </span>
@@ -2018,102 +2088,225 @@ export function GitPanel({
                     {isSelected && (
                       <div
                         style={{
-                          padding: '6px 12px 8px 32px',
-                          background: 'rgba(0,0,0,0.18)',
                           display: 'flex',
-                          flexDirection: 'column',
-                          gap: 4,
-                          borderLeft: `2px solid ${GRAPH_BRANCH_COLORS[(graphAnalysis.commitLanes.get(c.hash) ?? 0) % GRAPH_BRANCH_COLORS.length]}`,
-                          marginLeft: 12,
-                          marginTop: 2,
-                          marginBottom: 4,
+                          alignItems: 'stretch',
+                          background: 'rgba(255, 255, 255, 0.015)',
                         }}
                       >
+                        {/* 保持 Git 分支连线在展开区域连续不中断 */}
+                        <GitGraphExpandSvg rowIndex={i} analysis={graphAnalysis} />
+
+                        {/* 变更文件明细卡片 */}
                         <div
                           style={{
-                            fontSize: 11,
-                            color: 'var(--muted)',
-                            fontWeight: 600,
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
+                            flex: 1,
+                            minWidth: 0,
+                            margin: '4px 8px 8px 4px',
+                            background: 'color-mix(in srgb, var(--bg-elevated, #222) 80%, transparent)',
+                            border: '1px solid var(--border, rgba(255, 255, 255, 0.08))',
+                            borderRadius: 6,
+                            overflow: 'hidden',
+                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)',
                           }}
                         >
-                          <span>提交的文件变更明细 ({selectedCommitFiles.length}):</span>
-                          <span
-                            style={{ fontFamily: 'var(--font-mono)', fontSize: 10, opacity: 0.7 }}
+                          <div
+                            style={{
+                              padding: '5px 10px',
+                              background: 'rgba(255, 255, 255, 0.025)',
+                              borderBottom: '1px solid var(--border, rgba(255, 255, 255, 0.06))',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}
                           >
-                            {c.shortHash}
-                          </span>
-                        </div>
-                        {loadingDetails ? (
-                          <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>
-                            加载文件明细中...
-                          </div>
-                        ) : selectedCommitFiles.length === 0 ? (
-                          <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>
-                            暂无文件变更
-                          </div>
-                        ) : (
-                          selectedCommitFiles.map((f: GitCommitFileChange) => (
-                            <div
-                              key={f.path}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handlePreviewCommitFile(c.hash, f.path);
-                              }}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                padding: '3px 6px',
-                                borderRadius: 4,
-                                background: 'rgba(255, 255, 255, 0.04)',
-                                cursor: 'pointer',
-                                fontSize: 11,
-                              }}
-                              className="search-result-item"
-                              title="点击查看对比 Diff"
-                            >
-                              <RenderFileTreeIcon
-                                name={f.path.split('/').pop() || f.path}
-                                isDirectory={false}
-                              />
-                              <span
-                                style={{
-                                  flex: 1,
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
-                                  color: 'var(--text)',
-                                }}
-                              >
-                                {f.path}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>
+                                提交的文件变更明细
                               </span>
                               <span
                                 style={{
-                                  color:
-                                    f.status === 'A'
-                                      ? '#4caf50'
-                                      : f.status === 'D'
-                                        ? '#f44336'
-                                        : '#e5a54b',
-                                  fontWeight: 'bold',
-                                  fontSize: 11,
+                                  fontSize: 10,
+                                  padding: '0 5px',
+                                  borderRadius: 8,
+                                  background: 'rgba(255, 255, 255, 0.08)',
+                                  color: 'var(--muted)',
                                 }}
                               >
-                                {f.status}
+                                {selectedCommitFiles.length}
                               </span>
                             </div>
-                          ))
-                        )}
+                            <span
+                              style={{
+                                fontFamily: 'var(--font-mono, monospace)',
+                                fontSize: 10,
+                                color: 'var(--muted)',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                              }}
+                            >
+                              {c.shortHash}
+                            </span>
+                          </div>
+
+                          <div style={{ maxHeight: 240, overflowY: 'auto', padding: '3px 5px' }}>
+                            {loadingDetails ? (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: 'var(--muted)',
+                                  padding: '8px 4px',
+                                  textAlign: 'center',
+                                }}
+                              >
+                                加载文件明细中...
+                              </div>
+                            ) : selectedCommitFiles.length === 0 ? (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: 'var(--muted)',
+                                  padding: '8px 4px',
+                                  textAlign: 'center',
+                                }}
+                              >
+                                暂无文件变更
+                              </div>
+                            ) : (
+                              selectedCommitFiles.map((f: GitCommitFileChange) => {
+                                const fileName = f.path.split('/').pop() || f.path;
+                                const dirPath = f.path.includes('/')
+                                  ? f.path.slice(0, f.path.lastIndexOf('/') + 1)
+                                  : '';
+                                return (
+                                  <div
+                                    key={f.path}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handlePreviewCommitFile(c.hash, f.path);
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 6,
+                                      padding: '3.5px 8px',
+                                      borderRadius: 4,
+                                      cursor: 'pointer',
+                                      fontSize: 11.5,
+                                      margin: '1px 0',
+                                      transition: 'background 0.1s ease',
+                                    }}
+                                    className="search-result-item"
+                                    title="点击查看对比 Diff"
+                                  >
+                                    <RenderFileTreeIcon name={fileName} isDirectory={false} />
+                                    <span
+                                      style={{
+                                        flex: 1,
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        display: 'flex',
+                                        alignItems: 'baseline',
+                                        gap: 4,
+                                      }}
+                                    >
+                                      <span style={{ color: 'var(--text)' }}>{fileName}</span>
+                                      {dirPath && (
+                                        <span
+                                          style={{
+                                            color: 'var(--muted)',
+                                            fontSize: 10.5,
+                                            opacity: 0.65,
+                                          }}
+                                        >
+                                          {dirPath}
+                                        </span>
+                                      )}
+                                    </span>
+                                    <span
+                                      style={{
+                                        color:
+                                          f.status === 'A'
+                                            ? '#4caf50'
+                                            : f.status === 'D'
+                                              ? '#f44336'
+                                              : '#e5a54b',
+                                        background:
+                                          f.status === 'A'
+                                            ? 'rgba(76, 175, 80, 0.14)'
+                                            : f.status === 'D'
+                                              ? 'rgba(244, 67, 54, 0.14)'
+                                              : 'rgba(229, 165, 75, 0.14)',
+                                        padding: '1px 5px',
+                                        borderRadius: 3,
+                                        fontWeight: 600,
+                                        fontSize: 10,
+                                        minWidth: 16,
+                                        textAlign: 'center',
+                                      }}
+                                    >
+                                      {f.status}
+                                    </span>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
                 );
               })
             ) : (
-              <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>暂无提交记录</div>
+              <div
+                style={{
+                  padding: '24px 16px',
+                  color: 'var(--muted)',
+                  fontSize: 12,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  alignItems: 'center',
+                  textAlign: 'center',
+                }}
+              >
+                {historyResult?.emptyRepo ? (
+                  <>
+                    <div style={{ fontSize: 20 }}>🌱</div>
+                    <div style={{ fontWeight: 600, color: 'var(--text)' }}>
+                      仓库已初始化，暂无提交记录
+                    </div>
+                    <div style={{ fontSize: 11, lineHeight: 1.5, opacity: 0.8, maxWidth: 260 }}>
+                      当前分支尚未创建任何 commit。完成首次提交后，此处将自动展示完整的 Git 提交历史与分支图谱。
+                    </div>
+                  </>
+                ) : historyResult && !historyResult.ok && historyResult.detail ? (
+                  <>
+                    <div style={{ fontSize: 20 }}>⚠️</div>
+                    <div style={{ fontWeight: 600, color: '#f44336' }}>获取 Git 历史失败</div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        lineHeight: 1.4,
+                        opacity: 0.9,
+                        background: 'rgba(244, 67, 54, 0.1)',
+                        border: '1px solid rgba(244, 67, 54, 0.25)',
+                        padding: '6px 8px',
+                        borderRadius: 4,
+                        fontFamily: 'var(--font-mono)',
+                        wordBreak: 'break-all',
+                        maxWidth: 260,
+                      }}
+                    >
+                      {historyResult.detail}
+                    </div>
+                  </>
+                ) : (
+                  <div>暂无提交记录</div>
+                )}
+              </div>
             )}
           </div>
         )}

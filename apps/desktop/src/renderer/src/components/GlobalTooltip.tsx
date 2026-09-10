@@ -13,9 +13,14 @@ interface TooltipState {
   visible: boolean;
   text: string;
   targetRect: TargetRect | null;
+  mouseY?: number;
 }
 
-export const GlobalTooltip: React.FC = () => {
+interface GlobalTooltipProps {
+  delay?: number;
+}
+
+export const GlobalTooltip: React.FC<GlobalTooltipProps> = ({ delay = 500 }) => {
   const [state, setState] = useState<TooltipState>({
     visible: false,
     text: '',
@@ -25,6 +30,11 @@ export const GlobalTooltip: React.FC = () => {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentTargetRef = useRef<HTMLElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const delayRef = useRef(delay);
+
+  useEffect(() => {
+    delayRef.current = Math.max(500, delay ?? 500);
+  }, [delay]);
 
   useEffect(() => {
     const clearTimer = () => {
@@ -78,6 +88,8 @@ export const GlobalTooltip: React.FC = () => {
       clearTimer();
       currentTargetRef.current = el;
 
+      const clientY = e.clientY;
+      const waitMs = Math.max(500, delayRef.current ?? 500);
       timerRef.current = setTimeout(() => {
         if (currentTargetRef.current !== el || !document.body.contains(el)) return;
 
@@ -95,8 +107,9 @@ export const GlobalTooltip: React.FC = () => {
             width: rect.width,
             height: rect.height,
           },
+          mouseY: clientY,
         });
-      }, 200);
+      }, waitMs);
     };
 
     const handleMouseOut = (e: MouseEvent) => {
@@ -145,18 +158,37 @@ export const GlobalTooltip: React.FC = () => {
     // 小箭头始终指向触发按钮的水平中心
     const arrowLeft = Math.round(Math.max(8, Math.min(tooltipW - 8, centerX - left)));
 
-    // 垂直位置：底部空间充足则放下方，不够时智能翻转到上方
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const preferTop = spaceBelow < tooltipH + 10 && rect.top > tooltipH + 10;
-    const placement = preferTop ? 'top' : 'bottom';
-    const top = preferTop ? rect.top - tooltipH - 6 : rect.bottom + 6;
+    // 垂直位置：
+    // 若目标高度较大（如纵向分割条等高度 > 60px 的纵向通栏组件），依据鼠标光标 Y 轴附近定位，防止落入视口底界外
+    const isTall = rect.height > 60;
+    let top: number;
+    let placement: 'top' | 'bottom';
+
+    if (isTall) {
+      const anchorY = state.mouseY != null ? state.mouseY : (rect.top + rect.height / 2);
+      if (anchorY > tooltipH + 20) {
+        top = anchorY - tooltipH - 10;
+        placement = 'top';
+      } else {
+        top = anchorY + 16;
+        placement = 'bottom';
+      }
+    } else {
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const preferTop = spaceBelow < tooltipH + 10 && rect.top > tooltipH + 10;
+      placement = preferTop ? 'top' : 'bottom';
+      top = preferTop ? rect.top - tooltipH - 6 : rect.bottom + 6;
+    }
+
+    // 严防溢出屏幕上下边界
+    top = Math.round(Math.max(padding, Math.min(window.innerHeight - padding - tooltipH, top)));
 
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
     el.style.setProperty('--arrow-left', `${arrowLeft}px`);
     el.className = `global-app-tooltip placement-${placement}`;
     el.style.opacity = '1';
-  }, [state.visible, state.targetRect, state.text]);
+  }, [state.visible, state.targetRect, state.text, state.mouseY]);
 
   if (!state.visible || !state.text) return null;
 

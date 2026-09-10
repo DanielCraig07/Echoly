@@ -224,6 +224,12 @@ monaco.editor.defineTheme('custom-dark', {
     'editor.wordHighlightStrongBorder': '#00000000',
     'editor.selectionHighlightBackground': '#00000000',
     'editor.selectionHighlightBorder': '#00000000',
+    // 缩略图不透明背景与滚动条差异概览色条
+    'minimap.background': '#1E1E1E',
+    'editorOverviewRuler.border': '#00000000',
+    'editorOverviewRuler.addedForeground': '#2ea043',
+    'editorOverviewRuler.deletedForeground': '#f85149',
+    'editorOverviewRuler.modifiedForeground': '#e2c08d',
   },
 });
 
@@ -237,6 +243,11 @@ monaco.editor.defineTheme('custom-light', {
     'editorGutter.background': '#FFFFFF',
     'editorLineNumber.foreground': '#94a3b8',
     'editorLineNumber.activeForeground': '#334155',
+    'minimap.background': '#FFFFFF',
+    'editorOverviewRuler.border': '#00000000',
+    'editorOverviewRuler.addedForeground': '#1a7f37',
+    'editorOverviewRuler.deletedForeground': '#cf222e',
+    'editorOverviewRuler.modifiedForeground': '#bf8700',
   },
 });
 

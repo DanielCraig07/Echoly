@@ -137,6 +137,8 @@ function normalize(raw: Partial<AppSettings>): AppSettings {
     theme,
     autoSave: raw.autoSave === true,
     gitBlameInline: raw.gitBlameInline !== false,
+    hoverDelay: Math.max(500, Number(raw.hoverDelay) || DEFAULT_SETTINGS.hoverDelay || 500),
+    minimap: raw.minimap !== false,
   };
 }
 

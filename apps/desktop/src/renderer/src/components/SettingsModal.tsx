@@ -1135,6 +1135,58 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                       <span>光标所在行常驻显示 Git Blame (提交人、时间与提交摘要)</span>
                     </label>
                   </div>
+
+                  <div className="setting-card" style={{ marginTop: 12 }}>
+                    <div className="setting-card-title">
+                      <strong>{t('settings.hoverDelay')}</strong>
+                    </div>
+                    <p className="setting-card-desc">
+                      {t('settings.hoverDelayDesc')}
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                      <input
+                        type="number"
+                        min={500}
+                        step={100}
+                        className="modern-input"
+                        style={{ width: 140 }}
+                        value={settings.hoverDelay ?? 500}
+                        onChange={(e) => {
+                          const val = Math.max(500, Number(e.target.value) || 500);
+                          setSettings({ ...settings, hoverDelay: val });
+                        }}
+                      />
+                      <span style={{ fontSize: 13, color: 'var(--muted)' }}>毫秒 (ms)</span>
+                    </div>
+                  </div>
+
+                  <div className="setting-control-group" style={{ marginTop: 12 }}>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.minimap !== false}
+                        onChange={(e) => setSettings({ ...settings, minimap: e.target.checked })}
+                      />
+                      <span>{t('settings.minimap')}</span>
+                    </label>
+                  </div>
+
+                  <div className="setting-control-group" style={{ marginTop: 12 }}>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.selectionAiFloat !== false}
+                        onChange={(e) => setSettings({ ...settings, selectionAiFloat: e.target.checked })}
+                      />
+                      <span>{t('settings.selectionAiFloat')}</span>
+                    </label>
+                  </div>
                 </div>
               </div>
             )}

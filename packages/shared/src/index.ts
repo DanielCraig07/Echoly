@@ -156,6 +156,12 @@ export interface AppSettings {
   gitBlameInline?: boolean;
   /** 自动更新源配置。未配置时禁用自动更新。 */
   updateFeed?: UpdateFeedConfig | null;
+  /** 鼠标悬浮提示延迟时间（毫秒），最低 500ms。默认 500ms。 */
+  hoverDelay?: number;
+  /** 是否在选中代码时显示浮动 AI 提问/编辑操作栏。默认 true。 */
+  selectionAiFloat?: boolean;
+  /** 是否开启编辑区右侧代码缩略图 (Minimap)。默认 true。 */
+  minimap?: boolean;
 }
 
 export interface UpdateFeedConfig {
@@ -205,6 +211,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   autoSave: false,
   gitBlameInline: true,
+  hoverDelay: 500,
+  selectionAiFloat: true,
+  minimap: true,
   updateFeed: null,
 };
 
@@ -600,6 +609,7 @@ export interface GitStatusResult {
   ahead: number;
   behind: number;
   entries: GitStatusEntry[];
+  isShallow?: boolean;
 }
 
 export interface GitDiffResult {
@@ -609,6 +619,7 @@ export interface GitDiffResult {
   original: string;
   modified: string;
   staged: boolean;
+  isTracked?: boolean;
 }
 
 export interface GitBranchInfo {
@@ -643,6 +654,8 @@ export interface GitHistoryResult {
   ok: boolean;
   detail?: string;
   commits: GitCommitEntry[];
+  emptyRepo?: boolean;
+  isShallow?: boolean;
 }
 
 export interface GitBlameLineResult {
@@ -775,6 +788,10 @@ export type AppMenuId = 'edit' | 'view' | 'window';
 
 export type MenuCommand =
   | { type: 'save' }
+  | { type: 'saveAs' }
+  | { type: 'saveAll' }
+  | { type: 'revertFile' }
+  | { type: 'closeWorkspace' }
   | { type: 'autoSave'; enabled: boolean }
   | { type: 'toggleWordWrap'; enabled: boolean }
   | { type: 'newFile' }
@@ -870,8 +887,20 @@ export interface IpcApi {
   searchCode: (req: SearchCodeRequest) => Promise<SearchCodeHit[]>;
   sshConnect: (req: SshConnectRequest) => Promise<SshConnectResult>;
   sshDisconnect: () => Promise<void>;
+  sshSwitchRemotePath: (
+    remotePath: string,
+  ) => Promise<{ ok: boolean; detail?: string; root?: string; label?: string }>;
+  sshGetActiveSession: () => Promise<{
+    host: string;
+    port: number;
+    username: string;
+    remoteRoot: string;
+  } | null>;
   listSshProfiles: () => Promise<SshProfile[]>;
   listLocalSshConfig: () => Promise<SshProfile[]>;
+  saveSshProfile: (
+    profile: Partial<SshProfile> & { host: string; username: string },
+  ) => Promise<void>;
   deleteSshProfile: (id: string) => Promise<void>;
   listRemoteDir: (
     remotePath?: string,

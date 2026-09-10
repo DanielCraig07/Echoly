@@ -15,7 +15,7 @@ import { SshSessionManager } from './ssh/SshSessionManager';
 import { WindowRegistry } from './windowRegistry';
 import { initializeExtensionManager, disposeExtensionManager } from './extensionManager';
 import { initUpdater, quitAndInstallUpdate } from './updater';
-import type { AppMenuId } from '@deepseek-ide/shared';
+import type { AppMenuId, MenuCommand } from '@deepseek-ide/shared';
 
 const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = electron;
 type MenuItemConstructorOptions = electron.MenuItemConstructorOptions;
@@ -143,16 +143,7 @@ let menuDeps: MenuDeps = {
   },
 };
 
-function sendMenuCommand(
-  command:
-    | { type: 'save' }
-    | { type: 'autoSave'; enabled: boolean }
-    | { type: 'toggleWordWrap'; enabled: boolean }
-    | { type: 'newFile' }
-    | { type: 'closeEditor' }
-    | { type: 'openWorkspaceModal' }
-    | { type: 'openWorkspace'; path: string },
-): void {
+function sendMenuCommand(command: MenuCommand): void {
   const win = getActiveWindow();
   if (!win || win.isDestroyed()) return;
   win.webContents.send('menu:command', command);
@@ -162,8 +153,6 @@ function fileMenuTemplate(): MenuItemConstructorOptions[] {
   return [
     {
       label: '新建文本文件',
-      // 移除 Cmd+N 加速键：该快捷键被指令面板的「AI: 新建对话会话」占用。
-      // 若保留加速键，macOS 原生菜单会在渲染进程 keydown 之前拦截它。
       click: () => sendMenuCommand({ type: 'newFile' }),
     },
     {
@@ -174,28 +163,15 @@ function fileMenuTemplate(): MenuItemConstructorOptions[] {
       },
     },
     {
-      label: 'New Agents Window',
+      label: '新建 Agent 窗口',
       accelerator: 'CommandOrControl+Option+N',
       click: () => {
         createWindow(undefined, { blank: true });
       },
     },
-    {
-      label: '使用配置文件新建窗口',
-      submenu: [
-        {
-          label: 'Default',
-          click: () => {
-            createWindow(undefined, { blank: true });
-          },
-        },
-      ],
-    },
     { type: 'separator' },
     {
       label: '打开...',
-      // 移除 Cmd+O 加速键：被指令面板「工作区: 打开或切换工作区目录」占用，
-      // 避免原生菜单在渲染进程 keydown 之前拦截。
       click: async () => {
         const win = getActiveWindow();
         if (!win) return;
@@ -218,27 +194,28 @@ function fileMenuTemplate(): MenuItemConstructorOptions[] {
         }
       },
     },
-    { label: '从文件打开工作区...', click: () => {} },
-    { label: '打开最近的文件', submenu: [{ label: '清除最近的文件', click: () => {} }] },
-    { type: 'separator' },
     {
-      label: '将文件夹添加到工作区...',
+      label: '打开工作区...',
       click: () => {
         sendMenuCommand({ type: 'openWorkspaceModal' });
       },
     },
-    { label: '将工作区另存为...', click: () => {} },
-    { label: '复制工作区', click: () => {} },
     { type: 'separator' },
     {
       label: '保存',
       accelerator: 'CommandOrControl+S',
       click: () => sendMenuCommand({ type: 'save' }),
     },
-    { label: '另存为...', accelerator: 'CommandOrControl+Shift+S', click: () => {} },
-    { label: '全部保存', accelerator: 'CommandOrControl+Option+S', click: () => {} },
-    { type: 'separator' },
-    { label: '共享', submenu: [{ label: '在 GitHub 上共享', click: () => {} }] },
+    {
+      label: '另存为...',
+      accelerator: 'CommandOrControl+Shift+S',
+      click: () => sendMenuCommand({ type: 'saveAs' }),
+    },
+    {
+      label: '全部保存',
+      accelerator: 'CommandOrControl+Option+S',
+      click: () => sendMenuCommand({ type: 'saveAll' }),
+    },
     { type: 'separator' },
     {
       label: '自动保存',
@@ -250,16 +227,23 @@ function fileMenuTemplate(): MenuItemConstructorOptions[] {
         sendMenuCommand({ type: 'autoSave', enabled });
       },
     },
+    {
+      label: '还原文件',
+      click: () => sendMenuCommand({ type: 'revertFile' }),
+    },
     { type: 'separator' },
-    { label: '还原文件', click: () => {} },
     {
       label: '关闭编辑器',
       accelerator: 'CommandOrControl+W',
       click: () => sendMenuCommand({ type: 'closeEditor' }),
     },
-    { label: '关闭文件夹', accelerator: 'CommandOrControl+K', click: () => {} },
     {
-      label: 'Close Window',
+      label: '关闭文件夹',
+      accelerator: 'CommandOrControl+K',
+      click: () => sendMenuCommand({ type: 'closeWorkspace' }),
+    },
+    {
+      label: '关闭窗口',
       accelerator: 'CommandOrControl+Shift+W',
       click: () => {
         getActiveWindow()?.close();
@@ -270,13 +254,13 @@ function fileMenuTemplate(): MenuItemConstructorOptions[] {
 
 function editMenuTemplate(): MenuItemConstructorOptions[] {
   return [
-    { role: 'undo' },
-    { role: 'redo' },
+    { role: 'undo', label: '撤销' },
+    { role: 'redo', label: '重做' },
     { type: 'separator' },
-    { role: 'cut' },
-    { role: 'copy' },
-    { role: 'paste' },
-    { role: 'selectAll' },
+    { role: 'cut', label: '剪切' },
+    { role: 'copy', label: '复制' },
+    { role: 'paste', label: '粘贴' },
+    { role: 'selectAll', label: '全选' },
     { type: 'separator' },
     {
       label: '自动换行',
@@ -324,13 +308,20 @@ function viewMenuTemplate(): MenuItemConstructorOptions[] {
       click: () => resetZoom(),
     },
     { type: 'separator' },
-    { role: 'toggleDevTools' },
-    { role: 'reload' },
+    { role: 'toggleDevTools', label: '切换开发者工具' },
+    { role: 'reload', label: '重新加载' },
   ];
 }
 
 function windowMenuTemplate(): MenuItemConstructorOptions[] {
-  return [{ role: 'minimize' }, { role: 'close' }];
+  return [
+    { role: 'minimize', label: '最小化' },
+    { role: 'zoom', label: '缩放' },
+    { type: 'separator' },
+    { role: 'front', label: '前置全部窗口' },
+    { type: 'separator' },
+    { role: 'close', label: '关闭' },
+  ];
 }
 
 function buildAppMenu(): ElectronMenu {

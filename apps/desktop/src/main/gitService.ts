@@ -229,7 +229,7 @@ export class GitService {
     }
     const { root } = gate as { root: string };
 
-    const check = await this.runGit(['rev-parse', '--is-inside-work-tree'], root);
+    let check = await this.runGit(['rev-parse', '--is-inside-work-tree'], root);
     if (check.error) {
       return {
         ok: false,
@@ -242,8 +242,18 @@ export class GitService {
       };
     }
 
-    const stderrLower = (check.stderr || '').toLowerCase();
-    const isExplicitlyNotRepo = check.code === 128 || stderrLower.includes('not a git repository');
+    let stderr = (check.stderr || '').trim();
+    let stderrLower = stderr.toLowerCase();
+
+    // 针对 Git 2.35.2+ 的 safe.directory 所有权安全检查（常见于外盘拷贝或多用户创建的项目）
+    if (stderrLower.includes('detected dubious ownership')) {
+      await this.runGit(['config', '--global', '--add', 'safe.directory', root], root);
+      check = await this.runGit(['rev-parse', '--is-inside-work-tree'], root);
+      stderr = (check.stderr || '').trim();
+      stderrLower = stderr.toLowerCase();
+    }
+
+    const isExplicitlyNotRepo = stderrLower.includes('not a git repository');
 
     if (isExplicitlyNotRepo) {
       return {
@@ -260,7 +270,7 @@ export class GitService {
     if (check.code !== 0 || !check.stdout.trim().includes('true')) {
       return {
         ok: false,
-        detail: check.stderr.trim() || '获取 Git 状态失败（命令执行未成功）',
+        detail: stderr || '获取 Git 状态失败（命令执行未成功）',
         isRepo: false,
         branch: null,
         ahead: 0,
@@ -569,9 +579,23 @@ export class GitService {
         original: '',
         modified: '',
         staged,
+        isTracked: false,
       };
     }
     const { root } = gate as { root: string };
+    const check = await this.runGit(['rev-parse', '--is-inside-work-tree'], root);
+    if (check.code !== 0 || !check.stdout.trim().includes('true')) {
+      return {
+        ok: false,
+        detail: 'Not a git repository',
+        path: relPath,
+        original: '',
+        modified: '',
+        staged,
+        isTracked: false,
+      };
+    }
+
     let posix = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
     if (root) {
       const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
@@ -586,7 +610,7 @@ export class GitService {
       if (head.code === 0) original = head.stdout;
       const cached = await this.runGit(['show', `:0:${posix}`], root);
       const modified = cached.code === 0 ? cached.stdout : '';
-      return { ok: true, path: posix, original, modified, staged: true };
+      return { ok: true, path: posix, original, modified, staged: true, isTracked: true };
     }
 
     // unstaged: 优先以 HEAD 为基准版本，使得自最新 commit 以来的修改在编辑器左侧 gutter 均能准确呈现变动色条
@@ -637,7 +661,7 @@ export class GitService {
       modified = '';
     }
 
-    return { ok: true, path: posix, original, modified, staged: false };
+    return { ok: true, path: posix, original, modified, staged: false, isTracked };
   }
 
   async branches(): Promise<{
@@ -764,7 +788,7 @@ export class GitService {
       return { ok: false, detail: gate.detail, commits: [] };
     }
     const { root } = gate as { root: string };
-    const res = await this.runGit(
+    let res = await this.runGit(
       [
         'log',
         `-n${maxCount}`,
@@ -773,9 +797,45 @@ export class GitService {
       ],
       root,
     );
+
+    // 如果当前分支尚无提交，或处于特殊检出状态，尝试获取全部分支的提交历史 (--all)
     if (res.code !== 0) {
-      return { ok: false, detail: res.stderr.trim() || '无法获取 Git 提交历史', commits: [] };
+      const allRes = await this.runGit(
+        [
+          'log',
+          `-n${maxCount}`,
+          '--all',
+          '--topo-order',
+          '--pretty=format:%H%x09%h%x09%an%x09%ar%x09%P%x09%s',
+        ],
+        root,
+      );
+      if (allRes.code === 0 && allRes.stdout.trim()) {
+        res = allRes;
+      }
     }
+
+    if (res.code !== 0) {
+      const stderr = res.stderr.trim();
+      if (
+        stderr.includes('does not have any commits yet') ||
+        stderr.includes('your current branch') ||
+        stderr.includes('bad default revision') ||
+        stderr.includes('ambiguous argument')
+      ) {
+        return {
+          ok: true,
+          detail: '当前仓库暂无提交历史（尚未初次提交）',
+          commits: [],
+          emptyRepo: true,
+        };
+      }
+      return { ok: false, detail: stderr || '无法获取 Git 提交历史', commits: [] };
+    }
+
+    const shallowRes = await this.runGit(['rev-parse', '--is-shallow-repository'], root);
+    const isShallow = shallowRes.stdout.trim() === 'true';
+
     const commits: GitCommitEntry[] = [];
     const lines = res.stdout.split('\n');
     for (const line of lines) {
@@ -796,7 +856,7 @@ export class GitService {
         });
       }
     }
-    return { ok: true, commits };
+    return { ok: true, commits, isShallow };
   }
 
   async fileHistory(filePath: string, maxCount = 50): Promise<GitHistoryResult> {
@@ -816,7 +876,14 @@ export class GitService {
       root,
     );
     if (res.code !== 0) {
-      return { ok: false, detail: res.stderr.trim() || '无法获取该文件的 Git 历史', commits: [] };
+      const stderr = res.stderr.trim();
+      if (
+        stderr.includes('does not have any commits yet') ||
+        stderr.includes('your current branch')
+      ) {
+        return { ok: true, detail: '当前文件暂无提交历史', commits: [] };
+      }
+      return { ok: false, detail: stderr || '无法获取该文件的 Git 历史', commits: [] };
     }
     const commits: GitCommitEntry[] = [];
     const lines = res.stdout.split('\n');

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Props {
   open: boolean;
@@ -34,7 +35,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
   async function pickDir(): Promise<void> {
     const dir = await window.ide.pickDirectory();
@@ -59,7 +60,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
     onClose();
   }
 
-  return (
+  return createPortal(
     <div className="settings-overlay" onClick={onClose}>
       <div className="ide-modal" onClick={(e) => e.stopPropagation()}>
         <header className="ide-modal-header">
@@ -132,6 +133,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

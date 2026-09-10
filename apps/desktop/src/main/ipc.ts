@@ -75,7 +75,7 @@ export function registerIpc(deps: {
         properties: ['openDirectory'],
       });
       if (result.canceled || !result.filePaths[0]) return null;
-      return registry.current().workspace.setRoot(result.filePaths[0]);
+      return result.filePaths[0];
     }),
   );
 
@@ -262,8 +262,13 @@ export function registerIpc(deps: {
 
   ipcMain.handle('ssh:connect', (e, req: SshConnectRequest) => run(e, () => ssh.connect(req)));
   ipcMain.handle('ssh:disconnect', (e) => run(e, () => ssh.disconnect()));
+  ipcMain.handle('ssh:switchRemotePath', (e, remotePath: string) =>
+    run(e, () => ssh.switchRemotePath(remotePath)),
+  );
+  ipcMain.handle('ssh:getActiveSession', (e) => run(e, () => ssh.getActiveSession()));
   ipcMain.handle('ssh:listProfiles', () => ssh.listProfiles());
   ipcMain.handle('ssh:listLocalConfig', () => ssh.listLocalConfig());
+  ipcMain.handle('ssh:saveProfile', (_e, profile) => ssh.saveProfile(profile));
   ipcMain.handle('ssh:deleteProfile', (_e, id: string) => ssh.deleteProfile(id));
   ipcMain.handle('ssh:listRemoteDir', (e, remotePath?: string) =>
     run(e, () => ssh.listRemoteDir(remotePath)),

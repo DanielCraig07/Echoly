@@ -53,6 +53,9 @@ interface Props {
   onRemoveRecentWorkspace?: (path: string) => void;
   onClearRecentWorkspaces?: () => void;
   onMoreWorkspaceHistory?: () => void;
+  hoverDelay?: number;
+  minimap?: boolean;
+  selectionAiFloat?: boolean;
 }
 
 function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
@@ -536,6 +539,9 @@ export function EditorPane({
   onRemoveRecentWorkspace,
   onClearRecentWorkspaces,
   onMoreWorkspaceHistory,
+  hoverDelay = 500,
+  minimap = true,
+  selectionAiFloat = true,
 }: Props) {
   const active = tabs.find((t) => t.path === activePath) ?? null;
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
@@ -602,6 +608,7 @@ export function EditorPane({
   const [selectionCoords, setSelectionCoords] = useState<{ top: number; left: number } | null>(
     null,
   );
+  const [inlineAiCoords, setInlineAiCoords] = useState<{ top: number; left: number } | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const [mdEditorRatio, setMdEditorRatio] = useState<number>(0.5);
@@ -761,6 +768,7 @@ export function EditorPane({
   const currentBlameLineRef = useRef<number | null>(null);
   const blameCacheRef = useRef<Map<string, { text: string; lineNumber: number }>>(new Map());
   const [gitInlineDiffLine, setGitInlineDiffLine] = useState<number | null>(null);
+  const [editorInstance, setEditorInstance] = useState<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const isSyncingScrollRef = useRef(false);
 
 
@@ -910,7 +918,14 @@ export function EditorPane({
   const activeGitMeta = getTabGitMeta(activePath, gitStatus?.entries);
 
   useEffect(() => {
-    if (!activePath || activePath.startsWith('untitled:') || isImage || !window.ide?.gitDiff) {
+    if (
+      !activePath ||
+      activePath.startsWith('untitled:') ||
+      isImage ||
+      !window.ide?.gitDiff ||
+      gitStatus?.isRepo === false ||
+      activeGitMeta?.label === 'U'
+    ) {
       setGitDiffData(null);
       return;
     }
@@ -919,7 +934,7 @@ export function EditorPane({
       .gitDiff(activePath, false)
       .then((res) => {
         if (cancelled) return;
-        if (res && res.ok) {
+        if (res && res.ok && res.isTracked !== false) {
           setGitDiffData({ original: res.original, modified: res.modified });
         } else {
           setGitDiffData(null);
@@ -931,7 +946,7 @@ export function EditorPane({
     return () => {
       cancelled = true;
     };
-  }, [activePath, gitStatus, isImage, active?.dirty]);
+  }, [activePath, gitStatus, isImage, active?.dirty, activeGitMeta?.label]);
 
   // 外部重载内容（放弃修改 / Agent 改写文件 / 磁盘同步）时，@monaco-editor/react 通过 executeEdits
   // 写入新内容，而 Monaco 的 applyEdits 会把插入文本的行尾规范化为 model 既有 EOL。
@@ -1094,6 +1109,11 @@ export function EditorPane({
     }
   };
 
+  // 切换文件时清空原有装饰 ID，避免跨 model 应用发生失效
+  useEffect(() => {
+    decorationsRef.current = [];
+  }, [activePath]);
+
   // Apply git decorations (gutter indicators & overview ruler) from diff data
   useEffect(() => {
     const ed = editorRef.current;
@@ -1105,15 +1125,26 @@ export function EditorPane({
       return;
     }
 
+    const model = ed.getModel();
+    if (!model || model.isDisposed()) return;
+
     const originalText = gitDiffData.original;
     const currentText = active?.content ?? gitDiffData.modified;
     const diffs = computeLineDiffs(originalText, currentText);
 
     const decorations: MonacoEditor.IModelDeltaDecoration[] = [];
     const ranges: Array<{ start: number; end: number }> = [];
+    const isLight = uiTheme === 'light';
 
     for (const diff of diffs) {
       ranges.push({ start: diff.startLine, end: diff.endLine });
+      const diffColor =
+        diff.type === 'added'
+          ? (isLight ? '#1a7f37' : '#2ea043')
+          : diff.type === 'deleted'
+            ? (isLight ? '#cf222e' : '#f85149')
+            : (isLight ? '#bf8700' : '#e2c08d');
+
       decorations.push({
         range: {
           startLineNumber: diff.startLine,
@@ -1126,13 +1157,8 @@ export function EditorPane({
           linesDecorationsClassName: `git-gutter-${diff.type}`,
           glyphMarginClassName: 'git-gutter-glyph',
           overviewRuler: {
-            color:
-              diff.type === 'added'
-                ? '#2ea043'
-                : diff.type === 'deleted'
-                  ? '#f85149'
-                  : '#e2c08d',
-            position: 7, // OverviewRulerLane.Full
+            color: diffColor,
+            position: 1, // OverviewRulerLane.Left: 占滚动条左侧 1/3 宽度，纤细清晰
           },
         },
       });
@@ -1140,7 +1166,33 @@ export function EditorPane({
 
     modifiedRangesRef.current = ranges;
     decorationsRef.current = ed.deltaDecorations(decorationsRef.current, decorations);
-  }, [gitDiffData, active?.content]);
+  }, [gitDiffData, active?.content, activePath, editorInstance, uiTheme]);
+
+  // 按 Esc 键退出 Git 差异对比、差异预览或关闭选区浮动工具栏
+  useEffect(() => {
+    if (gitInlineDiffLine == null && !previewDiff && !selectionCoords) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (selectionCoords) {
+          e.preventDefault();
+          e.stopPropagation();
+          setSelectionCoords(null);
+          return;
+        }
+        if (gitInlineDiffLine != null) {
+          e.preventDefault();
+          e.stopPropagation();
+          setGitInlineDiffLine(null);
+        } else if (previewDiff && onCloseDiff) {
+          e.preventDefault();
+          e.stopPropagation();
+          onCloseDiff();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKey, true);
+    return () => window.removeEventListener('keydown', handleKey, true);
+  }, [gitInlineDiffLine, previewDiff, onCloseDiff, selectionCoords]);
 
   useEffect(() => {
     if (!active) {
@@ -1271,6 +1323,7 @@ export function EditorPane({
   };
 
   const isMouseDownRef = useRef(false);
+  const lastMousePosRef = useRef<{ clientX: number; clientY: number } | null>(null);
 
   const updateSelectionTextOnly = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
     const model = ed.getModel();
@@ -1331,29 +1384,185 @@ export function EditorPane({
     repositionSelectionCoords(ed);
   }, []);
 
-  // 轻量版：滚动时只重算浮层坐标，避免重复 getValueInRange / 触发父级 setState。
-  // 与 updateSelectionAndCoords 分开，滚动时走这个更省。
+  // 选区更新或滚动时计算浮层坐标：跟随鼠标位置，智能避让代码文本，绝不遮挡代码
   const repositionSelectionCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
     const sel = ed.getSelection();
-    if (!sel) return;
+    const model = ed.getModel();
+    if (!sel || sel.isEmpty() || !model) {
+      setSelectionCoords(null);
+      return;
+    }
     try {
-      const endPos = sel.getEndPosition();
-      const visiblePos = ed.getScrolledVisiblePosition(endPos);
       const editorDom = ed.getDomNode();
       const containerDom = editorContainerRef.current;
-      if (visiblePos && editorDom && containerDom) {
-        const editorRect = editorDom.getBoundingClientRect();
-        const containerRect = containerDom.getBoundingClientRect();
-        const left = editorRect.left - containerRect.left + visiblePos.left + 8;
-        const isNearTop = visiblePos.top < 32;
-        const top = isNearTop
-          ? editorRect.top - containerRect.top + visiblePos.top + (visiblePos.height || 18) + 4
-          : editorRect.top - containerRect.top + visiblePos.top - 28;
+      if (!editorDom || !containerDom) {
+        setSelectionCoords(null);
+        return;
+      }
+      const editorRect = editorDom.getBoundingClientRect();
+      const containerRect = containerDom.getBoundingClientRect();
 
-        setSelectionCoords({
-          left: Math.max(10, Math.min(left, containerRect.width - 170)),
-          top: Math.max(8, Math.min(top, containerRect.height - 35)),
+      // 获取当前编辑器内部布局（行号宽度、minimap 与垂直滚动条宽度）
+      const layout = ed.getLayoutInfo();
+      const contentLeft = layout.contentLeft; // 实际代码文本起始 X
+      const minimapWidth = layout.minimap?.renderMinimap ? layout.minimap.minimapWidth : 0;
+      const scrollbarWidth = layout.verticalScrollbarWidth || 12;
+      const rightMargin = minimapWidth + scrollbarWidth + 14;
+
+      const widgetWidth = 208;
+      const widgetHeight = 28;
+
+      const maxAllowedRight = editorRect.right - containerRect.left - rightMargin;
+      const minAllowedLeft = editorRect.left - containerRect.left + contentLeft;
+
+      const startPos = sel.getStartPosition();
+      const endPos = sel.getEndPosition();
+      const startVis = ed.getScrolledVisiblePosition(startPos);
+      const endVis = ed.getScrolledVisiblePosition(endPos);
+
+      // 若选区已完全滚出可视区域，自动隐藏
+      if (
+        (startVis && startVis.top > containerRect.height + 30) ||
+        (endVis && endVis.top < -30)
+      ) {
+        setSelectionCoords(null);
+        return;
+      }
+
+      const defaultLineHeight = 19;
+
+      // 锚点：优先使用鼠标最后释放位置；若无则使用选区结束处
+      let anchorX: number;
+      let anchorY: number;
+      if (lastMousePosRef.current) {
+        anchorX = lastMousePosRef.current.clientX - containerRect.left;
+        anchorY = lastMousePosRef.current.clientY - containerRect.top;
+      } else {
+        const refVis = endVis || startVis;
+        anchorX = editorRect.left - containerRect.left + (refVis?.left ?? contentLeft);
+        anchorY = editorRect.top - containerRect.top + (refVis?.top ?? 0) + (refVis?.height || defaultLineHeight);
+      }
+
+      // 收集选区及周边行代码文本占用的矩形范围，用于碰撞检测
+      const checkStartLine = Math.max(1, sel.startLineNumber - 2);
+      const checkEndLine = Math.min(model.getLineCount(), sel.endLineNumber + 2);
+      const codeObstacles: { top: number; bottom: number; left: number; right: number }[] = [];
+
+      for (let ln = checkStartLine; ln <= checkEndLine; ln++) {
+        const lineVis = ed.getScrolledVisiblePosition({ lineNumber: ln, column: 1 });
+        if (!lineVis) continue;
+        const lineTop = editorRect.top - containerRect.top + lineVis.top;
+        const lineBottom = lineTop + (lineVis.height || defaultLineHeight);
+        const maxCol = model.getLineMaxColumn(ln);
+        const lineEndVis = ed.getScrolledVisiblePosition({ lineNumber: ln, column: maxCol });
+
+        const codeLeft = editorRect.left - containerRect.left + contentLeft;
+        const codeRight = editorRect.left - containerRect.left + (lineEndVis ? lineEndVis.left : contentLeft);
+        const isCursorLine = ed.getPosition()?.lineNumber === ln;
+        // 当前光标行可能有 Git Blame 装饰信息
+        const occupiedRight = Math.max(codeLeft, codeRight + (isCursorLine ? 220 : 16));
+
+        codeObstacles.push({
+          top: lineTop,
+          bottom: lineBottom,
+          left: codeLeft,
+          right: occupiedRight,
         });
+      }
+
+      // 碰撞检测：浮层矩形是否与任何代码文本相交
+      const doesOverlapCode = (left: number, top: number, width: number, height: number) => {
+        const right = left + width;
+        const bottom = top + height;
+        for (const obs of codeObstacles) {
+          const vertOverlap = top < obs.bottom - 1 && bottom > obs.top + 1;
+          const horizOverlap = left < obs.right + 6 && right > obs.left - 6;
+          if (vertOverlap && horizOverlap) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      let finalLeft: number | null = null;
+      let finalTop: number | null = null;
+
+      // 候选 1：鼠标所在行右侧空白区（跟随鼠标且不遮挡该行代码）
+      const currentObs = codeObstacles.find((o) => anchorY >= o.top - 4 && anchorY <= o.bottom + 4);
+      const cand1Left = Math.max(anchorX + 12, (currentObs?.right ?? anchorX) + 14);
+      const cand1Top = anchorY - widgetHeight / 2;
+      if (
+        cand1Left + widgetWidth <= maxAllowedRight &&
+        cand1Top >= 8 &&
+        cand1Top + widgetHeight <= containerRect.height - 8 &&
+        !doesOverlapCode(cand1Left, cand1Top, widgetWidth, widgetHeight)
+      ) {
+        finalLeft = cand1Left;
+        finalTop = cand1Top;
+      }
+
+      // 候选 2：选区/鼠标下方行的空白处（优先贴近鼠标 X 坐标，但避开该行文字）
+      if (finalLeft == null) {
+        const cand2Top = anchorY + 8;
+        const belowObs = codeObstacles.find((o) => cand2Top >= o.top - 2 && cand2Top <= o.bottom + 2);
+        const cand2Left = Math.max(
+          minAllowedLeft,
+          Math.max(anchorX - 20, (belowObs?.right ?? minAllowedLeft) + 12),
+        );
+        if (
+          cand2Left + widgetWidth <= maxAllowedRight &&
+          cand2Top + widgetHeight <= containerRect.height - 8 &&
+          !doesOverlapCode(cand2Left, cand2Top, widgetWidth, widgetHeight)
+        ) {
+          finalLeft = cand2Left;
+          finalTop = cand2Top;
+        }
+      }
+
+      // 候选 3：选区/鼠标上方行的空白处
+      if (finalLeft == null) {
+        const cand3Top = anchorY - widgetHeight - 8;
+        const aboveObs = codeObstacles.find((o) => cand3Top >= o.top - 2 && cand3Top <= o.bottom + 2);
+        const cand3Left = Math.max(
+          minAllowedLeft,
+          Math.max(anchorX - 20, (aboveObs?.right ?? minAllowedLeft) + 12),
+        );
+        if (
+          cand3Top >= 8 &&
+          cand3Left + widgetWidth <= maxAllowedRight &&
+          !doesOverlapCode(cand3Left, cand3Top, widgetWidth, widgetHeight)
+        ) {
+          finalLeft = cand3Left;
+          finalTop = cand3Top;
+        }
+      }
+
+      // 候选 4：当前鼠标所在行，停靠在右侧边距安全区
+      if (finalLeft == null) {
+        const cand4Left = maxAllowedRight - widgetWidth;
+        const cand4Top = Math.max(8, Math.min(anchorY - widgetHeight / 2, containerRect.height - widgetHeight - 8));
+        if (!doesOverlapCode(cand4Left, cand4Top, widgetWidth, widgetHeight)) {
+          finalLeft = cand4Left;
+          finalTop = cand4Top;
+        }
+      }
+
+      // 候选 5：兜底方案——选区末尾行下方，不遮挡选区任何代码
+      if (finalLeft == null) {
+        const refBottomVis = endVis || startVis;
+        const selBottomY =
+          editorRect.top - containerRect.top + (refBottomVis?.top ?? anchorY) + (refBottomVis?.height || defaultLineHeight);
+        finalTop = Math.max(8, Math.min(selBottomY + 6, containerRect.height - widgetHeight - 8));
+        finalLeft = Math.max(
+          minAllowedLeft,
+          Math.min(anchorX, maxAllowedRight - widgetWidth),
+        );
+      }
+
+      if (finalLeft != null && finalTop != null) {
+        setSelectionCoords({ left: finalLeft, top: finalTop });
+      } else {
+        setSelectionCoords(null);
       }
     } catch {
       // ignore
@@ -1364,33 +1573,64 @@ export function EditorPane({
     (ed: MonacoEditor.IStandaloneCodeEditor) => {
       const sel = ed.getSelection();
       const model = ed.getModel();
+      let startLine = 1;
+      let endLine = 1;
       if (model && sel) {
         if (!sel.isEmpty()) {
           const text = model.getValueInRange(sel);
           setSelectedText(text);
+          startLine = sel.startLineNumber;
+          endLine = sel.endLineNumber;
           setSelectionRange({
-            startLine: sel.startLineNumber,
-            endLine: sel.endLineNumber,
+            startLine,
+            endLine,
           });
         } else {
           // If no selection range, select current line
           const lineNum = sel.positionLineNumber;
           const lineContent = model.getLineContent(lineNum);
           setSelectedText(lineContent);
+          startLine = lineNum;
+          endLine = lineNum;
           setSelectionRange({
             startLine: lineNum,
             endLine: lineNum,
           });
         }
       }
-      repositionSelectionCoords(ed);
+      try {
+        const editorDom = ed.getDomNode();
+        const containerDom = editorContainerRef.current;
+        const startPos = sel ? sel.getStartPosition() : { lineNumber: startLine, column: 1 };
+        const visiblePos = ed.getScrolledVisiblePosition(startPos);
+        if (visiblePos && editorDom && containerDom) {
+          const editorRect = editorDom.getBoundingClientRect();
+          const containerRect = containerDom.getBoundingClientRect();
+          const left = Math.max(
+            16,
+            Math.min(
+              editorRect.left - containerRect.left + visiblePos.left - 40,
+              containerRect.width - 440,
+            ),
+          );
+          const isNearTop = visiblePos.top < 120;
+          const top = isNearTop
+            ? editorRect.top - containerRect.top + visiblePos.top + 28
+            : editorRect.top - containerRect.top + visiblePos.top - 95;
+          setInlineAiCoords({ left, top });
+        } else {
+          setInlineAiCoords(null);
+        }
+      } catch {
+        setInlineAiCoords(null);
+      }
       setShowInlineAi(true);
       setTimeout(() => {
         inlineInputRef.current?.focus();
         inlineInputRef.current?.select();
       }, 50);
     },
-    [repositionSelectionCoords],
+    [],
   );
 
   const triggerAddToChatForEditor = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
@@ -1725,7 +1965,7 @@ export function EditorPane({
             {onCloseDiff && (
               <button
                 type="button"
-                title="关闭预览"
+                title="关闭预览 (Esc)"
                 onClick={onCloseDiff}
                 style={{
                   background: 'transparent',
@@ -2026,86 +2266,111 @@ export function EditorPane({
 
       <div className="editor-fill" ref={editorContainerRef} style={{ position: 'relative' }}>
         {/* Floating Add-to-Chat prompt when selection is present */}
-        {selectedText.trim().length > 0 && active?.path && selectionCoords && !showInlineAi && (
-          <div
-            className="selection-float-widget compact"
-            style={{
-              left: `${selectionCoords.left}px`,
-              top: `${selectionCoords.top}px`,
-            }}
-          >
-            <button
-              type="button"
-              className="selection-ai-btn"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (editorRef.current) {
-                  triggerAddToChatForEditor(editorRef.current);
-                } else {
-                  handleAddToChat(e);
-                  setSelectionCoords(null);
-                }
+        {selectedText.trim().length > 0 &&
+          active?.path &&
+          selectionCoords &&
+          !showInlineAi &&
+          selectionAiFloat !== false && (
+            <div
+              className="selection-float-widget compact"
+              style={{
+                left: `${selectionCoords.left}px`,
+                top: `${selectionCoords.top}px`,
               }}
-              title={`添加到 AI 会话提问 (${cmdKey}L)`}
             >
-              <svg
-                className="selection-ai-sparkle-icon"
-                viewBox="0 0 16 16"
-                width="13"
-                height="13"
-                fill="none"
+              <button
+                type="button"
+                className="selection-ai-btn"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (editorRef.current) {
+                    triggerAddToChatForEditor(editorRef.current);
+                  } else {
+                    handleAddToChat(e);
+                    setSelectionCoords(null);
+                  }
+                }}
+                title={`添加到 AI 会话提问 (${cmdKey}L)`}
               >
-                <path
-                  d="M8 1.5C8.3 4.8 11.2 7.7 14.5 8C11.2 8.3 8.3 11.2 8 14.5C7.7 11.2 4.8 8.3 1.5 8C4.8 7.7 7.7 4.8 8 1.5Z"
-                  fill="url(#ai-sparkle-grad)"
-                />
-                <defs>
-                  <linearGradient
-                    id="ai-sparkle-grad"
-                    x1="1.5"
-                    y1="1.5"
-                    x2="14.5"
-                    y2="14.5"
-                    gradientUnits="userSpaceOnUse"
-                  >
-                    <stop stopColor="#a78bfa" />
-                    <stop offset="1" stopColor="#38bdf8" />
-                  </linearGradient>
-                </defs>
-              </svg>
-              <span>AI 提问</span>
-              <kbd className="selection-ai-kbd">{cmdKey} L</kbd>
-            </button>
-            <div className="selection-ai-divider" />
-            <button
-              type="button"
-              className="selection-ai-inline-btn"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (editorRef.current) {
-                  openInlineAiForEditor(editorRef.current);
-                } else {
-                  setShowInlineAi(true);
-                  setTimeout(() => inlineInputRef.current?.focus(), 50);
-                }
-              }}
-              title={`行内智能编辑 (${cmdKey}K)`}
-            >
-              <span>编辑</span>
-              <kbd className="selection-ai-kbd">{cmdKey} K</kbd>
-            </button>
-          </div>
-        )}
+                <svg
+                  className="selection-ai-sparkle-icon"
+                  viewBox="0 0 16 16"
+                  width="13"
+                  height="13"
+                  fill="none"
+                >
+                  <path
+                    d="M8 1.5C8.3 4.8 11.2 7.7 14.5 8C11.2 8.3 8.3 11.2 8 14.5C7.7 11.2 4.8 8.3 1.5 8C4.8 7.7 7.7 4.8 8 1.5Z"
+                    fill="url(#ai-sparkle-grad)"
+                  />
+                  <defs>
+                    <linearGradient
+                      id="ai-sparkle-grad"
+                      x1="1.5"
+                      y1="1.5"
+                      x2="14.5"
+                      y2="14.5"
+                      gradientUnits="userSpaceOnUse"
+                    >
+                      <stop stopColor="#a78bfa" />
+                      <stop offset="1" stopColor="#38bdf8" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <span>AI 提问</span>
+                <kbd className="selection-ai-kbd">{cmdKey} L</kbd>
+              </button>
+              <div className="selection-ai-divider" />
+              <button
+                type="button"
+                className="selection-ai-inline-btn"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (editorRef.current) {
+                    openInlineAiForEditor(editorRef.current);
+                  } else {
+                    setShowInlineAi(true);
+                    setTimeout(() => inlineInputRef.current?.focus(), 50);
+                  }
+                }}
+                title={`行内智能编辑 (${cmdKey}K)`}
+              >
+                <span>编辑</span>
+                <kbd className="selection-ai-kbd">{cmdKey} K</kbd>
+              </button>
+              <div className="selection-ai-divider" />
+              <button
+                type="button"
+                className="selection-ai-close-btn"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSelectionCoords(null);
+                }}
+                title="隐藏快捷栏 (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
         {/* Inline AI Edit Widget (Cmd+K) */}
         {showInlineAi && active?.path && (
           <div
             className="inline-ai-widget"
             style={{
-              left: selectionCoords ? `${Math.max(16, selectionCoords.left - 60)}px` : '40px',
-              top: selectionCoords ? `${Math.max(10, selectionCoords.top + 28)}px` : '40px',
+              left: inlineAiCoords
+                ? `${inlineAiCoords.left}px`
+                : selectionCoords
+                  ? `${Math.max(16, selectionCoords.left - 60)}px`
+                  : '40px',
+              top: inlineAiCoords
+                ? `${inlineAiCoords.top}px`
+                : selectionCoords
+                  ? `${Math.max(10, selectionCoords.top + 28)}px`
+                  : '40px',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2305,6 +2570,7 @@ export function EditorPane({
                 }}
                 onMount={(ed) => {
                   editorRef.current = ed;
+                  setEditorInstance(ed);
                   if (activeLanguage === 'python' && window.ide?.lspNotifyDocument) {
                     void window.ide.lspNotifyDocument(active.path, active.content, 'python');
                   }
@@ -2355,15 +2621,37 @@ export function EditorPane({
                       }
                     }
                   });
-                  // Git gutter click handler — GUTTER_LINE_NUMBERS = 4, GUTTER_GLYPH_MARGIN = 3
+                  // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，排除代码折叠按钮
                   ed.onMouseDown((e) => {
+                    if (e.event) {
+                      const b = e.event.browserEvent;
+                      lastMousePosRef.current = {
+                        clientX: b?.clientX ?? e.event.posx,
+                        clientY: b?.clientY ?? e.event.posy,
+                      };
+                    }
                     if (e.event.metaKey || e.event.ctrlKey) {
                       return;
                     }
                     isMouseDownRef.current = true;
                     setSelectionCoords(null);
-                    if (e.target.type === 4 || e.target.type === 3) {
-                      const line = e.target.position?.lineNumber;
+                    const el = e.target.element as HTMLElement | null;
+                    const isGitGutterEl = !!el?.closest('[class*="git-gutter"]');
+                    const isFoldingEl = !!el?.closest(
+                      '[class*="codicon-folding"], [class*="folding"], [class*="codicon-chevron"], .inline-folded',
+                    );
+                    // 仅当明确点击了代码折叠/展开按钮（且未直接点中 git-gutter 色条）时忽略，保障折叠不误触
+                    if (isFoldingEl && !isGitGutterEl) {
+                      return;
+                    }
+                    // 左侧装订线区域（type 4 行装饰 / type 3 行号 / type 2 字形边距）或直接命中 git-gutter 元素
+                    if (
+                      e.target.type === 4 ||
+                      e.target.type === 3 ||
+                      e.target.type === 2 ||
+                      isGitGutterEl
+                    ) {
+                      const line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
                       if (line && modifiedRangesRef.current.length > 0) {
                         const isModifiedLine = modifiedRangesRef.current.some(
                           (r) => line >= r.start && line <= r.end,
@@ -2374,8 +2662,15 @@ export function EditorPane({
                       }
                     }
                   });
-                  ed.onMouseUp(() => {
+                  ed.onMouseUp((e) => {
                     isMouseDownRef.current = false;
+                    if (e.event) {
+                      const b = e.event.browserEvent;
+                      lastMousePosRef.current = {
+                        clientX: b?.clientX ?? e.event.posx,
+                        clientY: b?.clientY ?? e.event.posy,
+                      };
+                    }
                     updateSelectionAndCoords(ed);
                   });
                   updateSelectionAndCoords(ed);
@@ -2395,7 +2690,8 @@ export function EditorPane({
                   fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
                   fontWeight: '400',
                   disableMonospaceOptimizations: true,
-                  minimap: { enabled: false },
+                  minimap: { enabled: minimap !== false },
+                  hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                   automaticLayout: true,
                   smoothScrolling: true,
                   wordWrap: wordWrap ? 'on' : 'off',
@@ -2403,8 +2699,17 @@ export function EditorPane({
                   lineDecorationsWidth: 10,
                   glyphMargin: false,
                   folding: true,
-                  overviewRulerLanes: 0,
+                  overviewRulerLanes: 3,
                   overviewRulerBorder: false,
+                  scrollbar: {
+                    vertical: 'visible',
+                    horizontal: 'auto',
+                    verticalScrollbarSize: 12,
+                    horizontalScrollbarSize: 8,
+                    verticalSliderSize: 12,
+                    horizontalSliderSize: 8,
+                    useShadows: false,
+                  },
                   multiCursorModifier: 'alt',
                   links: true,
                   occurrencesHighlight: 'off',
@@ -2418,15 +2723,6 @@ export function EditorPane({
                     multipleTypeDefinitions: 'goto',
                   },
                   scrollBeyondLastColumn: 0,
-                  scrollbar: {
-                    vertical: 'visible',
-                    horizontal: 'auto',
-                    verticalScrollbarSize: 4,
-                    horizontalScrollbarSize: 3,
-                    verticalSliderSize: 4,
-                    horizontalSliderSize: 3,
-                    useShadows: false,
-                  },
                 }}
               />
             </div>
@@ -2526,19 +2822,34 @@ export function EditorPane({
                     onCursorChange?.(e.position.lineNumber, e.position.column);
                     updateGitBlameRef.current(e.position.lineNumber);
                   });
-                  ed.onMouseDown(() => {
+                  ed.onMouseDown((e) => {
                     isMouseDownRef.current = true;
+                    if (e.event) {
+                      const b = e.event.browserEvent;
+                      lastMousePosRef.current = {
+                        clientX: b?.clientX ?? e.event.posx,
+                        clientY: b?.clientY ?? e.event.posy,
+                      };
+                    }
                     setSelectionCoords(null);
                   });
-                  ed.onMouseUp(() => {
+                  ed.onMouseUp((e) => {
                     isMouseDownRef.current = false;
+                    if (e.event) {
+                      const b = e.event.browserEvent;
+                      lastMousePosRef.current = {
+                        clientX: b?.clientX ?? e.event.posx,
+                        clientY: b?.clientY ?? e.event.posy,
+                      };
+                    }
                     updateSelectionAndCoords(ed);
                   });
                   updateSelectionAndCoords(ed);
                 }}
                 options={{
                   fontSize: 13,
-                  minimap: { enabled: false },
+                  minimap: { enabled: minimap !== false },
+                  hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                   automaticLayout: true,
                   smoothScrolling: true,
                   occurrencesHighlight: 'off',
@@ -2546,11 +2857,16 @@ export function EditorPane({
                   wordWrap: wordWrap ? 'on' : 'off',
                   scrollBeyondLastColumn: 0,
                   lineNumbersMinChars: 4,
+                  overviewRulerLanes: 3,
+                  overviewRulerBorder: false,
                   scrollbar: {
                     vertical: 'visible',
                     horizontal: 'auto',
-                    verticalScrollbarSize: 4,
-                    horizontalScrollbarSize: 3,
+                    verticalScrollbarSize: 12,
+                    horizontalScrollbarSize: 8,
+                    verticalSliderSize: 12,
+                    horizontalSliderSize: 8,
+                    useShadows: false,
                   },
                 }}
               />
@@ -2660,6 +2976,7 @@ export function EditorPane({
               }}
               onMount={(ed, monaco) => {
                 editorRef.current = ed;
+                setEditorInstance(ed);
                 try {
                   monaco?.editor?.remeasureFonts?.();
                   if (typeof document !== 'undefined' && document.fonts?.ready) {
@@ -2707,15 +3024,37 @@ export function EditorPane({
                   updateGitBlameRef.current(e.position.lineNumber);
                   trackCursorJump(activeRef.current?.path, e.position.lineNumber, e.position.column);
                 });
-                // Git gutter click handler — GUTTER_LINE_NUMBERS = 4, GUTTER_GLYPH_MARGIN = 3
+                // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，排除代码折叠按钮
                 ed.onMouseDown((e) => {
+                  if (e.event) {
+                    const b = e.event.browserEvent;
+                    lastMousePosRef.current = {
+                      clientX: b?.clientX ?? e.event.posx,
+                      clientY: b?.clientY ?? e.event.posy,
+                    };
+                  }
                   if (e.event.metaKey || e.event.ctrlKey) {
                     return;
                   }
                   isMouseDownRef.current = true;
                   setSelectionCoords(null);
-                  if (e.target.type === 4 || e.target.type === 3) {
-                    const line = e.target.position?.lineNumber;
+                  const el = e.target.element as HTMLElement | null;
+                  const isGitGutterEl = !!el?.closest('[class*="git-gutter"]');
+                  const isFoldingEl = !!el?.closest(
+                    '[class*="codicon-folding"], [class*="folding"], [class*="codicon-chevron"], .inline-folded',
+                  );
+                  // 仅当明确点击了代码折叠/展开按钮（且未直接点中 git-gutter 色条）时忽略，保障折叠不误触
+                  if (isFoldingEl && !isGitGutterEl) {
+                    return;
+                  }
+                  // 左侧装订线区域（type 4 行装饰 / type 3 行号 / type 2 字形边距）或直接命中 git-gutter 元素
+                  if (
+                    e.target.type === 4 ||
+                    e.target.type === 3 ||
+                    e.target.type === 2 ||
+                    isGitGutterEl
+                  ) {
+                    const line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
                     if (line && modifiedRangesRef.current.length > 0) {
                       const isModifiedLine = modifiedRangesRef.current.some(
                         (r) => line >= r.start && line <= r.end,
@@ -2726,8 +3065,15 @@ export function EditorPane({
                     }
                   }
                 });
-                ed.onMouseUp(() => {
+                ed.onMouseUp((e) => {
                   isMouseDownRef.current = false;
+                  if (e.event) {
+                    const b = e.event.browserEvent;
+                    lastMousePosRef.current = {
+                      clientX: b?.clientX ?? e.event.posx,
+                      clientY: b?.clientY ?? e.event.posy,
+                    };
+                  }
                   updateSelectionAndCoords(ed);
                 });
                 updateSelectionAndCoords(ed);
@@ -2750,7 +3096,8 @@ export function EditorPane({
                 fontWeight: '400',
                 disableMonospaceOptimizations: true,
                 'semanticHighlighting.enabled': true,
-                minimap: { enabled: false },
+                minimap: { enabled: minimap !== false },
+                hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                 automaticLayout: true,
                 smoothScrolling: true,
                 wordWrap: wordWrap ? 'on' : 'off',
@@ -2759,7 +3106,7 @@ export function EditorPane({
                 lineDecorationsWidth: 10,
                 glyphMargin: false,
                 folding: true,
-                overviewRulerLanes: 2,
+                overviewRulerLanes: 3,
                 overviewRulerBorder: false,
                 multiCursorModifier: 'alt',
                 links: true,
@@ -2776,10 +3123,10 @@ export function EditorPane({
                 scrollbar: {
                   vertical: 'visible',
                   horizontal: 'auto',
-                  verticalScrollbarSize: 4,
-                  horizontalScrollbarSize: 3,
-                  verticalSliderSize: 4,
-                  horizontalSliderSize: 3,
+                  verticalScrollbarSize: 12,
+                  horizontalScrollbarSize: 8,
+                  verticalSliderSize: 12,
+                  horizontalSliderSize: 8,
                   useShadows: false,
                 },
               }}
@@ -3092,7 +3439,7 @@ export function EditorPane({
                       {/* 5. Close ✕ */}
                       <button
                         type="button"
-                        title="关闭对比"
+                        title="关闭对比 (Esc)"
                         onClick={() => setGitInlineDiffLine(null)}
                         style={{
                           background: 'transparent',

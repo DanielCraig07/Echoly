@@ -3978,6 +3978,8 @@ body.resizing.resizing-row {
 
 .tool-inout-box {
   margin: 6px 0 10px 0;
+  max-width: min(100%, 780px);
+  box-sizing: border-box;
   background: color-mix(in srgb, var(--bg-elevated, #222222) 65%, transparent);
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   border-radius: 6px;
@@ -4026,7 +4028,8 @@ body.resizing.resizing-row {
   flex: 1;
   min-width: 0;
   color: var(--text, #d4d4d8);
-  word-break: break-all;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
   font-size: 12px;
 }
@@ -4037,17 +4040,70 @@ body.resizing.resizing-row {
   text-overflow: ellipsis;
 }
 
-.tool-inout-content.collapsed-multi {
-  max-height: 80px;
-  overflow: hidden;
-  position: relative;
-  -webkit-mask-image: linear-gradient(180deg, #000 65%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 65%, transparent 100%);
+/* OUT 区域独立结构：头部信息/操作栏 + 内部代码输出体 */
+.tool-inout-section {
+  display: flex;
+  flex-direction: column;
 }
 
-.tool-inout-content.expanded-scroll {
-  max-height: 420px;
+.tool-inout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.015);
+  transition: background 0.12s ease;
+}
+
+.tool-inout-header.is-clickable {
+  cursor: pointer;
+}
+
+.tool-inout-header:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+}
+
+.tool-inout-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-inout-meta {
+  font-size: 10.5px;
+  color: var(--muted, #71717a);
+  font-weight: 500;
+}
+
+.tool-inout-body {
+  padding: 8px 12px;
+  color: var(--text, #d4d4d8);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  background: rgba(0, 0, 0, 0.18);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.tool-inout-body.is-clickable {
+  cursor: pointer;
+}
+
+.tool-inout-body.collapsed-multi {
+  max-height: 76px;
+  overflow: hidden;
+  position: relative;
+  -webkit-mask-image: linear-gradient(180deg, #000 60%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 60%, transparent 100%);
+}
+
+.tool-inout-body.expanded-scroll {
+  max-height: 380px;
   overflow-y: auto;
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .tool-inout-empty {
@@ -4097,7 +4153,9 @@ body.resizing.resizing-row {
   flex-shrink: 0;
 }
 
-.tool-inout-row:hover .tool-inout-copy-btn {
+.tool-inout-row:hover .tool-inout-copy-btn,
+.tool-inout-header:hover .tool-inout-copy-btn,
+.tool-inout-section:hover .tool-inout-copy-btn {
   opacity: 0.8;
 }
 
@@ -7275,7 +7333,7 @@ body.resizing.resizing-row {
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  z-index: 9999;
+  z-index: 99999 !important;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8025,6 +8083,27 @@ body.resizing.resizing-row {
   margin: 0 1px;
 }
 
+.selection-ai-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.selection-ai-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
 .selection-ai-kbd {
   display: inline-flex;
   align-items: center;
@@ -8090,19 +8169,31 @@ body.resizing.resizing-row {
   background: rgba(255, 255, 255, 0.35);
 }
 
-/* Slim Monaco Editor Scrollbars (Hidden by default, fade in on hover) */
+/* Monaco Editor Overview Ruler: 确保右侧滚动条上的 Git 差异色条及位置标识正常显示 */
 .monaco-editor .decorationsOverviewRuler,
-.monaco-diff-editor .decorationsOverviewRuler,
-.monaco-editor canvas.decorationsOverviewRuler,
-.monaco-diff-editor canvas.decorationsOverviewRuler,
-.monaco-editor .overview-ruler,
-.monaco-diff-editor .overview-ruler {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
+.monaco-editor canvas.decorationsOverviewRuler {
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  z-index: 6 !important;
+  pointer-events: none !important; /* 点击穿透至下层垂直滚动条轨道，实现点击差异标识立即滚动跳转 */
+}
+
+/* ── Monaco Minimap（缩略图防透视） ──────────────────────────────────────────
+   为缩略图设置不透明背景与左侧细分割线，遮挡超长代码文本，避免行文字穿透 minimap 显示 */
+.monaco-editor .minimap {
+  background-color: var(--bg-editor, #1e1e1e) !important;
+  border-left: 1px solid var(--border, rgba(255, 255, 255, 0.08)) !important;
+  z-index: 5 !important;
+}
+
+[data-theme='light'] .monaco-editor .minimap {
+  background-color: var(--bg-editor, #ffffff) !important;
+  border-left: 1px solid var(--border, rgba(0, 0, 0, 0.08)) !important;
+}
+
+.monaco-editor .minimap-canvas {
+  background-color: transparent !important;
 }
 
 /* Only Git modification gutter markers show pointer cursor and widen on hover */
@@ -8165,35 +8256,60 @@ body.resizing.resizing-row {
 
 .monaco-editor .scrollbar.vertical,
 .monaco-diff-editor .monaco-editor .scrollbar.vertical {
-  width: 5px !important;
+  width: 12px !important;
+  background: transparent !important;
+  z-index: 7 !important;
 }
 
 .monaco-editor .scrollbar.horizontal,
 .monaco-diff-editor .monaco-editor .scrollbar.horizontal {
-  height: 3px !important;
+  height: 6px !important;
+  z-index: 7 !important;
 }
 
 .monaco-editor .scrollbar.vertical .slider,
 .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider {
-  width: 5px !important;
-  left: 0 !important;
-  border-radius: 2px !important;
-  background: rgba(255, 255, 255, 0.2) !important;
+  width: 6px !important;
+  right: 2px !important;
+  left: auto !important;
+  border-radius: 3px !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+  transition: background 0.15s ease, width 0.15s ease !important;
 }
 
 .monaco-editor .scrollbar.horizontal .slider,
 .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider {
-  height: 3px !important;
-  top: 0 !important;
+  height: 4px !important;
+  top: auto !important;
+  bottom: 1px !important;
   border-radius: 2px !important;
-  background: rgba(255, 255, 255, 0.2) !important;
+  background: rgba(255, 255, 255, 0.22) !important;
 }
 
 .monaco-editor .scrollbar.vertical .slider:hover,
+.monaco-diff-editor .monaco-editor .scrollbar.vertical .slider:hover {
+  background: rgba(255, 255, 255, 0.45) !important;
+  width: 8px !important;
+}
+
 .monaco-editor .scrollbar.horizontal .slider:hover,
-.monaco-diff-editor .monaco-editor .scrollbar.vertical .slider:hover,
 .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider:hover {
   background: rgba(255, 255, 255, 0.45) !important;
+  height: 5px !important;
+}
+
+[data-theme='light'] .monaco-editor .scrollbar.vertical .slider,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider,
+[data-theme='light'] .monaco-editor .scrollbar.horizontal .slider,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider {
+  background: rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme='light'] .monaco-editor .scrollbar.vertical .slider:hover,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider:hover,
+[data-theme='light'] .monaco-editor .scrollbar.horizontal .slider:hover,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider:hover {
+  background: rgba(0, 0, 0, 0.4) !important;
 }
 
 /* ── Monaco 查找/替换小组件 (Find Widget) 美化 ───────────────────────────────
@@ -9027,6 +9143,22 @@ body.resizing.resizing-row {
   gap: 2px;
 }
 
+.open-ws-recent-list > li.is-current {
+  background: rgba(34, 197, 94, 0.05);
+  border: 1px solid rgba(34, 197, 94, 0.22);
+}
+
+.open-ws-recent-list > li.is-current:hover {
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.open-ws-recent-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .open-ws-recent-name {
   font-size: 13px;
   font-weight: 500;
@@ -9034,6 +9166,32 @@ body.resizing.resizing-row {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.open-ws-current-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.open-ws-current-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.85);
+  flex-shrink: 0;
 }
 
 .open-ws-recent-path {
@@ -11373,6 +11531,7 @@ body.resizing.resizing-row {
    ========================================================================== */
 
 .switch-workspace-overlay {
+  z-index: 10000 !important;
   background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;

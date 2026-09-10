@@ -166,23 +166,58 @@ function InOutExecutionBox({
         </div>
       </div>
 
-      {/* ─── OUT 区域（点击可展开/折叠全部输出） ─── */}
-      <div
-        className={`tool-inout-row${outCanToggle ? ' is-clickable' : ''}`}
-        onClick={() => {
-          if (outCanToggle) setOutExpanded((prev) => !prev);
-        }}
-        title={outCanToggle ? (outExpanded ? '点击收起输出结果' : '点击展开查看全部输出结果') : undefined}
-      >
-        <span className="tool-inout-tag">OUT</span>
+      {/* ─── OUT 区域（优化结构：头部状态/操作栏 + 独立代码输出块） ─── */}
+      <div className="tool-inout-section">
         <div
-          className={`tool-inout-content${
+          className={`tool-inout-header${outCanToggle ? ' is-clickable' : ''}`}
+          onClick={() => {
+            if (outCanToggle) setOutExpanded((prev) => !prev);
+          }}
+          title={outCanToggle ? (outExpanded ? '点击收起输出结果' : '点击展开查看全部输出结果') : undefined}
+        >
+          <div className="tool-inout-header-left">
+            <span className="tool-inout-tag">OUT</span>
+            {outLines.length > 0 && (
+              <span className="tool-inout-meta">
+                {outLines.length} 行输出
+              </span>
+            )}
+          </div>
+          <div className="tool-inout-actions" onClick={(e) => e.stopPropagation()}>
+            {outCanToggle && (
+              <button
+                type="button"
+                className="tool-inout-toggle-btn"
+                onClick={() => setOutExpanded((prev) => !prev)}
+              >
+                {outExpanded ? '▴ 收起' : `▾ 展开 (${outLines.length}行)`}
+              </button>
+            )}
+            {outTrimmed && (
+              <button
+                type="button"
+                className="tool-inout-copy-btn"
+                onClick={handleCopyOut}
+                title="复制输出"
+              >
+                {copiedOut ? '已复制' : '复制'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 独立的输出内容块，不再与 OUT 标签挤在同一行，避免拉得过宽 */}
+        <div
+          className={`tool-inout-body${
             !outExpanded && outCanToggle
               ? ' collapsed-multi'
               : outExpanded
                 ? ' expanded-scroll'
                 : ''
-          }`}
+          }${outCanToggle ? ' is-clickable' : ''}`}
+          onClick={() => {
+            if (outCanToggle) setOutExpanded((prev) => !prev);
+          }}
         >
           {isRunning ? (
             <span className="tool-inout-running">
@@ -197,27 +232,6 @@ function InOutExecutionBox({
             outTrimmed
           ) : (
             <span className="tool-inout-empty">{emptyOutText}</span>
-          )}
-        </div>
-        <div className="tool-inout-actions" onClick={(e) => e.stopPropagation()}>
-          {outCanToggle && (
-            <button
-              type="button"
-              className="tool-inout-toggle-btn"
-              onClick={() => setOutExpanded((prev) => !prev)}
-            >
-              {outExpanded ? '▴ 收起' : `▾ 展开 (${outLines.length}行)`}
-            </button>
-          )}
-          {outTrimmed && (
-            <button
-              type="button"
-              className="tool-inout-copy-btn"
-              onClick={handleCopyOut}
-              title="复制输出"
-            >
-              {copiedOut ? '已复制' : '复制'}
-            </button>
           )}
         </div>
       </div>

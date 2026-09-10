@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface SwitchWorkspaceTarget {
   path: string;
@@ -36,7 +37,7 @@ export function SwitchWorkspaceModal({
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [open, onClose]);
 
-  if (!open || !target) return null;
+  if (!open || !target || typeof document === 'undefined') return null;
 
   const targetObj: SwitchWorkspaceTarget =
     typeof target === 'string'
@@ -57,7 +58,7 @@ export function SwitchWorkspaceModal({
     targetObj.name || targetObj.path.split(/[/\\\\]/).filter(Boolean).pop() || targetObj.path;
   const isSsh = targetObj.kind === 'ssh' || !!targetObj.sshServer;
 
-  return (
+  return createPortal(
     <div className="settings-overlay switch-workspace-overlay" onClick={onClose}>
       <div
         className="settings-modal switch-workspace-dialog"
@@ -245,6 +246,7 @@ export function SwitchWorkspaceModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

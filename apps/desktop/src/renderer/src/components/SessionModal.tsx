@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { ChatSession } from '@deepseek-ide/shared';
 import { formatSessionWorkspaceLine } from '../utils';
 
@@ -144,8 +145,8 @@ export function SessionModal({
     return matchTitle || matchMsg || matchWs;
   });
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 99999 }}>
       <div className="session-modal" onClick={(e) => e.stopPropagation()}>
         <div className="session-modal-header">
           <div className="session-modal-title">
@@ -269,6 +270,7 @@ export function SessionModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

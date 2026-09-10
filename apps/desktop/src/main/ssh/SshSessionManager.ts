@@ -474,6 +474,27 @@ export class SshSessionManager {
     await fs.writeFile(this.profilesPath, JSON.stringify(profiles, null, 2), 'utf8');
   }
 
+  async saveProfile(
+    profile: Partial<SshProfile> & { host: string; username: string },
+  ): Promise<void> {
+    const profiles = await this.listProfiles();
+    const port = Number(profile.port) || 22;
+    const newP: SshProfile = {
+      id: profile.id || randomUUID(),
+      name: profile.name || `${profile.username}@${profile.host}`,
+      host: profile.host,
+      port,
+      username: profile.username,
+      privateKeyPath: profile.privateKeyPath,
+      remotePath: profile.remotePath || '',
+    };
+    const withoutDup = profiles.filter(
+      (p) => !(p.host === newP.host && p.username === newP.username && p.port === newP.port),
+    );
+    withoutDup.push(newP);
+    await this.saveProfiles(withoutDup);
+  }
+
   async deleteProfile(id: string): Promise<void> {
     const profiles = await this.listProfiles();
     await this.saveProfiles(profiles.filter((p) => p.id !== id));
@@ -512,6 +533,61 @@ export class SshSessionManager {
     }
   }
 
+  getActiveSession(): {
+    host: string;
+    port: number;
+    username: string;
+    remoteRoot: string;
+  } | null {
+    try {
+      const windowSession = this.resolveSession();
+      const webContentsId = windowSession.webContentsId;
+      const live = webContentsId >= 0 ? this.live.get(webContentsId) : null;
+      if (!live || !live.host || !live.username) return null;
+      return {
+        host: live.host,
+        port: live.port ?? 22,
+        username: live.username,
+        remoteRoot: windowSession.workspace.getRoot() || '',
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async switchRemotePath(remotePath: string): Promise<SshConnectResult> {
+    const windowSession = this.resolveSession();
+    const workspace = windowSession.workspace;
+    const webContentsId = windowSession.webContentsId;
+    const existingLive = webContentsId >= 0 ? this.live.get(webContentsId) : null;
+    if (!existingLive) {
+      return { ok: false, detail: '当前窗口无活动的 SSH 连接' };
+    }
+
+    const user = existingLive.username || 'user';
+    let remoteRoot = remotePath?.trim() || '';
+    if (!remoteRoot) {
+      remoteRoot = await new Promise<string>((resolve) => {
+        existingLive.client.exec('pwd', (err, stream) => {
+          if (err) return resolve(`/home/${user}`);
+          let out = '';
+          stream.on('data', (d: Buffer) => {
+            out += d.toString('utf8');
+          });
+          stream.on('close', () => resolve(out.trim() || `/home/${user}`));
+        });
+      });
+    }
+    remoteRoot = remoteRoot.replace(/\\/g, '/').replace(/\/$/, '') || '/';
+
+    const backend = new SftpBackend(remoteRoot, existingLive.client, existingLive.sftp);
+    const host = existingLive.host || 'remote';
+    const label = `ssh ${user}@${host}:${remoteRoot}`;
+    workspace.setRemoteBackend(backend, label);
+    existingLive.browseOnly = false;
+    return { ok: true, detail: `已切换至 ${label}`, root: remoteRoot, label };
+  }
+
   async connect(req: SshConnectRequest): Promise<SshConnectResult> {
     // Capture owning window BEFORE any await (ALS must not be relied on after yields).
     const windowSession = this.resolveSession();
@@ -521,13 +597,12 @@ export class SshSessionManager {
     const port = req.port ?? 22;
     const browseOnly = req.browseOnly === true;
 
-    // 检查当前窗口是否已有连向相同服务器的活动连接
+    // 检查当前窗口是否已有连向相同服务器的活动连接（若未传 host 则直接复用当前连接）
     const existingLive = webContentsId >= 0 ? this.live.get(webContentsId) : null;
     const isSameServer =
       existingLive &&
-      existingLive.host === req.host &&
-      existingLive.port === port &&
-      existingLive.username === req.username;
+      (!req.host || existingLive.host === req.host) &&
+      (!req.username || existingLive.username === req.username);
 
     if (isSameServer && existingLive) {
       if (browseOnly) {

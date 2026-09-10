@@ -1,4 +1,49 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import type { WorkspaceInfo } from '@deepseek-ide/shared';
+
+const isMac =
+  typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
+
+function checkIsCurrentWorkspace(
+  item: RecentWorkspaceItem,
+  currentWorkspace?: string | null,
+  currentWorkspaceInfo?: WorkspaceInfo | null,
+): boolean {
+  if (!currentWorkspace && !currentWorkspaceInfo?.root) return false;
+  const curRoot = (currentWorkspace || currentWorkspaceInfo?.root || '')
+    .trim()
+    .replace(/[/\\]+$/, '');
+  const itemPath = (item.path || '').trim().replace(/[/\\]+$/, '');
+  if (!curRoot || !itemPath) return false;
+
+  const curKind = currentWorkspaceInfo?.kind || 'local';
+  const itemIsSsh = item.kind === 'ssh' || !!item.sshServer || item.path.startsWith('ssh ');
+
+  if (curKind === 'ssh') {
+    if (!itemIsSsh) return false;
+    if (curRoot !== itemPath) return false;
+    if (item.sshServer && currentWorkspaceInfo?.label) {
+      const match = currentWorkspaceInfo.label.match(/^ssh\s+([^:/]+)/);
+      const curServer = match ? match[1] : '';
+      if (
+        curServer &&
+        item.sshServer &&
+        curServer !== item.sshServer &&
+        !curServer.includes(item.sshServer) &&
+        !item.sshServer.includes(curServer)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  } else {
+    if (itemIsSsh) return false;
+    return isMac || navigator.userAgent.includes('Windows')
+      ? curRoot.toLowerCase() === itemPath.toLowerCase()
+      : curRoot === itemPath;
+  }
+}
 
 export interface RecentWorkspaceItem {
   path: string;
@@ -16,6 +61,8 @@ interface Props {
   onPickSsh: () => void;
   onPickClone: () => void;
   recentWorkspaces?: RecentWorkspaceItem[];
+  currentWorkspace?: string | null;
+  currentWorkspaceInfo?: WorkspaceInfo | null;
   onSelectRecent?: (item: RecentWorkspaceItem) => void;
   onRemoveRecent?: (path: string) => void;
   onClearRecent?: () => void;
@@ -28,6 +75,8 @@ export function OpenWorkspaceModal({
   onPickSsh,
   onPickClone,
   recentWorkspaces = [],
+  currentWorkspace,
+  currentWorkspaceInfo,
   onSelectRecent,
   onRemoveRecent,
   onClearRecent,
@@ -45,9 +94,9 @@ export function OpenWorkspaceModal({
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div className="settings-overlay" onClick={onClose}>
       <div className="ide-modal ide-modal-md" onClick={(e) => e.stopPropagation()}>
         <header className="ide-modal-header">
@@ -169,8 +218,14 @@ export function OpenWorkspaceModal({
                     item.sshServer && !item.path.includes('@')
                       ? `${item.sshServer}:${item.path}`
                       : item.path;
+                  const isCurrent = checkIsCurrentWorkspace(
+                    item,
+                    currentWorkspace,
+                    currentWorkspaceInfo,
+                  );
+
                   return (
-                    <li key={item.path}>
+                    <li key={item.path} className={isCurrent ? 'is-current' : undefined}>
                       <button
                         type="button"
                         className="open-ws-recent-row"
@@ -183,7 +238,15 @@ export function OpenWorkspaceModal({
                           {isSsh ? 'SSH' : '本地'}
                         </span>
                         <span className="open-ws-recent-text">
-                          <span className="open-ws-recent-name">{item.name}</span>
+                          <span className="open-ws-recent-name-wrap">
+                            <span className="open-ws-recent-name">{item.name}</span>
+                            {isCurrent && (
+                              <span className="open-ws-current-badge" title="当前正在使用的工作区">
+                                <span className="open-ws-current-dot" />
+                                当前
+                              </span>
+                            )}
+                          </span>
                           <span className="open-ws-recent-path" title={pathLabel}>
                             {pathLabel}
                           </span>
@@ -216,6 +279,7 @@ export function OpenWorkspaceModal({
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -83,8 +83,12 @@ const api: IpcApi = {
   searchCode: (req: SearchCodeRequest) => ipcRenderer.invoke('search:code', req),
   sshConnect: (req: SshConnectRequest) => ipcRenderer.invoke('ssh:connect', req),
   sshDisconnect: () => ipcRenderer.invoke('ssh:disconnect'),
+  sshSwitchRemotePath: (remotePath: string) =>
+    ipcRenderer.invoke('ssh:switchRemotePath', remotePath),
+  sshGetActiveSession: () => ipcRenderer.invoke('ssh:getActiveSession'),
   listSshProfiles: () => ipcRenderer.invoke('ssh:listProfiles'),
   listLocalSshConfig: () => ipcRenderer.invoke('ssh:listLocalConfig'),
+  saveSshProfile: (profile) => ipcRenderer.invoke('ssh:saveProfile', profile),
   deleteSshProfile: (id) => ipcRenderer.invoke('ssh:deleteProfile', id),
   listRemoteDir: (remotePath?: string) => ipcRenderer.invoke('ssh:listRemoteDir', remotePath),
   createTerminal: (options?: TerminalCreateOptions) =>
