@@ -1102,20 +1102,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   };
 
   const handleLoadSessionFromModal = (session: ChatSession) => {
-    const currentKey =
-      workspaceInfo?.kind === 'ssh' ? workspaceInfo.label || workspace || '' : workspace || '';
-    const needsSwitch = Boolean(
-      session.workspacePath &&
-      session.workspacePath !== currentKey &&
-      session.workspacePath !== workspace,
-    );
-    if (needsSwitch && session.workspacePath) {
-      // Workspace change effect will open this session after switch completes.
-      pendingLoadSessionRef.current = { session, path: session.workspacePath };
-      onSwitchWorkspace?.(session.workspacePath);
-      return;
-    }
-
+    // 直接在当前聊天面板中打开该历史会话，不再触发切换工作区弹窗
     const existing = tabs.find((t) => t.id === session.id);
     if (existing) {
       setActiveTabId(existing.id);

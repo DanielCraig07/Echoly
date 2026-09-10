@@ -146,7 +146,7 @@ export function SessionModal({
   });
 
   return createPortal(
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 99999 }}>
+    <div className="session-modal-overlay" onClick={onClose}>
       <div className="session-modal" onClick={(e) => e.stopPropagation()}>
         <div className="session-modal-header">
           <div className="session-modal-title">

@@ -7327,6 +7327,19 @@ body.resizing.resizing-row {
 }
 
 /* ── Session Modal (弹窗) ─────────────────────────────────── */
+.session-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 99999 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease-out;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
