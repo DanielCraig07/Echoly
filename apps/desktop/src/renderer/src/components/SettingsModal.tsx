@@ -1411,47 +1411,59 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
 
         {/* 新版本确认弹窗 */}
         {pendingUpdate && (
-          <div className="modal-overlay" style={{ zIndex: 9999 }}>
-            <div className="session-modal-content" style={{ width: 420 }}>
-              <div className="settings-header" style={{ borderBottom: '1px solid var(--border)' }}>
-                <h3 style={{ margin: 0 }}>{t('settings.update.confirmTitle')}</h3>
-              </div>
-              <div style={{ padding: 16, maxHeight: 300, overflowY: 'auto', fontSize: 13 }}>
-                <div style={{ marginBottom: 8 }}>
-                  {t('settings.update.versionLabel')}{' '}
-                  <strong style={{ color: 'var(--accent)' }}>{pendingUpdate.version}</strong>
-                  {pendingUpdate.current && (
-                    <span style={{ color: 'var(--muted)', marginLeft: 8 }}>
-                      {t('settings.update.currentLabel')} {pendingUpdate.current}
-                    </span>
-                  )}
-                </div>
-                {pendingUpdate.notes ? (
-                  <div
-                    style={{
-                      whiteSpace: 'pre-wrap',
-                      color: 'var(--text)',
-                      lineHeight: 1.6,
-                      background: 'var(--bg-hover)',
-                      borderRadius: 8,
-                      padding: 12,
-                    }}
+          <div
+            className="confirm-update-overlay"
+            onClick={() => {
+              if (!downloading) setPendingUpdate(null);
+            }}
+          >
+            <div
+              className="confirm-update-dialog"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="confirm-update-header">
+                <div className="confirm-update-icon-wrap">
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
+                    <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.85.83 6.72 2.24" />
+                    <path d="M21 3v6h-6" />
+                  </svg>
+                </div>
+                <div className="confirm-update-title-area">
+                  <h3 className="confirm-update-title">{t('settings.update.confirmTitle')}</h3>
+                  <div className="confirm-update-version-row">
+                    <span className="confirm-update-new-badge">v{pendingUpdate.version}</span>
+                    {pendingUpdate.current && (
+                      <span className="confirm-update-current-text">
+                        {t('settings.update.currentLabel')} v{pendingUpdate.current}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="confirm-update-body">
+                <div className="confirm-update-notes-title">更新说明 (Release Notes)</div>
+                {pendingUpdate.notes ? (
+                  <div className="confirm-update-notes-box">
                     {pendingUpdate.notes}
                   </div>
                 ) : (
-                  <div style={{ color: 'var(--muted)' }}>{t('settings.update.noNotes')}</div>
+                  <div className="confirm-update-notes-empty">
+                    {t('settings.update.noNotes')}
+                  </div>
                 )}
               </div>
-              <div
-                className="footer-actions"
-                style={{
-                  padding: 12,
-                  justifyContent: 'flex-end',
-                  gap: 8,
-                  borderTop: '1px solid var(--border)',
-                }}
-              >
+
+              <div className="confirm-update-footer">
                 <button
                   type="button"
                   className="cancel-btn"
@@ -1463,6 +1475,12 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                 <button
                   type="button"
                   className="primary save-all-btn"
+                  style={{
+                    background: 'linear-gradient(135deg, #2563eb, #3b82f6)',
+                    color: '#fff',
+                    padding: '6px 18px',
+                    fontWeight: 600,
+                  }}
                   disabled={downloading}
                   onClick={() => void confirmUpdate()}
                 >

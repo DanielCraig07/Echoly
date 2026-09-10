@@ -11969,6 +11969,161 @@ body.resizing.resizing-row {
   }
 }
 
+/* ── 新版本更新确认弹窗 (Confirm Update Dialog) ────────── */
+.confirm-update-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.confirm-update-dialog {
+  width: min(480px, 92vw);
+  background: #181920;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 24px 64px -8px rgba(0, 0, 0, 0.85),
+    0 0 32px rgba(59, 130, 246, 0.15);
+  display: flex;
+  flex-direction: column;
+  animation: scaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="light"] .confirm-update-dialog {
+  background: #ffffff;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.2),
+    0 0 24px rgba(59, 130, 246, 0.1);
+}
+
+.confirm-update-header {
+  padding: 16px 20px 14px 20px;
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0.08) 0%, transparent 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.confirm-update-icon-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(37, 99, 235, 0.1));
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.confirm-update-title-area {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.confirm-update-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+[data-theme="light"] .confirm-update-title {
+  color: #0f172a;
+}
+
+.confirm-update-version-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.confirm-update-new-badge {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+  font-weight: 600;
+  font-family: var(--font-mono, monospace);
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+
+.confirm-update-current-text {
+  color: var(--muted, #94a3b8);
+  font-size: 11.5px;
+}
+
+.confirm-update-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.confirm-update-notes-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted, #94a3b8);
+  letter-spacing: 0.02em;
+}
+
+.confirm-update-notes-box {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text, #e2e8f0);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+[data-theme="light"] .confirm-update-notes-box {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #334155;
+}
+
+.confirm-update-notes-empty {
+  color: var(--muted, #71717a);
+  font-style: italic;
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.confirm-update-footer {
+  padding: 12px 20px 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.15);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+[data-theme="light"] .confirm-update-footer {
+  background: rgba(0, 0, 0, 0.02);
+  border-top-color: rgba(0, 0, 0, 0.06);
+}
+
 
 
 
