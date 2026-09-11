@@ -53,6 +53,8 @@ const DICT: Record<string, { zh: string; en: string }> = {
   'settings.nav.skillsDesc': { zh: 'Cursor / 本地技能', en: 'Cursor / local skills' },
   'settings.nav.update': { zh: '软件更新', en: 'Updates' },
   'settings.nav.updateDesc': { zh: '在线更新配置', en: 'Online update' },
+  'settings.nav.about': { zh: '关于作者', en: 'About Author' },
+  'settings.nav.aboutDesc': { zh: '开发者与项目信息', en: 'Developer & Project' },
 
   // 设置 - 通用文案
   'settings.title': { zh: '偏好设置', en: 'Preferences' },
@@ -120,6 +122,46 @@ const DICT: Record<string, { zh: string; en: string }> = {
   'settings.update.currentLabel': { zh: '当前版本', en: 'Current:' },
   'settings.update.confirmBtn': { zh: '是，立即更新', en: 'Yes, Update Now' },
   'settings.update.noNotes': { zh: '（该版本暂无更新说明）', en: '(No release notes)' },
+
+  // 设置 - 关于作者
+  'settings.about.title': { zh: '关于 Echoly 与开发者', en: 'About Echoly & Developer' },
+  'settings.about.desc': {
+    zh: '新一代基于原生大模型与本地智能代理深度融合的轻巧型智能开发环境。',
+    en: 'Next-generation lightweight intelligent IDE deeply integrating LLMs and local agents.',
+  },
+  'settings.about.developer': { zh: '核心开发者', en: 'Core Developer' },
+  'settings.about.authorName': { zh: 'Daniel', en: 'Daniel' },
+  'settings.about.authorHandle': { zh: '@DanielCraig07', en: '@DanielCraig07' },
+  'settings.about.authorBio': {
+    zh: '专注现代智能开发工具与 AI Agent 架构研发，打造极速、轻量、无缝协同的新一代智能编程生产力环境。',
+    en: 'Focused on modern developer tools & AI Agent architectures, building a blazing-fast, lightweight next-gen productivity IDE.',
+  },
+  'settings.about.version': { zh: '当前版本', en: 'Current Version' },
+  'settings.about.authorGithub': { zh: '开发者主页', en: 'Developer Profile' },
+  'settings.about.license': { zh: '软件授权', en: 'Software License' },
+  'settings.about.licenseVal': { zh: '专有软件 (Proprietary)', en: 'Proprietary Software' },
+  'settings.about.copyright': { zh: '版权所有', en: 'Copyright' },
+  'settings.about.copyrightVal': { zh: '© 2026 Daniel. All rights reserved.', en: '© 2026 Daniel. All rights reserved.' },
+  'settings.about.features': { zh: '核心特性', en: 'Core Highlights' },
+  'settings.about.featAst': { zh: '毫秒级 AST 符号跳转', en: 'Instant AST Navigation' },
+  'settings.about.featAstDesc': {
+    zh: '内置 Tree-sitter，毫秒级跨文件定义跳转与符号引用查找。',
+    en: 'Built-in Tree-sitter for millisecond cross-file definition & reference lookup.',
+  },
+  'settings.about.featAgent': { zh: 'AI Agent 深度共构', en: 'Deep AI Agent Co-Programming' },
+  'settings.about.featAgentDesc': {
+    zh: '支持 DeepSeek、Claude、GPT 及本地 Ollama，多步自主执行与工具放行安全拦截。',
+    en: 'Supports DeepSeek, Claude, GPT & Ollama with autonomous multi-step execution.',
+  },
+  'settings.about.featRemote': { zh: '远程 SSH 统一开发', en: 'Remote SSH Development' },
+  'settings.about.featRemoteDesc': {
+    zh: '无缝连接远程云主机与 Linux 服务器，统一工作空间和远程终端。',
+    en: 'Seamless connection to remote cloud Linux instances with unified workspace & terminal.',
+  },
+  'settings.about.systemInfo': { zh: '运行环境', en: 'Runtime Environment' },
+  'settings.about.copyInfo': { zh: '复制环境信息', en: 'Copy Environment Info' },
+  'settings.about.copied': { zh: '已复制到剪贴板', en: 'Copied to clipboard' },
+  'settings.about.checkUpdate': { zh: '检查版本更新', en: 'Check for Updates' },
 
   // 通用
   'common.close': { zh: '关闭', en: 'Close' },

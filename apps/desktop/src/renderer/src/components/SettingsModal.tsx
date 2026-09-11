@@ -26,6 +26,7 @@ interface Props {
     detail?: string,
     type?: 'success' | 'error' | 'info' | 'warn',
   ) => void;
+  initialTab?: 'models' | 'runtime' | 'general' | 'skills' | 'update' | 'about';
 }
 
 const PERMISSION_ORDER: PermissionMode[] = ['allow_all_extreme', 'allow_all', 'ask', 'deny_all'];
@@ -37,7 +38,7 @@ const PERMISSION_HINTS: Record<PermissionMode, string> = {
   deny_all: '拦截全部工具调用，仅可查看不可修改。',
 };
 
-export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
+export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab }: Props) {
   const { locale, t, setLocale } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [probe, setProbe] = useState<string>('');
@@ -159,9 +160,15 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
 
   // Tab state
   const [activeTab, setActiveTab] = useState<
-    'models' | 'runtime' | 'general' | 'skills' | 'update'
-  >('models');
+    'models' | 'runtime' | 'general' | 'skills' | 'update' | 'about'
+  >(initialTab || 'models');
   const [showApiKey, setShowApiKey] = useState(false);
+
+  useEffect(() => {
+    if (open && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [open, initialTab]);
 
   async function probeSingleModel(model: ModelProfile): Promise<void> {
     setModelProbingId(model.id);
@@ -419,6 +426,28 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
     return { ...base, ...patch };
   }
 
+  async function handleCopySystemInfo(): Promise<void> {
+    const info = [
+      `App: Echoly`,
+      `Version: v0.0.10 (Release)`,
+      `Developer: Daniel (@DanielCraig07)`,
+      `Platform: ${navigator.userAgent.includes('Macintosh') ? 'macOS (Darwin)' : 'Linux/Windows'}`,
+      `User Agent: ${navigator.userAgent}`,
+      `Date: ${new Date().toISOString()}`,
+    ].join('\n');
+
+    try {
+      await navigator.clipboard.writeText(info);
+      onShowToast?.(
+        t('settings.about.copied'),
+        'Echoly v0.0.10 诊断与环境信息已成功复制到剪贴板',
+        'success',
+      );
+    } catch {
+      onShowToast?.('复制失败', '请手动选中文本复制', 'error');
+    }
+  }
+
   return (
     <div className="settings-overlay">
       <div className="settings-modal modern-settings" onClick={(e) => e.stopPropagation()}>
@@ -499,6 +528,18 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
               <div className="nav-text">
                 <span className="nav-title">{t('settings.nav.update')}</span>
                 <span className="nav-sub">{t('settings.nav.updateDesc')}</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              className={`settings-nav-item ${activeTab === 'about' ? 'active' : ''}`}
+              onClick={() => setActiveTab('about')}
+            >
+              <span className="nav-icon">✨</span>
+              <div className="nav-text">
+                <span className="nav-title">{t('settings.nav.about')}</span>
+                <span className="nav-sub">{t('settings.nav.aboutDesc')}</span>
               </div>
             </button>
           </aside>
@@ -1375,6 +1416,161 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast }: Props) {
                         </span>
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 6. 关于作者与版本 Tab */}
+            {activeTab === 'about' && (
+              <div className="settings-panel-section about-panel-section">
+                {/* Brand Hero Card */}
+                <div className="about-hero-card">
+                  <div className="about-hero-top">
+                    <div className="about-logo-wrapper">
+                      <div className="about-logo-icon">⚡</div>
+                      <div className="about-logo-glow" />
+                    </div>
+                    <div className="about-hero-text">
+                      <div className="about-hero-title-row">
+                        <h2 className="about-app-name">Echoly</h2>
+                        <span className="about-version-tag">v0.0.10</span>
+                        <span className="about-badge-status">Latest Release</span>
+                      </div>
+                      <p className="about-tagline">{t('settings.about.desc')}</p>
+                    </div>
+                  </div>
+
+                  <div className="about-hero-actions">
+                    <button
+                      type="button"
+                      className="about-action-btn primary"
+                      onClick={() => setActiveTab('update')}
+                    >
+                      <span className="btn-icon">🔄</span>
+                      <span>{t('settings.about.checkUpdate')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="about-action-btn secondary"
+                      onClick={() => void handleCopySystemInfo()}
+                    >
+                      <span className="btn-icon">📋</span>
+                      <span>{t('settings.about.copyInfo')}</span>
+                    </button>
+                    <a
+                      href="https://github.com/DanielCraig07"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="about-action-btn secondary"
+                    >
+                      <span className="btn-icon">👨‍💻</span>
+                      <span>{t('settings.about.authorGithub')}</span>
+                    </a>
+                  </div>
+                </div>
+
+                {/* Author Card */}
+                <div className="about-author-card">
+                  <div className="about-author-avatar-wrap">
+                    <img
+                      src="https://avatars.githubusercontent.com/u/104928236?v=4"
+                      alt="Daniel"
+                      className="about-author-avatar"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                    <div className="about-avatar-fallback">⚡</div>
+                  </div>
+                  <div className="about-author-content">
+                    <div className="about-author-header">
+                      <div className="about-author-name-group">
+                        <h3 className="about-author-name">{t('settings.about.authorName')}</h3>
+                        <a
+                          href="https://github.com/DanielCraig07"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="about-author-handle"
+                        >
+                          {t('settings.about.authorHandle')} ↗
+                        </a>
+                      </div>
+                      <span className="about-author-role">{t('settings.about.developer')}</span>
+                    </div>
+                    <p className="about-author-bio">{t('settings.about.authorBio')}</p>
+                    <div className="about-author-tags">
+                      <span className="about-chip">🚀 Full-Stack & AI Agent</span>
+                      <span className="about-chip">⚡ Tree-sitter & AST</span>
+                      <span className="about-chip">💻 Electron & React</span>
+                      <span className="about-chip">🛡️ Safe Tool Execution</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Feature Highlights Grid */}
+                <div className="about-section-header">
+                  <h4 className="about-section-title">{t('settings.about.features')}</h4>
+                </div>
+                <div className="about-features-grid">
+                  <div className="about-feat-card">
+                    <div className="about-feat-header">
+                      <span className="about-feat-icon">⚡</span>
+                      <strong className="about-feat-name">{t('settings.about.featAst')}</strong>
+                    </div>
+                    <p className="about-feat-desc">{t('settings.about.featAstDesc')}</p>
+                  </div>
+
+                  <div className="about-feat-card">
+                    <div className="about-feat-header">
+                      <span className="about-feat-icon">🤖</span>
+                      <strong className="about-feat-name">{t('settings.about.featAgent')}</strong>
+                    </div>
+                    <p className="about-feat-desc">{t('settings.about.featAgentDesc')}</p>
+                  </div>
+
+                  <div className="about-feat-card">
+                    <div className="about-feat-header">
+                      <span className="about-feat-icon">🌐</span>
+                      <strong className="about-feat-name">{t('settings.about.featRemote')}</strong>
+                    </div>
+                    <p className="about-feat-desc">{t('settings.about.featRemoteDesc')}</p>
+                  </div>
+                </div>
+
+                {/* Environment & Diagnostic Card */}
+                <div className="about-info-card">
+                  <div className="about-info-header">
+                    <strong>{t('settings.about.systemInfo')}</strong>
+                    <button
+                      type="button"
+                      className="about-copy-btn"
+                      onClick={() => void handleCopySystemInfo()}
+                    >
+                      📋 {t('settings.about.copyInfo')}
+                    </button>
+                  </div>
+                  <div className="about-info-table">
+                    <div className="about-info-row">
+                      <span className="about-info-k">Echoly Version</span>
+                      <span className="about-info-v font-mono">v0.0.10 (Production)</span>
+                    </div>
+                    <div className="about-info-row">
+                      <span className="about-info-k">Target Architecture</span>
+                      <span className="about-info-v font-mono">Darwin arm64 (Apple Silicon)</span>
+                    </div>
+                    <div className="about-info-row">
+                      <span className="about-info-k">Runtime Stack</span>
+                      <span className="about-info-v font-mono">Electron 35.7.5 · React 18 · TypeScript</span>
+                    </div>
+                    <div className="about-info-row">
+                      <span className="about-info-k">{t('settings.about.license')}</span>
+                      <span className="about-info-v font-mono">{t('settings.about.licenseVal')}</span>
+                    </div>
+                    <div className="about-info-row">
+                      <span className="about-info-k">{t('settings.about.copyright')}</span>
+                      <span className="about-info-v font-mono">{t('settings.about.copyrightVal')}</span>
+                    </div>
                   </div>
                 </div>
               </div>

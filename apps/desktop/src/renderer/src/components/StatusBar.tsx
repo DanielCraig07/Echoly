@@ -11,6 +11,7 @@ interface Props {
   latestCommit?: GitCommitEntry | null;
   onOpenBranchSwitcher?: () => void;
   onSelectLanguage?: (lang: string) => void;
+  onOpenAbout?: () => void;
 }
 
 const COMMON_LANGUAGES = [
@@ -43,6 +44,7 @@ export function StatusBar({
   latestCommit,
   onOpenBranchSwitcher,
   onSelectLanguage,
+  onOpenAbout,
 }: Props) {
   const hasChanges = Boolean(gitStatus?.entries?.length);
   const [showLangPicker, setShowLangPicker] = useState(false);
@@ -173,6 +175,17 @@ export function StatusBar({
         <span className="status-item">
           行 {docStats?.lineCount ?? 0} 字数 {docStats?.charCount ?? 0}
         </span>
+
+        {/* 轻量开发者徽标 (点击直达关于作者) */}
+        <button
+          type="button"
+          className="status-item status-dev-badge"
+          onClick={onOpenAbout}
+          title="Echoly by Daniel (v0.0.10) · 点击查看关于作者"
+        >
+          <span className="status-dev-icon">⚡</span>
+          <span className="status-dev-name">Daniel</span>
+        </button>
       </div>
     </div>
   );

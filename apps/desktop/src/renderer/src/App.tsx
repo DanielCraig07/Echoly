@@ -166,6 +166,9 @@ export function App() {
   const [tabs, setTabs] = useState<OpenTab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<
+    'models' | 'runtime' | 'general' | 'skills' | 'update' | 'about'
+  >('models');
   const [openWorkspaceOpen, setOpenWorkspaceOpen] = useState(false);
   const [switchTarget, setSwitchTarget] = useState<SwitchWorkspaceTarget | null>(null);
   const switchTargetRef = useRef<SwitchWorkspaceTarget | null>(null);
@@ -2545,6 +2548,7 @@ export function App() {
 
       <SettingsModal
         open={settingsOpen}
+        initialTab={settingsInitialTab}
         onClose={() => setSettingsOpen(false)}
         onSaved={applySettings}
         onShowToast={showToast}
@@ -2680,6 +2684,10 @@ export function App() {
           setTabs((prev) =>
             prev.map((t) => (t.path === activePath ? { ...t, language: lang } : t)),
           );
+        }}
+        onOpenAbout={() => {
+          setSettingsInitialTab('about');
+          setSettingsOpen(true);
         }}
       />
 
