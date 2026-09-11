@@ -164,7 +164,7 @@ function ChatToolbarPill<T extends string>(props: {
   );
 }
 
-const STICK_THRESHOLD_PX = 80;
+const STICK_THRESHOLD_PX = 16;
 
 function createEmptyTab(id?: string, title = 'New Chat'): SessionTab {
   return {
@@ -587,6 +587,17 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const el = messagesElRef.current;
     if (!el) return;
 
+    let isUserInteracting = false;
+    let userInteractTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const onUserInteraction = () => {
+      isUserInteracting = true;
+      if (userInteractTimer) clearTimeout(userInteractTimer);
+      userInteractTimer = setTimeout(() => {
+        isUserInteracting = false;
+      }, 300);
+    };
+
     const onScroll = () => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       const nearBottom = distance <= STICK_THRESHOLD_PX;
@@ -596,9 +607,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     };
 
     const observer = new MutationObserver(() => {
-      if (stickRef.current && messagesElRef.current) {
+      // 当用户正在手动滑动滚轮或触摸时，即使接近底部也不要突然强行跳到最底部
+      if (stickRef.current && messagesElRef.current && !isUserInteracting) {
         requestAnimationFrame(() => {
-          if (messagesElRef.current) {
+          if (messagesElRef.current && !isUserInteracting) {
             messagesElRef.current.scrollTop = messagesElRef.current.scrollHeight;
           }
         });
@@ -612,9 +624,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     });
 
     el.addEventListener('scroll', onScroll, { passive: true });
+    el.addEventListener('wheel', onUserInteraction, { passive: true });
+    el.addEventListener('touchmove', onUserInteraction, { passive: true });
     return () => {
       observer.disconnect();
       el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('wheel', onUserInteraction);
+      el.removeEventListener('touchmove', onUserInteraction);
+      if (userInteractTimer) clearTimeout(userInteractTimer);
     };
   }, []);
 

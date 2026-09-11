@@ -153,7 +153,7 @@ export function SwitchWorkspaceModal({
         <div className="switch-workspace-options">
           <button
             type="button"
-            className="switch-workspace-option-card primary"
+            className="switch-workspace-option-card"
             onClick={() => {
               onClose();
               onOpenCurrentWindow(targetObj);

@@ -54,6 +54,22 @@ function basename(relPath: string): string {
   return parts[parts.length - 1] || norm;
 }
 
+export function normalizePathToRel(
+  filePath: string | null | undefined,
+  workspaceRoot: string | null | undefined
+): string {
+  if (!filePath) return '';
+  let p = filePath.replace(/\\/g, '/');
+  if (/^\/[a-zA-Z]:/.test(p)) p = p.slice(1);
+  if (workspaceRoot) {
+    const ws = workspaceRoot.replace(/\\/g, '/').replace(/\/+$/, '');
+    if (p.startsWith(ws)) {
+      p = p.slice(ws.length);
+    }
+  }
+  return p.replace(/^\/+/, '');
+}
+
 interface MenuProps {
   state: ContextMenuState;
   clipboard: PathClipboard;
@@ -300,10 +316,17 @@ function TreeNode({
 
   useEffect(() => {
     if (!expandPath || !node.isDirectory) return;
+    const expandRel = normalizePathToRel(expandPath, undefined);
+    const nodeRel = normalizePathToRel(node.path, undefined);
     if (
       expandPath === node.path ||
       expandPath.startsWith(`${node.path}/`) ||
-      node.path.startsWith(`${expandPath}/`)
+      node.path.startsWith(`${expandPath}/`) ||
+      (expandRel && nodeRel && (
+        expandRel === nodeRel ||
+        expandRel.startsWith(`${nodeRel}/`) ||
+        nodeRel.startsWith(`${expandRel}/`)
+      ))
     ) {
       setOpen(true);
     }
@@ -362,7 +385,10 @@ function TreeNode({
             </span>
             <span
               className="file-node-name"
-              style={{ color: gitMeta?.hasChanges ? '#e5a54b' : undefined }}
+              style={{
+                color: gitMeta?.hasChanges ? '#e5a54b' : undefined,
+                paddingRight: gitMeta?.hasChanges ? 32 : 8,
+              }}
               title={node.name}
             >
               {node.name}
@@ -407,15 +433,23 @@ function TreeNode({
 
   const nodeRef = useRef<HTMLDivElement>(null);
 
+  const activeRel = normalizePathToRel(activePath, undefined);
+  const nodeRel = normalizePathToRel(node.path, undefined);
+  const isThisActive =
+    activePath === node.path ||
+    (activeRel && nodeRel && activeRel === nodeRel) ||
+    (activeRel && activeRel.endsWith('/' + nodeRel)) ||
+    (nodeRel && nodeRel.endsWith('/' + activeRel));
+
   useEffect(() => {
-    if (activePath === node.path && nodeRef.current) {
+    if (isThisActive && nodeRef.current) {
       // Small timeout to allow directory expansion to finish rendering。
       // 用 'auto' 代替 'smooth'：smooth 滚动会在切换/刷新时产生长时间动画，拖慢感知。
       setTimeout(() => {
         nodeRef.current?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
       }, 50);
     }
-  }, [activePath, node.path]);
+  }, [isThisActive]);
 
   if (showRename) {
     return (
@@ -432,7 +466,7 @@ function TreeNode({
   return (
     <div
       ref={nodeRef}
-      className={`file-node ${selectedNode?.path === node.path ? 'active' : ''}`}
+      className={`file-node ${selectedNode?.path === node.path || isThisActive ? 'active' : ''}`}
       style={{ paddingLeft: 12 + depth * 16 }}
       onClick={() => {
         if (onSelectNode) onSelectNode({ path: node.path, isDirectory: false });
@@ -445,7 +479,14 @@ function TreeNode({
       <span style={{ zIndex: 1, display: 'flex' }}>
         <RenderFileTreeIcon name={node.name} isDirectory={false} />
       </span>
-      <span className="file-node-name" style={{ color: gitMeta?.color }} title={node.name}>
+      <span
+        className="file-node-name"
+        style={{
+          color: gitMeta?.color,
+          paddingRight: gitMeta?.label ? 32 : 8,
+        }}
+        title={node.name}
+      >
         {node.name}
       </span>
       {gitMeta?.label && (
@@ -790,12 +831,13 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     void window.ide.listDir('.').then(setRoots);
   }, [workspace, refreshKey]);
 
-  // Auto-reveal active file: set expandPath to activePath
+  // Auto-reveal active file: set expandPath to activePath (normalized to workspace relative path)
   useEffect(() => {
     if (activePath && activePath !== '.') {
-      setExpandPath(activePath);
+      const rel = normalizePathToRel(activePath, workspace);
+      setExpandPath(rel || activePath);
     }
-  }, [activePath]);
+  }, [activePath, workspace]);
 
   const openMenu = (e: ReactMouseEvent, target: MenuTarget) => {
     e.preventDefault();

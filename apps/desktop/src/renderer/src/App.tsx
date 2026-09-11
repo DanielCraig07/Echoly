@@ -230,10 +230,14 @@ export function App() {
   const terminalNonce = useRef(0);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('explorer');
   const [scmDiff, setScmDiff] = useState<PendingDiff | null>(null);
-  const [revealLine, setRevealLine] = useState<number | null>(null);
-  const [revealColumn, setRevealColumn] = useState<number | null>(null);
-  // nonce 单调递增，每次点击跳转时自增，保证 EditorPane 的 revealLine effect 必定触发
-  const [revealNonce, setRevealNonce] = useState(0);
+  // 严格绑定文件路径的一次性行号跳转目标，跳转完毕立即消费清空，彻底杜绝跨文件行号粘连
+  const [revealTarget, setRevealTarget] = useState<{
+    path: string;
+    line: number;
+    column?: number;
+    nonce: number;
+  } | null>(null);
+  const revealNonceRef = useRef(0);
   const cursorLineRef = useRef(1);
   const cursorColRef = useRef(1);
   const searchRef = useRef<TopSearchBarHandle>(null);
@@ -1005,10 +1009,15 @@ export function App() {
       setActivePath(existingTab.path);
       activePathRef.current = existingTab.path;
       if (line != null && line > 0) {
-        // nonce 自增保证 effect 必定重新触发，即使行号相同也能跳转
-        setRevealNonce((n) => n + 1);
-        setRevealColumn(col ?? null);
-        setRevealLine(line);
+        revealNonceRef.current += 1;
+        setRevealTarget({
+          path: existingTab.path,
+          line,
+          column: col ?? 1,
+          nonce: revealNonceRef.current,
+        });
+      } else {
+        setRevealTarget(null);
       }
       return;
     }
@@ -1080,9 +1089,15 @@ export function App() {
     setActivePath(path);
     activePathRef.current = path;
     if (line != null && line > 0) {
-      setRevealNonce((n) => n + 1);
-      setRevealColumn(col ?? null);
-      setTimeout(() => setRevealLine(line), 10);
+      revealNonceRef.current += 1;
+      setRevealTarget({
+        path,
+        line,
+        column: col ?? 1,
+        nonce: revealNonceRef.current,
+      });
+    } else {
+      setRevealTarget(null);
     }
   }, []);
 
@@ -2326,6 +2341,7 @@ export function App() {
             }}
             onSelectTab={(path) => {
               setScmDiff(null);
+              setRevealTarget(null);
               setActivePath(path);
             }}
             onCloseTab={(path) => {
@@ -2396,9 +2412,10 @@ export function App() {
               const res = await window.ide.gitStatus();
               if (res.ok) setGitStatus(res);
             }}
-            revealLine={revealLine}
-            revealColumn={revealColumn}
-            revealNonce={revealNonce}
+            revealTarget={revealTarget}
+            onRevealTargetConsumed={() => {
+              setRevealTarget(null);
+            }}
             uiTheme={uiTheme}
             gitBlameInline={gitBlameInline}
             workspace={workspace}

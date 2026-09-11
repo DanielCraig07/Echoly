@@ -104,7 +104,7 @@ function InOutExecutionBox({
   const outLines = outTrimmed ? outTrimmed.split('\n') : [];
 
   // 判断是否具备折叠/展开价值（单行过长或多行）
-  const inCanToggle = inLines.length > 1 || inTrimmed.length > 60;
+  const inCanToggle = inLines.length > 1 || inTrimmed.length > 120;
   const outCanToggle = outLines.length > 3 || outTrimmed.length > 180;
 
   const handleCopyIn = (e: React.MouseEvent) => {

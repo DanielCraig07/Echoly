@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { FileTreeNode, WorkspaceInfo, WorkspaceKind } from '@deepseek-ide/shared';
 import { LocalFsBackend, type WorkspaceBackend } from '@deepseek-ide/tools';
 
@@ -112,7 +114,12 @@ export class WorkspaceService {
       return { name: curName, path: curPath };
     }
 
-    const entries = await backend.listDir(relPath);
+    let entries: { name: string; isDirectory: boolean }[] = [];
+    try {
+      entries = await backend.listDir(relPath);
+    } catch {
+      return [];
+    }
     const nodes: FileTreeNode[] = [];
     for (const entry of entries) {
       if (SKIP.has(entry.name)) continue;
@@ -141,6 +148,14 @@ export class WorkspaceService {
   }
 
   async readFile(relPath: string): Promise<string> {
+    // If it's an absolute path that exists on the local machine (e.g. pyright typeshed-fallback, node_modules stubs, local virtualenv, etc.)
+    if (path.isAbsolute(relPath)) {
+      try {
+        return await fs.readFile(relPath, 'utf8');
+      } catch {
+        // if not found locally, proceed to backend
+      }
+    }
     return this.requireBackend().readFile(relPath);
   }
 

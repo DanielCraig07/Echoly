@@ -1121,47 +1121,57 @@ export async function jumpToDefinition(
       )
   );
 
-  // Multiple results → show custom peek panel
-  if (valid.length > 1) {
-    if (opts.onShowPeekResults) {
-      opts.onShowPeekResults(locationsToPeekResults(valid, symbol, root), symbol);
-    }
-    return true;
-  }
-
-  // User clicked ON the definition → show references
+  // 1. 用户点击定义行本身时，意图为查看该符号在项目中的引用：
+  // 触发 Monaco 原生 referenceSearch，在当前行展开行内 Peek Widget（References (N)），
+  // 确保在编辑区清晰展示，杜绝底部弹窗与编辑区空白无显示问题。
   if (valid.length === 0 && locations.length > 0) {
-    if (opts.onShowPeekResults) {
-      const refs = await findReferenceLocations(model, position, opts);
-      if (refs.length > 0) {
-        opts.onShowPeekResults(locationsToPeekResults(refs, symbol, root), symbol);
-        return true;
-      }
+    const refAction = editor.getAction('editor.action.referenceSearch.trigger');
+    if (refAction) {
+      void refAction.run();
+      return true;
     }
     return false;
   }
 
-  // No results at all → silent no-op
-  if (valid.length === 0) return false;
+  // 2. 多个定义目标：触发 Monaco 原生 revealDefinition，配合 gotoLocation.multipleDefinitions: 'peek'
+  // 自动在当前代码行展开原生 Peek Widget
+  if (valid.length > 1) {
+    const defAction = editor.getAction('editor.action.revealDefinition');
+    if (defAction) {
+      void defAction.run();
+      return true;
+    }
+  }
 
-  // Exactly 1 target → direct jump
-  const target = valid[0];
-  const targetLine = target.range.startLineNumber;
-  const targetCol = target.range.startColumn;
+  // 3. 唯一定义目标：直接平滑跳转
+  if (valid.length === 1) {
+    const target = valid[0];
+    const targetLine = target.range.startLineNumber;
+    const targetCol = target.range.startColumn;
 
-  // Same-file jump
-  if (target.uri.toString() === model.uri.toString()) {
-    editor.revealLineInCenter(targetLine);
-    editor.setPosition({ lineNumber: targetLine, column: targetCol });
-    editor.focus();
-    highlightJumpLocation(editor, targetLine);
+    // 同文件跳转
+    if (target.uri.toString() === model.uri.toString()) {
+      editor.revealLineInCenter(targetLine);
+      editor.setPosition({ lineNumber: targetLine, column: targetCol });
+      editor.focus();
+      highlightJumpLocation(editor, targetLine);
+      return true;
+    }
+
+    // 跨文件跳转
+    const targetPath = normalizePath(target.uri.fsPath || target.uri.path || '', root);
+    opts.onOpenFile(targetPath, targetLine, targetCol);
     return true;
   }
 
-  // Cross-file jump
-  const targetPath = normalizePath(target.uri.fsPath || target.uri.path || '', root);
-  opts.onOpenFile(targetPath, targetLine, targetCol);
-  return true;
+  // 4. Fallback：Monaco 内置语言服务（如 TypeScript/JavaScript）可能有 ripgrep 无法直接解析的符号
+  const defAction = editor.getAction('editor.action.revealDefinition');
+  if (defAction) {
+    void defAction.run();
+    return true;
+  }
+
+  return false;
 }
 
 

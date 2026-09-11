@@ -13,7 +13,7 @@ import { RenderFileTreeIcon } from './FileTree';
 import { MarkdownMessage, extractMarkdownHeadings, type MarkdownHeadingItem } from './MarkdownMessage';
 import { WelcomeView } from './WelcomeView';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
-import { setupCmdClickGesture, navigateBack, highlightJumpLocation, navigationStack, type PeekResult } from '../services/symbolNavigation';
+import { setupCmdClickGesture, navigateBack, highlightJumpLocation, navigationStack } from '../services/symbolNavigation';
 
 interface Props {
   tabs: OpenTab[];
@@ -38,9 +38,13 @@ interface Props {
   onPreviewGitDiff?: (path: string) => void;
   onDiscardPath?: (path: string) => void;
   onRefreshGitStatus?: () => void;
-  revealLine?: number | null;
-  revealColumn?: number | null;
-  revealNonce?: number; // 单调递增计数器，保证每次跳转请求都触发 effect
+  revealTarget?: {
+    path: string;
+    line: number;
+    column?: number;
+    nonce: number;
+  } | null;
+  onRevealTargetConsumed?: () => void;
   uiTheme: UiTheme;
   gitBlameInline?: boolean;
   /** When there is no open workspace, show the quick-start welcome screen instead of a plain hint. */
@@ -525,9 +529,8 @@ export function EditorPane({
   onPreviewGitDiff,
   onDiscardPath,
   onRefreshGitStatus,
-  revealLine,
-  revealColumn,
-  revealNonce = 0,
+  revealTarget,
+  onRevealTargetConsumed,
   uiTheme,
   gitBlameInline = true,
   workspace,
@@ -558,13 +561,13 @@ export function EditorPane({
   onOpenFileRef.current = onOpenFile;
   const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
   const cmdKey = isMac ? '⌘' : 'Ctrl+';
-  const pendingRevealColumn = useRef<number | null>(null);
-  // Peek panel state: shown when there are multiple definition results
-  const [peekResults, setPeekResults] = useState<PeekResult[]>([]);
-  const [peekSymbol, setPeekSymbol] = useState<string>('');
-  const [peekVisible, setPeekVisible] = useState(false);
+  const pendingRevealTargetRef = useRef<{
+    path: string;
+    line: number;
+    column?: number;
+    nonce: number;
+  } | null>(null);
   const monacoTheme = uiTheme === 'light' ? 'custom-light' : 'custom-dark';
-  const pendingReveal = useRef<number | null>(null);
 
   const lastCursorPosRef = useRef<{ path: string; line: number; column: number } | null>(null);
   const isNavigatingBackRef = useRef(false);
@@ -984,34 +987,80 @@ export function EditorPane({
   }, [splitActive?.path, splitActive?.content, alignModelEol]);
 
   useEffect(() => {
-    if (revealLine != null && revealLine > 0) {
-      const col = revealColumn ?? 1;
-      pendingReveal.current = revealLine;
-      pendingRevealColumn.current = col;
-      const ed = editorRef.current;
-      if (ed) {
-        const model = ed.getModel();
-        const modelUri = model?.uri?.path || '';
-        const currentActive = (activePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
-        const isMatchingModel =
-          Boolean(model) &&
-          (modelUri.endsWith(currentActive) || currentActive.endsWith(modelUri.replace(/^\/+/, '')));
+    pendingRevealTargetRef.current = revealTarget ?? null;
+  }, [revealTarget]);
 
-        if (isMatchingModel && model && revealLine <= model.getLineCount()) {
-          try {
-            ed.revealLineInCenter(revealLine);
-            ed.setPosition({ lineNumber: revealLine, column: col });
-            ed.focus();
-            highlightJumpLocation(ed, revealLine);
-            pendingReveal.current = null;
-            pendingRevealColumn.current = null;
-          } catch {
-            // ignore
-          }
-        }
+  const executeRevealTarget = useCallback(
+    (ed: MonacoEditor.IStandaloneCodeEditor) => {
+      const target = pendingRevealTargetRef.current;
+      if (!target || target.line <= 0) return;
+
+      const model = ed.getModel();
+      if (!model) return;
+
+      const modelUri = (model.uri?.fsPath || model.uri?.path || '').replace(/\\/g, '/');
+      const curActive = (activePath || '').replace(/\\/g, '/');
+      const targetPath = target.path.replace(/\\/g, '/');
+
+      const matchesActive =
+        Boolean(curActive && targetPath) &&
+        (curActive === targetPath ||
+          curActive.endsWith('/' + targetPath) ||
+          targetPath.endsWith('/' + curActive));
+
+      const matchesModel =
+        Boolean(modelUri && targetPath) &&
+        (modelUri === targetPath ||
+          modelUri.endsWith('/' + targetPath) ||
+          targetPath.endsWith('/' + modelUri));
+
+      if (!matchesActive || !matchesModel) {
+        return;
+      }
+
+      if (target.line > model.getLineCount()) {
+        return;
+      }
+
+      try {
+        const line = target.line;
+        const col = target.column ?? 1;
+        ed.revealLineInCenter(line);
+        ed.setPosition({ lineNumber: line, column: col });
+        ed.focus();
+        highlightJumpLocation(ed, line);
+      } catch {
+        // ignore
+      } finally {
+        pendingRevealTargetRef.current = null;
+        onRevealTargetConsumed?.();
+      }
+    },
+    [activePath, onRevealTargetConsumed]
+  );
+
+  useEffect(() => {
+    if (editorRef.current) {
+      executeRevealTarget(editorRef.current);
+    }
+  }, [revealTarget, activePath, executeRevealTarget]);
+
+  // 当切换标签或打开其它文件时，若当前 pendingTarget 与新文件路径不匹配，立即清空，杜绝跨文件粘连
+  useEffect(() => {
+    if (pendingRevealTargetRef.current) {
+      const curActive = (activePath || '').replace(/\\/g, '/');
+      const targetPath = pendingRevealTargetRef.current.path.replace(/\\/g, '/');
+      const matches =
+        Boolean(curActive && targetPath) &&
+        (curActive === targetPath ||
+          curActive.endsWith('/' + targetPath) ||
+          targetPath.endsWith('/' + curActive));
+      if (!matches) {
+        pendingRevealTargetRef.current = null;
+        onRevealTargetConsumed?.();
       }
     }
-  }, [revealLine, revealColumn, activePath, revealNonce]);
+  }, [activePath, onRevealTargetConsumed]);
 
   const setupEditorScrollSync = (ed: MonacoEditor.IStandaloneCodeEditor) => {
     ed.onDidScrollChange((e) => {
@@ -1109,9 +1158,14 @@ export function EditorPane({
     }
   };
 
-  // 切换文件时清空原有装饰 ID，避免跨 model 应用发生失效
+  // 选中文本后的 AI 悬浮提示：滑动文件时针对当前选区隐藏提示；重新划选或选区变化时恢复展示
+  const dismissedSelectionKeyRef = useRef<string | null>(null);
+
+  // 切换文件时清空原有装饰 ID，并重置选区 AI 悬浮窗提示状态
   useEffect(() => {
     decorationsRef.current = [];
+    dismissedSelectionKeyRef.current = null;
+    setSelectionCoords(null);
   }, [activePath]);
 
   // Apply git decorations (gutter indicators & overview ruler) from diff data
@@ -1199,8 +1253,6 @@ export function EditorPane({
       onSelectionChangeRef.current?.('');
       setSelectedText('');
     }
-    // Close peek panel whenever the active file changes
-    setPeekVisible(false);
   }, [active]);
 
   // Single-Hunk Discard Handler (reverts ONLY the target modified hunk, leaving other changes in the file intact)
@@ -1348,40 +1400,6 @@ export function EditorPane({
       startLine: sel.startLineNumber,
       endLine: sel.endLineNumber,
     });
-  }, []);
-
-  const updateSelectionAndCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
-    const model = ed.getModel();
-    const sel = ed.getSelection();
-    if (!model || !sel || sel.isEmpty()) {
-      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
-      clearTimerRef.current = setTimeout(() => {
-        onSelectionChangeRef.current?.('');
-        setSelectedText('');
-        setSelectionRange(null);
-        setSelectionCoords(null);
-      }, 250);
-      return;
-    }
-    if (clearTimerRef.current) {
-      clearTimeout(clearTimerRef.current);
-      clearTimerRef.current = null;
-    }
-    const val = model.getValueInRange(sel);
-    onSelectionChangeRef.current?.(val);
-    setSelectedText(val);
-    setSelectionRange({
-      startLine: sel.startLineNumber,
-      endLine: sel.endLineNumber,
-    });
-
-    // Only compute and display floating coordinates when mouse is NOT pressed down
-    if (isMouseDownRef.current) {
-      setSelectionCoords(null);
-      return;
-    }
-
-    repositionSelectionCoords(ed);
   }, []);
 
   // 选区更新或滚动时计算浮层坐标：跟随鼠标位置，智能避让代码文本，绝不遮挡代码
@@ -1569,6 +1587,49 @@ export function EditorPane({
     }
   }, []);
 
+  const updateSelectionAndCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
+    const model = ed.getModel();
+    const sel = ed.getSelection();
+    if (!model || !sel || sel.isEmpty()) {
+      dismissedSelectionKeyRef.current = null;
+      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = setTimeout(() => {
+        onSelectionChangeRef.current?.('');
+        setSelectedText('');
+        setSelectionRange(null);
+        setSelectionCoords(null);
+      }, 250);
+      return;
+    }
+    if (clearTimerRef.current) {
+      clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
+    const val = model.getValueInRange(sel);
+    onSelectionChangeRef.current?.(val);
+    setSelectedText(val);
+    setSelectionRange({
+      startLine: sel.startLineNumber,
+      endLine: sel.endLineNumber,
+    });
+
+    // Only compute and display floating coordinates when mouse is NOT pressed down
+    if (isMouseDownRef.current) {
+      setSelectionCoords(null);
+      return;
+    }
+
+    const currentKey = `${sel.startLineNumber}:${sel.startColumn}-${sel.endLineNumber}:${sel.endColumn}`;
+    // 滑动后当前选区隐藏不再提示 AI；当用户重新划选或改变选区时恢复展示
+    if (dismissedSelectionKeyRef.current === currentKey) {
+      setSelectionCoords(null);
+      return;
+    }
+
+    dismissedSelectionKeyRef.current = null;
+    repositionSelectionCoords(ed);
+  }, [repositionSelectionCoords]);
+
   const openInlineAiForEditor = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor) => {
       const sel = ed.getSelection();
@@ -1720,21 +1781,12 @@ export function EditorPane({
       });
       // When switching to another file tab via navigation, reveal line as soon as new model attaches
       ed.onDidChangeModel(() => {
-        if (pendingReveal.current != null) {
-          const line = pendingReveal.current;
-          const col = pendingRevealColumn.current ?? 1;
-          pendingReveal.current = null;
-          pendingRevealColumn.current = null;
-          requestAnimationFrame(() => {
-            ed.revealLineInCenter(line);
-            ed.setPosition({ lineNumber: line, column: col });
-            ed.focus();
-            highlightJumpLocation(ed, line);
-          });
-        }
+        requestAnimationFrame(() => {
+          executeRevealTarget(ed);
+        });
       });
     },
-    [openInlineAiForEditor, triggerAddToChatForEditor, workspace, onOpenFile],
+    [openInlineAiForEditor, triggerAddToChatForEditor, workspace, onOpenFile, executeRevealTarget],
   );
 
   useEffect(() => {
@@ -1755,11 +1807,6 @@ export function EditorPane({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (peekVisible) {
-          setPeekVisible(false);
-          editorRef.current?.focus();
-          return;
-        }
         if (showInlineAi) {
           setShowInlineAi(false);
           editorRef.current?.focus();
@@ -1787,7 +1834,7 @@ export function EditorPane({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [showInlineAi, peekVisible, openInlineAiForEditor, triggerAddToChatForEditor]);
+  }, [showInlineAi, openInlineAiForEditor, triggerAddToChatForEditor]);
 
   if (previewDiff) {
     const lang = languageFromPath(previewDiff.path);
@@ -2443,86 +2490,6 @@ export function EditorPane({
           </div>
         )}
 
-        {/* ── Definition Peek Panel: shown when Cmd+Click finds multiple results ── */}
-        {peekVisible && peekResults.length > 0 && (
-          <div
-            className="def-peek-panel"
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              zIndex: 50,
-              background: 'var(--bg-surface, #1e1e2e)',
-              borderTop: '1px solid var(--border, #333)',
-              maxHeight: 220,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: '0 -4px 16px rgba(0,0,0,0.35)',
-            }}
-          >
-            {/* Header */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '5px 12px 4px',
-              borderBottom: '1px solid var(--border, #333)',
-              flexShrink: 0,
-            }}>
-              <span style={{ fontSize: 11, color: 'var(--muted, #888)', fontWeight: 600, letterSpacing: '0.03em' }}>
-                "{peekSymbol}" 的 {peekResults.length} 个定义 — 点击跳转 &nbsp;|&nbsp; Alt+← 返回
-              </span>
-              <button
-                type="button"
-                onClick={() => setPeekVisible(false)}
-                style={{
-                  background: 'transparent', border: 'none', cursor: 'pointer',
-                  color: 'var(--muted, #888)', fontSize: 16, lineHeight: 1, padding: '0 2px',
-                }}
-                title="关闭 (Esc)"
-              >
-                ×
-              </button>
-            </div>
-            {/* Results list */}
-            <div style={{ overflowY: 'auto', flex: 1 }}>
-              {peekResults.map((r, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="def-peek-item"
-                  onClick={() => {
-                    setPeekVisible(false);
-                    onOpenFile?.(r.path, r.line, r.column);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'baseline',
-                    gap: 8,
-                    width: '100%',
-                    padding: '5px 14px',
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: '1px solid var(--border-subtle, rgba(255,255,255,0.05))',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    color: 'var(--text, #cdd6f4)',
-                    fontSize: 12,
-                    fontFamily: 'var(--font-mono, monospace)',
-                  }}
-                >
-                  <span style={{ color: 'var(--accent, #89b4fa)', flexShrink: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '50%' }}>
-                    {r.path}
-                  </span>
-                  <span style={{ color: 'var(--muted, #888)', flexShrink: 0 }}>:{r.line}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {active && isImage ? (
           <div className="image-preview-pane">
             {active.previewUrl ? (
@@ -2583,11 +2550,6 @@ export function EditorPane({
                     onOpenFile: (targetPath, line, col) => {
                       onOpenFile?.(targetPath, line, col);
                     },
-                    onShowPeekResults: (results, symbol) => {
-                      setPeekResults(results);
-                      setPeekSymbol(symbol);
-                      setPeekVisible(true);
-                    },
                     getCurrentPath: () => activeRef.current?.path ?? null,
                     getCurrentPosition: () => {
                       const pos = ed.getPosition();
@@ -2605,9 +2567,11 @@ export function EditorPane({
                     }
                   });
                   ed.onDidScrollChange(() => {
-                    if (isMouseDownRef.current) return;
-                    // 滚动触发，用 rAF 合并，避免频繁 setState 重渲染造成卡顿
-                    scheduleCoordsUpdate(() => repositionSelectionCoords(ed));
+                    const sel = ed.getSelection();
+                    if (sel && !sel.isEmpty()) {
+                      dismissedSelectionKeyRef.current = `${sel.startLineNumber}:${sel.startColumn}-${sel.endLineNumber}:${sel.endColumn}`;
+                    }
+                    setSelectionCoords(null);
                   });
                   ed.onDidChangeCursorPosition((e) => {
                     onCursorChange?.(e.position.lineNumber, e.position.column);
@@ -2675,15 +2639,7 @@ export function EditorPane({
                   });
                   updateSelectionAndCoords(ed);
 
-                  if (pendingReveal.current != null) {
-                    const line = pendingReveal.current;
-                    const col = pendingRevealColumn.current ?? 1;
-                    pendingReveal.current = null;
-                    pendingRevealColumn.current = null;
-                    ed.revealLineInCenter(line);
-                    ed.setPosition({ lineNumber: line, column: col });
-                    ed.focus();
-                  }
+                  executeRevealTarget(ed);
                 }}
                 options={{
                   fontSize: 13,
@@ -2815,8 +2771,11 @@ export function EditorPane({
                     }
                   });
                   ed.onDidScrollChange(() => {
-                    if (isMouseDownRef.current) return;
-                    scheduleCoordsUpdate(() => repositionSelectionCoords(ed));
+                    const sel = ed.getSelection();
+                    if (sel && !sel.isEmpty()) {
+                      dismissedSelectionKeyRef.current = `${sel.startLineNumber}:${sel.startColumn}-${sel.endLineNumber}:${sel.endColumn}`;
+                    }
+                    setSelectionCoords(null);
                   });
                   ed.onDidChangeCursorPosition((e) => {
                     onCursorChange?.(e.position.lineNumber, e.position.column);
@@ -2994,11 +2953,6 @@ export function EditorPane({
                     const fn = onOpenFileRef?.current ?? onOpenFile;
                     fn?.(targetPath, line, col);
                   },
-                  onShowPeekResults: (results, symbol) => {
-                    setPeekResults(results);
-                    setPeekSymbol(symbol);
-                    setPeekVisible(true);
-                  },
                   getCurrentPath: () => activeRef.current?.path ?? null,
                   getCurrentPosition: () => {
                     const pos = ed.getPosition();
@@ -3016,8 +2970,11 @@ export function EditorPane({
                   }
                 });
                 ed.onDidScrollChange(() => {
-                  if (isMouseDownRef.current) return;
-                  scheduleCoordsUpdate(() => repositionSelectionCoords(ed));
+                  const sel = ed.getSelection();
+                  if (sel && !sel.isEmpty()) {
+                    dismissedSelectionKeyRef.current = `${sel.startLineNumber}:${sel.startColumn}-${sel.endLineNumber}:${sel.endColumn}`;
+                  }
+                  setSelectionCoords(null);
                 });
                 ed.onDidChangeCursorPosition((e) => {
                   onCursorChange?.(e.position.lineNumber, e.position.column);
@@ -3082,13 +3039,7 @@ export function EditorPane({
                   updateGitBlameRef.current(initPos.lineNumber, true);
                 }
 
-                if (pendingReveal.current != null) {
-                  const line = pendingReveal.current;
-                  pendingReveal.current = null;
-                  ed.revealLineInCenter(line);
-                  ed.setPosition({ lineNumber: line, column: 1 });
-                  ed.focus();
-                }
+                executeRevealTarget(ed);
               }}
               options={{
                 fontSize: 13,

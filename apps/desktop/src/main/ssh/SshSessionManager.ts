@@ -12,10 +12,17 @@ function posixJoin(root: string, relPath = '.'): string {
   const cleaned = (relPath || '.').replace(/\\/g, '/');
   if (cleaned === '.' || cleaned === '') return root.replace(/\/$/, '') || '/';
   if (cleaned.startsWith('/')) {
-    // absolute remote path — still jail under root
-    const rootN = root.replace(/\/$/, '') || '/';
-    if (cleaned === rootN || cleaned.startsWith(`${rootN}/`)) return cleaned;
-    throw new Error(`Path escapes remote workspace: ${relPath}`);
+    // absolute path — normalize and return
+    const parts = cleaned.split('/').filter((p) => p && p !== '.');
+    const out: string[] = [];
+    for (const p of parts) {
+      if (p === '..') {
+        out.pop();
+      } else {
+        out.push(p);
+      }
+    }
+    return `/${out.join('/')}`;
   }
   const parts = [
     ...root.split('/').filter(Boolean),
@@ -24,7 +31,6 @@ function posixJoin(root: string, relPath = '.'): string {
   const out: string[] = [];
   for (const p of parts) {
     if (p === '..') {
-      if (!out.length) throw new Error(`Path escapes remote workspace: ${relPath}`);
       out.pop();
     } else {
       out.push(p);
@@ -37,8 +43,8 @@ function toRel(root: string, abs: string): string {
   const rootN = root.replace(/\/$/, '') || '/';
   const absN = abs.replace(/\/$/, '') || '/';
   if (absN === rootN) return '.';
-  if (!absN.startsWith(`${rootN}/`)) throw new Error(`Path outside workspace: ${abs}`);
-  return absN.slice(rootN.length + 1);
+  if (absN.startsWith(`${rootN}/`)) return absN.slice(rootN.length + 1);
+  return absN;
 }
 
 export class SftpBackend implements WorkspaceBackend {
@@ -62,7 +68,11 @@ export class SftpBackend implements WorkspaceBackend {
     const abs = this.resolve(relPath);
     return await new Promise((resolve, reject) => {
       this.sftp.readdir(abs, (err, list) => {
-        if (err) return reject(err);
+        if (err) {
+          const isNotFound = (err as any).code === 2 || err.message?.includes('No such file');
+          if (isNotFound) return resolve([]);
+          return reject(err);
+        }
         resolve(
           list.map((e) => ({
             name: e.filename,
@@ -78,8 +88,12 @@ export class SftpBackend implements WorkspaceBackend {
     // 先检查文件大小
     const stat = await new Promise<{ size: number }>((resolve, reject) => {
       this.sftp.stat(abs, (err, stats) => {
-        if (err) reject(new Error(`无法获取文件信息: ${err.message}`));
-        else resolve(stats);
+        if (err) {
+          const isNotFound = (err as any).code === 2 || err.message?.includes('No such file');
+          reject(new Error(isNotFound ? `文件不存在: ${relPath}` : `无法获取文件信息: ${err.message}`));
+        } else {
+          resolve(stats);
+        }
       });
     });
     const MAX_SIZE = 10 * 1024 * 1024; // 10MB
