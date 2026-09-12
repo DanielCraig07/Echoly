@@ -36,15 +36,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run pack:mac:publish
 
-      - name: Upload mac artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: echoly-mac-arm64
-          path: |
-            apps/desktop/release/*.dmg
-            apps/desktop/release/*.blockmap
-            apps/desktop/release/latest-mac.yml
 
   windows:
     runs-on: windows-latest
@@ -67,15 +58,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run pack:win:publish
 
-      - name: Upload win artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: echoly-win-x64
-          path: |
-            apps/desktop/release/*.exe
-            apps/desktop/release/*.blockmap
-            apps/desktop/release/latest.yml
 
   publish:
     needs: [macos, windows]
