@@ -71,14 +71,18 @@ async function ghAsset(
   assetId: number,
   token: string | undefined,
   onProgress?: (loaded: number, total: number) => void,
+  assetOwner?: string,
+  assetRepo?: string,
 ): Promise<Buffer> {
+  const owner = assetOwner || feed?.owner || GH_OWNER;
+  const repo = assetRepo || feed?.repo || GH_REPO;
   const headers: Record<string, string> = {
     Accept: 'application/octet-stream',
     'User-Agent': 'Echoly-Updater',
   };
   if (token) headers.Authorization = `bearer ${token}`;
   const res = await fetch(
-    `${API_BASE}/repos/${feed?.owner || GH_OWNER}/${feed?.repo || GH_REPO}/releases/assets/${assetId}`,
+    `${API_BASE}/repos/${owner}/${repo}/releases/assets/${assetId}`,
     {
       headers,
     },
@@ -188,7 +192,7 @@ async function probeUpdate(cfg: UpdateFeedConfig): Promise<UpdateProbe> {
 
   let ymlText: string;
   try {
-    ymlText = (await ghAsset(ymlAsset.id, token)).toString('utf8');
+    ymlText = (await ghAsset(ymlAsset.id, token, undefined, owner, repo)).toString('utf8');
   } catch (err) {
     return {
       hasUpdate: false,
@@ -213,11 +217,16 @@ async function probeUpdate(cfg: UpdateFeedConfig): Promise<UpdateProbe> {
     return { hasUpdate: false, detail: `未找到安装包资产 ${info.url}` };
   }
 
+  // release.body 是 GitHub Release 正文（更新日志）；
+  // GitHub 发布时若未填写说明则返回 null，此时回退到 release.name，
+  // 保证前端至少能展示版本名称而非空白。
+  const releaseNotes = release.body?.trim() || release.name?.trim() || '';
+
   return {
     hasUpdate: true,
     version: info.version,
     current,
-    releaseNotes: release.body || '',
+    releaseNotes,
     target: pkgAsset,
     owner,
     repo,
@@ -294,7 +303,8 @@ async function readSha512FromLatestYml(
     const release = await ghJson<GhRelease>(`/repos/${owner}/${repo}/releases/latest`, token);
     const ymlAsset = release.assets.find((a) => a.name === channelFile);
     if (!ymlAsset) return '';
-    const text = (await ghAsset(ymlAsset.id, token)).toString('utf8');
+    // 明确传入 owner/repo，避免依赖模块级 feed 变量
+    const text = (await ghAsset(ymlAsset.id, token, undefined, owner, repo)).toString('utf8');
     return text.match(/sha512:\s*(\S+)/)?.[1] || '';
   } catch {
     return '';

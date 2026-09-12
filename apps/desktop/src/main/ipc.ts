@@ -18,6 +18,8 @@ import type { GitService } from './gitService';
 import type { SearchService } from './searchService';
 import type { SshSessionManager } from './ssh/SshSessionManager';
 import type { WindowRegistry } from './windowRegistry';
+import { detectMavenEnvironment, initMavenWrapper, initMavenSettings } from './mavenService';
+import { detectInstalledJdks, getAvailableOnlineJdks, installOnlineJdk } from './javaService';
 
 export function registerIpc(deps: {
   ipcMain: IpcMain;
@@ -198,6 +200,9 @@ export function registerIpc(deps: {
     await shell.openPath(dir);
     return dir;
   });
+  ipcMain.handle('shell:showItemInFolder', (_e, fullPath: string) => {
+    shell.showItemInFolder(fullPath);
+  });
 
   ipcMain.handle('diff:accept', (e, id: string) =>
     run(e, () => registry.current().diffs.accept(id)),
@@ -296,5 +301,37 @@ export function registerIpc(deps: {
     'lsp:notifyDocument',
     (e, filePath: string, content: string, languageId?: string) =>
       run(e, () => registry.current().lsp.notifyDocument(filePath, content, languageId)),
+  );
+
+  ipcMain.handle('maven:checkEnv', (e) =>
+    run(e, () => detectMavenEnvironment(registry.current().workspace.getRoot() ?? undefined)),
+  );
+  ipcMain.handle('maven:initWrapper', (e) =>
+    run(e, () => {
+      const root = registry.current().workspace.getRoot();
+      if (!root) {
+        return { success: false, message: '未打开工作区' };
+      }
+      return initMavenWrapper(root);
+    }),
+  );
+  ipcMain.handle('maven:initSettings', (e) =>
+    run(e, () => {
+      const root = registry.current().workspace.getRoot();
+      if (!root) {
+        return { success: false, message: '未打开工作区' };
+      }
+      return initMavenSettings(root);
+    }),
+  );
+
+  ipcMain.handle('java:listInstalled', (e) =>
+    run(e, () => detectInstalledJdks()),
+  );
+  ipcMain.handle('java:listOnline', (e) =>
+    run(e, () => getAvailableOnlineJdks()),
+  );
+  ipcMain.handle('java:installOnline', (e, id: string) =>
+    run(e, () => installOnlineJdk(id)),
   );
 }

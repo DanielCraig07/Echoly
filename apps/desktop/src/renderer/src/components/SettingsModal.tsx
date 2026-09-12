@@ -8,13 +8,9 @@ import type {
   ModelProviderType,
   UpdateFeedConfig,
 } from '@deepseek-ide/shared';
-import {
-  PERMISSION_MODE_LABELS,
-  AI_PROVIDER_LABELS,
-  DEFAULT_PROVIDERS,
-  DEFAULT_MODELS,
-} from '@deepseek-ide/shared';
+import { PERMISSION_MODE_LABELS, AI_PROVIDER_LABELS, DEFAULT_PROVIDERS, DEFAULT_MODELS } from '@deepseek-ide/shared';
 import { useI18n } from '../i18n';
+import { EnvironmentSettingsSection } from './EnvironmentSettingsSection';
 
 interface Props {
   open: boolean;
@@ -26,7 +22,8 @@ interface Props {
     detail?: string,
     type?: 'success' | 'error' | 'info' | 'warn',
   ) => void;
-  initialTab?: 'models' | 'runtime' | 'general' | 'skills' | 'update' | 'about';
+  initialTab?: 'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'update' | 'about';
+  workspace?: string | null;
 }
 
 const PERMISSION_ORDER: PermissionMode[] = ['allow_all_extreme', 'allow_all', 'ask', 'deny_all'];
@@ -38,7 +35,7 @@ const PERMISSION_HINTS: Record<PermissionMode, string> = {
   deny_all: '拦截全部工具调用，仅可查看不可修改。',
 };
 
-export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab }: Props) {
+export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab, workspace }: Props) {
   const { locale, t, setLocale } = useI18n();
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [probe, setProbe] = useState<string>('');
@@ -158,13 +155,39 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab 
     },
   ];
 
-  // Tab state
-  const [activeTab, setActiveTab] = useState<
-    'models' | 'runtime' | 'general' | 'skills' | 'update' | 'about'
-  >(initialTab || 'models');
+  // Tab state — 持久化到 localStorage，下次打开时恢复上次停留位置
+  const SETTINGS_TAB_KEY = 'echoly_settings_last_tab';
+  type SettingsTab = 'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'update' | 'about';
+  const ALL_TABS: SettingsTab[] = ['models', 'runtime', 'environment', 'general', 'skills', 'update', 'about'];
+
+  function readPersistedTab(): SettingsTab {
+    try {
+      const stored = localStorage.getItem(SETTINGS_TAB_KEY) as SettingsTab | null;
+      if (stored && ALL_TABS.includes(stored)) return stored;
+    } catch {
+      // localStorage unavailable
+    }
+    return 'models';
+  }
+
+  const [activeTab, setActiveTabRaw] = useState<SettingsTab>(
+    // 外部强制指定时优先用 initialTab，否则恢复上次位置
+    initialTab || readPersistedTab(),
+  );
   const [showApiKey, setShowApiKey] = useState(false);
 
+  /** 切换 tab 并同时持久化 */
+  function setActiveTab(tab: SettingsTab): void {
+    setActiveTabRaw(tab);
+    try {
+      localStorage.setItem(SETTINGS_TAB_KEY, tab);
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
+    // 仅当外部明确传入 initialTab 时才强制跳转（如从关于页点击「检查更新」）
     if (open && initialTab) {
       setActiveTab(initialTab);
     }
@@ -492,6 +515,18 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab 
               <div className="nav-text">
                 <span className="nav-title">{t('settings.nav.runtime')}</span>
                 <span className="nav-sub">{t('settings.nav.runtimeDesc')}</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              className={`settings-nav-item ${activeTab === 'environment' ? 'active' : ''}`}
+              onClick={() => setActiveTab('environment')}
+            >
+              <span className="nav-icon">⚙️</span>
+              <div className="nav-text">
+                <span className="nav-title">构建与运行环境</span>
+                <span className="nav-sub">Java (JDK) / Maven 配置</span>
               </div>
             </button>
 
@@ -1228,8 +1263,63 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab 
                       <span>{t('settings.selectionAiFloat')}</span>
                     </label>
                   </div>
+
+                  <div className="setting-card" style={{ marginTop: 12 }}>
+                    <div className="setting-card-title">
+                      <strong>终端缓存条数上限 (Scrollback Lines)</strong>
+                    </div>
+                    <p className="setting-card-desc">
+                      控制每个终端窗口在内存中保留的历史运行日志行数上限。增加上限可回滚查看更多历史日志，默认 10,000 行。
+                    </p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                      <input
+                        type="number"
+                        min={1000}
+                        max={100000}
+                        step={1000}
+                        className="modern-input"
+                        style={{ width: 140 }}
+                        value={settings.terminalScrollback ?? 10000}
+                        onChange={(e) => {
+                          const val = Math.min(100000, Math.max(1000, Number(e.target.value) || 10000));
+                          setSettings({ ...settings, terminalScrollback: val });
+                        }}
+                      />
+                      <span style={{ fontSize: 13, color: 'var(--muted)' }}>行</span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {[5000, 10000, 20000, 50000].map((preset) => {
+                          const selected = (settings.terminalScrollback ?? 10000) === preset;
+                          return (
+                            <button
+                              key={preset}
+                              type="button"
+                              className="preset-tag-btn"
+                              style={{
+                                padding: '3px 9px',
+                                fontSize: 12,
+                                borderRadius: 4,
+                                border: '1px solid ' + (selected ? 'var(--accent)' : 'var(--border)'),
+                                background: selected ? 'var(--accent)' : 'transparent',
+                                color: selected ? '#fff' : 'var(--fg)',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                              }}
+                              onClick={() => setSettings({ ...settings, terminalScrollback: preset })}
+                            >
+                              {preset.toLocaleString()} 行
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
+            )}
+
+            {/* 开发与构建环境 Tab */}
+            {activeTab === 'environment' && (
+              <EnvironmentSettingsSection workspace={workspace || undefined} onShowToast={onShowToast} />
             )}
 
             {/* 4. Skills 扩展库 Tab */}

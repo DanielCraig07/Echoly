@@ -195,7 +195,13 @@ function SearchTreeNodeView({
               className="search-result-item"
             >
               <span
-                style={{ color: 'var(--accent)', fontSize: 11, minWidth: 24, textAlign: 'right', flexShrink: 0 }}
+                style={{
+                  color: 'var(--accent)',
+                  fontSize: 11,
+                  minWidth: 24,
+                  textAlign: 'right',
+                  flexShrink: 0,
+                }}
               >
                 {hit.line}:
               </span>
@@ -467,20 +473,13 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           <button
             type="button"
+            className="panel-action-btn"
             title="刷新搜索"
             onClick={() => void performSearch(query, isCaseSensitive)}
-            style={{
-              padding: 4,
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--muted)',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
           >
             <svg
-              width="16"
-              height="16"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -492,19 +491,13 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           </button>
           <button
             type="button"
+            className="panel-action-btn"
             title="清空搜索结果"
             onClick={handleClear}
-            style={{
-              padding: 4,
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--muted)',
-              cursor: 'pointer',
-            }}
           >
             <svg
-              width="16"
-              height="16"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -516,16 +509,9 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           </button>
           <button
             type="button"
+            className={`panel-action-btn ${displayMode === 'tree' ? 'active' : ''}`}
             title={displayMode === 'list' ? '按树结构显示' : '按列表显示'}
             onClick={() => setDisplayMode((m) => (m === 'list' ? 'tree' : 'list'))}
-            style={{
-              padding: 4,
-              background: displayMode === 'tree' ? 'var(--bg-hover)' : 'transparent',
-              border: 'none',
-              color: displayMode === 'tree' ? 'var(--text)' : 'var(--muted)',
-              borderRadius: 4,
-              cursor: 'pointer',
-            }}
           >
             {displayMode === 'tree' ? (
               <svg
@@ -562,19 +548,13 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           </button>
           <button
             type="button"
+            className="panel-action-btn"
             title={allCollapsed ? '全部展开' : '全部折叠'}
             onClick={toggleAllCollapse}
-            style={{
-              padding: 4,
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--muted)',
-              cursor: 'pointer',
-            }}
           >
             <svg
-              width="16"
-              height="16"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -603,17 +583,13 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             type="button"
+            className={`panel-action-btn ${showReplace ? 'active' : ''}`}
             onClick={() => setShowReplace((v) => !v)}
             title={showReplace ? '隐藏替换' : '显示替换'}
             style={{
-              padding: 2,
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--muted)',
-              cursor: 'pointer',
-              fontSize: 12,
               transform: showReplace ? 'rotate(90deg)' : 'none',
-              transition: 'transform 0.15s',
+              transition: 'transform 0.15s, background 0.15s',
+              fontSize: 12,
             }}
           >
             ▸
@@ -627,7 +603,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               background: 'var(--bg-input, #12161c)',
               border: '1px solid var(--border)',
               borderRadius: 6,
-              paddingRight: 74,
+              paddingRight: 80,
               boxSizing: 'border-box',
             }}
           >
@@ -660,56 +636,31 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             >
               <button
                 type="button"
+                className={`input-toggle-btn ${isCaseSensitive ? 'active' : ''}`}
                 title="区分大小写 (Alt+C)"
                 onClick={() => setIsCaseSensitive((v) => !v)}
-                style={{
-                  padding: '2px 5px',
-                  fontSize: 11,
-                  fontWeight: 'bold',
-                  fontFamily: 'monospace',
-                  background: isCaseSensitive ? 'var(--accent)' : 'transparent',
-                  color: isCaseSensitive ? '#fff' : 'var(--muted)',
-                  border: 'none',
-                  borderRadius: 3,
-                  cursor: 'pointer',
-                }}
+                style={{ fontFamily: 'monospace' }}
               >
                 Aa
               </button>
               <button
                 type="button"
+                className={`input-toggle-btn ${isWholeWord ? 'active' : ''}`}
                 title="全字匹配 (Alt+W)"
                 onClick={() => setIsWholeWord((v) => !v)}
                 style={{
-                  padding: '2px 5px',
-                  fontSize: 11,
-                  fontWeight: 'bold',
                   fontFamily: 'monospace',
                   textDecoration: isWholeWord ? 'underline' : 'none',
-                  background: isWholeWord ? 'var(--accent)' : 'transparent',
-                  color: isWholeWord ? '#fff' : 'var(--muted)',
-                  border: 'none',
-                  borderRadius: 3,
-                  cursor: 'pointer',
                 }}
               >
                 ab
               </button>
               <button
                 type="button"
+                className={`input-toggle-btn ${isRegex ? 'active' : ''}`}
                 title="使用正则表达式 (Alt+R)"
                 onClick={() => setIsRegex((v) => !v)}
-                style={{
-                  padding: '2px 5px',
-                  fontSize: 11,
-                  fontWeight: 'bold',
-                  fontFamily: 'monospace',
-                  background: isRegex ? 'var(--accent)' : 'transparent',
-                  color: isRegex ? '#fff' : 'var(--muted)',
-                  border: 'none',
-                  borderRadius: 3,
-                  cursor: 'pointer',
-                }}
+                style={{ fontFamily: 'monospace' }}
               >
                 .*
               </button>
@@ -719,7 +670,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
 
         {/* Replace Input Row (Collapsible) */}
         {showReplace && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 22 }}>
             <div
               style={{
                 flex: 1,
@@ -729,7 +680,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 background: 'var(--bg-input, #12161c)',
                 border: '1px solid var(--border)',
                 borderRadius: 6,
-                paddingRight: 60,
+                paddingRight: 64,
                 boxSizing: 'border-box',
               }}
             >
@@ -754,40 +705,23 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                   position: 'absolute',
                   right: 4,
                   display: 'flex',
-                  gap: 4,
+                  gap: 3,
                   alignItems: 'center',
                 }}
               >
                 <button
                   type="button"
+                  className={`input-toggle-btn ${preserveCase ? 'active' : ''}`}
                   title="保留大小写"
                   onClick={() => setPreserveCase((v) => !v)}
-                  style={{
-                    padding: '2px 4px',
-                    fontSize: 10,
-                    fontWeight: 'bold',
-                    background: preserveCase ? 'var(--accent)' : 'transparent',
-                    color: preserveCase ? '#fff' : 'var(--muted)',
-                    border: 'none',
-                    borderRadius: 3,
-                    cursor: 'pointer',
-                  }}
                 >
                   AB
                 </button>
                 <button
                   type="button"
+                  className="panel-action-btn"
                   title="全部替换 (Alt+Enter)"
                   onClick={() => void handleReplaceAll()}
-                  style={{
-                    padding: '2px 6px',
-                    fontSize: 12,
-                    background: 'transparent',
-                    color: 'var(--muted)',
-                    border: 'none',
-                    borderRadius: 3,
-                    cursor: 'pointer',
-                  }}
                 >
                   <svg
                     width="14"
@@ -812,13 +746,13 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
         <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 2 }}>
           <button
             type="button"
+            className={`panel-action-btn ${showDetails ? 'active' : ''}`}
             onClick={() => setShowDetails((v) => !v)}
             style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--muted)',
               fontSize: 11,
-              cursor: 'pointer',
+              padding: '2px 8px',
+              height: 'auto',
+              borderRadius: 4,
             }}
           >
             {showDetails ? '隐藏过滤选项 ▲' : '包含 / 排除的文件... ▼'}

@@ -31,7 +31,10 @@ import { SettingsModal } from './components/SettingsModal';
 import { OpenWorkspaceModal } from './components/OpenWorkspaceModal';
 import { CloneRepoModal } from './components/CloneRepoModal';
 import { SshConnectModal } from './components/SshConnectModal';
-import { SwitchWorkspaceModal, type SwitchWorkspaceTarget } from './components/SwitchWorkspaceModal';
+import {
+  SwitchWorkspaceModal,
+  type SwitchWorkspaceTarget,
+} from './components/SwitchWorkspaceModal';
 import { BranchSwitchModal } from './components/BranchSwitchModal';
 import { FileHistoryModal } from './components/FileHistoryModal';
 import {
@@ -44,6 +47,7 @@ import { ExtensionPanel } from './components/ExtensionPanel';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { GitPanel } from './components/GitPanel';
 import { SearchPanel } from './components/SearchPanel';
+import { MavenPanel } from './components/MavenPanel';
 import { StatusBar } from './components/StatusBar';
 import { GlobalTooltip } from './components/GlobalTooltip';
 import {
@@ -61,7 +65,7 @@ import {
 import { setupSymbolNavigation } from './services/symbolNavigation';
 
 type ResizeAxis = 'explorer' | 'chat' | 'bottom';
-type LeftPanel = 'explorer' | 'git';
+type LeftPanel = 'explorer' | 'search' | 'git' | 'maven';
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -166,9 +170,11 @@ export function App() {
   const [tabs, setTabs] = useState<OpenTab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // undefined 表示正常打开（由 SettingsModal 自行恢复 localStorage 中的上次 tab），
+  // 只有外部需要强制跳转时才赋具体值。
   const [settingsInitialTab, setSettingsInitialTab] = useState<
-    'models' | 'runtime' | 'general' | 'skills' | 'update' | 'about'
-  >('models');
+    'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'update' | 'about' | undefined
+  >(undefined);
   const [openWorkspaceOpen, setOpenWorkspaceOpen] = useState(false);
   const [switchTarget, setSwitchTarget] = useState<SwitchWorkspaceTarget | null>(null);
   const switchTargetRef = useRef<SwitchWorkspaceTarget | null>(null);
@@ -200,13 +206,18 @@ export function App() {
   const [gitBlameInline, setGitBlameInline] = useState(DEFAULT_SETTINGS.gitBlameInline ?? true);
   const [hoverDelay, setHoverDelay] = useState(DEFAULT_SETTINGS.hoverDelay ?? 500);
   const [minimap, setMinimap] = useState(DEFAULT_SETTINGS.minimap !== false);
-  const [selectionAiFloat, setSelectionAiFloat] = useState(DEFAULT_SETTINGS.selectionAiFloat !== false);
+  const [selectionAiFloat, setSelectionAiFloat] = useState(
+    DEFAULT_SETTINGS.selectionAiFloat !== false,
+  );
+  const [terminalScrollback, setTerminalScrollback] = useState<number>(
+    DEFAULT_SETTINGS.terminalScrollback ?? 10000,
+  );
   const [models, setModels] = useState<ModelProfile[]>(DEFAULT_MODELS);
   const [activeModelId, setActiveModelId] = useState<string>('deepseek-local');
   const [layout, setLayout] = useState<LayoutSettings>({ ...DEFAULT_LAYOUT });
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-  const [shellWidth, setShellWidth] = useState(0);
+  const [isMavenProject, setIsMavenProject] = useState(false);
   const autoSaveRef = useRef(autoSave);
   autoSaveRef.current = autoSave;
   const activePathRef = useRef(activePath);
@@ -222,6 +233,7 @@ export function App() {
   // will NOT trigger auto-save or mark dirty, preventing discarded files from being saved back.
   const suppressAutoSaveUntilRef = useRef<Map<string, number>>(new Map());
   const shellRef = useRef<HTMLDivElement>(null);
+  const [shellWidth, setShellWidth] = useState<number>(0);
   const middleColRef = useRef<HTMLDivElement>(null);
   const saveLayoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatRef = useRef<ChatPanelHandle>(null);
@@ -229,6 +241,8 @@ export function App() {
     cwd: string;
     nonce: number;
     initialCommand?: string;
+    terminalType?: string;
+    terminalTitle?: string;
   } | null>(null);
   const terminalNonce = useRef(0);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('explorer');
@@ -254,6 +268,7 @@ export function App() {
   const [timelineCommits, setTimelineCommits] = useState<GitCommitEntry[]>([]);
   const [fileHistoryModalPath, setFileHistoryModalPath] = useState<string | null>(null);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
+  const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
   const [activeLanguage, setActiveLanguage] = useState('plaintext');
@@ -266,6 +281,14 @@ export function App() {
       type: 'success' | 'error' | 'info' | 'warn';
     }>
   >([]);
+  const [toastDetailModal, setToastDetailModal] = useState<{
+    id: string;
+    title: string;
+    detail?: string;
+    type: 'success' | 'error' | 'info' | 'warn';
+  } | null>(null);
+  const [copiedToastId, setCopiedToastId] = useState<string | null>(null);
+  const [modalCopied, setModalCopied] = useState(false);
 
   const showToast = useCallback(
     (title: string, detail?: string, type: 'success' | 'error' | 'info' | 'warn' = 'success') => {
@@ -277,7 +300,6 @@ export function App() {
     },
     [],
   );
-
 
   // 判断某个路径是否处于“放弃修改抑制期”（防止 Monaco onChange 触发 auto-save 误将已放弃的内容又写回磁盘）
   const isPathSuppressed = useCallback((path: string): boolean => {
@@ -307,7 +329,9 @@ export function App() {
       (Array.isArray(pathOrPaths) &&
         pathOrPaths.some((p) => !p || p === '.' || p === 'ALL' || p === 'all'));
 
-    const pathsToDiscard = (Array.isArray(pathOrPaths) ? pathOrPaths : [pathOrPaths]).filter(Boolean);
+    const pathsToDiscard = (Array.isArray(pathOrPaths) ? pathOrPaths : [pathOrPaths]).filter(
+      Boolean,
+    );
 
     // 1. 立即锁定抑制窗口（3000ms），阻止任何 Monaco onChange 重绘误触发写盘
     const suppressUntilTime = Date.now() + 3000;
@@ -384,9 +408,7 @@ export function App() {
         try {
           const previewUrl = await window.ide.readFileDataUrl(tab.path);
           setTabs((prev) =>
-            prev.map((t) =>
-              t.path === tab.path ? { ...t, dirty: false, previewUrl } : t,
-            ),
+            prev.map((t) => (t.path === tab.path ? { ...t, dirty: false, previewUrl } : t)),
           );
         } catch {
           setTabs((prev) => prev.filter((t) => t.path !== tab.path));
@@ -779,7 +801,11 @@ export function App() {
     (path: string) => {
       void requestWorkspaceOpen({
         path,
-        name: path.split(/[/\\\\]/).filter(Boolean).pop() || path,
+        name:
+          path
+            .split(/[/\\\\]/)
+            .filter(Boolean)
+            .pop() || path,
         kind: 'local',
       });
     },
@@ -796,7 +822,11 @@ export function App() {
         /^[^@\s]+@[^:\s]+:/.test(targetPath);
       void requestWorkspaceOpen({
         path: targetPath,
-        name: targetPath.split(/[/\\\\]/).filter(Boolean).pop() || targetPath,
+        name:
+          targetPath
+            .split(/[/\\\\]/)
+            .filter(Boolean)
+            .pop() || targetPath,
         kind: isSsh ? 'ssh' : 'local',
       });
     },
@@ -808,7 +838,13 @@ export function App() {
       const isSsh = item.kind === 'ssh' || !!item.sshServer || item.path.startsWith('ssh ');
       void requestWorkspaceOpen({
         path: item.path,
-        name: item.name || item.path.split(/[/\\\\]/).filter(Boolean).pop() || item.path,
+        name:
+          item.name ||
+          item.path
+            .split(/[/\\\\]/)
+            .filter(Boolean)
+            .pop() ||
+          item.path,
         kind: isSsh ? 'ssh' : 'local',
         sshServer: item.sshServer,
         rawItem: item,
@@ -843,6 +879,7 @@ export function App() {
     setHoverDelay(Math.max(500, s.hoverDelay ?? 500));
     setMinimap(s.minimap !== false);
     setSelectionAiFloat(s.selectionAiFloat !== false);
+    setTerminalScrollback(s.terminalScrollback ?? 10000);
     if (s.models && Array.isArray(s.models) && s.models.length > 0) {
       setModels(s.models);
     }
@@ -876,7 +913,11 @@ export function App() {
           /^[^@\s]+@[^:\s]+:/.test(workspaceFromQuery);
         void openTargetInCurrentWindow({
           path: workspaceFromQuery,
-          name: workspaceFromQuery.split(/[/\\\\]/).filter(Boolean).pop() || workspaceFromQuery,
+          name:
+            workspaceFromQuery
+              .split(/[/\\\\]/)
+              .filter(Boolean)
+              .pop() || workspaceFromQuery,
           kind: isSsh ? 'ssh' : 'local',
         });
       }
@@ -922,6 +963,26 @@ export function App() {
       if (openFilesPersistTimer.current) clearTimeout(openFilesPersistTimer.current);
     };
   }, [workspace, tabs, activePath]);
+
+  // 动态检测当前工作区是否为 Maven 项目（存在 pom.xml），若非 Maven 则隐藏 Maven 图标
+  useEffect(() => {
+    if (!workspace) {
+      setIsMavenProject(false);
+      return;
+    }
+    let cancelled = false;
+    void window.ide.pathExists('pom.xml').then((hasPom) => {
+      if (!cancelled) {
+        setIsMavenProject(Boolean(hasPom));
+        if (!hasPom && leftPanel === 'maven') {
+          setLeftPanel('explorer');
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace, leftPanel]);
 
   const persistLayout = useCallback((next: LayoutSettings) => {
     if (saveLayoutTimer.current) clearTimeout(saveLayoutTimer.current);
@@ -1058,7 +1119,7 @@ export function App() {
         try {
           const hits = await window.ide.searchFiles(fileName, 5);
           const matched = hits.find(
-            (h) => h.path === path || h.path.endsWith('/' + path) || h.path.endsWith(fileName)
+            (h) => h.path === path || h.path.endsWith('/' + path) || h.path.endsWith(fileName),
           );
           if (matched) {
             content = await window.ide.readFile(matched.path);
@@ -1070,7 +1131,11 @@ export function App() {
         }
       }
       if (!resolved) {
-        console.warn('[navigation] cannot open file:', path, err instanceof Error ? err.message : err);
+        console.warn(
+          '[navigation] cannot open file:',
+          path,
+          err instanceof Error ? err.message : err,
+        );
         return;
       }
     }
@@ -1250,9 +1315,14 @@ export function App() {
     setTabs((prev) => {
       const exists = prev.some((t) => t.path === relPath);
       if (exists) {
-        return prev.map((t) => (t.path === relPath ? { ...t, content: tab.content, dirty: false } : t));
+        return prev.map((t) =>
+          t.path === relPath ? { ...t, content: tab.content, dirty: false } : t,
+        );
       }
-      return [...prev, { path: relPath, content: tab.content, dirty: false, language: languageFromPath(relPath) }];
+      return [
+        ...prev,
+        { path: relPath, content: tab.content, dirty: false, language: languageFromPath(relPath) },
+      ];
     });
     setActivePath(relPath);
     setTreeRefreshKey((k) => k + 1);
@@ -1388,7 +1458,11 @@ export function App() {
     if (!markDirty) {
       for (const [k, timer] of autoSaveTimers.current.entries()) {
         const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
-        if (normK === normTarget || normK.endsWith('/' + normTarget) || normTarget.endsWith('/' + normK)) {
+        if (
+          normK === normTarget ||
+          normK.endsWith('/' + normTarget) ||
+          normTarget.endsWith('/' + normK)
+        ) {
           clearTimeout(timer);
           autoSaveTimers.current.delete(k);
         }
@@ -1400,7 +1474,11 @@ export function App() {
 
     for (const [k, timer] of autoSaveTimers.current.entries()) {
       const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
-      if (normK === normTarget || normK.endsWith('/' + normTarget) || normTarget.endsWith('/' + normK)) {
+      if (
+        normK === normTarget ||
+        normK.endsWith('/' + normTarget) ||
+        normTarget.endsWith('/' + normK)
+      ) {
         clearTimeout(timer);
         autoSaveTimers.current.delete(k);
       }
@@ -1860,14 +1938,17 @@ export function App() {
               setLayout(next);
               persistLayout(next);
             }}
-            onRunCommand={(cmd) => {
+            onRunCommand={(cmd, cwd, terminalType, terminalTitle) => {
               terminalNonce.current += 1;
               setTerminalOpenRequest({
-                cwd: workspace || '',
+                cwd: cwd || workspace || '',
                 nonce: terminalNonce.current,
                 initialCommand: cmd,
+                terminalType,
+                terminalTitle,
               });
             }}
+            onShowToast={showToast}
           />
 
           {/* 全局命令与文件搜索触发栏 */}
@@ -2059,6 +2140,7 @@ export function App() {
                   justifyContent: 'center',
                   gap: 16,
                   height: 35,
+                  boxSizing: 'border-box',
                   padding: '4px 12px 4px',
                   borderBottom: '1px solid var(--border)',
                 }}
@@ -2068,15 +2150,15 @@ export function App() {
                   className={leftPanel === 'explorer' ? 'active' : ''}
                   onClick={() => setLeftPanel('explorer')}
                   title="文件"
-                  style={{ width: 26, height: 26, borderRadius: 6 }}
+                  style={{ width: 24, height: 24, borderRadius: 6 }}
                 >
                   <svg
-                    width="18"
-                    height="18"
+                    width="16"
+                    height="16"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.5"
+                    strokeWidth="1.6"
                   >
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
@@ -2090,15 +2172,15 @@ export function App() {
                   className={leftPanel === ('search' as any) ? 'active' : ''}
                   title="搜索"
                   onClick={() => setLeftPanel('search' as any)}
-                  style={{ width: 26, height: 26, borderRadius: 6 }}
+                  style={{ width: 24, height: 24, borderRadius: 6 }}
                 >
                   <svg
-                    width="18"
-                    height="18"
+                    width="16"
+                    height="16"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.5"
+                    strokeWidth="1.6"
                   >
                     <circle cx="11" cy="11" r="8" />
                     <path d="m21 21-4.3-4.3" />
@@ -2109,15 +2191,15 @@ export function App() {
                   className={leftPanel === 'git' ? 'active' : ''}
                   onClick={() => setLeftPanel('git')}
                   title="版本控制"
-                  style={{ width: 26, height: 26, borderRadius: 6 }}
+                  style={{ width: 24, height: 24, borderRadius: 6 }}
                 >
                   <svg
-                    width="18"
-                    height="18"
+                    width="16"
+                    height="16"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.5"
+                    strokeWidth="1.6"
                   >
                     <circle cx="18" cy="18" r="3" />
                     <circle cx="6" cy="6" r="3" />
@@ -2125,6 +2207,28 @@ export function App() {
                     <line x1="6" y1="9" x2="6" y2="21" />
                   </svg>
                 </button>
+                {isMavenProject && (
+                  <button
+                    type="button"
+                    className={leftPanel === 'maven' ? 'active' : ''}
+                    onClick={() => setLeftPanel('maven')}
+                    title="Maven 管理"
+                    style={{ width: 24, height: 24, borderRadius: 6 }}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M4 19V5.5L12 13.5L20 5.5V19" />
+                    </svg>
+                  </button>
+                )}
               </div>
               <div
                 className="explorer-wrapper"
@@ -2192,13 +2296,13 @@ export function App() {
                     >
                       <button
                         type="button"
+                        className="panel-action-btn"
                         title="新建文件"
-                        style={{ padding: 4 }}
                         onClick={() => fileTreeRef.current?.createFile()}
                       >
                         <svg
-                          width="16"
-                          height="16"
+                          width="15"
+                          height="15"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
@@ -2213,13 +2317,13 @@ export function App() {
                       </button>
                       <button
                         type="button"
+                        className="panel-action-btn"
                         title="新建文件夹"
-                        style={{ padding: 4 }}
                         onClick={() => fileTreeRef.current?.createFolder()}
                       >
                         <svg
-                          width="16"
-                          height="16"
+                          width="15"
+                          height="15"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
@@ -2233,8 +2337,8 @@ export function App() {
                       </button>
                       <button
                         type="button"
+                        className="panel-action-btn"
                         title="刷新文件树"
-                        style={{ padding: 4 }}
                         onClick={() => {
                           setTreeRefreshKey((k) => k + 1);
                           void (async () => {
@@ -2244,8 +2348,8 @@ export function App() {
                         }}
                       >
                         <svg
-                          width="16"
-                          height="16"
+                          width="15"
+                          height="15"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
@@ -2253,6 +2357,34 @@ export function App() {
                         >
                           <polyline points="23 4 23 10 17 10"></polyline>
                           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="panel-action-btn"
+                        title={isTreeCollapsed ? '全部展开' : '全部折叠'}
+                        onClick={() => {
+                          if (isTreeCollapsed) {
+                            fileTreeRef.current?.expandAll();
+                            setIsTreeCollapsed(false);
+                          } else {
+                            fileTreeRef.current?.collapseAll();
+                            setIsTreeCollapsed(true);
+                          }
+                        }}
+                      >
+                        <svg
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
+                          <rect x="8" y="8" width="12" height="12" rx="2" ry="2" />
+                          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                          <line x1="11" y1="14" x2="17" y2="14" />
+                          {isTreeCollapsed && <line x1="14" y1="11" x2="14" y2="17" />}
                         </svg>
                       </button>
                     </div>
@@ -2306,6 +2438,11 @@ export function App() {
                   }}
                   onDiscardPath={handleDiscardPath}
                   onShowToast={showToast}
+                  onViewFileHistory={(p) => void handleViewFileHistory(p)}
+                  onRevealInExplorer={(p) => {
+                    setLeftPanel('explorer');
+                    setActivePath(p);
+                  }}
                 />
               </div>
               <div
@@ -2319,8 +2456,42 @@ export function App() {
                   width: '100%',
                 }}
               >
-                <SearchPanel
-                  onOpenFile={(p, l) => void openFile(p, l)}
+                <SearchPanel onOpenFile={(p, l) => void openFile(p, l)} />
+              </div>
+              <div
+                className="maven-panel-wrapper"
+                style={{
+                  display: leftPanel === 'maven' ? 'flex' : 'none',
+                  minHeight: 0,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  height: '100%',
+                  width: '100%',
+                }}
+              >
+                <MavenPanel
+                  workspaceInfo={workspaceInfo}
+                  onOpenFile={(p) => void openFile(p)}
+                  onRunCommand={(cmd, cwd, terminalType, terminalTitle) => {
+                    if (layout.bottomPanelExpanded !== true) {
+                      const next = { ...layout, bottomPanelExpanded: true };
+                      setLayout(next);
+                      persistLayout(next);
+                    }
+                    terminalNonce.current += 1;
+                    setTerminalOpenRequest({
+                      cwd: cwd || workspace || '',
+                      nonce: terminalNonce.current,
+                      initialCommand: cmd,
+                      terminalType: terminalType || 'mvn',
+                      terminalTitle: terminalTitle || 'Maven',
+                    });
+                  }}
+                  onShowToast={showToast}
+                  onOpenSettings={(tab) => {
+                    setSettingsInitialTab(tab as any);
+                    setSettingsOpen(true);
+                  }}
                 />
               </div>
             </aside>
@@ -2438,20 +2609,30 @@ export function App() {
             selectionAiFloat={selectionAiFloat}
           />
 
-          {workspace && layout.bottomPanelExpanded === true && (
+          {workspace && (
             <>
+              {layout.bottomPanelExpanded === true && (
+                <div
+                  className="splitter splitter-h"
+                  onMouseDown={(e) => startResize('bottom', e)}
+                  title="拖拽调整底栏高度"
+                />
+              )}
               <div
-                className="splitter splitter-h"
-                onMouseDown={(e) => startResize('bottom', e)}
-                title="拖拽调整底栏高度"
-              />
-              <div className="bottom-panel" style={{ height: layout.bottomHeight }}>
+                className="bottom-panel"
+                style={{
+                  height: layout.bottomPanelExpanded === true ? layout.bottomHeight : 0,
+                  display: layout.bottomPanelExpanded === true ? 'flex' : 'none',
+                  overflow: 'hidden',
+                }}
+              >
                 <TerminalPanel
                   key={`${terminalKind}-${terminalKey}`}
                   terminalKind={terminalKind}
                   uiTheme={uiTheme}
                   openRequest={terminalOpenRequest}
-                  visible={true}
+                  visible={layout.bottomPanelExpanded === true}
+                  scrollback={terminalScrollback}
                   onCollapse={() => {
                     const next = { ...layout, bottomPanelExpanded: false };
                     setLayout(next);
@@ -2549,7 +2730,12 @@ export function App() {
       <SettingsModal
         open={settingsOpen}
         initialTab={settingsInitialTab}
-        onClose={() => setSettingsOpen(false)}
+        workspace={workspace}
+        onClose={() => {
+          setSettingsOpen(false);
+          // 关闭后重置，避免下次普通打开时仍强制跳转到上次外部指定的 tab
+          setSettingsInitialTab(undefined);
+        }}
         onSaved={applySettings}
         onShowToast={showToast}
       />
@@ -2702,55 +2888,295 @@ export function App() {
             display: 'flex',
             flexDirection: 'column',
             gap: 8,
-            maxWidth: 360,
+            maxWidth: 'min(420px, calc(100vw - 32px))',
             pointerEvents: 'none',
           }}
         >
-          {toasts.map((t) => (
-            <div
-              key={t.id}
-              style={{
-                pointerEvents: 'auto',
-                background: 'var(--bg-elevated, #252526)',
-                border: '1px solid var(--border)',
-                borderLeft: `4px solid ${
-                  t.type === 'success'
-                    ? '#4caf50'
+          {toasts.map((t) => {
+            const cleanTitle = t.title.replace(
+              /^([✓✕⚠️ℹ️⚡⚙️×]|(\u2713|\u2715|\u26a0|\u2139))\s*/u,
+              '',
+            );
+            const isLong = (t.detail && t.detail.length > 40) || cleanTitle.length > 25;
+
+            return (
+              <div
+                key={t.id}
+                onClick={() => {
+                  if (isLong) {
+                    setToastDetailModal({
+                      id: t.id,
+                      title: cleanTitle,
+                      detail: t.detail,
+                      type: t.type,
+                    });
+                  }
+                }}
+                style={{
+                  pointerEvents: 'auto',
+                  background: 'var(--bg-elevated, #252526)',
+                  border: '1px solid var(--border)',
+                  borderLeft: `4px solid ${
+                    t.type === 'success'
+                      ? '#4caf50'
+                      : t.type === 'error'
+                        ? '#f44336'
+                        : t.type === 'warn'
+                          ? '#ff9800'
+                          : '#2196f3'
+                  }`,
+                  borderRadius: 6,
+                  padding: '9px 12px',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                  color: 'var(--text)',
+                  fontSize: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  width: 360,
+                  boxSizing: 'border-box',
+                  cursor: isLong ? 'pointer' : 'default',
+                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 14,
+                    flexShrink: 0,
+                    lineHeight: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  {t.type === 'success'
+                    ? '✓'
                     : t.type === 'error'
-                      ? '#f44336'
+                      ? '✕'
                       : t.type === 'warn'
-                        ? '#ff9800'
-                        : '#2196f3'
-                }`,
-                borderRadius: 6,
-                padding: '10px 14px',
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-                color: 'var(--text)',
-                fontSize: 12,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 10,
-              }}
-            >
-              <span style={{ fontSize: 14 }}>
-                {t.type === 'success'
-                  ? '✓'
-                  : t.type === 'error'
-                    ? '✕'
-                    : t.type === 'warn'
-                      ? '⚠️'
-                      : 'ℹ️'}
-              </span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600 }}>{t.title}</div>
-                {t.detail && (
-                  <div style={{ color: 'var(--muted)', marginTop: 2, fontSize: 11 }}>
-                    {t.detail}
+                        ? '⚠️'
+                        : 'ℹ️'}
+                </span>
+
+                <div
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      color: 'var(--text-bright, #ffffff)',
+                    }}
+                    title={cleanTitle}
+                  >
+                    {cleanTitle}
                   </div>
-                )}
+                  {t.detail && (
+                    <div
+                      style={{
+                        color: 'var(--muted)',
+                        marginTop: 2,
+                        fontSize: 11,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={t.detail}
+                    >
+                      {t.detail}
+                    </div>
+                  )}
+                </div>
+
+                {/* 快捷操作区：快速复制、弹窗展开与关闭 */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    flexShrink: 0,
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* 快速复制按钮 */}
+                  <button
+                    type="button"
+                    className="panel-action-btn"
+                    style={{
+                      width: 24,
+                      height: 24,
+                      padding: 0,
+                      borderRadius: 4,
+                      color: copiedToastId === t.id ? '#10b981' : 'var(--muted)',
+                    }}
+                    title="复制提示内容"
+                    onClick={() => {
+                      const text = t.detail ? `${cleanTitle}\n${t.detail}` : cleanTitle;
+                      void navigator.clipboard.writeText(text);
+                      setCopiedToastId(t.id);
+                      setTimeout(() => setCopiedToastId(null), 1500);
+                    }}
+                  >
+                    {copiedToastId === t.id ? (
+                      <span style={{ fontSize: 12, fontWeight: 700 }}>✓</span>
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                    )}
+                  </button>
+
+                  {/* 展开弹窗按钮 (提示较长或想要细看时) */}
+                  {isLong && (
+                    <button
+                      type="button"
+                      className="panel-action-btn"
+                      style={{ width: 24, height: 24, padding: 0, borderRadius: 4 }}
+                      title="弹窗查看完整详情"
+                      onClick={() =>
+                        setToastDetailModal({
+                          id: t.id,
+                          title: cleanTitle,
+                          detail: t.detail,
+                          type: t.type,
+                        })
+                      }
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <polyline points="15 3 21 3 21 9" />
+                        <polyline points="9 21 3 21 3 15" />
+                        <line x1="21" y1="3" x2="14" y2="10" />
+                        <line x1="3" y1="21" x2="10" y2="14" />
+                      </svg>
+                    </button>
+                  )}
+
+                  {/* 关闭按钮 */}
+                  <button
+                    type="button"
+                    className="panel-action-btn"
+                    style={{ width: 20, height: 20, padding: 0, fontSize: 13, borderRadius: 4 }}
+                    title="关闭"
+                    onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 提示消息完整详情弹窗 */}
+      {toastDetailModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100000,
+            background: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setToastDetailModal(null)}
+        >
+          <div
+            style={{
+              background: 'var(--bg-elevated, #252526)',
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              boxShadow: '0 12px 36px rgba(0, 0, 0, 0.6)',
+              width: 500,
+              maxWidth: '92vw',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              padding: 16,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>
+                  {toastDetailModal.type === 'success'
+                    ? '✓'
+                    : toastDetailModal.type === 'error'
+                      ? '✕'
+                      : toastDetailModal.type === 'warn'
+                        ? '⚠️'
+                        : 'ℹ️'}
+                </span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright)' }}>
+                  {toastDetailModal.title}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="panel-action-btn"
+                onClick={() => setToastDetailModal(null)}
+                style={{ width: 24, height: 24, fontSize: 14 }}
+              >
+                ×
+              </button>
             </div>
-          ))}
+
+            {toastDetailModal.detail && (
+              <div
+                style={{
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  padding: 12,
+                  maxHeight: 280,
+                  overflowY: 'auto',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  fontFamily: 'Consolas, "Cascadia Code", monospace',
+                  color: 'var(--text)',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  userSelect: 'text',
+                }}
+              >
+                {toastDetailModal.detail}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+              <button
+                type="button"
+                className="panel-standard-btn"
+                style={{ padding: '5px 14px', fontSize: 12 }}
+                onClick={() => {
+                  const text = toastDetailModal.detail
+                    ? `${toastDetailModal.title}\n${toastDetailModal.detail}`
+                    : toastDetailModal.title;
+                  void navigator.clipboard.writeText(text);
+                  setModalCopied(true);
+                  setTimeout(() => setModalCopied(false), 2000);
+                }}
+              >
+                {modalCopied ? '✓ 已复制完整内容' : '复制内容'}
+              </button>
+              <button
+                type="button"
+                className="panel-standard-btn primary"
+                style={{ padding: '5px 14px', fontSize: 12 }}
+                onClick={() => setToastDetailModal(null)}
+              >
+                关闭
+              </button>
+            </div>
+          </div>
         </div>
       )}
       <GlobalTooltip delay={hoverDelay} />

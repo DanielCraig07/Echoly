@@ -51,6 +51,14 @@ export function languageFromPath(filePath: string): string {
     return 'ruby';
   }
 
+  // 4. Jenkinsfile variants (Groovy DSL)
+  if (
+    lower === 'jenkinsfile' ||
+    lower.startsWith('jenkinsfile.')
+  ) {
+    return 'groovy';
+  }
+
   // 4. Shell & dotfiles
   if (
     lower === '.bashrc' ||
@@ -211,6 +219,9 @@ export function languageFromPath(filePath: string): string {
     tf: 'hcl',
     tfvars: 'hcl',
     hcl: 'hcl',
+    groovy: 'groovy',
+    gvy: 'groovy',
+    gy: 'groovy',
 
     // Protocols & Schemas
     proto: 'protobuf',

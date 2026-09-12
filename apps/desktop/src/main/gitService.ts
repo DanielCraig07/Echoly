@@ -8,6 +8,7 @@ import type {
   GitCommitDetailResult,
   GitCommitEntry,
   GitCommitFileChange,
+  GitCommitStats,
   GitDiffResult,
   GitHistoryResult,
   GitBlameLineResult,
@@ -30,6 +31,33 @@ interface GitRunResult {
   stdout: string;
   stderr: string;
   error?: string;
+}
+function formatCommitDate(timestampSec: number | string): {
+  relativeDate: string;
+  fullDate: string;
+} {
+  const ts = typeof timestampSec === 'number' ? timestampSec * 1000 : Number(timestampSec) * 1000;
+  if (!ts || isNaN(ts)) {
+    return { relativeDate: '', fullDate: '' };
+  }
+  const date = new Date(ts);
+  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  let relativeDate = '';
+  if (diffSec < 60) relativeDate = '刚刚';
+  else if (diffSec < 3600) relativeDate = `${Math.floor(diffSec / 60)} 分钟前`;
+  else if (diffSec < 86400) relativeDate = `${Math.floor(diffSec / 3600)} 小时前`;
+  else if (diffSec < 2592000) relativeDate = `${Math.floor(diffSec / 86400)} 天前`;
+  else if (diffSec < 31536000) relativeDate = `${Math.floor(diffSec / 2592000)} 个月前`;
+  else relativeDate = `${Math.floor(diffSec / 31536000)} 年前`;
+
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  const fullDate = `${y}年${m}月${d}日 ${hh}:${mm}`;
+
+  return { relativeDate, fullDate };
 }
 
 export class GitService {
@@ -294,8 +322,12 @@ export class GitService {
     }
 
     await this.runGit(['update-index', '-q', '--really-refresh'], root);
-    const porcelain = await this.runGit(['status', '--porcelain=v1', '-uall'], root);
+    const porcelain = await this.runGit(
+      ['status', '--porcelain=v1', '-uall', '--ignored=matching'],
+      root,
+    );
     const entries: GitStatusEntry[] = [];
+    const ignoredPaths: string[] = [];
     for (const line of porcelain.stdout.split(/\r?\n/)) {
       if (!line || line.length < 3) continue;
       const index = line[0] ?? ' ';
@@ -306,6 +338,11 @@ export class GitService {
         filePath = filePath.split(' -> ').pop() || filePath;
       }
       filePath = filePath.replace(/\\/g, '/').replace(/^"|"$/g, '');
+      const isIgnored = index === '!' && workTree === '!';
+      if (isIgnored) {
+        ignoredPaths.push(filePath);
+        continue;
+      }
       const untracked = index === '?' && workTree === '?';
       const staged = !untracked && index !== ' ' && index !== '?';
       entries.push({
@@ -366,6 +403,7 @@ export class GitService {
       ahead,
       behind,
       entries,
+      ignoredPaths,
     };
   }
 
@@ -514,7 +552,10 @@ export class GitService {
                 // ignore local chmod failures
               }
             }
-            await this.runGit(['update-index', isExecutable ? '--chmod=+x' : '--chmod=-x', filePath], root);
+            await this.runGit(
+              ['update-index', isExecutable ? '--chmod=+x' : '--chmod=-x', filePath],
+              root,
+            );
           }
         }
       } catch {
@@ -551,7 +592,8 @@ export class GitService {
       const remainingDirty = finalVerify.entries.filter((e) => {
         const ep = e.path.replace(/\\/g, '/').replace(/^\/+/, '');
         return cleanInputPaths.some(
-          (cp) => ep === cp || ep.startsWith(cp + '/') || cp.endsWith('/' + ep) || ep.endsWith('/' + cp),
+          (cp) =>
+            ep === cp || ep.startsWith(cp + '/') || cp.endsWith('/' + ep) || ep.endsWith('/' + cp),
         );
       });
       if (remainingDirty.length > 0) {
@@ -782,34 +824,34 @@ export class GitService {
     return { ok: true, detail: res.stdout.trim() || res.stderr.trim() || 'push 完成' };
   }
 
-  async history(maxCount = 100): Promise<GitHistoryResult> {
+  async history(maxCount?: number): Promise<GitHistoryResult> {
     const gate = this.localRootOrError();
     if ('ok' in gate && gate.ok === false) {
       return { ok: false, detail: gate.detail, commits: [] };
     }
     const { root } = gate as { root: string };
-    let res = await this.runGit(
-      [
-        'log',
-        `-n${maxCount}`,
-        '--topo-order',
-        '--pretty=format:%H%x09%h%x09%an%x09%ar%x09%P%x09%s',
-      ],
-      root,
-    );
+    const logArgs = [
+      'log',
+      '--topo-order',
+      '--pretty=format:%H%x09%h%x09%an%x09%ae%x09%at%x09%P%x09%s',
+    ];
+    if (typeof maxCount === 'number' && maxCount > 0) {
+      logArgs.splice(1, 0, `-n${maxCount}`);
+    }
+    let res = await this.runGit(logArgs, root);
 
     // 如果当前分支尚无提交，或处于特殊检出状态，尝试获取全部分支的提交历史 (--all)
     if (res.code !== 0) {
-      const allRes = await this.runGit(
-        [
-          'log',
-          `-n${maxCount}`,
-          '--all',
-          '--topo-order',
-          '--pretty=format:%H%x09%h%x09%an%x09%ar%x09%P%x09%s',
-        ],
-        root,
-      );
+      const allArgs = [
+        'log',
+        '--all',
+        '--topo-order',
+        '--pretty=format:%H%x09%h%x09%an%x09%ae%x09%at%x09%P%x09%s',
+      ];
+      if (typeof maxCount === 'number' && maxCount > 0) {
+        allArgs.splice(1, 0, `-n${maxCount}`);
+      }
+      const allRes = await this.runGit(allArgs, root);
       if (allRes.code === 0 && allRes.stdout.trim()) {
         res = allRes;
       }
@@ -842,15 +884,24 @@ export class GitService {
       const trimmed = line.trim();
       if (!trimmed) continue;
       const parts = trimmed.split('\t');
-      if (parts.length >= 5) {
-        const parents = parts[4]?.trim() ? parts[4].trim().split(/\s+/) : [];
-        const message = parts.slice(5).join('\t') || '';
+      if (parts.length >= 6) {
+        const hash = parts[0];
+        const shortHash = parts[1];
+        const author = parts[2];
+        const authorEmail = parts[3];
+        const timestampSec = Number(parts[4]) || 0;
+        const parents = parts[5]?.trim() ? parts[5].trim().split(/\s+/) : [];
+        const message = parts.slice(6).join('\t') || '';
+        const { relativeDate, fullDate } = formatCommitDate(timestampSec);
         commits.push({
-          hash: parts[0],
-          shortHash: parts[1],
-          author: parts[2],
-          date: parts[3],
-          relativeDate: parts[3],
+          hash,
+          shortHash,
+          author,
+          authorEmail,
+          timestamp: timestampSec ? timestampSec * 1000 : undefined,
+          date: fullDate || relativeDate,
+          relativeDate,
+          fullDate,
           message,
           parents,
         });
@@ -859,22 +910,22 @@ export class GitService {
     return { ok: true, commits, isShallow };
   }
 
-  async fileHistory(filePath: string, maxCount = 50): Promise<GitHistoryResult> {
+  async fileHistory(filePath: string, maxCount?: number): Promise<GitHistoryResult> {
     const gate = this.localRootOrError();
     if ('ok' in gate && gate.ok === false) {
       return { ok: false, detail: gate.detail, commits: [] };
     }
     const { root } = gate as { root: string };
-    const res = await this.runGit(
-      [
-        'log',
-        `-n${maxCount}`,
-        '--pretty=format:%H%x09%h%x09%an%x09%ar%x09%P%x09%s',
-        '--',
-        filePath,
-      ],
-      root,
-    );
+    const logArgs = [
+      'log',
+      '--pretty=format:%H%x09%h%x09%an%x09%ae%x09%at%x09%P%x09%s',
+      '--',
+      filePath,
+    ];
+    if (typeof maxCount === 'number' && maxCount > 0) {
+      logArgs.splice(1, 0, `-n${maxCount}`);
+    }
+    const res = await this.runGit(logArgs, root);
     if (res.code !== 0) {
       const stderr = res.stderr.trim();
       if (
@@ -891,15 +942,24 @@ export class GitService {
       const trimmed = line.trim();
       if (!trimmed) continue;
       const parts = trimmed.split('\t');
-      if (parts.length >= 5) {
-        const parents = parts[4]?.trim() ? parts[4].trim().split(/\s+/) : [];
-        const message = parts.slice(5).join('\t') || '';
+      if (parts.length >= 6) {
+        const hash = parts[0];
+        const shortHash = parts[1];
+        const author = parts[2];
+        const authorEmail = parts[3];
+        const timestampSec = Number(parts[4]) || 0;
+        const parents = parts[5]?.trim() ? parts[5].trim().split(/\s+/) : [];
+        const message = parts.slice(6).join('\t') || '';
+        const { relativeDate, fullDate } = formatCommitDate(timestampSec);
         commits.push({
-          hash: parts[0],
-          shortHash: parts[1],
-          author: parts[2],
-          date: parts[3],
-          relativeDate: parts[3],
+          hash,
+          shortHash,
+          author,
+          authorEmail,
+          timestamp: timestampSec ? timestampSec * 1000 : undefined,
+          date: fullDate || relativeDate,
+          relativeDate,
+          fullDate,
           message,
           parents,
         });
@@ -990,24 +1050,114 @@ export class GitService {
       return { ok: false, detail: gate.detail, files: [] };
     }
     const { root } = gate as { root: string };
-    const res = await this.runGit(['show', '--raw', '--oneline', hash], root);
+    let res = await this.runGit(
+      [
+        'show',
+        '-m',
+        '--first-parent',
+        '--format=COMMIT_INFO%x00%H%x00%h%x00%an%x00%ae%x00%at%x00%B%x00%P',
+        '--raw',
+        '--shortstat',
+        hash,
+      ],
+      root,
+    );
     if (res.code !== 0) {
-      return { ok: false, detail: res.stderr.trim() || '无法获取 Commit 详情', files: [] };
+      const fallback = await this.runGit(
+        [
+          'show',
+          '--format=COMMIT_INFO%x00%H%x00%h%x00%an%x00%ae%x00%at%x00%B%x00%P',
+          '--raw',
+          '--shortstat',
+          hash,
+        ],
+        root,
+      );
+      if (fallback.code !== 0) {
+        return {
+          ok: false,
+          detail: fallback.stderr.trim() || res.stderr.trim() || '无法获取 Commit 详情',
+          files: [],
+        };
+      }
+      res = fallback;
     }
+
     const files: GitCommitFileChange[] = [];
-    const lines = res.stdout.split('\n');
-    for (const line of lines) {
-      if (line.startsWith(':')) {
-        const parts = line.split('\t');
-        if (parts.length >= 2) {
-          const meta = parts[0].trim().split(/\s+/);
-          const statusChar = (meta[meta.length - 1][0] ?? 'M') as 'M' | 'A' | 'D' | 'R';
-          const filePath = parts[1].trim();
-          files.push({ path: filePath, status: statusChar });
+    let stats: GitCommitStats = { filesChanged: 0, insertions: 0, deletions: 0 };
+    let commit: GitCommitEntry | undefined;
+
+    const out = res.stdout;
+    const infoPrefix = 'COMMIT_INFO\0';
+    if (out.startsWith(infoPrefix)) {
+      const rest = out.slice(infoPrefix.length);
+      const parts = rest.split('\0');
+      if (parts.length >= 6) {
+        const fullHash = parts[0];
+        const shortHash = parts[1];
+        const author = parts[2];
+        const authorEmail = parts[3];
+        const timestampSec = Number(parts[4]) || 0;
+        const body = parts[5];
+        const nextContent = parts.slice(6).join('\0');
+        const firstLineEnd = nextContent.indexOf('\n');
+        const parentsStr =
+          firstLineEnd !== -1 ? nextContent.slice(0, firstLineEnd).trim() : nextContent.trim();
+        const parents = parentsStr ? parentsStr.split(/\s+/) : [];
+        const { relativeDate, fullDate } = formatCommitDate(timestampSec);
+
+        const remaining = firstLineEnd !== -1 ? nextContent.slice(firstLineEnd + 1) : '';
+        const lines = remaining.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (line.startsWith(':')) {
+            const rawParts = line.split('\t');
+            if (rawParts.length >= 2) {
+              const meta = rawParts[0].trim().split(/\s+/);
+              const statusChar = (meta[meta.length - 1][0] ?? 'M') as 'M' | 'A' | 'D' | 'R';
+              const filePath = rawParts[1].trim();
+              files.push({ path: filePath, status: statusChar });
+            }
+          } else if (
+            trimmed.includes('changed') ||
+            trimmed.includes('insertion') ||
+            trimmed.includes('deletion')
+          ) {
+            const mFiles = trimmed.match(/(\d+)\s+files?\s+changed/);
+            const mIns = trimmed.match(/(\d+)\s+insertions?\(\+\)/);
+            const mDel = trimmed.match(/(\d+)\s+deletions?\(-\)/);
+            if (mFiles || mIns || mDel) {
+              stats = {
+                filesChanged: mFiles ? parseInt(mFiles[1], 10) : 0,
+                insertions: mIns ? parseInt(mIns[1], 10) : 0,
+                deletions: mDel ? parseInt(mDel[1], 10) : 0,
+              };
+            }
+          }
         }
+
+        if (stats.filesChanged === 0 && files.length > 0) {
+          stats.filesChanged = files.length;
+        }
+
+        commit = {
+          hash: fullHash,
+          shortHash,
+          author,
+          authorEmail,
+          timestamp: timestampSec ? timestampSec * 1000 : undefined,
+          date: fullDate || relativeDate,
+          relativeDate,
+          fullDate,
+          message: body.split('\n')[0] || '',
+          body: body.trim(),
+          parents,
+          stats,
+        };
       }
     }
-    return { ok: true, files };
+
+    return { ok: true, commit, files, stats };
   }
 
   async showCommitDiff(hash: string, filePath: string): Promise<GitDiffResult> {

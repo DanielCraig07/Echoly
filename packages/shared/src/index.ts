@@ -162,6 +162,8 @@ export interface AppSettings {
   selectionAiFloat?: boolean;
   /** 是否开启编辑区右侧代码缩略图 (Minimap)。默认 true。 */
   minimap?: boolean;
+  /** 终端回滚缓存最大行数上限 (Scrollback lines)，默认 10000 行。 */
+  terminalScrollback?: number;
 }
 
 export interface UpdateFeedConfig {
@@ -214,6 +216,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   hoverDelay: 500,
   selectionAiFloat: true,
   minimap: true,
+  terminalScrollback: 10000,
   updateFeed: null,
 };
 
@@ -599,6 +602,7 @@ export interface GitStatusEntry {
   workTree: string;
   staged: boolean;
   untracked: boolean;
+  ignored?: boolean;
 }
 
 export interface GitStatusResult {
@@ -609,6 +613,7 @@ export interface GitStatusResult {
   ahead: number;
   behind: number;
   entries: GitStatusEntry[];
+  ignoredPaths?: string[];
   isShallow?: boolean;
 }
 
@@ -628,14 +633,25 @@ export interface GitBranchInfo {
   remote: boolean;
 }
 
+export interface GitCommitStats {
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+}
+
 export interface GitCommitEntry {
   hash: string;
   shortHash: string;
   author: string;
+  authorEmail?: string;
   date: string;
   relativeDate?: string;
+  fullDate?: string;
+  timestamp?: number;
   message: string;
+  body?: string;
   parents?: string[];
+  stats?: GitCommitStats;
 }
 
 export interface GitCommitFileChange {
@@ -648,6 +664,7 @@ export interface GitCommitDetailResult {
   detail?: string;
   commit?: GitCommitEntry;
   files: GitCommitFileChange[];
+  stats?: GitCommitStats;
 }
 
 export interface GitHistoryResult {
@@ -947,17 +964,70 @@ export interface IpcApi {
   ) => () => void;
 
   /** LSP 语言服务器跳转到定义 */
-  lspGetDefinition: (
-    filePath: string,
-    line: number,
-    column: number,
-  ) => Promise<LspLocation[]>;
+  lspGetDefinition: (filePath: string, line: number, column: number) => Promise<LspLocation[]>;
   /** LSP 语言服务器同步文档内容 */
-  lspNotifyDocument: (
-    filePath: string,
-    content: string,
-    languageId?: string,
-  ) => Promise<void>;
+  lspNotifyDocument: (filePath: string, content: string, languageId?: string) => Promise<void>;
+
+  /** 在访达/资源管理器中显示指定文件 */
+  showItemInFolder: (fullPath: string) => Promise<void>;
+
+  /** 检测 Maven 环境 */
+  mavenCheckEnv: () => Promise<MavenEnvironmentInfo>;
+  /** 一键在当前工作区生成 Maven Wrapper (mvnw) */
+  mavenInitWrapper: () => Promise<{ success: boolean; message: string }>;
+  /** 一键在当前工作区生成包含阿里云加速镜像的 settings.xml */
+  mavenInitSettings: () => Promise<{ success: boolean; path?: string; message: string }>;
+
+  /** 检测并列出本地已安装的 Java (JDK) */
+  javaGetInstalledJdks: () => Promise<InstalledJdkInfo[]>;
+  /** 获取可供在线安装的官方推荐 Java (JDK) 列表 */
+  javaGetOnlineJdks: () => Promise<OnlineJdkInfo[]>;
+  /** 在线下载并安装指定的 JDK */
+  javaInstallOnlineJdk: (id: string) => Promise<{ success: boolean; javaHome?: string; message: string }>;
+  /** 监听 JDK 在线下载与解压进度 */
+  onJavaInstallProgress: (cb: (progress: JdkInstallProgress) => void) => () => void;
+}
+
+export interface InstalledJdkInfo {
+  id: string;
+  version: string;
+  majorVersion?: number;
+  arch?: string;
+  vendor?: string;
+  path: string;
+  isCurrent?: boolean;
+}
+
+export interface OnlineJdkInfo {
+  id: string;
+  name: string;
+  version: string;
+  vendor: string;
+  description?: string;
+  recommended?: boolean;
+  sizeMb?: number;
+  downloadUrl: string;
+  isInstalled?: boolean;
+  installedPath?: string;
+}
+
+export interface JdkInstallProgress {
+  id: string;
+  status: 'downloading' | 'extracting' | 'done' | 'error';
+  percent: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  message?: string;
+}
+
+export interface MavenEnvironmentInfo {
+  available: boolean;
+  type: 'wrapper' | 'system' | 'detected' | 'none';
+  executablePath: string;
+  hasJava: boolean;
+  mavenVersion?: string;
+  javaVersion?: string;
+  detail?: string;
 }
 
 export interface LspLocation {

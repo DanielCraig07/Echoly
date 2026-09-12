@@ -11,6 +11,14 @@ export default defineConfig({
           environment: 'node',
         },
       },
+      {
+        test: {
+          name: 'desktop',
+          root: 'apps/desktop',
+          include: ['test/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
     ],
   },
 });

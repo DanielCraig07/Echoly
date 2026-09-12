@@ -512,4 +512,169 @@ monaco.languages.onLanguage('python', registerEnhancedLanguages);
 monaco.languages.onLanguage('java', registerEnhancedLanguages);
 registerEnhancedLanguages();
 
+// ── Groovy / Jenkinsfile 语言注册 ─────────────────────────────────────────────
+// Monaco 不内置 Groovy，手动注册 Monarch tokenizer。
+// 涵盖 Groovy 语法 + Jenkins Pipeline DSL 关键字（pipeline/stage/steps 等）。
+monaco.languages.register({ id: 'groovy', extensions: ['.groovy', '.gvy', '.gy'], filenames: ['Jenkinsfile'] });
+
+monaco.languages.setMonarchTokensProvider('groovy', {
+  defaultToken: '',
+  tokenPostfix: '.groovy',
+
+  // Jenkins Pipeline DSL + Groovy 关键字合集
+  keywords: [
+    'abstract', 'assert', 'break', 'case', 'catch', 'class', 'const', 'continue',
+    'def', 'default', 'do', 'else', 'enum', 'extends', 'final', 'finally', 'for',
+    'goto', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'native',
+    'new', 'package', 'private', 'protected', 'public', 'return', 'static', 'strictfp',
+    'super', 'switch', 'synchronized', 'this', 'throw', 'throws', 'trait', 'transient',
+    'try', 'volatile', 'while',
+    // Jenkins Pipeline DSL
+    'pipeline', 'agent', 'stages', 'stage', 'steps', 'post', 'environment',
+    'options', 'parameters', 'triggers', 'tools', 'when', 'parallel', 'matrix',
+    'axes', 'axis', 'excludes', 'input', 'libraries', 'script', 'node', 'label',
+    'always', 'success', 'failure', 'unstable', 'changed', 'aborted', 'cleanup',
+    'any', 'none', 'dockerfile',
+  ],
+
+  typeKeywords: ['boolean', 'byte', 'char', 'double', 'float', 'int', 'long', 'short', 'void', 'String', 'Integer', 'Boolean', 'List', 'Map', 'Object'],
+
+  operators: ['=', '>', '<', '!', '~', '?', ':', '==', '<=', '>=', '!=', '&&', '||', '++', '--', '+', '-', '*', '/', '&', '|', '^', '%', '<<', '>>', '>>>', '+=', '-=', '*=', '/=', '&=', '|=', '^=', '%=', '<<=', '>>=', '>>>=', '->', '::', '?.', '**'],
+
+  symbols: /[=><!~?:&|+\-*\/\^%]+/,
+  escapes: /\\(?:[abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
+
+  tokenizer: {
+    root: [
+      // Shebang line
+      [/^#!.*$/, 'comment'],
+
+      // Identifiers & keywords
+      [/[a-zA-Z_$][\w$]*/, {
+        cases: {
+          '@keywords': 'keyword',
+          '@typeKeywords': 'type',
+          '@default': 'identifier',
+        },
+      }],
+
+      // Whitespace
+      { include: '@whitespace' },
+
+      // Delimiters
+      [/[{}()\[\]]/, '@brackets'],
+      [/[<>](?!@symbols)/, '@brackets'],
+      [/@symbols/, {
+        cases: {
+          '@operators': 'operator',
+          '@default': '',
+        },
+      }],
+
+      // Annotations / decorators
+      [/@[a-zA-Z_$][\w$]*/, 'annotation'],
+
+      // Numbers
+      [/\d*\.\d+([eE][\-+]?\d+)?[fFdD]?/, 'number.float'],
+      [/0[xX][0-9a-fA-F_]+[lL]?/, 'number.hex'],
+      [/\d+[lL]?/, 'number'],
+
+      // Delimiter
+      [/[;,.]/, 'delimiter'],
+
+      // Strings (triple-quoted first)
+      [/"""/, 'string', '@tripleDoubleString'],
+      [/'''/, 'string', '@tripleSingleString'],
+      [/"([^"\\]|\\.)*$/, 'string.invalid'],
+      [/"/, 'string', '@doubleString'],
+      [/'([^'\\]|\\.)*$/, 'string.invalid'],
+      [/'/, 'string', '@singleString'],
+
+      // GString / slashy string
+      [/\/(?![\/*])/, 'string', '@slashyString'],
+    ],
+
+    whitespace: [
+      [/[ \t\r\n]+/, ''],
+      [/\/\*\*(?!\/)/, 'comment.doc', '@javadoc'],
+      [/\/\*/, 'comment.block', '@comment'],
+      [/\/\/.*$/, 'comment'],
+    ],
+
+    comment: [
+      [/[^\/*]+/, 'comment.block'],
+      [/\/\*/, 'comment.block', '@push'],
+      [/\*\//, 'comment.block', '@pop'],
+      [/[\/*]/, 'comment.block'],
+    ],
+
+    javadoc: [
+      [/[^\/*]+/, 'comment.doc'],
+      [/\/\*/, 'comment.doc', '@push'],
+      [/\*\//, 'comment.doc', '@pop'],
+      [/[\/*]/, 'comment.doc'],
+    ],
+
+    tripleDoubleString: [
+      [/[^"\\]+/, 'string'],
+      [/@escapes/, 'string.escape'],
+      [/\\./, 'string.escape.invalid'],
+      [/"""/, 'string', '@pop'],
+      [/"/, 'string'],
+    ],
+
+    tripleSingleString: [
+      [/[^'\\]+/, 'string'],
+      [/@escapes/, 'string.escape'],
+      [/\\./, 'string.escape.invalid'],
+      [/'''/, 'string', '@pop'],
+      [/'/, 'string'],
+    ],
+
+    doubleString: [
+      [/[^"\\$]+/, 'string'],
+      [/@escapes/, 'string.escape'],
+      [/\\./, 'string.escape.invalid'],
+      [/"/, 'string', '@pop'],
+    ],
+
+    singleString: [
+      [/[^'\\]+/, 'string'],
+      [/@escapes/, 'string.escape'],
+      [/\\./, 'string.escape.invalid'],
+      [/'/, 'string', '@pop'],
+    ],
+
+    slashyString: [
+      [/[^\/\\]+/, 'string'],
+      [/\\./, 'string.escape'],
+      [/\//, 'string', '@pop'],
+    ],
+  },
+});
+
+// 补全提示关键字
+monaco.languages.setLanguageConfiguration('groovy', {
+  comments: { lineComment: '//', blockComment: ['/*', '*/'] },
+  brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+  autoClosingPairs: [
+    { open: '{', close: '}' },
+    { open: '[', close: ']' },
+    { open: '(', close: ')' },
+    { open: '"', close: '"', notIn: ['string'] },
+    { open: "'", close: "'", notIn: ['string', 'comment'] },
+  ],
+  surroundingPairs: [
+    { open: '{', close: '}' },
+    { open: '[', close: ']' },
+    { open: '(', close: ')' },
+    { open: '"', close: '"' },
+    { open: "'", close: "'" },
+  ],
+  indentationRules: {
+    increaseIndentPattern: /^.*\{[^}"']*$/,
+    decreaseIndentPattern: /^(.*\*\/)?\s*\}.*$/,
+  },
+});
+
 

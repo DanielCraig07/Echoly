@@ -159,6 +159,22 @@ const api: IpcApi = {
     ipcRenderer.invoke('lsp:getDefinition', filePath, line, column),
   lspNotifyDocument: (filePath, content, languageId) =>
     ipcRenderer.invoke('lsp:notifyDocument', filePath, content, languageId),
+  showItemInFolder: (fullPath) => ipcRenderer.invoke('shell:showItemInFolder', fullPath),
+  mavenCheckEnv: () => ipcRenderer.invoke('maven:checkEnv'),
+  mavenInitWrapper: () => ipcRenderer.invoke('maven:initWrapper'),
+  mavenInitSettings: () => ipcRenderer.invoke('maven:initSettings'),
+
+  javaGetInstalledJdks: () => ipcRenderer.invoke('java:listInstalled'),
+  javaGetOnlineJdks: () => ipcRenderer.invoke('java:listOnline'),
+  javaInstallOnlineJdk: (id: string) => ipcRenderer.invoke('java:installOnline', id),
+  onJavaInstallProgress: (cb) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      progress: { id: string; status: 'downloading' | 'extracting' | 'done' | 'error'; percent: number; downloadedBytes?: number; totalBytes?: number; message?: string },
+    ) => cb(progress);
+    ipcRenderer.on('java:installProgress', listener);
+    return () => ipcRenderer.removeListener('java:installProgress', listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('ide', api);

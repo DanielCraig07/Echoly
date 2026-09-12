@@ -103,11 +103,16 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    const maxH = Math.max(180, window.innerHeight - 20);
+    el.style.maxHeight = `${maxH}px`;
+    el.style.overflowY = 'auto';
+
     const rect = el.getBoundingClientRect();
     let { x, y } = state;
     if (x + rect.width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - rect.width - 8);
-    if (y + rect.height > window.innerHeight - 8)
+    if (y + rect.height > window.innerHeight - 8) {
       y = Math.max(8, window.innerHeight - rect.height - 8);
+    }
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }, [state]);
@@ -238,18 +243,25 @@ function getNodeGitStatus(
   nodePath: string,
   isDir: boolean,
   entries: GitStatusEntry[] = [],
-): { label?: string; hasChanges?: boolean; color?: string } | null {
-  if (
-    !nodePath ||
-    typeof nodePath !== 'string' ||
-    !entries ||
-    !Array.isArray(entries) ||
-    !entries.length
-  )
-    return null;
-  const norm = nodePath.replace(/\\/g, '/');
+  ignoredPaths: string[] = [],
+): { label?: string; hasChanges?: boolean; color?: string; isIgnored?: boolean } | null {
+  if (!nodePath || typeof nodePath !== 'string') return null;
+  const norm = nodePath.replace(/\\/g, '/').replace(/^\/+/, '');
 
   try {
+    // 1. 优先检测是否被 .gitignore 忽略（浅色置灰）
+    if (ignoredPaths && ignoredPaths.length > 0) {
+      const isIgnored = ignoredPaths.some((ig) => {
+        const cleanIg = ig.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+        return norm === cleanIg || norm.startsWith(`${cleanIg}/`);
+      });
+      if (isIgnored) {
+        return { isIgnored: true, color: 'var(--muted, #888888)' };
+      }
+    }
+
+    if (!entries || !Array.isArray(entries) || !entries.length) return null;
+
     if (!isDir) {
       const matched = entries.find((e) => e && e.path === norm);
       if (!matched) return null;
@@ -277,7 +289,10 @@ function TreeNode({
   activePath,
   selectedNode,
   gitEntries = [],
+  gitIgnoredPaths = [],
   refreshKey,
+  collapseKey,
+  expandKey,
   expandPath,
   inlineEdit,
   onOpenFile,
@@ -291,7 +306,10 @@ function TreeNode({
   activePath: string | null;
   selectedNode: { path: string; isDirectory: boolean } | null;
   gitEntries?: GitStatusEntry[];
+  gitIgnoredPaths?: string[];
   refreshKey: number;
+  collapseKey?: number;
+  expandKey?: number;
   expandPath: string | null;
   inlineEdit: InlineEdit | null;
   onOpenFile: (path: string) => void;
@@ -302,6 +320,20 @@ function TreeNode({
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [children, setChildren] = useState<FileTreeNode[] | null>(null);
+
+  useEffect(() => {
+    if (collapseKey && collapseKey > 0) {
+      setOpen(false);
+    }
+  }, [collapseKey]);
+
+  useEffect(() => {
+    if (expandKey && expandKey > 0) {
+      if (depth === 1) {
+        setOpen(true);
+      }
+    }
+  }, [expandKey, depth]);
 
   const showRename = inlineEdit?.mode === 'rename' && inlineEdit.node.path === node.path;
   const showCreateHere =
@@ -332,7 +364,7 @@ function TreeNode({
     }
   }, [expandPath, node.isDirectory, node.path]);
 
-  const gitMeta = getNodeGitStatus(node.path, node.isDirectory, gitEntries);
+  const gitMeta = getNodeGitStatus(node.path, node.isDirectory, gitEntries, gitIgnoredPaths);
 
   const indents = [];
   for (let i = 1; i <= depth; i++) {
@@ -353,12 +385,13 @@ function TreeNode({
           />
         ) : (
           <div
-            className={`file-node file-node-dir ${selectedNode?.path === node.path ? 'active' : ''}`}
+            className={`file-node file-node-dir ${selectedNode?.path === node.path ? 'active' : ''} ${gitMeta?.isIgnored ? 'is-git-ignored' : ''}`}
             style={{
               paddingLeft: 12 + depth * 16,
               position: 'sticky',
               top: stickyTop,
               zIndex: 50 - depth,
+              opacity: gitMeta?.isIgnored ? 0.52 : undefined,
             }}
             onClick={() => {
               if (onSelectNode) onSelectNode({ path: node.path, isDirectory: node.isDirectory });
@@ -386,7 +419,7 @@ function TreeNode({
             <span
               className="file-node-name"
               style={{
-                color: gitMeta?.hasChanges ? '#e5a54b' : undefined,
+                color: gitMeta?.hasChanges ? '#e5a54b' : gitMeta?.color,
                 paddingRight: gitMeta?.hasChanges ? 32 : 8,
               }}
               title={node.name}
@@ -415,7 +448,10 @@ function TreeNode({
                 activePath={activePath}
                 selectedNode={selectedNode}
                 gitEntries={gitEntries}
+                gitIgnoredPaths={gitIgnoredPaths}
                 refreshKey={refreshKey}
+                collapseKey={collapseKey}
+                expandKey={expandKey}
                 expandPath={expandPath}
                 inlineEdit={inlineEdit}
                 onOpenFile={onOpenFile}
@@ -443,8 +479,6 @@ function TreeNode({
 
   useEffect(() => {
     if (isThisActive && nodeRef.current) {
-      // Small timeout to allow directory expansion to finish rendering。
-      // 用 'auto' 代替 'smooth'：smooth 滚动会在切换/刷新时产生长时间动画，拖慢感知。
       setTimeout(() => {
         nodeRef.current?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
       }, 50);
@@ -466,8 +500,11 @@ function TreeNode({
   return (
     <div
       ref={nodeRef}
-      className={`file-node ${selectedNode?.path === node.path || isThisActive ? 'active' : ''}`}
-      style={{ paddingLeft: 12 + depth * 16 }}
+      className={`file-node ${selectedNode?.path === node.path || isThisActive ? 'active' : ''} ${gitMeta?.isIgnored ? 'is-git-ignored' : ''}`}
+      style={{
+        paddingLeft: 12 + depth * 16,
+        opacity: gitMeta?.isIgnored ? 0.52 : undefined,
+      }}
       onClick={() => {
         if (onSelectNode) onSelectNode({ path: node.path, isDirectory: false });
         onOpenFile(node.path);
@@ -748,6 +785,8 @@ function FindInFolderModal({
 export type FileTreeHandle = {
   createFile: () => void;
   createFolder: () => void;
+  collapseAll: () => void;
+  expandAll: () => void;
 };
 
 interface Props extends FileTreeHandlers {
@@ -779,6 +818,8 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
 ) {
   const [roots, setRoots] = useState<FileTreeNode[]>([]);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
+  const [collapseKey, setCollapseKey] = useState(0);
+  const [expandKey, setExpandKey] = useState(0);
   const refreshKey = (extRefreshKey ?? 0) + localRefreshKey;
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [clipboard, setClipboard] = useState<PathClipboard>(null);
@@ -820,6 +861,12 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
       setExpandPath(parent === '.' ? null : parent);
       setInlineEdit({ mode: 'create-folder', parentPath: parent });
       bump();
+    },
+    collapseAll: () => {
+      setCollapseKey((k) => k + 1);
+    },
+    expandAll: () => {
+      setExpandKey((k) => k + 1);
     },
   }));
 
@@ -1039,7 +1086,10 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           activePath={activePath}
           selectedNode={selectedNode}
           gitEntries={gitStatus?.entries ?? []}
+          gitIgnoredPaths={gitStatus?.ignoredPaths ?? []}
           refreshKey={refreshKey}
+          collapseKey={collapseKey}
+          expandKey={expandKey}
           expandPath={expandPath}
           inlineEdit={inlineEdit}
           onOpenFile={onOpenFile}

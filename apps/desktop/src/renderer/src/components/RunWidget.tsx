@@ -1,12 +1,24 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { loadEnvConfig } from './EnvironmentSettingsSection';
+import {
+  ProjectRuntimeConfigModal,
+  loadProjectRuntimeConfig,
+  type ProjectRuntimeConfig,
+} from './ProjectRuntimeConfigModal';
 
 interface Props {
   workspace: string | null;
   activePath?: string | null;
-  onRunCommand: (command: string) => void;
+  onRunCommand: (
+    command: string,
+    cwd?: string,
+    terminalType?: string,
+    terminalTitle?: string,
+  ) => void;
   onStopCommand?: () => void;
   isBottomExpanded: boolean;
   onExpandBottom: () => void;
+  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
 }
 
 export interface ScriptOption {
@@ -45,6 +57,7 @@ interface CustomConfig {
 async function detectProjectScripts(
   workspace: string,
   activePath?: string | null,
+  runtimeCfg?: ProjectRuntimeConfig,
 ): Promise<ScriptOption[]> {
   const tryRead = async (p: string): Promise<string | null> => {
     try {
@@ -136,17 +149,157 @@ async function detectProjectScripts(
         description: 'Node 运行当前脚本',
       });
     } else if (ext === 'java') {
-      results.push({
-        id: `active:${relPath}`,
-        name: fileName,
-        command: `java "${relPath}"`,
-        source: 'java',
-        badge: 'Java',
-        badgeBg: 'rgba(251, 146, 60, 0.15)',
-        badgeColor: '#fb923c',
-        group: 'current',
-        description: '运行当前 Java 单文件',
-      });
+      // 1. 读取 Java 文件内容，提取 package 与 类名
+      const javaCode = await tryRead(relPath);
+      let pkg = '';
+      if (javaCode) {
+        const pkgMatch = javaCode.match(/package\s+([a-zA-Z0-9_.]+)\s*;/);
+        if (pkgMatch) {
+          pkg = pkgMatch[1].trim();
+        }
+      }
+      const rawClassName = fileName.replace(/\.java$/i, '');
+      const fullClassName = pkg ? `${pkg}.${rawClassName}` : rawClassName;
+
+      // 2. 检测是否属于 Maven 项目 (根目录有 pom.xml 或 mvnw)
+      const hasPom = rootFiles.includes('pom.xml') || (await exists('pom.xml'));
+      const hasMvnw =
+        rootFiles.includes('mvnw') ||
+        rootFiles.includes('mvnw.cmd') ||
+        (await exists('mvnw')) ||
+        (await exists('mvnw.cmd'));
+
+      // 3. 构建高可用运行命令并接入项目全局运行时参数 (VM Options / 环境变量 / 程序参数)
+      const isWin = typeof navigator !== 'undefined' && /win/i.test(navigator.platform);
+      let javaPrefix = '';
+      let envCfg: any = null;
+      try {
+        envCfg = loadEnvConfig(workspace || undefined);
+      } catch {}
+
+      const rCfg = runtimeCfg || loadProjectRuntimeConfig(workspace);
+
+      const envPrefix = rCfg.envVars.trim()
+        ? (isWin ? `set "${rCfg.envVars.trim()}" && ` : `export ${rCfg.envVars.trim().replace(/,/g, ' ')} && `)
+        : '';
+
+      if (envCfg?.selectedJavaHome) {
+        javaPrefix = isWin
+          ? `set "JAVA_HOME=${envCfg.selectedJavaHome}" && `
+          : `export JAVA_HOME="${envCfg.selectedJavaHome}" && `;
+      }
+      javaPrefix = `${envPrefix}${javaPrefix}`;
+
+      const profileArg = rCfg.activeProfiles.trim() ? `-P${rCfg.activeProfiles.trim()} ` : '';
+      const vmArgsPart = rCfg.vmArgs.trim() ? ` ${rCfg.vmArgs.trim()}` : '';
+      const progArgsPart = rCfg.programArgs.trim() ? ` -Dexec.args="${rCfg.programArgs.trim()}"` : '';
+
+      if (hasPom || hasMvnw) {
+        let mvnExe = 'mvn';
+        if (envCfg?.customMvnPath) {
+          mvnExe = envCfg.customMvnPath;
+        } else if (hasMvnw) {
+          mvnExe = isWin ? 'mvnw.cmd' : './mvnw';
+        }
+
+        let settingsArg = '';
+        if (envCfg?.customSettingsPath) {
+          settingsArg = `-s "${envCfg.customSettingsPath}" `;
+        } else if (rootFiles.includes('.mvn') || (await exists('.mvn/settings.xml'))) {
+          settingsArg = `-s .mvn/settings.xml `;
+        }
+
+        // 4. 智能检测是否包含 main 入口方法或属于单测
+        const isTestFile = /Test|TestCase/i.test(rawClassName) || /@Test/i.test(javaCode || '');
+        const hasMainMethod =
+          /public\s+static\s+void\s+main\s*\(/i.test(javaCode || '') ||
+          /static\s+public\s+void\s+main\s*\(/i.test(javaCode || '') ||
+          /@SpringBootApplication/i.test(javaCode || '');
+
+        if (hasMainMethod) {
+          // 仅在明确含有 main 入口方法或 @SpringBootApplication 时，执行 exec:java 并附带项目全局 VM 参数与程序参数
+          // 融合图 3 高级运行选项：
+          // - skipBuildBeforeRun: 运行前不执行编译，直接秒级启动已有 class
+          // - addProvidedToClasspath: 将 "provided" 依赖添加到类路径 (-Dexec.classpathScope=compile)，杜绝 NoClassDefFoundError
+          // - saveConsoleToFile: 控制台输出写入日志文件
+          const compilePhase = rCfg.skipBuildBeforeRun ? '' : 'compile ';
+          const providedScopeArg = rCfg.addProvidedToClasspath ? ' -Dexec.classpathScope=compile' : '';
+          const logRedirect = rCfg.saveConsoleToFile ? ' | tee -a .echoly/logs/run.log' : '';
+          const mvnRunCmd = `${javaPrefix}${mvnExe} ${settingsArg}${profileArg}${compilePhase}exec:java -Dexec.mainClass="${fullClassName}"${providedScopeArg}${vmArgsPart}${progArgsPart}${logRedirect}`.trim();
+          results.push({
+            id: `active:${relPath}`,
+            name: `${rawClassName}`,
+            command: mvnRunCmd,
+            source: 'java',
+            badge: 'Java',
+            badgeBg: 'rgba(251, 146, 60, 0.15)',
+            badgeColor: '#fb923c',
+            group: 'current',
+            description: `Maven 运行主类 ${fullClassName}${rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : ''}`,
+          });
+        } else if (isTestFile) {
+          // 若是测试文件，提供一键单测执行
+          results.push({
+            id: `active:test:${relPath}`,
+            name: `测试: ${rawClassName}`,
+            command: `${javaPrefix}${mvnExe} ${settingsArg}${profileArg}test -Dtest=${rawClassName}${vmArgsPart}`.trim(),
+            source: 'java',
+            badge: 'Maven',
+            badgeBg: 'rgba(251, 146, 60, 0.15)',
+            badgeColor: '#fb923c',
+            group: 'current',
+            description: `Maven 运行单测 ${rawClassName}`,
+          });
+        } else {
+          // 该业务类/接口未包含 main 入口方法：提供项目编译验证，杜绝 NoSuchMethodException 报错
+          results.push({
+            id: `active:compile:${relPath}`,
+            name: `编译项目`,
+            command: `${javaPrefix}${mvnExe} ${settingsArg}${profileArg}compile`.trim(),
+            source: 'java',
+            badge: 'Maven',
+            badgeBg: 'rgba(251, 146, 60, 0.15)',
+            badgeColor: '#fb923c',
+            group: 'current',
+            description: `Maven 编译工程 (${rawClassName} 未包含 main 入口方法)`,
+          });
+        }
+      } else {
+        // 非 Maven 工程: 智能计算 classpath
+        const hasMainMethod =
+          /public\s+static\s+void\s+main\s*\(/i.test(javaCode || '') ||
+          /static\s+public\s+void\s+main\s*\(/i.test(javaCode || '');
+
+        const javaProgArgs = rCfg.programArgs.trim() ? ` ${rCfg.programArgs.trim()}` : '';
+        let javaCmd = `${javaPrefix}java${vmArgsPart} "${relPath}"${javaProgArgs}`;
+        if (hasMainMethod) {
+          if (pkg && relPath.includes('src/main/java/')) {
+            const srcRoot = relPath.substring(
+              0,
+              relPath.indexOf('src/main/java/') + 'src/main/java'.length,
+            );
+            javaCmd = `${javaPrefix}java${vmArgsPart} -cp "${srcRoot}" "${fullClassName}"${javaProgArgs}`;
+          } else if (pkg && relPath.includes('src/')) {
+            const srcRoot = relPath.substring(0, relPath.indexOf('src/') + 'src'.length);
+            javaCmd = `${javaPrefix}java${vmArgsPart} -cp "${srcRoot}" "${fullClassName}"${javaProgArgs}`;
+          }
+        } else {
+          javaCmd = `javac "${relPath}"`;
+        }
+        results.push({
+          id: `active:${relPath}`,
+          name: hasMainMethod ? rawClassName : `编译: ${rawClassName}`,
+          command: javaCmd,
+          source: 'java',
+          badge: 'Java',
+          badgeBg: 'rgba(251, 146, 60, 0.15)',
+          badgeColor: '#fb923c',
+          group: 'current',
+          description: hasMainMethod
+            ? `运行 Java 主类 ${fullClassName}${rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : ''}`
+            : `javac 编译 ${rawClassName} (未包含 main 方法)`,
+        });
+      }
     } else if (ext === 'go') {
       results.push({
         id: `active:${relPath}`,
@@ -644,6 +797,7 @@ export function RunWidget({
   onStopCommand,
   isBottomExpanded,
   onExpandBottom,
+  onShowToast,
 }: Props) {
   const [detectedScripts, setDetectedScripts] = useState<ScriptOption[]>([]);
   const [customConfigs, setCustomConfigs] = useState<CustomConfig[]>([]);
@@ -654,9 +808,36 @@ export function RunWidget({
   const [isAddingCustom, setIsAddingCustom] = useState<boolean>(false);
   const [newConfigName, setNewConfigName] = useState<string>('');
   const [newConfigCommand, setNewConfigCommand] = useState<string>('');
+  const [runtimeConfigModalOpen, setRuntimeConfigModalOpen] = useState(false);
+  const [runtimeConfig, setRuntimeConfig] = useState<ProjectRuntimeConfig>(() =>
+    loadProjectRuntimeConfig(workspace || undefined),
+  );
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // 监听工作区切换与运行时配置变更事件
+  useEffect(() => {
+    setRuntimeConfig(loadProjectRuntimeConfig(workspace || undefined));
+  }, [workspace]);
+
+  useEffect(() => {
+    const handleRuntimeConfigChanged = (e: Event) => {
+      const detail = (e as CustomEvent<{ workspace?: string; config: ProjectRuntimeConfig }>).detail;
+      if (!detail?.workspace || detail.workspace === workspace) {
+        setRuntimeConfig(detail.config || loadProjectRuntimeConfig(workspace || undefined));
+      }
+    };
+    window.addEventListener('echoly:runtimeConfigChanged', handleRuntimeConfigChanged);
+    return () => window.removeEventListener('echoly:runtimeConfigChanged', handleRuntimeConfigChanged);
+  }, [workspace]);
+
+  const hasActiveRuntimeArgs = Boolean(
+    runtimeConfig.vmArgs.trim() ||
+      runtimeConfig.programArgs.trim() ||
+      runtimeConfig.envVars.trim() ||
+      runtimeConfig.activeProfiles.trim(),
+  );
 
   // 读取自定义配置
   useEffect(() => {
@@ -673,19 +854,19 @@ export function RunWidget({
     }
   }, [workspace]);
 
-  // 自动检测工程运行配置
+  // 自动检测工程运行配置 (依赖 runtimeConfig 实时动态计算生成的命令)
   useEffect(() => {
     if (!workspace) return;
     let isMounted = true;
     (async () => {
-      const loaded = await detectProjectScripts(workspace, activePath);
+      const loaded = await detectProjectScripts(workspace, activePath, runtimeConfig);
       if (!isMounted) return;
       setDetectedScripts(loaded);
     })();
     return () => {
       isMounted = false;
     };
-  }, [workspace, activePath]);
+  }, [workspace, activePath, runtimeConfig]);
 
   // 将 customConfigs 映射为 ScriptOption
   const customScriptOptions = useMemo<ScriptOption[]>(() => {
@@ -809,17 +990,74 @@ export function RunWidget({
 
   const handleRun = useCallback(() => {
     if (!currentOption) return;
+    const rCfg = loadProjectRuntimeConfig(workspace);
+    if (rCfg.showSettingsBeforeRun) {
+      setRuntimeConfigModalOpen(true);
+      return;
+    }
     if (!isBottomExpanded) {
       onExpandBottom();
     }
     setIsRunning(true);
-    onRunCommand(currentOption.command);
+
+    let termType: string = currentOption.source;
+    let termTitle: string = currentOption.badge || '终端';
+
+    if (currentOption.badge === 'Java') {
+      termType = 'java';
+      termTitle = 'Java';
+    } else if (currentOption.source === 'java') {
+      if (currentOption.badge === 'Maven') {
+        termType = 'mvn';
+        termTitle = 'Maven';
+      } else {
+        termType = 'java';
+        termTitle = 'Java';
+      }
+    } else if (currentOption.source === 'python') {
+      termType = 'python';
+      termTitle = 'Python';
+    } else if (
+      currentOption.source === 'npm' ||
+      currentOption.source === 'pnpm' ||
+      currentOption.source === 'yarn' ||
+      currentOption.source === 'bun'
+    ) {
+      termType = 'node';
+      termTitle = 'Node';
+    }
+
+    onRunCommand(currentOption.command, undefined, termType, termTitle);
   }, [currentOption, isBottomExpanded, onExpandBottom, onRunCommand]);
+
+  // 监听进程执行结束或报错事件，自动解除 isRunning 运行状态
+  useEffect(() => {
+    const handleRunFinished = () => {
+      setIsRunning(false);
+    };
+    window.addEventListener('echoly:runFinished', handleRunFinished);
+    return () => {
+      window.removeEventListener('echoly:runFinished', handleRunFinished);
+    };
+  }, []);
 
   const handleStop = useCallback(() => {
     setIsRunning(false);
     onStopCommand?.();
-  }, [onStopCommand]);
+    window.dispatchEvent(
+      new CustomEvent('echoly:stopTerminalCommand', {
+        detail: {
+          terminalType:
+            currentOption?.badge === 'Java' ||
+            (currentOption?.source === 'java' && currentOption?.badge !== 'Maven')
+              ? 'java'
+              : currentOption?.badge === 'Maven'
+              ? 'mvn'
+              : undefined,
+        },
+      }),
+    );
+  }, [currentOption, onStopCommand]);
 
   // 过滤选项
   const filtered = useMemo(() => {
@@ -1218,6 +1456,104 @@ export function RunWidget({
                 </div>
               </div>
             )}
+            {/* 底部项目运行参数入口 */}
+            <div
+              style={{
+                borderTop: '1px solid var(--border)',
+                padding: '6px 8px 4px',
+                marginTop: 3,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setDropdownOpen(false);
+                  setRuntimeConfigModalOpen(true);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  width: '100%',
+                  background: hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.07)' : 'rgba(255, 255, 255, 0.03)',
+                  border: hasActiveRuntimeArgs ? '1px solid rgba(56, 189, 248, 0.25)' : '1px solid var(--border)',
+                  cursor: 'pointer',
+                  padding: '7px 10px',
+                  borderRadius: 6,
+                  textAlign: 'left',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--bg-hover, rgba(255, 255, 255, 0.08))';
+                  e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.45)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.07)' : 'rgba(255, 255, 255, 0.03)';
+                  e.currentTarget.style.borderColor = hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.25)' : 'var(--border)';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, overflow: 'hidden' }}>
+                  <span style={{ fontSize: 13, color: hasActiveRuntimeArgs ? '#38bdf8' : 'var(--muted)', flexShrink: 0 }}>
+                    ⚙
+                  </span>
+                  <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        color: hasActiveRuntimeArgs ? 'var(--text-bright, #fff)' : 'var(--text)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      项目全局运行参数配置
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--muted)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        marginTop: 1,
+                      }}
+                    >
+                      VM Options · 入口参数 · 环境变量
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    flexShrink: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: 10.5,
+                    padding: '2px 8px',
+                    borderRadius: 12,
+                    background: hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255, 255, 255, 0.06)',
+                    border: hasActiveRuntimeArgs
+                      ? '1px solid rgba(56, 189, 248, 0.4)'
+                      : '1px solid var(--border)',
+                    color: hasActiveRuntimeArgs ? '#38bdf8' : 'var(--muted)',
+                    whiteSpace: 'nowrap',
+                    fontWeight: 500,
+                  }}
+                >
+                  {hasActiveRuntimeArgs ? (
+                    <>
+                      <span style={{ fontSize: 7, color: '#38bdf8' }}>●</span>
+                      <span>已生效</span>
+                    </>
+                  ) : (
+                    <span>未配置</span>
+                  )}
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1280,20 +1616,97 @@ export function RunWidget({
             justifyContent: 'center',
             width: 22,
             height: 22,
-            background: '#ef4444',
-            color: '#fff',
-            border: 'none',
+            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+            color: '#ffffff',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
             borderRadius: 4,
             cursor: 'pointer',
             padding: 0,
-            transition: 'transform 0.1s, background 0.15s',
+            boxShadow: '0 0 8px rgba(239, 68, 68, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25)',
+            transition: 'all 0.15s ease',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#dc2626')}
-          onMouseLeave={(e) => (e.currentTarget.style.background = '#ef4444')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'linear-gradient(135deg, #f87171 0%, #ef4444 100%)';
+            e.currentTarget.style.boxShadow = '0 0 12px rgba(239, 68, 68, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.35)';
+            e.currentTarget.style.transform = 'scale(1.05)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+            e.currentTarget.style.boxShadow = '0 0 8px rgba(239, 68, 68, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25)';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+          onMouseDown={(e) => {
+            e.currentTarget.style.transform = 'scale(0.92)';
+          }}
+          onMouseUp={(e) => {
+            e.currentTarget.style.transform = 'scale(1.05)';
+          }}
         >
-          <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" />
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="5" y="5" width="14" height="14" rx="2.5" />
+          </svg>
         </button>
       )}
+
+      {/* 运行时参数配置按钮 ⚙ */}
+      <button
+        type="button"
+        onClick={() => setRuntimeConfigModalOpen(true)}
+        title={
+          hasActiveRuntimeArgs
+            ? `项目运行时参数已生效 (VM: ${runtimeConfig.vmArgs || '无'}, Profile: ${runtimeConfig.activeProfiles || '无'}) - 单击修改`
+            : '项目全局运行时参数配置 (VM Options / 启动参数 / 环境预设)'
+        }
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 22,
+          height: 22,
+          background: hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.15)' : 'none',
+          color: hasActiveRuntimeArgs ? '#38bdf8' : 'var(--muted, #888)',
+          border: hasActiveRuntimeArgs ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid transparent',
+          borderRadius: 4,
+          cursor: 'pointer',
+          padding: 0,
+          position: 'relative',
+          transition: 'all 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          if (!hasActiveRuntimeArgs) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+        }}
+        onMouseLeave={(e) => {
+          if (!hasActiveRuntimeArgs) e.currentTarget.style.background = 'none';
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        {hasActiveRuntimeArgs && (
+          <span
+            style={{
+              position: 'absolute',
+              top: 2,
+              right: 2,
+              width: 5,
+              height: 5,
+              borderRadius: '50%',
+              background: '#38bdf8',
+              boxShadow: '0 0 4px #38bdf8',
+            }}
+          />
+        )}
+      </button>
+
+      {/* 运行时参数配置弹窗 */}
+      <ProjectRuntimeConfigModal
+        isOpen={runtimeConfigModalOpen}
+        onClose={() => setRuntimeConfigModalOpen(false)}
+        workspace={workspace || undefined}
+        activePath={activePath || undefined}
+        onShowToast={onShowToast}
+      />
     </div>
   );
 }

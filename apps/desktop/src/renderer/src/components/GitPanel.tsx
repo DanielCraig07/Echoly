@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type {
   GitBranchInfo,
   GitCommitEntry,
   GitCommitFileChange,
+  GitCommitStats,
   GitHistoryResult,
   GitStatusEntry,
   GitStatusResult,
@@ -10,12 +11,15 @@ import type {
   WorkspaceInfo,
 } from '@deepseek-ide/shared';
 import { RenderFileTreeIcon } from './FileTree';
+import { GitCommitPreviewCard } from './GitCommitPreviewCard';
 
 interface Props {
   workspaceInfo: WorkspaceInfo | null;
   onPreviewDiff: (diff: PendingDiff | null) => void;
   onDiscardPath?: (path: string | string[]) => void;
   onOpenFile?: (path: string) => void;
+  onViewFileHistory?: (path: string) => void;
+  onRevealInExplorer?: (path: string) => void;
   onShowToast?: (
     title: string,
     detail?: string,
@@ -73,32 +77,108 @@ function buildGitTree(entries: GitStatusEntry[]): GitTreeNode[] {
     }
   }
 
-  return rootNodes;
+  // 排序：文件夹在前，文件在后，按字母序排列
+  const sortNodes = (nodes: GitTreeNode[]) => {
+    nodes.sort((a, b) => {
+      if (a.isDirectory && !b.isDirectory) return -1;
+      if (!a.isDirectory && b.isDirectory) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const n of nodes) {
+      if (n.isDirectory && n.children.length > 0) {
+        sortNodes(n.children);
+      }
+    }
+  };
+  sortNodes(rootNodes);
+
+  // 紧凑目录合并（Compact Folders，如 VS Code）：当目录只有一个子目录且无同级文件时，合并层级为 a / b / c
+  const compactNodes = (nodes: GitTreeNode[]): GitTreeNode[] => {
+    return nodes.map((node) => {
+      if (!node.isDirectory) return node;
+
+      const compactedChildren = compactNodes(node.children);
+      let cur: GitTreeNode = { ...node, children: compactedChildren };
+
+      while (cur.isDirectory && cur.children.length === 1 && cur.children[0].isDirectory) {
+        const onlyChild = cur.children[0];
+        cur = {
+          name: `${cur.name} / ${onlyChild.name}`,
+          path: onlyChild.path,
+          isDirectory: true,
+          entry: undefined,
+          children: onlyChild.children,
+        };
+      }
+
+      return cur;
+    });
+  };
+
+  return compactNodes(rootNodes);
+}
+
+function collectFolderFiles(node: GitTreeNode): string[] {
+  const result: string[] = [];
+  function traverse(n: GitTreeNode) {
+    if (n.entry) {
+      result.push(n.entry.path);
+    }
+    if (n.children) {
+      for (const c of n.children) traverse(c);
+    }
+  }
+  traverse(node);
+  return result;
 }
 
 function GitTreeItemView({
   node,
   depth = 0,
   staged,
+  selectedPath,
+  onSelectPath,
   onPreview,
   onDiscard,
+  onStage,
+  onUnstage,
+  onOpenFile,
+  onContextMenu,
+  onFolderContextMenu,
 }: {
   node: GitTreeNode;
   depth?: number;
   staged: boolean;
+  selectedPath?: string | null;
+  onSelectPath?: (path: string) => void;
   onPreview: (entry: GitStatusEntry, staged: boolean) => void;
   onDiscard: (path: string) => void;
+  onStage?: (path: string) => void;
+  onUnstage?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
+  onContextMenu?: (e: React.MouseEvent, entry: GitStatusEntry, staged: boolean) => void;
+  onFolderContextMenu?: (e: React.MouseEvent, node: GitTreeNode, staged: boolean) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [isFolderHovered, setIsFolderHovered] = useState(false);
 
   if (node.isDirectory) {
+    const isFolderSelected = selectedPath === node.path;
     return (
       <div>
         <div
           onClick={() => setCollapsed(!collapsed)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onSelectPath?.(node.path);
+            onFolderContextMenu?.(e, node, staged);
+          }}
+          onMouseEnter={() => setIsFolderHovered(true)}
+          onMouseLeave={() => setIsFolderHovered(false)}
           style={{
             paddingLeft: 12 + depth * 14,
-            paddingRight: 12,
+            paddingRight: 10,
             height: 24,
             boxSizing: 'border-box',
             display: 'flex',
@@ -107,50 +187,108 @@ function GitTreeItemView({
             fontSize: 12,
             cursor: 'pointer',
             userSelect: 'none',
+            background: isFolderSelected
+              ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))'
+              : isFolderHovered
+                ? 'rgba(255, 255, 255, 0.04)'
+                : 'transparent',
+            borderRadius: 4,
+            transition: 'background 0.1s ease',
           }}
           className="search-result-item"
         >
-          <span style={{ fontSize: 10, color: 'var(--muted)', width: 12 }}>
+          <span style={{ fontSize: 10, color: 'var(--muted)', width: 12, textAlign: 'center' }}>
             {collapsed ? '▸' : '▾'}
           </span>
-          <RenderFileTreeIcon name={node.name} isDirectory={true} />
+          <RenderFileTreeIcon
+            name={node.name.includes(' / ') ? node.name.split(' / ').pop()! : node.name}
+            isDirectory={true}
+          />
           <span
-            style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            style={{
+              flex: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              color: 'var(--text)',
+            }}
           >
             {node.name}
           </span>
-          {!staged && (
-            <button
-              type="button"
-              title="放弃文件夹下所有更改"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDiscard(node.path);
-              }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--muted)',
-                cursor: 'pointer',
-                padding: 4,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-              }}
-              className="icon-btn"
+
+          {(isFolderHovered || isFolderSelected) && (
+            <div
+              style={{ display: 'flex', alignItems: 'center', gap: 2 }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-              >
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-              </svg>
-            </button>
+              {!staged && (
+                <button
+                  type="button"
+                  title="放弃文件夹下所有更改"
+                  onClick={() => {
+                    onSelectPath?.(node.path);
+                    onDiscard(node.path);
+                  }}
+                  className="panel-action-btn"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                  </svg>
+                </button>
+              )}
+              {!staged ? (
+                <button
+                  type="button"
+                  title="暂存文件夹下所有更改"
+                  onClick={() => {
+                    onSelectPath?.(node.path);
+                    onStage?.(node.path);
+                  }}
+                  className="panel-action-btn"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  title="取消暂存文件夹下所有更改"
+                  onClick={() => {
+                    onSelectPath?.(node.path);
+                    onUnstage?.(node.path);
+                  }}
+                  className="panel-action-btn"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+              )}
+            </div>
           )}
         </div>
         {!collapsed &&
@@ -160,8 +298,15 @@ function GitTreeItemView({
               node={child}
               depth={depth + 1}
               staged={staged}
+              selectedPath={selectedPath}
+              onSelectPath={onSelectPath}
               onPreview={onPreview}
               onDiscard={onDiscard}
+              onStage={onStage}
+              onUnstage={onUnstage}
+              onOpenFile={onOpenFile}
+              onContextMenu={onContextMenu}
+              onFolderContextMenu={onFolderContextMenu}
             />
           ))}
       </div>
@@ -171,12 +316,26 @@ function GitTreeItemView({
   const f = node.entry;
   if (!f) return null;
 
+  const isSelected = selectedPath === f.path;
+  const [isHovered, setIsHovered] = useState(false);
+
   return (
     <div
-      onClick={() => onPreview(f, staged)}
+      onClick={() => {
+        onSelectPath?.(f.path);
+        onPreview(f, staged);
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelectPath?.(f.path);
+        onContextMenu?.(e, f, staged);
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
-        paddingLeft: 12 + depth * 14 + 12,
-        paddingRight: 12,
+        paddingLeft: 12 + depth * 14 + 10,
+        paddingRight: 10,
         height: 24,
         boxSizing: 'border-box',
         display: 'flex',
@@ -184,67 +343,355 @@ function GitTreeItemView({
         gap: 6,
         fontSize: 12,
         cursor: 'pointer',
+        background: isSelected
+          ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))'
+          : isHovered
+            ? 'rgba(255, 255, 255, 0.04)'
+            : 'transparent',
+        borderRadius: 4,
+        transition: 'background 0.1s ease',
+        userSelect: 'none',
       }}
       className="search-result-item"
     >
       <RenderFileTreeIcon name={node.name} isDirectory={false} />
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {node.name}
-      </span>
       <span
         style={{
-          color: f.staged ? '#4caf50' : f.untracked ? '#888' : '#e5a54b',
+          flex: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          color: isSelected ? 'var(--text-bright, #fff)' : 'var(--text)',
+        }}
+      >
+        {node.name}
+      </span>
+
+      {/* 悬停或选中状态下显示操作按钮栏（打开文件、放弃更改、暂存/取消暂存） */}
+      {(isHovered || isSelected) && (
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 2 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {onOpenFile && (
+            <button
+              type="button"
+              title="打开文件"
+              onClick={() => {
+                onSelectPath?.(f.path);
+                onOpenFile(f.path);
+              }}
+              className="panel-action-btn"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            </button>
+          )}
+
+          {!staged && (
+            <button
+              type="button"
+              title="放弃更改"
+              onClick={() => {
+                onSelectPath?.(f.path);
+                onDiscard(f.path);
+              }}
+              className="panel-action-btn"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+            </button>
+          )}
+
+          {!staged ? (
+            <button
+              type="button"
+              title="暂存更改"
+              onClick={() => {
+                onSelectPath?.(f.path);
+                onStage?.(f.path);
+              }}
+              className="panel-action-btn"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              title="取消暂存"
+              onClick={() => {
+                onSelectPath?.(f.path);
+                onUnstage?.(f.path);
+              }}
+              className="panel-action-btn"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+
+      <span
+        style={{
+          color: f.staged ? '#4caf50' : f.untracked ? '#34d399' : '#e5a54b',
           fontSize: 11,
-          fontWeight: 'bold',
+          fontWeight: 600,
+          width: 14,
+          textAlign: 'center',
+          marginLeft: 2,
         }}
       >
         {f.staged ? 'A' : f.untracked ? 'U' : statusLabel(f)}
       </span>
-      {!staged && (
-        <button
-          type="button"
-          title="放弃更改"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDiscard(f.path);
-          }}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            padding: 4,
-            borderRadius: 4,
-            display: 'flex',
-            alignItems: 'center',
-          }}
-          className="icon-btn"
+    </div>
+  );
+}
+
+function GitFileListItemView({
+  entry,
+  staged,
+  selectedPath,
+  onSelectPath,
+  onPreview,
+  onDiscard,
+  onStage,
+  onUnstage,
+  onOpenFile,
+  onContextMenu,
+}: {
+  entry: GitStatusEntry;
+  staged: boolean;
+  selectedPath?: string | null;
+  onSelectPath?: (path: string) => void;
+  onPreview: (entry: GitStatusEntry, staged: boolean) => void;
+  onDiscard: (path: string) => void;
+  onStage?: (path: string) => void;
+  onUnstage?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
+  onContextMenu?: (e: React.MouseEvent, entry: GitStatusEntry, staged: boolean) => void;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const isSelected = selectedPath === entry.path;
+  const fileName = entry.path.split('/').pop() || entry.path;
+  const dirName = entry.path.includes('/')
+    ? entry.path.substring(0, entry.path.lastIndexOf('/'))
+    : '';
+
+  return (
+    <div
+      onClick={() => {
+        onSelectPath?.(entry.path);
+        onPreview(entry, staged);
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelectPath?.(entry.path);
+        onContextMenu?.(e, entry, staged);
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        height: 24,
+        padding: '0 10px 0 16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 12,
+        cursor: 'pointer',
+        boxSizing: 'border-box',
+        background: isSelected
+          ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))'
+          : isHovered
+            ? 'rgba(255, 255, 255, 0.04)'
+            : 'transparent',
+        borderRadius: 4,
+        transition: 'background 0.1s ease',
+        userSelect: 'none',
+      }}
+      className="search-result-item"
+    >
+      <RenderFileTreeIcon name={fileName} isDirectory={false} />
+      <span
+        style={{
+          flex: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        <span style={{ color: isSelected ? 'var(--text-bright, #fff)' : 'var(--text)' }}>
+          {fileName}
+        </span>
+        {dirName && (
+          <span style={{ fontSize: 10.5, color: 'var(--muted)', opacity: 0.65 }}>{dirName}</span>
+        )}
+      </span>
+
+      {(isHovered || isSelected) && (
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 2 }}
+          onClick={(e) => e.stopPropagation()}
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-          >
-            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-            <path d="M3 3v5h5" />
-          </svg>
-        </button>
+          {onOpenFile && (
+            <button
+              type="button"
+              title="打开文件"
+              onClick={() => {
+                onSelectPath?.(entry.path);
+                onOpenFile(entry.path);
+              }}
+              className="panel-action-btn"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            </button>
+          )}
+
+          {!staged && (
+            <button
+              type="button"
+              title="放弃更改"
+              onClick={() => {
+                onSelectPath?.(entry.path);
+                onDiscard(entry.path);
+              }}
+              className="panel-action-btn"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+              >
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+            </button>
+          )}
+
+          {!staged ? (
+            <button
+              type="button"
+              title="暂存更改"
+              onClick={() => {
+                onSelectPath?.(entry.path);
+                onStage?.(entry.path);
+              }}
+              className="panel-action-btn"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              title="取消暂存"
+              onClick={() => {
+                onSelectPath?.(entry.path);
+                onUnstage?.(entry.path);
+              }}
+              className="panel-action-btn"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          )}
+        </div>
       )}
+
+      <span
+        style={{
+          color: entry.staged ? '#4caf50' : entry.untracked ? '#34d399' : '#e5a54b',
+          fontSize: 11,
+          fontWeight: 600,
+          width: 14,
+          textAlign: 'center',
+          marginLeft: 2,
+        }}
+      >
+        {entry.staged ? 'A' : entry.untracked ? 'U' : statusLabel(entry)}
+      </span>
     </div>
   );
 }
 
 const GRAPH_BRANCH_COLORS = [
   '#f57c00', // Orange (lane 0 - main track)
-  '#e91e63', // Magenta / Pink (lane 1 - feature branch)
-  '#00bcd4', // Cyan / Teal (lane 2 - secondary branch)
+  '#00bcd4', // Cyan / Teal (lane 1 - feature branch)
+  '#ab47bc', // Purple (lane 2 - secondary branch)
   '#42a5f5', // Sky Blue (lane 3)
-  '#ab47bc', // Purple (lane 4)
-  '#66bb6a', // Emerald Green (lane 5)
-  '#ffa726', // Amber (lane 6)
+  '#66bb6a', // Emerald Green (lane 4)
+  '#ffa726', // Amber (lane 5)
+  '#e91e63', // Magenta / Pink (lane 6)
 ];
 
 interface GraphEdge {
@@ -253,6 +700,7 @@ interface GraphEdge {
   parentRow: number;
   parentLane: number;
   isPrimary: boolean;
+  isDashed: boolean;
   color: string;
 }
 
@@ -309,21 +757,49 @@ function analyzeGitGraph(commits: GitCommitEntry[]): GraphAnalysis {
     }
   }
 
+  // 识别属于被合并分支（Merge commit 的次级父提交及其专属祖先提交集合）
+  const dashedCommits = new Set<string>();
+  for (let r = 0; r < commits.length; r++) {
+    const c = commits[r];
+    const parents = c.parents || [];
+    if (parents.length >= 2) {
+      for (let i = 1; i < parents.length; i++) {
+        dashedCommits.add(parents[i]);
+      }
+    }
+  }
+
+  // 向下传播虚线状态（若提交属于被合并支线且其父提交单一，向下延续虚线轨道）
+  for (let r = 0; r < commits.length; r++) {
+    const c = commits[r];
+    if (dashedCommits.has(c.hash)) {
+      const parents = c.parents || [];
+      if (parents.length === 1) {
+        dashedCommits.add(parents[0]);
+      }
+    }
+  }
+
   const edges: GraphEdge[] = [];
   for (let r = 0; r < commits.length; r++) {
     const c = commits[r];
     const cLane = commitLanes.get(c.hash) ?? 0;
     const parents = c.parents || [];
+    const isChildDashed = dashedCommits.has(c.hash);
+
     parents.forEach((pHash, pIdx) => {
       const pRow = commitIndices.get(pHash);
       if (pRow !== undefined && pRow > r) {
         const pLane = commitLanes.get(pHash) ?? cLane;
+        // 如果是合并提交的次级父提交，或是被合并分支上的提交连线，呈现为虚线（如参考截图左下轨道）
+        const isDashed = pIdx > 0 || isChildDashed;
         edges.push({
           childRow: r,
           childLane: cLane,
           parentRow: pRow,
           parentLane: pLane,
           isPrimary: pIdx === 0,
+          isDashed,
           color: GRAPH_BRANCH_COLORS[(pIdx === 0 ? cLane : pLane) % GRAPH_BRANCH_COLORS.length],
         });
       }
@@ -339,28 +815,39 @@ function GitGraphRowSvg({
   commit,
   analysis,
   totalRowHeight,
+  isSelected,
 }: {
   rowIndex: number;
   commit: GitCommitEntry;
   analysis: GraphAnalysis;
   totalRowHeight: number;
+  isSelected?: boolean;
 }) {
-  const { commitLanes, edges, maxLane } = analysis;
+  const { commitLanes, edges } = analysis;
   const cLane = commitLanes.get(commit.hash) ?? 0;
   const cColor = GRAPH_BRANCH_COLORS[cLane % GRAPH_BRANCH_COLORS.length];
-  const LANE_WIDTH = 18;
-  const X_OFFSET = 12;
+  const LANE_WIDTH = 12;
+  const X_OFFSET = 10;
   const Y_MID = 13;
   const cx = X_OFFSET + cLane * LANE_WIDTH;
   const isMerge = (commit.parents?.length || 0) >= 2;
 
   const paths: React.ReactNode[] = [];
 
+  // 计算当前行真正涉及的最大轨道编号（包括节点自身轨道，以及当前行所有连线的起点和终点轨道）
+  let rowMaxLane = cLane;
+
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
     if (e.childRow <= rowIndex && rowIndex <= e.parentRow) {
+      rowMaxLane = Math.max(rowMaxLane, e.parentLane);
+      if (rowIndex === e.childRow) {
+        rowMaxLane = Math.max(rowMaxLane, e.childLane);
+      }
+
       const childX = X_OFFSET + e.childLane * LANE_WIDTH;
       const parentX = X_OFFSET + e.parentLane * LANE_WIDTH;
+      const dash = e.isDashed ? '4 3' : undefined;
 
       if (rowIndex === e.childRow) {
         if (e.childLane === e.parentLane) {
@@ -373,18 +860,24 @@ function GitGraphRowSvg({
               y2={totalRowHeight}
               stroke={e.color}
               strokeWidth={2}
+              strokeDasharray={dash}
             />,
           );
         } else {
-          // Fork branch: curve smoothly out of child node downwards towards parentLane
+          // 分支拐弯：从 child 节点水平向右弯折，以顺滑 90 度圆弧过渡进入目标轨道 parentLane（对齐参考截图）
+          const cpx1 = childX + (parentX - childX) * 0.7;
+          const cpy1 = Y_MID;
+          const cpx2 = parentX;
+          const cpy2 = Y_MID + (totalRowHeight - Y_MID) * 0.3;
           paths.push(
             <path
               key={`c-${i}`}
-              d={`M ${childX} ${Y_MID} C ${childX} ${(Y_MID + totalRowHeight) / 2}, ${parentX} ${(Y_MID + totalRowHeight) / 2}, ${parentX} ${totalRowHeight}`}
+              d={`M ${childX} ${Y_MID} C ${cpx1} ${cpy1}, ${cpx2} ${cpy2}, ${parentX} ${totalRowHeight}`}
               fill="none"
               stroke={e.color}
               strokeWidth={2}
               strokeLinecap="round"
+              strokeDasharray={dash}
             />,
           );
         }
@@ -399,10 +892,10 @@ function GitGraphRowSvg({
               y2={Y_MID}
               stroke={e.color}
               strokeWidth={2}
+              strokeDasharray={dash}
             />,
           );
         } else if (e.parentRow === e.childRow + 1) {
-          // If immediate next row is parentRow and different lanes, the curve was already drawn in childRow down to parentX at totalRowHeight
           paths.push(
             <line
               key={`p-${i}`}
@@ -412,10 +905,10 @@ function GitGraphRowSvg({
               y2={Y_MID}
               stroke={e.color}
               strokeWidth={2}
+              strokeDasharray={dash}
             />,
           );
         } else {
-          // Multi-row branch merging into parentRow: curve in from parentLane into parent node
           paths.push(
             <line
               key={`p-${i}`}
@@ -425,11 +918,12 @@ function GitGraphRowSvg({
               y2={Y_MID}
               stroke={e.color}
               strokeWidth={2}
+              strokeDasharray={dash}
             />,
           );
         }
       } else {
-        // Intermediate passing rows along parentX track
+        // 中间行垂直向下延续轨道
         paths.push(
           <line
             key={`m-${i}`}
@@ -439,13 +933,15 @@ function GitGraphRowSvg({
             y2={totalRowHeight}
             stroke={e.color}
             strokeWidth={2}
+            strokeDasharray={dash}
           />,
         );
       }
     }
   }
 
-  const svgWidth = X_OFFSET + (maxLane + 1) * LANE_WIDTH + 6;
+  // 紧凑自适应宽度：由当前行实际涉及的最大轨道决定，消除右侧无效空白，使提交说明紧贴分支轨道
+  const svgWidth = X_OFFSET + rowMaxLane * LANE_WIDTH + 8;
 
   return (
     <svg
@@ -459,43 +955,63 @@ function GitGraphRowSvg({
           <circle
             cx={cx}
             cy={Y_MID}
-            r={6.5}
-            fill="var(--bg-main, #1e1e1e)"
+            r={5}
+            fill="var(--bg-panel, #181818)"
             stroke={cColor}
-            strokeWidth={2}
+            strokeWidth={1.8}
           />
-          <circle cx={cx} cy={Y_MID} r={2.5} fill={cColor} />
+          <circle cx={cx} cy={Y_MID} r={2} fill={cColor} />
+          {isSelected && (
+            <circle
+              cx={cx}
+              cy={Y_MID}
+              r={7.5}
+              fill="none"
+              stroke={cColor}
+              strokeWidth={1.2}
+              strokeDasharray="2 2"
+              opacity={0.85}
+            />
+          )}
         </g>
       ) : (
-        <circle
-          cx={cx}
-          cy={Y_MID}
-          r={4.5}
-          fill={cColor}
-          stroke="var(--bg-main, #1e1e1e)"
-          strokeWidth={1.5}
-        />
+        <g>
+          <circle
+            cx={cx}
+            cy={Y_MID}
+            r={4}
+            fill={cColor}
+            stroke="var(--bg-panel, #181818)"
+            strokeWidth={1.5}
+          />
+          {isSelected && (
+            <circle
+              cx={cx}
+              cy={Y_MID}
+              r={7}
+              fill="none"
+              stroke={cColor}
+              strokeWidth={1.2}
+              strokeDasharray="2 2"
+              opacity={0.85}
+            />
+          )}
+        </g>
       )}
     </svg>
   );
 }
 
-function GitGraphExpandSvg({
-  rowIndex,
-  analysis,
-}: {
-  rowIndex: number;
-  analysis: GraphAnalysis;
-}) {
-  const { edges, maxLane } = analysis;
-  const LANE_WIDTH = 18;
-  const X_OFFSET = 12;
-  const svgWidth = X_OFFSET + (maxLane + 1) * LANE_WIDTH + 6;
+function GitGraphExpandSvg({ rowIndex, analysis }: { rowIndex: number; analysis: GraphAnalysis }) {
+  const { edges } = analysis;
+  const LANE_WIDTH = 12;
+  const X_OFFSET = 10;
 
   // Active passing edges connecting through between rowIndex and rowIndex + 1
-  const passingEdges = edges.filter(
-    (e) => e.childRow <= rowIndex && rowIndex < e.parentRow,
-  );
+  const passingEdges = edges.filter((e) => e.childRow <= rowIndex && rowIndex < e.parentRow);
+  const maxActiveLane =
+    passingEdges.length > 0 ? Math.max(...passingEdges.map((e) => e.parentLane)) : 0;
+  const svgWidth = X_OFFSET + maxActiveLane * LANE_WIDTH + 8;
 
   return (
     <div style={{ width: svgWidth, flexShrink: 0, position: 'relative', display: 'flex' }}>
@@ -522,10 +1038,139 @@ function GitGraphExpandSvg({
               vectorEffect="non-scaling-stroke"
               stroke={e.color}
               strokeWidth={2}
+              strokeDasharray={e.isDashed ? '4 3' : undefined}
             />
           );
         })}
       </svg>
+    </div>
+  );
+}
+
+interface GitContextMenuState {
+  x: number;
+  y: number;
+  entry?: GitStatusEntry;
+  folderNode?: GitTreeNode;
+  isFolder?: boolean;
+  staged: boolean;
+}
+
+function GitFileContextMenu({
+  state,
+  onClose,
+  onOpenDiff,
+  onOpenFile,
+  onOpenHeadFile,
+  onDiscard,
+  onDiscardFolder,
+  onToggleStage,
+  onToggleStageFolder,
+  onAddToGitignore,
+  onShowInFolder,
+  onRevealInExplorer,
+  onViewFileHistory,
+}: {
+  state: GitContextMenuState;
+  onClose: () => void;
+  onOpenDiff: (entry: GitStatusEntry, staged: boolean) => void;
+  onOpenFile: (path: string) => void;
+  onOpenHeadFile: (path: string) => void;
+  onDiscard: (path: string) => void;
+  onDiscardFolder?: (paths: string[]) => void;
+  onToggleStage: (entry: GitStatusEntry, staged: boolean) => void;
+  onToggleStageFolder?: (paths: string[], staged: boolean) => void;
+  onAddToGitignore: (path: string) => void;
+  onShowInFolder: (path: string) => void;
+  onRevealInExplorer: (path: string) => void;
+  onViewFileHistory: (path: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { entry, folderNode, isFolder, staged } = state;
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const maxH = Math.max(180, window.innerHeight - 20);
+    el.style.maxHeight = `${maxH}px`;
+    el.style.overflowY = 'auto';
+
+    const rect = el.getBoundingClientRect();
+    let { x, y } = state;
+    if (x + rect.width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - rect.width - 8);
+    if (y + rect.height > window.innerHeight - 8) {
+      y = Math.max(8, window.innerHeight - rect.height - 8);
+    }
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+  }, [state]);
+
+  const item = (label: string, onClick: () => void, danger?: boolean) => (
+    <button
+      type="button"
+      className={`ctx-item${danger ? ' danger' : ''}`}
+      onClick={() => {
+        onClose();
+        onClick();
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  const sep = (key: string) => <div key={key} className="ctx-sep" />;
+  const isMac = navigator.userAgent.includes('Mac');
+
+  if (isFolder && folderNode) {
+    const folderFiles = collectFolderFiles(folderNode);
+    return (
+      <div className="ctx-menu" ref={ref} role="menu">
+        {item('放弃文件夹下所有更改', () => onDiscardFolder?.(folderFiles), true)}
+        {item(
+          staged ? '取消暂存文件夹内更改' : '暂存文件夹内更改',
+          () => onToggleStageFolder?.(folderFiles, staged),
+        )}
+        {item('添加到 .gitignore', () =>
+          onAddToGitignore(folderNode.path.endsWith('/') ? folderNode.path : `${folderNode.path}/`),
+        )}
+        {sep('fs1')}
+        {item(isMac ? '在访达中显示' : '在资源管理器中显示', () => onShowInFolder(folderNode.path))}
+        {item('在资源管理器视图中显示', () => onRevealInExplorer(folderNode.path))}
+      </div>
+    );
+  }
+
+  if (!entry) return null;
+
+  return (
+    <div className="ctx-menu" ref={ref} role="menu">
+      {item('打开更改', () => onOpenDiff(entry, staged))}
+      {item('打开文件', () => onOpenFile(entry.path))}
+      {item('打开文件 (HEAD)', () => onOpenHeadFile(entry.path))}
+      {sep('s1')}
+      {item('放弃更改', () => onDiscard(entry.path), true)}
+      {item(staged ? '取消暂存更改' : '暂存更改', () => onToggleStage(entry, staged))}
+      {item('添加到 .gitignore', () => onAddToGitignore(entry.path))}
+      {sep('s2')}
+      {item(isMac ? '在访达中显示' : '在资源管理器中显示', () => onShowInFolder(entry.path))}
+      {item('在资源管理器视图中显示', () => onRevealInExplorer(entry.path))}
+      {sep('s3')}
+      {item('Git: View File History', () => onViewFileHistory(entry.path))}
     </div>
   );
 }
@@ -535,6 +1180,8 @@ export function GitPanel({
   onPreviewDiff,
   onDiscardPath,
   onOpenFile,
+  onViewFileHistory,
+  onRevealInExplorer,
   onShowToast,
 }: Props) {
   const [status, setStatus] = useState<GitStatusResult | null>(null);
@@ -545,14 +1192,37 @@ export function GitPanel({
   const [selectedCommitFiles, setSelectedCommitFiles] = useState<GitCommitFileChange[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
+  // Commit Hover Preview Card 状态
+  const [hoveredCommitInfo, setHoveredCommitInfo] = useState<{
+    commit: GitCommitEntry;
+    rect: DOMRect;
+  } | null>(null);
+  const [commitDetailsCache, setCommitDetailsCache] = useState<
+    Record<string, { stats?: GitCommitStats; body?: string }>
+  >({});
+  const [loadingPreviewHash, setLoadingPreviewHash] = useState<string | null>(null);
+  const [hoveredRowHash, setHoveredRowHash] = useState<string | null>(null);
+
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
+
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [displayMode, setDisplayMode] = useState<'list' | 'tree'>('list');
+  const [selectedStatusPath, setSelectedStatusPath] = useState<string | null>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showCommitDropdown, setShowCommitDropdown] = useState(false);
   const [graphHeight, setGraphHeight] = useState(320);
   const [isGraphCollapsed, setIsGraphCollapsed] = useState(false);
+  const [fileContextMenu, setFileContextMenu] = useState<GitContextMenuState | null>(null);
 
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const moreMenuBtnRef = useRef<HTMLButtonElement>(null);
@@ -681,6 +1351,9 @@ export function GitPanel({
   };
 
   const handleDiscard = async (target: string | string[]) => {
+    if (typeof target === 'string') {
+      setSelectedStatusPath(target);
+    }
     setBusy(true);
     try {
       if (onDiscardPath) {
@@ -735,6 +1408,15 @@ export function GitPanel({
       const detail = await window.ide.gitCommitDetails(hash);
       if (detail.ok) {
         setSelectedCommitFiles(detail.files);
+        if (detail.stats || detail.commit?.body) {
+          setCommitDetailsCache((prev) => ({
+            ...prev,
+            [hash]: {
+              stats: detail.stats,
+              body: detail.commit?.body,
+            },
+          }));
+        }
       } else {
         setSelectedCommitFiles([]);
       }
@@ -743,6 +1425,87 @@ export function GitPanel({
     } finally {
       setLoadingDetails(false);
     }
+  };
+
+  const handleRowMouseEnter = (commit: GitCommitEntry, el: HTMLElement) => {
+    setHoveredRowHash(commit.hash);
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+    }
+    hoverTimerRef.current = setTimeout(async () => {
+      const rect = el.getBoundingClientRect();
+      const cached = commitDetailsCache[commit.hash];
+      const enrichedCommit: GitCommitEntry = {
+        ...commit,
+        body: cached?.body || commit.body || commit.message,
+        stats: cached?.stats || commit.stats,
+      };
+      setHoveredCommitInfo({ commit: enrichedCommit, rect });
+
+      if (!cached?.stats && !commit.stats) {
+        setLoadingPreviewHash(commit.hash);
+        try {
+          const detail = await window.ide.gitCommitDetails(commit.hash);
+          if (detail.ok) {
+            const newStats = detail.stats || {
+              filesChanged: detail.files.length,
+              insertions: 0,
+              deletions: 0,
+            };
+            const newBody = detail.commit?.body || detail.commit?.message || commit.message;
+            setCommitDetailsCache((prev) => ({
+              ...prev,
+              [commit.hash]: { stats: newStats, body: newBody },
+            }));
+            setHoveredCommitInfo((current) => {
+              if (current && current.commit.hash === commit.hash) {
+                return {
+                  ...current,
+                  commit: {
+                    ...current.commit,
+                    body: newBody,
+                    stats: newStats,
+                  },
+                };
+              }
+              return current;
+            });
+          }
+        } catch {
+          // ignore
+        } finally {
+          setLoadingPreviewHash((cur) => (cur === commit.hash ? null : cur));
+        }
+      }
+    }, 200);
+  };
+
+  const handleRowMouseLeave = (commit: GitCommitEntry) => {
+    setHoveredRowHash((cur) => (cur === commit.hash ? null : cur));
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    closeTimerRef.current = setTimeout(() => {
+      setHoveredCommitInfo(null);
+    }, 180);
+  };
+
+  const handleCardMouseEnter = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  };
+
+  const handleCardMouseLeave = () => {
+    closeTimerRef.current = setTimeout(() => {
+      setHoveredCommitInfo(null);
+    }, 150);
   };
 
   const handlePreviewCommitFile = async (hash: string, filePath: string) => {
@@ -768,7 +1531,7 @@ export function GitPanel({
     const [st, br, hist] = await Promise.all([
       window.ide.gitStatus(),
       window.ide.gitBranches(),
-      window.ide.gitHistory(50),
+      window.ide.gitHistory(),
     ]);
 
     setStatus(st);
@@ -804,6 +1567,7 @@ export function GitPanel({
   };
 
   const preview = async (entry: GitStatusEntry, staged: boolean) => {
+    setSelectedStatusPath(entry.path);
     if (onOpenFile) {
       onOpenFile(entry.path);
     }
@@ -816,6 +1580,82 @@ export function GitPanel({
         modified: res.modified,
         description: `${staged ? 'Staged' : 'Working'} — ${entry.path}`,
       });
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, entry: GitStatusEntry, staged: boolean) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedStatusPath(entry.path);
+    setFileContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      entry,
+      isFolder: false,
+      staged,
+    });
+  };
+
+  const handleFolderContextMenu = (e: React.MouseEvent, node: GitTreeNode, staged: boolean) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedStatusPath(node.path);
+    setFileContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      folderNode: node,
+      isFolder: true,
+      staged,
+    });
+  };
+
+  const handleOpenHeadFile = async (path: string) => {
+    try {
+      const res = await window.ide.gitDiff(path, false);
+      if (res.ok) {
+        onPreviewDiff({
+          id: `head:${path}`,
+          path,
+          original: res.original,
+          modified: res.original,
+          description: `${path} (HEAD)`,
+        });
+      } else {
+        onShowToast?.(`无法读取 HEAD 版本: ${res.detail || '未知错误'}`);
+      }
+    } catch (err: any) {
+      onShowToast?.(`读取 HEAD 版本失败: ${err?.message || String(err)}`);
+    }
+  };
+
+  const handleAddToGitignore = async (relPath: string) => {
+    try {
+      let current = '';
+      try {
+        current = await window.ide.readFile('.gitignore');
+      } catch {
+        current = '';
+      }
+      const lines = current.split(/\r?\n/).map((l) => l.trim());
+      if (lines.includes(relPath)) {
+        onShowToast?.(`${relPath} 已存在于 .gitignore 中`);
+        return;
+      }
+      const updated = current.endsWith('\n') || current.length === 0 ? `${current}${relPath}\n` : `${current}\n${relPath}\n`;
+      await window.ide.writeFile('.gitignore', updated);
+      onShowToast?.(`已将 ${relPath} 添加到 .gitignore`);
+      void refresh();
+    } catch (err: any) {
+      onShowToast?.(`添加 .gitignore 失败: ${err?.message || String(err)}`);
+    }
+  };
+
+  const handleShowInNativeFolder = async (relPath: string) => {
+    try {
+      const absPath = await window.ide.resolveAbsolutePath(relPath);
+      await window.ide.showItemInFolder(absPath);
+    } catch (err: any) {
+      onShowToast?.(`在资源管理器中显示失败: ${err?.message || String(err)}`);
     }
   };
 
@@ -1009,16 +1849,9 @@ export function GitPanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
             type="button"
+            className={`panel-action-btn ${displayMode === 'tree' ? 'active' : ''}`}
             title={displayMode === 'list' ? '按树结构显示' : '按列表显示'}
             onClick={() => setDisplayMode((m) => (m === 'list' ? 'tree' : 'list'))}
-            style={{
-              padding: 4,
-              background: displayMode === 'tree' ? 'var(--bg-hover)' : 'transparent',
-              border: 'none',
-              color: displayMode === 'tree' ? 'var(--text)' : 'var(--muted)',
-              borderRadius: 4,
-              cursor: 'pointer',
-            }}
           >
             {displayMode === 'tree' ? (
               <svg
@@ -1055,19 +1888,13 @@ export function GitPanel({
           </button>
           <button
             type="button"
+            className="panel-action-btn"
             title="刷新"
             onClick={() => void refresh()}
-            style={{
-              padding: 4,
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--muted)',
-              cursor: 'pointer',
-            }}
           >
             <svg
-              width="16"
-              height="16"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -1080,18 +1907,11 @@ export function GitPanel({
           <button
             ref={moreMenuBtnRef}
             type="button"
+            className={`panel-action-btn ${showMoreMenu ? 'active' : ''}`}
             title="更多操作"
             onClick={() => setShowMoreMenu((v) => !v)}
-            style={{
-              padding: 4,
-              background: showMoreMenu ? 'var(--bg-hover)' : 'transparent',
-              border: 'none',
-              color: 'var(--muted)',
-              borderRadius: 4,
-              cursor: 'pointer',
-            }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
             </svg>
           </button>
@@ -1100,11 +1920,7 @@ export function GitPanel({
 
       {/* 2. More (...) Dropdown Context Menu matching screenshot */}
       {showMoreMenu && (
-        <div
-          ref={moreMenuRef}
-          onClick={() => setShowMoreMenu(false)}
-          className="git-more-menu"
-        >
+        <div ref={moreMenuRef} onClick={() => setShowMoreMenu(false)} className="git-more-menu">
           <div
             className="git-more-menu-item"
             onClick={() => setDisplayMode((m) => (m === 'tree' ? 'list' : 'tree'))}
@@ -1308,9 +2124,7 @@ export function GitPanel({
                 const res = await window.ide.gitStatus();
                 const detail = res.ok
                   ? `当前分支 ${res.branch || 'main'}，${
-                      res.entries.length
-                        ? `有 ${res.entries.length} 项变动`
-                        : '工作树干净 (Clean)'
+                      res.entries.length ? `有 ${res.entries.length} 项变动` : '工作树干净 (Clean)'
                     }`
                   : res.detail || '无法读取工作树状态';
                 return { ok: res.ok, detail };
@@ -1394,6 +2208,7 @@ export function GitPanel({
         <div style={{ display: 'flex', width: '100%', position: 'relative' }}>
           <button
             type="button"
+            className="git-commit-btn"
             style={{
               flex: 1,
               padding: '6px 12px',
@@ -1421,6 +2236,7 @@ export function GitPanel({
           <button
             ref={commitDropdownBtnRef}
             type="button"
+            className="git-commit-dropdown-btn"
             title="更多提交选项"
             onClick={() => setShowCommitDropdown((v) => !v)}
             style={{
@@ -1528,16 +2344,11 @@ export function GitPanel({
               <span>已暂存的更改 ({staged.length})</span>
               <button
                 type="button"
+                className="panel-text-btn"
+                title="取消暂存当前所有更改"
                 onClick={() =>
                   void runOp(() => window.ide.gitUnstage(staged.map((e: GitStatusEntry) => e.path)))
                 }
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--accent)',
-                  fontSize: 11,
-                  cursor: 'pointer',
-                }}
               >
                 取消暂存全部
               </button>
@@ -1548,44 +2359,29 @@ export function GitPanel({
                     key={node.path}
                     node={node}
                     staged={true}
+                    selectedPath={selectedStatusPath}
+                    onSelectPath={setSelectedStatusPath}
                     onPreview={(f) => void preview(f, true)}
-                    onDiscard={() => {}}
+                    onDiscard={(p) => void handleDiscard(p)}
+                    onUnstage={(p) => void runOp(() => window.ide.gitUnstage([p]))}
+                    onOpenFile={onOpenFile}
+                    onContextMenu={handleContextMenu}
+                    onFolderContextMenu={handleFolderContextMenu}
                   />
                 ))
               : staged.map((f: GitStatusEntry) => (
-                  <div
+                  <GitFileListItemView
                     key={f.path}
-                    onClick={() => void preview(f, true)}
-                    style={{
-                      height: 24,
-                      padding: '0 12px 0 20px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      fontSize: 12,
-                      cursor: 'pointer',
-                      boxSizing: 'border-box',
-                    }}
-                    className="search-result-item"
-                  >
-                    <RenderFileTreeIcon
-                      name={f.path.split('/').pop() || f.path}
-                      isDirectory={false}
-                    />
-                    <span
-                      style={{
-                        flex: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {f.path}
-                    </span>
-                    <span style={{ color: '#4caf50', fontSize: 11, fontWeight: 'bold' }}>
-                      {statusLabel(f)}
-                    </span>
-                  </div>
+                    entry={f}
+                    staged={true}
+                    selectedPath={selectedStatusPath}
+                    onSelectPath={setSelectedStatusPath}
+                    onPreview={(entry, s) => void preview(entry, s)}
+                    onDiscard={(p) => void handleDiscard(p)}
+                    onUnstage={(p) => void runOp(() => window.ide.gitUnstage([p]))}
+                    onOpenFile={onOpenFile}
+                    onContextMenu={handleContextMenu}
+                  />
                 ))}
           </div>
         )}
@@ -1611,23 +2407,11 @@ export function GitPanel({
                   type="button"
                   title="放弃所有更改"
                   onClick={() => void handleDiscard(working.map((e: GitStatusEntry) => e.path))}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--muted)',
-                    fontSize: 11,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    padding: 4,
-                    borderRadius: 4,
-                  }}
-                  className="icon-btn"
+                  className="panel-action-btn"
                 >
                   <svg
-                    width="16"
-                    height="16"
+                    width="15"
+                    height="15"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -1639,18 +2423,13 @@ export function GitPanel({
                 </button>
                 <button
                   type="button"
+                  className="panel-text-btn"
+                  title="暂存当前所有更改"
                   onClick={() =>
                     void runOp(() =>
                       window.ide.gitStage(working.map((e: GitStatusEntry) => e.path)),
                     )
                   }
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--accent)',
-                    fontSize: 11,
-                    cursor: 'pointer',
-                  }}
                 >
                   暂存全部
                 </button>
@@ -1663,75 +2442,29 @@ export function GitPanel({
                     key={node.path}
                     node={node}
                     staged={false}
+                    selectedPath={selectedStatusPath}
+                    onSelectPath={setSelectedStatusPath}
                     onPreview={(f) => void preview(f, false)}
-                    onDiscard={(p) => handleDiscard(p)}
+                    onDiscard={(p) => void handleDiscard(p)}
+                    onStage={(p) => void runOp(() => window.ide.gitStage([p]))}
+                    onOpenFile={onOpenFile}
+                    onContextMenu={handleContextMenu}
+                    onFolderContextMenu={handleFolderContextMenu}
                   />
                 ))
               : working.map((f: GitStatusEntry) => (
-                  <div
+                  <GitFileListItemView
                     key={f.path}
-                    onClick={() => void preview(f, false)}
-                    style={{
-                      height: 24,
-                      padding: '0 12px 0 20px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      fontSize: 12,
-                      cursor: 'pointer',
-                      boxSizing: 'border-box',
-                    }}
-                    className="search-result-item"
-                  >
-                    <RenderFileTreeIcon
-                      name={f.path.split('/').pop() || f.path}
-                      isDirectory={false}
-                    />
-                    <span
-                      style={{
-                        flex: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {f.path}
-                    </span>
-                    <span style={{ color: '#e5a54b', fontSize: 11, fontWeight: 'bold' }}>
-                      {statusLabel(f)}
-                    </span>
-                    <button
-                      type="button"
-                      title="放弃更改"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDiscard(f.path);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--muted)',
-                        cursor: 'pointer',
-                        padding: 4,
-                        borderRadius: 4,
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      className="icon-btn"
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                      >
-                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                        <path d="M3 3v5h5" />
-                      </svg>
-                    </button>
-                  </div>
+                    entry={f}
+                    staged={false}
+                    selectedPath={selectedStatusPath}
+                    onSelectPath={setSelectedStatusPath}
+                    onPreview={(entry, s) => void preview(entry, s)}
+                    onDiscard={(p) => void handleDiscard(p)}
+                    onStage={(p) => void runOp(() => window.ide.gitStage([p]))}
+                    onOpenFile={onOpenFile}
+                    onContextMenu={handleContextMenu}
+                  />
                 ))}
           </div>
         )}
@@ -1757,23 +2490,11 @@ export function GitPanel({
                   type="button"
                   title="放弃所有未跟踪更改"
                   onClick={() => void handleDiscard(untracked.map((e: GitStatusEntry) => e.path))}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--muted)',
-                    fontSize: 11,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    padding: 4,
-                    borderRadius: 4,
-                  }}
-                  className="icon-btn"
+                  className="panel-action-btn"
                 >
                   <svg
-                    width="16"
-                    height="16"
+                    width="15"
+                    height="15"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -1785,18 +2506,13 @@ export function GitPanel({
                 </button>
                 <button
                   type="button"
+                  className="panel-text-btn"
+                  title="暂存所有未跟踪文件"
                   onClick={() =>
                     void runOp(() =>
                       window.ide.gitStage(untracked.map((e: GitStatusEntry) => e.path)),
                     )
                   }
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--accent)',
-                    fontSize: 11,
-                    cursor: 'pointer',
-                  }}
                 >
                   暂存全部
                 </button>
@@ -1809,73 +2525,29 @@ export function GitPanel({
                     key={node.path}
                     node={node}
                     staged={false}
+                    selectedPath={selectedStatusPath}
+                    onSelectPath={setSelectedStatusPath}
                     onPreview={(f) => void preview(f, false)}
-                    onDiscard={(p) => handleDiscard(p)}
+                    onDiscard={(p) => void handleDiscard(p)}
+                    onStage={(p) => void runOp(() => window.ide.gitStage([p]))}
+                    onOpenFile={onOpenFile}
+                    onContextMenu={handleContextMenu}
+                    onFolderContextMenu={handleFolderContextMenu}
                   />
                 ))
               : untracked.map((f: GitStatusEntry) => (
-                  <div
+                  <GitFileListItemView
                     key={f.path}
-                    onClick={() => void preview(f, false)}
-                    style={{
-                      height: 24,
-                      padding: '0 12px 0 20px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      fontSize: 12,
-                      cursor: 'pointer',
-                      boxSizing: 'border-box',
-                    }}
-                    className="search-result-item"
-                  >
-                    <RenderFileTreeIcon
-                      name={f.path.split('/').pop() || f.path}
-                      isDirectory={false}
-                    />
-                    <span
-                      style={{
-                        flex: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {f.path}
-                    </span>
-                    <span style={{ color: '#888', fontSize: 11, fontWeight: 'bold' }}>U</span>
-                    <button
-                      type="button"
-                      title="放弃更改"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDiscard(f.path);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--muted)',
-                        cursor: 'pointer',
-                        padding: 4,
-                        borderRadius: 4,
-                        display: 'flex',
-                        alignItems: 'center',
-                      }}
-                      className="icon-btn"
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                      >
-                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                        <path d="M3 3v5h5" />
-                      </svg>
-                    </button>
-                  </div>
+                    entry={f}
+                    staged={false}
+                    selectedPath={selectedStatusPath}
+                    onSelectPath={setSelectedStatusPath}
+                    onPreview={(entry, s) => void preview(entry, s)}
+                    onDiscard={(p) => void handleDiscard(p)}
+                    onStage={(p) => void runOp(() => window.ide.gitStage([p]))}
+                    onOpenFile={onOpenFile}
+                    onContextMenu={handleContextMenu}
+                  />
                 ))}
           </div>
         )}
@@ -1904,7 +2576,7 @@ export function GitPanel({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '4px 12px',
+            padding: '4px 10px',
             background: 'rgba(255, 255, 255, 0.02)',
             borderBottom: '1px solid var(--border)',
             fontSize: 11,
@@ -1920,63 +2592,154 @@ export function GitPanel({
             <span className="chevron" style={{ fontSize: 11, color: 'var(--muted)', width: 10 }}>
               {isGraphCollapsed ? '›' : '▾'}
             </span>
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Git 提交历史 / 图形</span>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>图形</span>
             <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
               ({commits.length})
             </span>
           </div>
           <div
-            style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <span
+            {/* 自动状态指示 */}
+            <button
+              type="button"
+              className="panel-action-btn active"
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 2,
-                cursor: 'pointer',
-                color: 'var(--accent)',
+                height: 20,
+                padding: '1px 6px',
+                fontSize: 11,
+                display: 'inline-flex',
+                gap: 3,
+                color: 'var(--accent, #58a6ff)',
+                fontWeight: 500,
               }}
+              title="自动同步状态"
+              onClick={() => void refresh()}
             >
               <svg
-                width="12"
-                height="12"
+                width="11"
+                height="11"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
               >
-                <circle cx="12" cy="12" r="3" />
-                <line x1="3" y1="12" x2="9" y2="12" />
-                <line x1="15" y1="12" x2="21" y2="12" />
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2m0 16v2M2 12h2m16 0h2" />
               </svg>
               自动
-            </span>
+            </button>
+
+            {/* 聚焦 HEAD 图标 */}
+            <button
+              type="button"
+              onClick={() => {
+                onShowToast?.('聚焦当前分支', `当前分支: ${status?.branch || 'HEAD'}`, 'info');
+              }}
+              title="聚焦当前分支"
+              className="panel-action-btn"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+              </svg>
+            </button>
+
+            {/* 新建/切换分支图标 */}
+            <button
+              type="button"
+              onClick={() =>
+                void runGitAction('新建分支', async () => {
+                  const b = prompt('请输入新分支名称:');
+                  if (!b?.trim()) return { ok: false, detail: '取消输入' };
+                  return window.ide.gitCreateBranch(b.trim(), true);
+                })
+              }
+              title="新建分支"
+              className="panel-action-btn"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="6" y1="3" x2="6" y2="15" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <path d="M18 9a9 9 0 0 1-9 9" />
+              </svg>
+            </button>
+
+            {/* 同步 / 拉取图标 */}
+            <button
+              type="button"
+              onClick={() => void runGitAction('拉取更改 (Pull)', () => window.ide.gitPull())}
+              title="拉取与同步 (Pull)"
+              className="panel-action-btn"
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M7 16V4m0 0L3 8m4-4l4 4" />
+                <path d="M17 8v12m0 0l4-4m-4 4l-4-4" />
+              </svg>
+            </button>
+
+            {/* 刷新图谱图标 */}
             <button
               type="button"
               onClick={() => void refresh()}
               title="刷新提交图谱"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                padding: 0,
-                margin: 0,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                color: 'inherit',
-              }}
+              className="panel-action-btn"
             >
               <svg
-                width="14"
-                height="14"
+                width="13"
+                height="13"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="1.5"
+                strokeWidth="2"
               >
                 <polyline points="23 4 23 10 17 10" />
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+            </button>
+
+            {/* 更多操作图标 */}
+            <button
+              type="button"
+              ref={moreMenuBtnRef}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMoreMenu((v) => !v);
+              }}
+              title="更多操作..."
+              className={`panel-action-btn ${showMoreMenu ? 'active' : ''}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="19" cy="12" r="2" />
               </svg>
             </button>
           </div>
@@ -1984,6 +2747,9 @@ export function GitPanel({
 
         {!isGraphCollapsed && (
           <div
+            onScroll={() => {
+              if (hoveredCommitInfo) setHoveredCommitInfo(null);
+            }}
             style={{
               flex: 1,
               overflowY: 'auto',
@@ -1991,25 +2757,34 @@ export function GitPanel({
               fontSize: 12,
               display: 'flex',
               flexDirection: 'column',
+              position: 'relative',
             }}
           >
             {commits.length > 0 ? (
               commits.map((c, i) => {
                 const isSelected = selectedCommitHash === c.hash;
+                const isHovered = hoveredRowHash === c.hash;
                 const isHead = i === 0;
 
                 return (
                   <div key={c.hash} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                     <div
                       onClick={() => void handleSelectCommit(c.hash)}
+                      onMouseEnter={(e) => handleRowMouseEnter(c, e.currentTarget)}
+                      onMouseLeave={() => handleRowMouseLeave(c)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         height: 26,
                         cursor: 'pointer',
-                        background: isSelected ? 'var(--bg-hover)' : 'transparent',
+                        background: isSelected
+                          ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))'
+                          : isHovered
+                            ? 'rgba(255, 255, 255, 0.04)'
+                            : 'transparent',
                         userSelect: 'none',
                         paddingRight: 10,
+                        transition: 'background 0.1s ease',
                       }}
                       className="search-result-item"
                     >
@@ -2019,19 +2794,20 @@ export function GitPanel({
                         commit={c}
                         analysis={graphAnalysis}
                         totalRowHeight={26}
+                        isSelected={isSelected}
                       />
 
                       {/* Commit Message */}
                       <span
-                        title={c.message}
                         style={{
-                          color: 'var(--text)',
+                          color: isSelected ? 'var(--text-bright, #fff)' : 'var(--text)',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           flex: 1,
                           whiteSpace: 'nowrap',
                           fontSize: 12,
-                          marginLeft: 6,
+                          marginLeft: 4,
+                          letterSpacing: '0.1px',
                         }}
                       >
                         {c.message}
@@ -2055,6 +2831,40 @@ export function GitPanel({
                         </span>
                       )}
 
+                      {/* 悬停/选中时显示的快速查看变更图标小按钮 */}
+                      {(isHovered || isSelected) && (
+                        <button
+                          type="button"
+                          title="查看文件变更明细"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleSelectCommit(c.hash);
+                          }}
+                          className="panel-action-btn"
+                          style={{
+                            margin: '0 4px',
+                            minWidth: 20,
+                            height: 20,
+                            padding: 2,
+                          }}
+                        >
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                          >
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <line x1="16" y1="13" x2="8" y2="13" />
+                            <line x1="16" y1="17" x2="8" y2="17" />
+                            <line x1="10" y1="9" x2="8" y2="9" />
+                          </svg>
+                        </button>
+                      )}
+
                       {/* Author */}
                       <span
                         style={{
@@ -2063,25 +2873,13 @@ export function GitPanel({
                           whiteSpace: 'nowrap',
                           marginLeft: 8,
                           opacity: 0.85,
+                          maxWidth: 90,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
                         }}
                       >
                         {c.author}
                       </span>
-
-                      {/* Relative Date */}
-                      {c.relativeDate && (
-                        <span
-                          style={{
-                            color: 'var(--muted)',
-                            fontSize: 10,
-                            whiteSpace: 'nowrap',
-                            marginLeft: 8,
-                            opacity: 0.6,
-                          }}
-                        >
-                          {c.relativeDate}
-                        </span>
-                      )}
                     </div>
 
                     {/* Expandable File Changes Detail for Selected Commit */}
@@ -2102,7 +2900,8 @@ export function GitPanel({
                             flex: 1,
                             minWidth: 0,
                             margin: '4px 8px 8px 4px',
-                            background: 'color-mix(in srgb, var(--bg-elevated, #222) 80%, transparent)',
+                            background:
+                              'color-mix(in srgb, var(--bg-elevated, #222) 80%, transparent)',
                             border: '1px solid var(--border, rgba(255, 255, 255, 0.08))',
                             borderRadius: 6,
                             overflow: 'hidden',
@@ -2279,7 +3078,8 @@ export function GitPanel({
                       仓库已初始化，暂无提交记录
                     </div>
                     <div style={{ fontSize: 11, lineHeight: 1.5, opacity: 0.8, maxWidth: 260 }}>
-                      当前分支尚未创建任何 commit。完成首次提交后，此处将自动展示完整的 Git 提交历史与分支图谱。
+                      当前分支尚未创建任何 commit。完成首次提交后，此处将自动展示完整的 Git
+                      提交历史与分支图谱。
                     </div>
                   </>
                 ) : historyResult && !historyResult.ok && historyResult.detail ? (
@@ -2311,6 +3111,56 @@ export function GitPanel({
           </div>
         )}
       </div>
+
+      {/* Commit Floating Hover Preview Popover */}
+      {hoveredCommitInfo && (
+        <GitCommitPreviewCard
+          commit={hoveredCommitInfo.commit}
+          stats={
+            commitDetailsCache[hoveredCommitInfo.commit.hash]?.stats ||
+            hoveredCommitInfo.commit.stats
+          }
+          loadingStats={loadingPreviewHash === hoveredCommitInfo.commit.hash}
+          targetRect={hoveredCommitInfo.rect}
+          onMouseEnter={handleCardMouseEnter}
+          onMouseLeave={handleCardMouseLeave}
+          onSelectCommit={(hash) => void handleSelectCommit(hash)}
+          onCopyHash={(hash) => {
+            onShowToast?.('已复制提交哈希', hash.slice(0, 8), 'success');
+          }}
+        />
+      )}
+
+      {/* File Context Menu */}
+      {fileContextMenu && (
+        <GitFileContextMenu
+          state={fileContextMenu}
+          onClose={() => setFileContextMenu(null)}
+          onOpenDiff={(entry, staged) => void preview(entry, staged)}
+          onOpenFile={(p) => onOpenFile?.(p)}
+          onOpenHeadFile={(p) => void handleOpenHeadFile(p)}
+          onDiscard={(p) => void handleDiscard(p)}
+          onDiscardFolder={(paths) => void handleDiscard(paths)}
+          onToggleStage={(entry, staged) => {
+            if (staged) {
+              void runOp(() => window.ide.gitUnstage([entry.path]));
+            } else {
+              void runOp(() => window.ide.gitStage([entry.path]));
+            }
+          }}
+          onToggleStageFolder={(paths, isStaged) => {
+            if (isStaged) {
+              void runOp(() => window.ide.gitUnstage(paths));
+            } else {
+              void runOp(() => window.ide.gitStage(paths));
+            }
+          }}
+          onAddToGitignore={(p) => void handleAddToGitignore(p)}
+          onShowInFolder={(p) => void handleShowInNativeFolder(p)}
+          onRevealInExplorer={(p) => onRevealInExplorer?.(p)}
+          onViewFileHistory={(p) => onViewFileHistory?.(p)}
+        />
+      )}
     </div>
   );
 }
