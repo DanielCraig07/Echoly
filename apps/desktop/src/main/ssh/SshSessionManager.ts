@@ -191,12 +191,40 @@ export class SftpBackend implements WorkspaceBackend {
     const abs = this.resolve(relPath);
     const dir = abs.includes('/') ? abs.slice(0, abs.lastIndexOf('/')) || '/' : '/';
     await this.mkdirp(dir);
+
+    // 1. 获取原文件权限位（若存在）
+    let origMode: number | undefined;
+    try {
+      const stats = await new Promise<any>((resolve, reject) => {
+        this.sftp.stat(abs, (err, st) => (err ? reject(err) : resolve(st)));
+      });
+      if (stats && typeof stats.mode === 'number') {
+        origMode = stats.mode & 0o7777;
+      }
+    } catch {
+      // 原文件不存在，保持 undefined
+    }
+
+    const targetMode = origMode !== undefined ? origMode : 0o644;
+
     await new Promise<void>((resolve, reject) => {
-      const stream = this.sftp.createWriteStream(abs);
+      // 显式指定 mode，避免 ssh2 默认使用 0o666 并执行 fchmod(handle, 0o666)
+      const stream = this.sftp.createWriteStream(abs, { mode: targetMode });
       stream.on('error', reject);
       stream.on('close', () => resolve());
       stream.end(content, 'utf8');
     });
+
+    // 某些 SFTP 服务端写入后可能受 umask 影响，显式 chmod 确保保留原有权限位
+    if (origMode !== undefined) {
+      try {
+        await new Promise<void>((resolve) => {
+          this.sftp.chmod(abs, origMode, () => resolve());
+        });
+      } catch {
+        // 忽略可能由于所有权导致的 chmod 报错
+      }
+    }
   }
 
   resolveAbsolute(relPath = '.'): string {
@@ -289,18 +317,55 @@ export class SftpBackend implements WorkspaceBackend {
   private async copyFile(fromAbs: string, toAbs: string): Promise<void> {
     const dir = toAbs.includes('/') ? toAbs.slice(0, toAbs.lastIndexOf('/')) || '/' : '/';
     await this.mkdirp(dir);
+
+    let origMode: number | undefined;
+    try {
+      const stats = await new Promise<any>((resolve, reject) => {
+        this.sftp.stat(fromAbs, (err, st) => (err ? reject(err) : resolve(st)));
+      });
+      if (stats && typeof stats.mode === 'number') {
+        origMode = stats.mode & 0o7777;
+      }
+    } catch {}
+
+    const targetMode = origMode !== undefined ? origMode : 0o644;
+
     await new Promise<void>((resolve, reject) => {
       const read = this.sftp.createReadStream(fromAbs);
-      const write = this.sftp.createWriteStream(toAbs);
+      const write = this.sftp.createWriteStream(toAbs, { mode: targetMode });
       read.on('error', reject);
       write.on('error', reject);
       write.on('close', () => resolve());
       read.pipe(write);
     });
+
+    if (origMode !== undefined) {
+      try {
+        await new Promise<void>((resolve) => {
+          this.sftp.chmod(toAbs, origMode, () => resolve());
+        });
+      } catch {}
+    }
   }
 
   private async copyDirRecursive(fromAbs: string, toAbs: string): Promise<void> {
+    let dirMode = 0o755;
+    try {
+      const st = await new Promise<any>((resolve, reject) => {
+        this.sftp.stat(fromAbs, (err, s) => (err ? reject(err) : resolve(s)));
+      });
+      if (st && typeof st.mode === 'number') {
+        dirMode = st.mode & 0o7777;
+      }
+    } catch {}
+
     await this.mkdirp(toAbs);
+    try {
+      await new Promise<void>((resolve) => {
+        this.sftp.chmod(toAbs, dirMode, () => resolve());
+      });
+    } catch {}
+
     const list = await new Promise<Array<{ filename: string; isDirectory: boolean }>>(
       (resolve, reject) => {
         this.sftp.readdir(fromAbs, (err, entries) => {
@@ -332,7 +397,7 @@ export class SftpBackend implements WorkspaceBackend {
     for (const p of parts) {
       cur += `/${p}`;
       await new Promise<void>((resolve) => {
-        this.sftp.mkdir(cur, (err) => {
+        this.sftp.mkdir(cur, { mode: 0o755 }, (err) => {
           // ignore exists
           void err;
           resolve();

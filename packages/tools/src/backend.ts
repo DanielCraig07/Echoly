@@ -45,7 +45,13 @@ export interface WorkspaceBackend {
 }
 
 async function copyDirLocal(src: string, dest: string): Promise<void> {
-  await fs.mkdir(dest, { recursive: true });
+  const srcStat = await fs.stat(src);
+  await fs.mkdir(dest, { recursive: true, mode: 0o755 });
+  if (process.platform !== 'win32') {
+    try {
+      await fs.chmod(dest, srcStat.mode & 0o7777);
+    } catch {}
+  }
   const entries = await fs.readdir(src, { withFileTypes: true });
   for (const entry of entries) {
     const from = path.join(src, entry.name);
@@ -54,6 +60,12 @@ async function copyDirLocal(src: string, dest: string): Promise<void> {
       await copyDirLocal(from, to);
     } else {
       await fs.copyFile(from, to);
+      if (process.platform !== 'win32') {
+        try {
+          const st = await fs.stat(from);
+          await fs.chmod(to, st.mode & 0o7777);
+        } catch {}
+      }
     }
   }
 }
@@ -139,11 +151,24 @@ export class LocalFsBackend implements WorkspaceBackend {
   async writeFile(relPath: string, content: string): Promise<void> {
     const abs = this.resolve(relPath);
     await ensureParentDir(abs);
-    await fs.writeFile(abs, content, 'utf8');
+    let origMode: number | undefined;
+    try {
+      const st = await fs.stat(abs);
+      origMode = st.mode;
+    } catch {}
+    await fs.writeFile(abs, content, {
+      encoding: 'utf8',
+      mode: origMode !== undefined ? origMode & 0o7777 : 0o644,
+    });
+    if (origMode !== undefined && process.platform !== 'win32') {
+      try {
+        await fs.chmod(abs, origMode & 0o7777);
+      } catch {}
+    }
   }
 
   async mkdir(relPath: string): Promise<void> {
-    await fs.mkdir(this.resolve(relPath), { recursive: true });
+    await fs.mkdir(this.resolve(relPath), { recursive: true, mode: 0o755 });
   }
 
   async rename(fromRel: string, toRel: string): Promise<void> {
@@ -166,6 +191,11 @@ export class LocalFsBackend implements WorkspaceBackend {
       await copyDirLocal(from, to);
     } else {
       await fs.copyFile(from, to);
+      if (process.platform !== 'win32') {
+        try {
+          await fs.chmod(to, stat.mode & 0o7777);
+        } catch {}
+      }
     }
   }
 

@@ -521,6 +521,28 @@ export class GitService {
 
     // 1. 处理已跟踪文件的还原
     for (const filePath of tracked) {
+      // 记录还原前工作区文件的实际权限位（如果在磁盘上存在）
+      let preMode: number | undefined;
+      if (this.workspace.getKind() === 'ssh' && this.ssh) {
+        try {
+          const absPath = this.workspace.resolveAbsolute(filePath);
+          const statRes = await this.ssh.runCommand(
+            `stat -c '%a' '${absPath.replace(/'/g, "'\\''")}' 2>/dev/null || stat -f '%Lp' '${absPath.replace(/'/g, "'\\''")}' 2>/dev/null`,
+          );
+          if (statRes.code === 0 && statRes.stdout.trim()) {
+            preMode = parseInt(statRes.stdout.trim(), 8);
+          }
+        } catch {}
+      } else if (process.platform !== 'win32') {
+        try {
+          const fsModule = await import('fs/promises');
+          const pathModule = await import('path');
+          const absPath = pathModule.resolve(root, filePath);
+          const st = await fsModule.stat(absPath);
+          preMode = st.mode & 0o7777;
+        } catch {}
+      }
+
       // a. 从暂存区重置
       await this.runGit(['reset', 'HEAD', '--', filePath], root);
       // b. 强制检出 HEAD 内容覆盖工作区
@@ -530,38 +552,63 @@ export class GitService {
         await this.runGit(['restore', '--staged', '--worktree', '--', filePath], root);
       }
 
-      // c. 权限位 (File Mode) 纠正：
-      // 在 Linux / SSH 模式下，文件权限（如 100755 vs 100644）若不一致会导致永久显示 M
+      // c. 权限位 (File Mode) 纠偏与保留：
+      // 绝对不要对目录操作，且绝不能抹杀原有可执行权限
       try {
         const lsTree = await this.runGit(['ls-tree', 'HEAD', '--', filePath], root);
         if (lsTree.code === 0 && lsTree.stdout.trim()) {
-          // 只对普通文件（100644 / 100755 blob）纠正权限位。
-          // 目录在 ls-tree 里是「040000 tree」、符号链接是「120000 blob」——若一并按 644 处理，
-          // 目录会被去掉 x 位变成 drw-r--r--，导致该目录再也无法进入/打开。
+          // 只对普通文件（100644 / 100755 blob）纠偏/恢复权限位。
+          // 目录在 ls-tree 里是「040000 tree」、符号链接是「120000 blob」——一律跳过。
           const modeMatch = lsTree.stdout.trim().match(/^(\d{6})\s+(\w+)\s/);
           const expectedMode = modeMatch?.[1] ?? '';
           const expectedType = modeMatch?.[2] ?? '';
           const isPlainFile =
             expectedType === 'blob' && (expectedMode === '100644' || expectedMode === '100755');
           if (isPlainFile) {
-            const isExecutable = expectedMode === '100755';
-            const chmodNum = isExecutable ? '755' : '644';
-            if (this.workspace.getKind() === 'ssh' && this.ssh) {
-              await this.ssh.runCommand(`chmod ${chmodNum} '${filePath.replace(/'/g, "'\\''")}'`);
-            } else if (process.platform !== 'win32') {
-              try {
-                const fsModule = await import('fs/promises');
-                const pathModule = await import('path');
-                const absPath = pathModule.resolve(root, filePath);
-                await fsModule.chmod(absPath, isExecutable ? 0o755 : 0o644);
-              } catch {
-                // ignore local chmod failures
+            const isGitExecutable = expectedMode === '100755';
+            const wasDiskExecutable = preMode !== undefined && (preMode & 0o111) !== 0;
+
+            if (isGitExecutable) {
+              // Git HEAD 规定该文件为可执行文件 (100755)
+              if (this.workspace.getKind() === 'ssh' && this.ssh) {
+                await this.ssh.runCommand(`chmod 755 '${filePath.replace(/'/g, "'\\''")}'`);
+              } else if (process.platform !== 'win32') {
+                try {
+                  const fsModule = await import('fs/promises');
+                  const pathModule = await import('path');
+                  const absPath = pathModule.resolve(root, filePath);
+                  await fsModule.chmod(absPath, 0o755);
+                } catch {}
               }
+              await this.runGit(['update-index', '--chmod=+x', filePath], root);
+            } else if (wasDiskExecutable && preMode !== undefined) {
+              // 磁盘原本带可执行权限位（如自定义脚本或配置），保留原有权限位，绝不强行降级为 644
+              const chmodOctal = (preMode & 0o7777).toString(8);
+              if (this.workspace.getKind() === 'ssh' && this.ssh) {
+                await this.ssh.runCommand(`chmod ${chmodOctal} '${filePath.replace(/'/g, "'\\''")}'`);
+              } else if (process.platform !== 'win32') {
+                try {
+                  const fsModule = await import('fs/promises');
+                  const pathModule = await import('path');
+                  const absPath = pathModule.resolve(root, filePath);
+                  await fsModule.chmod(absPath, preMode & 0o7777);
+                } catch {}
+              }
+            } else if (preMode !== undefined) {
+              // 普通非可执行文件，恢复 preMode 原有权限位
+              const chmodOctal = (preMode & 0o7777).toString(8);
+              if (this.workspace.getKind() === 'ssh' && this.ssh) {
+                await this.ssh.runCommand(`chmod ${chmodOctal} '${filePath.replace(/'/g, "'\\''")}'`);
+              } else if (process.platform !== 'win32') {
+                try {
+                  const fsModule = await import('fs/promises');
+                  const pathModule = await import('path');
+                  const absPath = pathModule.resolve(root, filePath);
+                  await fsModule.chmod(absPath, preMode & 0o7777);
+                } catch {}
+              }
+              await this.runGit(['update-index', '--chmod=-x', filePath], root);
             }
-            await this.runGit(
-              ['update-index', isExecutable ? '--chmod=+x' : '--chmod=-x', filePath],
-              root,
-            );
           }
         }
       } catch {

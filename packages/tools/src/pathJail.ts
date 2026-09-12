@@ -26,7 +26,7 @@ export function toPosixRel(workspaceRoot: string, absPath: string): string {
 }
 
 export async function ensureParentDir(filePath: string): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o755 });
 }
 
 export function pathExists(p: string): boolean {
