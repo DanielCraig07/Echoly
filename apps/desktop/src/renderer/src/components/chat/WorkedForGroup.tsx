@@ -127,33 +127,33 @@ function InOutExecutionBox({
 
   return (
     <div className="tool-inout-box">
-      {/* ─── IN 区域（点击可展开/折叠全部输入） ─── */}
-      <div
-        className={`tool-inout-row has-border${inCanToggle ? ' is-clickable' : ''}`}
-        onClick={() => {
-          if (inCanToggle) setInExpanded((prev) => !prev);
-        }}
-        title={inCanToggle ? (inExpanded ? '点击收起输入参数' : '点击展开查看全部输入参数') : undefined}
-      >
-        <span className="tool-inout-tag">IN</span>
+      {/* ─── IN 区域（点击可展开/折叠全部输入）；无输入参数时整行隐藏，不再显示 IN 标签 ─── */}
+      {inTrimmed && (
         <div
-          className={`tool-inout-content${
-            !inExpanded && inCanToggle ? ' collapsed-single' : ''
-          }`}
+          className={`tool-inout-row has-border${inCanToggle ? ' is-clickable' : ''}`}
+          onClick={() => {
+            if (inCanToggle) setInExpanded((prev) => !prev);
+          }}
+          title={inCanToggle ? (inExpanded ? '点击收起输入参数' : '点击展开查看全部输入参数') : undefined}
         >
-          {inTrimmed || '(无输入参数)'}
-        </div>
-        <div className="tool-inout-actions" onClick={(e) => e.stopPropagation()}>
-          {inCanToggle && (
-            <button
-              type="button"
-              className="tool-inout-toggle-btn"
-              onClick={() => setInExpanded((prev) => !prev)}
-            >
-              {inExpanded ? '▴ 收起' : '▾ 展开'}
-            </button>
-          )}
-          {inTrimmed && (
+          <span className="tool-inout-tag">IN</span>
+          <div
+            className={`tool-inout-content${
+              !inExpanded && inCanToggle ? ' collapsed-single' : ''
+            }`}
+          >
+            {inTrimmed}
+          </div>
+          <div className="tool-inout-actions" onClick={(e) => e.stopPropagation()}>
+            {inCanToggle && (
+              <button
+                type="button"
+                className="tool-inout-toggle-btn"
+                onClick={() => setInExpanded((prev) => !prev)}
+              >
+                {inExpanded ? '▴ 收起' : '▾ 展开'}
+              </button>
+            )}
             <button
               type="button"
               className="tool-inout-copy-btn"
@@ -162,9 +162,9 @@ function InOutExecutionBox({
             >
               {copiedIn ? '已复制' : '复制'}
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ─── OUT 区域（优化结构：头部状态/操作栏 + 独立代码输出块） ─── */}
       <div className="tool-inout-section">

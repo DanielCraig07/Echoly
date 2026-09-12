@@ -2894,7 +2894,7 @@ export function App() {
         >
           {toasts.map((t) => {
             const cleanTitle = t.title.replace(
-              /^([✓✕⚠️ℹ️⚡⚙️×]|(\u2713|\u2715|\u26a0|\u2139))\s*/u,
+              /^[\u2713\u2715\u26a0\u2139\u26a1\u2699\u00d7]\uFE0F?\s*/u,
               '',
             );
             const isLong = (t.detail && t.detail.length > 40) || cleanTitle.length > 25;

@@ -541,7 +541,7 @@ monaco.languages.setMonarchTokensProvider('groovy', {
 
   operators: ['=', '>', '<', '!', '~', '?', ':', '==', '<=', '>=', '!=', '&&', '||', '++', '--', '+', '-', '*', '/', '&', '|', '^', '%', '<<', '>>', '>>>', '+=', '-=', '*=', '/=', '&=', '|=', '^=', '%=', '<<=', '>>=', '>>>=', '->', '::', '?.', '**'],
 
-  symbols: /[=><!~?:&|+\-*\/\^%]+/,
+  symbols: /[=><!~?:&|+\-*^%/]+/,
   escapes: /\\(?:[abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
 
   tokenizer: {
@@ -562,7 +562,7 @@ monaco.languages.setMonarchTokensProvider('groovy', {
       { include: '@whitespace' },
 
       // Delimiters
-      [/[{}()\[\]]/, '@brackets'],
+      [/[{}()[\]]/, '@brackets'],
       [/[<>](?!@symbols)/, '@brackets'],
       [/@symbols/, {
         cases: {
@@ -575,7 +575,7 @@ monaco.languages.setMonarchTokensProvider('groovy', {
       [/@[a-zA-Z_$][\w$]*/, 'annotation'],
 
       // Numbers
-      [/\d*\.\d+([eE][\-+]?\d+)?[fFdD]?/, 'number.float'],
+      [/\d*\.\d+([eE][-+]?\d+)?[fFdD]?/, 'number.float'],
       [/0[xX][0-9a-fA-F_]+[lL]?/, 'number.hex'],
       [/\d+[lL]?/, 'number'],
 
@@ -591,7 +591,7 @@ monaco.languages.setMonarchTokensProvider('groovy', {
       [/'/, 'string', '@singleString'],
 
       // GString / slashy string
-      [/\/(?![\/*])/, 'string', '@slashyString'],
+      [/\/(?![/*])/, 'string', '@slashyString'],
     ],
 
     whitespace: [
@@ -602,17 +602,17 @@ monaco.languages.setMonarchTokensProvider('groovy', {
     ],
 
     comment: [
-      [/[^\/*]+/, 'comment.block'],
+      [/[^/*]+/, 'comment.block'],
       [/\/\*/, 'comment.block', '@push'],
       [/\*\//, 'comment.block', '@pop'],
-      [/[\/*]/, 'comment.block'],
+      [/[/*]/, 'comment.block'],
     ],
 
     javadoc: [
-      [/[^\/*]+/, 'comment.doc'],
+      [/[^/*]+/, 'comment.doc'],
       [/\/\*/, 'comment.doc', '@push'],
       [/\*\//, 'comment.doc', '@pop'],
-      [/[\/*]/, 'comment.doc'],
+      [/[/*]/, 'comment.doc'],
     ],
 
     tripleDoubleString: [
@@ -646,7 +646,7 @@ monaco.languages.setMonarchTokensProvider('groovy', {
     ],
 
     slashyString: [
-      [/[^\/\\]+/, 'string'],
+      [/[^/\\]+/, 'string'],
       [/\\./, 'string.escape'],
       [/\//, 'string', '@pop'],
     ],

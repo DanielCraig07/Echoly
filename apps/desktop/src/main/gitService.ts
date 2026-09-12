@@ -535,9 +535,15 @@ export class GitService {
       try {
         const lsTree = await this.runGit(['ls-tree', 'HEAD', '--', filePath], root);
         if (lsTree.code === 0 && lsTree.stdout.trim()) {
-          const modeMatch = lsTree.stdout.trim().match(/^(\d+)\s+/);
-          if (modeMatch && modeMatch[1]) {
-            const expectedMode = modeMatch[1]; // 例如 '100644' 或 '100755'
+          // 只对普通文件（100644 / 100755 blob）纠正权限位。
+          // 目录在 ls-tree 里是「040000 tree」、符号链接是「120000 blob」——若一并按 644 处理，
+          // 目录会被去掉 x 位变成 drw-r--r--，导致该目录再也无法进入/打开。
+          const modeMatch = lsTree.stdout.trim().match(/^(\d{6})\s+(\w+)\s/);
+          const expectedMode = modeMatch?.[1] ?? '';
+          const expectedType = modeMatch?.[2] ?? '';
+          const isPlainFile =
+            expectedType === 'blob' && (expectedMode === '100644' || expectedMode === '100755');
+          if (isPlainFile) {
             const isExecutable = expectedMode === '100755';
             const chmodNum = isExecutable ? '755' : '644';
             if (this.workspace.getKind() === 'ssh' && this.ssh) {

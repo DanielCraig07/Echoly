@@ -209,6 +209,7 @@ function wrapCommand(cmd: string): string {
 }
 
 import { colorizeTerminalLogs } from '../utils/terminalLogColorizer';
+import { measureContentColumns } from '../utils/terminalWidth';
 export { colorizeTerminalLogs };
 
 interface SessionProps {
@@ -249,8 +250,14 @@ function TerminalSession({
   visibleRef.current = visible;
   const wordWrapRef = useRef(wordWrap);
   wordWrapRef.current = wordWrap;
+  // 不换行模式下横向滚动区宽度的唯一来源：
+  // measureContentColumns 会把折行行拼回逻辑行后取最宽者，宽度只取决于「内容」，
+  // 与列数调整本身无关，不会出现「改一次列数宽度就变一次」的反馈循环。
   const maxLineLenRef = useRef<number>(0);
-  const currentLineLenRef = useRef<number>(0);
+  // 列数调整去抖：不换行模式下最长行是动态变化的，每来一帧输出就 resize 会抖动
+  const colFitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 最近一次已应用的列数，用于跳过重复 resize
+  const lastWideColsRef = useRef<number>(0);
 
   // no-wrap 模式自定义纵向滚动条（固定在 host 右边缘）
   const vScrollBarRef = useRef<HTMLDivElement | null>(null);
@@ -343,6 +350,18 @@ function TerminalSession({
   }, [updateVScrollThumb]);
 
 
+  /**
+   * 扫描 xterm buffer，返回内容真实占用的最大列数（按单元格宽度计，CJK/emoji 记 2 列）。
+   * 具体口径与边界说明见 utils/terminalWidth.ts。
+   */
+  const measureBufferWidth = (term: Terminal): number => {
+    try {
+      return measureContentColumns(term.buffer.active, term.cols);
+    } catch {
+      return maxLineLenRef.current;
+    }
+  };
+
   const applyTerminalSize = (id: string) => {
     const term = termRef.current;
     const fit = fitRef.current;
@@ -367,20 +386,35 @@ function TerminalSession({
           void window.ide.resizeTerminal(id, cols, rows);
         }
       } else {
-        // 单行/不换行模式：展开超宽列（默认 20000 列，可根据超长日志动态扩至 60000 列）
-        // 彻底杜绝长日志换行，实现“单行不管多长都一行显示”，并提供丝滑横向滚动
+        // 单行/不换行模式：列数 = max(视口宽度, 内容真实最宽行 + 1)，不预展开、不留固定余量。
+        // 内容不超过视口时列数就是视口宽度，横向滚动区间为 0，只有出现超长行才按需扩容。
         const dims = fit.proposeDimensions();
-        const rows = dims?.rows && dims.rows >= 3 ? dims.rows : term.rows || 24;
-        const wideCols = Math.min(60000, Math.max(20000, maxLineLenRef.current + 500));
+        // 行数必须能被 [minRows, maxRows] 完全容纳，否则 xterm 会忽略整个 resize，
+        // 列数就会卡在旧值上（表现为横向滚动条长度与文字对不上）
+        let rows = dims?.rows && dims.rows >= 3 ? dims.rows : term.rows || 24;
+        const maxRows = Math.max(1, term.buffer.active.length - 1);
+        const minRows = Math.min(3, maxRows);
+        rows = Math.max(minRows, Math.min(rows, maxRows));
+        const viewCols = dims?.cols && dims.cols >= 20 ? dims.cols : 80;
+        const longest = measureBufferWidth(term);
+        maxLineLenRef.current = longest;
+        // 列数只有两个来源：视口宽度，或「内容最宽行 + 1 列」（光标停在行尾不贴边）。
+        // 绝不能用「上一次的列数」参与计算，否则 resize 与重排互相喂养，列数被逐轮放大。
+        const wideCols = Math.min(60000, Math.max(80, viewCols, longest + 1));
 
         host.style.overflowX = 'auto';
-        term.resize(wideCols, rows);
+        if (wideCols !== term.cols || rows !== term.rows) {
+          lastWideColsRef.current = wideCols;
+          selfResizingRef.current = true;
+          term.resize(wideCols, rows);
+          selfResizingRef.current = false;
+          void window.ide.resizeTerminal(id, wideCols, rows);
+        }
         if (term.element) {
           term.element.style.width = 'max-content';
           term.element.style.minWidth = '100%';
         }
         term.refresh(0, Math.max(0, term.rows - 1));
-        void window.ide.resizeTerminal(id, wideCols, rows);
       }
       if (activeRef.current) term.focus();
     } catch (e) {
@@ -388,12 +422,33 @@ function TerminalSession({
     }
   };
 
+  /** 内容变化后的列数对齐：去抖后按真实最宽行重算，宽度只随内容伸缩，不再单调变窄。 */
+  const scheduleColumnFit = (id: string) => {
+    if (colFitTimerRef.current) clearTimeout(colFitTimerRef.current);
+    colFitTimerRef.current = setTimeout(() => {
+      colFitTimerRef.current = null;
+      applyTerminalSize(id);
+    }, 80);
+  };
+
+  /** 终端自身的尺寸变化（外部 resize 或 xterm 内部重排）也要重新对齐列数。 */
+  const scheduleColumnFitRef = useRef<(id: string) => void>(() => {});
+  scheduleColumnFitRef.current = scheduleColumnFit;
+  /** 正在由本组件主动 resize 时置位，避免 onResize 回调自触发。 */
+  const selfResizingRef = useRef(false);
+
   useEffect(() => {
     if (!hostRef.current) return;
     let disposed = false;
     let unreg: (() => void) | undefined = undefined;
     let unregRaw: (() => void) | undefined = undefined;
-    const initialCols = wordWrapRef.current ? 80 : 20000;
+    // 初始列数固定 80：两种模式都会在挂载后由 applyTerminalSize 校准到视口宽度，
+    // 不换行模式不再预展开超宽列，避免刚打开就出现巨大的横向滚动区间。
+    const initialCols = 80;
+    // 新建会话意味着终端内容重新开始，最长行统计与已应用的列数随之清零，
+    // 否则上一个会话的长行会把新终端的列数一起撑宽。
+    maxLineLenRef.current = 0;
+    lastWideColsRef.current = 0;
     const term = new Terminal({
       convertEol: true,
       cursorBlink: true,
@@ -414,30 +469,9 @@ function TerminalSession({
 
     let sessionId: string | null = null;
     let outputBuffer = '';
+    let writeParsedDisposable: { dispose: () => void } | null = null;
     const unsubData = window.ide.onTerminalData(({ id, data }) => {
       if ((sessionId ?? idRef.current) === id) {
-        // 动态追踪最长单行长度，若单行超长（如上万字符的大日志），自动拓展终端列宽，确保单行模式下永不换行
-        for (let i = 0; i < data.length; i++) {
-          const ch = data[i];
-          if (ch === '\n' || ch === '\r') {
-            currentLineLenRef.current = 0;
-          } else {
-            currentLineLenRef.current++;
-            if (currentLineLenRef.current > maxLineLenRef.current) {
-              maxLineLenRef.current = currentLineLenRef.current;
-            }
-          }
-        }
-
-        if (!wordWrapRef.current && termRef.current && idRef.current) {
-          const currentTermCols = termRef.current.cols;
-          if (maxLineLenRef.current + 200 > currentTermCols && currentTermCols < 60000) {
-            const newCols = Math.min(60000, Math.max(currentTermCols * 2, maxLineLenRef.current + 1000));
-            termRef.current.resize(newCols, termRef.current.rows);
-            void window.ide.resizeTerminal(idRef.current, newCols, termRef.current.rows);
-          }
-        }
-
         // 过滤掉内部哨兵信号行，避免在终端视口中向用户显示冗余内部标记
         const cleanData = data.replace(/(?:\r?\n|^)__ECHOLY_FIN__:\d+(?:\r?\n|$)/g, '\r\n');
         term.write(colorizeTerminalLogs(cleanData));
@@ -465,6 +499,23 @@ function TerminalSession({
           }),
         );
       }
+    });
+
+    // 不换行模式：每帧内容解析完成后按 buffer 真实最宽行对齐列数（去抖）。
+    // 单行日志不会被折行，横向滚动条长度也始终与屏幕上真正显示的字符数一致。
+    writeParsedDisposable = term.onWriteParsed(() => {
+      if (!wordWrapRef.current && idRef.current) {
+        scheduleColumnFit(idRef.current);
+      }
+    });
+
+    // 终端尺寸/列数被外部改写（xterm 内部重排、窗口或面板变化等）时重新对齐列数，
+    // 避免列数被单向改小后再也回不去。自身发起的 resize 通过 selfResizingRef 排除，
+    // 防止 resize → 重排 → 再 resize 的循环。
+    const onResizeDisposable = term.onResize(() => {
+      const id = idRef.current;
+      if (!id || selfResizingRef.current || wordWrapRef.current) return;
+      scheduleColumnFit(id);
     });
 
     void window.ide.createTerminal({ kind: terminalKind, cwd, cols: initialCols, rows: 24 }).then((res) => {
@@ -534,6 +585,13 @@ function TerminalSession({
       }
       unsubData();
       unsubExit();
+      writeParsedDisposable?.dispose();
+      writeParsedDisposable = null;
+      onResizeDisposable.dispose();
+      if (colFitTimerRef.current) {
+        clearTimeout(colFitTimerRef.current);
+        colFitTimerRef.current = null;
+      }
       if (idRef.current) void window.ide.disposeTerminal(idRef.current);
       idRef.current = null;
       termRef.current = null;
@@ -551,6 +609,9 @@ function TerminalSession({
 
   // 当换行状态动态变化时，立即重算尺寸与重排终端文字
   useEffect(() => {
+    // 从换行模式切回单行模式时，已折行的长行需要重新展开：
+    // applyTerminalSize 会扫描 buffer 求出真实最宽行（折行行数是列数的整数倍，因此结果就是原行长），
+    // 再据此一次性把列数撑到位。
     if (idRef.current) {
       applyTerminalSize(idRef.current);
     }

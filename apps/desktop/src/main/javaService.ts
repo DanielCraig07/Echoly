@@ -36,7 +36,7 @@ export async function detectInstalledJdks(): Promise<InstalledJdkInfo[]> {
       const lines = output.split('\n');
       for (const line of lines) {
         const trimmed = line.trim();
-        const match = trimmed.match(/^(\d+(?:\.\d+)*[_\.\d]*)\s+\(([^)]+)\)\s+"([^"]+)"\s+-\s+"([^"]+)"\s+(.+)$/);
+        const match = trimmed.match(/^(\d+(?:\.\d+)*[_.\d]*)\s+\(([^)]+)\)\s+"([^"]+)"\s+-\s+"([^"]+)"\s+(.+)$/);
         if (match) {
           const [, version, arch, vendor, , homePath] = match;
           const cleanPath = homePath.trim();
