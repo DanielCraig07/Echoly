@@ -1,0 +1,261 @@
+/* ==========================================================================
+   Project Runtime Config Modal — 运行参数配置弹窗
+   原先所有内容平铺堆叠、间距拥挤；这里改为分节卡片布局，并统一控件样式
+   ========================================================================== */
+.runtime-modal {
+  width: 100%;
+  max-width: 720px;
+  background: var(--bg-elevated, #1f1f23);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75);
+  color: var(--text);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 92vh;
+}
+
+.runtime-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel, #252528);
+  flex-shrink: 0;
+}
+
+.runtime-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel, #252528);
+  flex-shrink: 0;
+}
+
+.runtime-body {
+  padding: 18px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.runtime-bind-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 14px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  font-size: 12px;
+  color: #38bdf8;
+}
+
+/* 分节卡片：统一容器的边框、留白与内部间距 */
+.runtime-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.runtime-section-plain {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.runtime-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright, #fff);
+  letter-spacing: 0.02em;
+  padding-bottom: 2px;
+}
+
+.runtime-preset-section {
+  background: rgba(56, 189, 248, 0.05);
+  border-color: rgba(56, 189, 248, 0.2);
+}
+
+.runtime-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.runtime-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.runtime-field-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright, #fff);
+}
+
+.runtime-field-hint {
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.runtime-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 720px) {
+  .runtime-field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.runtime-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-input, #18181b);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-bright, #fff);
+  padding: 7px 10px;
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.runtime-input:focus {
+  border-color: var(--accent, #4c8dff);
+}
+
+.runtime-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.runtime-options-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+/* 已启用选项摘要：只读展示，点击可关闭该项 */
+.runtime-option-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.runtime-option-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: var(--text-bright, #fff);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.runtime-option-check {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.runtime-option-remove {
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+  color: var(--muted);
+  transition: opacity 0.12s ease;
+}
+
+.runtime-option-chip:hover .runtime-option-remove {
+  opacity: 1;
+  color: #fca5a5;
+}
+
+/* 选项摘要：仅浏览结果，开关本身在「添加运行选项」弹层里操作 */
+
+.runtime-command-preview {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+/* ── 悬浮反馈：这些元素的行内样式写死了 background/border/color，
+      需要 !important 才能让 :hover 生效 ── */
+.runtime-preset-chip:hover {
+  border-color: rgba(56, 189, 248, 0.75) !important;
+  background: rgba(56, 189, 248, 0.16) !important;
+  color: #7dd3fc !important;
+}
+
+.runtime-add-options-btn:hover {
+  border-color: rgba(56, 189, 248, 0.55) !important;
+  background: rgba(56, 189, 248, 0.16) !important;
+}
+
+.runtime-reset-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.runtime-reset-btn:hover {
+  color: var(--danger, #ef4444);
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* 主操作按钮：绿色强调，行内样式无法表达 :hover，改用类 + filter */
+.runtime-save-btn {
+  font-size: 12px;
+  padding: 5px 16px;
+  background: #22c55e;
+  border-color: #22c55e;
+  color: #fff;
+  transition:
+    filter 0.15s ease,
+    background 0.15s ease;
+}
+
+.runtime-save-btn:hover {
+  filter: brightness(1.1);
+}
+
+.runtime-save-btn:active {
+  filter: brightness(0.95);
+}

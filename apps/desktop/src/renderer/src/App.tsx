@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -269,6 +270,16 @@ export function App() {
   const [fileHistoryModalPath, setFileHistoryModalPath] = useState<string | null>(null);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
+
+  const projectDisplayName = useMemo(() => {
+    const raw = workspaceInfo.label || workspaceInfo.root || '';
+    if (!raw || raw === '未打开工作区') return 'PROJECT-IDE';
+    const clean = raw.replace(/^ssh\s+[^\s:]+:/, '');
+    const segments = clean.split(/[/\\]/).filter(Boolean);
+    const name = segments.pop() || clean;
+    return name.toUpperCase();
+  }, [workspaceInfo.label, workspaceInfo.root]);
+
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
   const [activeLanguage, setActiveLanguage] = useState('plaintext');
@@ -1959,12 +1970,12 @@ export function App() {
             title="搜索动作或文件 (⌘P / ⌘Shift+P)"
           >
             <svg
-              width="13"
-              height="13"
+              width="15"
+              height="15"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="2.2"
             >
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -1986,15 +1997,15 @@ export function App() {
                 persistLayout(next);
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <rect
                   x="1.5"
                   y="1.5"
                   width="13"
                   height="13"
-                  rx="2"
+                  rx="2.5"
                   stroke="currentColor"
-                  strokeWidth="1.2"
+                  strokeWidth="1.4"
                 />
                 <line
                   x1="5.5"
@@ -2002,7 +2013,7 @@ export function App() {
                   x2="5.5"
                   y2="14.5"
                   stroke="currentColor"
-                  strokeWidth="1.2"
+                  strokeWidth="1.4"
                 />
                 <rect
                   x="1.5"
@@ -2010,8 +2021,8 @@ export function App() {
                   width="4"
                   height="13"
                   fill="currentColor"
-                  opacity="0.4"
-                  rx="1"
+                  opacity={showLeftPanel ? 0.65 : 0.25}
+                  rx="1.5"
                 />
               </svg>
             </button>
@@ -2029,15 +2040,15 @@ export function App() {
                 persistLayout(next);
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <rect
                   x="1.5"
                   y="1.5"
                   width="13"
                   height="13"
-                  rx="2"
+                  rx="2.5"
                   stroke="currentColor"
-                  strokeWidth="1.2"
+                  strokeWidth="1.4"
                 />
                 <line
                   x1="1.5"
@@ -2045,7 +2056,7 @@ export function App() {
                   x2="14.5"
                   y2="10.5"
                   stroke="currentColor"
-                  strokeWidth="1.2"
+                  strokeWidth="1.4"
                 />
                 <rect
                   x="1.5"
@@ -2053,8 +2064,8 @@ export function App() {
                   width="13"
                   height="4"
                   fill="currentColor"
-                  opacity="0.4"
-                  rx="1"
+                  opacity={!isWelcomeShell && layout.bottomPanelExpanded === true ? 0.65 : 0.25}
+                  rx="1.5"
                 />
               </svg>
             </button>
@@ -2069,15 +2080,15 @@ export function App() {
                 persistLayout(next);
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <rect
                   x="1.5"
                   y="1.5"
                   width="13"
                   height="13"
-                  rx="2"
+                  rx="2.5"
                   stroke="currentColor"
-                  strokeWidth="1.2"
+                  strokeWidth="1.4"
                 />
                 <line
                   x1="10.5"
@@ -2085,7 +2096,7 @@ export function App() {
                   x2="10.5"
                   y2="14.5"
                   stroke="currentColor"
-                  strokeWidth="1.2"
+                  strokeWidth="1.4"
                 />
                 <rect
                   x="10.5"
@@ -2093,8 +2104,8 @@ export function App() {
                   width="4"
                   height="13"
                   fill="currentColor"
-                  opacity="0.4"
-                  rx="1"
+                  opacity={showChatPanel ? 0.65 : 0.25}
+                  rx="1.5"
                 />
               </svg>
             </button>
@@ -2108,12 +2119,12 @@ export function App() {
             onClick={() => setSettingsOpen(true)}
           >
             <svg
-              width="18"
-              height="18"
+              width="19"
+              height="19"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.8"
+              strokeWidth="2"
             >
               <circle cx="12" cy="12" r="3" />
               <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24" />
@@ -2138,10 +2149,10 @@ export function App() {
                 className="idea-sidebar-tabs"
                 style={{
                   justifyContent: 'center',
-                  gap: 16,
-                  height: 35,
+                  gap: 14,
+                  height: 38,
                   boxSizing: 'border-box',
-                  padding: '4px 12px 4px',
+                  padding: '5px 12px 5px',
                   borderBottom: '1px solid var(--border)',
                 }}
               >
@@ -2150,15 +2161,15 @@ export function App() {
                   className={leftPanel === 'explorer' ? 'active' : ''}
                   onClick={() => setLeftPanel('explorer')}
                   title="文件"
-                  style={{ width: 24, height: 24, borderRadius: 6 }}
+                  style={{ width: 28, height: 28, borderRadius: 6 }}
                 >
                   <svg
-                    width="16"
-                    height="16"
+                    width="18"
+                    height="18"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.6"
+                    strokeWidth="1.8"
                   >
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
@@ -2172,15 +2183,15 @@ export function App() {
                   className={leftPanel === ('search' as any) ? 'active' : ''}
                   title="搜索"
                   onClick={() => setLeftPanel('search' as any)}
-                  style={{ width: 24, height: 24, borderRadius: 6 }}
+                  style={{ width: 28, height: 28, borderRadius: 6 }}
                 >
                   <svg
-                    width="16"
-                    height="16"
+                    width="18"
+                    height="18"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.6"
+                    strokeWidth="1.8"
                   >
                     <circle cx="11" cy="11" r="8" />
                     <path d="m21 21-4.3-4.3" />
@@ -2191,15 +2202,15 @@ export function App() {
                   className={leftPanel === 'git' ? 'active' : ''}
                   onClick={() => setLeftPanel('git')}
                   title="版本控制"
-                  style={{ width: 24, height: 24, borderRadius: 6 }}
+                  style={{ width: 28, height: 28, borderRadius: 6 }}
                 >
                   <svg
-                    width="16"
-                    height="16"
+                    width="18"
+                    height="18"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
-                    strokeWidth="1.6"
+                    strokeWidth="1.8"
                   >
                     <circle cx="18" cy="18" r="3" />
                     <circle cx="6" cy="6" r="3" />
@@ -2213,15 +2224,15 @@ export function App() {
                     className={leftPanel === 'maven' ? 'active' : ''}
                     onClick={() => setLeftPanel('maven')}
                     title="Maven 管理"
-                    style={{ width: 24, height: 24, borderRadius: 6 }}
+                    style={{ width: 28, height: 28, borderRadius: 6 }}
                   >
                     <svg
-                      width="16"
-                      height="16"
+                      width="18"
+                      height="18"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
-                      strokeWidth="1.6"
+                      strokeWidth="1.8"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     >
@@ -2257,32 +2268,39 @@ export function App() {
                       borderBottom: '1px solid var(--border)',
                       display: 'flex',
                       alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
                     }}
                     onClick={() => setWorkspaceExpanded((v) => !v)}
                   >
-                    <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      {workspaceExpanded ? '▾' : '▸'}
-                    </span>
-                    <span
-                      title={workspaceInfo.label || 'PROJECT-IDE'}
+                    <div
                       style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: 'var(--text)',
-                        letterSpacing: '0.05em',
-                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
                         minWidth: 0,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
+                        flex: 1,
+                        marginRight: 8,
                       }}
                     >
-                      {workspaceInfo.label
-                        ? workspaceInfo.label.includes('/')
-                          ? workspaceInfo.label.split('/').filter(Boolean).pop()?.toUpperCase()
-                          : workspaceInfo.label.toUpperCase()
-                        : 'PROJECT-IDE'}
-                    </span>
+                      <span className="chevron" style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>
+                        {workspaceExpanded ? '▾' : '▸'}
+                      </span>
+                      <span
+                        title={workspaceInfo.label || workspaceInfo.root || 'PROJECT-IDE'}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: 'var(--text)',
+                          letterSpacing: '0.05em',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {projectDisplayName}
+                      </span>
+                    </div>
 
                     <div
                       className="explorer-quick-actions"
@@ -2292,8 +2310,43 @@ export function App() {
                         marginLeft: 'auto',
                         display: 'flex',
                         alignItems: 'center',
+                        flexShrink: 0,
                       }}
                     >
+                      {/* 1. 定位当前文件 (最左侧) */}
+                      <button
+                        type="button"
+                        className="panel-action-btn"
+                        title={activePath ? `定位当前文件 (${activePath.split('/').pop()})` : '定位到当前打开的文件'}
+                        onClick={() => {
+                          if (!activePath) {
+                            showToast('当前没有打开的文件', undefined, 'info');
+                            return;
+                          }
+                          fileTreeRef.current?.locateActiveFile();
+                          showToast(`已定位: ${activePath.split('/').pop()}`, undefined, 'info');
+                        }}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <circle cx="12" cy="12" r="7" />
+                          <circle cx="12" cy="12" r="2" fill="currentColor" />
+                          <line x1="12" y1="2" x2="12" y2="5" />
+                          <line x1="12" y1="19" x2="12" y2="22" />
+                          <line x1="2" y1="12" x2="5" y2="12" />
+                          <line x1="19" y1="12" x2="22" y2="12" />
+                        </svg>
+                      </button>
+
+                      {/* 2. 新建文件 */}
                       <button
                         type="button"
                         className="panel-action-btn"
@@ -2301,12 +2354,14 @@ export function App() {
                         onClick={() => fileTreeRef.current?.createFile()}
                       >
                         <svg
-                          width="15"
-                          height="15"
+                          width="16"
+                          height="16"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
-                          strokeWidth="1.5"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         >
                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h9" />
                           <polyline points="14 2 14 8 20 8" />
@@ -2315,6 +2370,8 @@ export function App() {
                           <line x1="18" y1="15" x2="18" y2="21" />
                         </svg>
                       </button>
+
+                      {/* 3. 新建文件夹 */}
                       <button
                         type="button"
                         className="panel-action-btn"
@@ -2322,12 +2379,14 @@ export function App() {
                         onClick={() => fileTreeRef.current?.createFolder()}
                       >
                         <svg
-                          width="15"
-                          height="15"
+                          width="16"
+                          height="16"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
-                          strokeWidth="1.5"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         >
                           <path d="M4 22h11" />
                           <path d="M4 22a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v7" />
@@ -2335,6 +2394,8 @@ export function App() {
                           <line x1="18" y1="15" x2="18" y2="21" />
                         </svg>
                       </button>
+
+                      {/* 4. 刷新文件树 */}
                       <button
                         type="button"
                         className="panel-action-btn"
@@ -2348,17 +2409,21 @@ export function App() {
                         }}
                       >
                         <svg
-                          width="15"
-                          height="15"
+                          width="16"
+                          height="16"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
-                          strokeWidth="1.5"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         >
                           <polyline points="23 4 23 10 17 10"></polyline>
                           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                         </svg>
                       </button>
+
+                      {/* 5. 全部折叠 / 展开 */}
                       <button
                         type="button"
                         className="panel-action-btn"
@@ -2374,12 +2439,14 @@ export function App() {
                         }}
                       >
                         <svg
-                          width="15"
-                          height="15"
+                          width="16"
+                          height="16"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
-                          strokeWidth="1.5"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         >
                           <rect x="8" y="8" width="12" height="12" rx="2" ry="2" />
                           <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
@@ -2863,18 +2930,74 @@ export function App() {
         gitStatus={gitStatus}
         activePath={activePath}
         cursorPos={{ line: cursorLine, col: cursorCol }}
+        docStats={
+          (() => {
+            const tab = tabs.find((t) => t.path === activePath);
+            if (!tab) return null;
+            return {
+              lineCount: tab.content ? tab.content.split('\n').length : 1,
+              charCount: tab.content ? tab.content.length : 0,
+            };
+          })()
+        }
         language={activeLanguage}
+        eol={
+          (() => {
+            const tab = tabs.find((t) => t.path === activePath);
+            return tab?.content?.includes('\r\n') ? 'CRLF' : 'LF';
+          })()
+        }
+        onOpenRemote={() => {
+          setSshTargetForModal(null);
+          setSshOpen(true);
+        }}
         onOpenBranchSwitcher={() => setBranchModalOpen(true)}
+        onSyncGit={async () => {
+          const res = await window.ide.gitStatus();
+          if (res.ok) setGitStatus(res);
+        }}
+        onToggleBottomPanel={() => {
+          setLayout((prev) => ({
+            ...prev,
+            bottomPanelExpanded: !prev.bottomPanelExpanded,
+          }));
+        }}
+        onGoToLine={(line, col) => {
+          if (!activePath) return;
+          revealNonceRef.current += 1;
+          setRevealTarget({
+            path: activePath,
+            line,
+            column: col ?? 1,
+            nonce: revealNonceRef.current,
+          });
+          showToast(`已跳转到第 ${line} 行`, undefined, 'info');
+        }}
+        onToggleEol={(nextEol) => {
+          if (!activePath) return;
+          setTabs((prev) =>
+            prev.map((t) => {
+              if (t.path !== activePath) return t;
+              const converted =
+                nextEol === 'CRLF'
+                  ? t.content.replace(/\r?\n/g, '\r\n')
+                  : t.content.replace(/\r\n/g, '\n');
+              return { ...t, content: converted, dirty: true };
+            }),
+          );
+        }}
         onSelectLanguage={(lang) => {
           if (!activePath) return;
           setTabs((prev) =>
             prev.map((t) => (t.path === activePath ? { ...t, language: lang } : t)),
           );
+          showToast(`语言模式已切换为 ${lang}`, undefined, 'info');
         }}
         onOpenAbout={() => {
           setSettingsInitialTab('about');
           setSettingsOpen(true);
         }}
+        onShowToast={showToast}
       />
 
       {/* Bottom-Right Toast Notifications Overlay */}

@@ -241,6 +241,21 @@ export function ProjectRuntimeConfigModal({
     });
   }, [onShowToast]);
 
+  // 已启用的高级运行选项摘要（开关统一在「添加运行选项」弹层里操作）
+  const enabledOptions = useMemo<
+    Array<{ key: keyof ProjectRuntimeConfig; label: string }>
+  >(() => {
+    const all: Array<{ key: keyof ProjectRuntimeConfig; label: string }> = [
+      { key: 'addProvidedToClasspath', label: 'provided 依赖加入类路径' },
+      { key: 'skipBuildBeforeRun', label: '运行前不编译' },
+      { key: 'shortenCommandLine', label: '缩短命令行' },
+      { key: 'allowMultipleInstances', label: '允许并发多实例' },
+      { key: 'saveConsoleToFile', label: '控制台日志存文件' },
+      { key: 'showSettingsBeforeRun', label: '启动前显示配置' },
+    ];
+    return all.filter((o) => config[o.key] === true);
+  }, [config]);
+
   // 计算示例实时命令预览
   const previewCommand = useMemo(() => {
     const activeFileName = activePath ? activePath.split('/').pop() : '';
@@ -289,32 +304,11 @@ export function ProjectRuntimeConfigModal({
       onClick={onClose}
     >
       <div
-        style={{
-          width: '100%',
-          maxWidth: 680,
-          background: 'var(--bg-elevated, #1f1f23)',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.75)',
-          color: 'var(--text)',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          maxHeight: '92vh',
-        }}
+        className="runtime-modal"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 18px',
-            borderBottom: '1px solid var(--border)',
-            background: 'var(--bg-panel, #252528)',
-          }}
-        >
+        <div className="runtime-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 16 }}>⚡</span>
             <div>
@@ -338,43 +332,24 @@ export function ProjectRuntimeConfigModal({
         </div>
 
         {/* Body */}
-        <div style={{ padding: '16px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="runtime-body">
           {/* 项目绑定确认横幅 */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '8px 12px',
-              borderRadius: 6,
-              background: 'rgba(56, 189, 248, 0.08)',
-              border: '1px solid rgba(56, 189, 248, 0.25)',
-              fontSize: 12,
-              color: '#38bdf8',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="runtime-bind-banner">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
               <span>📁</span>
-              <span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 当前配置绑定至项目: <strong>{projectName}</strong>
                 {workspace && <span style={{ opacity: 0.75, marginLeft: 6 }}>({workspace})</span>}
               </span>
             </div>
-            <div style={{ fontSize: 11, color: '#34d399', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ fontSize: 11, color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
               <span>✓</span> 独立项目级配置已绑定
             </div>
           </div>
 
           {/* 智能检测到的环境配置文件预设（支持再次点击取消） */}
           {detectedPresets.length > 0 && (
-            <div
-              style={{
-                background: 'rgba(56, 189, 248, 0.05)',
-                border: '1px solid rgba(56, 189, 248, 0.2)',
-                borderRadius: 8,
-                padding: '10px 14px',
-              }}
-            >
+            <div className="runtime-section runtime-preset-section">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#38bdf8' }}>
                   <span>💡</span> 检测到项目中存在的环境配置 (点击单选/再次点击取消):
@@ -388,6 +363,7 @@ export function ProjectRuntimeConfigModal({
                     <button
                       key={preset.envKey}
                       type="button"
+                      className="runtime-preset-chip"
                       onClick={() => handleTogglePreset(preset)}
                       style={{
                         display: 'inline-flex',
@@ -418,79 +394,60 @@ export function ProjectRuntimeConfigModal({
             </div>
           )}
 
-          {/* JVM 参数 (VM Options) */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
-                ☕ JVM 虚拟机参数 (VM Options)
-              </label>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>传递给 System.getProperty()</span>
-            </div>
-            <input
-              type="text"
-              value={config.vmArgs}
-              onChange={(e) => setConfig({ ...config, vmArgs: e.target.value })}
-              placeholder="例如: -Denv=local-dev -Dfile.encoding=UTF-8 -Xms256m -Xmx1024m"
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                background: 'var(--bg-input, #18181b)',
-                border: '1px solid var(--border)',
-                borderRadius: 5,
-                color: 'var(--text-bright, #fff)',
-                padding: '7px 10px',
-                fontSize: 12,
-                fontFamily: 'var(--font-mono, monospace)',
-                outline: 'none',
-              }}
-            />
-            {/* 常用 JVM 快捷标记（支持点击添加/取消） */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>快捷参数:</span>
-              {[
-                '-Denv=local-dev',
-                '-Dfile.encoding=UTF-8',
-                '-Xmx1024m',
-                '-Dspring.profiles.active=dev',
-              ].map((flag) => {
-                const isPresent = config.vmArgs.includes(flag);
-                return (
-                  <button
-                    key={flag}
-                    type="button"
-                    onClick={() => handleToggleVmArg(flag)}
-                    style={{
-                      fontSize: 10.5,
-                      padding: '2px 7px',
-                      borderRadius: 3,
-                      background: isPresent ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                      border: isPresent ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
-                      color: isPresent ? '#38bdf8' : 'var(--text)',
-                      cursor: 'pointer',
-                    }}
-                    title={isPresent ? `点击移除 ${flag}` : `点击添加 ${flag}`}
-                  >
-                    {isPresent ? `✓ ${flag}` : `+ ${flag}`}
-                  </button>
-                );
-              })}
+          {/* 启动参数 */}
+          <div className="runtime-section">
+            <div className="runtime-section-label">启动参数</div>
+
+            <div className="runtime-field">
+              <div className="runtime-field-head">
+                <label className="runtime-field-title">☕ JVM 虚拟机参数 (VM Options)</label>
+                <span className="runtime-field-hint">传递给 System.getProperty()</span>
+              </div>
+              <input
+                type="text"
+                value={config.vmArgs}
+                onChange={(e) => setConfig({ ...config, vmArgs: e.target.value })}
+                placeholder="例如: -Denv=local-dev -Dfile.encoding=UTF-8 -Xms256m -Xmx1024m"
+                className="runtime-input"
+              />
+              {/* 常用 JVM 快捷标记（支持点击添加/取消） */}
+              <div className="runtime-chip-row">
+                <span className="runtime-field-hint">快捷参数:</span>
+                {[
+                  '-Denv=local-dev',
+                  '-Dfile.encoding=UTF-8',
+                  '-Xmx1024m',
+                  '-Dspring.profiles.active=dev',
+                ].map((flag) => {
+                  const isPresent = config.vmArgs.includes(flag);
+                  return (
+                    <button
+                      key={flag}
+                      type="button"
+                      className="runtime-preset-chip"
+                      onClick={() => handleToggleVmArg(flag)}
+                      style={{
+                        fontSize: 10.5,
+                        padding: '2px 7px',
+                        borderRadius: 3,
+                        background: isPresent ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                        border: isPresent ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
+                        color: isPresent ? '#38bdf8' : 'var(--text)',
+                        cursor: 'pointer',
+                      }}
+                      title={isPresent ? `点击移除 ${flag}` : `点击添加 ${flag}`}
+                    >
+                      {isPresent ? `✓ ${flag}` : `+ ${flag}`}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
           {/* 高级运行选项卡片与“添加运行选项”按钮 (融入图 3 选项) */}
-          <div
-            style={{
-              background: 'rgba(255, 255, 255, 0.03)',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              padding: '12px 14px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 10,
-              position: 'relative',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="runtime-section runtime-section-plain">
+            <div className="runtime-options-head">
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 13 }}>⚙️</span>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-bright)' }}>
@@ -500,6 +457,7 @@ export function ProjectRuntimeConfigModal({
               <div style={{ position: 'relative' }} ref={addOptionsRef}>
                 <button
                   type="button"
+                  className="runtime-add-options-btn"
                   onClick={() => setShowAddOptionsPopup((p) => !p)}
                   style={{
                     display: 'flex',
@@ -819,174 +777,73 @@ export function ProjectRuntimeConfigModal({
               </div>
             </div>
 
-            {/* 突出展示图 3 红框核心选项：Add dependencies with "provided" scope to classpath */}
-            <div
-              style={{
-                border: '1px solid rgba(239, 68, 68, 0.35)',
-                background: 'rgba(239, 68, 68, 0.05)',
-                borderRadius: 6,
-                padding: '9px 12px',
-              }}
-            >
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={config.addProvidedToClasspath}
-                  onChange={(e) => setConfig({ ...config, addProvidedToClasspath: e.target.checked })}
-                  style={{ marginTop: 2 }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#fca5a5' }}>
-                    <span>将 "provided" 作用域的依赖添加到类路径 (Add dependencies with "provided" scope to classpath)</span>
-                    <span style={{ fontSize: 10, background: '#ef4444', color: '#fff', padding: '1px 5px', borderRadius: 3 }}>推荐开启</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, lineHeight: 1.4 }}>
-                    在运行主类时包含 scope 为 provided 的依赖库（如 Flink, Spark, Lombok, Servlet-API 等），自动注入 <code style={{ color: '#38bdf8' }}>-Dexec.classpathScope=compile</code>，杜绝本地运行报 NoClassDefFoundError / ClassNotFoundException。
-                  </div>
-                </div>
-              </label>
-            </div>
-
-            {/* 其它已选中的高级选项快捷开关 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 2 }}>
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontSize: 11.5,
-                  padding: '6px 10px',
-                  borderRadius: 5,
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={config.skipBuildBeforeRun}
-                  onChange={(e) => setConfig({ ...config, skipBuildBeforeRun: e.target.checked })}
-                />
-                <div>
-                  <div style={{ color: 'var(--text-bright)' }}>运行前不编译 (Do not build)</div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>跳过 compile，直接执行 class</div>
-                </div>
-              </label>
-
-              <label
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontSize: 11.5,
-                  padding: '6px 10px',
-                  borderRadius: 5,
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid var(--border)',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={config.allowMultipleInstances}
-                  onChange={(e) => setConfig({ ...config, allowMultipleInstances: e.target.checked })}
-                />
-                <div>
-                  <div style={{ color: 'var(--text-bright)' }}>允许并发运行多实例</div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>不中断前序已启动的会话</div>
-                </div>
-              </label>
+            {/* 已启用的选项摘要：开关本身只在「添加运行选项」弹层里操作，
+                这里仅展示结果，避免同一选项出现两处勾选框 */}
+            <div className="runtime-option-summary">
+              {enabledOptions.length === 0 ? (
+                <span className="runtime-field-hint">
+                  暂未启用任何高级选项，点击右上角「添加运行选项」进行配置。
+                </span>
+              ) : (
+                enabledOptions.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    className="runtime-preset-chip runtime-option-chip"
+                    onClick={() => setConfig({ ...config, [opt.key]: false } as ProjectRuntimeConfig)}
+                    title={`点击关闭「${opt.label}」`}
+                  >
+                    <span className="runtime-option-check">✓</span>
+                    <span>{opt.label}</span>
+                    <span className="runtime-option-remove">×</span>
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
           {/* 程序启动参数 (Program Arguments) */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
-                📦 程序启动参数 (Program Arguments)
-              </label>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>传递给 main(String[] args) 入口参数</span>
+          <div className="runtime-field">
+            <div className="runtime-field-head">
+              <label className="runtime-field-title">📦 程序启动参数 (Program Arguments)</label>
+              <span className="runtime-field-hint">传递给 main(String[] args) 入口参数</span>
             </div>
             <input
               type="text"
               value={config.programArgs}
               onChange={(e) => setConfig({ ...config, programArgs: e.target.value })}
               placeholder="例如: --server.port=8080 --mode=standalone"
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                background: 'var(--bg-input, #18181b)',
-                border: '1px solid var(--border)',
-                borderRadius: 5,
-                color: 'var(--text-bright, #fff)',
-                padding: '7px 10px',
-                fontSize: 12,
-                fontFamily: 'var(--font-mono, monospace)',
-                outline: 'none',
-              }}
+              className="runtime-input"
             />
           </div>
 
           {/* 环境变量 (Environment Variables) 与 Maven Profile */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-bright)', marginBottom: 5 }}>
-                🌐 系统环境变量 (Environment Variables)
-              </label>
+          <div className="runtime-field-grid">
+            <div className="runtime-field">
+              <label className="runtime-field-title">🌐 系统环境变量 (Environment Variables)</label>
               <input
                 type="text"
                 value={config.envVars}
                 onChange={(e) => setConfig({ ...config, envVars: e.target.value })}
                 placeholder="KEY=VALUE (逗号分隔)"
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'var(--bg-input, #18181b)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 5,
-                  color: 'var(--text-bright, #fff)',
-                  padding: '7px 10px',
-                  fontSize: 12,
-                  fontFamily: 'var(--font-mono, monospace)',
-                  outline: 'none',
-                }}
+                className="runtime-input"
               />
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-bright)', marginBottom: 5 }}>
-                🏷️ Maven 激活 Profile (-P)
-              </label>
+            <div className="runtime-field">
+              <label className="runtime-field-title">🏷️ Maven 激活 Profile (-P)</label>
               <input
                 type="text"
                 value={config.activeProfiles}
                 onChange={(e) => setConfig({ ...config, activeProfiles: e.target.value })}
                 placeholder="例如: dev, local"
-                style={{
-                  width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'var(--bg-input, #18181b)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 5,
-                  color: 'var(--text-bright, #fff)',
-                  padding: '7px 10px',
-                  fontSize: 12,
-                  fontFamily: 'var(--font-mono, monospace)',
-                  outline: 'none',
-                }}
+                className="runtime-input"
               />
             </div>
           </div>
 
           {/* 实时生成运行命令预览 */}
-          <div
-            style={{
-              background: 'rgba(0, 0, 0, 0.4)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              padding: '10px 12px',
-            }}
-          >
+          <div className="runtime-command-preview">
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ color: '#4ade80' }}>●</span> 运行命令实时预览效果:
             </div>
@@ -1005,31 +862,8 @@ export function ProjectRuntimeConfigModal({
         </div>
 
         {/* Footer Actions */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 18px',
-            borderTop: '1px solid var(--border)',
-            background: 'var(--bg-panel, #252528)',
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleReset}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--muted)',
-              fontSize: 12,
-              cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: 4,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--muted)')}
-          >
+        <div className="runtime-modal-footer">
+          <button type="button" className="runtime-reset-btn" onClick={handleReset}>
             重置参数
           </button>
 
@@ -1044,9 +878,8 @@ export function ProjectRuntimeConfigModal({
             </button>
             <button
               type="button"
-              className="panel-standard-btn primary"
+              className="panel-standard-btn runtime-save-btn"
               onClick={handleSave}
-              style={{ fontSize: 12, padding: '5px 16px', background: '#22c55e', borderColor: '#22c55e', color: '#fff' }}
             >
               保存并应用
             </button>

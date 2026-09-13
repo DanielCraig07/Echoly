@@ -148,8 +148,8 @@ function parsePomXml(content: string, pomPath: string): MavenModule {
 
 const IconReload = ({ spinning }: { spinning?: boolean }) => (
   <svg
-    width="14"
-    height="14"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -165,8 +165,8 @@ const IconReload = ({ spinning }: { spinning?: boolean }) => (
 
 const IconPlay = () => (
   <svg
-    width="14"
-    height="14"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="currentColor"
     style={{ flexShrink: 0 }}
@@ -177,8 +177,8 @@ const IconPlay = () => (
 
 const IconTerminal = () => (
   <svg
-    width="14"
-    height="14"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -195,8 +195,8 @@ const IconTerminal = () => (
 
 const IconSkipTest = ({ active }: { active?: boolean }) => (
   <svg
-    width="14"
-    height="14"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -212,8 +212,8 @@ const IconSkipTest = ({ active }: { active?: boolean }) => (
 
 const IconSettings = () => (
   <svg
-    width="14"
-    height="14"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -229,8 +229,8 @@ const IconSettings = () => (
 
 const IconExpandAll = () => (
   <svg
-    width="14"
-    height="14"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -246,8 +246,8 @@ const IconExpandAll = () => (
 
 const IconCollapseAll = () => (
   <svg
-    width="14"
-    height="14"
+    width="16"
+    height="16"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -301,7 +301,7 @@ function TreeNode({ label, icon, badge, badgeColor = 'var(--muted)', collapsed, 
     <div>
       <div
         onClick={onToggle}
-        className="tree-item-hover"
+        className="maven-tree-leaf"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -327,7 +327,7 @@ function TreeNode({ label, icon, badge, badgeColor = 'var(--muted)', collapsed, 
           {label}
         </span>
         {badge && (
-          <span style={{ fontSize: 10.5, color: badgeColor, fontWeight: 500, flexShrink: 0 }}>
+          <span style={{ fontSize: 10.5, color: badgeColor, fontWeight: 500, flexShrink: 0, marginLeft: 'auto' }}>
             {badge}
           </span>
         )}
@@ -624,7 +624,7 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
             gap: 4,
           }}
         >
-          <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>
+          <span className="chevron" style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>
             ▾
           </span>{' '}
           Maven

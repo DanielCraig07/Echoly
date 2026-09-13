@@ -1,4 +1,5 @@
 import './styles.css';
+import './runtimeConfig.css';
 import './monaco';
 import { Component, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';

@@ -1839,7 +1839,7 @@ export function GitPanel({
             gap: 4,
           }}
         >
-          <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>
+          <span className="chevron" style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>
             ▾
           </span>{' '}
           源代码
@@ -1855,8 +1855,8 @@ export function GitPanel({
           >
             {displayMode === 'tree' ? (
               <svg
-                width="15"
-                height="15"
+                width="16"
+                height="16"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -1868,8 +1868,8 @@ export function GitPanel({
               </svg>
             ) : (
               <svg
-                width="15"
-                height="15"
+                width="16"
+                height="16"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -1893,12 +1893,12 @@ export function GitPanel({
             onClick={() => void refresh()}
           >
             <svg
-              width="15"
-              height="15"
+              width="16"
+              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.5"
+              strokeWidth="2"
             >
               <polyline points="23 4 23 10 17 10" />
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
@@ -1911,7 +1911,7 @@ export function GitPanel({
             title="更多操作"
             onClick={() => setShowMoreMenu((v) => !v)}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <path d="M6 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm8 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" />
             </svg>
           </button>

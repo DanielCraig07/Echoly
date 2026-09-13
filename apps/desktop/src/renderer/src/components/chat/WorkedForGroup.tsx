@@ -127,53 +127,117 @@ function InOutExecutionBox({
 
   return (
     <div className="tool-inout-box">
-      {/* ─── IN 区域（点击可展开/折叠全部输入）；无输入参数时整行隐藏，不再显示 IN 标签 ─── */}
+      {/* ─── IN 区域（对标 OUT 结构：展开后独占完整全宽代码块铺满卡片，按钮靠至最右侧） ─── */}
       {inTrimmed && (
-        <div
-          className={`tool-inout-row has-border${inCanToggle ? ' is-clickable' : ''}`}
-          onClick={() => {
-            if (inCanToggle) setInExpanded((prev) => !prev);
-          }}
-          title={inCanToggle ? (inExpanded ? '点击收起输入参数' : '点击展开查看全部输入参数') : undefined}
-        >
-          <span className="tool-inout-tag">IN</span>
+        <div className="tool-inout-section has-border">
           <div
-            className={`tool-inout-content${
-              !inExpanded && inCanToggle ? ' collapsed-single' : ''
-            }`}
+            className={`tool-inout-header${inCanToggle ? ' is-clickable' : ''}`}
+            onClick={() => {
+              if (inCanToggle) setInExpanded((prev) => !prev);
+            }}
+            title={
+              inCanToggle
+                ? inExpanded
+                  ? '点击收起输入参数'
+                  : '点击展开查看完整输入参数'
+                : undefined
+            }
           >
-            {inTrimmed}
+            <div className="tool-inout-header-left">
+              <span className="tool-inout-tag">IN</span>
+              {inExpanded ? (
+                <span className="tool-inout-meta">
+                  {inLines.length > 1 ? `${inLines.length} 行输入` : '完整输入'}
+                </span>
+              ) : (
+                <div
+                  className={`tool-inout-content${
+                    inCanToggle ? ' collapsed-single' : ''
+                  }`}
+                >
+                  {inTrimmed}
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* 浮动操作按钮组（纯图标，鼠标悬浮时显现，不挤占排版，悬浮于上方） */}
           <div className="tool-inout-actions" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="tool-inout-btn tool-inout-copy-btn"
+              onClick={handleCopyIn}
+              title={copiedIn ? '已复制' : '复制输入'}
+            >
+              {copiedIn ? (
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="#38bdf8">
+                  <path
+                    fillRule="evenodd"
+                    d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"
+                  />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25v-7.5z"
+                  />
+                  <path
+                    fillRule="evenodd"
+                    d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25v-7.5zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25h-7.5z"
+                  />
+                </svg>
+              )}
+            </button>
             {inCanToggle && (
               <button
                 type="button"
-                className="tool-inout-toggle-btn"
+                className="tool-inout-btn tool-inout-toggle-btn"
                 onClick={() => setInExpanded((prev) => !prev)}
+                title={inExpanded ? '收起输入' : '展开输入'}
               >
-                {inExpanded ? '▴ 收起' : '▾ 展开'}
+                {inExpanded ? (
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path
+                      fillRule="evenodd"
+                      d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"
+                    />
+                  </svg>
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                    <path
+                      fillRule="evenodd"
+                      d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"
+                    />
+                  </svg>
+                )}
               </button>
             )}
-            <button
-              type="button"
-              className="tool-inout-copy-btn"
-              onClick={handleCopyIn}
-              title="复制输入"
-            >
-              {copiedIn ? '已复制' : '复制'}
-            </button>
           </div>
+
+          {/* 展开后作为独立的全宽代码块撑满整张卡片，避免挤在单行狭窄区域 */}
+          {inExpanded && inCanToggle && (
+            <div className="tool-inout-body tool-inout-in-body expanded-scroll">
+              {inTrimmed}
+            </div>
+          )}
         </div>
       )}
 
-      {/* ─── OUT 区域（优化结构：头部状态/操作栏 + 独立代码输出块） ─── */}
+      {/* ─── OUT 区域（优化结构：头部状态/操作栏 + 独立代码输出块，展开按钮靠到最右侧） ─── */}
       <div className="tool-inout-section">
         <div
           className={`tool-inout-header${outCanToggle ? ' is-clickable' : ''}`}
           onClick={() => {
             if (outCanToggle) setOutExpanded((prev) => !prev);
           }}
-          title={outCanToggle ? (outExpanded ? '点击收起输出结果' : '点击展开查看全部输出结果') : undefined}
+          title={
+            outCanToggle
+              ? outExpanded
+                ? '点击收起输出结果'
+                : '点击展开查看全部输出结果'
+              : undefined
+          }
         >
           <div className="tool-inout-header-left">
             <span className="tool-inout-tag">OUT</span>
@@ -183,30 +247,65 @@ function InOutExecutionBox({
               </span>
             )}
           </div>
-          <div className="tool-inout-actions" onClick={(e) => e.stopPropagation()}>
-            {outCanToggle && (
-              <button
-                type="button"
-                className="tool-inout-toggle-btn"
-                onClick={() => setOutExpanded((prev) => !prev)}
-              >
-                {outExpanded ? '▴ 收起' : `▾ 展开 (${outLines.length}行)`}
-              </button>
-            )}
-            {outTrimmed && (
-              <button
-                type="button"
-                className="tool-inout-copy-btn"
-                onClick={handleCopyOut}
-                title="复制输出"
-              >
-                {copiedOut ? '已复制' : '复制'}
-              </button>
-            )}
-          </div>
         </div>
 
-        {/* 独立的输出内容块，不再与 OUT 标签挤在同一行，避免拉得过宽 */}
+        {/* 浮动操作按钮组（纯图标，鼠标悬浮时显现，不挤占排版，悬浮于上方） */}
+        <div className="tool-inout-actions" onClick={(e) => e.stopPropagation()}>
+          {outTrimmed && (
+            <button
+              type="button"
+              className="tool-inout-btn tool-inout-copy-btn"
+              onClick={handleCopyOut}
+              title={copiedOut ? '已复制' : '复制输出'}
+            >
+              {copiedOut ? (
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="#38bdf8">
+                  <path
+                    fillRule="evenodd"
+                    d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z"
+                  />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25v-7.5z"
+                  />
+                  <path
+                    fillRule="evenodd"
+                    d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25v-7.5zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25h-7.5z"
+                  />
+                </svg>
+              )}
+            </button>
+          )}
+          {outCanToggle && (
+            <button
+              type="button"
+              className="tool-inout-btn tool-inout-toggle-btn"
+              onClick={() => setOutExpanded((prev) => !prev)}
+              title={outExpanded ? '收起输出' : '展开输出'}
+            >
+              {outExpanded ? (
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"
+                  />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"
+                  />
+                </svg>
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* 独立的输出内容块，撑满整宽卡片 */}
         <div
           className={`tool-inout-body${
             !outExpanded && outCanToggle
@@ -214,9 +313,9 @@ function InOutExecutionBox({
               : outExpanded
                 ? ' expanded-scroll'
                 : ''
-          }${outCanToggle ? ' is-clickable' : ''}`}
+          }${!outExpanded && outCanToggle ? ' is-clickable' : ''}`}
           onClick={() => {
-            if (outCanToggle) setOutExpanded((prev) => !prev);
+            if (!outExpanded && outCanToggle) setOutExpanded(true);
           }}
         >
           {isRunning ? (

@@ -1200,12 +1200,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         <div className="chat-header-actions">
           <button type="button" className="icon-btn" title="新建对话" onClick={handleNewTab}>
             <svg
-              width="15"
-              height="15"
+              width="17"
+              height="17"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="2.2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
@@ -1219,12 +1219,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             onClick={() => setShowHistoryModal(true)}
           >
             <svg
-              width="15"
-              height="15"
+              width="17"
+              height="17"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="2.2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >

@@ -758,9 +758,11 @@ export function EditorPane({
   const [showToc, setShowToc] = useState(false);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const tocListRef = useRef<HTMLDivElement>(null);
-  const [gitDiffData, setGitDiffData] = useState<{ original: string; modified: string } | null>(
-    null,
-  );
+  const [gitDiffData, setGitDiffData] = useState<{
+    path: string;
+    original: string;
+    modified: string;
+  } | null>(null);
   const [mdPreviewScrollTo, setMdPreviewScrollTo] = useState<string | null>(null);
   const mdPreviewRef = useRef<HTMLDivElement>(null);
   const decorationsRef = useRef<string[]>([]);
@@ -938,7 +940,7 @@ export function EditorPane({
       .then((res) => {
         if (cancelled) return;
         if (res && res.ok && res.isTracked !== false) {
-          setGitDiffData({ original: res.original, modified: res.modified });
+          setGitDiffData({ path: activePath, original: res.original, modified: res.modified });
         } else {
           setGitDiffData(null);
         }
@@ -1160,10 +1162,38 @@ export function EditorPane({
 
   // 选中文本后的 AI 悬浮提示：滑动文件时针对当前选区隐藏提示；重新划选或选区变化时恢复展示
   const dismissedSelectionKeyRef = useRef<string | null>(null);
+  // Monaco 查找框是否展开：展开时收起 AI 悬浮提示，避免盖在搜索框的上/下一个按钮上
+  const [findWidgetVisible, setFindWidgetVisible] = useState(false);
 
-  // 切换文件时清空原有装饰 ID，并重置选区 AI 悬浮窗提示状态
   useEffect(() => {
-    decorationsRef.current = [];
+    const ed = editorInstance;
+    const domNode = ed?.getDomNode();
+    const findWidget = domNode?.querySelector('.find-widget');
+    if (!findWidget) return;
+
+    const sync = () => setFindWidgetVisible(findWidget.classList.contains('visible'));
+    sync();
+
+    // Monaco 只切 .find-widget 的 visible class，观察它即可感知查找框开关
+    const observer = new MutationObserver(sync);
+    observer.observe(findWidget, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, [editorInstance, activePath]);
+
+  useEffect(() => {
+    if (findWidgetVisible) setSelectionCoords(null);
+  }, [findWidgetVisible]);
+
+  // 切换文件时清空原有装饰与 diff 数据，并重置选区 AI 悬浮窗提示状态
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (ed) {
+      decorationsRef.current = ed.deltaDecorations(decorationsRef.current, []);
+    } else {
+      decorationsRef.current = [];
+    }
+    setGitDiffData(null);
+    modifiedRangesRef.current = [];
     dismissedSelectionKeyRef.current = null;
     setSelectionCoords(null);
   }, [activePath]);
@@ -1171,7 +1201,7 @@ export function EditorPane({
   // Apply git decorations (gutter indicators & overview ruler) from diff data
   useEffect(() => {
     const ed = editorRef.current;
-    if (!ed || !gitDiffData) {
+    if (!ed || !gitDiffData || gitDiffData.path !== activePath) {
       if (ed) {
         decorationsRef.current = ed.deltaDecorations(decorationsRef.current, []);
       }
@@ -1257,7 +1287,7 @@ export function EditorPane({
 
   // Single-Hunk Discard Handler (reverts ONLY the target modified hunk, leaving other changes in the file intact)
   const handleDiscardSingleHunk = async () => {
-    if (!active?.path || !gitDiffData || gitInlineDiffLine == null) return;
+    if (!active?.path || !gitDiffData || gitDiffData.path !== activePath || gitInlineDiffLine == null) return;
     const currentContent = active.content ?? gitDiffData.modified;
     const { hunks } = computeInlineHunks(gitDiffData.original, currentContent);
     const targetL = gitInlineDiffLine;
@@ -1590,6 +1620,11 @@ export function EditorPane({
   const updateSelectionAndCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
     const model = ed.getModel();
     const sel = ed.getSelection();
+    // 查找框打开时不显示 AI 悬浮提示，避免遮挡搜索框
+    if (ed.getDomNode()?.querySelector('.find-widget.visible')) {
+      setSelectionCoords(null);
+      return;
+    }
     if (!model || !sel || sel.isEmpty()) {
       dismissedSelectionKeyRef.current = null;
       if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
@@ -2317,6 +2352,7 @@ export function EditorPane({
           active?.path &&
           selectionCoords &&
           !showInlineAi &&
+          !findWidgetVisible &&
           selectionAiFloat !== false && (
             <div
               className="selection-float-widget compact"
@@ -3129,7 +3165,7 @@ export function EditorPane({
             className="git-inline-diff-banner"
           >
             {(() => {
-              if (!gitDiffData) {
+              if (!gitDiffData || gitDiffData.path !== activePath) {
                 return (
                   <div style={{ padding: '12px 16px', color: 'var(--muted)' }}>
                     正在加载改动对比数据...
@@ -3254,6 +3290,7 @@ export function EditorPane({
                 <>
                   {/* Header Action Bar */}
                   <div
+                    className="scm-hunk-action-bar"
                     style={{
                       display: 'flex',
                       alignItems: 'center',

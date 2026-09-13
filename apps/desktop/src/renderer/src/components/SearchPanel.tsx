@@ -465,7 +465,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             gap: 4,
           }}
         >
-          <span className="chevron" style={{ fontSize: 12, color: 'var(--muted)' }}>
+          <span className="chevron" style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>
             ▾
           </span>{' '}
           搜索
@@ -478,12 +478,14 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             onClick={() => void performSearch(query, isCaseSensitive)}
           >
             <svg
-              width="15"
-              height="15"
+              width="16"
+              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.5"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
               <polyline points="23 4 23 10 17 10" />
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
@@ -496,12 +498,14 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             onClick={handleClear}
           >
             <svg
-              width="15"
-              height="15"
+              width="16"
+              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.5"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
@@ -515,8 +519,8 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           >
             {displayMode === 'tree' ? (
               <svg
-                width="15"
-                height="15"
+                width="16"
+                height="16"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -528,8 +532,8 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               </svg>
             ) : (
               <svg
-                width="15"
-                height="15"
+                width="16"
+                height="16"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -553,12 +557,14 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             onClick={toggleAllCollapse}
           >
             <svg
-              width="15"
-              height="15"
+              width="16"
+              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="1.5"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
               <rect x="8" y="8" width="12" height="12" rx="2" ry="2" />
               <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
@@ -572,10 +578,10 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
       {/* 2. Inputs Area */}
       <div
         style={{
-          padding: 12,
+          padding: '10px 12px 10px 10px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 8,
+          gap: 6,
           borderBottom: '1px solid var(--border)',
         }}
       >
@@ -668,10 +674,9 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           </div>
         </div>
 
-        {/* Replace Input Row (Collapsible) */}
+        {/* Replace Input Row (Collapsible) — 左边缘与搜索输入框对齐 */}
         {showReplace && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 22 }}>
-            <div
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 30 }}>            <div
               style={{
                 flex: 1,
                 position: 'relative',
@@ -853,6 +858,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                     >
                       {/* File Header */}
                       <div
+                        className="search-result-item search-result-file-header"
                         onClick={() => toggleFileCollapse(group.path)}
                         style={{
                           display: 'flex',
@@ -860,7 +866,6 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                           gap: 6,
                           padding: '6px 12px',
                           cursor: 'pointer',
-                          background: 'rgba(255, 255, 255, 0.02)',
                           userSelect: 'none',
                         }}
                       >

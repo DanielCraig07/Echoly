@@ -161,6 +161,18 @@ button.danger {
   color: var(--danger-text);
 }
 
+/* button.primary / button.danger 与 button:hover 同权重且声明在后，
+   会吃掉通用 hover 背景；这里为实心按钮补上可见的悬浮反馈 */
+button.primary:not(:disabled):hover,
+button.danger:not(:disabled):hover {
+  filter: brightness(1.12);
+}
+
+button.primary:not(:disabled):active,
+button.danger:not(:disabled):active {
+  filter: brightness(0.95);
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -245,11 +257,11 @@ textarea:focus {
 .layout-toggle-group {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   background: var(--bg-hover, rgba(255, 255, 255, 0.06));
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 2px 4px;
+  border-radius: 8px;
+  padding: 2px 3px;
   margin-right: 6px;
   -webkit-app-region: no-drag;
 }
@@ -258,20 +270,20 @@ textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 20px;
+  width: 26px;
+  height: 22px;
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--muted);
-  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 5px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .layout-toggle-btn:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .layout-toggle-btn:disabled {
@@ -280,8 +292,33 @@ textarea:focus {
 }
 
 .layout-toggle-btn.active {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.layout-toggle-btn.active:hover {
+  background: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+/* 顶部「设置」入口：与折叠按钮同构，单独放大并补足悬浮反馈 */
+.layout-toggle-btn.settings-btn {
+  width: 28px;
+  height: 26px;
+  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.layout-toggle-btn.settings-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  transform: scale(1.05);
+}
+
+[data-theme='light'] .layout-toggle-btn.settings-btn:hover,
+[data-theme='light'] .layout-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .titlebar-spacer {
@@ -411,7 +448,7 @@ textarea:focus {
   background: var(--bg-card, rgba(255, 255, 255, 0.04));
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   font-size: 12px;
   user-select: none;
@@ -420,8 +457,8 @@ textarea:focus {
 
 .top-search-trigger:hover {
   background: var(--bg-hover, rgba(255, 255, 255, 0.08));
-  border-color: rgba(255, 255, 255, 0.18);
-  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
 }
 
 .search-trigger-text {
@@ -1116,20 +1153,38 @@ textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
   background: transparent;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.85);
   padding: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.idea-sidebar-tabs button:hover,
+.idea-sidebar-tabs button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: scale(1.05);
+}
+
+.idea-sidebar-tabs button:active {
+  transform: scale(0.95);
+}
+
 .idea-sidebar-tabs button.active {
-  color: var(--text);
-  background: var(--bg-hover);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.idea-sidebar-tabs button.active:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
 }
 
 .idea-sidebar-spacer {
@@ -1137,7 +1192,6 @@ textarea:focus {
 }
 
 .idea-project-title {
-  padding-left: 4px !important;
   font-weight: 700 !important;
   font-size: 12px !important;
   color: var(--text) !important;
@@ -1155,6 +1209,10 @@ textarea:focus {
   flex: 1;
   min-height: 0;
   overflow: visible;
+  /* 滚动时目录行 sticky 吸附在上方，行的圆角与 1px 行距会露出下面的文件，
+     用与 .file-node-dir 一致的底色填充行间缝隙 */
+  background: var(--bg-panel, #181818);
+  border-radius: 0 0 6px 0;
 }
 
 .git-panel {
@@ -1573,15 +1631,52 @@ body.resizing.resizing-row {
   background-color: var(--bg-panel, #181818) !important;
   border-bottom: none !important;
   box-shadow: none !important;
+  /* 目录行必须整行不透明地盖住下方滚动内容，故取消左右圆角：
+     圆角处背景会被裁掉，下方 .file-node.active 的蓝色选中条正是从
+     这个缺口漏出来的。上下留白靠下面的伪元素补齐 */
+  border-radius: 0 !important;
 }
 
+/* 行高 24px 与吸附步长一致时行间不应有缝，这里再补一条同色描边兜底 */
+.file-node-dir::before {
+  content: '';
+  position: absolute;
+  inset: -1px 0;
+  background: var(--bg-panel, #181818);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.file-node-dir > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 选中指示条改由伪元素绘制（不再用 inset box-shadow），避免被圆角裁剪 */
+.file-node-dir::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.file-node-dir.active,
 .file-node-dir:hover {
   background-color: var(--bg-hover) !important;
 }
 
-.file-node-dir.active {
-  background-color: var(--bg-hover) !important;
-  box-shadow: inset 2px 0 0 var(--accent) !important;
+.file-node-dir.active::before,
+.file-node-dir:hover::before {
+  background: var(--bg-hover);
+}
+
+.file-node-dir.active::after {
+  background: var(--accent) !important;
 }
 
 .tree-indent-guide {
@@ -1591,12 +1686,17 @@ body.resizing.resizing-row {
   width: 1px;
   background-color: rgba(255, 255, 255, 0.15);
   pointer-events: none;
+  z-index: 1;
 }
 
 .file-node-name {
+  position: relative;
+  z-index: 1;
   white-space: nowrap;
   flex-shrink: 0;
 }
+
+
 
 /* ── Gitignored Files & Folders: Muted / Dimmed appearance ── */
 .file-node.is-git-ignored {
@@ -2155,6 +2255,16 @@ body.resizing.resizing-row {
   line-height: 1;
   display: inline-block;
   user-select: none;
+  cursor: pointer;
+  border-radius: 3px;
+  transition:
+    background 0.1s ease,
+    filter 0.1s ease;
+}
+
+.tab .tab-git-badge:hover {
+  filter: brightness(1.25);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .tab .tab-close-btn {
@@ -3739,6 +3849,8 @@ body.resizing.resizing-row {
   flex-direction: column;
   margin: 4px 0 8px;
   user-select: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .worked-for-summary-header {
@@ -3947,6 +4059,7 @@ body.resizing.resizing-row {
   position: relative;
   margin: 8px 0 14px 6px;
   padding-left: 22px;
+  box-sizing: border-box;
 }
 
 .agent-timeline-stream::before {
@@ -3962,6 +4075,8 @@ body.resizing.resizing-row {
 .agent-timeline-node {
   position: relative;
   margin-bottom: 10px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .agent-timeline-node:last-child {
@@ -4041,7 +4156,7 @@ body.resizing.resizing-row {
 
 .tool-inout-box {
   margin: 6px 0 10px 0;
-  max-width: min(100%, 780px);
+  width: 100%;
   box-sizing: border-box;
   background: color-mix(in srgb, var(--bg-elevated, #222222) 65%, transparent);
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
@@ -4061,6 +4176,8 @@ body.resizing.resizing-row {
   gap: 12px;
   position: relative;
   transition: background 0.1s ease;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .tool-inout-row.is-clickable {
@@ -4104,10 +4221,17 @@ body.resizing.resizing-row {
   text-overflow: ellipsis;
 }
 
-/* OUT 区域独立结构：头部信息/操作栏 + 内部代码输出体 */
+/* 区域独立结构：头部信息/操作栏 + 内部代码输出体 */
 .tool-inout-section {
+  position: relative;
   display: flex;
   flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tool-inout-section.has-border {
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.06));
 }
 
 .tool-inout-header {
@@ -4115,9 +4239,13 @@ body.resizing.resizing-row {
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
+  padding-right: 58px; /* 为右上角悬浮操作图标留出呼吸空间，彻底不遮挡正文 */
   user-select: none;
   background: rgba(255, 255, 255, 0.015);
   transition: background 0.12s ease;
+  width: 100%;
+  box-sizing: border-box;
+  gap: 8px;
 }
 
 .tool-inout-header.is-clickable {
@@ -4132,12 +4260,16 @@ body.resizing.resizing-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .tool-inout-meta {
   font-size: 10.5px;
   color: var(--muted, #71717a);
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 .tool-inout-body {
@@ -4150,6 +4282,13 @@ body.resizing.resizing-row {
   overflow-wrap: anywhere;
   background: rgba(0, 0, 0, 0.18);
   border-top: 1px solid rgba(255, 255, 255, 0.04);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tool-inout-body.tool-inout-in-body {
+  background: rgba(0, 0, 0, 0.12);
+  color: #e4e4e7;
 }
 
 .tool-inout-body.is-clickable {
@@ -4170,67 +4309,83 @@ body.resizing.resizing-row {
   background: rgba(0, 0, 0, 0.25);
 }
 
+.tool-inout-body.tool-inout-in-body.expanded-scroll {
+  background: rgba(0, 0, 0, 0.15);
+}
+
 .tool-inout-empty {
   color: var(--muted, #71717a);
   font-style: italic;
   user-select: none;
 }
 
+/* 浮动操作按钮胶囊：默认纯透明隐藏，鼠标悬浮在卡片区域时淡入悬浮于右上角上方 */
 .tool-inout-actions {
-  display: flex;
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  z-index: 5;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.tool-inout-toggle-btn {
-  background: transparent;
-  border: none;
-  color: var(--muted, #a1a1aa);
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  flex-shrink: 0;
-  opacity: 0.75;
-  transition:
-    opacity 0.12s,
-    color 0.12s,
-    background 0.12s;
-  user-select: none;
-}
-
-.tool-inout-toggle-btn:hover {
-  opacity: 1;
-  color: #38bdf8;
-  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
-}
-
-.tool-inout-copy-btn {
-  background: transparent;
-  border: none;
-  color: var(--muted, #71717a);
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  cursor: pointer;
+  gap: 2px;
+  background: rgba(24, 24, 28, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
   transition:
-    opacity 0.15s,
-    color 0.12s;
-  flex-shrink: 0;
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
-.tool-inout-row:hover .tool-inout-copy-btn,
-.tool-inout-header:hover .tool-inout-copy-btn,
-.tool-inout-section:hover .tool-inout-copy-btn {
-  opacity: 0.8;
-}
-
-.tool-inout-copy-btn:hover {
+.tool-inout-section:hover .tool-inout-actions,
+.tool-inout-row:hover .tool-inout-actions {
   opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* 纯图标操作按钮 */
+.tool-inout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted, #a1a1aa);
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  user-select: none;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    transform 0.08s ease;
+}
+
+.tool-inout-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.tool-inout-btn:active {
+  transform: scale(0.92);
+}
+
+.tool-inout-btn.tool-inout-copy-btn:hover {
   color: var(--text, #e2e8f0);
+}
+
+.tool-inout-btn.tool-inout-toggle-btn:hover {
+  color: #38bdf8;
 }
 
 .agent-timeline-thinking-box {
@@ -5341,80 +5496,161 @@ body.resizing.resizing-row {
   color: #e57373;
 }
 
-/* Explorer Header 4 Quick Action Buttons (Match Screenshot 2) */
+/* Explorer Header Quick Action Buttons (Unified with Maven toolbar button standard) */
 .explorer-quick-actions {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
-.explorer-quick-actions button {
-  padding: 2px 4px;
-  font-size: 13px;
+.explorer-quick-actions .panel-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  min-width: 26px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid transparent;
   background: transparent;
-  border: none;
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
-  border-radius: 3px;
-  opacity: 0.8;
-  line-height: 1;
-}
-
-.explorer-quick-actions button:hover {
+  box-sizing: border-box;
   opacity: 1;
-  color: var(--fg);
-  background: rgba(255, 255, 255, 0.08);
+  transition: all 0.15s ease;
+  user-select: none;
+  flex-shrink: 0;
 }
 
-/* Bottom IDE Status Bar */
+.explorer-quick-actions .panel-action-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
+}
+
+.explorer-quick-actions .panel-action-btn:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Bottom IDE Status Bar (高度微增，增加视觉通透感与呼吸空间) */
 .ide-status-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 22px;
-  background: var(--bg-tabs);
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 11px;
-  font-family: var(--font-ui);
+  height: 26px;
+  background: #141416;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11.5px;
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   user-select: none;
-  padding: 0 4px 0 0;
+  padding: 0 8px 0 0;
   flex-shrink: 0;
   z-index: 100;
+  box-sizing: border-box;
 }
 
 .status-bar-left,
 .status-bar-right {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 3px;
+  height: 100%;
 }
 
 .status-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 4px;
   cursor: pointer;
-  padding: 1px 4px;
-  border-radius: 3px;
   white-space: nowrap;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 11.5px;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    transform 0.08s ease;
 }
 
 .status-item:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+.status-item:active {
+  transform: scale(0.96);
+}
+
+.status-item.is-active {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
 }
 
 .status-remote {
-  background: var(--accent);
-  color: #ffffff;
-  padding: 0 8px;
-  height: 22px;
-  line-height: 22px;
+  background: #007acc !important;
+  color: #ffffff !important;
+  padding: 0 10px;
+  height: 26px;
+  line-height: 26px;
   font-weight: 700;
+  font-size: 12px;
   border-radius: 0;
   margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  letter-spacing: -0.5px;
+  transition:
+    background 0.15s ease,
+    filter 0.15s ease;
+}
+
+.status-remote:hover {
+  background: #1f8ad2 !important;
+  color: #ffffff !important;
+  filter: brightness(1.12);
+}
+
+.status-remote:active {
+  filter: brightness(0.92);
+}
+
+.status-sync-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+}
+
+.status-sync-btn svg {
+  transform-origin: center center;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease;
+}
+
+.status-sync-btn:hover svg {
+  color: #ffffff;
+  transform: rotate(45deg);
+}
+
+.status-sync-btn.is-syncing svg {
+  animation: spin 0.8s linear infinite !important;
+  transform: none;
 }
 
 .editor-breadcrumb .crumb-sep {
@@ -7579,19 +7815,32 @@ body.resizing.resizing-row {
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--muted, #999);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--fg, #ffffff);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
 }
 
 .icon-btn:active {
   transform: scale(0.94);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 差异视图工具条里的 .icon-btn 自带内联 background/color/border，
+   会盖掉上面的悬浮规则，这里补一条更高权重的规则保留悬浮反馈 */
+.chat-diff-title-row .icon-btn:hover,
+.diff-title-row .icon-btn:hover,
+.scm-hunk-action-bar .icon-btn:hover,
+.icon-btn.is-hoverable:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--fg, #ffffff) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 /* ── Panel Header & Toolbar Action Buttons ─────────────────── */
@@ -7600,12 +7849,12 @@ body.resizing.resizing-row {
   align-items: center;
   justify-content: center;
   padding: 3px;
-  min-width: 24px;
-  height: 24px;
+  min-width: 26px;
+  height: 26px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--muted, #999);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   box-sizing: border-box;
   transition: all 0.15s ease;
@@ -7613,14 +7862,15 @@ body.resizing.resizing-row {
 }
 
 .panel-action-btn:hover {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
-  color: var(--text-bright, #ffffff);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
 }
 
 .panel-action-btn:active {
-  transform: scale(0.94);
-  background: rgba(255, 255, 255, 0.15);
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .panel-action-btn:focus {
@@ -7634,16 +7884,16 @@ body.resizing.resizing-row {
 
 .panel-action-btn.active,
 .panel-action-btn.selected {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.12));
-  color: var(--text-bright, #ffffff);
-  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .panel-action-btn.active:hover,
 .panel-action-btn.selected:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.25);
   color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 /* ── Maven Toolbar Action Buttons (Matching Git Header Standard) ── */
@@ -7652,13 +7902,13 @@ body.resizing.resizing-row {
   align-items: center;
   justify-content: center;
   padding: 3px;
-  min-width: 24px;
-  width: 24px;
-  height: 24px;
+  min-width: 26px;
+  width: 26px;
+  height: 26px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--muted, #999);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   box-sizing: border-box;
   transition: all 0.15s ease;
@@ -7667,26 +7917,27 @@ body.resizing.resizing-row {
 }
 
 .maven-toolbar-btn:hover {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
-  color: var(--text-bright, #ffffff);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
 }
 
 .maven-toolbar-btn:active {
-  transform: scale(0.94);
-  background: rgba(255, 255, 255, 0.15);
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .maven-toolbar-btn.active {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.12));
-  color: var(--text-bright, #ffffff);
-  border-color: rgba(255, 255, 255, 0.16);
-}
-
-.maven-toolbar-btn.active:hover {
   background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.22);
+}
+
+.maven-toolbar-btn.active:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 /* ── Maven Lifecycle Goal Item: exactly matching workspace .file-node ── */
@@ -7726,11 +7977,9 @@ body.resizing.resizing-row {
 .maven-tree-leaf {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 3px 6px 3px 32px;
+  gap: 6px;
   border-radius: 4px;
   cursor: pointer;
-  margin: 1px 4px;
   font-size: 12px;
   border: 1px solid transparent;
   transition: background 0.12s ease, color 0.12s ease;
@@ -8935,60 +9184,92 @@ body.resizing.resizing-row {
   box-shadow:
     0 10px 30px rgba(0, 0, 0, 0.55),
     0 0 0 1px rgba(0, 0, 0, 0.2) !important;
-  overflow: visible !important;
-  color: var(--text) !important;
+  overflow: hidden !important;
+  color: var(--text, #d4d4d8) !important;
   top: 10px !important;
   right: 18px !important;
+  min-width: 420px !important;
+  box-sizing: border-box !important;
 }
 
+/* 隐藏态彻底不可见：
+   Monaco 仅把组件上移 translateY(-100% - 10px) 移出视野，自定义阴影向下扩散
+   约 12px 会残留在编辑器顶部形成黑色拖影；此处直接消除隐藏态的阴影与不透明度 */
+.monaco-editor .find-widget:not(.visible) {
+  box-shadow: none !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
+.monaco-editor .find-widget.visible {
+  opacity: 1;
+}
+
+/* 输入框（查找框与替换框）样式统一 */
 .monaco-editor .find-widget .monaco-inputbox {
   background: rgba(16, 16, 18, 0.75) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
   border-radius: 6px !important;
   box-shadow: none !important;
+  min-height: 26px !important;
+  height: 26px !important;
+  box-sizing: border-box !important;
   transition:
     border-color 0.15s,
     box-shadow 0.15s !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox .input {
-  color: var(--text) !important;
+  color: var(--text, #e4e4e7) !important;
   background: transparent !important;
   font-size: 12px !important;
   padding: 2px 6px !important;
+  line-height: 20px !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
-  border-color: rgba(96, 165, 250, 0.7) !important;
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2) !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 1px #38bdf8 !important;
+  outline: none !important;
 }
 
-/* 左侧展开/折叠替换栏的按钮（> 符号） */
-.monaco-editor .find-widget .left .button,
-.monaco-editor .find-widget .button.codicon-find-collapsed,
-.monaco-editor .find-widget .button.codicon-find-expanded {
-  background: transparent !important;
-  border: none !important;
-  border-radius: 4px !important;
-  color: rgba(255, 255, 255, 0.5) !important;
-  box-shadow: none !important;
-  transition:
-    background 0.12s,
-    color 0.12s !important;
+.monaco-editor .find-widget .monaco-inputbox .input::placeholder {
+  font-size: 12px !important;
+  color: rgba(255, 255, 255, 0.35) !important;
 }
 
-.monaco-editor .find-widget .left .button:hover,
-.monaco-editor .find-widget .button.codicon-find-collapsed:hover,
-.monaco-editor .find-widget .button.codicon-find-expanded:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #ffffff !important;
-}
-
-.monaco-editor .find-widget .find-part,
-.monaco-editor .find-widget .replace-part {
-  cursor: text;
-  gap: 6px !important;
+/* 行容器布局：上行查找，下行替换 */
+.monaco-editor .find-widget > .find-part {
+  margin: 4px 28px 4px 22px !important;
+  display: flex !important;
   align-items: center !important;
+  gap: 6px !important;
+  font-size: 12px !important;
+}
+
+.monaco-editor .find-widget > .replace-part {
+  margin: 2px 28px 5px 22px !important;
+  font-size: 12px !important;
+}
+
+.monaco-editor .find-widget:not(.replaceToggled) > .replace-part {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
+}
+
+.monaco-editor .find-widget.replaceToggled > .replace-part {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
 }
 
 .monaco-editor .find-widget .replace-part .replace-input {
@@ -8996,84 +9277,277 @@ body.resizing.resizing-row {
   flex: 1 1 auto !important;
 }
 
-/* 匹配计数 8 of 15 */
+/* 左侧展开/折叠替换栏的按钮（chevron 符号）：
+   始终居中对齐查找行，避免展开后下移 */
+.monaco-editor .find-widget .button.toggle.left,
+.monaco-editor .find-widget .left .button {
+  position: absolute !important;
+  left: 3px !important;
+  top: 6px !important;
+  width: 18px !important;
+  height: 22px !important;
+  border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.6) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  z-index: 2 !important;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    transform 0.1s ease !important;
+}
+
+.monaco-editor .find-widget .button.toggle.left:hover,
+.monaco-editor .find-widget .left .button:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+.monaco-editor .find-widget .button.toggle.left:active,
+.monaco-editor .find-widget .left .button:active {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  transform: scale(0.92) !important;
+}
+
+/* 右上角关闭按钮 (✕)：与查找行右侧按钮组平齐 */
+.monaco-editor .find-widget > .button.codicon-widget-close,
+.monaco-editor .find-widget > .button.close-button,
+.monaco-editor .find-widget .close-button {
+  position: absolute !important;
+  top: 6px !important;
+  right: 5px !important;
+  width: 22px !important;
+  height: 22px !important;
+  padding: 0 !important;
+  border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  z-index: 2 !important;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    transform 0.1s ease !important;
+}
+
+.monaco-editor .find-widget > .button.codicon-widget-close:hover,
+.monaco-editor .find-widget > .button.close-button:hover,
+.monaco-editor .find-widget .close-button:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+.monaco-editor .find-widget > .button.codicon-widget-close:active,
+.monaco-editor .find-widget > .button.close-button:active,
+.monaco-editor .find-widget .close-button:active {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  transform: scale(0.92) !important;
+}
+
+/* 匹配计数（保持用户指定的 n of N 格式，如 10 of 330 / No results） */
 .monaco-editor .find-widget .matchesCount {
-  color: rgba(255, 255, 255, 0.55) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: rgba(255, 255, 255, 0.65) !important;
   font-size: 11.5px !important;
-  font-family: var(--font-mono, monospace) !important;
+  font-family: var(--font-mono, monospace), -apple-system, sans-serif !important;
+  margin: 0 6px 0 6px !important;
   padding: 0 4px !important;
-  letter-spacing: -0.01em !important;
+  height: 24px !important;
+  line-height: 24px !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  letter-spacing: 0.02em !important;
 }
 
-/* 输入框内部的 Aa / ab / .* 切换按钮 */
-.monaco-editor .find-widget .monaco-custom-checkbox,
-.monaco-editor .find-widget .button {
-  background: transparent !important;
-  border: none !important;
-  border-radius: 4px !important;
-  color: rgba(255, 255, 255, 0.5) !important;
-  box-shadow: none !important;
-  outline: none !important;
-  transition:
-    background 0.12s,
-    color 0.12s !important;
+.monaco-editor .find-widget.no-results .matchesCount {
+  color: #f87171 !important;
 }
 
-.monaco-editor .find-widget .monaco-custom-checkbox:hover,
-.monaco-editor .find-widget .button:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: rgba(255, 255, 255, 0.9) !important;
-}
-
-.monaco-editor .find-widget .monaco-custom-checkbox.checked,
-.monaco-editor .find-widget .button.checked {
-  background: rgba(59, 130, 246, 0.22) !important;
-  color: #60a5fa !important;
-  border: 1px solid rgba(96, 165, 250, 0.4) !important;
-}
-
-/* 导航与动作按钮组 (↑ / ↓ / ≡ / ✕) */
-.monaco-editor .find-widget .find-actions,
-.monaco-editor .find-widget .monaco-action-bar {
-  color: rgba(255, 255, 255, 0.6) !important;
-}
-
-.monaco-editor .find-widget .monaco-action-bar .action-item {
+/* 输入框内部的 Aa / ab / .* / AB 切换按钮 */
+.monaco-editor .find-widget .monaco-custom-toggle {
+  width: 20px !important;
+  height: 20px !important;
   margin: 0 1px !important;
-}
-
-.monaco-editor .find-widget .monaco-action-bar .action-label,
-.monaco-editor .find-widget .find-actions .action-item .action-label {
-  background: transparent !important;
-  border: none !important;
-  outline: none !important;
-  box-shadow: none !important;
   border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  background-color: transparent !important;
   color: rgba(255, 255, 255, 0.6) !important;
-  transition:
-    background 0.12s,
-    color 0.12s !important;
-}
-
-.monaco-editor .find-widget .monaco-action-bar .action-item:hover .action-label,
-.monaco-editor .find-widget .find-actions .action-item:hover .action-label {
-  color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-}
-
-.monaco-editor .find-widget .monaco-action-bar .action-item:focus .action-label,
-.monaco-editor .find-widget .monaco-action-bar .action-item.focused .action-label,
-.monaco-editor .find-widget .monaco-action-bar .action-item.active .action-label,
-.monaco-editor .find-widget .monaco-action-bar .action-label:focus {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
   outline: none !important;
   box-shadow: none !important;
-  background: rgba(255, 255, 255, 0.14) !important;
+  font-family: codicon !important;
+  font-size: 14px !important;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease !important;
+}
+
+.monaco-editor .find-widget .monaco-custom-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
   color: #ffffff !important;
 }
 
+.monaco-editor .find-widget .monaco-custom-toggle.checked {
+  background-color: rgba(59, 130, 246, 0.25) !important;
+  border: 1px solid rgba(96, 165, 250, 0.5) !important;
+  color: #60a5fa !important;
+}
+
+.monaco-editor .find-widget .monaco-custom-toggle.checked:hover {
+  background-color: rgba(59, 130, 246, 0.35) !important;
+  border-color: rgba(96, 165, 250, 0.65) !important;
+  color: #93c5fd !important;
+}
+
+/* 导航与动作按钮组 (↑ / ↓ / ≡ 及 替换 / 全部替换) */
+.monaco-editor .find-widget .find-actions,
+.monaco-editor .find-widget .replace-actions,
+.monaco-editor .find-widget .monaco-action-bar {
+  display: flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  height: 26px !important;
+}
+
+.monaco-editor .find-widget .find-actions .button,
+.monaco-editor .find-widget .replace-actions .button,
+.monaco-editor .find-widget .button,
+.monaco-editor .find-widget .codicon-find-selection {
+  width: 22px !important;
+  height: 22px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  box-shadow: none !important;
+  outline: none !important;
+  font-family: codicon !important;
+  font-size: 16px !important;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease,
+    transform 0.1s ease !important;
+}
+
+/* 所有操作按钮显式悬浮效果 (清晰背景与高亮反馈) */
+.monaco-editor .find-widget .find-actions .button:not(.disabled):hover,
+.monaco-editor .find-widget .replace-actions .button:not(.disabled):hover,
+.monaco-editor .find-widget .button:not(.disabled):hover,
+.monaco-editor .find-widget .codicon-find-selection:not(.disabled):hover,
+.monaco-editor .find-widget .monaco-action-bar .action-item:hover .action-label {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+}
+
+.monaco-editor .find-widget .find-actions .button:not(.disabled):active,
+.monaco-editor .find-widget .replace-actions .button:not(.disabled):active,
+.monaco-editor .find-widget .button:not(.disabled):active,
+.monaco-editor .find-widget .codicon-find-selection:not(.disabled):active {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  transform: scale(0.92) !important;
+}
+
+/* 选中激活态（如图 1 选定内容中查找 ≡ 被激活时圆角微底色高亮） */
+.monaco-editor .find-widget .button.checked,
+.monaco-editor .find-widget .codicon-find-selection.checked {
+  background: rgba(255, 255, 255, 0.16) !important;
+  border: 1px solid rgba(255, 255, 255, 0.24) !important;
+  color: #ffffff !important;
+}
+
+.monaco-editor .find-widget .button.checked:hover,
+.monaco-editor .find-widget .codicon-find-selection.checked:hover {
+  background: rgba(255, 255, 255, 0.24) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  color: #ffffff !important;
+}
+
+.monaco-editor .find-widget .button.disabled,
+.monaco-editor .find-widget .disabled,
 .monaco-editor .find-widget .monaco-action-bar .action-item.disabled .action-label {
   opacity: 0.3 !important;
   cursor: default !important;
+  pointer-events: none !important;
+}
+
+/* 按钮图标 Codicon 字符映射（对标图 1 图标） */
+.monaco-editor .find-widget [class*='codicon-']::before,
+.monaco-editor .find-widget .codicon::before {
+  font-family: codicon !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  display: inline-block !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+.monaco-editor .find-widget .codicon-case-sensitive::before {
+  content: '\eab1' !important; /* Aa */
+}
+.monaco-editor .find-widget .codicon-whole-word::before {
+  content: '\eb7e' !important; /* _ab_ */
+}
+.monaco-editor .find-widget .codicon-regex::before {
+  content: '\eb38' !important; /* .* */
+}
+.monaco-editor .find-widget .codicon-preserve-case::before {
+  content: '\eb2e' !important; /* AB */
+}
+.monaco-editor .find-widget .codicon-find-previous-match::before,
+.monaco-editor .find-widget .button.previous::before {
+  content: '\eaa1' !important; /* ↑ */
+}
+.monaco-editor .find-widget .codicon-find-next-match::before,
+.monaco-editor .find-widget .button.next::before {
+  content: '\ea9a' !important; /* ↓ */
+}
+.monaco-editor .find-widget .codicon-find-selection::before {
+  content: '\eb85' !important; /* ≡ */
+}
+.monaco-editor .find-widget .codicon-widget-close::before,
+.monaco-editor .find-widget .button.close-button::before {
+  content: '\ea76' !important; /* ✕ */
+}
+.monaco-editor .find-widget .codicon-find-replace::before,
+.monaco-editor .find-widget .button.replace::before {
+  content: '\eb3d' !important; /* b -> [c] */
+}
+.monaco-editor .find-widget .codicon-find-replace-all::before,
+.monaco-editor .find-widget .button.replace-all::before {
+  content: '\eb3c' !important; /* ab -> [ac] */
+}
+.monaco-editor .find-widget .codicon-find-collapsed::before,
+.monaco-editor .find-widget:not(.replaceToggled) .button.toggle.left::before {
+  content: '\eab6' !important; /* › */
+}
+.monaco-editor .find-widget .codicon-find-expanded::before,
+.monaco-editor .find-widget.replaceToggled .button.toggle.left::before {
+  content: '\eab4' !important; /* ∨ */
 }
 
 /* 匹配/选中亮色 */
@@ -9084,22 +9558,6 @@ body.resizing.resizing-row {
 .monaco-editor .currentFindMatch {
   background: rgba(76, 141, 255, 0.55) !important;
   outline: 1px solid #60a5fa !important;
-}
-
-/* 关闭按钮 */
-.monaco-editor .find-widget .close-button {
-  color: rgba(255, 255, 255, 0.5) !important;
-  border-radius: 4px !important;
-}
-.monaco-editor .find-widget .close-button:hover {
-  color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-}
-
-/* 查找输入框里的提示占位 */
-.monaco-editor .find-widget .monaco-inputbox .input::placeholder {
-  font-size: 12px !important;
-  color: rgba(255, 255, 255, 0.35) !important;
 }
 
 /* 彻底隐藏搜索和替换小组件内部的滚动条 (包括输入框、替换框和侧边滑块) */
@@ -10553,6 +11011,14 @@ body.resizing.resizing-row {
   cursor: pointer;
   flex-shrink: 0;
   border: 1px solid rgba(255, 255, 255, 0.15);
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.staged-img-thumb:hover {
+  border-color: var(--accent, #4c8dff);
+  transform: scale(1.06);
 }
 
 .staged-file-icon {
@@ -11812,6 +12278,14 @@ body.resizing.resizing-row {
   cursor: not-allowed;
 }
 
+.inline-ai-submit-btn:not(:disabled):hover {
+  filter: brightness(1.12);
+}
+
+.inline-ai-submit-btn:not(:disabled):active {
+  filter: brightness(0.95);
+}
+
 .inline-ai-tags {
   display: flex;
   align-items: center;
@@ -11837,23 +12311,168 @@ body.resizing.resizing-row {
 }
 
 /* ==========================================================================
-   Status Bar Language Picker Popup
+   Status Bar Interactive Popovers & Elements
    ========================================================================== */
 
-.status-lang-btn:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
-  border-radius: 3px;
+.status-popover-anchor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
 }
 
+.status-popover {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  right: 0;
+  background: rgba(26, 26, 30, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.25);
+  z-index: 9999;
+  overflow: hidden;
+  animation: fadeIn 0.12s ease;
+  min-width: 190px;
+  padding: 6px;
+  color: #e4e4e7;
+  box-sizing: border-box;
+}
+
+.status-popover-header {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a1a1aa;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.status-popover-desc {
+  font-size: 10px;
+  color: var(--muted, #71717a);
+  font-weight: normal;
+}
+
+.status-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.status-popover-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.status-popover-item.active {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  font-weight: 500;
+}
+
+.status-goto-box {
+  padding: 4px 6px 2px;
+}
+
+.status-goto-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: #ffffff;
+  outline: none;
+  margin-bottom: 8px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.status-goto-input:focus {
+  border-color: var(--accent, #38bdf8);
+  box-shadow: 0 0 0 1px var(--accent, #38bdf8);
+}
+
+.status-goto-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.status-goto-btn {
+  background: var(--accent, #38bdf8);
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+
+.status-goto-btn:hover {
+  filter: brightness(1.15);
+}
+
+.status-goto-cancel-btn {
+  background: transparent;
+  color: #a1a1aa;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.status-goto-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.status-stats-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 5px 14px;
+  padding: 4px 8px 8px;
+  font-size: 11px;
+}
+
+.status-stats-label {
+  color: #a1a1aa;
+}
+
+.status-stats-val {
+  font-weight: 500;
+  color: #ffffff;
+  text-align: right;
+  font-family: var(--font-mono, monospace);
+}
+
+/* 语言选择弹层 */
 .status-lang-picker-popup {
   position: absolute;
-  bottom: calc(100% + 4px);
+  bottom: calc(100% + 5px);
   right: 0;
   width: 220px;
-  background: #1e1e1e;
-  border: 1px solid var(--border);
+  background: rgba(26, 26, 30, 0.98);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.25);
   z-index: 9999;
   overflow: hidden;
   animation: fadeIn 0.12s ease;
@@ -11861,24 +12480,24 @@ body.resizing.resizing-row {
 
 .status-lang-picker-header {
   padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.02);
 }
 
 .status-lang-picker-input {
   width: 100%;
   box-sizing: border-box;
-  background: #181818;
-  border: 1px solid var(--border);
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 4px;
   padding: 4px 8px;
   font-size: 11px;
-  color: var(--text);
+  color: #ffffff;
   outline: none;
 }
 
 .status-lang-picker-input:focus {
-  border-color: var(--accent);
+  border-color: var(--accent, #38bdf8);
 }
 
 .status-lang-picker-list {
@@ -11913,6 +12532,36 @@ body.resizing.resizing-row {
   font-size: 9.5px;
   font-family: var(--font-mono);
   color: var(--muted);
+}
+
+/* 开发者 Badge 个性化徽标 */
+.status-dev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.18), rgba(59, 130, 246, 0.18)) !important;
+  border: 1px solid rgba(168, 85, 247, 0.35) !important;
+  color: #e9d5ff !important;
+  border-radius: 12px !important;
+  padding: 1px 9px !important;
+  font-size: 11px !important;
+  font-weight: 500;
+  cursor: pointer;
+  margin-left: 2px;
+  transition: all 0.15s ease !important;
+}
+
+.status-dev-badge:hover {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.35), rgba(59, 130, 246, 0.35)) !important;
+  border-color: rgba(192, 132, 252, 0.7) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 14px rgba(168, 85, 247, 0.4);
+  transform: translateY(-1px);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Monaco Inline Git Blame (IDEA / GitLens 质感)
@@ -13703,8 +14352,17 @@ body.resizing.resizing-row {
   width: 100%;
 }
 
-.maven-panel .search-result-item:hover {
+/* 可点击结果行统一悬浮反馈（原先仅 .maven-panel 内生效，搜索/Git 面板行无反馈） */
+.search-result-item {
+  transition: background 0.1s ease;
+}
+
+.search-result-item:hover {
   background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+}
+
+.search-result-file-header {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .maven-panel select:focus {

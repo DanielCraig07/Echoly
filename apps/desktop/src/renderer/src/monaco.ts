@@ -1,5 +1,6 @@
 import { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
+import 'monaco-editor/esm/vs/base/browser/ui/codicons/codicon/codicon.css';
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';

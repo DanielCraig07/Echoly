@@ -293,6 +293,7 @@ function TreeNode({
   refreshKey,
   collapseKey,
   expandKey,
+  locateKey,
   expandPath,
   inlineEdit,
   onOpenFile,
@@ -310,6 +311,7 @@ function TreeNode({
   refreshKey: number;
   collapseKey?: number;
   expandKey?: number;
+  locateKey?: number;
   expandPath: string | null;
   inlineEdit: InlineEdit | null;
   onOpenFile: (path: string) => void;
@@ -362,7 +364,7 @@ function TreeNode({
     ) {
       setOpen(true);
     }
-  }, [expandPath, node.isDirectory, node.path]);
+  }, [expandPath, node.isDirectory, node.path, locateKey]);
 
   const gitMeta = getNodeGitStatus(node.path, node.isDirectory, gitEntries, gitIgnoredPaths);
 
@@ -394,33 +396,69 @@ function TreeNode({
               opacity: gitMeta?.isIgnored ? 0.52 : undefined,
             }}
             onClick={() => {
-              if (onSelectNode) onSelectNode({ path: node.path, isDirectory: node.isDirectory });
+              if (onSelectNode) onSelectNode({ path: node.path, isDirectory: true });
               setOpen((v) => !v);
             }}
             onContextMenu={(e) => onContextNode(e, node)}
           >
             {indents}
             <span
+              className="chevron"
               style={{
-                marginRight: 6,
-                fontSize: 13,
-                fontWeight: 'bold',
-                width: 12,
-                display: 'inline-block',
-                textAlign: 'center',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 14,
+                height: 14,
+                fontSize: 10,
+                color: 'rgba(255, 255, 255, 0.65)',
+                marginRight: 2,
+                position: 'relative',
                 zIndex: 1,
               }}
             >
               {open ? '▾' : '▸'}
             </span>
-            <span style={{ zIndex: 1, display: 'flex' }}>
-              <RenderFileTreeIcon name={node.name} isDirectory={true} isOpen={open} />
+            <span
+              className="folder-icon"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                marginRight: 4,
+                position: 'relative',
+                zIndex: 1,
+              }}
+            >
+              {open ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"
+                    fill="#eab308"
+                    opacity="0.25"
+                  />
+                  <path
+                    d="M2 10h20l-2 10H4L2 10Z"
+                    fill="#eab308"
+                    opacity="0.9"
+                  />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"
+                    fill="#eab308"
+                    opacity="0.85"
+                  />
+                </svg>
+              )}
             </span>
             <span
               className="file-node-name"
               style={{
-                color: gitMeta?.hasChanges ? '#e5a54b' : gitMeta?.color,
-                paddingRight: gitMeta?.hasChanges ? 32 : 8,
+                color: gitMeta?.hasChanges ? '#e5a54b' : gitMeta?.color || 'var(--text)',
+                fontWeight: 500,
+                position: 'relative',
+                zIndex: 1,
               }}
               title={node.name}
             >
@@ -429,18 +467,20 @@ function TreeNode({
             {gitMeta?.hasChanges && <span className="git-dir-dot">●</span>}
           </div>
         )}
-        {open && (
+
+        {showCreateHere && (
+          <InlineNameInput
+            initial=""
+            placeholder={inlineEdit.mode === 'create-file' ? '文件名' : '文件夹名'}
+            depth={depth + 1}
+            onSubmit={(name) => onInlineDone(inlineEdit, name)}
+            onCancel={onInlineCancel}
+          />
+        )}
+
+        {open && children && (
           <>
-            {showCreateHere && (
-              <InlineNameInput
-                initial=""
-                placeholder={inlineEdit.mode === 'create-file' ? '文件名' : '文件夹名'}
-                depth={depth + 1}
-                onSubmit={(name) => onInlineDone(inlineEdit, name)}
-                onCancel={onInlineCancel}
-              />
-            )}
-            {children?.map((child) => (
+            {children.map((child) => (
               <TreeNode
                 key={child.path}
                 node={child}
@@ -452,6 +492,7 @@ function TreeNode({
                 refreshKey={refreshKey}
                 collapseKey={collapseKey}
                 expandKey={expandKey}
+                locateKey={locateKey}
                 expandPath={expandPath}
                 inlineEdit={inlineEdit}
                 onOpenFile={onOpenFile}
@@ -479,11 +520,35 @@ function TreeNode({
 
   useEffect(() => {
     if (isThisActive && nodeRef.current) {
-      setTimeout(() => {
-        nodeRef.current?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
-      }, 50);
+      const el = nodeRef.current;
+      const container = el.closest('.explorer-tree-body') as HTMLElement | null;
+      if (!container) return;
+
+      const triggerScroll = (smooth: boolean) => {
+        const elRect = el.getBoundingClientRect();
+        const cRect = container.getBoundingClientRect();
+        if (elRect.top < cRect.top || elRect.bottom > cRect.bottom || smooth) {
+          const targetScroll =
+            container.scrollTop +
+            (elRect.top - cRect.top) -
+            cRect.height / 2 +
+            elRect.height / 2;
+          container.scrollTo({
+            top: Math.max(0, targetScroll),
+            behavior: smooth ? 'smooth' : 'auto',
+          });
+        }
+      };
+
+      if (locateKey && locateKey > 0) {
+        const t = setTimeout(() => triggerScroll(true), 100);
+        return () => clearTimeout(t);
+      } else {
+        const t = setTimeout(() => triggerScroll(false), 50);
+        return () => clearTimeout(t);
+      }
     }
-  }, [isThisActive]);
+  }, [isThisActive, locateKey]);
 
   if (showRename) {
     return (
@@ -787,6 +852,7 @@ export type FileTreeHandle = {
   createFolder: () => void;
   collapseAll: () => void;
   expandAll: () => void;
+  locateActiveFile: () => void;
 };
 
 interface Props extends FileTreeHandlers {
@@ -820,6 +886,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [collapseKey, setCollapseKey] = useState(0);
   const [expandKey, setExpandKey] = useState(0);
+  const [locateKey, setLocateKey] = useState(0);
   const refreshKey = (extRefreshKey ?? 0) + localRefreshKey;
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [clipboard, setClipboard] = useState<PathClipboard>(null);
@@ -867,6 +934,13 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     },
     expandAll: () => {
       setExpandKey((k) => k + 1);
+    },
+    locateActiveFile: () => {
+      if (!activePath || activePath === '.') return;
+      const rel = normalizePathToRel(activePath, workspace) || activePath;
+      setExpandPath(rel);
+      setLocateKey((k) => k + 1);
+      onSelectNode?.({ path: activePath, isDirectory: false });
     },
   }));
 
@@ -1090,6 +1164,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           refreshKey={refreshKey}
           collapseKey={collapseKey}
           expandKey={expandKey}
+          locateKey={locateKey}
           expandPath={expandPath}
           inlineEdit={inlineEdit}
           onOpenFile={onOpenFile}
