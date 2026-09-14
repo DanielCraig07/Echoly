@@ -27,6 +27,7 @@
     "@types/katex": "^0.16.8",
     "@types/prismjs": "^1.26.6",
     "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.16.0",
     "@xterm/xterm": "^5.5.0",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",

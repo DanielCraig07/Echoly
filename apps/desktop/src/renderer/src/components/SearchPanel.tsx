@@ -593,26 +593,27 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             onClick={() => setShowReplace((v) => !v)}
             title={showReplace ? '隐藏替换' : '显示替换'}
             style={{
-              transform: showReplace ? 'rotate(90deg)' : 'none',
-              transition: 'transform 0.15s, background 0.15s',
-              fontSize: 12,
+              transition: 'transform 0.15s ease, background 0.15s ease',
             }}
           >
-            ▸
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{
+                transform: showReplace ? 'rotate(90deg)' : 'none',
+                transition: 'transform 0.15s ease',
+              }}
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </button>
-          <div
-            style={{
-              flex: 1,
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-              background: 'var(--bg-input, #12161c)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              paddingRight: 80,
-              boxSizing: 'border-box',
-            }}
-          >
+          <div className="search-input-wrapper" style={{ flex: 1, paddingRight: 80 }}>
             <input
               type="text"
               value={query}
@@ -676,19 +677,8 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
 
         {/* Replace Input Row (Collapsible) — 左边缘与搜索输入框对齐 */}
         {showReplace && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 30 }}>            <div
-              style={{
-                flex: 1,
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                background: 'var(--bg-input, #12161c)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                paddingRight: 64,
-                boxSizing: 'border-box',
-              }}
-            >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 32 }}>
+            <div className="search-input-wrapper" style={{ flex: 1, paddingRight: 64 }}>
               <input
                 type="text"
                 value={replaceQuery}
@@ -772,16 +762,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               value={includesPattern}
               onChange={(e) => setIncludesPattern(e.target.value)}
               placeholder="e.g. *.ts, src/**"
-              style={{
-                width: '100%',
-                padding: '4px 8px',
-                background: 'var(--bg-input, #12161c)',
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                color: 'var(--text)',
-                fontSize: 12,
-                outline: 'none',
-              }}
+              className="search-filter-input"
             />
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>排除的文件</span>
             <input
@@ -789,16 +770,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               value={excludesPattern}
               onChange={(e) => setExcludesPattern(e.target.value)}
               placeholder="e.g. node_modules, dist"
-              style={{
-                width: '100%',
-                padding: '4px 8px',
-                background: 'var(--bg-input, #12161c)',
-                border: '1px solid var(--border)',
-                borderRadius: 4,
-                color: 'var(--text)',
-                fontSize: 12,
-                outline: 'none',
-              }}
+              className="search-filter-input"
             />
           </div>
         )}

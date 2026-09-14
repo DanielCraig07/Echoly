@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import type { UiTheme } from '@deepseek-ide/shared';
 import { uid } from '../utils';
@@ -64,7 +65,7 @@ function tabLabel(kind: 'local' | 'ssh', index: number): string {
   return kind === 'ssh' ? `SSH ${index}` : `本地 ${index}`;
 }
 
-function IconPlus({ size = 12 }: { size?: number }) {
+function IconPlus({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -72,7 +73,7 @@ function IconPlus({ size = 12 }: { size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -82,7 +83,7 @@ function IconPlus({ size = 12 }: { size?: number }) {
   );
 }
 
-function IconClear({ size = 12 }: { size?: number }) {
+function IconClear({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -100,7 +101,7 @@ function IconClear({ size = 12 }: { size?: number }) {
   );
 }
 
-function IconTrash({ size = 12 }: { size?: number }) {
+function IconTrash({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -120,7 +121,7 @@ function IconTrash({ size = 12 }: { size?: number }) {
   );
 }
 
-function IconWordWrap({ size = 12 }: { size?: number }) {
+function IconWordWrap({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -128,7 +129,7 @@ function IconWordWrap({ size = 12 }: { size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -157,7 +158,7 @@ function IconClose({ size = 9 }: { size?: number }) {
   );
 }
 
-function IconScrollToTop({ size = 12 }: { size?: number }) {
+function IconScrollToTop({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -165,7 +166,7 @@ function IconScrollToTop({ size = 12 }: { size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -176,7 +177,7 @@ function IconScrollToTop({ size = 12 }: { size?: number }) {
   );
 }
 
-function IconScrollToBottom({ size = 12 }: { size?: number }) {
+function IconScrollToBottom({ size = 16 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -184,7 +185,7 @@ function IconScrollToBottom({ size = 12 }: { size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2.2"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
@@ -192,6 +193,196 @@ function IconScrollToBottom({ size = 12 }: { size?: number }) {
       <polyline points="6 11 12 17 18 11" />
       <line x1="4" y1="20" x2="20" y2="20" />
     </svg>
+  );
+}
+
+function IconSearch({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  );
+}
+
+interface TerminalSearchBarProps {
+  query: string;
+  onQueryChange: (q: string) => void;
+  caseSensitive: boolean;
+  onToggleCaseSensitive: () => void;
+  wholeWord: boolean;
+  onToggleWholeWord: () => void;
+  regex: boolean;
+  onToggleRegex: () => void;
+  resultIndex: number;
+  resultCount: number;
+  onFindNext: () => void;
+  onFindPrevious: () => void;
+  onClose: () => void;
+}
+
+function TerminalSearchBar({
+  query,
+  onQueryChange,
+  caseSensitive,
+  onToggleCaseSensitive,
+  wholeWord,
+  onToggleWholeWord,
+  regex,
+  onToggleRegex,
+  resultIndex,
+  resultCount,
+  onFindNext,
+  onFindPrevious,
+  onClose,
+}: TerminalSearchBarProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        onFindPrevious();
+      } else {
+        onFindNext();
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+    }
+  };
+
+  return (
+    <div className="terminal-search-bar" onClick={(e) => e.stopPropagation()}>
+      <div className="terminal-search-input-container">
+        <input
+          ref={inputRef}
+          type="text"
+          className="terminal-search-input"
+          value={query}
+          onChange={(e) => onQueryChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="在终端中查找..."
+        />
+        <div style={{ position: 'absolute', right: 4, display: 'flex', gap: 2, alignItems: 'center' }}>
+          <button
+            type="button"
+            className={`input-toggle-btn${caseSensitive ? ' active' : ''}`}
+            title="区分大小写 (Alt+C)"
+            onClick={onToggleCaseSensitive}
+            style={{ fontFamily: 'monospace' }}
+          >
+            Aa
+          </button>
+          <button
+            type="button"
+            className={`input-toggle-btn${wholeWord ? ' active' : ''}`}
+            title="全字匹配 (Alt+W)"
+            onClick={onToggleWholeWord}
+            style={{
+              fontFamily: 'monospace',
+              textDecoration: wholeWord ? 'underline' : 'none',
+            }}
+          >
+            ab
+          </button>
+          <button
+            type="button"
+            className={`input-toggle-btn${regex ? ' active' : ''}`}
+            title="使用正则表达式 (Alt+R)"
+            onClick={onToggleRegex}
+            style={{ fontFamily: 'monospace' }}
+          >
+            .*
+          </button>
+        </div>
+      </div>
+
+      {query && (
+        <span className={`terminal-search-badge${resultCount === 0 ? ' no-results' : ''}`}>
+          {resultCount === 0
+            ? '无结果'
+            : resultIndex >= 0
+              ? `${resultIndex + 1}/${resultCount}`
+              : `${resultCount} 项`}
+        </span>
+      )}
+
+      <div className="terminal-search-actions">
+        <button
+          type="button"
+          className="panel-action-btn"
+          title="上一个匹配项 (Shift+Enter)"
+          onClick={onFindPrevious}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="panel-action-btn"
+          title="下一个匹配项 (Enter)"
+          onClick={onFindNext}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="panel-action-btn"
+          title="关闭搜索 (Esc)"
+          onClick={onClose}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -222,9 +413,13 @@ interface SessionProps {
   initialCommand?: string;
   wordWrap?: boolean;
   scrollback?: number;
+  searchOpen?: boolean;
+  onOpenSearch?: () => void;
+  onCloseSearch?: () => void;
   onRegisterSession?: (clientId: string, sendCmd: (cmd: string) => void) => () => void;
   onRegisterRawSession?: (clientId: string, sendRaw: (raw: string) => void) => () => void;
 }
+
 
 function TerminalSession({
   clientId,
@@ -236,12 +431,16 @@ function TerminalSession({
   initialCommand,
   wordWrap = true,
   scrollback,
+  searchOpen,
+  onOpenSearch,
+  onCloseSearch,
   onRegisterSession,
   onRegisterRawSession,
 }: SessionProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const idRef = useRef<string | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
   const activeRef = useRef(active);
@@ -250,6 +449,15 @@ function TerminalSession({
   visibleRef.current = visible;
   const wordWrapRef = useRef(wordWrap);
   wordWrapRef.current = wordWrap;
+
+  // 搜索状态管理
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
+  const [searchWholeWord, setSearchWholeWord] = useState(false);
+  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchResultIndex, setSearchResultIndex] = useState(-1);
+  const [searchResultCount, setSearchResultCount] = useState(0);
+
   // 不换行模式下横向滚动区宽度的唯一来源：
   // measureContentColumns 会把折行行拼回逻辑行后取最宽者，宽度只取决于「内容」，
   // 与列数调整本身无关，不会出现「改一次列数宽度就变一次」的反馈循环。
@@ -345,9 +553,10 @@ function TerminalSession({
   const handleVScrollOverlayWheel = useCallback((e: React.WheelEvent) => {
     const viewport = getXtermViewport();
     if (!viewport) return;
-    viewport.scrollTop += e.deltaY;
+    viewport.scrollTop += e.deltaY * 0.6;
     updateVScrollThumb();
   }, [updateVScrollThumb]);
+
 
 
   /**
@@ -397,10 +606,14 @@ function TerminalSession({
         rows = Math.max(minRows, Math.min(rows, maxRows));
         const viewCols = dims?.cols && dims.cols >= 20 ? dims.cols : 80;
         const longest = measureBufferWidth(term);
-        maxLineLenRef.current = longest;
-        // 列数只有两个来源：视口宽度，或「内容最宽行 + 1 列」（光标停在行尾不贴边）。
-        // 绝不能用「上一次的列数」参与计算，否则 resize 与重排互相喂养，列数被逐轮放大。
-        const wideCols = Math.min(60000, Math.max(80, viewCols, longest + 1));
+        // 保持单调高水位，避免 Windows ConPTY 在刷新、换行或空行输出时导致列数在 80 和长行之间来回振荡跳动；
+        // 仅在 buffer 彻底清空重置时才重新归零。
+        if (term.buffer.active.length <= term.rows && term.buffer.active.baseY === 0 && longest === 0) {
+          maxLineLenRef.current = 0;
+        } else {
+          maxLineLenRef.current = Math.max(maxLineLenRef.current, longest);
+        }
+        const wideCols = Math.min(4000, Math.max(80, viewCols, maxLineLenRef.current + 1));
 
         host.style.overflowX = 'auto';
         if (wideCols !== term.cols || rows !== term.rows) {
@@ -428,7 +641,7 @@ function TerminalSession({
     colFitTimerRef.current = setTimeout(() => {
       colFitTimerRef.current = null;
       applyTerminalSize(id);
-    }, 80);
+    }, 150);
   };
 
   /** 终端自身的尺寸变化（外部 resize 或 xterm 内部重排）也要重新对齐列数。 */
@@ -450,6 +663,7 @@ function TerminalSession({
     maxLineLenRef.current = 0;
     lastWideColsRef.current = 0;
     const term = new Terminal({
+      allowProposedApi: true,
       convertEol: true,
       cursorBlink: true,
       fontSize: 12,
@@ -459,9 +673,32 @@ function TerminalSession({
       cols: initialCols,
       rows: 24,
       scrollback: scrollback ?? 10000,
+      smoothScrollDuration: 0,
+      scrollSensitivity: 0.6,
+      fastScrollSensitivity: 4,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+
+    const searchAddon = new SearchAddon({ highlightLimit: 1000 });
+    term.loadAddon(searchAddon);
+    searchAddonRef.current = searchAddon;
+
+    const searchChangeDisposable = searchAddon.onDidChangeResults((e) => {
+      setSearchResultIndex(e.resultIndex);
+      setSearchResultCount(e.resultCount);
+    });
+
+    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && e.type === 'keydown') {
+        e.preventDefault();
+        e.stopPropagation();
+        onOpenSearch?.();
+        return false;
+      }
+      return true;
+    });
+
     term.open(hostRef.current);
     termRef.current = term;
     fitRef.current = fit;
@@ -585,6 +822,9 @@ function TerminalSession({
       }
       unsubData();
       unsubExit();
+      searchChangeDisposable.dispose();
+      searchAddon.dispose();
+      searchAddonRef.current = null;
       writeParsedDisposable?.dispose();
       writeParsedDisposable = null;
       onResizeDisposable.dispose();
@@ -654,8 +894,12 @@ function TerminalSession({
     const handleClear = (e: Event) => {
       const detail = (e as CustomEvent<{ clientId: string }>).detail;
       if (detail?.clientId === clientId && termRef.current) {
+        maxLineLenRef.current = 0;
         termRef.current.clear();
         termRef.current.write('\x1b[2J\x1b[3J\x1b[H');
+        if (idRef.current) {
+          applyTerminalSize(idRef.current);
+        }
       }
     };
     const handleTop = (e: Event) => {
@@ -700,6 +944,109 @@ function TerminalSession({
     };
   }, [active, visible, wordWrap]);
 
+  // 稳健执行搜索逻辑，内置正则合法性校验与双模式容错保护
+  const performSearch = useCallback(
+    (forward: boolean, incremental: boolean = false) => {
+      const addon = searchAddonRef.current;
+      if (!addon) return;
+      if (!searchQuery) {
+        try {
+          addon.clearDecorations();
+        } catch {
+          // ignore
+        }
+        setSearchResultIndex(-1);
+        setSearchResultCount(0);
+        return;
+      }
+
+      // 如果启用了正则模式，先校验语法合法性，避免输入如 `(` 或 `[` 导致内部语法异常抛出
+      if (searchRegex) {
+        try {
+          new RegExp(searchQuery);
+        } catch {
+          setSearchResultIndex(-1);
+          setSearchResultCount(0);
+          return;
+        }
+      }
+
+      // 优先带装饰项高亮搜索（要求标准 7 位 #RRGGBB 颜色编码）
+      try {
+        const searchOpts = {
+          caseSensitive: searchCaseSensitive,
+          wholeWord: searchWholeWord,
+          regex: searchRegex,
+          incremental,
+          decorations: {
+            matchBackground: '#3b82f6',
+            matchBorder: '#60a5fa',
+            matchOverviewRuler: '#3b82f6',
+            activeMatchBackground: '#f59e0b',
+            activeMatchBorder: '#fbbf24',
+            activeMatchColorOverviewRuler: '#f59e0b',
+          },
+        };
+        if (forward) {
+          addon.findNext(searchQuery, searchOpts);
+        } else {
+          addon.findPrevious(searchQuery, searchOpts);
+        }
+      } catch (err) {
+        // 若由于终端未完全 mount 或特定环境导致 decorations 失败，降级为原生选区模式继续正常检索
+        try {
+          const fallbackOpts = {
+            caseSensitive: searchCaseSensitive,
+            wholeWord: searchWholeWord,
+            regex: searchRegex,
+            incremental,
+          };
+          if (forward) {
+            addon.findNext(searchQuery, fallbackOpts);
+          } else {
+            addon.findPrevious(searchQuery, fallbackOpts);
+          }
+        } catch (err2) {
+          console.warn('Terminal search error:', err, err2);
+        }
+      }
+    },
+    [searchQuery, searchCaseSensitive, searchWholeWord, searchRegex],
+  );
+
+  // 搜索关键词或选项变动时执行检索与高亮
+  useEffect(() => {
+    if (!searchOpen) {
+      try {
+        searchAddonRef.current?.clearDecorations();
+      } catch {
+        // ignore
+      }
+      setSearchResultIndex(-1);
+      setSearchResultCount(0);
+      return;
+    }
+    performSearch(true, true);
+  }, [searchOpen, searchQuery, searchCaseSensitive, searchWholeWord, searchRegex, performSearch]);
+
+  const handleFindNext = () => {
+    performSearch(true, false);
+  };
+
+  const handleFindPrevious = () => {
+    performSearch(false, false);
+  };
+
+  const handleCloseSearch = () => {
+    try {
+      searchAddonRef.current?.clearDecorations();
+    } catch {
+      // ignore
+    }
+    onCloseSearch?.();
+    termRef.current?.focus();
+  };
+
   return (
     <div
       className={`terminal-session${active ? ' active' : ''}${!wordWrap ? ' no-wrap' : ''}`}
@@ -709,6 +1056,24 @@ function TerminalSession({
       }}
     >
       <div className={`terminal-host${!wordWrap ? ' no-wrap' : ''}`} ref={hostRef} />
+      {/* 终端浮动搜索栏 */}
+      {active && searchOpen && (
+        <TerminalSearchBar
+          query={searchQuery}
+          onQueryChange={setSearchQuery}
+          caseSensitive={searchCaseSensitive}
+          onToggleCaseSensitive={() => setSearchCaseSensitive((v) => !v)}
+          wholeWord={searchWholeWord}
+          onToggleWholeWord={() => setSearchWholeWord((v) => !v)}
+          regex={searchRegex}
+          onToggleRegex={() => setSearchRegex((v) => !v)}
+          resultIndex={searchResultIndex}
+          resultCount={searchResultCount}
+          onFindNext={handleFindNext}
+          onFindPrevious={handleFindPrevious}
+          onClose={handleCloseSearch}
+        />
+      )}
       {/* no-wrap 模式下：自定义纵向滚动条，固定在 host 可视區右侧，避免原生滑动条随内容宽度跑到右边看不到 */}
       {!wordWrap && (
         <div
@@ -754,6 +1119,9 @@ export function TerminalPanel({
       return true;
     }
   });
+
+  // 终端搜索栏显隐状态
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const toggleWordWrap = useCallback(() => {
     setWordWrap((prev) => {
@@ -975,81 +1343,83 @@ export function TerminalPanel({
               );
             })}
           </div>
+        </div>
 
+        <div className="terminal-toolbar-right">
           <button
             type="button"
-            className="terminal-add-btn"
+            className="panel-action-btn"
             title="新建终端"
             onClick={() => addTerminal()}
           >
-            <IconPlus size={12} />
+            <IconPlus size={16} />
           </button>
           <button
             type="button"
-            className={`terminal-add-btn${wordWrap ? ' active' : ''}`}
+            className={`panel-action-btn${wordWrap ? ' active' : ''}`}
             title={
               wordWrap
                 ? '自动换行: 已启用 (点击切换为单行横向滚动模式)'
                 : '自动换行: 已禁用 (点击启用自适应视口换行)'
             }
             onClick={toggleWordWrap}
-            style={{ marginLeft: 3 }}
           >
-            <IconWordWrap size={12} />
+            <IconWordWrap size={16} />
           </button>
           <button
             type="button"
-            className="terminal-add-btn"
+            className={`panel-action-btn${isSearchOpen ? ' active' : ''}`}
+            title="在终端中搜索 (Ctrl+F / ⌘F)"
+            onClick={() => setIsSearchOpen((v) => !v)}
+          >
+            <IconSearch size={16} />
+          </button>
+          <button
+            type="button"
+            className="panel-action-btn"
             title="滚动到最上方 (Scroll to Top)"
             onClick={handleScrollToTop}
-            style={{ marginLeft: 3 }}
           >
-            <IconScrollToTop size={12} />
+            <IconScrollToTop size={16} />
           </button>
           <button
             type="button"
-            className="terminal-add-btn"
+            className="panel-action-btn"
             title="滚动到最下方 (Scroll to Bottom)"
             onClick={handleScrollToBottom}
-            style={{ marginLeft: 3 }}
           >
-            <IconScrollToBottom size={12} />
+            <IconScrollToBottom size={16} />
           </button>
           <button
             type="button"
-            className="terminal-add-btn"
+            className="panel-action-btn"
             title="清空终端内容 (Clear)"
             onClick={handleClearTerminal}
-            style={{ marginLeft: 3 }}
           >
-            <IconClear size={12} />
+            <IconClear size={16} />
           </button>
           <button
             type="button"
-            className="terminal-add-btn"
+            className="panel-action-btn"
             title="删除当前终端标签 (Kill)"
             onClick={() => closeTerminal(activeId)}
-            style={{ marginLeft: 3 }}
           >
-            <IconTrash size={12} />
+            <IconTrash size={16} />
           </button>
-        </div>
-
-        <div className="terminal-toolbar-right">
           {onCollapse && (
             <button
               type="button"
-              className="terminal-action-btn terminal-collapse-btn"
+              className="panel-action-btn"
               onClick={onCollapse}
               title="折叠终端"
             >
               <svg
-                width="13"
-                height="13"
+                width="16"
+                height="16"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2.2"
+                strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
@@ -1072,6 +1442,9 @@ export function TerminalPanel({
             initialCommand={tab.initialCommand}
             wordWrap={wordWrap}
             scrollback={scrollback}
+            searchOpen={tab.clientId === activeId && isSearchOpen}
+            onOpenSearch={() => setIsSearchOpen(true)}
+            onCloseSearch={() => setIsSearchOpen(false)}
             onRegisterSession={handleRegisterSession}
             onRegisterRawSession={handleRegisterRawSession}
           />
@@ -1080,3 +1453,4 @@ export function TerminalPanel({
     </div>
   );
 }
+

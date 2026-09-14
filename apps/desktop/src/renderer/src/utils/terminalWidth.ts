@@ -57,8 +57,10 @@ export function measureContentColumns(buf: BufferLike, cols: number): number {
       const cell = line.getCell(x, scratch);
       if (!cell) continue;
       const w = cell.getWidth();
-      // code === 0 是空单元格，不计入内容
-      if (w > 0 && cell.getCode() !== 0) {
+      const code = cell.getCode();
+      // code === 0 是空单元格，code === 32 是行尾普通空格，均不计入有效内容宽度
+      // 避免 Windows ConPTY 等在行尾补满空格导致测量值等于总列数并在多帧间一长一短剧烈跳变
+      if (w > 0 && code !== 0 && code !== 32) {
         const end = logicalBase + x + w;
         if (end > widest) widest = end;
         break;

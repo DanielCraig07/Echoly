@@ -55,11 +55,15 @@ describe('measureContentColumns', () => {
     expect(measureContentColumns(buf, cols)).toBe(5);
   });
 
-  it('行尾空格（普通空格字符）计入内容宽度', () => {
+  it('行尾普通空格不计入内容宽度，词间空格保留', () => {
     const cols = 80;
-    // 'ab' + 3 个空格：空格是有 code 的字符，宽度应为 5
+    // 'ab' + 3 个行尾空格：行尾空格不应撑大滚动条，宽度应为 2
     const buf = makeBuffer([padLine(makeLine(codes('ab   ')), cols)]);
-    expect(measureContentColumns(buf, cols)).toBe(5);
+    expect(measureContentColumns(buf, cols)).toBe(2);
+
+    // 词间空格保留：'a   b' + 2 个行尾空格 → 宽度应为 5 ('a   b')
+    const buf2 = makeBuffer([padLine(makeLine(codes('a   b  ')), cols)]);
+    expect(measureContentColumns(buf2, cols)).toBe(5);
   });
 
   it('折行的连续物理行按逻辑行累加宽度', () => {

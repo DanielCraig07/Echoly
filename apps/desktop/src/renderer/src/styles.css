@@ -5083,6 +5083,8 @@ body.resizing.resizing-row {
   overflow: hidden !important;
 }
 
+
+
 .terminal-host.no-wrap {
   overflow-x: auto !important;
   overflow-y: hidden !important;  /* xterm-viewport 内部负责纵向滚动，host 不产生额外纵向滚动条 */
@@ -7896,6 +7898,35 @@ body.resizing.resizing-row {
   border-color: rgba(255, 255, 255, 0.28);
 }
 
+[data-theme='light'] .panel-action-btn {
+  color: rgba(0, 0, 0, 0.72);
+}
+
+[data-theme='light'] .panel-action-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #000000;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme='light'] .panel-action-btn:active {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+[data-theme='light'] .panel-action-btn.active,
+[data-theme='light'] .panel-action-btn.selected {
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+[data-theme='light'] .panel-action-btn.active:hover,
+[data-theme='light'] .panel-action-btn.selected:hover {
+  background: rgba(59, 130, 246, 0.22);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.5);
+}
+
+
 /* ── Maven Toolbar Action Buttons (Matching Git Header Standard) ── */
 .maven-toolbar-btn {
   display: inline-flex;
@@ -8100,7 +8131,8 @@ body.resizing.resizing-row {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 6px;
+  padding: 2px 5px;
+  min-width: 22px;
   height: 20px;
   font-size: 11px;
   font-weight: 600;
@@ -8108,7 +8140,7 @@ body.resizing.resizing-row {
   border-radius: 4px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--muted, #999);
+  color: rgba(255, 255, 255, 0.8);
   cursor: pointer;
   box-sizing: border-box;
   transition: all 0.15s ease;
@@ -8116,28 +8148,238 @@ body.resizing.resizing-row {
 }
 
 .input-toggle-btn:hover {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
-  color: var(--text, #ffffff);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
 }
 
 .input-toggle-btn:active {
   transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .input-toggle-btn.active,
 .input-toggle-btn.selected {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.14));
-  color: var(--text-bright, #ffffff);
-  border-color: var(--accent, #4c8dff);
-  box-shadow: 0 0 4px rgba(76, 141, 255, 0.25);
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.45);
+  box-shadow: 0 0 6px rgba(59, 130, 246, 0.25);
 }
 
 .input-toggle-btn.active:hover,
 .input-toggle-btn.selected:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
+  background: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+  border-color: rgba(96, 165, 250, 0.65);
 }
+
+[data-theme='light'] .input-toggle-btn {
+  color: rgba(0, 0, 0, 0.72);
+}
+
+[data-theme='light'] .input-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #000000;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme='light'] .input-toggle-btn.active,
+[data-theme='light'] .input-toggle-btn.selected {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+/* ── Unified Search Input Wrapper & Focus Glow ──────────────── */
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg-input, #12161c);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.search-input-wrapper:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.search-input-wrapper:focus-within {
+  border-color: var(--accent, #3b82f6) !important;
+  box-shadow: 0 0 0 1px var(--accent, #3b82f6), 0 0 8px rgba(59, 130, 246, 0.28) !important;
+  background: rgba(18, 22, 30, 0.95);
+}
+
+[data-theme='light'] .search-input-wrapper {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme='light'] .search-input-wrapper:hover {
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme='light'] .search-input-wrapper:focus-within {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 1px #2563eb, 0 0 8px rgba(37, 99, 235, 0.22) !important;
+  background: #ffffff;
+}
+
+.search-filter-input {
+  width: 100%;
+  padding: 5px 8px;
+  background: var(--bg-input, #12161c);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.search-filter-input:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.search-filter-input:focus {
+  border-color: var(--accent, #3b82f6) !important;
+  box-shadow: 0 0 0 1px var(--accent, #3b82f6), 0 0 8px rgba(59, 130, 246, 0.28) !important;
+  background: rgba(18, 22, 30, 0.95);
+}
+
+[data-theme='light'] .search-filter-input {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme='light'] .search-filter-input:hover {
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme='light'] .search-filter-input:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 1px #2563eb, 0 0 8px rgba(37, 99, 235, 0.22) !important;
+  background: #ffffff;
+}
+
+/* ── Terminal Floating Search Bar ──────────────────────────── */
+.terminal-search-bar {
+  position: absolute;
+  top: 6px;
+  right: 18px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: rgba(24, 24, 28, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  box-sizing: border-box;
+  animation: terminalSearchSlideIn 0.15s ease-out;
+}
+
+@keyframes terminalSearchSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[data-theme='light'] .terminal-search-bar {
+  background: rgba(245, 245, 248, 0.94);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
+.terminal-search-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 250px;
+  min-height: 26px;
+  height: 26px;
+  background: rgba(16, 16, 18, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding-right: 76px;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.terminal-search-input-container:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.terminal-search-input-container:focus-within {
+  border-color: var(--accent, #3b82f6) !important;
+  box-shadow: 0 0 0 1px var(--accent, #3b82f6), 0 0 8px rgba(59, 130, 246, 0.28) !important;
+  background: rgba(18, 22, 30, 0.95);
+}
+
+[data-theme='light'] .terminal-search-input-container {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme='light'] .terminal-search-input-container:focus-within {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 1px #2563eb, 0 0 8px rgba(37, 99, 235, 0.22) !important;
+  background: #ffffff;
+}
+
+.terminal-search-input {
+  width: 100%;
+  height: 100%;
+  padding: 2px 8px;
+  background: transparent;
+  border: none;
+  color: var(--text, #ffffff);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.terminal-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 11.5px;
+}
+
+[data-theme='light'] .terminal-search-input::placeholder {
+  color: rgba(0, 0, 0, 0.38);
+}
+
+.terminal-search-badge {
+  font-size: 11px;
+  color: var(--muted, rgba(255, 255, 255, 0.65));
+  white-space: nowrap;
+  padding: 0 4px;
+  user-select: none;
+  min-width: 32px;
+  text-align: center;
+}
+
+.terminal-search-badge.no-results {
+  color: #f87171;
+}
+
+.terminal-search-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
 
 .mode-switch {
   display: flex;
@@ -9218,8 +9460,13 @@ body.resizing.resizing-row {
   height: 26px !important;
   box-sizing: border-box !important;
   transition:
-    border-color 0.15s,
-    box-shadow 0.15s !important;
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease !important;
+}
+
+.monaco-editor .find-widget .monaco-inputbox:hover {
+  border-color: rgba(255, 255, 255, 0.22) !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox .input {
@@ -9231,9 +9478,25 @@ body.resizing.resizing-row {
 }
 
 .monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
-  border-color: #38bdf8 !important;
-  box-shadow: 0 0 0 1px #38bdf8 !important;
+  border-color: var(--accent, #3b82f6) !important;
+  box-shadow: 0 0 0 1px var(--accent, #3b82f6), 0 0 8px rgba(59, 130, 246, 0.28) !important;
+  background: rgba(18, 22, 30, 0.95) !important;
   outline: none !important;
+}
+
+[data-theme='light'] .monaco-editor .find-widget .monaco-inputbox {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(0, 0, 0, 0.15) !important;
+}
+
+[data-theme='light'] .monaco-editor .find-widget .monaco-inputbox:hover {
+  border-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+[data-theme='light'] .monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 1px #2563eb, 0 0 8px rgba(37, 99, 235, 0.22) !important;
+  background: #ffffff !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox .input::placeholder {
@@ -9243,7 +9506,7 @@ body.resizing.resizing-row {
 
 /* 行容器布局：上行查找，下行替换 */
 .monaco-editor .find-widget > .find-part {
-  margin: 4px 28px 4px 22px !important;
+  margin: 4px 28px 4px 24px !important;
   display: flex !important;
   align-items: center !important;
   gap: 6px !important;
@@ -9251,7 +9514,7 @@ body.resizing.resizing-row {
 }
 
 .monaco-editor .find-widget > .replace-part {
-  margin: 2px 28px 5px 22px !important;
+  margin: 2px 28px 5px 24px !important;
   font-size: 12px !important;
 }
 
@@ -9277,68 +9540,61 @@ body.resizing.resizing-row {
   flex: 1 1 auto !important;
 }
 
-/* 左侧展开/折叠替换栏的按钮（chevron 符号）：
-   始终居中对齐查找行，避免展开后下移 */
+/* 左侧展开/折叠替换栏的按钮（chevron 符号）：对齐 Maven 风格 */
 .monaco-editor .find-widget .button.toggle.left,
 .monaco-editor .find-widget .left .button {
   position: absolute !important;
   left: 3px !important;
   top: 6px !important;
-  width: 18px !important;
-  height: 22px !important;
-  border-radius: 4px !important;
+  width: 20px !important;
+  height: 24px !important;
+  border-radius: 6px !important;
   border: 1px solid transparent !important;
   background: transparent !important;
-  color: rgba(255, 255, 255, 0.6) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
   box-shadow: none !important;
   z-index: 2 !important;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease,
-    transform 0.1s ease !important;
+  transition: all 0.15s ease !important;
 }
 
 .monaco-editor .find-widget .button.toggle.left:hover,
 .monaco-editor .find-widget .left .button:hover {
   background: rgba(255, 255, 255, 0.12) !important;
   color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  transform: scale(1.05) !important;
 }
 
 .monaco-editor .find-widget .button.toggle.left:active,
 .monaco-editor .find-widget .left .button:active {
   background: rgba(255, 255, 255, 0.2) !important;
   color: #ffffff !important;
-  transform: scale(0.92) !important;
+  transform: scale(0.95) !important;
 }
 
-/* 右上角关闭按钮 (✕)：与查找行右侧按钮组平齐 */
+/* 右上角关闭按钮 (✕)：对齐 Maven 风格 */
 .monaco-editor .find-widget > .button.codicon-widget-close,
 .monaco-editor .find-widget > .button.close-button,
 .monaco-editor .find-widget .close-button {
   position: absolute !important;
   top: 6px !important;
   right: 5px !important;
-  width: 22px !important;
-  height: 22px !important;
+  width: 24px !important;
+  height: 24px !important;
   padding: 0 !important;
-  border-radius: 4px !important;
+  border-radius: 6px !important;
   border: 1px solid transparent !important;
   background: transparent !important;
-  color: rgba(255, 255, 255, 0.65) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  box-shadow: none !important;
-  z-index: 2 !important;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease,
-    transform 0.1s ease !important;
+  transition: all 0.15s ease !important;
 }
 
 .monaco-editor .find-widget > .button.codicon-widget-close:hover,
@@ -9346,6 +9602,8 @@ body.resizing.resizing-row {
 .monaco-editor .find-widget .close-button:hover {
   background: rgba(255, 255, 255, 0.12) !important;
   color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  transform: scale(1.05) !important;
 }
 
 .monaco-editor .find-widget > .button.codicon-widget-close:active,
@@ -9353,39 +9611,33 @@ body.resizing.resizing-row {
 .monaco-editor .find-widget .close-button:active {
   background: rgba(255, 255, 255, 0.2) !important;
   color: #ffffff !important;
-  transform: scale(0.92) !important;
+  transform: scale(0.95) !important;
 }
 
-/* 匹配计数（保持用户指定的 n of N 格式，如 10 of 330 / No results） */
 .monaco-editor .find-widget .matchesCount {
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  color: rgba(255, 255, 255, 0.65) !important;
-  font-size: 11.5px !important;
-  font-family: var(--font-mono, monospace), -apple-system, sans-serif !important;
-  margin: 0 6px 0 6px !important;
+  margin: 0 4px !important;
   padding: 0 4px !important;
-  height: 24px !important;
-  line-height: 24px !important;
-  white-space: nowrap !important;
-  flex-shrink: 0 !important;
-  letter-spacing: 0.02em !important;
+  min-width: 40px !important;
+  font-size: 11px !important;
+  color: var(--muted, rgba(255, 255, 255, 0.65)) !important;
 }
 
 .monaco-editor .find-widget.no-results .matchesCount {
   color: #f87171 !important;
 }
 
-/* 输入框内部的 Aa / ab / .* / AB 切换按钮 */
+/* 输入框内部的 Aa / ab / .* / AB 切换按钮：对齐 Maven 标准 */
 .monaco-editor .find-widget .monaco-custom-toggle {
-  width: 20px !important;
+  width: 22px !important;
   height: 20px !important;
   margin: 0 1px !important;
   border-radius: 4px !important;
   border: 1px solid transparent !important;
   background-color: transparent !important;
-  color: rgba(255, 255, 255, 0.6) !important;
+  color: rgba(255, 255, 255, 0.8) !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -9393,11 +9645,8 @@ body.resizing.resizing-row {
   outline: none !important;
   box-shadow: none !important;
   font-family: codicon !important;
-  font-size: 14px !important;
-  transition:
-    background-color 0.12s ease,
-    color 0.12s ease,
-    border-color 0.12s ease !important;
+  font-size: 13px !important;
+  transition: all 0.15s ease !important;
 }
 
 .monaco-editor .find-widget .monaco-custom-toggle:hover {
@@ -9431,14 +9680,15 @@ body.resizing.resizing-row {
 .monaco-editor .find-widget .replace-actions .button,
 .monaco-editor .find-widget .button,
 .monaco-editor .find-widget .codicon-find-selection {
-  width: 22px !important;
-  height: 22px !important;
+  min-width: 24px !important;
+  width: 24px !important;
+  height: 24px !important;
   padding: 0 !important;
   margin: 0 !important;
-  border-radius: 4px !important;
+  border-radius: 6px !important;
   border: 1px solid transparent !important;
   background: transparent !important;
-  color: rgba(255, 255, 255, 0.65) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -9446,15 +9696,11 @@ body.resizing.resizing-row {
   box-shadow: none !important;
   outline: none !important;
   font-family: codicon !important;
-  font-size: 16px !important;
-  transition:
-    background 0.12s ease,
-    color 0.12s ease,
-    border-color 0.12s ease,
-    transform 0.1s ease !important;
+  font-size: 15px !important;
+  transition: all 0.15s ease !important;
 }
 
-/* 所有操作按钮显式悬浮效果 (清晰背景与高亮反馈) */
+/* 所有操作按钮显式悬浮效果 (Maven 风格：高亮背景 + 微边框 + 放大) */
 .monaco-editor .find-widget .find-actions .button:not(.disabled):hover,
 .monaco-editor .find-widget .replace-actions .button:not(.disabled):hover,
 .monaco-editor .find-widget .button:not(.disabled):hover,
@@ -9462,6 +9708,8 @@ body.resizing.resizing-row {
 .monaco-editor .find-widget .monaco-action-bar .action-item:hover .action-label {
   background: rgba(255, 255, 255, 0.12) !important;
   color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  transform: scale(1.05) !important;
 }
 
 .monaco-editor .find-widget .find-actions .button:not(.disabled):active,
@@ -9470,23 +9718,24 @@ body.resizing.resizing-row {
 .monaco-editor .find-widget .codicon-find-selection:not(.disabled):active {
   background: rgba(255, 255, 255, 0.2) !important;
   color: #ffffff !important;
-  transform: scale(0.92) !important;
+  transform: scale(0.95) !important;
 }
 
-/* 选中激活态（如图 1 选定内容中查找 ≡ 被激活时圆角微底色高亮） */
+/* 选中激活态（在选定内容中查找 ≡ 被激活） */
 .monaco-editor .find-widget .button.checked,
 .monaco-editor .find-widget .codicon-find-selection.checked {
-  background: rgba(255, 255, 255, 0.16) !important;
-  border: 1px solid rgba(255, 255, 255, 0.24) !important;
+  background: rgba(255, 255, 255, 0.18) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
   color: #ffffff !important;
 }
 
 .monaco-editor .find-widget .button.checked:hover,
 .monaco-editor .find-widget .codicon-find-selection.checked:hover {
-  background: rgba(255, 255, 255, 0.24) !important;
-  border-color: rgba(255, 255, 255, 0.35) !important;
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
   color: #ffffff !important;
 }
+
 
 .monaco-editor .find-widget .button.disabled,
 .monaco-editor .find-widget .disabled,
