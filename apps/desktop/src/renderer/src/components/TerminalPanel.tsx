@@ -754,7 +754,7 @@ function TerminalSession({
           // 2. 包含 % 、 $ 、 # 或 > 并且位于提示符末尾
           const isPromptReady =
             data.includes('\x1b[?2004h') ||
-            /[\$%#>]\s*(?:\x1b\[[0-9;]*[a-zA-Z])?$/.test(data) ||
+            /[$%#>]\s*(?:\x1b\[[0-9;]*[a-zA-Z])?$/.test(data) ||
             /(?:%|\$|#|>)\s*$/.test(data.trimEnd());
 
           if (isPromptReady) {

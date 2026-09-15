@@ -23,9 +23,9 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
 
     // Mock Client.connect to trigger error
     vi.mocked(Client).mockImplementationOnce(function () {
-      const listeners: Record<string, Function[]> = {};
+      const listeners: Record<string, ((...args: any[]) => void)[]> = {};
       const clientInstance = {
-        on: (event: string, cb: Function) => {
+        on: (event: string, cb: (...args: any[]) => void) => {
           listeners[event] = listeners[event] || [];
           listeners[event].push(cb);
           return clientInstance;
