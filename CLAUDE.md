@@ -162,3 +162,13 @@ Settings stored in Electron `userData/settings.json`.
 - **Packaging**: unsigned, `dir` target on Windows (avoids winCodeSign symlink issues); `identity: null` on macOS.
 - **Windows 图标**: 打包时由 `resources/icon.png` 自动生成多分辨率 `.ico` 并通过 rcedit 写入 `Echoly.exe`。**切勿在 `build.win` 里设 `signAndEditExecutable: false`** —— 那会跳过 rcedit，导致 exe 与桌面快捷方式仍显示 Electron 默认图标。Windows 打包在 `windows-latest` runner 上执行，rcedit 可原生运行。
 - **SSH**: password never persisted to disk; profiles keep host/user/key paths only.
+
+## UI 规范与按钮交互（对齐 Maven 标准，永久强制）
+
+所有二级面板工具栏（Maven、Git、Explorer、Search 等）必须严格对齐 Maven 标准：
+- **容器**：`height: 30`, `padding: '0 10px'`, `display: 'flex'`, `alignItems: 'center'`, `justifyContent: 'space-between'`, `borderBottom: '1px solid var(--border)'`。
+- **按钮**：统一使用 `<button type="button" className="panel-action-btn" title="...">`。
+- **严禁内联尺寸覆盖**：绝对禁止在按钮上添加 `style={{ width: 22, height: 22 }}` 等内联尺寸硬编码，尺寸与微动效（26x26px，hover 1.05，active 0.95）由 `.panel-action-btn` 统一管理。
+- **图标**：标准高对比度 SVG 矢量（14x14 或 16x16，`strokeWidth="2"`，`stroke="currentColor"`）。
+- **终端环境**：本地终端与子进程自动集成系统与 Homebrew 路径（`/opt/homebrew/bin`），Shell 默认使用登录 Shell（`-l` 参数）。
+- **Git 分支切换**：分支切换时自动保留未提交修改并在切回时自动恢复，切换后立即同步刷新打开文件、文件树与全局 Git 状态。

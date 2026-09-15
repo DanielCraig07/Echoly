@@ -933,6 +933,7 @@ export interface IpcApi {
   onTerminalExit: (cb: (payload: { id: string; exitCode: number }) => void) => () => void;
   onWorkspaceChanged: (cb: (info: WorkspaceInfo) => void) => () => void;
   onGitCloneLog: (cb: (line: string) => void) => () => void;
+  onGitBranchSwitched: (cb: (data: { branch: string }) => void) => () => void;
   onDownloadProgress: (
     cb: (progress: { percent: number; downloaded: number; total: number }) => void,
   ) => () => void;

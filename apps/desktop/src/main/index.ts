@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { registerIpc } from './ipc';
 import { initLogging } from './logging';
+import { ensureSystemEnv } from './shellEnv';
 import { SettingsStore } from './settings';
 import { SessionStore } from './sessions';
 import { AgentService } from './agentService';
@@ -26,7 +27,8 @@ process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 app.setName('Echoly');
 
-// 初始化日志与崩溃上报（最早调用）
+// 初始化环境与日志（最早调用，确保子进程及终端可执行系统工具如 brew）
+ensureSystemEnv();
 initLogging();
 
 // 单实例锁：避免同机同时启动多个生产实例；开发环境下不与已安装的应用冲突

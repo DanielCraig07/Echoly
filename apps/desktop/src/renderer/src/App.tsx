@@ -470,6 +470,52 @@ export function App() {
     }
   };
 
+  const lastBranchRef = useRef<string | null>(null);
+
+  const reloadTabsOnBranchChange = useCallback(async () => {
+    // 分支切换后，重新从磁盘载入未被用户手动标记修改（非 dirty）的打开标签页
+    const currentTabs = tabsRef.current;
+    if (!currentTabs.length) return;
+
+    for (const tab of currentTabs) {
+      if (tab.dirty) continue;
+
+      if (tab.language === 'image' || tab.previewUrl || isImagePath(tab.path)) {
+        try {
+          const previewUrl = await window.ide.readFileDataUrl(tab.path);
+          setTabs((prev) =>
+            prev.map((t) => (t.path === tab.path ? { ...t, dirty: false, previewUrl } : t)),
+          );
+        } catch {
+          // 该文件在切后的分支若不存在，可保留或忽略
+        }
+      } else {
+        try {
+          const freshContent = await window.ide.readFile(tab.path);
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.path === tab.path ? { ...t, content: freshContent, dirty: false } : t,
+            ),
+          );
+        } catch {
+          // 该文件在新分支可能已被删除或重命名
+        }
+      }
+    }
+  }, []);
+
+  const handleBranchSwitchSync = useCallback(async () => {
+    await reloadTabsOnBranchChange();
+    const st = await window.ide.gitStatus();
+    if (st.ok) {
+      setGitStatus(st);
+      if (st.branch) {
+        lastBranchRef.current = st.branch;
+      }
+    }
+    setTreeRefreshKey((k) => k + 1);
+  }, [reloadTabsOnBranchChange]);
+
   useEffect(() => {
     if (!workspace) return;
     let isMounted = true;
@@ -478,7 +524,15 @@ export function App() {
         const res = await window.ide.gitStatus();
         if (!isMounted) return;
         if (res.ok) {
+          const prevBranch = lastBranchRef.current;
           setGitStatus(res);
+          if (res.branch) {
+            lastBranchRef.current = res.branch;
+            if (prevBranch && res.branch !== prevBranch) {
+              // 检测到分支变动（如在终端执行 git checkout），联动重载标签页与树
+              void handleBranchSwitchSync();
+            }
+          }
         } else {
           // 遇到临时网络异常/超时，保留上一次有效的 Git 状态，避免突变为“非 Git 项目”
           setGitStatus((prev) => (prev?.isRepo ? prev : res));
@@ -493,7 +547,13 @@ export function App() {
       isMounted = false;
       clearInterval(timer);
     };
-  }, [workspace]);
+  }, [workspace, handleBranchSwitchSync]);
+
+  useEffect(() => {
+    return window.ide.onGitBranchSwitched?.(() => {
+      void handleBranchSwitchSync();
+    });
+  }, [handleBranchSwitchSync]);
 
   const handleViewFileHistory = useCallback((filePath: string) => {
     setFileHistoryModalPath(filePath);
@@ -2510,6 +2570,7 @@ export function App() {
                     setLeftPanel('explorer');
                     setActivePath(p);
                   }}
+                  onBranchSwitched={handleBranchSwitchSync}
                 />
               </div>
               <div
@@ -2908,11 +2969,7 @@ export function App() {
         currentBranch={gitStatus?.branch}
         onClose={() => setBranchModalOpen(false)}
         onSwitched={() => {
-          void (async () => {
-            const st = await window.ide.gitStatus();
-            setGitStatus(st);
-            setTreeRefreshKey((k) => k + 1);
-          })();
+          void handleBranchSwitchSync();
         }}
       />
 

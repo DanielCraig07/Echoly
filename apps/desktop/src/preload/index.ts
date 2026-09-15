@@ -130,6 +130,11 @@ const api: IpcApi = {
     ipcRenderer.on('git:cloneLog', listener);
     return () => ipcRenderer.removeListener('git:cloneLog', listener);
   },
+  onGitBranchSwitched: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { branch: string }) => cb(data);
+    ipcRenderer.on('git:branchSwitched', listener);
+    return () => ipcRenderer.removeListener('git:branchSwitched', listener);
+  },
   onDownloadProgress: (cb) => {
     const listener = (
       _: Electron.IpcRendererEvent,

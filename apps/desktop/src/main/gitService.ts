@@ -798,30 +798,103 @@ export class GitService {
     return { ok: true, branches, tags };
   }
 
+  private async restoreBranchStash(branchName: string, root: string): Promise<boolean> {
+    if (!branchName) return false;
+    const cleanBranch = branchName.replace(/^refs\/heads\//, '').trim();
+    const listRes = await this.runGit(['stash', 'list', '--pretty=format:%gd%x09%gs'], root);
+    if (listRes.code !== 0 || !listRes.stdout.trim()) return false;
+    const targetTag = `echoly-branch-state:${cleanBranch}`;
+    for (const line of listRes.stdout.split('\n')) {
+      const parts = line.trim().split('\t');
+      if (parts.length >= 2) {
+        const ref = parts[0].trim();
+        const msg = parts[1].trim();
+        if (msg.includes(targetTag)) {
+          const popRes = await this.runGit(['stash', 'pop', '--index', ref], root);
+          if (popRes.code !== 0) {
+            // 若带有 --index 冲突，回退到普通 pop
+            const altPop = await this.runGit(['stash', 'pop', ref], root);
+            if (altPop.code !== 0) {
+              await this.runGit(['stash', 'apply', ref], root);
+            }
+          }
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   async checkout(branch: string): Promise<GitOpResult> {
     const gate = this.localRootOrError();
     if ('ok' in gate && gate.ok === false) return gate;
     const { root } = gate as { root: string };
     const name = branch.trim();
     if (!name) return { ok: false, detail: '请指定分支' };
-    // remote branch like origin/foo → checkout -b foo --track origin/foo if needed
+
+    // 1. 获取当前分支名
+    const curBranchRes = await this.runGit(['branch', '--show-current'], root);
+    const currentBranch = curBranchRes.stdout.trim();
+
+    // 2. 如果是从当前分支切到同一分支，直接返回成功
+    const targetLocal = name.includes('/') ? name.split('/').slice(1).join('/') : name;
+    if (currentBranch && (currentBranch === name || currentBranch === targetLocal)) {
+      return { ok: true, detail: `已在分支 ${name}` };
+    }
+
+    // 3. 检查当前分支是否有修改文件（工作区或暂存区）
+    let stashedForCurrent = false;
+    if (currentBranch) {
+      const statusRes = await this.status();
+      if (statusRes.ok && statusRes.isRepo && statusRes.entries.length > 0) {
+        const stashMsg = `echoly-branch-state:${currentBranch}`;
+        const stashRes = await this.runGit(
+          ['stash', 'push', '--include-untracked', '-m', stashMsg],
+          root,
+        );
+        if (stashRes.code === 0) {
+          stashedForCurrent = true;
+        }
+      }
+    }
+
+    // 4. 执行分支切换
     let args = ['checkout', name];
     if (name.includes('/') && !name.startsWith('.')) {
-      const local = name.includes('/') ? name.split('/').slice(1).join('/') : name;
       const exists = await this.runGit(
-        ['show-ref', '--verify', `--quiet`, `refs/heads/${local}`],
+        ['show-ref', '--verify', `--quiet`, `refs/heads/${targetLocal}`],
         root,
       );
       if (exists.code !== 0) {
-        args = ['checkout', '-b', local, '--track', name];
+        args = ['checkout', '-b', targetLocal, '--track', name];
       } else {
-        args = ['checkout', local];
+        args = ['checkout', targetLocal];
       }
     }
     const res = await this.runGit(args, root);
-    if (res.error) return { ok: false, detail: res.error };
-    if (res.code !== 0)
-      return { ok: false, detail: res.stderr.trim() || res.stdout.trim() || '切换分支失败' };
+    if (res.error || res.code !== 0) {
+      // 切换失败时，若之前暂存了当前分支的修改，恢复它
+      if (stashedForCurrent && currentBranch) {
+        await this.restoreBranchStash(currentBranch, root);
+      }
+      return {
+        ok: false,
+        detail: res.error || res.stderr.trim() || res.stdout.trim() || '切换分支失败',
+      };
+    }
+
+    // 5. 切换目标分支成功后，检查目标分支是否有之前保存的修改状态，有则自动恢复
+    await this.restoreBranchStash(targetLocal, root);
+
+    // 6. 刷新索引
+    await this.runGit(['update-index', '-q', '--really-refresh'], root);
+
+    // 7. 向渲染进程广播分支切换成功事件
+    const win = this.getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('git:branchSwitched', { branch: targetLocal });
+    }
+
     return { ok: true, detail: `已切换到 ${name}` };
   }
 
@@ -835,6 +908,14 @@ export class GitService {
     const res = await this.runGit(args, root);
     if (res.error) return { ok: false, detail: res.error };
     if (res.code !== 0) return { ok: false, detail: res.stderr.trim() || '创建分支失败' };
+
+    if (doCheckout) {
+      const win = this.getWindow();
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('git:branchSwitched', { branch });
+      }
+    }
+
     return { ok: true, detail: doCheckout ? `已创建并切换到 ${branch}` : `已创建 ${branch}` };
   }
 

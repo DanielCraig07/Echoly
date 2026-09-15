@@ -20,6 +20,8 @@ interface Props {
   onOpenFile?: (path: string) => void;
   onViewFileHistory?: (path: string) => void;
   onRevealInExplorer?: (path: string) => void;
+  onBranchSwitched?: () => void;
+  refreshNonce?: number;
   onShowToast?: (
     title: string,
     detail?: string,
@@ -1182,6 +1184,8 @@ export function GitPanel({
   onOpenFile,
   onViewFileHistory,
   onRevealInExplorer,
+  onBranchSwitched,
+  refreshNonce,
   onShowToast,
 }: Props) {
   const [status, setStatus] = useState<GitStatusResult | null>(null);
@@ -1340,6 +1344,14 @@ export function GitPanel({
       if (res.ok) {
         onShowToast?.(`✓ ${title}成功`, res.detail || successMsg || '操作已完成', 'success');
         await refresh();
+        if (
+          title.includes('分支') ||
+          title.includes('签出') ||
+          title.includes('Pull') ||
+          title.includes('拉取')
+        ) {
+          onBranchSwitched?.();
+        }
       } else {
         onShowToast?.(`✕ ${title}失败`, res.detail || '操作未能完成', 'error');
       }
@@ -1550,8 +1562,14 @@ export function GitPanel({
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => void refresh(), 8000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+    const unbind = window.ide.onGitBranchSwitched?.(() => {
+      void refresh();
+    });
+    return () => {
+      clearInterval(timer);
+      unbind?.();
+    };
+  }, [refresh, refreshNonce]);
 
   const runOp = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -2582,8 +2600,8 @@ export function GitPanel({
             fontSize: 11,
             fontWeight: 600,
             color: 'var(--muted)',
-            height: 32,
-            minHeight: 32,
+            height: 30,
+            minHeight: 30,
             boxSizing: 'border-box',
             cursor: 'pointer',
             userSelect: 'none',
@@ -2609,9 +2627,9 @@ export function GitPanel({
               type="button"
               className="panel-action-btn active"
               style={{
-                height: 22,
+                height: 24,
                 minWidth: 44,
-                padding: '1px 6px',
+                padding: '0 6px',
                 fontSize: 11,
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -2623,8 +2641,8 @@ export function GitPanel({
               onClick={() => void refresh()}
             >
               <svg
-                width="11"
-                height="11"
+                width="12"
+                height="12"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -2639,7 +2657,6 @@ export function GitPanel({
             {/* 聚焦 HEAD 图标 */}
             <button
               type="button"
-              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               onClick={() => {
                 onShowToast?.('聚焦当前分支', `当前分支: ${status?.branch || 'HEAD'}`, 'info');
               }}
@@ -2647,8 +2664,8 @@ export function GitPanel({
               className="panel-action-btn"
             >
               <svg
-                width="13"
-                height="13"
+                width="14"
+                height="14"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -2662,7 +2679,6 @@ export function GitPanel({
             {/* 新建/切换分支图标 */}
             <button
               type="button"
-              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               onClick={() =>
                 void runGitAction('新建分支', async () => {
                   const b = prompt('请输入新分支名称:');
@@ -2674,8 +2690,8 @@ export function GitPanel({
               className="panel-action-btn"
             >
               <svg
-                width="13"
-                height="13"
+                width="14"
+                height="14"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -2693,14 +2709,13 @@ export function GitPanel({
             {/* 同步 / 拉取图标 */}
             <button
               type="button"
-              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               onClick={() => void runGitAction('拉取更改 (Pull)', () => window.ide.gitPull())}
               title="拉取与同步 (Pull)"
               className="panel-action-btn"
             >
               <svg
-                width="13"
-                height="13"
+                width="14"
+                height="14"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -2716,14 +2731,13 @@ export function GitPanel({
             {/* 刷新图谱图标 */}
             <button
               type="button"
-              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               onClick={() => void refresh()}
               title="刷新提交图谱"
               className="panel-action-btn"
             >
               <svg
-                width="13"
-                height="13"
+                width="14"
+                height="14"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -2737,7 +2751,6 @@ export function GitPanel({
             {/* 更多操作图标 */}
             <button
               type="button"
-              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               ref={moreMenuBtnRef}
               onClick={(e) => {
                 e.stopPropagation();

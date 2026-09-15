@@ -6,6 +6,7 @@ import { BrowserWindow } from 'electron';
 import { spawn as ptySpawn, type IPty } from 'node-pty';
 import type { TerminalCreateOptions } from '@deepseek-ide/shared';
 import type { SshSessionManager } from './ssh/SshSessionManager';
+import { getLocalTerminalEnv } from './shellEnv';
 
 interface LocalHandle {
   kind: 'local';
@@ -169,30 +170,18 @@ export class TerminalService {
       cols: initialCols,
       rows: initialRows,
       cwd,
-      env: {
-        ...process.env,
-        PWD: cwd,
-        HOME: process.env.HOME || os.homedir(),
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-        LANG: process.env.LANG || 'en_US.UTF-8',
-        SHLVL: '1',
-        // Enable colored ls output on macOS (CLICOLOR) and Linux (LS_COLORS)
-        CLICOLOR: '1',
-        CLICOLOR_FORCE: '1',
-        LSCOLORS: 'Gxfxcxdxbxegedabagacad',
-        LS_COLORS:
-          'di=1;36:ln=1;35:so=1;32:pi=33:ex=0;31:bd=1;33:cd=1;33:su=41;30:sg=43;30:tw=1;34:ow=1;34:*.zip=1;31:*.tar=1;31:*.gz=1;31:*.png=35:*.jpg=35:*.gif=35:*.mp4=35:*.mov=35:*.pdf=31:*.md=0;31:*.json=0;31:*.html=0;31:*.js=0;31:*.ts=0;31',
-      },
+      env: getLocalTerminalEnv(cwd),
     };
+
+    const shellArgs = isWin ? [] : ['-l'];
 
     let pty: IPty;
     try {
-      pty = ptySpawn(shell, [], spawnOptions);
+      pty = ptySpawn(shell, shellArgs, spawnOptions);
     } catch (err) {
       // 若因 npm 重装等导致辅助可执行位丢失报 posix_spawnp failed，强制恢复权限后重试一次
       ensureSpawnHelperPermissions();
-      pty = ptySpawn(shell, [], spawnOptions);
+      pty = ptySpawn(shell, shellArgs, spawnOptions);
     }
 
     pty.onData((data: string) => {
