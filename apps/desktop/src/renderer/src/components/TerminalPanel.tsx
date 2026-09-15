@@ -580,6 +580,27 @@ function TerminalSession({
 
     try {
       const isWrap = wordWrapRef.current;
+      const isAlternate = term.buffer.active.type === 'alternate';
+
+      // 全屏终端程序（vim / nano / htop / less）使用备用缓冲区时，
+      // 必须严格与物理视口宽高对齐铺满，绝不能缩减行数或展开超宽列，防止下方大片留白或光标错位
+      if (isAlternate) {
+        host.style.overflowX = 'hidden';
+        if (term.element) {
+          term.element.style.width = '100%';
+          term.element.style.minWidth = '100%';
+        }
+        fit.fit();
+        const cols = term.cols;
+        const rows = term.rows;
+        if (cols >= 20 && rows >= 3) {
+          void window.ide.resizeTerminal(id, cols, rows);
+        }
+        term.refresh(0, Math.max(0, term.rows - 1));
+        if (activeRef.current) term.focus();
+        return;
+      }
+
       if (isWrap) {
         host.style.overflowX = 'hidden';
         if (term.element) {
@@ -598,12 +619,8 @@ function TerminalSession({
         // 单行/不换行模式：列数 = max(视口宽度, 内容真实最宽行 + 1)，不预展开、不留固定余量。
         // 内容不超过视口时列数就是视口宽度，横向滚动区间为 0，只有出现超长行才按需扩容。
         const dims = fit.proposeDimensions();
-        // 行数必须能被 [minRows, maxRows] 完全容纳，否则 xterm 会忽略整个 resize，
-        // 列数就会卡在旧值上（表现为横向滚动条长度与文字对不上）
-        let rows = dims?.rows && dims.rows >= 3 ? dims.rows : term.rows || 24;
-        const maxRows = Math.max(1, term.buffer.active.length - 1);
-        const minRows = Math.min(3, maxRows);
-        rows = Math.max(minRows, Math.min(rows, maxRows));
+        // 行数必须始终使用物理视口能容纳的真实行数，绝不能被 buffer.length 限制
+        const rows = dims?.rows && dims.rows >= 3 ? dims.rows : term.rows || 24;
         const viewCols = dims?.cols && dims.cols >= 20 ? dims.cols : 80;
         const longest = measureBufferWidth(term);
         // 保持单调高水位，避免 Windows ConPTY 在刷新、换行或空行输出时导致列数在 80 和长行之间来回振荡跳动；
@@ -637,6 +654,7 @@ function TerminalSession({
 
   /** 内容变化后的列数对齐：去抖后按真实最宽行重算，宽度只随内容伸缩，不再单调变窄。 */
   const scheduleColumnFit = (id: string) => {
+    if (termRef.current?.buffer.active.type === 'alternate') return;
     if (colFitTimerRef.current) clearTimeout(colFitTimerRef.current);
     colFitTimerRef.current = setTimeout(() => {
       colFitTimerRef.current = null;
@@ -684,7 +702,7 @@ function TerminalSession({
     term.loadAddon(searchAddon);
     searchAddonRef.current = searchAddon;
 
-    const searchChangeDisposable = searchAddon.onDidChangeResults((e) => {
+    const searchChangeDisposable = searchAddon.onDidChangeResults((e: { resultIndex: number; resultCount: number }) => {
       setSearchResultIndex(e.resultIndex);
       setSearchResultCount(e.resultCount);
     });
@@ -707,11 +725,50 @@ function TerminalSession({
     let sessionId: string | null = null;
     let outputBuffer = '';
     let writeParsedDisposable: { dispose: () => void } | null = null;
+    let initialCmdSent = false;
+    let initialCmdTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const dispatchInitialCommand = () => {
+      if (initialCmdSent || disposed) return;
+      const targetId = sessionId ?? idRef.current;
+      if (!targetId || !initialCommand?.trim()) return;
+      initialCmdSent = true;
+      if (initialCmdTimer) {
+        clearTimeout(initialCmdTimer);
+        initialCmdTimer = null;
+      }
+      void window.ide.writeTerminal(targetId, wrapCommand(initialCommand) + '\r\n');
+    };
+
     const unsubData = window.ide.onTerminalData(({ id, data }) => {
       if ((sessionId ?? idRef.current) === id) {
         // 过滤掉内部哨兵信号行，避免在终端视口中向用户显示冗余内部标记
         const cleanData = data.replace(/(?:\r?\n|^)__ECHOLY_FIN__:\d+(?:\r?\n|$)/g, '\r\n');
         term.write(colorizeTerminalLogs(cleanData));
+
+        // 若有 initialCommand 尚未发送：等待终端 Shell 真正就绪并输出 Prompt 提示符后再写入，
+        // 彻底杜绝在 Shell 启动完成前由操作系统底层 PTY 提前回显导致的「第一行是孤立纯命令，第二行才是终端提示符与命令」
+        if (!initialCmdSent && initialCommand?.trim()) {
+          // 检测常见的终端 Shell 提示符特征：
+          // 1. \x1b[?2004h: Bracketed Paste 模式开启（现代 zsh / bash 提示符就绪的标准特征）
+          // 2. 包含 % 、 $ 、 # 或 > 并且位于提示符末尾
+          const isPromptReady =
+            data.includes('\x1b[?2004h') ||
+            /[\$%#>]\s*(?:\x1b\[[0-9;]*[a-zA-Z])?$/.test(data) ||
+            /(?:%|\$|#|>)\s*$/.test(data.trimEnd());
+
+          if (isPromptReady) {
+            if (initialCmdTimer) clearTimeout(initialCmdTimer);
+            initialCmdTimer = setTimeout(() => {
+              dispatchInitialCommand();
+            }, 60);
+          } else if (!initialCmdTimer) {
+            // 收到首批输出但暂未精确匹配特征，缓冲 150ms 确保 prompt 完成输出
+            initialCmdTimer = setTimeout(() => {
+              dispatchInitialCommand();
+            }, 150);
+          }
+        }
 
         outputBuffer = (outputBuffer + data).slice(-300);
         // 严格匹配实际执行后由 printf 真实输出的数字退出码，绝不在 shell 输入回显阶段提前触发
@@ -741,6 +798,7 @@ function TerminalSession({
     // 不换行模式：每帧内容解析完成后按 buffer 真实最宽行对齐列数（去抖）。
     // 单行日志不会被折行，横向滚动条长度也始终与屏幕上真正显示的字符数一致。
     writeParsedDisposable = term.onWriteParsed(() => {
+      if (term.buffer.active.type === 'alternate') return;
       if (!wordWrapRef.current && idRef.current) {
         scheduleColumnFit(idRef.current);
       }
@@ -755,7 +813,20 @@ function TerminalSession({
       scheduleColumnFit(id);
     });
 
-    void window.ide.createTerminal({ kind: terminalKind, cwd, cols: initialCols, rows: 24 }).then((res) => {
+    // 监听缓冲区切换（例如进入或退出 vim / nano / less 等全屏交互程序）
+    // 切换时立即以对应模式（全屏/日志）对齐尺寸，避免视口留白或尺寸错位
+    const bufferChangeDisposable = term.buffer.onBufferChange(() => {
+      const id = idRef.current;
+      if (id) {
+        applyTerminalSize(id);
+      }
+    });
+
+    const initDims = fit.proposeDimensions();
+    const startCols = initDims?.cols && initDims.cols >= 20 ? initDims.cols : initialCols;
+    const startRows = initDims?.rows && initDims.rows >= 3 ? initDims.rows : 24;
+
+    void window.ide.createTerminal({ kind: terminalKind, cwd, cols: startCols, rows: startRows }).then((res) => {
       if (disposed) return;
       const { id } = res;
       if (!id) {
@@ -779,12 +850,11 @@ function TerminalSession({
       };
       unregRaw = onRegisterRawSession?.(clientId, sendRaw);
 
-      if (initialCommand?.trim()) {
-        setTimeout(() => {
-          if (!disposed) {
-            void window.ide.writeTerminal(id, wrapCommand(initialCommand) + '\r\n');
-          }
-        }, 400);
+      // 设置兜底定时器（1500ms）：若 Shell 极端静默未触发输出数据，确保命令仍正常发出
+      if (initialCommand?.trim() && !initialCmdSent && !initialCmdTimer) {
+        initialCmdTimer = setTimeout(() => {
+          dispatchInitialCommand();
+        }, 1500);
       }
 
       term.onData((data) => {
@@ -814,6 +884,10 @@ function TerminalSession({
 
     return () => {
       disposed = true;
+      if (initialCmdTimer) {
+        clearTimeout(initialCmdTimer);
+        initialCmdTimer = null;
+      }
       unreg?.();
       unregRaw?.();
       if (observerRef.current) {
@@ -828,6 +902,7 @@ function TerminalSession({
       writeParsedDisposable?.dispose();
       writeParsedDisposable = null;
       onResizeDisposable.dispose();
+      bufferChangeDisposable.dispose();
       if (colFitTimerRef.current) {
         clearTimeout(colFitTimerRef.current);
         colFitTimerRef.current = null;

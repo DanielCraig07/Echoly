@@ -986,6 +986,8 @@ export interface IpcApi {
   javaInstallOnlineJdk: (id: string) => Promise<{ success: boolean; javaHome?: string; message: string }>;
   /** 监听 JDK 在线下载与解压进度 */
   onJavaInstallProgress: (cb: (progress: JdkInstallProgress) => void) => () => void;
+  /** 打开系统设置（如 macOS 本地网络隐私设置） */
+  openSystemSettings?: (type?: string) => Promise<boolean>;
 }
 
 export interface InstalledJdkInfo {

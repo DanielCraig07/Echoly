@@ -873,9 +873,38 @@ export class SshSessionManager {
         // ignore
       }
       if (webContentsId >= 0) this.live.delete(webContentsId);
+
+      const rawMsg = err instanceof Error ? err.message : String(err);
+      let detail = rawMsg;
+
+      const host = req.host || '';
+      const isLocalHost =
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        /^10\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+        host.endsWith('.local');
+
+      const isNetworkUnreachable =
+        rawMsg.includes('EHOSTUNREACH') ||
+        rawMsg.includes('ENETUNREACH') ||
+        rawMsg.includes('No route to host') ||
+        rawMsg.includes('ETIMEDOUT') ||
+        rawMsg.includes('EACCES') ||
+        rawMsg.includes('EPERM');
+
+      if (isLocalHost && isNetworkUnreachable) {
+        if (process.platform === 'darwin') {
+          detail = `无法连接本地网络服务器 (${host}:${port}): ${rawMsg}。由于 macOS 隐私保护机制，请前往「系统设置 -> 隐私与安全性 -> 本地网络」，确保已允许 Echoly (或 Electron) 访问本地网络；同时确认局域网 IP 与网络路由可达。`;
+        } else {
+          detail = `无法连接局域网服务器 (${host}:${port}): ${rawMsg}。请检查局域网连接、目标 IP 与防火墙设置。`;
+        }
+      }
+
       return {
         ok: false,
-        detail: err instanceof Error ? err.message : String(err),
+        detail,
       };
     }
   }
@@ -987,6 +1016,8 @@ export class SshSessionManager {
   openShell(
     onData: (data: string) => void,
     onClose: (code: number) => void,
+    initialCols?: number,
+    initialRows?: number,
   ): {
     write: (data: string) => void;
     resize: (cols: number, rows: number) => void;
@@ -995,13 +1026,33 @@ export class SshSessionManager {
     const live = this.liveForCurrent();
     if (!live) return null;
     let channel: ClientChannel | null = null;
-    live.client.shell({ term: 'xterm-256color' }, (err, stream) => {
+    let pendingResize: { cols: number; rows: number } | null =
+      initialCols && initialRows ? { cols: initialCols, rows: initialRows } : null;
+    const pendingWrites: string[] = [];
+
+    const shellOptions: { term: string; cols?: number; rows?: number } = {
+      term: 'xterm-256color',
+    };
+    if (initialCols && initialCols >= 20 && initialRows && initialRows >= 3) {
+      shellOptions.cols = initialCols;
+      shellOptions.rows = initialRows;
+    }
+
+    live.client.shell(shellOptions, (err, stream) => {
       if (err) {
         onData(`\r\n[ssh shell error] ${err.message}\r\n`);
         onClose(1);
         return;
       }
       channel = stream;
+      if (pendingResize) {
+        stream.setWindow(pendingResize.rows, pendingResize.cols, 0, 0);
+        pendingResize = null;
+      }
+      while (pendingWrites.length > 0) {
+        const chunk = pendingWrites.shift();
+        if (chunk) stream.write(chunk);
+      }
       const root = live.workspace.getRoot();
       if (root) {
         stream.write(`cd ${shellQuote(root)}\n`);
@@ -1011,9 +1062,19 @@ export class SshSessionManager {
       stream.on('close', () => onClose(0));
     });
     return {
-      write: (data) => channel?.write(data),
+      write: (data) => {
+        if (channel) {
+          channel.write(data);
+        } else {
+          pendingWrites.push(data);
+        }
+      },
       resize: (cols, rows) => {
-        channel?.setWindow(rows, cols, 0, 0);
+        if (channel) {
+          channel.setWindow(rows, cols, 0, 0);
+        } else {
+          pendingResize = { cols, rows };
+        }
       },
       close: () => channel?.close(),
     };

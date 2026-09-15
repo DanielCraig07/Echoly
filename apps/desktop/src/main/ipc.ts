@@ -334,4 +334,22 @@ export function registerIpc(deps: {
   ipcMain.handle('java:installOnline', (e, id: string) =>
     run(e, () => installOnlineJdk(id)),
   );
+
+  ipcMain.handle('system:openPrivacySettings', async (_e, type?: string) => {
+    if (process.platform === 'darwin') {
+      try {
+        if (type === 'localNetwork') {
+          await shell.openExternal(
+            'x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork',
+          );
+          return true;
+        }
+        await shell.openExternal('x-apple.systempreferences:com.apple.preference.security');
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
 }

@@ -6,7 +6,7 @@
   "author": "Echoly",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && electron-vite dev",
     "build": "electron-vite build",
     "pack": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --x64 --config.electronVersion=35.7.5",
     "pack:win32": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --ia32 --config.electronVersion=35.7.5 --config.electronDist=electron-dist-cache/win32-ia32",
@@ -102,7 +102,12 @@
       "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Echoly 需要访问本地局域网以连接远程 SSH 服务器及内网服务。"
+      },
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist"
     },
     "dmg": {
       "title": "${productName} ${version} ${arch}",

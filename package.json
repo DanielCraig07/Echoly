@@ -8,7 +8,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev -w @deepseek-ide/desktop",
+    "postinstall": "node scripts/fix-pty-perms.js && node scripts/fix-mac-local-network.js",
+    "dev": "node scripts/fix-pty-perms.js && node scripts/fix-mac-local-network.js && npm run dev -w @deepseek-ide/desktop",
     "build": "npm run build -w @deepseek-ide/desktop",
     "pack": "npm run pack -w @deepseek-ide/desktop",
     "pack:win32": "npm run pack:win32 -w @deepseek-ide/desktop",

@@ -392,7 +392,21 @@ export function SshConnectModal({
                 </div>
               )}
 
-              {error && <div className="probe-fail">{error}</div>}
+              {error && (
+                <div className="probe-fail" style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                  <span>{error}</span>
+                  {error.includes('本地网络') && (
+                    <button
+                      type="button"
+                      className="ghost"
+                      style={{ padding: '2px 8px', fontSize: 11, textDecoration: 'underline', cursor: 'pointer' }}
+                      onClick={() => void window.ide.openSystemSettings?.('localNetwork')}
+                    >
+                      打开 macOS「系统设置 - 本地网络」
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <footer className="ide-modal-footer">
@@ -515,7 +529,21 @@ export function SshConnectModal({
                 </div>
               </div>
 
-              {error && <div className="probe-fail">{error}</div>}
+              {error && (
+                <div className="probe-fail" style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                  <span>{error}</span>
+                  {error.includes('本地网络') && (
+                    <button
+                      type="button"
+                      className="ghost"
+                      style={{ padding: '2px 8px', fontSize: 11, textDecoration: 'underline', cursor: 'pointer' }}
+                      onClick={() => void window.ide.openSystemSettings?.('localNetwork')}
+                    >
+                      打开 macOS「系统设置 - 本地网络」
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <footer className="ide-modal-footer">

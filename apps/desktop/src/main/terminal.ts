@@ -21,6 +21,36 @@ type SshHandle = {
 
 type TermHandle = LocalHandle | SshHandle;
 
+function ensureSpawnHelperPermissions(): void {
+  if (process.platform === 'win32') return;
+  try {
+    const candidates = [
+      path.join(process.cwd(), 'node_modules', 'node-pty', 'prebuilds'),
+      path.join(__dirname, '..', '..', 'node_modules', 'node-pty', 'prebuilds'),
+      path.join(__dirname, 'node_modules', 'node-pty', 'prebuilds'),
+    ];
+    for (const prebuildsRoot of candidates) {
+      if (fs.existsSync(prebuildsRoot)) {
+        for (const dir of fs.readdirSync(prebuildsRoot)) {
+          const helper = path.join(prebuildsRoot, dir, 'spawn-helper');
+          if (fs.existsSync(helper)) {
+            try {
+              const stat = fs.statSync(helper);
+              if ((stat.mode & 0o111) !== 0o111) {
+                fs.chmodSync(helper, 0o755);
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Terminal service – uses a real PTY (node-pty) for local shells so TUI programs
  * (vim, htop, ssh, interactive scripts) work correctly, with resize support.
@@ -66,7 +96,7 @@ export class TerminalService {
     const kind = options?.kind ?? 'local';
     const result =
       kind === 'ssh'
-        ? this.createSsh(options?.cwd)
+        ? this.createSsh(options?.cwd, options?.cols, options?.rows)
         : this.createLocal(options?.cwd, options?.cols, options?.rows);
     if (ownerWebContentsId != null) {
       this.termOwners.set(result.id, ownerWebContentsId);
@@ -129,12 +159,12 @@ export class TerminalService {
     const isWin = process.platform === 'win32';
     const shell = isWin ? process.env.COMSPEC || 'cmd.exe' : process.env.SHELL || '/bin/zsh';
     const cwd = this.resolveLocalCwd(cwdRel);
-    const initialCols = Math.max(80, cols || 80);
-    const initialRows = Math.max(24, rows || 24);
+    const initialCols = Math.max(20, cols || 80);
+    const initialRows = Math.max(3, rows || 24);
 
-    // spawn a real PTY. node-pty ships prebuilt native binaries per platform, so
-    // TUI apps (vim/htop/ssh) and resize work correctly.
-    const pty = ptySpawn(shell, [], {
+    ensureSpawnHelperPermissions();
+
+    const spawnOptions = {
       name: 'xterm-256color',
       cols: initialCols,
       rows: initialRows,
@@ -154,7 +184,16 @@ export class TerminalService {
         LS_COLORS:
           'di=1;36:ln=1;35:so=1;32:pi=33:ex=0;31:bd=1;33:cd=1;33:su=41;30:sg=43;30:tw=1;34:ow=1;34:*.zip=1;31:*.tar=1;31:*.gz=1;31:*.png=35:*.jpg=35:*.gif=35:*.mp4=35:*.mov=35:*.pdf=31:*.md=0;31:*.json=0;31:*.html=0;31:*.js=0;31:*.ts=0;31',
       },
-    });
+    };
+
+    let pty: IPty;
+    try {
+      pty = ptySpawn(shell, [], spawnOptions);
+    } catch (err) {
+      // 若因 npm 重装等导致辅助可执行位丢失报 posix_spawnp failed，强制恢复权限后重试一次
+      ensureSpawnHelperPermissions();
+      pty = ptySpawn(shell, [], spawnOptions);
+    }
 
     pty.onData((data: string) => {
       this.sendToWindow('terminal:data', { id, data });
@@ -180,7 +219,7 @@ export class TerminalService {
     return { id };
   }
 
-  private createSsh(cwdRel?: string): { id: string } {
+  private createSsh(cwdRel?: string, cols?: number, rows?: number): { id: string } {
     const id = randomUUID();
     if (!this.ssh?.isConnected()) {
       this.sendToWindow('terminal:data', {
@@ -196,6 +235,8 @@ export class TerminalService {
         this.sendToWindow('terminal:exit', { id, exitCode });
         this.terminals.delete(id);
       },
+      cols,
+      rows,
     );
     if (!handle) {
       this.sendToWindow('terminal:data', {
@@ -240,7 +281,7 @@ export class TerminalService {
   }
 
   resize(id: string, cols: number, rows: number): void {
-    if (cols < 40 || rows < 5) return;
+    if (cols < 20 || rows < 3) return;
     const t = this.terminals.get(id);
     if (!t) return;
     if (t.kind === 'local') t.pty.resize(cols, rows);

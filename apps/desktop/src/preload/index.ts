@@ -175,6 +175,7 @@ const api: IpcApi = {
     ipcRenderer.on('java:installProgress', listener);
     return () => ipcRenderer.removeListener('java:installProgress', listener);
   },
+  openSystemSettings: (type?: string) => ipcRenderer.invoke('system:openPrivacySettings', type),
 };
 
 contextBridge.exposeInMainWorld('ide', api);
