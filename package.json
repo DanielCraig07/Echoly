@@ -1,6 +1,6 @@
 {
   "name": "echoly",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "private": true,
   "description": "Echoly - AI-first Modern Intelligent IDE",
   "workspaces": [
