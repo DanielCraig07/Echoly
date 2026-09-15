@@ -48,12 +48,12 @@ export function SshConnectModal({
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        onClose();
+        handleClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [open, onClose]);
+  }, [open, onClose, step]);
 
   useEffect(() => {
     if (!open) {
@@ -259,10 +259,9 @@ export function SshConnectModal({
   if (typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="settings-overlay" onClick={handleClose}>
+    <div className="settings-overlay">
       <div
         className={`ide-modal${step === 'pick_directory' || showForm ? ' ide-modal-md' : ''}`}
-        onClick={(e) => e.stopPropagation()}
       >
         {step === 'credentials' ? (
           <>

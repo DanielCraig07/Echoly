@@ -59,6 +59,85 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
     }
   });
 
+  it('formats helpful local network diagnosis on Connection lost before handshake', async () => {
+    const mockSession = { webContentsId: 1, workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/home' } };
+    const manager = new SshSessionManager(() => mockSession as any, '/tmp/test-user-data', () => null);
+
+    vi.mocked(Client).mockImplementation(function () {
+      const listeners: Record<string, ((...args: any[]) => void)[]> = {};
+      const clientInstance = {
+        on: (event: string, cb: (...args: any[]) => void) => {
+          listeners[event] = listeners[event] || [];
+          listeners[event].push(cb);
+          return clientInstance;
+        },
+        connect: () => {
+          process.nextTick(() => {
+            listeners['error']?.forEach((cb) =>
+              cb(new Error('Connection lost before handshake')),
+            );
+          });
+          return clientInstance;
+        },
+        end: vi.fn(),
+      };
+      return clientInstance as any;
+    });
+
+    const res = await manager.connect({
+      host: '192.168.10.208',
+      port: 22,
+      username: 'root',
+      password: 'password',
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.detail).toContain('无法连接');
+    expect(res.detail).toContain('Connection lost before handshake');
+    if (process.platform === 'darwin') {
+      expect(res.detail).toContain('本地网络');
+    }
+  });
+
+  it('formats user-friendly error on All configured authentication methods failed without retrying via nc', async () => {
+    const mockSession = { webContentsId: 1, workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/home' } };
+    const manager = new SshSessionManager(() => mockSession as any, '/tmp/test-user-data', () => null);
+
+    let connectCount = 0;
+    vi.mocked(Client).mockImplementation(function () {
+      const listeners: Record<string, ((...args: any[]) => void)[]> = {};
+      const clientInstance = {
+        on: (event: string, cb: (...args: any[]) => void) => {
+          listeners[event] = listeners[event] || [];
+          listeners[event].push(cb);
+          return clientInstance;
+        },
+        connect: () => {
+          connectCount++;
+          process.nextTick(() => {
+            listeners['error']?.forEach((cb) =>
+              cb(new Error('All configured authentication methods failed')),
+            );
+          });
+          return clientInstance;
+        },
+        end: vi.fn(),
+      };
+      return clientInstance as any;
+    });
+
+    const res = await manager.connect({
+      host: '192.168.10.208',
+      port: 22,
+      username: 'root',
+      password: 'wrong-password',
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.detail).toContain('认证失败：请检查用户名、密码或私钥口令是否正确');
+    expect(connectCount).toBe(1); // should not retry via nc on auth failure
+  });
+
   it('buffers resize and write before shell channel opens and applies on ready', async () => {
     const mockSession = { webContentsId: 1, workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/remote/home' } };
     const manager = new SshSessionManager(() => mockSession as any, '/tmp/test-user-data', () => null);

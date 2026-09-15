@@ -4,69 +4,102 @@ import fsSync from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { Duplex } from 'node:stream';
+import net from 'node:net';
 import type { SshConnectRequest, SshConnectResult, SshProfile } from '@deepseek-ide/shared';
 import type { CommandResult, DirEntry, WorkspaceBackend } from '@deepseek-ide/tools';
 import type { WorkspaceService } from '../workspace';
 import type { WindowSession } from '../windowRegistry';
 import type { BrowserWindow } from 'electron';
 
+interface LocalNcProxy {
+  port: number;
+  close: () => void;
+}
+
 /**
- * 在 macOS 上利用系统原生签名且无限制的 /usr/bin/nc 建立系统级 Socket 桥接管道。
- * 彻底解决 macOS 15 Sequoia 对未签名/Ad-hoc 签名 GUI 应用静默拦截局域网 socket (EHOSTUNREACH) 的问题。
+ * 在 macOS 上利用系统原生签名且无限制的 /usr/bin/nc 建立本地 TCP 代理。
+ * 彻底解决 macOS 15 Sequoia 对打包后的桌面应用静默拦截局域网 socket (EHOSTUNREACH / Connection lost before handshake) 的问题。
+ * 通过在 127.0.0.1 启动临时监听，让 ssh2 通过原生 net.Socket 连接本地回环（不受本地网络隐私策略拦截），
+ * 并由系统原生工具 /usr/bin/nc 负责与远程局域网建立真实数据转发。
  */
-function createSystemSocketBridge(host: string, port: number): { stream: Duplex; cleanup: () => void } {
-  const nc = spawn('/usr/bin/nc', [host, String(port)], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
+function startLocalNcProxy(remoteHost: string, remotePort: number): Promise<LocalNcProxy> {
+  return new Promise((resolve, reject) => {
+    let closed = false;
+    const activeSockets = new Set<net.Socket>();
+    const activeProcesses = new Set<ReturnType<typeof spawn>>();
 
-  let isCleanedUp = false;
-  const cleanup = () => {
-    if (isCleanedUp) return;
-    isCleanedUp = true;
-    try {
-      if (!nc.killed) nc.kill();
-    } catch {
-      // ignore
-    }
-  };
+    const server = net.createServer((clientSock) => {
+      activeSockets.add(clientSock);
 
-  const duplex = new Duplex({
-    read() {},
-    write(chunk, encoding, callback) {
-      if (nc.stdin && !nc.stdin.destroyed) {
-        nc.stdin.write(chunk, encoding, callback);
-      } else {
-        callback();
+      const nc = spawn('/usr/bin/nc', [remoteHost, String(remotePort)], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      activeProcesses.add(nc);
+
+      clientSock.pipe(nc.stdin);
+      nc.stdout.pipe(clientSock);
+
+      const cleanupConn = () => {
+        activeSockets.delete(clientSock);
+        activeProcesses.delete(nc);
+        try {
+          if (!nc.killed) nc.kill();
+        } catch {
+          // ignore
+        }
+        try {
+          if (!clientSock.destroyed) clientSock.destroy();
+        } catch {
+          // ignore
+        }
+      };
+
+      nc.on('error', cleanupConn);
+      nc.on('close', cleanupConn);
+      clientSock.on('error', cleanupConn);
+      clientSock.on('close', cleanupConn);
+    });
+
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      if (!addr || typeof addr === 'string') {
+        server.close();
+        return reject(new Error('无法获取本地代理端口'));
       }
-    },
-    destroy(err, callback) {
-      cleanup();
-      callback(err);
-    },
+      resolve({
+        port: addr.port,
+        close: () => {
+          if (closed) return;
+          closed = true;
+          try {
+            server.close();
+          } catch {
+            // ignore
+          }
+          for (const s of activeSockets) {
+            try {
+              s.destroy();
+            } catch {
+              // ignore
+            }
+          }
+          activeSockets.clear();
+          for (const p of activeProcesses) {
+            try {
+              if (!p.killed) p.kill();
+            } catch {
+              // ignore
+            }
+          }
+          activeProcesses.clear();
+        },
+      });
+    });
+
+    server.on('error', (err) => {
+      reject(err);
+    });
   });
-
-  nc.stdout.on('data', (chunk) => {
-    duplex.push(chunk);
-  });
-
-  nc.stdout.on('end', () => {
-    duplex.push(null);
-  });
-
-  nc.on('error', (err) => {
-    duplex.destroy(err);
-  });
-
-  nc.on('close', () => {
-    cleanup();
-    duplex.destroy();
-  });
-
-  duplex.on('close', cleanup);
-  duplex.on('end', cleanup);
-
-  return { stream: duplex, cleanup };
 }
 
 function posixJoin(root: string, relPath = '.'): string {
@@ -849,28 +882,17 @@ export class SshSessionManager {
         });
       } catch (firstErr) {
         const rawMsg = firstErr instanceof Error ? firstErr.message : String(firstErr);
-        const host = req.host || '';
-        const isLocalHost =
-          host === 'localhost' ||
-          host === '127.0.0.1' ||
-          /^10\./.test(host) ||
-          /^192\.168\./.test(host) ||
-          /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-          host.endsWith('.local');
+        const isAuthError =
+          rawMsg.includes('All configured authentication methods failed') ||
+          rawMsg.includes('authentication') ||
+          rawMsg.includes('key is invalid') ||
+          rawMsg.includes('passphrase');
 
-        const isNetworkUnreachable =
-          rawMsg.includes('EHOSTUNREACH') ||
-          rawMsg.includes('ENETUNREACH') ||
-          rawMsg.includes('No route to host') ||
-          rawMsg.includes('ETIMEDOUT') ||
-          rawMsg.includes('EACCES') ||
-          rawMsg.includes('EPERM');
-
-        // 在 macOS 平台，当连接局域网遇到网络不可达时（通常受 macOS 15 Local Network 隐私机制或 TCC 缓存阻断），
-        // 自动利用系统内置且拥有完整原生网络权限的 /usr/bin/nc 建立系统级桥接通道进行无缝重连自愈
+        // 在 macOS 平台，当连接局域网遇到网络不可达、连接重置或握手前断开时（通常受 macOS 15 Local Network 隐私机制或 TCC 缓存阻断），
+        // 自动利用系统内置且拥有完整原生网络权限的 /usr/bin/nc 建立本地回环 TCP 代理进行无缝重连自愈
         if (
+          !isAuthError &&
           process.platform === 'darwin' &&
-          (isLocalHost || isNetworkUnreachable) &&
           fsSync.existsSync('/usr/bin/nc')
         ) {
           try {
@@ -878,20 +900,22 @@ export class SshSessionManager {
           } catch {
             // ignore
           }
-          const bridge = createSystemSocketBridge(req.host, port);
-          bridgeCleanup = bridge.cleanup;
+          const proxy = await startLocalNcProxy(req.host, port);
+          bridgeCleanup = proxy.close;
 
           const retryClient = new Client();
           await new Promise<void>((resolve, reject) => {
             retryClient
               .on('ready', () => resolve())
               .on('error', (retryErr) => {
-                bridge.cleanup();
+                proxy.close();
                 reject(retryErr);
               })
               .connect({
                 ...baseConnectConfig,
-                sock: bridge.stream,
+                host: '127.0.0.1',
+                port: proxy.port,
+                readyTimeout: 20000,
               });
           });
           client = retryClient;
@@ -1018,9 +1042,13 @@ export class SshSessionManager {
         rawMsg.includes('No route to host') ||
         rawMsg.includes('ETIMEDOUT') ||
         rawMsg.includes('EACCES') ||
-        rawMsg.includes('EPERM');
+        rawMsg.includes('EPERM') ||
+        rawMsg.includes('Connection lost before handshake') ||
+        rawMsg.includes('ECONNRESET');
 
-      if (isLocalHost && isNetworkUnreachable) {
+      if (rawMsg.includes('All configured authentication methods failed')) {
+        detail = `认证失败：请检查用户名、密码或私钥口令是否正确 (${rawMsg})`;
+      } else if (isLocalHost && isNetworkUnreachable) {
         if (process.platform === 'darwin') {
           detail = `无法连接本地网络服务器 (${host}:${port}): ${rawMsg}。由于 macOS 隐私保护机制，请前往「系统设置 -> 隐私与安全性 -> 本地网络」，确保已允许 Echoly (或 Electron) 访问本地网络；同时确认局域网 IP 与网络路由可达。`;
         } else {
