@@ -2557,7 +2557,7 @@ export function GitPanel({
       <div
         className="splitter splitter-h"
         onMouseDown={handleGraphResizeStart}
-        style={{ cursor: 'row-resize', height: 5, background: 'var(--border)', minHeight: 5 }}
+        style={{ cursor: 'row-resize', height: 4, margin: 0, minHeight: 4 }}
         title="上下拖动调整图形高度"
       />
 
@@ -2576,16 +2576,19 @@ export function GitPanel({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            padding: '4px 10px',
+            padding: '0 10px',
             background: 'rgba(255, 255, 255, 0.02)',
             borderBottom: '1px solid var(--border)',
             fontSize: 11,
             fontWeight: 600,
             color: 'var(--muted)',
-            height: 26,
+            height: 32,
+            minHeight: 32,
             boxSizing: 'border-box',
             cursor: 'pointer',
             userSelect: 'none',
+            position: 'relative',
+            zIndex: 1,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2598,7 +2601,7 @@ export function GitPanel({
             </span>
           </div>
           <div
-            style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* 自动状态指示 */}
@@ -2606,10 +2609,12 @@ export function GitPanel({
               type="button"
               className="panel-action-btn active"
               style={{
-                height: 20,
+                height: 22,
+                minWidth: 44,
                 padding: '1px 6px',
                 fontSize: 11,
                 display: 'inline-flex',
+                alignItems: 'center',
                 gap: 3,
                 color: 'var(--accent, #58a6ff)',
                 fontWeight: 500,
@@ -2634,6 +2639,7 @@ export function GitPanel({
             {/* 聚焦 HEAD 图标 */}
             <button
               type="button"
+              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               onClick={() => {
                 onShowToast?.('聚焦当前分支', `当前分支: ${status?.branch || 'HEAD'}`, 'info');
               }}
@@ -2656,6 +2662,7 @@ export function GitPanel({
             {/* 新建/切换分支图标 */}
             <button
               type="button"
+              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               onClick={() =>
                 void runGitAction('新建分支', async () => {
                   const b = prompt('请输入新分支名称:');
@@ -2686,6 +2693,7 @@ export function GitPanel({
             {/* 同步 / 拉取图标 */}
             <button
               type="button"
+              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               onClick={() => void runGitAction('拉取更改 (Pull)', () => window.ide.gitPull())}
               title="拉取与同步 (Pull)"
               className="panel-action-btn"
@@ -2708,6 +2716,7 @@ export function GitPanel({
             {/* 刷新图谱图标 */}
             <button
               type="button"
+              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               onClick={() => void refresh()}
               title="刷新提交图谱"
               className="panel-action-btn"
@@ -2728,6 +2737,7 @@ export function GitPanel({
             {/* 更多操作图标 */}
             <button
               type="button"
+              style={{ width: 22, height: 22, minWidth: 22, padding: 2 }}
               ref={moreMenuBtnRef}
               onClick={(e) => {
                 e.stopPropagation();

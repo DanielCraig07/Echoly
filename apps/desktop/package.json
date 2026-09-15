@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ide/desktop",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "private": true,
   "description": "Echoly Desktop App",
   "author": "Echoly",
@@ -11,10 +11,10 @@
     "pack": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --x64 --config.electronVersion=35.7.5",
     "pack:win32": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --ia32 --config.electronVersion=35.7.5 --config.electronDist=electron-dist-cache/win32-ia32",
     "pack:win:publish": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --x64 --config.electronVersion=35.7.5 --publish always",
-    "pack:mac:publish": "npm run build && node ../../scripts/fix-pty-perms.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64 --config.electronVersion=35.7.5 --publish always && rm -rf release/mac release/mac-arm64 release/mac-x64",
-    "pack:mac": "npm run build && node ../../scripts/fix-pty-perms.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
-    "pack:mac:arm64": "npm run build && node ../../scripts/fix-pty-perms.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64 --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
-    "pack:mac:x64": "npm run build && node ../../scripts/fix-pty-perms.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --x64 --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
+    "pack:mac:publish": "npm run build && node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64 --config.electronVersion=35.7.5 --publish always && rm -rf release/mac release/mac-arm64 release/mac-x64",
+    "pack:mac": "npm run build && node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
+    "pack:mac:arm64": "npm run build && node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64 --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
+    "pack:mac:x64": "npm run build && node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --x64 --config.electronVersion=35.7.5 && rm -rf release/mac release/mac-arm64 release/mac-x64",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
@@ -66,6 +66,7 @@
       "output": "release",
       "buildResources": "resources"
     },
+    "afterPack": "scripts/after-pack.js",
     "icon": "resources/icon.png",
     "electronDist": "../../node_modules/electron/dist",
     "files": [
@@ -104,7 +105,12 @@
       "gatekeeperAssess": false,
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "extendInfo": {
-        "NSLocalNetworkUsageDescription": "Echoly 需要访问本地局域网以连接远程 SSH 服务器及内网服务。"
+        "NSLocalNetworkUsageDescription": "Echoly 需要访问本地局域网以连接远程 SSH 服务器及内网服务。",
+        "NSBonjourServices": [
+          "_ssh._tcp",
+          "_sftp-ssh._tcp",
+          "_lnp._tcp"
+        ]
       },
       "entitlements": "resources/entitlements.mac.plist",
       "entitlementsInherit": "resources/entitlements.mac.plist"

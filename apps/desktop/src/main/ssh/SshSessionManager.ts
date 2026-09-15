@@ -2,9 +2,11 @@ import { Client, type SFTPWrapper, type ClientChannel } from 'ssh2';
 import fs from 'node:fs/promises';
 import fsSync from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
+import electronLog from 'electron-log';
 import type { SshConnectRequest, SshConnectResult, SshProfile } from '@deepseek-ide/shared';
 import type { CommandResult, DirEntry, WorkspaceBackend } from '@deepseek-ide/tools';
 import type { WorkspaceService } from '../workspace';
@@ -31,10 +33,23 @@ function startLocalNcProxy(remoteHost: string, remotePort: number): Promise<Loca
     const server = net.createServer((clientSock) => {
       activeSockets.add(clientSock);
 
-      const nc = spawn('/usr/bin/nc', [remoteHost, String(remotePort)], {
+      const args = [remoteHost, String(remotePort)];
+      // 若为直接 IP 地址，增加 -n 参数跳过慢速 DNS 解析
+      if (/^(\d{1,3}\.){3}\d{1,3}$/.test(remoteHost) || remoteHost.includes(':')) {
+        args.unshift('-n');
+      }
+      // 增加连接超时参数 10 秒
+      args.unshift('-G', '10');
+
+      const nc = spawn('/usr/bin/nc', args, {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       activeProcesses.add(nc);
+
+      let ncStderr = '';
+      nc.stderr?.on('data', (chunk) => {
+        ncStderr += chunk.toString();
+      });
 
       clientSock.pipe(nc.stdin);
       nc.stdout.pipe(clientSock);
@@ -52,9 +67,15 @@ function startLocalNcProxy(remoteHost: string, remotePort: number): Promise<Loca
         } catch {
           // ignore
         }
+        if (ncStderr) {
+          electronLog.warn(`[ssh-proxy] nc stderr for ${remoteHost}:${remotePort}: ${ncStderr.trim()}`);
+        }
       };
 
-      nc.on('error', cleanupConn);
+      nc.on('error', (err) => {
+        electronLog.error(`[ssh-proxy] nc spawn error for ${remoteHost}:${remotePort}:`, err);
+        cleanupConn();
+      });
       nc.on('close', cleanupConn);
       clientSock.on('error', cleanupConn);
       clientSock.on('close', cleanupConn);
@@ -834,7 +855,11 @@ export class SshSessionManager {
     let privateKey: Buffer | undefined;
     if (req.privateKeyPath) {
       try {
-        privateKey = await fs.readFile(req.privateKeyPath);
+        let keyPath = req.privateKeyPath.trim();
+        if (keyPath.startsWith('~/')) {
+          keyPath = path.join(os.homedir(), keyPath.slice(2));
+        }
+        privateKey = await fs.readFile(keyPath);
       } catch (err) {
         return {
           ok: false,
@@ -842,7 +867,6 @@ export class SshSessionManager {
         };
       }
     } else if (!req.password) {
-      const os = require('node:os');
       const home = os.homedir();
       const candidates = ['id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa'];
       for (const name of candidates) {
@@ -859,6 +883,13 @@ export class SshSessionManager {
     let client = new Client();
     let bridgeCleanup: (() => void) | null = null;
 
+    // 只有在未提供明确密码且未提供具体私钥时，才尝试使用系统 SSH_AUTH_SOCK
+    // 避免在 GUI 应用中向无效或无权限的 Apple launchd agent socket 发起查询导致认证冲突或被拦截
+    let agentSocket: string | undefined;
+    if (!req.password && !privateKey && process.env.SSH_AUTH_SOCK && fsSync.existsSync(process.env.SSH_AUTH_SOCK)) {
+      agentSocket = process.env.SSH_AUTH_SOCK;
+    }
+
     const baseConnectConfig = {
       host: req.host,
       port,
@@ -866,11 +897,17 @@ export class SshSessionManager {
       password: req.password,
       privateKey,
       passphrase: req.passphrase,
-      agent: process.env.SSH_AUTH_SOCK,
+      agent: agentSocket,
       readyTimeout: 20000,
       keepaliveInterval: 5000,
       keepaliveCountMax: 3,
     };
+
+    electronLog.info(
+      `[ssh] connecting to ${req.username}@${req.host}:${port} (auth: ${
+        req.password ? 'password' : privateKey ? 'key' : agentSocket ? 'agent' : 'default'
+      })`,
+    );
 
     try {
       try {
@@ -895,6 +932,7 @@ export class SshSessionManager {
           process.platform === 'darwin' &&
           fsSync.existsSync('/usr/bin/nc')
         ) {
+          electronLog.info(`[ssh] direct connect failed (${rawMsg}), retrying via local loopback bridge (/usr/bin/nc)...`);
           try {
             client.end();
           } catch {
@@ -906,8 +944,12 @@ export class SshSessionManager {
           const retryClient = new Client();
           await new Promise<void>((resolve, reject) => {
             retryClient
-              .on('ready', () => resolve())
+              .on('ready', () => {
+                electronLog.info(`[ssh] successfully connected via local loopback bridge!`);
+                resolve();
+              })
               .on('error', (retryErr) => {
+                electronLog.warn(`[ssh] retry via loopback bridge failed:`, retryErr);
                 proxy.close();
                 reject(retryErr);
               })
@@ -1025,6 +1067,7 @@ export class SshSessionManager {
       if (webContentsId >= 0) this.live.delete(webContentsId);
 
       const rawMsg = err instanceof Error ? err.message : String(err);
+      electronLog.error(`[ssh] connection to ${req.host}:${port} failed:`, err);
       let detail = rawMsg;
 
       const host = req.host || '';

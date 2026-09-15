@@ -418,6 +418,23 @@ function createWindow(targetPath?: string, opts?: { blank?: boolean }): Electron
 
 app.whenReady().then(async () => {
   const settings = new SettingsStore(app.getPath('userData'));
+
+  // macOS 15 Sequoia 局域网权限预热：发送静默探测包使系统及早绑定本地网络授权，避免后续 SSH 握手前被操作系统拦截
+  if (process.platform === 'darwin') {
+    try {
+      const dgram = require('node:dgram');
+      const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+      sock.on('error', () => {
+        try { sock.close(); } catch { /* ignore */ }
+      });
+      sock.send(Buffer.from([0]), 5353, '224.0.0.251', () => {
+        try { sock.close(); } catch { /* ignore */ }
+      });
+    } catch {
+      // ignore
+    }
+  }
+
   menuDeps = {
     getAutoSave: () => settings.get().autoSave === true,
     setAutoSave: (enabled) => {

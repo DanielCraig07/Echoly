@@ -35,23 +35,38 @@ function fixMacLocalNetwork() {
 
   let content = fs.readFileSync(plistPath, 'utf8');
 
+  let modified = false;
+
   // 检查是否已经存在 NSLocalNetworkUsageDescription
-  if (content.includes('<key>NSLocalNetworkUsageDescription</key>')) {
-    return;
+  if (!content.includes('<key>NSLocalNetworkUsageDescription</key>')) {
+    console.log('[fix-mac-network] Injecting NSLocalNetworkUsageDescription into Electron.app...');
+    const injection = `\t<key>NSLocalNetworkUsageDescription</key>\n\t<string>Echoly 需要访问本地局域网以连接远程 SSH 服务器及内网 AI 服务。</string>\n`;
+    if (content.includes('</dict>\n</plist>')) {
+      content = content.replace('</dict>\n</plist>', `${injection}</dict>\n</plist>`);
+    } else if (content.includes('</dict></plist>')) {
+      content = content.replace('</dict></plist>', `${injection}</dict></plist>`);
+    } else {
+      content = content.replace('<dict>', `<dict>\n${injection}`);
+    }
+    modified = true;
   }
 
-  console.log('[fix-mac-network] Injecting NSLocalNetworkUsageDescription into Electron.app...');
+  // 检查是否已经存在 NSBonjourServices
+  if (!content.includes('<key>NSBonjourServices</key>')) {
+    console.log('[fix-mac-network] Injecting NSBonjourServices into Electron.app...');
+    const bonjourInjection = `\t<key>NSBonjourServices</key>\n\t<array>\n\t\t<string>_ssh._tcp</string>\n\t\t<string>_sftp-ssh._tcp</string>\n\t\t<string>_lnp._tcp</string>\n\t</array>\n`;
+    if (content.includes('</dict>\n</plist>')) {
+      content = content.replace('</dict>\n</plist>', `${bonjourInjection}</dict>\n</plist>`);
+    } else if (content.includes('</dict></plist>')) {
+      content = content.replace('</dict></plist>', `${bonjourInjection}</dict></plist>`);
+    } else {
+      content = content.replace('<dict>', `<dict>\n${bonjourInjection}`);
+    }
+    modified = true;
+  }
 
-  // 注入权限声明描述
-  const injection = `\t<key>NSLocalNetworkUsageDescription</key>\n\t<string>Echoly 需要访问本地局域网以连接远程 SSH 服务器及内网 AI 服务。</string>\n`;
-
-  if (content.includes('</dict>\n</plist>')) {
-    content = content.replace('</dict>\n</plist>', `${injection}</dict>\n</plist>`);
-  } else if (content.includes('</dict></plist>')) {
-    content = content.replace('</dict></plist>', `${injection}</dict></plist>`);
-  } else {
-    // 降级兜底：在第一个 <dict> 之后插入
-    content = content.replace('<dict>', `<dict>\n${injection}`);
+  if (!modified) {
+    return;
   }
 
   fs.writeFileSync(plistPath, content, 'utf8');
