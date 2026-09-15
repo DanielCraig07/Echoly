@@ -3,7 +3,7 @@ import { SshSessionManager } from '../src/main/ssh/SshSessionManager';
 import { Client } from 'ssh2';
 
 vi.mock('ssh2', () => {
-  const ClientMock = vi.fn().mockImplementation(() => {
+  const ClientMock = vi.fn().mockImplementation(function () {
     return {
       on: vi.fn().mockReturnThis(),
       connect: vi.fn().mockReturnThis(),
@@ -21,8 +21,8 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
     const mockSession = { webContentsId: 1, workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/home' } };
     const manager = new SshSessionManager(() => mockSession as any, '/tmp/test-user-data', () => null);
 
-    // Mock Client.connect to trigger error
-    vi.mocked(Client).mockImplementationOnce(function () {
+    // Mock Client.connect to trigger error on direct and fallback
+    vi.mocked(Client).mockImplementation(function () {
       const listeners: Record<string, ((...args: any[]) => void)[]> = {};
       const clientInstance = {
         on: (event: string, cb: (...args: any[]) => void) => {

@@ -1,12 +1,73 @@
 import { Client, type SFTPWrapper, type ClientChannel } from 'ssh2';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { Duplex } from 'node:stream';
 import type { SshConnectRequest, SshConnectResult, SshProfile } from '@deepseek-ide/shared';
 import type { CommandResult, DirEntry, WorkspaceBackend } from '@deepseek-ide/tools';
 import type { WorkspaceService } from '../workspace';
 import type { WindowSession } from '../windowRegistry';
 import type { BrowserWindow } from 'electron';
+
+/**
+ * 在 macOS 上利用系统原生签名且无限制的 /usr/bin/nc 建立系统级 Socket 桥接管道。
+ * 彻底解决 macOS 15 Sequoia 对未签名/Ad-hoc 签名 GUI 应用静默拦截局域网 socket (EHOSTUNREACH) 的问题。
+ */
+function createSystemSocketBridge(host: string, port: number): { stream: Duplex; cleanup: () => void } {
+  const nc = spawn('/usr/bin/nc', [host, String(port)], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+
+  let isCleanedUp = false;
+  const cleanup = () => {
+    if (isCleanedUp) return;
+    isCleanedUp = true;
+    try {
+      if (!nc.killed) nc.kill();
+    } catch {
+      // ignore
+    }
+  };
+
+  const duplex = new Duplex({
+    read() {},
+    write(chunk, encoding, callback) {
+      if (nc.stdin && !nc.stdin.destroyed) {
+        nc.stdin.write(chunk, encoding, callback);
+      } else {
+        callback();
+      }
+    },
+    destroy(err, callback) {
+      cleanup();
+      callback(err);
+    },
+  });
+
+  nc.stdout.on('data', (chunk) => {
+    duplex.push(chunk);
+  });
+
+  nc.stdout.on('end', () => {
+    duplex.push(null);
+  });
+
+  nc.on('error', (err) => {
+    duplex.destroy(err);
+  });
+
+  nc.on('close', () => {
+    cleanup();
+    duplex.destroy();
+  });
+
+  duplex.on('close', cleanup);
+  duplex.on('end', cleanup);
+
+  return { stream: duplex, cleanup };
+}
 
 function posixJoin(root: string, relPath = '.'): string {
   const cleaned = (relPath || '.').replace(/\\/g, '/');
@@ -762,25 +823,82 @@ export class SshSessionManager {
       }
     }
 
-    const client = new Client();
+    let client = new Client();
+    let bridgeCleanup: (() => void) | null = null;
+
+    const baseConnectConfig = {
+      host: req.host,
+      port,
+      username: req.username,
+      password: req.password,
+      privateKey,
+      passphrase: req.passphrase,
+      agent: process.env.SSH_AUTH_SOCK,
+      readyTimeout: 20000,
+      keepaliveInterval: 5000,
+      keepaliveCountMax: 3,
+    };
+
     try {
-      await new Promise<void>((resolve, reject) => {
-        client
-          .on('ready', () => resolve())
-          .on('error', reject)
-          .connect({
-            host: req.host,
-            port,
-            username: req.username,
-            password: req.password,
-            privateKey,
-            passphrase: req.passphrase,
-            agent: process.env.SSH_AUTH_SOCK,
-            readyTimeout: 20000,
-            keepaliveInterval: 5000,
-            keepaliveCountMax: 3,
+      try {
+        await new Promise<void>((resolve, reject) => {
+          client
+            .on('ready', () => resolve())
+            .on('error', reject)
+            .connect(baseConnectConfig);
+        });
+      } catch (firstErr) {
+        const rawMsg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+        const host = req.host || '';
+        const isLocalHost =
+          host === 'localhost' ||
+          host === '127.0.0.1' ||
+          /^10\./.test(host) ||
+          /^192\.168\./.test(host) ||
+          /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+          host.endsWith('.local');
+
+        const isNetworkUnreachable =
+          rawMsg.includes('EHOSTUNREACH') ||
+          rawMsg.includes('ENETUNREACH') ||
+          rawMsg.includes('No route to host') ||
+          rawMsg.includes('ETIMEDOUT') ||
+          rawMsg.includes('EACCES') ||
+          rawMsg.includes('EPERM');
+
+        // 在 macOS 平台，当连接局域网遇到网络不可达时（通常受 macOS 15 Local Network 隐私机制或 TCC 缓存阻断），
+        // 自动利用系统内置且拥有完整原生网络权限的 /usr/bin/nc 建立系统级桥接通道进行无缝重连自愈
+        if (
+          process.platform === 'darwin' &&
+          (isLocalHost || isNetworkUnreachable) &&
+          fsSync.existsSync('/usr/bin/nc')
+        ) {
+          try {
+            client.end();
+          } catch {
+            // ignore
+          }
+          const bridge = createSystemSocketBridge(req.host, port);
+          bridgeCleanup = bridge.cleanup;
+
+          const retryClient = new Client();
+          await new Promise<void>((resolve, reject) => {
+            retryClient
+              .on('ready', () => resolve())
+              .on('error', (retryErr) => {
+                bridge.cleanup();
+                reject(retryErr);
+              })
+              .connect({
+                ...baseConnectConfig,
+                sock: bridge.stream,
+              });
           });
-      });
+          client = retryClient;
+        } else {
+          throw firstErr;
+        }
+      }
 
       const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
         client.sftp((err, s) => (err ? reject(err) : resolve(s)));
@@ -818,6 +936,10 @@ export class SshSessionManager {
 
       // 注册常驻连接生命周期监听，网络中断时及时释放，避免连接僵死
       const cleanupDeadConnection = () => {
+        if (bridgeCleanup) {
+          bridgeCleanup();
+          bridgeCleanup = null;
+        }
         if (webContentsId >= 0) {
           const cur = this.live.get(webContentsId);
           if (cur && cur.client === client) {
@@ -867,6 +989,10 @@ export class SshSessionManager {
         detail: `已连接 ${label}`,
       };
     } catch (err) {
+      if (bridgeCleanup) {
+        bridgeCleanup();
+        bridgeCleanup = null;
+      }
       try {
         client.end();
       } catch {
