@@ -145,6 +145,7 @@ Echoly/
 | `Cmd+P` / `Ctrl+P`             | 打开文件快速检索面板                   |
 | `Cmd+Shift+P` / `Ctrl+Shift+P` | 唤起全局动作指令面板 (Command Palette) |
 | `Cmd+Shift+F` / `Ctrl+Shift+F` | 全文代码符号检索                       |
+| `Cmd+Shift+B` / `Ctrl+Shift+B` | 展开 / 折叠左侧资源管理器边栏          |
 | `Cmd+J` / `Ctrl+J`             | 展开 / 折叠底部控制台终端              |
 | `Cmd+B` / `Ctrl+B`             | 展开 / 折叠右侧 AI 助手面板            |
 | `Cmd+Shift+G` / `Ctrl+Shift+G` | 快速切到 Git 版本控制面板              |

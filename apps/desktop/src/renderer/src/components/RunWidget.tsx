@@ -1652,34 +1652,14 @@ export function RunWidget({
       <button
         type="button"
         onClick={() => setRuntimeConfigModalOpen(true)}
+        className="run-widget-settings-btn"
         title={
           hasActiveRuntimeArgs
             ? `项目运行时参数已生效 (VM: ${runtimeConfig.vmArgs || '无'}, Profile: ${runtimeConfig.activeProfiles || '无'}) - 单击修改`
             : '项目全局运行时参数配置 (VM Options / 启动参数 / 环境预设)'
         }
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 22,
-          height: 22,
-          background: hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.15)' : 'none',
-          color: hasActiveRuntimeArgs ? '#38bdf8' : 'var(--muted, #888)',
-          border: hasActiveRuntimeArgs ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid transparent',
-          borderRadius: 4,
-          cursor: 'pointer',
-          padding: 0,
-          position: 'relative',
-          transition: 'all 0.15s ease',
-        }}
-        onMouseEnter={(e) => {
-          if (!hasActiveRuntimeArgs) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-        }}
-        onMouseLeave={(e) => {
-          if (!hasActiveRuntimeArgs) e.currentTarget.style.background = 'none';
-        }}
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>

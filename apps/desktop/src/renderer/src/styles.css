@@ -321,6 +321,50 @@ textarea:focus {
   background: rgba(0, 0, 0, 0.08);
 }
 
+/* 运行配置栏中的运行时设置按钮：默认无背景色（纯白图标），鼠标悬浮为系统级统一背景色 */
+.run-widget-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.run-widget-settings-btn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.12));
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
+}
+
+.run-widget-settings-btn:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+[data-theme='light'] .run-widget-settings-btn {
+  color: rgba(0, 0, 0, 0.72);
+}
+
+[data-theme='light'] .run-widget-settings-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #000000;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme='light'] .run-widget-settings-btn:active {
+  background: rgba(0, 0, 0, 0.14);
+}
+
 .titlebar-spacer {
   width: 1px;
   height: 16px;

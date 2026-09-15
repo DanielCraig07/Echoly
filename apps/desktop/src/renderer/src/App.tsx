@@ -1762,6 +1762,19 @@ export function App() {
         ideActions.find((a) => a.id === 'cmd-new-terminal')?.handler();
         return;
       }
+      // Cmd+Shift+B / Cmd+Shift+E -> 展开/折叠左侧边栏
+      if (ctrl && e.shiftKey && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'e')) {
+        e.preventDefault();
+        ideActions.find((a) => a.id === 'cmd-toggle-sidebar')?.handler();
+        return;
+      }
+      // Cmd+L (或 Ctrl+L 且非终端聚焦时) -> 展开/折叠 AI 面板
+      if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'l' && !isTerminalFocused) {
+        if (skipDueToInput) return;
+        e.preventDefault();
+        ideActions.find((a) => a.id === 'cmd-toggle-ai')?.handler();
+        return;
+      }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
@@ -1825,6 +1838,20 @@ export function App() {
           setLayout(next);
           persistLayout(next);
         }
+      },
+    },
+    {
+      id: 'cmd-toggle-sidebar',
+      title: '视图: 展开/折叠左侧边栏',
+      category: '视图',
+      shortcut: isMac ? '⌘⇧B' : 'Ctrl+Shift+B',
+      handler: () => {
+        const next = {
+          ...layoutRef.current,
+          leftPanelExpanded: layoutRef.current.leftPanelExpanded === false,
+        };
+        setLayout(next);
+        persistLayout(next);
       },
     },
     {
@@ -2027,7 +2054,7 @@ export function App() {
             type="button"
             className="top-search-trigger"
             onClick={() => searchRef.current?.focus('actions')}
-            title="搜索动作或文件 (⌘P / ⌘Shift+P)"
+            title={isMac ? '搜索动作或文件 (⌘P / ⌘⇧P)' : '搜索动作或文件 (Ctrl+P / Ctrl+Shift+P)'}
           >
             <svg
               width="15"
@@ -2049,7 +2076,11 @@ export function App() {
             <button
               type="button"
               className={`layout-toggle-btn ${showLeftPanel ? 'active' : ''}`}
-              title={showLeftPanel ? '折叠左侧边栏' : '展开左侧边栏'}
+              title={
+                showLeftPanel
+                  ? `折叠左侧边栏 (${isMac ? '⌘⇧B' : 'Ctrl+Shift+B'})`
+                  : `展开左侧边栏 (${isMac ? '⌘⇧B' : 'Ctrl+Shift+B'})`
+              }
               disabled={isWelcomeShell}
               onClick={() => {
                 const next = { ...layout, leftPanelExpanded: layout.leftPanelExpanded === false };
@@ -2089,7 +2120,11 @@ export function App() {
             <button
               type="button"
               className={`layout-toggle-btn ${!isWelcomeShell && layout.bottomPanelExpanded === true ? 'active' : ''}`}
-              title={layout.bottomPanelExpanded === true ? '折叠底部终端' : '展开底部终端'}
+              title={
+                layout.bottomPanelExpanded === true
+                  ? `折叠底部终端 (${isMac ? '⌘J' : 'Ctrl+J'})`
+                  : `展开底部终端 (${isMac ? '⌘J' : 'Ctrl+J'})`
+              }
               disabled={isWelcomeShell}
               onClick={() => {
                 const next = {
@@ -2132,7 +2167,11 @@ export function App() {
             <button
               type="button"
               className={`layout-toggle-btn ${showChatPanel ? 'active' : ''}`}
-              title={showChatPanel ? '折叠右侧 AI 面板' : '展开右侧 AI 面板'}
+              title={
+                showChatPanel
+                  ? `折叠右侧 AI 面板 (${isMac ? '⌘B' : 'Ctrl+B'})`
+                  : `展开右侧 AI 面板 (${isMac ? '⌘B' : 'Ctrl+B'})`
+              }
               disabled={isWelcomeShell}
               onClick={() => {
                 const next = { ...layout, chatPanelExpanded: layout.chatPanelExpanded === false };
@@ -2175,7 +2214,7 @@ export function App() {
           <button
             type="button"
             className="layout-toggle-btn settings-btn"
-            title="设置"
+            title={isMac ? '设置 (⌘,)' : '设置 (Ctrl+,)'}
             onClick={() => setSettingsOpen(true)}
           >
             <svg
