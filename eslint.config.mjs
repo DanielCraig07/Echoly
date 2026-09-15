@@ -27,6 +27,7 @@ export default tseslint.config(
         __filename: 'readonly',
         require: 'readonly',
         module: 'readonly',
+        exports: 'readonly',
         // Browser globals (renderer)
         window: 'readonly',
         document: 'readonly',

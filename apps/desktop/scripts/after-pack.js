@@ -8,7 +8,7 @@ const fs = require('fs');
  * with resources/entitlements.mac.plist even when no Apple Developer Certificate
  * is configured (identity: null).
  */
-exports.default = async function afterPack(context) {
+async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
 
   const appPath = path.join(
@@ -30,4 +30,7 @@ exports.default = async function afterPack(context) {
   } catch (err) {
     console.warn('[after-pack] codesign warning:', err && err.message ? err.message : err);
   }
-};
+}
+
+module.exports = afterPack;
+module.exports.default = afterPack;
