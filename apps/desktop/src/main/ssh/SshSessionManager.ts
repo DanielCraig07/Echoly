@@ -822,7 +822,7 @@ export class SshSessionManager {
     rawPath: string | undefined,
     defaultUser = 'user',
   ): Promise<string> {
-    let p = rawPath?.trim() || '';
+    const p = rawPath?.trim() || '';
     if (!p || p === '.' || p === '~' || p.startsWith('~/') || !p.startsWith('/')) {
       const home = await new Promise<string>((resolve) => {
         client.exec('pwd', (err, stream) => {
