@@ -697,8 +697,12 @@ export async function globFilesByPattern(
   pattern: string,
   maxResults = 200,
 ): Promise<string[]> {
+  if (!pattern || typeof pattern !== 'string' || !pattern.trim()) {
+    return [];
+  }
+  const cleanPattern = pattern.trim();
   const re = globToRegExp(
-    pattern.startsWith('**/') || pattern.includes('/') ? pattern : `**/${pattern}`,
+    cleanPattern.startsWith('**/') || cleanPattern.includes('/') ? cleanPattern : `**/${cleanPattern}`,
   );
   const files = await collectFilePaths(backend, Math.max(maxResults * 20, 2000));
   const matches: string[] = [];

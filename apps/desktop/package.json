@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ide/desktop",
-  "version": "0.0.20",
+  "version": "0.0.21",
   "private": true,
   "description": "Echoly Desktop App",
   "author": "Echoly",
@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && electron-vite dev",
     "build": "electron-vite build",
+    "preview": "electron-vite preview",
     "pack": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --x64 --config.electronVersion=35.7.5",
     "pack:win32": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --ia32 --config.electronVersion=35.7.5 --config.electronDist=electron-dist-cache/win32-ia32",
     "pack:win:publish": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --x64 --config.electronVersion=35.7.5 --publish always",

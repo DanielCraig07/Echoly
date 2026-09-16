@@ -1,10 +1,10 @@
 import type {
   ChatMessage,
-  StreamChunk,
   TokenUsage,
   ToolDefinition,
   ThinkingBlock,
 } from '@deepseek-ide/shared';
+import { LlmTimeoutError, type LlmTimeoutCode } from './index';
 
 export interface AnthropicClientOptions {
   baseUrl?: string;
@@ -14,6 +14,8 @@ export interface AnthropicClientOptions {
   enableThinking?: boolean;
   thinkingTokens?: number;
   fetchImpl?: typeof fetch;
+  firstTokenTimeoutMs?: number;
+  streamStallTimeoutMs?: number;
 }
 
 export interface AnthropicChatParams {
@@ -22,6 +24,8 @@ export interface AnthropicChatParams {
   temperature?: number;
   model?: string;
   signal?: AbortSignal;
+  firstTokenTimeoutMs?: number;
+  streamStallTimeoutMs?: number;
 }
 
 export interface AnthropicChatResult {
@@ -41,6 +45,22 @@ interface AnthropicMessage {
         input: Record<string, unknown>;
       }
     | { type: 'tool_result'; tool_use_id: string; content: string }
+    | {
+        type: 'image';
+        source: {
+          type: 'base64';
+          media_type: string;
+          data: string;
+        };
+      }
+    | {
+        type: 'document';
+        source: {
+          type: 'base64';
+          media_type: string;
+          data: string;
+        };
+      }
   >;
 }
 
@@ -75,7 +95,35 @@ function convertToAnthropicMessages(messages: ChatMessage[]): AnthropicMessage[]
                 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
               data: rawBase64,
             },
-          } as any);
+          });
+        }
+      }
+
+      // Handle document attachments (e.g. PDF)
+      if (m.documents?.length) {
+        for (const doc of m.documents) {
+          const rawBase64 = doc.dataUrl.includes('base64,')
+            ? doc.dataUrl.split('base64,')[1]
+            : doc.dataUrl;
+          if (doc.mediaType === 'application/pdf' || doc.mediaType?.includes('pdf')) {
+            content.push({
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: rawBase64,
+              },
+            });
+          } else if (doc.mediaType?.startsWith('image/')) {
+            content.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: doc.mediaType,
+                data: rawBase64,
+              },
+            });
+          }
         }
       }
 
@@ -87,11 +135,17 @@ function convertToAnthropicMessages(messages: ChatMessage[]): AnthropicMessage[]
       // Handle tool calls (from assistant)
       if (m.tool_calls) {
         for (const tc of m.tool_calls) {
+          let parsedInput: Record<string, unknown> = {};
+          try {
+            parsedInput = JSON.parse(tc.function.arguments || '{}');
+          } catch {
+            parsedInput = {};
+          }
           content.push({
             type: 'tool_use',
             id: tc.id,
             name: tc.function.name,
-            input: JSON.parse(tc.function.arguments || '{}'),
+            input: parsedInput,
           });
         }
       }
@@ -210,6 +264,8 @@ export class AnthropicClient {
   readonly temperature: number;
   readonly enableThinking: boolean;
   readonly thinkingTokens: number;
+  readonly firstTokenTimeoutMs: number;
+  readonly streamStallTimeoutMs: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: AnthropicClientOptions) {
@@ -222,6 +278,8 @@ export class AnthropicClient {
     this.temperature = options.temperature ?? 0.2;
     this.enableThinking = options.enableThinking ?? true;
     this.thinkingTokens = options.thinkingTokens ?? 10000;
+    this.firstTokenTimeoutMs = options.firstTokenTimeoutMs ?? 60_000;
+    this.streamStallTimeoutMs = options.streamStallTimeoutMs ?? 90_000;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -248,12 +306,43 @@ export class AnthropicClient {
       };
     }
 
-    const res = await this.fetchImpl(`${this.baseUrl}/v1/messages`, {
-      method: 'POST',
-      headers: buildHeaders(this.apiKey),
-      body: JSON.stringify(body),
-      signal: params.signal,
-    });
+    const firstTokenTimeout = params.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs;
+    const abortController = new AbortController();
+    let timedOutError: LlmTimeoutError | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    if (firstTokenTimeout > 0) {
+      timer = setTimeout(() => {
+        timedOutError = new LlmTimeoutError(
+          `模型请求响应超时（已等待 ${Math.round(firstTokenTimeout / 1000)} 秒），推理节点响应挂起`,
+          'REQUEST_TIMEOUT',
+          firstTokenTimeout,
+        );
+        abortController.abort();
+      }, firstTokenTimeout);
+    }
+
+    const onAbort = () => abortController.abort();
+    if (params.signal) {
+      if (params.signal.aborted) abortController.abort();
+      else params.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.baseUrl}/v1/messages`, {
+        method: 'POST',
+        headers: buildHeaders(this.apiKey),
+        body: JSON.stringify(body),
+        signal: abortController.signal,
+      });
+    } catch (fetchErr) {
+      if (timedOutError) throw timedOutError;
+      throw fetchErr;
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
+    }
 
     if (!res.ok) {
       const text = await res.text();
@@ -287,19 +376,59 @@ export class AnthropicClient {
       };
     }
 
-    const res = await this.fetchImpl(`${this.baseUrl}/v1/messages`, {
-      method: 'POST',
-      headers: buildHeaders(this.apiKey),
-      body: JSON.stringify(body),
-      signal: params.signal,
-    });
+    const firstTokenTimeout = params.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs;
+    const streamStallTimeout = params.streamStallTimeoutMs ?? this.streamStallTimeoutMs;
+
+    const abortController = new AbortController();
+    let timedOutError: LlmTimeoutError | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const resetWatchdog = (ms: number, code: LlmTimeoutCode, msg: string) => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (ms <= 0) return;
+      timeoutTimer = setTimeout(() => {
+        timedOutError = new LlmTimeoutError(msg, code, ms);
+        abortController.abort();
+      }, ms);
+    };
+
+    const onAbort = () => abortController.abort();
+    if (params.signal) {
+      if (params.signal.aborted) abortController.abort();
+      else params.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    resetWatchdog(
+      firstTokenTimeout,
+      'FIRST_TOKEN_TIMEOUT',
+      `首个 Token 响应超时（已等待 ${Math.round(firstTokenTimeout / 1000)} 秒），推理节点响应挂起或显存过载`,
+    );
+
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.baseUrl}/v1/messages`, {
+        method: 'POST',
+        headers: buildHeaders(this.apiKey),
+        body: JSON.stringify(body),
+        signal: abortController.signal,
+      });
+    } catch (fetchErr) {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
+      if (timedOutError) throw timedOutError;
+      throw fetchErr;
+    }
 
     if (!res.ok) {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
       const text = await res.text();
       throw new Error(formatLlmErrorMessage(res.status, text));
     }
 
     if (!res.body) {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
       throw new Error('Anthropic stream has no body');
     }
 
@@ -310,14 +439,34 @@ export class AnthropicClient {
     const thinking: ThinkingBlock[] = [];
     const textParts: string[] = [];
     const toolCalls: NonNullable<ChatMessage['tool_calls']> = [];
+    const toolCallByIndex = new Map<number, NonNullable<ChatMessage['tool_calls']>[number]>();
     let usage: TokenUsage | undefined;
+    let receivedFirstChunk = false;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        let readResult: { done: boolean; value?: Uint8Array };
+        try {
+          readResult = await reader.read();
+        } catch (readErr) {
+          if (timedOutError) throw timedOutError;
+          throw readErr;
+        }
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split(/\r?\n/);
+        const { done, value } = readResult;
+        if (done) break;
+
+        if (!receivedFirstChunk) {
+          receivedFirstChunk = true;
+        }
+        resetWatchdog(
+          streamStallTimeout,
+          'STREAM_STALL_TIMEOUT',
+          `流式输出停滞超过 ${Math.round(streamStallTimeout / 1000)} 秒未产生新内容`,
+        );
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? '';
 
       for (const rawLine of lines) {
@@ -346,26 +495,65 @@ export class AnthropicClient {
               lastThinking.thinking += delta.thinking;
             }
           } else if (delta.type === 'input_json_delta') {
-            // Tool input streaming - accumulate
+            const tc =
+              typeof event.index === 'number'
+                ? toolCallByIndex.get(event.index)
+                : toolCalls[toolCalls.length - 1];
+            if (tc && delta.partial_json) {
+              tc.function.arguments += delta.partial_json;
+            }
           }
         } else if (event.type === 'content_block_start') {
           const block = event.content_block;
           if (block.type === 'thinking') {
             thinking.push({ type: 'thinking', thinking: '' });
           } else if (block.type === 'tool_use') {
-            toolCalls.push({
+            const initialArgs =
+              block.input && typeof block.input === 'object' && Object.keys(block.input).length > 0
+                ? JSON.stringify(block.input)
+                : '';
+            const tc: NonNullable<ChatMessage['tool_calls']>[number] = {
               id: block.id,
               type: 'function',
-              function: { name: block.name, arguments: '' },
-            });
+              function: { name: block.name, arguments: initialArgs },
+            };
+            toolCalls.push(tc);
+            if (typeof event.index === 'number') {
+              toolCallByIndex.set(event.index, tc);
+            }
           }
-        } else if (event.type === 'message_delta' && event.usage) {
+        } else if (event.type === 'message_start' && event.message?.usage) {
           usage = {
-            promptTokens: event.usage.input_tokens,
-            completionTokens: event.usage.output_tokens,
-            totalTokens: (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0),
+            promptTokens: event.message.usage.input_tokens,
+            completionTokens: event.message.usage.output_tokens,
+            totalTokens:
+              (event.message.usage.input_tokens || 0) + (event.message.usage.output_tokens || 0),
+          };
+        } else if (event.type === 'message_delta' && event.usage) {
+          const promptTokens = usage?.promptTokens ?? 0;
+          const completionTokens = event.usage.output_tokens ?? usage?.completionTokens ?? 0;
+          usage = {
+            promptTokens,
+            completionTokens,
+            totalTokens: promptTokens + completionTokens,
           };
         }
+      }
+    }
+  } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
+    if (params.signal) params.signal.removeEventListener('abort', onAbort);
+    try {
+      reader.releaseLock();
+    } catch {
+      // ignore
+    }
+  }
+
+    // Default any empty tool arguments to "{}" to prevent downstream JSON parse issues
+    for (const tc of toolCalls) {
+      if (!tc.function.arguments || !tc.function.arguments.trim()) {
+        tc.function.arguments = '{}';
       }
     }
 

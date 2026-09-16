@@ -391,8 +391,12 @@ export interface ChatMessage {
   tool_calls?: ToolCall[];
   /** Claude Extended Thinking content */
   thinking?: ThinkingBlock[];
+  /** DeepSeek / QwQ / OpenAI reasoning content */
+  reasoning_content?: string;
   /** Optional image attachments for multimodal models */
   images?: Array<{ dataUrl: string; mediaType: string }>;
+  /** Optional document attachments (e.g. PDF) for multimodal models */
+  documents?: Array<{ dataUrl: string; mediaType: string; name?: string }>;
 }
 
 export interface ToolDefinition {
@@ -441,6 +445,8 @@ export interface ChatCompletionResponse {
 export type StreamChunkDelta = {
   role?: ChatRole;
   content?: string | null;
+  reasoning_content?: string | null;
+  reasoning?: string | null;
   tool_calls?: Array<{
     index: number;
     id?: string;
@@ -476,6 +482,7 @@ export type AgentRunStatus =
 export type AgentEvent =
   | { type: 'status'; status: AgentRunStatus }
   | { type: 'token'; text: string }
+  | { type: 'thinking_token'; text: string }
   | { type: 'assistant_message'; content: string }
   | { type: 'tool_start'; id: string; name: string; args: unknown }
   | { type: 'tool_output'; id: string; chunk: string }
@@ -820,7 +827,8 @@ export interface IpcApi {
   getSettings: () => Promise<AppSettings>;
   saveSettings: (settings: Partial<AppSettings>) => Promise<AppSettings>;
   pickWorkspace: () => Promise<string | null>;
-  openNewWindow: (targetPath?: string) => Promise<void>;
+  openNewWindow: (targetPath?: string, sshAuth?: any) => Promise<void>;
+  getSshAuthHandoff: (token: string) => Promise<any>;
   getWorkspace: () => Promise<string | null>;
   getWorkspaceInfo: () => Promise<WorkspaceInfo>;
   setWorkspace: (root: string) => Promise<string>;
@@ -904,6 +912,7 @@ export interface IpcApi {
   searchCode: (req: SearchCodeRequest) => Promise<SearchCodeHit[]>;
   sshConnect: (req: SshConnectRequest) => Promise<SshConnectResult>;
   sshDisconnect: () => Promise<void>;
+  sshDisconnectBrowse: () => Promise<void>;
   sshSwitchRemotePath: (
     remotePath: string,
   ) => Promise<{ ok: boolean; detail?: string; root?: string; label?: string }>;

@@ -9,7 +9,41 @@ function estimateTokens(text: string): number {
 
 function mapSessionToChat(m: ChatSessionMessage): ChatMessage | null {
   if (m.role === 'user') {
-    return { role: 'user', content: m.content };
+    const images: Array<{ dataUrl: string; mediaType: string }> = [];
+    const documents: Array<{ dataUrl: string; mediaType: string; name?: string }> = [];
+
+    if (m.attachments && m.attachments.length > 0) {
+      for (const att of m.attachments) {
+        if (!att.dataUrl) continue;
+        const isImage =
+          att.type === 'image' ||
+          att.mimeType?.startsWith('image/') ||
+          /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(att.name);
+        const isPdf = att.mimeType === 'application/pdf' || /\.pdf$/i.test(att.name);
+        const match = att.dataUrl.match(/^data:([^;]+);base64,/);
+
+        if (isImage) {
+          const mediaType = match ? match[1] : att.mimeType || 'image/png';
+          images.push({ dataUrl: att.dataUrl, mediaType });
+        } else if (isPdf) {
+          const mediaType = match ? match[1] : 'application/pdf';
+          documents.push({ dataUrl: att.dataUrl, mediaType, name: att.name });
+        } else {
+          documents.push({
+            dataUrl: att.dataUrl,
+            mediaType: match ? match[1] : att.mimeType || 'application/octet-stream',
+            name: att.name,
+          });
+        }
+      }
+    }
+
+    return {
+      role: 'user',
+      content: m.content,
+      images: images.length > 0 ? images : undefined,
+      documents: documents.length > 0 ? documents : undefined,
+    };
   }
   if (m.role === 'assistant') {
     // 跳过中间推理消息，只保留最终回复

@@ -19,7 +19,8 @@ const api: IpcApi = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   pickWorkspace: () => ipcRenderer.invoke('workspace:pick'),
-  openNewWindow: (targetPath) => ipcRenderer.invoke('window:openNew', targetPath),
+  openNewWindow: (targetPath, sshAuth) => ipcRenderer.invoke('window:openNew', targetPath, sshAuth),
+  getSshAuthHandoff: (token) => ipcRenderer.invoke('ssh:getAuthHandoff', token),
   getWorkspace: () => ipcRenderer.invoke('workspace:get'),
   getWorkspaceInfo: () => ipcRenderer.invoke('workspace:getInfo'),
   setWorkspace: (root) => ipcRenderer.invoke('workspace:set', root),
@@ -83,6 +84,7 @@ const api: IpcApi = {
   searchCode: (req: SearchCodeRequest) => ipcRenderer.invoke('search:code', req),
   sshConnect: (req: SshConnectRequest) => ipcRenderer.invoke('ssh:connect', req),
   sshDisconnect: () => ipcRenderer.invoke('ssh:disconnect'),
+  sshDisconnectBrowse: () => ipcRenderer.invoke('ssh:disconnectBrowse'),
   sshSwitchRemotePath: (remotePath: string) =>
     ipcRenderer.invoke('ssh:switchRemotePath', remotePath),
   sshGetActiveSession: () => ipcRenderer.invoke('ssh:getActiveSession'),

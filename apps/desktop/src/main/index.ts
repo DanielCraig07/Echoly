@@ -360,9 +360,13 @@ function popupAppMenu(id: AppMenuId, win: ElectronBrowserWindow): void {
   Menu.buildFromTemplate(template).popup({ window: win });
 }
 
-function createWindow(targetPath?: string, opts?: { blank?: boolean }): ElectronBrowserWindow {
+function createWindow(
+  targetPath?: string,
+  opts?: { blank?: boolean; sshAuthToken?: string },
+): ElectronBrowserWindow {
   const icon = resolveAppIcon();
   const blank = opts?.blank ?? false;
+  const sshAuthToken = opts?.sshAuthToken;
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -399,11 +403,13 @@ function createWindow(targetPath?: string, opts?: { blank?: boolean }): Electron
     const url = new URL(process.env.ELECTRON_RENDERER_URL);
     if (blank) url.searchParams.set('blank', '1');
     if (targetPath) url.searchParams.set('workspace', targetPath);
+    if (sshAuthToken) url.searchParams.set('sshAuthToken', sshAuthToken);
     win.loadURL(url.toString());
   } else {
     const query: Record<string, string> = {};
     if (blank) query.blank = '1';
     if (targetPath) query.workspace = targetPath;
+    if (sshAuthToken) query.sshAuthToken = sshAuthToken;
     win.loadFile(
       join(__dirname, '../renderer/index.html'),
       Object.keys(query).length ? { query } : {},
@@ -411,6 +417,10 @@ function createWindow(targetPath?: string, opts?: { blank?: boolean }): Electron
   }
 
   win.webContents.setWindowOpenHandler(({ url }) => {
+    // 严禁外部浏览器打开本地 dev server (5173等本地开发端口)
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(url)) {
+      return { action: 'deny' };
+    }
     shell.openExternal(url);
     return { action: 'deny' };
   });

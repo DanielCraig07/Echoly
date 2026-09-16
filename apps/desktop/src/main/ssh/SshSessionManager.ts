@@ -182,18 +182,42 @@ export class SftpBackend implements WorkspaceBackend {
   async listDir(relPath = '.'): Promise<DirEntry[]> {
     const abs = this.resolve(relPath);
     return await new Promise((resolve, reject) => {
-      this.sftp.readdir(abs, (err, list) => {
+      this.sftp.readdir(abs, async (err, list) => {
         if (err) {
           const isNotFound = (err as any).code === 2 || err.message?.includes('No such file');
-          if (isNotFound) return resolve([]);
+          if (isNotFound) {
+            electronLog.warn(`[ssh] SftpBackend.listDir: path not found: ${abs}`);
+            return resolve([]);
+          }
+          electronLog.error(`[ssh] SftpBackend.listDir error for ${abs}:`, err);
           return reject(err);
         }
-        resolve(
-          list.map((e) => ({
-            name: e.filename,
-            isDirectory: (e.attrs.mode & 0o170000) === 0o040000,
-          })),
+        const filtered = list.filter((e) => e.filename !== '.' && e.filename !== '..');
+        const entries: DirEntry[] = await Promise.all(
+          filtered.map(async (e) => {
+            let isDirectory = (e.attrs.mode & 0o170000) === 0o040000;
+            const isSymlink = (e.attrs.mode & 0o170000) === 0o120000;
+            if (isSymlink) {
+              try {
+                const childAbs = posixJoin(abs, e.filename);
+                const targetStat = await new Promise<{ mode: number }>((resStat, rejStat) => {
+                  this.sftp.stat(childAbs, (statErr, stats) => {
+                    if (statErr) rejStat(statErr);
+                    else resStat(stats);
+                  });
+                });
+                isDirectory = (targetStat.mode & 0o170000) === 0o040000;
+              } catch {
+                isDirectory = false;
+              }
+            }
+            return {
+              name: e.filename,
+              isDirectory,
+            };
+          }),
         );
+        resolve(entries);
       });
     });
   }
@@ -580,6 +604,7 @@ interface LiveSsh {
 export class SshSessionManager {
   private readonly profilesPath: string;
   private readonly live = new Map<number, LiveSsh>();
+  private readonly browseLive = new Map<number, LiveSsh>();
 
   constructor(
     private readonly resolveSession: () => WindowSession,
@@ -596,6 +621,18 @@ export class SshSessionManager {
       if (byId) return byId;
     }
     for (const entry of this.live.values()) {
+      if (entry.workspace === session.workspace) return entry;
+    }
+    return null;
+  }
+
+  private browseLiveForCurrent(): LiveSsh | null {
+    const session = this.resolveSession();
+    if (session.webContentsId >= 0) {
+      const byId = this.browseLive.get(session.webContentsId);
+      if (byId) return byId;
+    }
+    for (const entry of this.browseLive.values()) {
       if (entry.workspace === session.workspace) return entry;
     }
     return null;
@@ -698,6 +735,28 @@ export class SshSessionManager {
     return !!this.liveForCurrent();
   }
 
+  /** Disconnect only the given window's temporary browse session. */
+  async disconnectBrowse(webContentsId?: number): Promise<void> {
+    const id =
+      webContentsId ??
+      (() => {
+        try {
+          return this.resolveSession().webContentsId;
+        } catch {
+          return -1;
+        }
+      })();
+    if (id < 0) return;
+    const browse = this.browseLive.get(id);
+    if (!browse) return;
+    this.browseLive.delete(id);
+    try {
+      browse.client.end();
+    } catch {
+      // ignore
+    }
+  }
+
   /** Disconnect only the given window's SSH (or current window if omitted). */
   async disconnect(webContentsId?: number): Promise<void> {
     const id =
@@ -714,6 +773,15 @@ export class SshSessionManager {
   }
 
   disconnectWindow(webContentsId: number): void {
+    const browse = this.browseLive.get(webContentsId);
+    if (browse) {
+      this.browseLive.delete(webContentsId);
+      try {
+        browse.client.end();
+      } catch {
+        // ignore
+      }
+    }
     const live = this.live.get(webContentsId);
     if (!live) return;
     this.live.delete(webContentsId);
@@ -749,6 +817,46 @@ export class SshSessionManager {
     }
   }
 
+  private async resolveRemotePath(
+    client: Client,
+    rawPath: string | undefined,
+    defaultUser = 'user',
+  ): Promise<string> {
+    let p = rawPath?.trim() || '';
+    if (!p || p === '.' || p === '~' || p.startsWith('~/') || !p.startsWith('/')) {
+      const home = await new Promise<string>((resolve) => {
+        client.exec('pwd', (err, stream) => {
+          if (err) return resolve(`/home/${defaultUser}`);
+          let out = '';
+          stream.on('data', (d: Buffer) => {
+            out += d.toString('utf8');
+          });
+          stream.on('close', () => resolve(out.trim() || `/home/${defaultUser}`));
+        });
+      });
+      const cleanHome = home.replace(/\\/g, '/').replace(/\/+$/, '') || `/home/${defaultUser}`;
+      if (!p || p === '.' || p === '~') {
+        return cleanHome;
+      }
+      if (p.startsWith('~/')) {
+        return `${cleanHome}/${p.slice(2).replace(/^\/+/, '')}`;
+      }
+      return `${cleanHome}/${p.replace(/^\/+/, '')}`;
+    }
+    return p.replace(/\\/g, '/').replace(/\/+$/, '') || '/';
+  }
+
+  private async verifyRemoteDir(sftp: SFTPWrapper, remotePath: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      sftp.stat(remotePath, (err, stats) => {
+        if (err) return reject(err);
+        const isDir = (stats.mode & 0o170000) === 0o040000;
+        if (!isDir) return reject(new Error(`远程路径不是一个有效目录: ${remotePath}`));
+        resolve();
+      });
+    });
+  }
+
   async switchRemotePath(remotePath: string): Promise<SshConnectResult> {
     const windowSession = this.resolveSession();
     const workspace = windowSession.workspace;
@@ -759,20 +867,19 @@ export class SshSessionManager {
     }
 
     const user = existingLive.username || 'user';
-    let remoteRoot = remotePath?.trim() || '';
-    if (!remoteRoot) {
-      remoteRoot = await new Promise<string>((resolve) => {
-        existingLive.client.exec('pwd', (err, stream) => {
-          if (err) return resolve(`/home/${user}`);
-          let out = '';
-          stream.on('data', (d: Buffer) => {
-            out += d.toString('utf8');
-          });
-          stream.on('close', () => resolve(out.trim() || `/home/${user}`));
-        });
-      });
+    const remoteRoot = await this.resolveRemotePath(existingLive.client, remotePath, user);
+
+    try {
+      await this.verifyRemoteDir(existingLive.sftp, remoteRoot);
+    } catch (err: any) {
+      const isNotFound = err?.code === 2 || err?.message?.includes('No such file');
+      return {
+        ok: false,
+        detail: isNotFound
+          ? `远程目录不存在: ${remoteRoot}`
+          : `无法访问远程目录 (${remoteRoot}): ${err?.message || String(err)}`,
+      };
     }
-    remoteRoot = remoteRoot.replace(/\\/g, '/').replace(/\/$/, '') || '/';
 
     const backend = new SftpBackend(remoteRoot, existingLive.client, existingLive.sftp);
     const host = existingLive.host || 'remote';
@@ -791,47 +898,48 @@ export class SshSessionManager {
     const port = req.port ?? 22;
     const browseOnly = req.browseOnly === true;
 
-    // 检查当前窗口是否已有连向相同服务器的活动连接（若未传 host 则直接复用当前连接）
+    // 1. 检查当前窗口是否已有连向相同服务器的活动工作区连接
     const existingLive = webContentsId >= 0 ? this.live.get(webContentsId) : null;
-    const isSameServer =
+    const isSameServerAsLive =
       existingLive &&
       (!req.host || existingLive.host === req.host) &&
       (!req.username || existingLive.username === req.username);
 
-    if (isSameServer && existingLive) {
+    if (isSameServerAsLive && existingLive) {
       if (browseOnly) {
         return { ok: true, detail: `已连接 ${existingLive.username}@${existingLive.host}` };
       }
 
-      // 复用已有连接，正式打开指定的工作区目录
-      let remoteRoot = req.remotePath?.trim() || '';
-      if (!remoteRoot) {
-        remoteRoot = await new Promise<string>((resolve) => {
-          existingLive.client.exec('pwd', (err, stream) => {
-            if (err) return resolve(`/home/${req.username}`);
-            let out = '';
-            stream.on('data', (d: Buffer) => {
-              out += d.toString('utf8');
-            });
-            stream.on('close', () => resolve(out.trim() || `/home/${req.username}`));
-          });
-        });
+      const user = req.username || existingLive.username || 'user';
+      const host = req.host || existingLive.host || 'remote';
+      const remoteRoot = await this.resolveRemotePath(existingLive.client, req.remotePath, user);
+
+      try {
+        await this.verifyRemoteDir(existingLive.sftp, remoteRoot);
+      } catch (err: any) {
+        const isNotFound = err?.code === 2 || err?.message?.includes('No such file');
+        return {
+          ok: false,
+          detail: isNotFound
+            ? `远程目录不存在: ${remoteRoot}`
+            : `无法访问远程目录 (${remoteRoot}): ${err?.message || String(err)}`,
+        };
       }
-      remoteRoot = remoteRoot.replace(/\\/g, '/').replace(/\/$/, '') || '/';
 
       const backend = new SftpBackend(remoteRoot, existingLive.client, existingLive.sftp);
-      const label = `ssh ${req.username}@${req.host}:${remoteRoot}`;
+      const label = `ssh ${user}@${host}:${remoteRoot}`;
       workspace.setRemoteBackend(backend, label);
       existingLive.browseOnly = false;
+      this.disconnectBrowse(webContentsId);
 
       if (req.saveProfile) {
         const profiles = await this.listProfiles();
         const profile: SshProfile = {
           id: randomUUID(),
-          name: req.profileName || `${req.username}@${req.host}`,
-          host: req.host,
+          name: req.profileName || `${user}@${host}`,
+          host,
           port,
-          username: req.username,
+          username: user,
           privateKeyPath: req.privateKeyPath,
           remotePath: remoteRoot,
         };
@@ -850,7 +958,75 @@ export class SshSessionManager {
       return { ok: true, root: remoteRoot, label, detail: `已连接 ${label}` };
     }
 
-    this.disconnectWindow(webContentsId);
+    // 2. 检查当前窗口是否已有连向相同服务器的临时浏览连接
+    const existingBrowse = webContentsId >= 0 ? this.browseLive.get(webContentsId) : null;
+    const isSameServerAsBrowse =
+      existingBrowse &&
+      (!req.host || existingBrowse.host === req.host) &&
+      (!req.username || existingBrowse.username === req.username);
+
+    if (isSameServerAsBrowse && existingBrowse) {
+      if (browseOnly) {
+        return { ok: true, detail: `已连接 ${existingBrowse.username}@${existingBrowse.host}` };
+      }
+
+      // 如果现在正式切换为打开工作区，直接提升为 live 工作区
+      this.browseLive.delete(webContentsId);
+      this.disconnectWindow(webContentsId);
+
+      const user = req.username || existingBrowse.username || 'user';
+      const host = req.host || existingBrowse.host || 'remote';
+      const remoteRoot = await this.resolveRemotePath(existingBrowse.client, req.remotePath, user);
+
+      try {
+        await this.verifyRemoteDir(existingBrowse.sftp, remoteRoot);
+      } catch (err: any) {
+        const isNotFound = err?.code === 2 || err?.message?.includes('No such file');
+        return {
+          ok: false,
+          detail: isNotFound
+            ? `远程目录不存在: ${remoteRoot}`
+            : `无法访问远程目录 (${remoteRoot}): ${err?.message || String(err)}`,
+        };
+      }
+
+      const backend = new SftpBackend(remoteRoot, existingBrowse.client, existingBrowse.sftp);
+      const label = `ssh ${user}@${host}:${remoteRoot}`;
+      workspace.setRemoteBackend(backend, label);
+      existingBrowse.browseOnly = false;
+      this.live.set(webContentsId, existingBrowse);
+
+      if (req.saveProfile) {
+        const profiles = await this.listProfiles();
+        const profile: SshProfile = {
+          id: randomUUID(),
+          name: req.profileName || `${user}@${host}`,
+          host,
+          port,
+          username: user,
+          privateKeyPath: req.privateKeyPath,
+          remotePath: remoteRoot,
+        };
+        const withoutDup = profiles.filter(
+          (p) =>
+            !(
+              p.host === profile.host &&
+              p.username === profile.username &&
+              p.port === profile.port
+            ),
+        );
+        withoutDup.push(profile);
+        await this.saveProfiles(withoutDup);
+      }
+
+      return { ok: true, root: remoteRoot, label, detail: `已连接 ${label}` };
+    }
+
+    if (browseOnly) {
+      this.disconnectBrowse(webContentsId);
+    } else {
+      this.disconnectWindow(webContentsId);
+    }
 
     let privateKey: Buffer | undefined;
     if (req.privateKeyPath) {
@@ -970,34 +1146,48 @@ export class SshSessionManager {
         client.sftp((err, s) => (err ? reject(err) : resolve(s)));
       });
 
-      let remoteRoot = req.remotePath?.trim() || '';
-      if (!remoteRoot) {
-        remoteRoot = await new Promise<string>((resolve) => {
-          client.exec('pwd', (err, stream) => {
-            if (err) return resolve(`/home/${req.username}`);
-            let out = '';
-            stream.on('data', (d: Buffer) => {
-              out += d.toString('utf8');
-            });
-            stream.on('close', () => resolve(out.trim() || `/home/${req.username}`));
-          });
-        });
+      const remoteRoot = await this.resolveRemotePath(client, req.remotePath, req.username);
+
+      if (!browseOnly) {
+        try {
+          await this.verifyRemoteDir(sftp, remoteRoot);
+        } catch (err: any) {
+          const isNotFound = err?.code === 2 || err?.message?.includes('No such file');
+          return {
+            ok: false,
+            detail: isNotFound
+              ? `远程目录不存在: ${remoteRoot}`
+              : `无法访问远程目录 (${remoteRoot}): ${err?.message || String(err)}`,
+          };
+        }
       }
-      remoteRoot = remoteRoot.replace(/\\/g, '/').replace(/\/$/, '') || '/';
 
       const label = `ssh ${req.username}@${req.host}:${remoteRoot}`;
 
       if (webContentsId >= 0) {
-        this.live.set(webContentsId, {
-          client,
-          sftp,
-          workspace,
-          webContentsId,
-          host: req.host,
-          port,
-          username: req.username,
-          browseOnly,
-        });
+        if (browseOnly) {
+          this.browseLive.set(webContentsId, {
+            client,
+            sftp,
+            workspace,
+            webContentsId,
+            host: req.host,
+            port,
+            username: req.username,
+            browseOnly: true,
+          });
+        } else {
+          this.live.set(webContentsId, {
+            client,
+            sftp,
+            workspace,
+            webContentsId,
+            host: req.host,
+            port,
+            username: req.username,
+            browseOnly: false,
+          });
+        }
       }
 
       // 注册常驻连接生命周期监听，网络中断时及时释放，避免连接僵死
@@ -1007,9 +1197,16 @@ export class SshSessionManager {
           bridgeCleanup = null;
         }
         if (webContentsId >= 0) {
-          const cur = this.live.get(webContentsId);
-          if (cur && cur.client === client) {
-            this.live.delete(webContentsId);
+          if (browseOnly) {
+            const cur = this.browseLive.get(webContentsId);
+            if (cur && cur.client === client) {
+              this.browseLive.delete(webContentsId);
+            }
+          } else {
+            const cur = this.live.get(webContentsId);
+            if (cur && cur.client === client) {
+              this.live.delete(webContentsId);
+            }
           }
         }
       };
@@ -1064,7 +1261,13 @@ export class SshSessionManager {
       } catch {
         // ignore
       }
-      if (webContentsId >= 0) this.live.delete(webContentsId);
+      if (webContentsId >= 0) {
+        if (browseOnly) {
+          this.browseLive.delete(webContentsId);
+        } else {
+          this.live.delete(webContentsId);
+        }
+      }
 
       const rawMsg = err instanceof Error ? err.message : String(err);
       electronLog.error(`[ssh] connection to ${req.host}:${port} failed:`, err);
@@ -1112,42 +1315,44 @@ export class SshSessionManager {
     currentPath?: string;
     detail?: string;
   }> {
-    const live = this.liveForCurrent();
+    const live = this.browseLiveForCurrent() || this.liveForCurrent();
     if (!live) {
       return { ok: false, detail: 'SSH 未连接' };
     }
 
     try {
-      let abs = targetPath?.trim() || '';
-      if (!abs) {
-        abs = await new Promise<string>((resolve) => {
-          live.client.exec('pwd', (err, stream) => {
-            if (err) return resolve('/home');
-            let out = '';
-            stream.on('data', (d: Buffer) => (out += d.toString('utf8')));
-            stream.on('close', () => resolve(out.trim() || '/home'));
-          });
-        });
-      }
-
-      abs = abs.replace(/\\/g, '/').replace(/\/$/, '') || '/';
+      const abs = await this.resolveRemotePath(live.client, targetPath, live.username || 'user');
 
       const entries = await new Promise<
         Array<{ name: string; isDirectory: boolean; path: string }>
       >((resolve, reject) => {
-        live.sftp.readdir(abs, (err, list) => {
+        live.sftp.readdir(abs, async (err, list) => {
           if (err) return reject(err);
-          const dirs = list
-            .filter(
-              (e) =>
-                (e.attrs.mode & 0o170000) === 0o040000 && e.filename !== '.' && e.filename !== '..',
-            )
-            .map((e) => ({
-              name: e.filename,
-              isDirectory: true,
-              path: abs === '/' ? `/${e.filename}` : `${abs}/${e.filename}`,
-            }))
-            .sort((a, b) => a.name.localeCompare(b.name));
+          const filtered = list.filter((e) => e.filename !== '.' && e.filename !== '..');
+          const dirs: Array<{ name: string; isDirectory: boolean; path: string }> = [];
+          for (const e of filtered) {
+            let isDir = (e.attrs.mode & 0o170000) === 0o040000;
+            const isSymlink = (e.attrs.mode & 0o170000) === 0o120000;
+            if (isSymlink) {
+              try {
+                const childAbs = abs === '/' ? `/${e.filename}` : `${abs}/${e.filename}`;
+                const stat = await new Promise<{ mode: number }>((resStat, rejStat) => {
+                  live.sftp.stat(childAbs, (statErr, s) => (statErr ? rejStat(statErr) : resStat(s)));
+                });
+                isDir = (stat.mode & 0o170000) === 0o040000;
+              } catch {
+                isDir = false;
+              }
+            }
+            if (isDir) {
+              dirs.push({
+                name: e.filename,
+                isDirectory: true,
+                path: abs === '/' ? `/${e.filename}` : `${abs}/${e.filename}`,
+              });
+            }
+          }
+          dirs.sort((a, b) => a.name.localeCompare(b.name));
           resolve(dirs);
         });
       });

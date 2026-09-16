@@ -13,7 +13,7 @@ import type {
   ProviderConfig,
 } from '@deepseek-ide/shared';
 import { syncPermissionBooleans } from '@deepseek-ide/shared';
-import { UnifiedLlmClient, estimateTokensFromMessages } from '@deepseek-ide/llm';
+import { UnifiedLlmClient, estimateTokensFromMessages, isLlmTimeoutError } from '@deepseek-ide/llm';
 import {
   executeTool,
   toolsForMode,
@@ -21,6 +21,38 @@ import {
   type WorkspaceBackend,
   LocalFsBackend,
 } from '@deepseek-ide/tools';
+
+/**
+ * 判断 baseUrl 是否指向本地或局域网私有 GPU 推理节点。
+ * 本地私有节点显存及显存带宽有限，在大上下文下 Prefill 极易卡死或触发 PCIe 内存交换。
+ * 系统会对其自动启用更加严格主动的 Token 预算和超时防护。
+ */
+export function isLocalOrPrivateNetworkUrl(url?: string): boolean {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '::1' ||
+      host === '0.0.0.0' ||
+      host.endsWith('.local')
+    ) {
+      return true;
+    }
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    const match172 = host.match(/^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
+    if (match172) {
+      const secondOctet = parseInt(match172[1], 10);
+      if (secondOctet >= 16 && secondOctet <= 31) return true;
+    }
+    return false;
+  } catch {
+    return /localhost|127\.0\.0\.1|192\.168\.|10\./i.test(url);
+  }
+}
 
 export interface AgentRunOptions {
   prompt: string;
@@ -44,6 +76,7 @@ export interface AgentRunOptions {
   /** Resolves true to continue another maxAgentSteps chunk; false to stop. */
   requestContinue?: () => Promise<boolean>;
   signal?: AbortSignal;
+  client?: any;
 }
 
 const MAX_OPEN_FILE_CHARS = 12_000;
@@ -275,7 +308,7 @@ export async function runAgent(
     }
   }
 
-  const client = new UnifiedLlmClient(providerConfig);
+  const client = options.client ?? new UnifiedLlmClient(providerConfig);
 
   const getPermissionMode = (): AppSettings['permissionMode'] =>
     options.getPermissionMode?.() ?? settings.permissionMode ?? 'ask';
@@ -327,19 +360,36 @@ export async function runAgent(
 
   let userPrompt = prompt;
   const images: Array<{ dataUrl: string; mediaType: string }> = [];
+  const documents: Array<{ dataUrl: string; mediaType: string; name?: string }> = [];
 
   if (attachments && attachments.length > 0) {
     const fileBlocks: string[] = [];
     for (const att of attachments) {
-      if (att.type === 'file' && att.content) {
-        fileBlocks.push(`\n\n--- 附件文件: ${att.name} ---\n\`\`\`\n${att.content}\n\`\`\``);
-      } else if (att.type === 'image') {
+      const isImage =
+        att.type === 'image' ||
+        att.mimeType?.startsWith('image/') ||
+        /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(att.name);
+      const isPdf = att.mimeType === 'application/pdf' || /\.pdf$/i.test(att.name);
+
+      if (isImage && att.dataUrl) {
         fileBlocks.push(`\n\n--- 附件图片: ${att.name} ---`);
-        if (att.dataUrl) {
-          const match = att.dataUrl.match(/^data:([^;]+);base64,/);
-          const mediaType = match ? match[1] : att.mimeType || 'image/png';
-          images.push({ dataUrl: att.dataUrl, mediaType });
-        }
+        const match = att.dataUrl.match(/^data:([^;]+);base64,/);
+        const mediaType = match ? match[1] : att.mimeType || 'image/png';
+        images.push({ dataUrl: att.dataUrl, mediaType });
+      } else if (isPdf && att.dataUrl) {
+        fileBlocks.push(`\n\n--- 附件文档(PDF): ${att.name} ---`);
+        const match = att.dataUrl.match(/^data:([^;]+);base64,/);
+        const mediaType = match ? match[1] : 'application/pdf';
+        documents.push({ dataUrl: att.dataUrl, mediaType, name: att.name });
+      } else if (att.content) {
+        fileBlocks.push(`\n\n--- 附件文件: ${att.name} ---\n\`\`\`\n${att.content}\n\`\`\``);
+      } else if (att.dataUrl) {
+        fileBlocks.push(`\n\n--- 附件数据: ${att.name} ---`);
+        documents.push({
+          dataUrl: att.dataUrl,
+          mediaType: att.mimeType || 'application/octet-stream',
+          name: att.name,
+        });
       }
     }
     if (fileBlocks.length > 0) {
@@ -351,9 +401,10 @@ export async function runAgent(
     role: 'user',
     content: userPrompt,
     images: images.length > 0 ? images : undefined,
+    documents: documents.length > 0 ? documents : undefined,
   };
 
-  const messages: ChatMessage[] = [
+  let messages: ChatMessage[] = [
     {
       role: 'system',
       content: buildSystemPrompt({
@@ -398,6 +449,62 @@ export async function runAgent(
           throw new Error('cancelled');
         }
 
+        // Context Compaction: If tool history gets too large, compress older tool results to prevent model server stalling
+        let estimated = estimateTokensFromMessages(messages);
+        const isLocalNode = isLocalOrPrivateNetworkUrl(providerConfig.baseUrl);
+        const defaultLocalBudget = 22000;
+        const defaultCloudBudget = 60000;
+        const maxPromptBudget = isLocalNode
+          ? Math.min(windowTokens ? Math.floor(windowTokens * 0.5) : defaultLocalBudget, defaultLocalBudget)
+          : Math.min(windowTokens ? Math.floor(windowTokens * 0.75) : defaultCloudBudget, defaultCloudBudget);
+
+        if (estimated > maxPromptBudget && messages.length > 8) {
+          // Stage 1: Compress older tool outputs
+          for (let i = 1; i < messages.length - (isLocalNode ? 4 : 8); i++) {
+            const m = messages[i];
+            if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 300) {
+              m.content = `${m.content.slice(0, 200)}\n...[早期步骤输出已压缩]`;
+            }
+          }
+          estimated = estimateTokensFromMessages(messages);
+
+          // Stage 2: If still over budget, prune verbose reasoning and thinking blocks from early turns
+          if (estimated > maxPromptBudget) {
+            for (let i = 1; i < messages.length - (isLocalNode ? 4 : 8); i++) {
+              const m = messages[i];
+              if (m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 200) {
+                m.content = `${m.content.slice(0, 150)}...[前序思考已简述]`;
+              }
+              if (m.thinking?.length) {
+                m.thinking = undefined;
+              }
+            }
+            estimated = estimateTokensFromMessages(messages);
+          }
+
+          // Stage 3: If still over budget, slide the middle window keeping system (0), initial user turn (1), and recent messages
+          const stage3Threshold = isLocalNode ? 10 : 18;
+          const stage3RecentCount = isLocalNode ? 8 : 14;
+          if (estimated > maxPromptBudget && messages.length > stage3Threshold) {
+            const recentMessages = messages.slice(-stage3RecentCount);
+            let firstCleanIdx = 0;
+            while (firstCleanIdx < recentMessages.length && recentMessages[firstCleanIdx].role === 'tool') {
+              firstCleanIdx++;
+            }
+            const cleanRecent = recentMessages.slice(firstCleanIdx);
+            messages = [
+              messages[0],
+              messages[1],
+              {
+                role: 'system',
+                content:
+                  '[系统说明：当前执行步数较多，早期的中间调用细节已归档压缩，请基于当前工作区状态与最近的执行步骤继续完成。]',
+              },
+              ...cleanRecent,
+            ];
+          }
+        }
+
         onEvent({ type: 'step_progress', step: step + 1, maxSteps: limit });
         onEvent({ type: 'status', status: 'thinking' });
         emitContextUsage(estimateTokensFromMessages(messages), 'estimate');
@@ -406,43 +513,95 @@ export async function runAgent(
         const effectiveTools = consecutiveStuckSteps >= 2 ? undefined : tools;
 
         let assistant: ChatMessage;
-        try {
-          const result = await client.chatStreamCollect(
-            {
-              messages,
-              tools: effectiveTools,
-              signal,
-            },
-            (token) => onEvent({ type: 'token', text: token }),
-          );
-          assistant = result.message;
-          if (result.usage?.totalTokens != null) {
-            emitContextUsage(result.usage.totalTokens, 'api');
-          } else if (result.usage?.promptTokens != null) {
-            emitContextUsage(
-              result.usage.promptTokens + (result.usage.completionTokens ?? 0),
-              'api',
-            );
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (
-            signal?.aborted ||
-            (err instanceof Error && err.name === 'AbortError') ||
-            /aborted|abort|cancelled/i.test(msg)
-          ) {
-            throw new Error('cancelled');
-          }
-          if (/tools|tool_choice|400/.test(msg)) {
-            const result = await client.chatStreamCollect({ messages, signal }, (token) =>
-              onEvent({ type: 'token', text: token }),
+        let callAttempts = 0;
+        const maxTimeoutRetries = 1;
+
+        while (true) {
+          try {
+            const result = await client.chatStreamCollect(
+              {
+                messages,
+                tools: effectiveTools,
+                signal,
+              },
+              (token: string) => onEvent({ type: 'token', text: token }),
+              (thinking: string) => onEvent({ type: 'thinking_token', text: thinking }),
             );
             assistant = result.message;
             if (result.usage?.totalTokens != null) {
               emitContextUsage(result.usage.totalTokens, 'api');
+            } else if (result.usage?.promptTokens != null) {
+              emitContextUsage(
+                result.usage.promptTokens + (result.usage.completionTokens ?? 0),
+                'api',
+              );
             }
-          } else {
-            throw err;
+            break;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (
+              signal?.aborted ||
+              (err instanceof Error && err.name === 'AbortError') ||
+              /aborted|abort|cancelled/i.test(msg)
+            ) {
+              throw new Error('cancelled');
+            }
+
+            // Watchdog Timeout Protection & Auto-healing Retry:
+            // If local model server stalled (>60s TTFT), drastically prune messages and retry automatically
+            if (isLlmTimeoutError(err) && callAttempts < maxTimeoutRetries) {
+              callAttempts++;
+              onEvent({ type: 'status', status: 'thinking' });
+              if (messages.length > 3) {
+                const recent = messages.slice(-4);
+                let firstClean = 0;
+                while (firstClean < recent.length && recent[firstClean].role === 'tool') {
+                  firstClean++;
+                }
+                const cleanRecent = recent.slice(firstClean);
+                for (const m of cleanRecent) {
+                  if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 200) {
+                    m.content = `${m.content.slice(0, 150)}...[因节点显存超时已紧急精简]`;
+                  }
+                  if (m.thinking) m.thinking = undefined;
+                }
+                messages = [
+                  messages[0],
+                  messages[1],
+                  {
+                    role: 'system',
+                    content:
+                      '[系统自愈提示：上一轮推理响应超时（>60s），已执行紧急深度上下文压缩。请直接基于当前步骤和最近工具调用结果给出下一步操作。]',
+                  },
+                  ...cleanRecent,
+                ];
+                emitContextUsage(estimateTokensFromMessages(messages), 'estimate');
+              }
+              continue;
+            }
+
+            // If native tool calling failed or not supported, fallback to prompt-based execution
+            if (
+              tools.length > 0 &&
+              err instanceof Error &&
+              /tools|function|unsupported|not supported|bad request/i.test(err.message)
+            ) {
+              const result = await client.chatStreamCollect(
+                {
+                  messages,
+                  signal,
+                },
+                (token: string) => onEvent({ type: 'token', text: token }),
+                (thinking: string) => onEvent({ type: 'thinking_token', text: thinking }),
+              );
+              assistant = result.message;
+              if (result.usage?.totalTokens != null) {
+                emitContextUsage(result.usage.totalTokens, 'api');
+              }
+              break;
+            } else {
+              throw err;
+            }
           }
         }
 
@@ -453,7 +612,7 @@ export async function runAgent(
           assistant.tool_calls?.map((tc) => ({
             id: tc.id,
             name: tc.function.name,
-            args: tc.function.arguments,
+            args: tc.function.arguments && tc.function.arguments.trim() ? tc.function.arguments : '{}',
           })) ?? [];
 
         if (!toolCalls.length && assistant.content && consecutiveStuckSteps < 2) {
@@ -469,6 +628,9 @@ export async function runAgent(
             .filter((line) => !/^-{3,}\s*$/.test(line.trim()))
             .join('\n')
             .trim();
+          if (!finalText && step > 1) {
+            finalText = `已完成计划中的修改与执行（共执行了 ${step - 1} 步工具操作）。详细执行过程可展开上方「Worked for」时间线查看。`;
+          }
           onEvent({ type: 'assistant_message', content: finalText });
           if (mode === 'plan') {
             const plan =
@@ -487,8 +649,14 @@ export async function runAgent(
 
         // Persist intermediate reasoning before tools so UI does not lose streaming text.
         // Strip bare --- separator lines which the model uses in reasoning but render as <hr> in Markdown.
-        if (assistant.content?.trim()) {
-          const displayContent = assistant.content
+        const thoughtToDisplay = (
+          assistant.reasoning_content ||
+          (assistant.thinking?.map((t) => t.thinking).join('\n') || '') ||
+          assistant.content ||
+          ''
+        ).trim();
+        if (thoughtToDisplay) {
+          const displayContent = thoughtToDisplay
             .split('\n')
             .filter((line) => !/^-{3,}\s*$/.test(line.trim()))
             .join('\n')

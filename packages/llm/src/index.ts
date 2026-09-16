@@ -11,12 +11,37 @@ import type {
 import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from '@deepseek-ide/shared';
 import { AnthropicClient, formatLlmErrorMessage } from './anthropic';
 
+export type LlmTimeoutCode = 'FIRST_TOKEN_TIMEOUT' | 'STREAM_STALL_TIMEOUT' | 'REQUEST_TIMEOUT';
+
+export class LlmTimeoutError extends Error {
+  readonly code: LlmTimeoutCode;
+  readonly timeoutMs: number;
+
+  constructor(message: string, code: LlmTimeoutCode, timeoutMs: number) {
+    super(message);
+    this.name = 'LlmTimeoutError';
+    this.code = code;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export function isLlmTimeoutError(err: unknown): err is LlmTimeoutError {
+  return (
+    err instanceof LlmTimeoutError ||
+    (err instanceof Error &&
+      (err.name === 'LlmTimeoutError' ||
+        /FIRST_TOKEN_TIMEOUT|STREAM_STALL_TIMEOUT|REQUEST_TIMEOUT/i.test(err.message)))
+  );
+}
+
 export interface LlmClientOptions {
   baseUrl?: string;
   apiKey?: string;
   model?: string;
   temperature?: number;
   fetchImpl?: typeof fetch;
+  firstTokenTimeoutMs?: number;
+  streamStallTimeoutMs?: number;
 }
 
 export interface ChatParams {
@@ -25,6 +50,8 @@ export interface ChatParams {
   temperature?: number;
   model?: string;
   signal?: AbortSignal;
+  firstTokenTimeoutMs?: number;
+  streamStallTimeoutMs?: number;
 }
 
 export interface ChatStreamResult {
@@ -78,16 +105,32 @@ export function estimateTokensFromMessages(messages: ChatMessage[]): number {
 
 export function formatOpenAIMessages(messages: ChatMessage[]): any[] {
   return messages.map((m) => {
-    if (m.role === 'user' && m.images && m.images.length > 0) {
+    const hasImages = Boolean(m.images && m.images.length > 0);
+    const hasDocs = Boolean(m.documents && m.documents.length > 0);
+
+    if (m.role === 'user' && (hasImages || hasDocs)) {
       const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
       if (m.content) {
         parts.push({ type: 'text', text: m.content });
       }
-      for (const img of m.images) {
-        parts.push({
-          type: 'image_url',
-          image_url: { url: img.dataUrl },
-        });
+      if (hasImages && m.images) {
+        for (const img of m.images) {
+          parts.push({
+            type: 'image_url',
+            image_url: { url: img.dataUrl },
+          });
+        }
+      }
+      if (hasDocs && m.documents) {
+        for (const doc of m.documents) {
+          // For documents with dataUrl: many multimodal gateways (e.g. GPT-4o, Claude proxy) accept dataUrl as image_url or file reference
+          if (doc.dataUrl) {
+            parts.push({
+              type: 'image_url',
+              image_url: { url: doc.dataUrl },
+            });
+          }
+        }
       }
       return {
         ...m,
@@ -103,6 +146,8 @@ export class LlmClient {
   readonly apiKey: string;
   readonly model: string;
   readonly temperature: number;
+  readonly firstTokenTimeoutMs: number;
+  readonly streamStallTimeoutMs: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: LlmClientOptions = {}) {
@@ -110,6 +155,8 @@ export class LlmClient {
     this.apiKey = options.apiKey ?? '';
     this.model = options.model ?? DEFAULT_LLM_MODEL;
     this.temperature = options.temperature ?? 0.2;
+    this.firstTokenTimeoutMs = options.firstTokenTimeoutMs ?? 60_000;
+    this.streamStallTimeoutMs = options.streamStallTimeoutMs ?? 90_000;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -119,6 +166,8 @@ export class LlmClient {
       apiKey: partial.apiKey ?? this.apiKey,
       model: partial.model ?? this.model,
       temperature: partial.temperature ?? this.temperature,
+      firstTokenTimeoutMs: partial.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs,
+      streamStallTimeoutMs: partial.streamStallTimeoutMs ?? this.streamStallTimeoutMs,
       fetchImpl: partial.fetchImpl ?? this.fetchImpl,
     });
   }
@@ -147,12 +196,43 @@ export class LlmClient {
       tool_choice: params.tools?.length ? 'auto' : undefined,
     };
 
-    const res = await this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: buildHeaders(this.apiKey),
-      body: JSON.stringify(body),
-      signal: params.signal,
-    });
+    const firstTokenTimeout = params.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs;
+    const abortController = new AbortController();
+    let timedOutError: LlmTimeoutError | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    if (firstTokenTimeout > 0) {
+      timer = setTimeout(() => {
+        timedOutError = new LlmTimeoutError(
+          `模型请求响应超时（已等待 ${Math.round(firstTokenTimeout / 1000)} 秒），推理节点响应挂起`,
+          'REQUEST_TIMEOUT',
+          firstTokenTimeout,
+        );
+        abortController.abort();
+      }, firstTokenTimeout);
+    }
+
+    const onAbort = () => abortController.abort();
+    if (params.signal) {
+      if (params.signal.aborted) abortController.abort();
+      else params.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: buildHeaders(this.apiKey),
+        body: JSON.stringify(body),
+        signal: abortController.signal,
+      });
+    } catch (fetchErr) {
+      if (timedOutError) throw timedOutError;
+      throw fetchErr;
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
+    }
 
     if (!res.ok) {
       const text = await res.text();
@@ -177,18 +257,58 @@ export class LlmClient {
       tool_choice: params.tools?.length ? 'auto' : undefined,
     };
 
-    const res = await this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: buildHeaders(this.apiKey),
-      body: JSON.stringify(body),
-      signal: params.signal,
-    });
+    const firstTokenTimeout = params.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs;
+    const streamStallTimeout = params.streamStallTimeoutMs ?? this.streamStallTimeoutMs;
+
+    const abortController = new AbortController();
+    let timedOutError: LlmTimeoutError | null = null;
+    let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const resetWatchdog = (ms: number, code: LlmTimeoutCode, msg: string) => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (ms <= 0) return;
+      timeoutTimer = setTimeout(() => {
+        timedOutError = new LlmTimeoutError(msg, code, ms);
+        abortController.abort();
+      }, ms);
+    };
+
+    const onAbort = () => abortController.abort();
+    if (params.signal) {
+      if (params.signal.aborted) abortController.abort();
+      else params.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    resetWatchdog(
+      firstTokenTimeout,
+      'FIRST_TOKEN_TIMEOUT',
+      `首个 Token 响应超时（已等待 ${Math.round(firstTokenTimeout / 1000)} 秒），推理节点响应挂起或显存过载`,
+    );
+
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: buildHeaders(this.apiKey),
+        body: JSON.stringify(body),
+        signal: abortController.signal,
+      });
+    } catch (fetchErr) {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
+      if (timedOutError) throw timedOutError;
+      throw fetchErr;
+    }
 
     if (!res.ok) {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
       const text = await res.text();
       throw new Error(formatLlmErrorMessage(res.status, text));
     }
     if (!res.body) {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
       throw new Error('chatStream response has no body');
     }
 
@@ -196,65 +316,98 @@ export class LlmClient {
     const decoder = new TextDecoder();
     let buffer = '';
     let content = '';
+    let reasoningContent = '';
     const toolCalls: NonNullable<ChatMessage['tool_calls']> = [];
     let role: ChatMessage['role'] = 'assistant';
     let usage: TokenUsage | undefined;
+    let receivedFirstChunk = false;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() ?? '';
-
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line || !line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (payload === '[DONE]') {
-          continue;
-        }
-        let chunk: StreamChunk;
+    try {
+      while (true) {
+        let readResult: { done: boolean; value?: Uint8Array };
         try {
-          chunk = JSON.parse(payload) as StreamChunk;
-        } catch {
-          continue;
+          readResult = await reader.read();
+        } catch (readErr) {
+          if (timedOutError) throw timedOutError;
+          throw readErr;
         }
-        const parsedUsage = usageFromApi(chunk.usage);
-        if (parsedUsage) usage = parsedUsage;
-        yield chunk;
 
-        const delta = chunk.choices?.[0]?.delta;
-        if (!delta) continue;
-        if (delta.role) role = delta.role;
-        if (typeof delta.content === 'string') content += delta.content;
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const idx = tc.index ?? 0;
-            if (!toolCalls[idx]) {
-              toolCalls[idx] = {
-                id: tc.id ?? `call_${idx}`,
-                type: 'function',
-                function: {
-                  name: tc.function?.name ?? '',
-                  arguments: tc.function?.arguments ?? '',
-                },
-              };
-            } else {
-              if (tc.id) toolCalls[idx].id = tc.id;
-              if (tc.function?.name) toolCalls[idx].function.name += tc.function.name;
-              if (tc.function?.arguments) {
-                toolCalls[idx].function.arguments += tc.function.arguments;
+        const { done, value } = readResult;
+        if (done) break;
+
+        if (!receivedFirstChunk) {
+          receivedFirstChunk = true;
+        }
+        resetWatchdog(
+          streamStallTimeout,
+          'STREAM_STALL_TIMEOUT',
+          `流式输出停滞超过 ${Math.round(streamStallTimeout / 1000)} 秒未产生新内容`,
+        );
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() ?? '';
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line || !line.startsWith('data:')) continue;
+          const payload = line.slice(5).trim();
+          if (payload === '[DONE]') {
+            continue;
+          }
+          let chunk: StreamChunk;
+          try {
+            chunk = JSON.parse(payload) as StreamChunk;
+          } catch {
+            continue;
+          }
+          const parsedUsage = usageFromApi(chunk.usage);
+          if (parsedUsage) usage = parsedUsage;
+          yield chunk;
+
+          const delta = chunk.choices?.[0]?.delta;
+          if (!delta) continue;
+          if (delta.role) role = delta.role;
+          if (typeof delta.content === 'string') content += delta.content;
+          const reasoningDelta = delta.reasoning_content ?? (delta as any).reasoning;
+          if (typeof reasoningDelta === 'string') reasoningContent += reasoningDelta;
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index ?? 0;
+              if (!toolCalls[idx]) {
+                toolCalls[idx] = {
+                  id: tc.id ?? `call_${idx}`,
+                  type: 'function',
+                  function: {
+                    name: tc.function?.name ?? '',
+                    arguments: tc.function?.arguments ?? '',
+                  },
+                };
+              } else {
+                if (tc.id) toolCalls[idx].id = tc.id;
+                if (tc.function?.name) toolCalls[idx].function.name += tc.function.name;
+                if (tc.function?.arguments) {
+                  toolCalls[idx].function.arguments += tc.function.arguments;
+                }
               }
             }
           }
         }
+      }
+    } finally {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
+      try {
+        reader.releaseLock();
+      } catch {
+        // ignore
       }
     }
 
     const message: ChatMessage = {
       role,
       content: content || null,
+      reasoning_content: reasoningContent || undefined,
       tool_calls: toolCalls.length ? toolCalls : undefined,
     };
     return { message, usage };
@@ -262,14 +415,17 @@ export class LlmClient {
 
   /**
    * Collect a streamed response into a final assistant message while
-   * optionally forwarding content tokens.
+   * optionally forwarding content tokens and thinking tokens.
    */
   async chatStreamCollect(
     params: ChatParams,
     onToken?: (text: string) => void,
+    onThinking?: (thinking: string) => void,
   ): Promise<ChatStreamResult> {
     const gen = this.chatStream(params);
     let final: ChatStreamResult | null = null;
+    let inThinkTag = false;
+
     while (true) {
       const next = await gen.next();
       if (next.done) {
@@ -277,7 +433,33 @@ export class LlmClient {
         break;
       }
       const delta = next.value.choices?.[0]?.delta;
-      if (delta?.content) onToken?.(delta.content);
+      const reasoningDelta = delta?.reasoning_content ?? (delta as any)?.reasoning;
+      if (typeof reasoningDelta === 'string' && reasoningDelta) {
+        onThinking?.(reasoningDelta);
+      }
+
+      if (delta?.content) {
+        let text = delta.content;
+        if (text.includes('<think>')) {
+          inThinkTag = true;
+          const parts = text.split('<think>');
+          if (parts[0]) onToken?.(parts[0]);
+          text = parts.slice(1).join('<think>');
+        }
+        if (inThinkTag) {
+          if (text.includes('</think>')) {
+            const parts = text.split('</think>');
+            if (parts[0]) onThinking?.(parts[0]);
+            inThinkTag = false;
+            const remaining = parts.slice(1).join('</think>');
+            if (remaining) onToken?.(remaining);
+          } else {
+            onThinking?.(text);
+          }
+        } else {
+          onToken?.(text);
+        }
+      }
     }
     if (!final) {
       throw new Error('stream ended without message');
@@ -336,7 +518,7 @@ export class UnifiedLlmClient {
       return this.anthropicClient.chatStreamCollect(params, onToken, onThinking);
     }
     if (this.openaiClient) {
-      return this.openaiClient.chatStreamCollect(params, onToken);
+      return this.openaiClient.chatStreamCollect(params, onToken, onThinking);
     }
     throw new Error('No client initialized');
   }

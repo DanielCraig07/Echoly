@@ -13,6 +13,22 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'llm',
+          root: 'packages/llm',
+          include: ['test/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
+          name: 'agent',
+          root: 'packages/agent',
+          include: ['test/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'desktop',
           root: 'apps/desktop',
           include: ['test/**/*.test.ts'],

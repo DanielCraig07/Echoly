@@ -57,10 +57,31 @@ export function registerIpc(deps: {
 
   const run = <T>(event: { sender: WebContents }, fn: () => T): T => registry.run(event.sender, fn);
 
-  ipcMain.handle('window:openNew', async (_e, targetPath?: string) => {
+  const sshAuthHandoffMap = new Map<string, any>();
+
+  ipcMain.handle('window:openNew', async (_e, targetPath?: string, sshAuth?: any) => {
     const { createWindow } = await import('./index');
+    let token: string | undefined;
+    if (sshAuth) {
+      const { randomUUID } = await import('node:crypto');
+      token = randomUUID();
+      sshAuthHandoffMap.set(token, sshAuth);
+      setTimeout(() => {
+        if (token) sshAuthHandoffMap.delete(token);
+      }, 60_000);
+    }
     // Blank window + optional ?workspace=; each window has its own WorkspaceService.
-    createWindow(targetPath, { blank: true });
+    createWindow(targetPath, { blank: true, sshAuthToken: token });
+  });
+
+  ipcMain.handle('ssh:getAuthHandoff', (_e, token: string) => {
+    if (!token) return null;
+    const data = sshAuthHandoffMap.get(token);
+    if (data) {
+      sshAuthHandoffMap.delete(token);
+      return data;
+    }
+    return null;
   });
 
   ipcMain.handle('settings:get', () => settings.get());
@@ -267,6 +288,7 @@ export function registerIpc(deps: {
 
   ipcMain.handle('ssh:connect', (e, req: SshConnectRequest) => run(e, () => ssh.connect(req)));
   ipcMain.handle('ssh:disconnect', (e) => run(e, () => ssh.disconnect()));
+  ipcMain.handle('ssh:disconnectBrowse', (e) => run(e, () => ssh.disconnectBrowse()));
   ipcMain.handle('ssh:switchRemotePath', (e, remotePath: string) =>
     run(e, () => ssh.switchRemotePath(remotePath)),
   );

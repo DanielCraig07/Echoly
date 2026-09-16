@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import electronLog from 'electron-log';
 import type { FileTreeNode, WorkspaceInfo, WorkspaceKind } from '@deepseek-ide/shared';
 import { LocalFsBackend, type WorkspaceBackend } from '@deepseek-ide/tools';
 
@@ -89,7 +90,7 @@ export class WorkspaceService {
 
   async listDir(relPath = '.'): Promise<FileTreeNode[]> {
     const backend = this.requireBackend();
-    const SKIP = new Set(['node_modules', '.git', '.DS_Store']);
+    const SKIP = new Set(['node_modules', '.git', '.DS_Store', '.', '..']);
 
     /** Compact-merge: collapse single-child-dir chains like VS Code. */
     async function compact(name: string, p: string): Promise<{ name: string; path: string }> {
@@ -117,12 +118,13 @@ export class WorkspaceService {
     let entries: { name: string; isDirectory: boolean }[] = [];
     try {
       entries = await backend.listDir(relPath);
-    } catch {
+    } catch (err) {
+      electronLog.error(`[workspace] listDir failed for "${relPath}":`, err);
       return [];
     }
     const nodes: FileTreeNode[] = [];
     for (const entry of entries) {
-      if (SKIP.has(entry.name)) continue;
+      if (!entry.name || SKIP.has(entry.name) || entry.name === '.' || entry.name === '..') continue;
 
       let childPath =
         !relPath || relPath === '.' ? entry.name : `${relPath.replace(/\/$/, '')}/${entry.name}`;

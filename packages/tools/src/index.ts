@@ -74,9 +74,17 @@ function truncate(text: string, max = 80_000): string {
   return `${text.slice(0, max)}\n\n...[truncated ${text.length - max} chars]`;
 }
 
-function parseArgs<T extends Record<string, unknown>>(raw: string): T {
-  if (!raw || !raw.trim()) return {} as T;
-  return JSON.parse(raw) as T;
+function parseArgs<T extends Record<string, unknown>>(raw: unknown): T {
+  if (!raw) return {} as T;
+  if (typeof raw === 'object' && raw !== null) return raw as T;
+  if (typeof raw !== 'string') return {} as T;
+  try {
+    const trimmed = raw.trim();
+    if (!trimmed) return {} as T;
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return {} as T;
+  }
 }
 
 const READONLY_TERMINAL_RE =
@@ -86,10 +94,12 @@ const DANGEROUS_TERMINAL_RE =
   /\b(rm\s+-rf|del\s+\/s|format\s+|shutdown|reg\s+delete|Remove-Item\s+-Recurse|curl\s+.+\|\s*sh)\b/i;
 
 export function isReadonlyTerminalCommand(command: string): boolean {
+  if (!command || typeof command !== 'string') return false;
   return READONLY_TERMINAL_RE.test(command.trim());
 }
 
 export function isDangerousTerminalCommand(command: string): boolean {
+  if (!command || typeof command !== 'string') return false;
   return DANGEROUS_TERMINAL_RE.test(command);
 }
 
@@ -235,8 +245,11 @@ async function globFiles(ctx: ToolContext, pattern: string, maxResults = 200): P
 async function runTerminal(
   ctx: ToolContext,
   command: string,
-  timeoutMs = 60_000,
+  timeoutMs = 300_000,
 ): Promise<ToolResult> {
+  // 防卡死保护：强制单条终端命令安全超时上限为 5 分钟（300,000ms），允许运行大型构建与全量测试套件
+  const safeTimeoutMs = Math.min(Math.max(timeoutMs || 300_000, 5_000), 300_000);
+
   if (needsTerminalConfirm(ctx, command)) {
     const approved = await ctx.requestConfirm({
       title: isDangerousTerminalCommand(command) ? 'Dangerous command' : 'Run terminal command',
@@ -253,7 +266,7 @@ async function runTerminal(
     }
   }
 
-  const result = await backendOf(ctx).runCommand(command, timeoutMs, (chunk) => {
+  const result = await backendOf(ctx).runCommand(command, safeTimeoutMs, (chunk) => {
     ctx.onTerminalOutput?.(chunk);
   });
   return {
@@ -280,14 +293,20 @@ export async function executeTool(
     switch (name) {
       case 'list_dir': {
         const args = parseArgs<{ path?: string }>(rawArgs);
-        return await listDir(ctx, args.path ?? '.');
+        return await listDir(ctx, args.path || '.');
       }
       case 'read_file': {
         const args = parseArgs<{ path: string; offset?: number; limit?: number }>(rawArgs);
+        if (!args.path || typeof args.path !== 'string') {
+          return { content: 'Error: missing required "path" argument for read_file', isError: true };
+        }
         return await readFileTool(ctx, args.path, args.offset, args.limit);
       }
       case 'read_file_lines': {
         const args = parseArgs<{ path: string; offset?: number; limit?: number }>(rawArgs);
+        if (!args.path || typeof args.path !== 'string') {
+          return { content: 'Error: missing required "path" argument for read_file_lines', isError: true };
+        }
         const backend = backendOf(ctx);
         const { lines, total, offset, truncated } = await backend.readFileLines(
           args.path,
@@ -303,10 +322,25 @@ export async function executeTool(
       }
       case 'write_file': {
         const args = parseArgs<{ path: string; content: string }>(rawArgs);
+        if (!args.path || typeof args.path !== 'string') {
+          return { content: 'Error: missing required "path" argument for write_file', isError: true };
+        }
+        if (typeof args.content !== 'string') {
+          return { content: 'Error: missing required "content" argument for write_file', isError: true };
+        }
         return await writeFileTool(ctx, args.path, args.content);
       }
       case 'apply_patch': {
         const args = parseArgs<{ path: string; old_text: string; new_text: string }>(rawArgs);
+        if (!args.path || typeof args.path !== 'string') {
+          return { content: 'Error: missing required "path" argument for apply_patch', isError: true };
+        }
+        if (typeof args.old_text !== 'string' || typeof args.new_text !== 'string') {
+          return {
+            content: 'Error: missing "old_text" or "new_text" argument for apply_patch',
+            isError: true,
+          };
+        }
         return await applyPatchTool(ctx, args.path, args.old_text, args.new_text);
       }
       case 'search_code': {
@@ -317,6 +351,9 @@ export async function executeTool(
           case_insensitive?: boolean;
           max_results?: number;
         }>(rawArgs);
+        if (!args.pattern || typeof args.pattern !== 'string') {
+          return { content: 'Error: missing required "pattern" argument for search_code', isError: true };
+        }
         const backend = backendOf(ctx);
         const opts = {
           glob: args.glob,
@@ -348,10 +385,16 @@ export async function executeTool(
       }
       case 'glob_files': {
         const args = parseArgs<{ pattern: string; max_results?: number }>(rawArgs);
+        if (!args.pattern || typeof args.pattern !== 'string') {
+          return { content: 'Error: missing required "pattern" argument for glob_files', isError: true };
+        }
         return await globFiles(ctx, args.pattern, args.max_results);
       }
       case 'run_terminal': {
         const args = parseArgs<{ command: string; timeout_ms?: number }>(rawArgs);
+        if (!args.command || typeof args.command !== 'string') {
+          return { content: 'Error: missing required "command" argument for run_terminal', isError: true };
+        }
         return await runTerminal(ctx, args.command, args.timeout_ms);
       }
       case 'ask_user': {

@@ -775,6 +775,7 @@ export function EditorPane({
   const [gitInlineDiffLine, setGitInlineDiffLine] = useState<number | null>(null);
   const [editorInstance, setEditorInstance] = useState<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const isSyncingScrollRef = useRef(false);
+  const tocNavigatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 
 
@@ -1064,29 +1065,107 @@ export function EditorPane({
     }
   }, [activePath, onRevealTargetConsumed]);
 
+  const getMarkdownAnchors = useCallback(
+    (ed: MonacoEditor.IStandaloneCodeEditor, previewEl: HTMLElement) => {
+      const model = ed.getModel();
+      const totalLines = model ? model.getLineCount() : 1;
+      const maxPreviewScroll = Math.max(0, previewEl.scrollHeight - previewEl.clientHeight);
+      const maxEditorScroll = Math.max(0, ed.getScrollHeight() - ed.getLayoutInfo().height);
+
+      const anchors: Array<{ editorTop: number; previewTop: number }> = [];
+      anchors.push({ editorTop: 0, previewTop: 0 });
+
+      for (const h of mdHeadings) {
+        let el: HTMLElement | null = null;
+        try {
+          el = previewEl.querySelector(`#${CSS.escape(h.id)}`) as HTMLElement | null;
+        } catch {}
+        if (!el && h.line != null) {
+          el = previewEl.querySelector(`[data-heading-line="${h.line}"]`) as HTMLElement | null;
+        }
+        if (!el && h.text) {
+          const headings = Array.from(previewEl.querySelectorAll('h1, h2, h3, h4, h5, h6')) as HTMLElement[];
+          el = headings.find((item) => item.textContent?.trim() === h.text.trim()) || null;
+        }
+        if (el) {
+          const pTop =
+            el.getBoundingClientRect().top - previewEl.getBoundingClientRect().top + previewEl.scrollTop - 16;
+          const eTop = ed.getTopForLineNumber(h.line) - 16;
+          anchors.push({
+            editorTop: Math.max(0, eTop),
+            previewTop: Math.max(0, pTop),
+          });
+        }
+      }
+
+      anchors.push({
+        editorTop: Math.max(0, maxEditorScroll),
+        previewTop: Math.max(0, maxPreviewScroll),
+      });
+
+      anchors.sort((a, b) => a.editorTop - b.editorTop);
+      return anchors;
+    },
+    [mdHeadings],
+  );
+
+  const syncEditorToPreview = useCallback(
+    (ed: MonacoEditor.IStandaloneCodeEditor, previewEl: HTMLElement) => {
+      const editorScrollTop = ed.getScrollTop();
+      const anchors = getMarkdownAnchors(ed, previewEl);
+      if (anchors.length < 2) return;
+
+      let i = 0;
+      while (i < anchors.length - 1 && anchors[i + 1].editorTop <= editorScrollTop) {
+        i++;
+      }
+      const a1 = anchors[i];
+      const a2 = anchors[Math.min(i + 1, anchors.length - 1)];
+
+      const eDelta = a2.editorTop - a1.editorTop;
+      const ratio = eDelta > 0 ? Math.max(0, Math.min(1, (editorScrollTop - a1.editorTop) / eDelta)) : 0;
+      const targetPreviewTop = a1.previewTop + ratio * (a2.previewTop - a1.previewTop);
+
+      isSyncingScrollRef.current = true;
+      previewEl.scrollTop = targetPreviewTop;
+      setTimeout(() => {
+        isSyncingScrollRef.current = false;
+      }, 50);
+    },
+    [getMarkdownAnchors],
+  );
+
+  const syncPreviewToEditor = useCallback(
+    (previewEl: HTMLElement, ed: MonacoEditor.IStandaloneCodeEditor) => {
+      const previewScrollTop = previewEl.scrollTop;
+      const anchors = getMarkdownAnchors(ed, previewEl);
+      if (anchors.length < 2) return;
+
+      let i = 0;
+      while (i < anchors.length - 1 && anchors[i + 1].previewTop <= previewScrollTop) {
+        i++;
+      }
+      const a1 = anchors[i];
+      const a2 = anchors[Math.min(i + 1, anchors.length - 1)];
+
+      const pDelta = a2.previewTop - a1.previewTop;
+      const ratio = pDelta > 0 ? Math.max(0, Math.min(1, (previewScrollTop - a1.previewTop) / pDelta)) : 0;
+      const targetEditorTop = a1.editorTop + ratio * (a2.editorTop - a1.editorTop);
+
+      isSyncingScrollRef.current = true;
+      ed.setScrollTop(targetEditorTop);
+      setTimeout(() => {
+        isSyncingScrollRef.current = false;
+      }, 50);
+    },
+    [getMarkdownAnchors],
+  );
+
   const setupEditorScrollSync = (ed: MonacoEditor.IStandaloneCodeEditor) => {
-    ed.onDidScrollChange((e) => {
+    ed.onDidScrollChange(() => {
       if (isSyncingScrollRef.current) return;
       if (!mdPreviewRef.current) return;
-
-      const previewEl = mdPreviewRef.current;
-      const editorScrollTop = e.scrollTop;
-      const editorScrollHeight = e.scrollHeight;
-      const editorHeight = ed.getLayoutInfo().height;
-
-      const maxEditorScroll = editorScrollHeight - editorHeight;
-      if (maxEditorScroll <= 0) return;
-
-      const scrollRatio = Math.max(0, Math.min(1, editorScrollTop / maxEditorScroll));
-      const maxPreviewScroll = previewEl.scrollHeight - previewEl.clientHeight;
-
-      if (maxPreviewScroll > 0) {
-        isSyncingScrollRef.current = true;
-        previewEl.scrollTop = scrollRatio * maxPreviewScroll;
-        setTimeout(() => {
-          isSyncingScrollRef.current = false;
-        }, 40);
-      }
+      syncEditorToPreview(ed, mdPreviewRef.current);
     });
   };
 
@@ -1105,7 +1184,13 @@ export function EditorPane({
 
     let currentId: string | null = null;
     for (const h of mdHeadings) {
-      const el = previewEl.querySelector(`#${CSS.escape(h.id)}`);
+      let el: Element | null = null;
+      try {
+        el = previewEl.querySelector(`#${CSS.escape(h.id)}`);
+      } catch {}
+      if (!el && h.line != null) {
+        el = previewEl.querySelector(`[data-heading-line="${h.line}"]`);
+      }
       if (el) {
         const rect = el.getBoundingClientRect();
         if (rect.top <= threshold) {
@@ -1129,6 +1214,21 @@ export function EditorPane({
     }
   }, [showMdPreview, showToc, updateActiveHeading]);
 
+  // Keep editor and preview in sync when toggling or entering preview mode
+  useEffect(() => {
+    if (showMdPreview && isMarkdown) {
+      const timer = setTimeout(() => {
+        const ed = editorRef.current;
+        const previewEl = mdPreviewRef.current;
+        if (ed && previewEl) {
+          syncEditorToPreview(ed, previewEl);
+          updateActiveHeading();
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [showMdPreview, isMarkdown, syncEditorToPreview, updateActiveHeading]);
+
   // Keep active item visible inside TOC floating list
   useEffect(() => {
     if (!showToc || !activeHeadingId) return;
@@ -1139,26 +1239,54 @@ export function EditorPane({
   }, [activeHeadingId, showToc]);
 
   const handlePreviewScroll = () => {
-    updateActiveHeading();
     if (isSyncingScrollRef.current) return;
+    updateActiveHeading();
     const previewEl = mdPreviewRef.current;
     const ed = editorRef.current;
     if (!previewEl || !ed) return;
-
-    const maxPreviewScroll = previewEl.scrollHeight - previewEl.clientHeight;
-    if (maxPreviewScroll <= 0) return;
-
-    const scrollRatio = Math.max(0, Math.min(1, previewEl.scrollTop / maxPreviewScroll));
-    const maxEditorScroll = ed.getScrollHeight() - ed.getLayoutInfo().height;
-
-    if (maxEditorScroll > 0) {
-      isSyncingScrollRef.current = true;
-      ed.setScrollTop(scrollRatio * maxEditorScroll);
-      setTimeout(() => {
-        isSyncingScrollRef.current = false;
-      }, 40);
-    }
+    syncPreviewToEditor(previewEl, ed);
   };
+
+  const handleHeadingClick = useCallback((h: MarkdownHeadingItem) => {
+    if (tocNavigatingTimerRef.current) {
+      clearTimeout(tocNavigatingTimerRef.current);
+    }
+    // Lock scroll synchronization during TOC navigation to prevent Monaco scroll from interfering with preview
+    isSyncingScrollRef.current = true;
+    setActiveHeadingId(h.id);
+
+    if (mdPreviewRef.current) {
+      const previewEl = mdPreviewRef.current;
+      let el: HTMLElement | null = null;
+      try {
+        el = previewEl.querySelector(`#${CSS.escape(h.id)}`) as HTMLElement | null;
+      } catch {}
+      if (!el && h.line != null) {
+        el = previewEl.querySelector(`[data-heading-line="${h.line}"]`) as HTMLElement | null;
+      }
+      if (!el && h.text) {
+        const headings = Array.from(previewEl.querySelectorAll('h1, h2, h3, h4, h5, h6')) as HTMLElement[];
+        el = headings.find((item) => item.textContent?.trim() === h.text.trim()) || null;
+      }
+
+      if (el) {
+        const offset =
+          el.getBoundingClientRect().top - previewEl.getBoundingClientRect().top + previewEl.scrollTop - 16;
+        previewEl.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
+      }
+    }
+
+    if (editorRef.current) {
+      const targetTop = Math.max(0, editorRef.current.getTopForLineNumber(h.line) - 16);
+      editorRef.current.setScrollTop(targetTop, 1 /* Smooth */);
+      editorRef.current.setPosition({ lineNumber: h.line, column: 1 });
+    }
+
+    // Release sync lock once smooth scroll settles
+    tocNavigatingTimerRef.current = setTimeout(() => {
+      isSyncingScrollRef.current = false;
+    }, 650);
+  }, []);
 
   // 选中文本后的 AI 悬浮提示：滑动文件时针对当前选区隐藏提示；重新划选或选区变化时恢复展示
   const dismissedSelectionKeyRef = useRef<string | null>(null);
@@ -2754,19 +2882,7 @@ export function EditorPane({
                           <div
                             key={`${h.id}-${idx}`}
                             className={`md-toc-item level-${h.level}${isActive ? ' active' : ''}`}
-                            onClick={() => {
-                              setActiveHeadingId(h.id);
-                              if (mdPreviewRef.current) {
-                                const el = mdPreviewRef.current.querySelector(`#${CSS.escape(h.id)}`);
-                                if (el) {
-                                  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                }
-                              }
-                              if (editorRef.current) {
-                                editorRef.current.revealLineInCenter(h.line);
-                                editorRef.current.setPosition({ lineNumber: h.line, column: 1 });
-                              }
-                            }}
+                            onClick={() => handleHeadingClick(h)}
                             title={`第 ${h.line} 行: ${h.text}`}
                           >
                             <span className="md-toc-bullet" />

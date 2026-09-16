@@ -375,25 +375,35 @@ const markdownComponents = {
       </div>
     );
   },
-  h1({ children, ...props }: any) {
+  h1({ node, children, ...props }: any) {
     const text = extractNodeText(children);
     const id = slugifyHeading(text);
-    return <h1 id={id} {...props}>{children}</h1>;
+    return <h1 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h1>;
   },
-  h2({ children, ...props }: any) {
+  h2({ node, children, ...props }: any) {
     const text = extractNodeText(children);
     const id = slugifyHeading(text);
-    return <h2 id={id} {...props}>{children}</h2>;
+    return <h2 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h2>;
   },
-  h3({ children, ...props }: any) {
+  h3({ node, children, ...props }: any) {
     const text = extractNodeText(children);
     const id = slugifyHeading(text);
-    return <h3 id={id} {...props}>{children}</h3>;
+    return <h3 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h3>;
   },
-  h4({ children, ...props }: any) {
+  h4({ node, children, ...props }: any) {
     const text = extractNodeText(children);
     const id = slugifyHeading(text);
-    return <h4 id={id} {...props}>{children}</h4>;
+    return <h4 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h4>;
+  },
+  h5({ node, children, ...props }: any) {
+    const text = extractNodeText(children);
+    const id = slugifyHeading(text);
+    return <h5 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h5>;
+  },
+  h6({ node, children, ...props }: any) {
+    const text = extractNodeText(children);
+    const id = slugifyHeading(text);
+    return <h6 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h6>;
   },
   strong({ node, children, ...props }: any) {
     return (

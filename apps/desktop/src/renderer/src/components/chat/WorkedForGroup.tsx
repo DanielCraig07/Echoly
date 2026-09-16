@@ -5,6 +5,8 @@ import { commandFromArgs, parseTerminalResult } from '../ToolCallCard';
 interface WorkedForGroupProps {
   messages: ChatSessionMessage[];
   isStreaming: boolean;
+  liveThinking?: string;
+  contextUsage?: { usedTokens: number; windowTokens: number; source?: 'api' | 'estimate' } | null;
   onOpenFile?: (path: string, line?: number) => void;
 }
 
@@ -21,6 +23,7 @@ interface StepItem {
   isRunning?: boolean;
   isError?: boolean;
   defaultThoughtOpen?: boolean;
+  durationSeconds?: number;
 }
 
 function parseJson(str?: string): any {
@@ -77,6 +80,12 @@ function formatDuration(seconds: number): string {
   return s === 0 ? `${m}m` : `${m}m ${s}s`;
 }
 
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
 /**
  * 独立的 IN / OUT 卡片组件
  * 严格按照截图还原：IN 与 OUT 两栏完全独立，均支持点击整行或按钮展开/折叠
@@ -96,6 +105,18 @@ function InOutExecutionBox({
   const [outExpanded, setOutExpanded] = useState(false);
   const [copiedIn, setCopiedIn] = useState(false);
   const [copiedOut, setCopiedOut] = useState(false);
+  const [runningSeconds, setRunningSeconds] = useState(1);
+
+  useEffect(() => {
+    if (!isRunning) {
+      setRunningSeconds(1);
+      return;
+    }
+    const timer = setInterval(() => {
+      setRunningSeconds((s) => s + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isRunning]);
 
   const inTrimmed = (inContent || '').trim();
   const outTrimmed = (outContent || '').trim();
@@ -324,7 +345,16 @@ function InOutExecutionBox({
                 className="agent-timeline-working-dot"
                 style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 8 }}
               />
-              {outTrimmed || '正在执行并等待输出...'}
+              {outTrimmed ? (
+                <>
+                  <span style={{ color: 'var(--accent, #38bdf8)', marginRight: 6 }}>
+                    [等待终端执行中 · {runningSeconds}s / 超时上限5m]
+                  </span>
+                  {outTrimmed}
+                </>
+              ) : (
+                `正在等待终端执行... (${runningSeconds}s / 安全超时上限5分钟)`
+              )}
               <span className="terminal-cursor">▋</span>
             </span>
           ) : outTrimmed ? (
@@ -338,27 +368,40 @@ function InOutExecutionBox({
   );
 }
 
-export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForGroupProps) {
+export function WorkedForGroup({
+  messages,
+  isStreaming,
+  liveThinking,
+  contextUsage,
+  onOpenFile,
+}: WorkedForGroupProps) {
   // 初始状态：流式执行中默认展开，已完成的消息默认折叠
   const [isExpanded, setIsExpanded] = useState<boolean>(() => Boolean(isStreaming));
   const [thoughtToggles, setThoughtToggles] = useState<Record<string, boolean>>({});
   const [liveDuration, setLiveDuration] = useState(0);
+  const [currentStepLiveDuration, setCurrentStepLiveDuration] = useState(0);
   const prevStreamingRef = React.useRef(isStreaming);
 
   // 当从流式运行切换为完成（AI回复最终结果之后），自动折叠思考与执行过程
   useEffect(() => {
     if (prevStreamingRef.current && !isStreaming) {
       setIsExpanded(false);
+      setCurrentStepLiveDuration(0);
     }
     prevStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
   // 流式实时计时器
   useEffect(() => {
-    if (!isStreaming) return;
+    if (!isStreaming) {
+      setCurrentStepLiveDuration(0);
+      return;
+    }
     const start = messages[0]?.createdAt || Date.now();
+    const lastMsgTime = messages[messages.length - 1]?.createdAt || Date.now();
     const update = () => {
       setLiveDuration(Math.max(1, Math.round((Date.now() - start) / 1000)));
+      setCurrentStepLiveDuration(Math.max(1, Math.round((Date.now() - lastMsgTime) / 1000)));
     };
     update();
     const timer = setInterval(update, 1000);
@@ -370,6 +413,11 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
     const items: StepItem[] = [];
 
     messages.forEach((m, idx) => {
+      const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
+      const durationSeconds =
+        nextMsg && nextMsg.createdAt && m.createdAt && nextMsg.createdAt >= m.createdAt
+          ? Math.max(1, Math.round((nextMsg.createdAt - m.createdAt) / 1000))
+          : undefined;
       if (m.role === 'tool') {
         const name = m.toolName || '';
         const args = parseJson(m.toolArgs) || {};
@@ -388,6 +436,7 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
             outContent: cleanOutput,
             isRunning,
             isError,
+            durationSeconds,
           });
         } else if (name === 'read_file') {
           const filePath = (args.path || args.file || '').replace(/\\/g, '/');
@@ -420,6 +469,7 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
             outContent: m.content || '(读取完成，内容为空)',
             isRunning,
             isError,
+            durationSeconds,
           });
         } else if (name === 'write_file' || name === 'apply_patch') {
           const filePath = (args.path || args.file || '').replace(/\\/g, '/');
@@ -440,6 +490,7 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
             outContent: m.content || '(已写入并保存成功)',
             isRunning,
             isError,
+            durationSeconds,
           });
         } else if (name === 'search_code') {
           const query = args.pattern || args.query || '';
@@ -452,6 +503,7 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
             outContent: m.content || '(搜索完成，无匹配结果)',
             isRunning,
             isError,
+            durationSeconds,
           });
         } else if (name === 'glob_files') {
           const pattern = args.pattern || args.glob || '';
@@ -464,6 +516,7 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
             outContent: m.content || '(未匹配到文件)',
             isRunning,
             isError,
+            durationSeconds,
           });
         } else if (name === 'list_dir') {
           const path = args.path || '.';
@@ -473,9 +526,10 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
             badge: 'List',
             title: `列出目录 ${path}`,
             inContent: `path: ${path}`,
-            outContent: m.content || '(空目录)',
+            outContent: m.content || '(目录为空)',
             isRunning,
             isError,
+            durationSeconds,
           });
         } else {
           // 通用工具调用
@@ -524,6 +578,15 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
     ? liveDuration || totalDurationSeconds
     : Math.max(totalDurationSeconds, liveDuration || 1);
 
+  const runningTerminalStep = useMemo(() => {
+    return stepItems.find(
+      (s) => s.isRunning && (s.badge === 'Bash' || s.title?.includes('bash') || s.badge === 'Tool'),
+    );
+  }, [stepItems]);
+  const isWaitingTerminal = Boolean(
+    isStreaming && runningTerminalStep && (runningTerminalStep.badge === 'Bash' || runningTerminalStep.badge === 'Tool'),
+  );
+
   if (stepItems.length === 0 && !isStreaming) return null;
 
   const toggleThought = (id: string) => {
@@ -544,7 +607,9 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
       >
         <span className="worked-for-label">
           {isStreaming
-            ? `Working for ${formatDuration(displayDuration)}`
+            ? isWaitingTerminal
+              ? `等待终端执行中 · ${formatDuration(displayDuration)}`
+              : `Working for ${formatDuration(displayDuration)}`
             : `Worked for ${formatDuration(displayDuration)}`}
         </span>
         <span className={`worked-for-chevron${isExpanded ? ' open' : ''}`}>›</span>
@@ -604,6 +669,19 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
                     >
                       {step.title}
                     </span>
+                    {step.durationSeconds != null && (
+                      <span
+                        className="agent-timeline-step-duration"
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 11,
+                          color: 'var(--muted, #888888)',
+                          fontFamily: 'ui-monospace, monospace',
+                        }}
+                      >
+                        {formatDuration(step.durationSeconds)}
+                      </span>
+                    )}
                   </span>
                 </div>
 
@@ -617,15 +695,64 @@ export function WorkedForGroup({ messages, isStreaming, onOpenFile }: WorkedForG
             );
           })}
 
-          {/* 实时处理中状态提示 */}
+          {/* 实时处理中状态提示（含实时动态耗时与实时思考过程） */}
           {isStreaming && (
             <div className="agent-timeline-node" style={{ marginBottom: 0 }}>
               <span className="agent-timeline-dot is-running" />
-              <div className="agent-timeline-row">
+              <div
+                className="agent-timeline-row"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
                 <span className="agent-timeline-title" style={{ color: 'var(--muted, #888888)' }}>
-                  处理中...
+                  {liveThinking ? '思考中...' : isWaitingTerminal ? '等待终端执行中...' : '处理中...'}
+                </span>
+                <span
+                  className="agent-timeline-live-duration"
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--muted, #888888)',
+                    fontFamily: 'ui-monospace, monospace',
+                  }}
+                >
+                  ({formatDuration(currentStepLiveDuration || 1)}
+                  {contextUsage?.usedTokens
+                    ? ` · ${formatTokens(contextUsage.usedTokens)} tokens`
+                    : ''})
                 </span>
               </div>
+              {liveThinking && (
+                <div
+                  className="agent-timeline-thinking-box live-stream"
+                  style={{
+                    marginTop: 8,
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    backgroundColor: 'var(--bg-card, rgba(255, 255, 255, 0.04))',
+                    border: '1px solid var(--border, rgba(255, 255, 255, 0.1))',
+                    fontSize: 12,
+                    lineHeight: 1.6,
+                    color: 'var(--fg-muted, #a0a0a0)',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    maxHeight: 280,
+                    overflowY: 'auto',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  }}
+                >
+                  {liveThinking}
+                  <span
+                    className="streaming-cursor"
+                    style={{
+                      display: 'inline-block',
+                      width: 6,
+                      height: 12,
+                      marginLeft: 3,
+                      backgroundColor: 'var(--primary, #3b82f6)',
+                      verticalAlign: 'middle',
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

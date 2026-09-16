@@ -730,18 +730,19 @@ export function App() {
         const remotePath =
           remotePathMatch?.[1]?.trim() || (target.kind === 'ssh' ? target.path : undefined);
 
-        // 1. 核心优化：若当前窗口已有活动 SSH 会话（或当前工作区就是同一 SSH 主机），直接秒级复用会话切换远程目录！
+        // 1. 若当前窗口已有活动 SSH 会话，检查是否为同一服务器，如果是则直接秒级复用会话切换远程目录
         const activeSsh = await window.ide.sshGetActiveSession?.().catch(() => null);
         const targetServer = target.sshServer || userHost || hostOnly || '';
+        const targetHost = target.rawItem?.host || hostOnly;
+        const targetUser = target.rawItem?.username || (userHost.includes('@') ? userHost.split('@')[0] : '');
 
         if (activeSsh) {
           const isSameHost =
-            !targetServer ||
-            targetServer.includes(activeSsh.host) ||
-            activeSsh.host.includes(targetServer) ||
-            targetServer.includes(activeSsh.username);
+            (targetHost && targetHost === activeSsh.host) ||
+            (!targetHost && targetServer && (targetServer.includes(activeSsh.host) || activeSsh.host.includes(targetServer)));
+          const isSameUser = !targetUser || targetUser === activeSsh.username;
 
-          if (isSameHost) {
+          if (isSameHost && isSameUser) {
             const nextRemote = remotePath || target.path;
             const res = await window.ide.sshSwitchRemotePath(nextRemote);
             if (res.ok) {
@@ -752,6 +753,7 @@ export function App() {
               setDiffs([]);
               setScmDiff(null);
               setTerminalKey((k) => k + 1);
+              setTreeRefreshKey((k) => k + 1);
               await restoreOpenFilesForRoot(info.root);
               showToast('✓ 已切换远程工作区', `${info.root}`, 'success');
               return;
@@ -772,37 +774,30 @@ export function App() {
           return false;
         });
 
-        if (matchedProfile) {
+        // 优先使用当前用户输入的最新凭据（尤其是密码），并与匹配的 profile 合并补全
+        const hostToConnect = target.rawItem?.host || matchedProfile?.host || hostOnly;
+        const userToConnect =
+          target.rawItem?.username ||
+          matchedProfile?.username ||
+          (userHost.includes('@') ? userHost.split('@')[0] : '');
+        const portToConnect = Number(target.rawItem?.port || matchedProfile?.port || 22) || 22;
+        const passwordToConnect = target.rawItem?.password;
+        const keyToConnect = target.rawItem?.privateKeyPath || matchedProfile?.privateKeyPath;
+        const passphraseToConnect = target.rawItem?.passphrase;
+        const pathToConnect =
+          remotePath || target.rawItem?.remotePath || matchedProfile?.remotePath || target.path;
+
+        if (hostToConnect && userToConnect) {
           const res = await window.ide.sshConnect({
-            host: matchedProfile.host,
-            port: matchedProfile.port,
-            username: matchedProfile.username,
-            privateKeyPath: matchedProfile.privateKeyPath,
-            remotePath: remotePath || matchedProfile.remotePath,
-          });
-          if (res.ok) {
-            const info = await window.ide.getWorkspaceInfo();
-            persistOpenFilesForRoot(workspaceRef.current);
-            setWorkspaceInfo(info);
-            setWorkspace(info.root);
-            setDiffs([]);
-            setScmDiff(null);
-            setTerminalKey((k) => k + 1);
-            await restoreOpenFilesForRoot(info.root);
-            showToast('✓ 已连接远程工作区', `${info.root}`, 'success');
-            return;
-          }
-        } else if (target.rawItem?.host) {
-          const res = await window.ide.sshConnect({
-            host: target.rawItem.host,
-            port: target.rawItem.port,
-            username: target.rawItem.username,
-            password: target.rawItem.password,
-            privateKeyPath: target.rawItem.privateKeyPath,
-            passphrase: target.rawItem.passphrase,
-            remotePath: remotePath || target.rawItem.remotePath,
-            saveProfile: target.rawItem.saveProfile,
-            profileName: target.rawItem.profileName,
+            host: hostToConnect,
+            port: portToConnect,
+            username: userToConnect,
+            password: passwordToConnect,
+            privateKeyPath: keyToConnect,
+            passphrase: passphraseToConnect,
+            remotePath: pathToConnect,
+            saveProfile: target.rawItem?.saveProfile,
+            profileName: target.rawItem?.profileName || matchedProfile?.name,
             browseOnly: false,
           });
           if (res.ok) {
@@ -813,9 +808,12 @@ export function App() {
             setDiffs([]);
             setScmDiff(null);
             setTerminalKey((k) => k + 1);
+            setTreeRefreshKey((k) => k + 1);
             await restoreOpenFilesForRoot(info.root);
             showToast('✓ 已连接远程工作区', `${info.root}`, 'success');
             return;
+          } else {
+            showToast('✕ 连接远程工作区失败', res.detail, 'error');
           }
         }
 
@@ -835,7 +833,7 @@ export function App() {
     const isSsh = target.kind === 'ssh' || !!target.sshServer;
     if (isSsh) {
       const sshUri = target.sshServer ? `${target.sshServer}:${target.path}` : target.path;
-      void window.ide.openNewWindow(sshUri);
+      void window.ide.openNewWindow(sshUri, target.rawItem);
     } else {
       void window.ide.openNewWindow(target.path);
     }
@@ -982,15 +980,34 @@ export function App() {
           workspaceFromQuery.startsWith('ssh:') ||
           workspaceFromQuery.startsWith('ssh://') ||
           /^[^@\s]+@[^:\s]+:/.test(workspaceFromQuery);
-        void openTargetInCurrentWindow({
-          path: workspaceFromQuery,
-          name:
-            workspaceFromQuery
-              .split(/[/\\\\]/)
-              .filter(Boolean)
-              .pop() || workspaceFromQuery,
-          kind: isSsh ? 'ssh' : 'local',
-        });
+        const sshAuthToken = new URLSearchParams(window.location.search).get('sshAuthToken');
+        if (sshAuthToken) {
+          void window.ide.getSshAuthHandoff(sshAuthToken).then((auth) => {
+            void openTargetInCurrentWindow({
+              path: auth?.remotePath || workspaceFromQuery,
+              name:
+                workspaceFromQuery
+                  .split(/[/\\\\]/)
+                  .filter(Boolean)
+                  .pop() || workspaceFromQuery,
+              kind: 'ssh',
+              sshServer:
+                auth?.profileName ||
+                (auth?.username && auth?.host ? `${auth.username}@${auth.host}` : undefined),
+              rawItem: auth,
+            });
+          });
+        } else {
+          void openTargetInCurrentWindow({
+            path: workspaceFromQuery,
+            name:
+              workspaceFromQuery
+                .split(/[/\\\\]/)
+                .filter(Boolean)
+                .pop() || workspaceFromQuery,
+            kind: isSsh ? 'ssh' : 'local',
+          });
+        }
       }
     } else {
       void window.ide.getWorkspaceInfo().then((info) => {
@@ -2989,16 +3006,10 @@ export function App() {
         open={!!switchTarget}
         target={switchTarget}
         onClose={() => {
-          if (switchTarget?.rawItem?.isTempBrowse) {
-            void window.ide.sshDisconnect();
-          }
           setSwitchTarget(null);
         }}
         onOpenCurrentWindow={(t) => void openTargetInCurrentWindow(t)}
         onOpenNewWindow={(t) => {
-          if (t.rawItem?.isTempBrowse) {
-            void window.ide.sshDisconnect();
-          }
           openTargetInNewWindow(t);
         }}
       />

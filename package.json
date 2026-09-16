@@ -1,6 +1,6 @@
 {
   "name": "echoly",
-  "version": "0.0.20",
+  "version": "0.0.21",
   "private": true,
   "description": "Echoly - AI-first Modern Intelligent IDE",
   "workspaces": [
@@ -11,6 +11,7 @@
     "postinstall": "node scripts/fix-pty-perms.js && node scripts/fix-mac-local-network.js",
     "dev": "node scripts/fix-pty-perms.js && node scripts/fix-mac-local-network.js && npm run dev -w @deepseek-ide/desktop",
     "build": "npm run build -w @deepseek-ide/desktop",
+    "preview": "npm run preview -w @deepseek-ide/desktop",
     "pack": "npm run pack -w @deepseek-ide/desktop",
     "pack:win32": "npm run pack:win32 -w @deepseek-ide/desktop",
     "pack:win:publish": "npm run pack:win:publish -w @deepseek-ide/desktop",

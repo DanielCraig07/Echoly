@@ -66,6 +66,7 @@ export interface SessionTab {
   status: AgentRunStatus;
   runId: string | null;
   streaming: string;
+  thinkingStreaming?: string;
   confirm: ConfirmRequest | null;
   plan: PlanProposal | null;
   pendingPlanContext: PlanProposal | null;
@@ -164,7 +165,7 @@ function ChatToolbarPill<T extends string>(props: {
   );
 }
 
-const STICK_THRESHOLD_PX = 16;
+const STICK_THRESHOLD_PX = 60;
 
 function createEmptyTab(id?: string, title = 'New Chat'): SessionTab {
   return {
@@ -342,6 +343,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const [isDragging, setIsDragging] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const stickRef = useRef(true);
+  const isProgrammaticScrollRef = useRef(false);
+  const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number | null>(null);
 
   const handleCopyMessage = useCallback((content: string, id: string) => {
@@ -437,8 +440,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       for (const file of files) {
         const isImage =
           file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(file.name);
+        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
 
-        if (isImage) {
+        if (isImage || isPdf) {
+          if (file.size > 20 * 1024 * 1024) {
+            alert(`文件 ${file.name} 超过 20MB 限制`);
+            continue;
+          }
           try {
             const dataUrl = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
@@ -448,14 +456,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             });
             newAttachments.push({
               id: uid(),
-              name: file.name || 'image.png',
-              type: 'image',
-              mimeType: file.type || 'image/png',
+              name: file.name || (isImage ? 'image.png' : 'document.pdf'),
+              type: isImage ? 'image' : 'file',
+              mimeType: file.type || (isImage ? 'image/png' : 'application/pdf'),
               size: file.size,
               dataUrl,
             });
           } catch (err) {
-            console.error('Failed to read image file:', err);
+            console.error('Failed to read media/document file:', err);
           }
         } else {
           if (file.size > 5 * 1024 * 1024) {
@@ -531,10 +539,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const el = messagesElRef.current;
     if (!el) return;
     if (!force && !stickRef.current) return;
+    isProgrammaticScrollRef.current = true;
+    if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
+    el.scrollTop = el.scrollHeight;
     requestAnimationFrame(() => {
       if (messagesElRef.current) {
         messagesElRef.current.scrollTop = messagesElRef.current.scrollHeight;
       }
+      programmaticScrollTimerRef.current = setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+      }, 100);
     });
   }, []);
 
@@ -544,6 +558,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     stickRef.current = true;
     setStickToBottom(true);
     setShowJumpLatest(false);
+    isProgrammaticScrollRef.current = true;
+    if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
 
     const doScroll = () => {
       const el = messagesElRef.current;
@@ -557,11 +573,18 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           behavior: 'auto',
         });
       }
+      stickRef.current = true;
     };
 
     doScroll();
     requestAnimationFrame(doScroll);
-    setTimeout(doScroll, 40);
+    setTimeout(() => {
+      doScroll();
+      stickRef.current = true;
+      programmaticScrollTimerRef.current = setTimeout(() => {
+        isProgrammaticScrollRef.current = false;
+      }, 150);
+    }, 40);
   }, []);
 
   const lastUserMsgId = [...(activeTab?.messages ?? [])]
@@ -580,40 +603,69 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     stickRef.current = true;
     setStickToBottom(true);
     setShowJumpLatest(false);
-    requestAnimationFrame(() => scrollToBottom(true));
+    scrollToBottom(true);
   }, [scrollToBottom]);
 
   useEffect(() => {
     const el = messagesElRef.current;
     if (!el) return;
 
-    let isUserInteracting = false;
-    let userInteractTimer: ReturnType<typeof setTimeout> | null = null;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) {
+        // 用户向上滚轮（主动查阅历史）：立即解除吸底并展示「回到最新」按钮
+        stickRef.current = false;
+        setStickToBottom(false);
+        setShowJumpLatest(true);
+      }
+      // 向下滚轮（e.deltaY > 0）时不强行吸底！
+      // 允许用户在历史记录中自由向下平滑微调浏览，只有当真正滚到接近底部（onScroll 触发 nearBottom）时才恢复吸底。
+    };
 
-    const onUserInteraction = () => {
-      isUserInteracting = true;
-      if (userInteractTimer) clearTimeout(userInteractTimer);
-      userInteractTimer = setTimeout(() => {
-        isUserInteracting = false;
-      }, 300);
+    let touchStartY = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0]?.clientY ?? 0;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const currentY = e.touches[0]?.clientY ?? 0;
+      const deltaY = touchStartY - currentY;
+      if (deltaY < 0) {
+        // 手指向下拉（查阅历史）：立即解除吸底
+        stickRef.current = false;
+        setStickToBottom(false);
+        setShowJumpLatest(true);
+      }
+      // 同样，手指向上推（向下看历史）时不强行吸底，避免突然跳到最底部
     };
 
     const onScroll = () => {
+      if (isProgrammaticScrollRef.current) {
+        return;
+      }
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       const nearBottom = distance <= STICK_THRESHOLD_PX;
-      stickRef.current = nearBottom;
-      setStickToBottom(nearBottom);
-      setShowJumpLatest(!nearBottom);
+
+      if (nearBottom) {
+        // 只有当距离底部在安全缓冲区内（<= STICK_THRESHOLD_PX）时，才恢复吸底
+        stickRef.current = true;
+        setStickToBottom(true);
+        setShowJumpLatest(false);
+      } else {
+        // 离底部较远，说明用户脱离了底部在翻阅历史消息，解除吸底并展示「回到最新」
+        stickRef.current = false;
+        setStickToBottom(false);
+        setShowJumpLatest(true);
+      }
     };
 
     const observer = new MutationObserver(() => {
-      // 当用户正在手动滑动滚轮或触摸时，即使接近底部也不要突然强行跳到最底部
-      if (stickRef.current && messagesElRef.current && !isUserInteracting) {
-        requestAnimationFrame(() => {
-          if (messagesElRef.current && !isUserInteracting) {
-            messagesElRef.current.scrollTop = messagesElRef.current.scrollHeight;
-          }
-        });
+      // 只要处于吸底状态，DOM 发生变更（如流式输出、卡片展开）一律紧贴最新底部
+      if (stickRef.current && messagesElRef.current) {
+        isProgrammaticScrollRef.current = true;
+        messagesElRef.current.scrollTop = messagesElRef.current.scrollHeight;
+        if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
+        programmaticScrollTimerRef.current = setTimeout(() => {
+          isProgrammaticScrollRef.current = false;
+        }, 80);
       }
     });
 
@@ -624,14 +676,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     });
 
     el.addEventListener('scroll', onScroll, { passive: true });
-    el.addEventListener('wheel', onUserInteraction, { passive: true });
-    el.addEventListener('touchmove', onUserInteraction, { passive: true });
+    el.addEventListener('wheel', onWheel, { passive: true });
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
     return () => {
       observer.disconnect();
       el.removeEventListener('scroll', onScroll);
-      el.removeEventListener('wheel', onUserInteraction);
-      el.removeEventListener('touchmove', onUserInteraction);
-      if (userInteractTimer) clearTimeout(userInteractTimer);
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
     };
   }, []);
 
@@ -643,6 +697,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     activeTab?.messages,
     activeTab?.streaming,
     activeTab?.plan,
+    activeTab?.status,
+    activeTab?.stepInfo,
     activeTab?.awaitingContinue,
     scrollToBottom,
   ]);
@@ -741,10 +797,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         switch (event.type) {
           case 'status':
             next.status = event.status;
-            if (event.status === 'cancelled') {
+            if (event.status === 'thinking') {
+              next.thinkingStreaming = '';
+            } else if (event.status === 'cancelled') {
               next.runId = null;
               next.confirm = null;
               next.streaming = '';
+              next.thinkingStreaming = '';
               next.awaitingContinue = false;
               next.continueInfo = null;
               next.stepInfo = null;
@@ -752,6 +811,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             break;
           case 'token':
             next.streaming += event.text;
+            break;
+          case 'thinking_token':
+            next.thinkingStreaming = (next.thinkingStreaming || '') + event.text;
             break;
           case 'pending_diff':
             onPendingDiffRef.current(event);
@@ -789,6 +851,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             break;
           case 'tool_start': {
             next.streaming = '';
+            next.thinkingStreaming = '';
             const newMsg: ChatSessionMessage = {
               id: event.id || uid(),
               role: 'tool',
@@ -851,6 +914,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           }
           case 'assistant_message': {
             next.streaming = '';
+            next.thinkingStreaming = '';
             if (event.content) {
               const displayContent = event.content
                 .split('\n')
@@ -885,10 +949,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           }
           case 'done': {
             next.streaming = '';
+            next.thinkingStreaming = '';
             next.awaitingContinue = false;
             next.continueInfo = null;
             next.stepInfo = null;
-            if (event.finalText && event.finalText !== '(cancelled)') {
+            const textToDisplay =
+              event.finalText ||
+              (next.messages.some((m) => m.role === 'tool')
+                ? '已完成执行，详细操作步骤已收折在上方「Worked for」面板中，点击即可展开查看。'
+                : '');
+            if (textToDisplay && textToDisplay !== '(cancelled)') {
               const lastIdx = next.messages.length - 1;
               const last = next.messages[lastIdx];
               // Match against the trailing intermediate assistant bubble (emitted just
@@ -897,9 +967,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               // the same answer to be appended twice.
               if (last && last.role === 'assistant' && last.isIntermediate) {
                 const msgs = [...next.messages];
-                msgs[lastIdx] = { ...last, content: event.finalText, isIntermediate: false };
+                msgs[lastIdx] = { ...last, content: textToDisplay, isIntermediate: false };
                 next.messages = msgs;
-              } else if (last && last.role === 'assistant' && last.content === event.finalText) {
+              } else if (last && last.role === 'assistant' && last.content === textToDisplay) {
                 const msgs = [...next.messages];
                 msgs[lastIdx] = { ...last, isIntermediate: false };
                 next.messages = msgs;
@@ -909,7 +979,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   {
                     id: uid(),
                     role: 'assistant',
-                    content: event.finalText,
+                    content: textToDisplay,
                     isIntermediate: false,
                     createdAt: Date.now(),
                   },
@@ -1374,6 +1444,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                       key={key}
                       messages={pendingGroup}
                       isStreaming={Boolean(isRunning && turnIsLive && isLiveGroup)}
+                      liveThinking={
+                        isRunning && turnIsLive && isLiveGroup
+                          ? activeTab?.thinkingStreaming
+                          : undefined
+                      }
+                      contextUsage={activeTab?.contextUsage}
                       onOpenFile={onOpenFile}
                     />,
                   );
