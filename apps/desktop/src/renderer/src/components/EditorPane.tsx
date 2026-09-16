@@ -755,6 +755,8 @@ export function EditorPane({
   }, []);
 
   const [showMdPreview, setShowMdPreview] = useState(false);
+  const showMdPreviewRef = useRef(false);
+  showMdPreviewRef.current = showMdPreview;
   const [showToc, setShowToc] = useState(false);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const tocListRef = useRef<HTMLDivElement>(null);
@@ -776,6 +778,10 @@ export function EditorPane({
   const [editorInstance, setEditorInstance] = useState<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const isSyncingScrollRef = useRef(false);
   const tocNavigatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 保存每个 md 文件的预览滚动位置，切换文件时持久化，切回时恢复
+  const mdPreviewScrollCacheRef = useRef<Map<string, number>>(new Map());
+  // 用于在文件切换时读取切换前的 activePath，以便保存旧文件滚动位置
+  const prevActivePathRef = useRef<string | null>(null);
 
 
 
@@ -1214,20 +1220,47 @@ export function EditorPane({
     }
   }, [showMdPreview, showToc, updateActiveHeading]);
 
-  // Keep editor and preview in sync when toggling or entering preview mode
+  // Keep editor and preview in sync when toggling or entering preview mode;
+  // when switching between md files, restore the cached scroll position first.
   useEffect(() => {
     if (showMdPreview && isMarkdown) {
       const timer = setTimeout(() => {
         const ed = editorRef.current;
         const previewEl = mdPreviewRef.current;
         if (ed && previewEl) {
-          syncEditorToPreview(ed, previewEl);
-          updateActiveHeading();
+          // 如果缓存中有当前文件的滚动位置，优先恢复；否则按编辑器位置同步
+          const cached = activePath ? mdPreviewScrollCacheRef.current.get(activePath) : undefined;
+          if (cached !== undefined && cached > 0) {
+            // 1. 锁定滚动同步，防止 Monaco onDidScrollChange 覆盖恢复值
+            isSyncingScrollRef.current = true;
+            // 2. 恢复预览面板滚动位置
+            previewEl.scrollTop = cached;
+            // 3. 关键：同时把 Monaco 编辑器位置也同步到与预览对应的位置
+            //    否则 Monaco 仍停在第 1 行，后续任何编辑器滚动事件会通过
+            //    syncEditorToPreview 将预览拉回 0，破坏刚刚恢复的位置。
+            const anchors = getMarkdownAnchors(ed, previewEl);
+            if (anchors.length >= 2) {
+              let ai = 0;
+              while (ai < anchors.length - 1 && anchors[ai + 1].previewTop <= cached) ai++;
+              const a1 = anchors[ai];
+              const a2 = anchors[Math.min(ai + 1, anchors.length - 1)];
+              const pDelta = a2.previewTop - a1.previewTop;
+              const ratio = pDelta > 0 ? Math.max(0, Math.min(1, (cached - a1.previewTop) / pDelta)) : 0;
+              const targetEditorTop = a1.editorTop + ratio * (a2.editorTop - a1.editorTop);
+              ed.setScrollTop(Math.max(0, targetEditorTop));
+            }
+            // 4. 延长锁定时间（250ms），覆盖 Monaco 模型初始化后的所有延迟滚动事件
+            setTimeout(() => { isSyncingScrollRef.current = false; }, 250);
+            updateActiveHeading();
+          } else {
+            syncEditorToPreview(ed, previewEl);
+            updateActiveHeading();
+          }
         }
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [showMdPreview, isMarkdown, syncEditorToPreview, updateActiveHeading]);
+  }, [showMdPreview, isMarkdown, activePath, getMarkdownAnchors, syncEditorToPreview, updateActiveHeading]);
 
   // Keep active item visible inside TOC floating list
   useEffect(() => {
@@ -1244,6 +1277,10 @@ export function EditorPane({
     const previewEl = mdPreviewRef.current;
     const ed = editorRef.current;
     if (!previewEl || !ed) return;
+    // 实时保存当前文件的预览滚动位置
+    if (activePath) {
+      mdPreviewScrollCacheRef.current.set(activePath, previewEl.scrollTop);
+    }
     syncPreviewToEditor(previewEl, ed);
   };
 
@@ -1313,7 +1350,19 @@ export function EditorPane({
   }, [findWidgetVisible]);
 
   // 切换文件时清空原有装饰与 diff 数据，并重置选区 AI 悬浮窗提示状态
+  // 同时保存旧文件的 md 预览滚动位置（供切回时恢复）
   useEffect(() => {
+    // 先保存切换前文件的预览滚动位置
+    const prevPath = prevActivePathRef.current;
+    const previewEl = mdPreviewRef.current;
+    if (prevPath && previewEl && showMdPreviewRef.current) {
+      const scrollTop = previewEl.scrollTop;
+      if (scrollTop > 0) {
+        mdPreviewScrollCacheRef.current.set(prevPath, scrollTop);
+      }
+    }
+    prevActivePathRef.current = activePath;
+
     const ed = editorRef.current;
     if (ed) {
       decorationsRef.current = ed.deltaDecorations(decorationsRef.current, []);
@@ -1380,15 +1429,21 @@ export function EditorPane({
     decorationsRef.current = ed.deltaDecorations(decorationsRef.current, decorations);
   }, [gitDiffData, active?.content, activePath, editorInstance, uiTheme]);
 
-  // 按 Esc 键退出 Git 差异对比、差异预览或关闭选区浮动工具栏
+  // 按 Esc 键退出 Git 差异对比、差异预览，或关闭选区浮动工具栏，或关闭目录大纲
   useEffect(() => {
-    if (gitInlineDiffLine == null && !previewDiff && !selectionCoords) return;
+    if (gitInlineDiffLine == null && !previewDiff && !selectionCoords && !showToc) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (selectionCoords) {
           e.preventDefault();
           e.stopPropagation();
           setSelectionCoords(null);
+          return;
+        }
+        if (showToc) {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowToc(false);
           return;
         }
         if (gitInlineDiffLine != null) {
@@ -1404,7 +1459,7 @@ export function EditorPane({
     };
     window.addEventListener('keydown', handleKey, true);
     return () => window.removeEventListener('keydown', handleKey, true);
-  }, [gitInlineDiffLine, previewDiff, onCloseDiff, selectionCoords]);
+  }, [gitInlineDiffLine, previewDiff, onCloseDiff, selectionCoords, showToc]);
 
   useEffect(() => {
     if (!active) {
@@ -2867,7 +2922,7 @@ export function EditorPane({
                       type="button"
                       className="md-toc-close-btn"
                       onClick={() => setShowToc(false)}
-                      title="关闭大纲"
+                      title="关闭大纲 (Esc)"
                     >
                       ✕
                     </button>
