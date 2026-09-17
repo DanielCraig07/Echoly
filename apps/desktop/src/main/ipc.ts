@@ -22,7 +22,7 @@ import type { WindowRegistry } from './windowRegistry';
 import { detectMavenEnvironment, initMavenWrapper, initMavenSettings } from './mavenService';
 import { detectInstalledJdks, getAvailableOnlineJdks, installOnlineJdk } from './javaService';
 import { detectCppToolchain, detectMultiLangToolchain } from './cppToolchainService';
-import { PROJECT_TEMPLATES } from '../renderer/src/utils/projectTemplates';
+import { PROJECT_TEMPLATES } from '@deepseek-ide/shared';
 
 export function registerIpc(deps: {
   ipcMain: IpcMain;

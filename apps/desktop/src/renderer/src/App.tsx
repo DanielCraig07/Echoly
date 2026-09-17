@@ -1220,7 +1220,7 @@ export function App() {
       }
     };
 
-    let fsDebounce: NodeJS.Timeout | null = null;
+    let fsDebounce: ReturnType<typeof setTimeout> | null = null;
     const triggerFsRefresh = () => {
       if (fsDebounce) clearTimeout(fsDebounce);
       fsDebounce = setTimeout(() => {

@@ -1214,8 +1214,11 @@ export interface LspLocation {
   endColumn?: number;
 }
 
+export * from './projectTemplates';
+
 declare global {
   interface Window {
     ide: IpcApi;
   }
 }
+
