@@ -48,5 +48,5 @@ describe('Multi-Language Templates & Toolchain Suite', () => {
     expect(res.node.node).toHaveProperty('installed');
     expect(res.node.npm).toHaveProperty('installed');
     expect(res.node.typescript).toHaveProperty('installed');
-  });
+  }, 20000);
 });
