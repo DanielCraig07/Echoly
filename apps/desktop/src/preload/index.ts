@@ -166,6 +166,30 @@ const api: IpcApi = {
     ipcRenderer.invoke('lsp:getDefinition', filePath, line, column),
   lspNotifyDocument: (filePath, content, languageId) =>
     ipcRenderer.invoke('lsp:notifyDocument', filePath, content, languageId),
+  lspSwitchSourceHeader: (filePath: string) =>
+    ipcRenderer.invoke('lsp:switchSourceHeader', filePath),
+
+  cppCheckToolchain: () => ipcRenderer.invoke('cpp:checkToolchain'),
+
+  dapStartSession: (config) => ipcRenderer.invoke('dap:startSession', config),
+  dapStopSession: () => ipcRenderer.invoke('dap:stopSession'),
+  dapSetBreakpoints: (filePath, lines) => ipcRenderer.invoke('dap:setBreakpoints', filePath, lines),
+  dapContinue: () => ipcRenderer.invoke('dap:continue'),
+  dapStepOver: () => ipcRenderer.invoke('dap:stepOver'),
+  dapStepInto: () => ipcRenderer.invoke('dap:stepInto'),
+  dapStepOut: () => ipcRenderer.invoke('dap:stepOut'),
+  dapPause: () => ipcRenderer.invoke('dap:pause'),
+  dapGetThreads: () => ipcRenderer.invoke('dap:getThreads'),
+  dapGetStackTrace: (threadId?: number) => ipcRenderer.invoke('dap:getStackTrace', threadId),
+  dapGetScopes: (frameId: number) => ipcRenderer.invoke('dap:getScopes', frameId),
+  dapGetVariables: (variablesReference: number) => ipcRenderer.invoke('dap:getVariables', variablesReference),
+  dapEvaluate: (expression: string, frameId?: number) => ipcRenderer.invoke('dap:evaluate', expression, frameId),
+  onDapEvent: (cb) => {
+    const listener = (_: any, ev: any) => cb(ev);
+    ipcRenderer.on('dap:event', listener);
+    return () => ipcRenderer.removeListener('dap:event', listener);
+  },
+
   showItemInFolder: (fullPath) => ipcRenderer.invoke('shell:showItemInFolder', fullPath),
   mavenCheckEnv: () => ipcRenderer.invoke('maven:checkEnv'),
   mavenInitWrapper: () => ipcRenderer.invoke('maven:initWrapper'),

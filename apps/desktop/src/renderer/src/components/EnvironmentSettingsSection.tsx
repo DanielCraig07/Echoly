@@ -4,6 +4,7 @@ import type {
   InstalledJdkInfo,
   OnlineJdkInfo,
   JdkInstallProgress,
+  CppToolchainStatus,
 } from '@deepseek-ide/shared';
 import {
   loadProjectRuntimeConfig,
@@ -55,13 +56,78 @@ interface EnvironmentSettingsSectionProps {
 }
 
 export function EnvironmentSettingsSection({ workspace, onShowToast }: EnvironmentSettingsSectionProps) {
-  const [subTab, setSubTab] = useState<'java' | 'maven' | 'runtime'>('java');
+  const [subTab, setSubTab] = useState<'java' | 'maven' | 'cpp' | 'runtime'>('java');
 
   // Config state
   const [config, setConfig] = useState<EnvConfig>(() => loadEnvConfig(workspace));
   const [runtimeConfig, setRuntimeConfig] = useState<ProjectRuntimeConfig>(() =>
     loadProjectRuntimeConfig(workspace),
   );
+
+  // C/C++ Toolchain State
+  const [cppToolchain, setCppToolchain] = useState<CppToolchainStatus | null>(null);
+  const [detectingCpp, setDetectingCpp] = useState(false);
+  const [creatingCppTemplate, setCreatingCppTemplate] = useState(false);
+
+  const detectCpp = useCallback(async () => {
+    setDetectingCpp(true);
+    try {
+      if (window.ide?.cppCheckToolchain) {
+        const res = await window.ide.cppCheckToolchain();
+        setCppToolchain(res);
+      }
+    } catch (e) {
+      console.error('Failed to check C++ toolchain:', e);
+    } finally {
+      setDetectingCpp(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (subTab === 'cpp') {
+      void detectCpp();
+    }
+  }, [subTab, detectCpp]);
+
+  const handleCreateCppTemplate = async () => {
+    setCreatingCppTemplate(true);
+    try {
+      if (!window.ide?.writeFile) return;
+
+      await window.ide.writeFile(
+        'CMakeLists.txt',
+        `cmake_minimum_required(VERSION 3.15)\nproject(CppDemo VERSION 1.0.0 LANGUAGES CXX)\n\nset(CMAKE_CXX_STANDARD 17)\nset(CMAKE_CXX_STANDARD_REQUIRED ON)\nset(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n\ninclude_directories(include)\n\nadd_executable(app src/main.cpp)\n`,
+      );
+
+      await window.ide.writeFile(
+        'src/main.cpp',
+        `#include <iostream>\n#include "demo.h"\n\nint main(int argc, char** argv) {\n    std::cout << "🚀 Hello Echoly C++ with Clangd & LLDB-DAP!" << std::endl;\n    demoGreeting();\n    return 0;\n}\n`,
+      );
+
+      await window.ide.writeFile(
+        'include/demo.h',
+        `#pragma once\n#include <iostream>\n\ninline void demoGreeting() {\n    std::cout << "✨ Header & Source switching working seamlessly!" << std::endl;\n}\n`,
+      );
+
+      await window.ide.writeFile(
+        '.clang-format',
+        `BasedOnStyle: Google\nIndentWidth: 4\nColumnLimit: 100\n`,
+      );
+
+      await window.ide.writeFile(
+        '.gitignore',
+        `build/\n.echoly/\n*.o\n*.out\n*.exe\n`,
+      );
+
+      onShowToast?.('C++ 工程模板创建成功', '已生成 CMakeLists.txt, src/main.cpp 等标准模板', 'success');
+      // 触发文件树刷新
+      window.dispatchEvent(new CustomEvent('echoly:refreshTree'));
+    } catch (err: any) {
+      onShowToast?.('创建模板失败', err?.message || String(err), 'error');
+    } finally {
+      setCreatingCppTemplate(false);
+    }
+  };
 
   useEffect(() => {
     setConfig(loadEnvConfig(workspace));
@@ -444,6 +510,29 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
         >
           <span>🛠️</span>
           <span>Maven 构建工具 &amp; settings.xml</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('cpp')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '7px 16px',
+            borderRadius: 6,
+            border: '1px solid',
+            borderColor: subTab === 'cpp' ? 'var(--accent, #3b82f6)' : 'transparent',
+            background: subTab === 'cpp' ? 'var(--bg-hover, rgba(59, 130, 246, 0.12))' : 'transparent',
+            color: subTab === 'cpp' ? 'var(--text-bright, #fff)' : 'var(--text)',
+            fontSize: 12.5,
+            fontWeight: subTab === 'cpp' ? 600 : 400,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <span>🚀</span>
+          <span>C/C++ 工具链 &amp; 调试环境</span>
         </button>
 
         <button
@@ -1670,6 +1759,262 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 >
                   保存运行时参数
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 4: C/C++ TOOLCHAIN & DEBUGGING ─── */}
+      {subTab === 'cpp' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* C/C++ 概览横幅卡片 */}
+          <div
+            style={{
+              padding: '16px 20px',
+              borderRadius: 8,
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(147, 51, 234, 0.05) 100%)',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 16 }}>🚀</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)' }}>
+                  C / C++ 现代开发工具链与 LLDB-DAP 调试引擎
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+                Echoly 已原生接入 Clangd LSP 语言服务、LLDB-DAP 调试协议与 CMake 自动化套件，实现开箱即用的 C/C++ 代码补全、跳转定义、Alt+O 头源切换、断点调试与构建运行。
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                className="panel-standard-btn"
+                onClick={detectCpp}
+                disabled={detectingCpp}
+                style={{ fontSize: 12, padding: '6px 14px' }}
+              >
+                {detectingCpp ? '检测中...' : '重新体检'}
+              </button>
+              <button
+                type="button"
+                className="panel-standard-btn primary"
+                onClick={handleCreateCppTemplate}
+                disabled={creatingCppTemplate}
+                style={{ fontSize: 12, padding: '6px 14px', background: '#3b82f6', borderColor: '#3b82f6', color: '#fff' }}
+              >
+                {creatingCppTemplate ? '生成中...' : '一键创建 CMake C++ 模板'}
+              </button>
+            </div>
+          </div>
+
+          {/* 工具链四件套卡片网格 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+            {/* 1. 编译器 (Compiler) */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff' }}>
+                  <span>⚙️</span>
+                  <span>C/C++ 编译器 (Compiler)</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: cppToolchain?.compiler.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: cppToolchain?.compiler.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {cppToolchain?.compiler.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace' }}>
+                命令: {cppToolchain?.compiler.command || 'clang++ / g++'}
+              </div>
+              {cppToolchain?.compiler.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8' }}>版本: {cppToolchain.compiler.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', wordBreak: 'break-all' }}>路径: {cppToolchain.compiler.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171' }}>推荐安装: {cppToolchain?.compiler.installGuide || 'xcode-select --install'}</div>
+              )}
+            </div>
+
+            {/* 2. Clangd 语言服务 (LSP) */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff' }}>
+                  <span>🧠</span>
+                  <span>Clangd 语言服务器 (LSP)</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: cppToolchain?.clangd.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: cppToolchain?.clangd.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {cppToolchain?.clangd.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace' }}>
+                命令: {cppToolchain?.clangd.command || 'clangd'}
+              </div>
+              {cppToolchain?.clangd.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8' }}>版本: {cppToolchain.clangd.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', wordBreak: 'break-all' }}>路径: {cppToolchain.clangd.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171' }}>推荐安装: {cppToolchain?.clangd.installGuide || 'brew install llvm'}</div>
+              )}
+            </div>
+
+            {/* 3. 调试器引擎 (Debugger) */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff' }}>
+                  <span>🪲</span>
+                  <span>LLDB-DAP 调试引擎 (Debugger)</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: cppToolchain?.debugger.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: cppToolchain?.debugger.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {cppToolchain?.debugger.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace' }}>
+                命令: {cppToolchain?.debugger.command || 'lldb-dap'}
+              </div>
+              {cppToolchain?.debugger.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8' }}>版本: {cppToolchain.debugger.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', wordBreak: 'break-all' }}>路径: {cppToolchain.debugger.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171' }}>推荐安装: {cppToolchain?.debugger.installGuide || 'xcode-select --install'}</div>
+              )}
+            </div>
+
+            {/* 4. CMake 构建系统 (CMake) */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff' }}>
+                  <span>🏗️</span>
+                  <span>CMake 构建系统 (Build System)</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: cppToolchain?.cmake.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: cppToolchain?.cmake.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {cppToolchain?.cmake.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace' }}>
+                命令: {cppToolchain?.cmake.command || 'cmake'}
+              </div>
+              {cppToolchain?.cmake.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8' }}>版本: {cppToolchain.cmake.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', wordBreak: 'break-all' }}>路径: {cppToolchain.cmake.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171' }}>推荐安装: {cppToolchain?.cmake.installGuide || 'brew install cmake'}</div>
+              )}
+            </div>
+          </div>
+
+          {/* C++ 核心特性卡片 */}
+          <div
+            style={{
+              padding: '16px',
+              borderRadius: 8,
+              background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#fff', marginBottom: 10 }}>
+              💡 Echoly C/C++ 快捷开发指引
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#93c5fd', marginBottom: 4 }}>⌨️ 快捷键 Alt+O</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  在编辑器中按 Alt+O (Option+O)，可在头文件 (.h / .hpp) 与源文件 (.cpp) 之间秒级跳转互切。
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>🔴 边距断点交互</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  鼠标直接点击代码行号左侧的字形边距槽，即可自由添加或移除断点红点，与 LLDB 引擎实时同步。
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>⚡ CMake 自动感知</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  只要根目录存在 CMakeLists.txt，顶部运行部件即自动解析 Targets，支持一键 Build、Run 与 CTest。
+                </div>
               </div>
             </div>
           </div>

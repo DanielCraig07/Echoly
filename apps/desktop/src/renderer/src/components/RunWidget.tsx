@@ -5,6 +5,7 @@ import {
   loadProjectRuntimeConfig,
   type ProjectRuntimeConfig,
 } from './ProjectRuntimeConfigModal';
+import { resolveDebugConfig } from '../utils/debugLauncher';
 
 interface Props {
   workspace: string | null;
@@ -38,6 +39,9 @@ export interface ScriptOption {
     | 'go'
     | 'cargo'
     | 'makefile'
+    | 'cmake'
+    | 'cpp'
+    | 'c'
     | 'custom'
     | 'generic';
   badge: string;
@@ -53,8 +57,8 @@ interface CustomConfig {
   command: string;
 }
 
-/** 尝试从文件系统多语言检测项目运行配置 */
-async function detectProjectScripts(
+/** 尝试从文件系统多语言检测项目运行配置 (包括 Java, C/C++, CMake, Python, Go, Node, Rust, Docker, Make 等) */
+export async function detectProjectScripts(
   workspace: string,
   activePath?: string | null,
   runtimeCfg?: ProjectRuntimeConfig,
@@ -312,6 +316,92 @@ async function detectProjectScripts(
         group: 'current',
         description: 'go run 运行当前文件',
       });
+    } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx' || ext === 'c' || ext === 'h' || ext === 'hpp') {
+      const isCpp = ext !== 'c';
+      const isHeader = ext === 'h' || ext === 'hpp';
+      const baseName = fileName.replace(/\.[^.]+$/, '');
+      const code = await tryRead(relPath);
+      const isWin = typeof navigator !== 'undefined' && /win/i.test(navigator.platform);
+
+      const rCfg = runtimeCfg || loadProjectRuntimeConfig(workspace);
+      const envPrefix = rCfg.envVars.trim()
+        ? (isWin ? `set "${rCfg.envVars.trim()}" && ` : `export ${rCfg.envVars.trim().replace(/,/g, ' ')} && `)
+        : '';
+      const progArgs = rCfg.programArgs.trim() ? ` ${rCfg.programArgs.trim()}` : '';
+
+      const hasMain =
+        /\b(?:int|auto)\s+main\s*\([^)]*\)/.test(code || '') ||
+        /\bmain\s*\([^)]*\)\s*\{/.test(code || '');
+      const isTest =
+        /#include\s*<gtest\/gtest\.h>/i.test(code || '') ||
+        /\bTEST(?:_F|_P)?\s*\(/i.test(code || '') ||
+        /\bTEST_CASE\s*\(/i.test(code || '');
+
+      const defaultCompiler = isWin
+        ? (isCpp ? 'g++' : 'gcc')
+        : (isCpp ? 'clang++' : 'clang');
+
+      if (isHeader) {
+        results.push({
+          id: `active:check:${relPath}`,
+          name: `语法检查: ${fileName}`,
+          command: `${envPrefix}${defaultCompiler} -fsyntax-only "${relPath}"`.trim(),
+          source: isCpp ? 'cpp' : 'c',
+          badge: isCpp ? 'C++' : 'C',
+          badgeBg: 'rgba(59, 130, 246, 0.15)',
+          badgeColor: '#60a5fa',
+          group: 'current',
+          description: `检查头文件 ${fileName} 语法有效性`,
+        });
+      } else if (isTest) {
+        const binDir = isWin ? '.echoly\\bin' : '.echoly/bin';
+        const binPath = isWin ? `${binDir}\\${baseName}_test.exe` : `${binDir}/${baseName}_test`;
+        const mkdirCmd = isWin ? `if not exist "${binDir}" mkdir "${binDir}" && ` : `mkdir -p "${binDir}" && `;
+        const testLibs = /gtest/i.test(code || '') ? ' -lgtest -lgtest_main -pthread' : '';
+        const stdFlag = isCpp ? '-std=c++17 ' : '-std=c11 ';
+        const compileCmd = `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}-g "${relPath}" -o "${binPath}"${testLibs} && "${binPath}"${progArgs}`.trim();
+        results.push({
+          id: `active:test:${relPath}`,
+          name: `测试: ${baseName}`,
+          command: compileCmd,
+          source: isCpp ? 'cpp' : 'c',
+          badge: isCpp ? 'C++ Test' : 'C Test',
+          badgeBg: 'rgba(59, 130, 246, 0.15)',
+          badgeColor: '#60a5fa',
+          group: 'current',
+          description: `编译并执行单元测试 ${baseName}`,
+        });
+      } else if (hasMain) {
+        const binDir = isWin ? '.echoly\\bin' : '.echoly/bin';
+        const binPath = isWin ? `${binDir}\\${baseName}.exe` : `${binDir}/${baseName}`;
+        const mkdirCmd = isWin ? `if not exist "${binDir}" mkdir "${binDir}" && ` : `mkdir -p "${binDir}" && `;
+        const stdFlag = isCpp ? '-std=c++17 ' : '-std=c11 ';
+        const compileCmd = `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}-g "${relPath}" -o "${binPath}" && "${binPath}"${progArgs}`.trim();
+        results.push({
+          id: `active:${relPath}`,
+          name: baseName,
+          command: compileCmd,
+          source: isCpp ? 'cpp' : 'c',
+          badge: isCpp ? 'C++' : 'C',
+          badgeBg: 'rgba(59, 130, 246, 0.15)',
+          badgeColor: '#60a5fa',
+          group: 'current',
+          description: `编译并运行 ${fileName}`,
+        });
+      } else {
+        const nullDev = isWin ? 'NUL' : '/dev/null';
+        results.push({
+          id: `active:compile:${relPath}`,
+          name: `编译检查: ${baseName}`,
+          command: `${envPrefix}${defaultCompiler} -c "${relPath}" -o ${nullDev}`.trim(),
+          source: isCpp ? 'cpp' : 'c',
+          badge: isCpp ? 'C++' : 'C',
+          badgeBg: 'rgba(59, 130, 246, 0.15)',
+          badgeColor: '#60a5fa',
+          group: 'current',
+          description: `验证编译 ${fileName} (未检测到 main 函数)`,
+        });
+      }
     }
   }
 
@@ -764,23 +854,108 @@ async function detectProjectScripts(
     );
   }
 
+  // ── 8.5. CMake 项目检测 (CMakeLists.txt) ─────────────────────────
+  const cmakeLists = await tryRead('CMakeLists.txt');
+  if (cmakeLists) {
+    const projMatch = cmakeLists.match(/project\s*\(\s*([a-zA-Z0-9_.-]+)/i);
+    const projName = projMatch ? projMatch[1] : 'Project';
+
+    // 提取 add_executable 目标
+    const targetMatches = [...cmakeLists.matchAll(/add_executable\s*\(\s*([a-zA-Z0-9_.-]+)/gi)];
+    const targets = targetMatches.map((m) => m[1]).filter(Boolean);
+
+    // 1. 全量配置并编译 (CMake: Build All)
+    results.push({
+      id: 'cmake:build',
+      name: 'CMake: Build All',
+      command: 'cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build -j',
+      source: 'cmake',
+      badge: 'CMake',
+      badgeBg: 'rgba(6, 182, 212, 0.15)',
+      badgeColor: '#06b6d4',
+      group: 'project',
+      description: `生成构建配置并全量编译 ${projName}`,
+    });
+
+    // 2. 为每个 executable 目标生成独立运行项
+    const isWin = typeof navigator !== 'undefined' && /win/i.test(navigator.platform);
+    for (const tgt of targets) {
+      const runCmd = isWin
+        ? `cmake --build build --target ${tgt} && (if exist "build\\Debug\\${tgt}.exe" (build\\Debug\\${tgt}.exe) else (build\\${tgt}.exe))`
+        : `cmake --build build --target ${tgt} && (./build/${tgt} || ./build/bin/${tgt} || ./build/Debug/${tgt})`;
+      results.push({
+        id: `cmake:run:${tgt}`,
+        name: `${tgt}`,
+        command: runCmd,
+        source: 'cmake',
+        badge: 'CMake',
+        badgeBg: 'rgba(6, 182, 212, 0.15)',
+        badgeColor: '#06b6d4',
+        group: 'project',
+        description: `构建并运行目标 ${tgt}`,
+      });
+    }
+
+    // 3. 测试支持 (若包含 enable_testing 或 add_test)
+    if (/enable_testing|add_test/i.test(cmakeLists)) {
+      results.push({
+        id: 'cmake:test',
+        name: 'CMake: Test (CTest)',
+        command: 'ctest --test-dir build --output-on-failure',
+        source: 'cmake',
+        badge: 'CTest',
+        badgeBg: 'rgba(6, 182, 212, 0.15)',
+        badgeColor: '#06b6d4',
+        group: 'project',
+        description: '执行 CTest 单元测试集',
+      });
+    }
+
+    // 4. 清理目标 (CMake: Clean)
+    results.push({
+      id: 'cmake:clean',
+      name: 'CMake: Clean',
+      command: 'cmake --build build --target clean',
+      source: 'cmake',
+      badge: 'CMake',
+      badgeBg: 'rgba(6, 182, 212, 0.15)',
+      badgeColor: '#06b6d4',
+      group: 'project',
+      description: '清理 CMake 编译缓存产物',
+    });
+  }
+
   // ── 9. Makefile 检测 ─────────────────────────────────────────────
   const makefile = await tryRead('Makefile');
   if (makefile) {
+    const rawTargets: string[] = [];
     for (const line of makefile.split(/\r?\n/)) {
       const m = line.match(/^([a-zA-Z0-9_.-]+)\s*:\s*(.*)$/);
       if (m && !m[1].startsWith('.') && !/^[A-Z0-9_]+$/.test(m[1])) {
-        results.push({
-          id: `make:${m[1]}`,
-          name: m[1],
-          command: `make ${m[1]}`,
-          source: 'makefile',
-          badge: 'Make',
-          badgeBg: 'rgba(148, 163, 184, 0.15)',
-          badgeColor: '#94a3b8',
-          group: 'project',
-        });
+        rawTargets.push(m[1]);
       }
+    }
+    // 优先常用目标排序: all, build, run, test, clean
+    const priority = ['all', 'build', 'run', 'start', 'test', 'clean'];
+    rawTargets.sort((a, b) => {
+      const ia = priority.indexOf(a);
+      const ib = priority.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
+    for (const target of rawTargets) {
+      results.push({
+        id: `make:${target}`,
+        name: target,
+        command: `make ${target}`,
+        source: 'makefile',
+        badge: 'Make',
+        badgeBg: 'rgba(148, 163, 184, 0.15)',
+        badgeColor: '#94a3b8',
+        group: 'project',
+      });
     }
   }
 
@@ -1030,6 +1205,78 @@ export function RunWidget({
     onRunCommand(currentOption.command, undefined, termType, termTitle);
   }, [currentOption, isBottomExpanded, onExpandBottom, onRunCommand]);
 
+  const handleDebug = useCallback(async () => {
+    if (!currentOption) return;
+
+    const rCfg = loadProjectRuntimeConfig(workspace);
+    if (rCfg.showSettingsBeforeRun) {
+      setRuntimeConfigModalOpen(true);
+      return;
+    }
+
+    if (!isBottomExpanded) {
+      onExpandBottom();
+    }
+    setIsRunning(true);
+
+    const dbgConfig = resolveDebugConfig(currentOption, activePath);
+
+    window.dispatchEvent(
+      new CustomEvent('echoly:startDebug', {
+        detail: {
+          language: dbgConfig.language,
+          port: dbgConfig.port,
+          name: currentOption.name,
+          command: dbgConfig.command,
+        },
+      }),
+    );
+
+    if (dbgConfig.type === 'dap') {
+      let binPath = '';
+      if (currentOption.source === 'cmake') {
+        const tgtMatch = currentOption.id.match(/^cmake:run:(.+)$/);
+        const tgt = tgtMatch ? tgtMatch[1] : 'app';
+        binPath = `build/${tgt}`;
+      } else {
+        const fileMatch = currentOption.id.match(/^active:(.+)$/);
+        const relPath = fileMatch ? fileMatch[1] : (activePath || '');
+        const baseName = (relPath.split('/').pop() || '').replace(/\.[^.]+$/, '');
+        binPath = `.echoly/bin/${baseName}`;
+      }
+
+      let buildCmd = currentOption.command;
+      if (buildCmd.includes(' && ')) {
+        buildCmd = buildCmd.split(' && ')[0];
+      }
+
+      onRunCommand(buildCmd, undefined, dbgConfig.terminalType, dbgConfig.terminalTitle);
+      onShowToast?.('启动 C/C++ 调试', dbgConfig.toastMessage, 'info');
+
+      setTimeout(async () => {
+        try {
+          if (window.ide?.dapStartSession) {
+            const res = await window.ide.dapStartSession({
+              program: binPath,
+              cwd: workspace || undefined,
+              stopOnEntry: false,
+            });
+            if (!res.success) {
+              console.warn('[RunWidget] DAP startSession failed:', res.error);
+            }
+          }
+        } catch (err) {
+          console.error('[RunWidget] Failed to launch debug session:', err);
+        }
+      }, 1200);
+      return;
+    }
+
+    // 针对 Java (JDWP)、Python (debugpy)、Node.js (inspect)、Go (Delve) 等多语言调试
+    onRunCommand(dbgConfig.command, undefined, dbgConfig.terminalType, dbgConfig.terminalTitle);
+    onShowToast?.('启动调试', dbgConfig.toastMessage, 'info');
+  }, [currentOption, isBottomExpanded, onExpandBottom, onRunCommand, onShowToast, activePath, workspace]);
+
   // 监听进程执行结束或报错事件，自动解除 isRunning 运行状态
   useEffect(() => {
     const handleRunFinished = () => {
@@ -1088,9 +1335,9 @@ export function RunWidget({
         background: 'var(--bg-elevated, #222226)',
         border: '1px solid rgba(255, 255, 255, 0.12)',
         borderRadius: 6,
-        height: 28,
-        padding: '0 3px',
-        gap: 3,
+        height: 30,
+        padding: '0 4px',
+        gap: 4,
         position: 'relative',
         fontSize: 12,
         userSelect: 'none',
@@ -1562,9 +1809,9 @@ export function RunWidget({
       <div
         style={{
           width: 1,
-          height: 14,
-          background: 'rgba(255, 255, 255, 0.12)',
-          margin: '0 1px',
+          height: 16,
+          background: 'rgba(255, 255, 255, 0.14)',
+          margin: '0 2px',
         }}
       />
 
@@ -1583,12 +1830,12 @@ export function RunWidget({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 22,
-            height: 22,
+            width: 26,
+            height: 26,
             background: currentOption ? '#22c55e' : 'rgba(255, 255, 255, 0.1)',
             color: '#fff',
             border: 'none',
-            borderRadius: 4,
+            borderRadius: 5,
             cursor: currentOption ? 'pointer' : 'not-allowed',
             padding: 0,
             opacity: currentOption ? 1 : 0.4,
@@ -1601,8 +1848,8 @@ export function RunWidget({
             if (currentOption) e.currentTarget.style.background = '#22c55e';
           }}
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="5 3 19 12 5 21 5 3" />
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="6 4 20 12 6 20 6 4" />
           </svg>
         </button>
       ) : (
@@ -1614,12 +1861,12 @@ export function RunWidget({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 22,
-            height: 22,
+            width: 26,
+            height: 26,
             background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
             color: '#ffffff',
             border: '1px solid rgba(239, 68, 68, 0.4)',
-            borderRadius: 4,
+            borderRadius: 5,
             cursor: 'pointer',
             padding: 0,
             boxShadow: '0 0 8px rgba(239, 68, 68, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25)',
@@ -1642,11 +1889,71 @@ export function RunWidget({
             e.currentTarget.style.transform = 'scale(1.05)';
           }}
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
             <rect x="5" y="5" width="14" height="14" rx="2.5" />
           </svg>
         </button>
       )}
+
+      {/* 调试按钮 🪲 (加大至 26x26px，高对比度图标与醒目轮廓) */}
+      <button
+        type="button"
+        onClick={handleDebug}
+        disabled={!currentOption}
+        title={
+          currentOption
+            ? `启动调试 (Debug): ${currentOption.name}`
+            : '请先选择一个运行配置'
+        }
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 26,
+          height: 26,
+          background: currentOption ? 'rgba(56, 189, 248, 0.12)' : 'transparent',
+          color: currentOption ? '#38bdf8' : 'rgba(255, 255, 255, 0.2)',
+          border: currentOption ? '1px solid rgba(56, 189, 248, 0.28)' : '1px solid transparent',
+          borderRadius: 5,
+          cursor: currentOption ? 'pointer' : 'not-allowed',
+          padding: 0,
+          opacity: currentOption ? 1 : 0.4,
+          transition: 'all 0.15s ease',
+          boxShadow: currentOption ? '0 1px 3px rgba(0, 0, 0, 0.2)' : 'none',
+        }}
+        onMouseEnter={(e) => {
+          if (currentOption) {
+            e.currentTarget.style.background = 'rgba(56, 189, 248, 0.22)';
+            e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.5)';
+            e.currentTarget.style.color = '#7dd3fc';
+            e.currentTarget.style.transform = 'scale(1.05)';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (currentOption) {
+            e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
+            e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.28)';
+            e.currentTarget.style.color = '#38bdf8';
+            e.currentTarget.style.transform = 'scale(1)';
+          }
+        }}
+        onMouseDown={(e) => {
+          if (currentOption) e.currentTarget.style.transform = 'scale(0.95)';
+        }}
+        onMouseUp={(e) => {
+          if (currentOption) e.currentTarget.style.transform = 'scale(1.05)';
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="8" y="9" width="8" height="10" rx="4" />
+          <line x1="6" y1="4" x2="8" y2="7" />
+          <line x1="18" y1="4" x2="16" y2="7" />
+          <line x1="4" y1="11" x2="8" y2="11" />
+          <line x1="20" y1="11" x2="16" y2="11" />
+          <line x1="4" y1="15" x2="8" y2="15" />
+          <line x1="20" y1="15" x2="16" y2="15" />
+        </svg>
+      </button>
 
       {/* 运行时参数配置按钮 ⚙ */}
       <button
@@ -1659,7 +1966,7 @@ export function RunWidget({
             : '项目全局运行时参数配置 (VM Options / 启动参数 / 环境预设)'
         }
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>

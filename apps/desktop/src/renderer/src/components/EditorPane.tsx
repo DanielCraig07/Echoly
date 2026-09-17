@@ -7,13 +7,15 @@ import type {
   OpenTab,
   PendingDiff,
   UiTheme,
+  DapBreakpoint,
 } from '@deepseek-ide/shared';
 import { isImagePath, isUntitledPath, languageFromPath, untitledTabLabel } from '../utils';
 import { RenderFileTreeIcon } from './FileTree';
 import { MarkdownMessage, extractMarkdownHeadings, type MarkdownHeadingItem } from './MarkdownMessage';
 import { WelcomeView } from './WelcomeView';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
-import { setupCmdClickGesture, navigateBack, highlightJumpLocation, navigationStack } from '../services/symbolNavigation';
+import { setupCmdClickGesture, navigateBack, highlightJumpLocation, navigationStack, switchSourceHeader } from '../services/symbolNavigation';
+import * as monaco from 'monaco-editor';
 
 interface Props {
   tabs: OpenTab[];
@@ -568,6 +570,112 @@ export function EditorPane({
     nonce: number;
   } | null>(null);
   const monacoTheme = uiTheme === 'light' ? 'custom-light' : 'custom-dark';
+
+  // ── C/C++ DAP 调试与断点状态 ──
+  const [breakpoints, setBreakpoints] = useState<DapBreakpoint[]>(() => {
+    try {
+      const raw = localStorage.getItem('echoly.dap.breakpoints');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [isDebugging, setIsDebugging] = useState(false);
+  const [debugState, setDebugState] = useState<'running' | 'paused' | 'stopped'>('stopped');
+  const [debugStoppedInfo, setDebugStoppedInfo] = useState<{ path: string; line: number } | null>(null);
+  const debugDecorationsRef = useRef<string[]>([]);
+
+  const toggleBreakpoint = useCallback((targetPath: string, line: number) => {
+    setBreakpoints((prev) => {
+      const exists = prev.some((b) => b.path === targetPath && b.line === line);
+      const next = exists
+        ? prev.filter((b) => !(b.path === targetPath && b.line === line))
+        : [...prev, { path: targetPath, line, verified: true }];
+
+      try {
+        localStorage.setItem('echoly.dap.breakpoints', JSON.stringify(next));
+      } catch {}
+
+      const fileLines = next.filter((b) => b.path === targetPath).map((b) => b.line);
+      void window.ide?.dapSetBreakpoints?.(targetPath, fileLines);
+
+      return next;
+    });
+  }, []);
+
+  // 监听 DAP 调试事件
+  useEffect(() => {
+    if (!window.ide?.onDapEvent) return;
+
+    const unlisten = window.ide.onDapEvent((ev) => {
+      if (ev.type === 'stopped') {
+        setIsDebugging(true);
+        setDebugState('paused');
+      } else if (ev.type === 'continued') {
+        setDebugState('running');
+        setDebugStoppedInfo(null);
+      } else if (ev.type === 'terminated' || ev.type === 'exited') {
+        setIsDebugging(false);
+        setDebugState('stopped');
+        setDebugStoppedInfo(null);
+      }
+    });
+
+    const handleStartDebug = () => {
+      setIsDebugging(true);
+      setDebugState('running');
+    };
+    window.addEventListener('echoly:startDebug', handleStartDebug);
+
+    return () => {
+      unlisten();
+      window.removeEventListener('echoly:startDebug', handleStartDebug);
+    };
+  }, []);
+
+  // 同步断点与命中断点行高亮至 Monaco 装订线
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed || !activePath) return;
+
+    const fileBps = breakpoints.filter((b) => b.path === activePath);
+    const newDecs: MonacoEditor.IModelDeltaDecoration[] = fileBps.map((bp) => ({
+      range: new monaco.Range(bp.line, 1, bp.line, 1),
+      options: {
+        isWholeLine: false,
+        glyphMarginClassName: 'debug-breakpoint-glyph',
+        glyphMarginHoverMessage: { value: `断点: 第 ${bp.line} 行` },
+      },
+    }));
+
+    if (debugStoppedInfo && debugStoppedInfo.path === activePath) {
+      newDecs.push({
+        range: new monaco.Range(debugStoppedInfo.line, 1, debugStoppedInfo.line, 1),
+        options: {
+          isWholeLine: true,
+          className: 'debug-stopped-line-highlight',
+          glyphMarginClassName: 'debug-stopped-line-glyph',
+        },
+      });
+    }
+
+    debugDecorationsRef.current = ed.deltaDecorations(debugDecorationsRef.current, newDecs);
+  }, [activePath, breakpoints, debugStoppedInfo]);
+
+  // Alt+O 快速在头文件与源文件之间切换 (.h <-> .cpp)
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'o' || e.key === 'O')) {
+        e.preventDefault();
+        if (activePath && onOpenFileRef.current) {
+          void switchSourceHeader(activePath, (p) => onOpenFileRef.current?.(p));
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [activePath]);
 
   const lastCursorPosRef = useRef<{ path: string; line: number; column: number } | null>(null);
   const isNavigatingBackRef = useRef(false);
@@ -2709,6 +2817,80 @@ export function EditorPane({
           </div>
         )}
 
+        {/* C/C++ 浮动调试控制条 */}
+        {isDebugging && (
+          <div className="floating-debug-toolbar">
+            {debugState === 'paused' ? (
+              <button
+                type="button"
+                className="debug-toolbar-btn"
+                onClick={() => window.ide?.dapContinue?.()}
+                title="继续执行 (F5)"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#22c55e">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="debug-toolbar-btn"
+                onClick={() => window.ide?.dapPause?.()}
+                title="暂停执行 (F6)"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#facc15">
+                  <rect x="6" y="4" width="4" height="16" />
+                  <rect x="14" y="4" width="4" height="16" />
+                </svg>
+              </button>
+            )}
+            <button
+              type="button"
+              className="debug-toolbar-btn"
+              onClick={() => window.ide?.dapStepOver?.()}
+              title="单步跳过 (F10)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <polyline points="19 12 12 19 5 12" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="debug-toolbar-btn"
+              onClick={() => window.ide?.dapStepInto?.()}
+              title="单步步入 (F11)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="7 13 12 18 17 13" />
+                <polyline points="7 6 12 11 17 6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="debug-toolbar-btn"
+              onClick={() => window.ide?.dapStepOut?.()}
+              title="单步步出 (Shift+F11)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="7 11 12 6 17 11" />
+                <polyline points="7 18 12 13 17 18" />
+              </svg>
+            </button>
+            <div className="debug-toolbar-divider" />
+            <button
+              type="button"
+              className="debug-toolbar-btn"
+              onClick={() => window.ide?.dapStopSession?.()}
+              title="停止调试 (Shift+F5)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="#ef4444">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+              </svg>
+            </button>
+          </div>
+        )}
+
         {active && isImage ? (
           <div className="image-preview-pane">
             {active.previewUrl ? (
@@ -2835,6 +3017,10 @@ export function EditorPane({
                       isGitGutterEl
                     ) {
                       const line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
+                      if (e.target.type === 2 && line && active?.path) {
+                        toggleBreakpoint(active.path, line);
+                        return;
+                      }
                       if (line && modifiedRangesRef.current.length > 0) {
                         const isModifiedLine = modifiedRangesRef.current.some(
                           (r) => line >= r.start && line <= r.end,
@@ -2872,7 +3058,7 @@ export function EditorPane({
                   wordWrap: wordWrap ? 'on' : 'off',
                   lineNumbersMinChars: 4,
                   lineDecorationsWidth: 10,
-                  glyphMargin: false,
+                  glyphMargin: true,
                   folding: true,
                   overviewRulerLanes: 3,
                   overviewRulerBorder: false,
@@ -3219,6 +3405,10 @@ export function EditorPane({
                     isGitGutterEl
                   ) {
                     const line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
+                    if (e.target.type === 2 && line && active?.path) {
+                      toggleBreakpoint(active.path, line);
+                      return;
+                    }
                     if (line && modifiedRangesRef.current.length > 0) {
                       const isModifiedLine = modifiedRangesRef.current.some(
                         (r) => line >= r.start && line <= r.end,
@@ -3262,7 +3452,7 @@ export function EditorPane({
                 scrollBeyondLastColumn: 0,
                 lineNumbersMinChars: 4,
                 lineDecorationsWidth: 10,
-                glyphMargin: false,
+                glyphMargin: true,
                 folding: true,
                 overviewRulerLanes: 3,
                 overviewRulerBorder: false,

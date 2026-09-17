@@ -3,17 +3,20 @@ import { BrowserWindow, type WebContents } from 'electron';
 import { WorkspaceService } from './workspace';
 import { DiffStore } from './diffStore';
 import { LspService } from './lspService';
+import { DapService } from './dapService';
 
 /** Per-BrowserWindow workspace + diffs (multi-window isolation). */
 export class WindowSession {
   readonly workspace = new WorkspaceService();
   readonly diffs = new DiffStore(this.workspace);
   readonly lsp = new LspService(() => this.workspace);
+  readonly dap = new DapService(() => this.workspace);
 
   constructor(readonly webContentsId: number) {}
 
   dispose(): void {
     this.lsp.dispose();
+    this.dap.dispose();
   }
 }
 
@@ -44,6 +47,12 @@ export class WindowRegistry {
         (w) => !w.isDestroyed() && w.webContents.id === id,
       );
       if (win) win.webContents.send('workspace:changed', info);
+    });
+    session.dap.on('event', (event) => {
+      const win = BrowserWindow.getAllWindows().find(
+        (w) => !w.isDestroyed() && w.webContents.id === id,
+      );
+      if (win) win.webContents.send('dap:event', event);
     });
     wc.once('destroyed', () => {
       const s = this.sessions.get(id);

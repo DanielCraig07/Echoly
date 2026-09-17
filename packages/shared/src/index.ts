@@ -977,6 +977,33 @@ export interface IpcApi {
   lspGetDefinition: (filePath: string, line: number, column: number) => Promise<LspLocation[]>;
   /** LSP 语言服务器同步文档内容 */
   lspNotifyDocument: (filePath: string, content: string, languageId?: string) => Promise<void>;
+  /** LSP C/C++ 头文件与源文件快速切换 (Alt+O) */
+  lspSwitchSourceHeader?: (filePath: string) => Promise<string | null>;
+
+  /** 检测系统 C/C++ 工具链状态 (编译器, Clangd, 调试器, CMake) */
+  cppCheckToolchain?: () => Promise<CppToolchainStatus>;
+
+  /** DAP 调试会话管理 */
+  dapStartSession?: (config: {
+    program: string;
+    args?: string[];
+    cwd?: string;
+    env?: Record<string, string>;
+    stopOnEntry?: boolean;
+  }) => Promise<{ success: boolean; error?: string }>;
+  dapStopSession?: () => Promise<void>;
+  dapSetBreakpoints?: (filePath: string, lines: number[]) => Promise<DapBreakpoint[]>;
+  dapContinue?: () => Promise<void>;
+  dapStepOver?: () => Promise<void>;
+  dapStepInto?: () => Promise<void>;
+  dapStepOut?: () => Promise<void>;
+  dapPause?: () => Promise<void>;
+  dapGetThreads?: () => Promise<DapThread[]>;
+  dapGetStackTrace?: (threadId: number) => Promise<DapStackFrame[]>;
+  dapGetScopes?: (frameId: number) => Promise<DapScope[]>;
+  dapGetVariables?: (variablesReference: number) => Promise<DapVariable[]>;
+  dapEvaluate?: (expression: string, frameId?: number) => Promise<{ result: string; type?: string }>;
+  onDapEvent?: (cb: (event: DapEvent) => void) => () => void;
 
   /** 在访达/资源管理器中显示指定文件 */
   showItemInFolder: (fullPath: string) => Promise<void>;
@@ -998,6 +1025,76 @@ export interface IpcApi {
   onJavaInstallProgress: (cb: (progress: JdkInstallProgress) => void) => () => void;
   /** 打开系统设置（如 macOS 本地网络隐私设置） */
   openSystemSettings?: (type?: string) => Promise<boolean>;
+}
+
+export interface CppToolItem {
+  name: string;
+  command: string;
+  path?: string;
+  version?: string;
+  installed: boolean;
+  installGuide?: string;
+}
+
+export interface CppToolchainStatus {
+  compiler: CppToolItem;
+  clangd: CppToolItem;
+  debugger: CppToolItem;
+  cmake: CppToolItem;
+}
+
+export interface DapBreakpoint {
+  id?: number;
+  path: string;
+  line: number;
+  verified?: boolean;
+}
+
+export interface DapThread {
+  id: number;
+  name: string;
+}
+
+export interface DapStackFrame {
+  id: number;
+  name: string;
+  source?: {
+    path?: string;
+    name?: string;
+  };
+  line: number;
+  column: number;
+}
+
+export interface DapScope {
+  name: string;
+  variablesReference: number;
+  expensive?: boolean;
+}
+
+export interface DapVariable {
+  name: string;
+  value: string;
+  type?: string;
+  variablesReference: number;
+}
+
+export type DapEventType =
+  | 'stopped'
+  | 'continued'
+  | 'output'
+  | 'terminated'
+  | 'exited'
+  | 'breakpoint';
+
+export interface DapEvent {
+  type: DapEventType;
+  reason?: string;
+  threadId?: number;
+  hitBreakpointIds?: number[];
+  category?: string;
+  output?: string;
+  exitCode?: number;
 }
 
 export interface InstalledJdkInfo {

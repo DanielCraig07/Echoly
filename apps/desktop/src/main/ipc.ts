@@ -20,6 +20,7 @@ import type { SshSessionManager } from './ssh/SshSessionManager';
 import type { WindowRegistry } from './windowRegistry';
 import { detectMavenEnvironment, initMavenWrapper, initMavenSettings } from './mavenService';
 import { detectInstalledJdks, getAvailableOnlineJdks, installOnlineJdk } from './javaService';
+import { detectCppToolchain } from './cppToolchainService';
 
 export function registerIpc(deps: {
   ipcMain: IpcMain;
@@ -323,6 +324,52 @@ export function registerIpc(deps: {
     'lsp:notifyDocument',
     (e, filePath: string, content: string, languageId?: string) =>
       run(e, () => registry.current().lsp.notifyDocument(filePath, content, languageId)),
+  );
+  ipcMain.handle('lsp:switchSourceHeader', (e, filePath: string) =>
+    run(e, () => registry.current().lsp.switchSourceHeader(filePath)),
+  );
+
+  // ── C/C++ Toolchain & DAP Debugger ──
+  ipcMain.handle('cpp:checkToolchain', () => detectCppToolchain());
+
+  ipcMain.handle('dap:startSession', (e, config) =>
+    run(e, () => registry.current().dap.startSession(config)),
+  );
+  ipcMain.handle('dap:stopSession', (e) =>
+    run(e, () => registry.current().dap.stopSession()),
+  );
+  ipcMain.handle('dap:setBreakpoints', (e, filePath: string, lines: number[]) =>
+    run(e, () => registry.current().dap.setBreakpoints(filePath, lines)),
+  );
+  ipcMain.handle('dap:continue', (e) =>
+    run(e, () => registry.current().dap.continue()),
+  );
+  ipcMain.handle('dap:stepOver', (e) =>
+    run(e, () => registry.current().dap.stepOver()),
+  );
+  ipcMain.handle('dap:stepInto', (e) =>
+    run(e, () => registry.current().dap.stepInto()),
+  );
+  ipcMain.handle('dap:stepOut', (e) =>
+    run(e, () => registry.current().dap.stepOut()),
+  );
+  ipcMain.handle('dap:pause', (e) =>
+    run(e, () => registry.current().dap.pause()),
+  );
+  ipcMain.handle('dap:getThreads', (e) =>
+    run(e, () => registry.current().dap.getThreads()),
+  );
+  ipcMain.handle('dap:getStackTrace', (e, threadId?: number) =>
+    run(e, () => registry.current().dap.getStackTrace(threadId)),
+  );
+  ipcMain.handle('dap:getScopes', (e, frameId: number) =>
+    run(e, () => registry.current().dap.getScopes(frameId)),
+  );
+  ipcMain.handle('dap:getVariables', (e, variablesReference: number) =>
+    run(e, () => registry.current().dap.getVariables(variablesReference)),
+  );
+  ipcMain.handle('dap:evaluate', (e, expression: string, frameId?: number) =>
+    run(e, () => registry.current().dap.evaluate(expression, frameId)),
   );
 
   ipcMain.handle('maven:checkEnv', (e) =>

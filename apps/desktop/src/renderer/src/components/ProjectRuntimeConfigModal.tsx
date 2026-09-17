@@ -258,7 +258,23 @@ export function ProjectRuntimeConfigModal({
 
   // 计算示例实时命令预览
   const previewCommand = useMemo(() => {
-    const activeFileName = activePath ? activePath.split('/').pop() : '';
+    const activeFileName = activePath ? activePath.split('/').pop() || '' : '';
+    const isCpp = /\.(cpp|cc|cxx|hpp|hh)$/i.test(activeFileName);
+    const isC = /\.(c|h)$/i.test(activeFileName);
+
+    if (isCpp || isC) {
+      const baseName = activeFileName.replace(/\.[^.]+$/, '');
+      const compiler = isCpp ? 'clang++' : 'clang';
+      const stdFlag = isCpp ? '-std=c++17 ' : '-std=c11 ';
+      const progArgs = config.programArgs.trim() ? ` ${config.programArgs.trim()}` : '';
+      const logRedirect = config.saveConsoleToFile ? ' | tee -a .echoly/logs/run.log' : '';
+      let cmd = `mkdir -p .echoly/bin && ${compiler} ${stdFlag}-g "${activeFileName}" -o ".echoly/bin/${baseName}" && "./echoly/bin/${baseName}"${progArgs}${logRedirect}`;
+      if (config.envVars.trim()) {
+        return `export ${config.envVars.trim().replace(/,/g, ' ')} && ${cmd}`;
+      }
+      return cmd;
+    }
+
     const className = activeFileName?.replace(/\.java$/, '') || 'TechnologyTacticsJob';
 
     const compilePhase = config.skipBuildBeforeRun ? '' : 'compile ';
@@ -325,7 +341,6 @@ export function ProjectRuntimeConfigModal({
             className="panel-action-btn"
             onClick={onClose}
             title="关闭"
-            style={{ fontSize: 14 }}
           >
             ✕
           </button>

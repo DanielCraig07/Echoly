@@ -634,12 +634,20 @@ export async function findDefinitionLocations(
   const currentUri = model.uri;
   const root = opts?.getWorkspaceRoot?.();
 
-  // ── Tier 1: Pyright Language Server (Python) ──────────────────────────────
-  if (lang === 'python' && window.ide?.lspGetDefinition) {
+  // ── Tier 1: LSP Language Server (Python via Pyright, C/C++ via Clangd) ────
+  const isLspLang =
+    lang === 'python' ||
+    lang === 'cpp' ||
+    lang === 'c' ||
+    /\.(cpp|cc|cxx|c|h|hpp|hh|hxx)$/i.test(currentUri.fsPath || currentUri.path || '');
+
+  if (isLspLang && window.ide?.lspGetDefinition) {
     try {
       const currentPath = currentUri.fsPath || currentUri.path || '';
+      const lspLangId =
+        lang === 'python' ? 'python' : (lang === 'c' || currentPath.endsWith('.c') ? 'c' : 'cpp');
       if (window.ide.lspNotifyDocument) {
-        void window.ide.lspNotifyDocument(currentPath, model.getValue(), 'python');
+        void window.ide.lspNotifyDocument(currentPath, model.getValue(), lspLangId);
       }
       const lspHits = await window.ide.lspGetDefinition(
         currentPath,
@@ -1519,3 +1527,24 @@ export function setupSymbolNavigation(opts: SymbolNavigationOptions): { dispose:
   activeNavigationController = controller;
   return controller;
 }
+
+/**
+ * 切换当前 C/C++ 文件的头文件与源文件 (.cpp <-> .h)
+ */
+export async function switchSourceHeader(
+  activePath: string,
+  onOpenFile: (path: string) => void,
+): Promise<boolean> {
+  if (!activePath || !window.ide?.lspSwitchSourceHeader) return false;
+  try {
+    const counterpart = await window.ide.lspSwitchSourceHeader(activePath);
+    if (counterpart) {
+      onOpenFile(counterpart);
+      return true;
+    }
+  } catch (err) {
+    console.warn('[symbolNavigation] switchSourceHeader error:', err);
+  }
+  return false;
+}
+

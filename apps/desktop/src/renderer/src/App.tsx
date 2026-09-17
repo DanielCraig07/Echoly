@@ -22,12 +22,14 @@ import type {
   UiTheme,
   WorkspaceInfo,
   ModelProfile,
+  DapBreakpoint,
 } from '@deepseek-ide/shared';
 import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, DEFAULT_MODELS } from '@deepseek-ide/shared';
 import { FileTree, type FileTreeHandle } from './components/FileTree';
 import { EditorPane } from './components/EditorPane';
 import { ChatPanel, type ChatPanelHandle } from './components/ChatPanel';
 import { TerminalPanel } from './components/TerminalPanel';
+import { DebugPanel } from './components/DebugPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { OpenWorkspaceModal } from './components/OpenWorkspaceModal';
 import { CloneRepoModal } from './components/CloneRepoModal';
@@ -1078,6 +1080,86 @@ export function App() {
       void window.ide.saveSettings({ layout: next });
     }, 300);
   }, []);
+
+  // ── C/C++ 调试会话与底部面板标签 ──
+  const [bottomTab, setBottomTab] = useState<'terminal' | 'debug'>('terminal');
+  const [isDebugging, setIsDebugging] = useState(false);
+  const [debugState, setDebugState] = useState<'running' | 'paused' | 'stopped'>('stopped');
+  const [breakpoints, setBreakpoints] = useState<DapBreakpoint[]>(() => {
+    try {
+      const raw = localStorage.getItem('echoly.dap.breakpoints');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleToggleBreakpoint = useCallback((path: string, line: number) => {
+    setBreakpoints((prev) => {
+      const exists = prev.some((b) => b.path === path && b.line === line);
+      const next = exists
+        ? prev.filter((b) => !(b.path === path && b.line === line))
+        : [...prev, { path, line, verified: true }];
+      try {
+        localStorage.setItem('echoly.dap.breakpoints', JSON.stringify(next));
+      } catch {}
+      const fileLines = next.filter((b) => b.path === path).map((b) => b.line);
+      void window.ide?.dapSetBreakpoints?.(path, fileLines);
+      return next;
+    });
+  }, []);
+
+  const handleClearBreakpoints = useCallback(() => {
+    setBreakpoints([]);
+    try {
+      localStorage.setItem('echoly.dap.breakpoints', '[]');
+    } catch {}
+  }, []);
+
+  // 监听调试事件以自动展开底部调试面板
+  useEffect(() => {
+    if (!window.ide?.onDapEvent) return;
+    const unlisten = window.ide.onDapEvent((ev) => {
+      if (ev.type === 'stopped') {
+        setIsDebugging(true);
+        setDebugState('paused');
+        setBottomTab('debug');
+        setLayout((prev) => {
+          if (!prev.bottomPanelExpanded) {
+            const next = { ...prev, bottomPanelExpanded: true };
+            persistLayout(next);
+            return next;
+          }
+          return prev;
+        });
+      } else if (ev.type === 'continued') {
+        setDebugState('running');
+      } else if (ev.type === 'terminated' || ev.type === 'exited') {
+        setIsDebugging(false);
+        setDebugState('stopped');
+      }
+    });
+
+    const handleStartDebug = () => {
+      setIsDebugging(true);
+      setDebugState('running');
+      setBottomTab('debug');
+      setLayout((prev) => {
+        if (!prev.bottomPanelExpanded) {
+          const next = { ...prev, bottomPanelExpanded: true };
+          persistLayout(next);
+          return next;
+        }
+        return prev;
+      });
+    };
+    window.addEventListener('echoly:startDebug', handleStartDebug);
+
+    return () => {
+      unlisten();
+      window.removeEventListener('echoly:startDebug', handleStartDebug);
+    };
+  }, [persistLayout]);
 
   const startResize = useCallback(
     (axis: ResizeAxis, e: ReactMouseEvent) => {
@@ -2807,22 +2889,122 @@ export function App() {
                 style={{
                   height: layout.bottomPanelExpanded === true ? layout.bottomHeight : 0,
                   display: layout.bottomPanelExpanded === true ? 'flex' : 'none',
+                  flexDirection: 'column',
                   overflow: 'hidden',
                 }}
               >
-                <TerminalPanel
-                  key={`${terminalKind}-${terminalKey}`}
-                  terminalKind={terminalKind}
-                  uiTheme={uiTheme}
-                  openRequest={terminalOpenRequest}
-                  visible={layout.bottomPanelExpanded === true}
-                  scrollback={terminalScrollback}
-                  onCollapse={() => {
-                    const next = { ...layout, bottomPanelExpanded: false };
-                    setLayout(next);
-                    persistLayout(next);
+                {/* 底部面板模式切换工具栏 */}
+                <div
+                  style={{
+                    height: 28,
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    borderBottom: '1px solid var(--border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0 8px',
+                    flexShrink: 0,
                   }}
-                />
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button
+                      type="button"
+                      onClick={() => setBottomTab('terminal')}
+                      style={{
+                        padding: '3px 10px',
+                        border: 'none',
+                        background: bottomTab === 'terminal' ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))' : 'transparent',
+                        color: bottomTab === 'terminal' ? 'var(--text-bright, #fff)' : 'var(--muted)',
+                        borderRadius: 4,
+                        fontSize: 11.5,
+                        fontWeight: bottomTab === 'terminal' ? 600 : 400,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <span>💻</span>
+                      <span>终端 (Terminal)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBottomTab('debug')}
+                      style={{
+                        padding: '3px 10px',
+                        border: 'none',
+                        background: bottomTab === 'debug' ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))' : 'transparent',
+                        color: bottomTab === 'debug' ? 'var(--text-bright, #fff)' : 'var(--muted)',
+                        borderRadius: 4,
+                        fontSize: 11.5,
+                        fontWeight: bottomTab === 'debug' ? 600 : 400,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <span>🪲</span>
+                      <span>调试控制台 (Debug)</span>
+                      {isDebugging && (
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: debugState === 'paused' ? '#facc15' : '#22c55e',
+                          }}
+                        />
+                      )}
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="panel-action-btn"
+                    onClick={() => {
+                      const next = { ...layout, bottomPanelExpanded: false };
+                      setLayout(next);
+                      persistLayout(next);
+                    }}
+                    title="折叠面板"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div style={{ flex: 1, overflow: 'hidden', display: bottomTab === 'terminal' ? 'flex' : 'none' }}>
+                  <TerminalPanel
+                    key={`${terminalKind}-${terminalKey}`}
+                    terminalKind={terminalKind}
+                    uiTheme={uiTheme}
+                    openRequest={terminalOpenRequest}
+                    visible={layout.bottomPanelExpanded === true && bottomTab === 'terminal'}
+                    scrollback={terminalScrollback}
+                    onCollapse={() => {
+                      const next = { ...layout, bottomPanelExpanded: false };
+                      setLayout(next);
+                      persistLayout(next);
+                    }}
+                  />
+                </div>
+
+                <div style={{ flex: 1, overflow: 'hidden', display: bottomTab === 'debug' ? 'flex' : 'none' }}>
+                  <DebugPanel
+                    breakpoints={breakpoints}
+                    onToggleBreakpoint={handleToggleBreakpoint}
+                    onClearBreakpoints={handleClearBreakpoints}
+                    onOpenFile={(p, l, c) => void openFile(p, l, c)}
+                    isDebugging={isDebugging}
+                    debugState={debugState}
+                    onContinue={() => window.ide?.dapContinue?.()}
+                    onPause={() => window.ide?.dapPause?.()}
+                    onStepOver={() => window.ide?.dapStepOver?.()}
+                    onStepInto={() => window.ide?.dapStepInto?.()}
+                    onStepOut={() => window.ide?.dapStepOut?.()}
+                    onStop={() => window.ide?.dapStopSession?.()}
+                  />
+                </div>
               </div>
             </>
           )}

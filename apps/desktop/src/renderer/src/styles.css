@@ -326,12 +326,12 @@ textarea:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   background: transparent;
   color: #ffffff;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 5px;
   cursor: pointer;
   padding: 0;
   position: relative;
@@ -15167,3 +15167,187 @@ body.resizing.resizing-row {
 .maven-panel select:focus {
   border-color: var(--accent, #4c8dff) !important;
 }
+
+/* ==========================================================================
+   C/C++ DAP 调试系统样式 (Breakpoints, Floating Toolbar, DebugPanel)
+   ========================================================================== */
+
+/* Monaco 编辑器断点红点标记 */
+.debug-breakpoint-glyph {
+  position: relative;
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 50% !important;
+  background: #ef4444 !important;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.75) !important;
+  margin-left: 6px !important;
+  margin-top: 5px !important;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.debug-breakpoint-glyph:hover {
+  transform: scale(1.2);
+}
+
+/* Monaco 编辑器停顿行黄色高亮与箭头标记 */
+.debug-stopped-line-glyph {
+  width: 10px !important;
+  height: 10px !important;
+  margin-left: 5px !important;
+  margin-top: 4px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23facc15'%3E%3Cpolygon points='5 3 19 12 5 21 5 3'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.8));
+}
+
+.debug-stopped-line-highlight {
+  background: rgba(234, 179, 8, 0.12) !important;
+  border-top: 1px solid rgba(234, 179, 8, 0.3) !important;
+  border-bottom: 1px solid rgba(234, 179, 8, 0.3) !important;
+}
+
+/* 浮动调试操作条 (Floating Debug Toolbar) */
+.floating-debug-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(24, 24, 28, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+  animation: debugToolbarSlideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes debugToolbarSlideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.debug-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text, #d4d4d8);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.debug-toolbar-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.debug-toolbar-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.debug-toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.debug-toolbar-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 4px;
+}
+
+/* 调试面板 (DebugPanel) 样式 */
+.debug-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--bg, #181818);
+  color: var(--text, #cccccc);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.debug-section {
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  display: flex;
+  flex-direction: column;
+}
+
+.debug-section-header {
+  height: 28px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.02);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted, #888);
+  cursor: pointer;
+  user-select: none;
+}
+
+.debug-section-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-bright, #fff);
+}
+
+.debug-section-content {
+  overflow-y: auto;
+  max-height: 180px;
+}
+
+.debug-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 1px 4px;
+  transition: background 0.1s;
+}
+
+.debug-item-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.debug-var-name {
+  color: #93c5fd;
+  font-family: monospace;
+}
+
+.debug-var-value {
+  color: #86efac;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.debug-var-type {
+  color: #a1a1aa;
+  font-size: 10.5px;
+}
+
