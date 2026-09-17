@@ -37,6 +37,8 @@ const api: IpcApi = {
   downloadFile: (relPath) => ipcRenderer.invoke('workspace:downloadFile', relPath),
   saveFileDialog: (defaultPath) => ipcRenderer.invoke('dialog:saveFile', defaultPath),
   pickDirectory: () => ipcRenderer.invoke('dialog:pickDirectory'),
+  createProjectFromTemplate: (params) =>
+    ipcRenderer.invoke('project:createFromTemplate', params),
   pickFile: (filters) => ipcRenderer.invoke('dialog:pickFile', filters),
   startAgent: (payload) => ipcRenderer.invoke('agent:start', payload),
   cancelAgent: (runId) => ipcRenderer.invoke('agent:cancel', runId),
@@ -127,6 +129,11 @@ const api: IpcApi = {
     ipcRenderer.on('workspace:changed', listener);
     return () => ipcRenderer.removeListener('workspace:changed', listener);
   },
+  onFsChanged: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { type: string; path?: string }) => cb(data);
+    ipcRenderer.on('workspace:fsChanged', listener);
+    return () => ipcRenderer.removeListener('workspace:fsChanged', listener);
+  },
   onGitCloneLog: (cb) => {
     const listener = (_: Electron.IpcRendererEvent, line: string) => cb(line);
     ipcRenderer.on('git:cloneLog', listener);
@@ -164,12 +171,20 @@ const api: IpcApi = {
   },
   lspGetDefinition: (filePath, line, column) =>
     ipcRenderer.invoke('lsp:getDefinition', filePath, line, column),
+  lspGetCompletion: (filePath, line, column) =>
+    ipcRenderer.invoke('lsp:getCompletion', filePath, line, column),
   lspNotifyDocument: (filePath, content, languageId) =>
     ipcRenderer.invoke('lsp:notifyDocument', filePath, content, languageId),
   lspSwitchSourceHeader: (filePath: string) =>
     ipcRenderer.invoke('lsp:switchSourceHeader', filePath),
+  onLspDiagnostics: (cb) => {
+    const listener = (_: any, ev: any) => cb(ev);
+    ipcRenderer.on('lsp:diagnostics', listener);
+    return () => ipcRenderer.removeListener('lsp:diagnostics', listener);
+  },
 
   cppCheckToolchain: () => ipcRenderer.invoke('cpp:checkToolchain'),
+  multiLangCheckToolchain: () => ipcRenderer.invoke('multiLang:checkToolchain'),
 
   dapStartSession: (config) => ipcRenderer.invoke('dap:startSession', config),
   dapStopSession: () => ipcRenderer.invoke('dap:stopSession'),

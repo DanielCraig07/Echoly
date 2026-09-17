@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type {
   DapBreakpoint,
   DapScope,
@@ -7,6 +7,7 @@ import type {
 } from '@deepseek-ide/shared';
 
 interface DebugPanelProps {
+  workspace?: string | null;
   breakpoints: DapBreakpoint[];
   onToggleBreakpoint: (path: string, line: number) => void;
   onClearBreakpoints: () => void;
@@ -22,6 +23,7 @@ interface DebugPanelProps {
 }
 
 export function DebugPanel({
+  workspace,
   breakpoints,
   onToggleBreakpoint,
   onClearBreakpoints,
@@ -47,7 +49,7 @@ export function DebugPanel({
   // ── 堆栈与变量数据 ──
   const [frames, setFrames] = useState<DapStackFrame[]>([]);
   const [selectedFrameId, setSelectedFrameId] = useState<number | null>(null);
-  const [scopes, setScopes] = useState<DapScope[]>([]);
+  const [_scopes, setScopes] = useState<DapScope[]>([]);
   const [variables, setVariables] = useState<{ [scopeName: string]: DapVariable[] }>({});
 
   // ── 监视表达式 ──
@@ -56,6 +58,57 @@ export function DebugPanel({
   >([]);
   const [newWatchInput, setNewWatchInput] = useState('');
   const [isAddingWatch, setIsAddingWatch] = useState(false);
+
+  // ── 左右分栏拖动宽度调节 (持久化记录) ──
+  const [leftWidth, setLeftWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('echoly.debugPanel.leftWidth');
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 200 && val <= 1200) return val;
+      }
+    } catch {}
+    return 360;
+  });
+  const isResizingRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const startResizeLeft = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = leftWidth;
+    const prevUserSelect = document.body.style.userSelect;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = ev.clientX - startX;
+      const clientW = containerRef.current?.clientWidth || 800;
+      const maxW = Math.max(240, clientW - 240);
+      const next = Math.max(200, Math.min(maxW, startWidth + delta));
+      setLeftWidth(next);
+    };
+
+    const onMouseUp = () => {
+      isResizingRef.current = false;
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.cursor = prevCursor;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      try {
+        setLeftWidth((current) => {
+          localStorage.setItem('echoly.debugPanel.leftWidth', String(current));
+          return current;
+        });
+      } catch {}
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [leftWidth]);
 
   // ── 调试控制台输出与输入 ──
   const [consoleLogs, setConsoleLogs] = useState<Array<{ category: string; text: string }>>([]);
@@ -358,16 +411,16 @@ export function DebugPanel({
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div ref={containerRef} style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         {/* 左半侧: 变量、堆栈、断点与监视 */}
         <div
           style={{
-            width: '45%',
-            minWidth: 260,
-            borderRight: '1px solid var(--border)',
+            width: leftWidth,
+            minWidth: 220,
             display: 'flex',
             flexDirection: 'column',
             overflowY: 'auto',
+            flexShrink: 0,
           }}
         >
           {/* 1. 变量 (Variables) */}
@@ -573,10 +626,34 @@ export function DebugPanel({
                             background: '#ef4444',
                             boxShadow: '0 0 4px #ef4444',
                             display: 'inline-block',
+                            flexShrink: 0,
                           }}
                         />
-                        <span style={{ color: '#fff' }}>{bp.path.split('/').pop()}</span>
-                        <span style={{ color: 'var(--muted)' }}>行 {bp.line}</span>
+                        {(() => {
+                          let display = bp.path;
+                          if (workspace) {
+                            const normWs = workspace.replace(/\\/g, '/').replace(/\/+$/, '');
+                            const normPath = bp.path.replace(/\\/g, '/');
+                            if (normPath.startsWith(normWs + '/')) {
+                              display = normPath.slice(normWs.length + 1);
+                            }
+                          }
+                          return (
+                            <span
+                              style={{
+                                color: '#fff',
+                                maxWidth: 160,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title={bp.path}
+                            >
+                              {display}
+                            </span>
+                          );
+                        })()}
+                        <span style={{ color: 'var(--muted)', flexShrink: 0 }}>:{bp.line}</span>
                       </div>
                       <button
                         type="button"
@@ -594,11 +671,27 @@ export function DebugPanel({
                 )}
               </div>
             )}
-          </div>
         </div>
+      </div>
 
-        {/* 右半侧: 调试控制台输出与 REPL */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#121214' }}>
+      {/* 中间可左右拖动划线 */}
+      <div
+        className="splitter splitter-v"
+        onMouseDown={startResizeLeft}
+        title="左右拖拽调整调试工作台面板宽度"
+        style={{
+          width: 5,
+          cursor: 'col-resize',
+          background: 'transparent',
+          borderLeft: '1px solid var(--border)',
+          flexShrink: 0,
+          zIndex: 10,
+          userSelect: 'none',
+        }}
+      />
+
+      {/* 右半侧: 调试控制台输出与 REPL */}
+      <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', background: '#121214' }}>
           <div
             ref={logContainerRef}
             style={{

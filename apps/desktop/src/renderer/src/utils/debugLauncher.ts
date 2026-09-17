@@ -90,18 +90,10 @@ export function resolveDebugConfig(
     (id.startsWith('active:') && id.endsWith('.py')) ||
     /\bpython(3)?\b/.test(command)
   ) {
-    let debugCmd = command;
-    const debugpyFlag = '-m debugpy --listen 127.0.0.1:5678';
+    let rawTarget = command.replace(/^python3?\s+/, '').trim();
+    if (!rawTarget) rawTarget = activePath ? `"${activePath}"` : '"main.py"';
 
-    if (debugCmd.includes('python3 ')) {
-      debugCmd = debugCmd.replace('python3 ', `python3 ${debugpyFlag} `);
-    } else if (debugCmd.includes('python ')) {
-      debugCmd = debugCmd.replace('python ', `python ${debugpyFlag} `);
-    } else if (debugCmd.startsWith('poetry run ')) {
-      debugCmd = debugCmd.replace('poetry run ', `poetry run python ${debugpyFlag} `);
-    } else {
-      debugCmd = `python3 ${debugpyFlag} ${debugCmd}`;
-    }
+    const debugCmd = `python3 -m debugpy --listen 127.0.0.1:5678 --wait-for-client ${rawTarget}`;
 
     return {
       type: 'terminal',
@@ -110,7 +102,7 @@ export function resolveDebugConfig(
       terminalType: 'python',
       terminalTitle: 'Python (Debug: 5678)',
       port: 5678,
-      toastMessage: 'Python 调试会话已启动，debugpy 监听端口 5678',
+      toastMessage: 'Python 调试命令已就绪，正在准备连接...',
     };
   }
 
@@ -144,19 +136,14 @@ export function resolveDebugConfig(
     };
   }
 
-  // 5. Go 调试 (基于 Delve dlv，默认监听 2345 端口)
+  // 5. Go 调试 (基于 Delve dlv dap，默认监听 2345 端口)
   if (
     source === 'go' ||
     badge === 'Go' ||
     (id.startsWith('active:') && id.endsWith('.go')) ||
     /\bgo run\b/.test(command)
   ) {
-    let debugCmd = command;
-    if (debugCmd.startsWith('go run ')) {
-      debugCmd = debugCmd.replace('go run ', 'dlv debug --headless --listen=127.0.0.1:2345 --api-version=2 ');
-    } else {
-      debugCmd = `dlv exec --headless --listen=127.0.0.1:2345 --api-version=2 -- ${debugCmd}`;
-    }
+    const debugCmd = `dlv dap --listen=127.0.0.1:2345`;
 
     return {
       type: 'terminal',
@@ -165,7 +152,7 @@ export function resolveDebugConfig(
       terminalType: 'go',
       terminalTitle: 'Go (Debug: 2345)',
       port: 2345,
-      toastMessage: 'Go 调试会话已启动，Delve 监听端口 2345',
+      toastMessage: 'Go 调试会话已启动，Delve DAP 监听 2345 端口...',
     };
   }
 

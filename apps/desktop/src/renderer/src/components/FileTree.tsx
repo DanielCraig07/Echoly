@@ -1003,8 +1003,11 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           return;
         }
         await window.ide.writeFile(path, '');
-        setExpandPath(edit.parentPath === '.' ? path : edit.parentPath);
+        // 自动展开目标父目录并聚焦新文件
+        setExpandPath(path);
         bump();
+        window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+        setTimeout(() => bump(), 60);
         onOpenFile(path);
       } else if (edit.mode === 'create-folder') {
         const path = joinRel(edit.parentPath, name);
@@ -1013,8 +1016,11 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           return;
         }
         await window.ide.mkdir(path);
+        // 自动展开新创建的文件夹
         setExpandPath(path);
         bump();
+        window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+        setTimeout(() => bump(), 60);
       } else if (edit.mode === 'rename') {
         const parent = parentOf(edit.node.path);
         const next = joinRel(parent, name);
@@ -1024,7 +1030,10 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           return;
         }
         await window.ide.renamePath(edit.node.path, next);
+        setExpandPath(next);
         bump();
+        window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+        setTimeout(() => bump(), 60);
         if (!edit.node.isDirectory) onOpenFile(next);
       }
     } catch (err) {
@@ -1088,6 +1097,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           }
           setExpandPath(destParent === '.' ? dest : destParent);
           bump();
+          window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
           break;
         }
         case 'download':
@@ -1102,6 +1112,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           if (node) {
             onDiscardPath?.(node.path);
             bump();
+            window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
           }
           break;
         case 'copy-abs':
@@ -1122,6 +1133,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
             if (!ok) return;
             await window.ide.removePath(node.path);
             bump();
+            window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
           }
           break;
         default:

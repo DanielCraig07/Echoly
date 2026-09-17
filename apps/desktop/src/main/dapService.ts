@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import EventEmitter from 'node:events';
+import net from 'node:net';
 import type {
   DapBreakpoint,
   DapEvent,
@@ -20,6 +21,7 @@ interface PendingRequest {
 
 export class DapService extends EventEmitter {
   private process: ChildProcess | null = null;
+  private socket: net.Socket | null = null;
   private seq = 1;
   private pendingRequests = new Map<number, PendingRequest>();
   private buffer = Buffer.alloc(0);
@@ -70,7 +72,31 @@ export class DapService extends EventEmitter {
   }
 
   /**
-   * Start a new debug session for a compiled binary.
+   * Connect to debug port with retry mechanism.
+   */
+  private connectSocket(host: string, port: number, maxRetries = 8, intervalMs = 200): Promise<net.Socket> {
+    return new Promise((resolve, reject) => {
+      let retries = 0;
+      const attempt = () => {
+        const socket = net.createConnection({ host, port }, () => {
+          resolve(socket);
+        });
+        socket.once('error', (err) => {
+          socket.destroy();
+          retries++;
+          if (retries >= maxRetries) {
+            reject(new Error(`无法连接到调试端口 ${host}:${port} (${err.message})，请确认调试进程已启动`));
+          } else {
+            setTimeout(attempt, intervalMs);
+          }
+        });
+      };
+      attempt();
+    });
+  }
+
+  /**
+   * Start a new debug session (C/C++ binary via stdio lldb-dap, or Python/Go/Java via TCP socket).
    */
   async startSession(config: {
     program: string;
@@ -78,11 +104,109 @@ export class DapService extends EventEmitter {
     cwd?: string;
     env?: Record<string, string>;
     stopOnEntry?: boolean;
+    mode?: 'stdio' | 'socket';
+    host?: string;
+    port?: number;
+    language?: string;
   }): Promise<{ success: boolean; error?: string }> {
     if (this.isSessionActive) {
       await this.stopSession();
     }
 
+    const root = this.workspace.getRoot();
+
+    // 1. Socket 模式：适用于 debugpy (5678)、dlv dap (2345)、Java JDWP/DAP (5005) 等
+    if (config.mode === 'socket' || (config.port && config.port > 0)) {
+      const host = config.host || '127.0.0.1';
+      const port = config.port || 5678;
+
+      try {
+        const socket = await this.connectSocket(host, port);
+        this.socket = socket;
+        this.isSessionActive = true;
+        this.seq = 1;
+        this.buffer = Buffer.alloc(0);
+        this.pendingRequests.clear();
+
+        socket.on('data', (chunk: Buffer) => this.handleData(chunk));
+        socket.on('error', (err) => {
+          this.emit('event', {
+            type: 'output',
+            category: 'stderr',
+            output: `\n[DAP Socket 异常] ${err.message}\n`,
+          } as DapEvent);
+        });
+        socket.on('close', () => {
+          this.isSessionActive = false;
+          this.socket = null;
+          this.emit('event', {
+            type: 'exited',
+            exitCode: 0,
+          } as DapEvent);
+          this.emit('event', {
+            type: 'terminated',
+          } as DapEvent);
+        });
+
+        // DAP initialize
+        await this.sendRequest('initialize', {
+          clientID: 'echoly',
+          clientName: `Echoly ${config.language || 'Multi-Language'} Debugger`,
+          adapterID: config.language || 'generic',
+          pathFormat: 'path',
+          linesStartAt1: true,
+          columnsStartAt1: true,
+          supportsVariableType: true,
+        });
+
+        // Attach 或 Launch
+        try {
+          await this.sendRequest('attach', {
+            name: 'Attach',
+            type: config.language || 'generic',
+            request: 'attach',
+            connect: { host, port },
+            pathMappings: root ? [{ localRoot: root, remoteRoot: root }] : [],
+            justMyCode: false,
+          });
+        } catch {
+          // fallback to launch if attach not supported
+          await this.sendRequest('launch', {
+            program: config.program,
+            args: config.args || [],
+            cwd: config.cwd || root || process.cwd(),
+            env: config.env || {},
+            stopOnEntry: config.stopOnEntry ?? false,
+          });
+        }
+
+        // 同步已有断点
+        for (const [bpPath, lines] of this.breakpointsByPath.entries()) {
+          await this.sendBreakpointsToAdapter(bpPath, lines);
+        }
+
+        // Configuration done
+        try {
+          await this.sendRequest('configurationDone', {});
+        } catch {
+          /* some adapters don't require configurationDone */
+        }
+
+        return { success: true };
+      } catch (err: any) {
+        this.isSessionActive = false;
+        if (this.socket) {
+          this.socket.destroy();
+          this.socket = null;
+        }
+        return {
+          success: false,
+          error: err?.message || String(err),
+        };
+      }
+    }
+
+    // 2. Stdio 模式：适用于本地 C/C++ lldb-dap
     const dbgBin = this.findDebuggerExecutable();
     if (!dbgBin) {
       return {
@@ -93,7 +217,6 @@ export class DapService extends EventEmitter {
     }
 
     let programPath = config.program;
-    const root = this.workspace.getRoot();
     if (!path.isAbsolute(programPath) && root) {
       programPath = path.resolve(root, programPath);
     }
@@ -179,10 +302,11 @@ export class DapService extends EventEmitter {
   }
 
   /**
-   * Sends raw DAP request with timeout.
+   * Sends raw DAP request with timeout via stdio or socket.
    */
   private sendRequest(command: string, args?: any): Promise<any> {
-    if (!this.process || !this.process.stdin || !this.isSessionActive) {
+    const hasTransport = (this.process && this.process.stdin) || (this.socket && !this.socket.destroyed);
+    if (!hasTransport || !this.isSessionActive) {
       return Promise.reject(new Error('调试会话未建立或已终止'));
     }
 
@@ -204,7 +328,11 @@ export class DapService extends EventEmitter {
       }, 10000);
 
       this.pendingRequests.set(seq, { resolve, reject, timer });
-      this.process!.stdin!.write(message, 'utf8');
+      if (this.socket && !this.socket.destroyed) {
+        this.socket.write(message, 'utf8');
+      } else if (this.process?.stdin) {
+        this.process.stdin.write(message, 'utf8');
+      }
     });
   }
 
@@ -294,36 +422,69 @@ export class DapService extends EventEmitter {
   /**
    * Set and synchronize breakpoints for a source file.
    */
-  async setBreakpoints(filePath: string, lines: number[]): Promise<DapBreakpoint[]> {
-    this.breakpointsByPath.set(filePath, lines);
+  async setBreakpoints(
+    filePath: string,
+    breakpoints: Array<number | { line: number; condition?: string; logMessage?: string }>,
+  ): Promise<DapBreakpoint[]> {
+    const rawLines = breakpoints.map((b) => (typeof b === 'number' ? b : b.line));
+    this.breakpointsByPath.set(filePath, rawLines);
 
     if (this.isSessionActive) {
-      return await this.sendBreakpointsToAdapter(filePath, lines);
+      return await this.sendBreakpointsToAdapter(filePath, breakpoints);
     }
 
-    return lines.map((line) => ({
-      path: filePath,
-      line,
-      verified: true,
-    }));
+    return breakpoints.map((b) => {
+      const line = typeof b === 'number' ? b : b.line;
+      const condition = typeof b === 'number' ? undefined : b.condition;
+      return {
+        path: filePath,
+        line,
+        condition,
+        verified: true,
+      };
+    });
   }
 
-  private async sendBreakpointsToAdapter(filePath: string, lines: number[]): Promise<DapBreakpoint[]> {
+  private async sendBreakpointsToAdapter(
+    filePath: string,
+    breakpoints: Array<number | { line: number; condition?: string; logMessage?: string }>,
+  ): Promise<DapBreakpoint[]> {
     try {
+      const dapBreakpoints = breakpoints.map((b) => {
+        if (typeof b === 'number') {
+          return { line: b };
+        }
+        return {
+          line: b.line,
+          condition: b.condition,
+          logMessage: b.logMessage,
+        };
+      });
+
       const res = await this.sendRequest('setBreakpoints', {
         source: { path: filePath },
-        breakpoints: lines.map((l) => ({ line: l })),
+        breakpoints: dapBreakpoints,
       });
 
       const bps: any[] = res?.breakpoints || [];
-      return bps.map((b, idx) => ({
-        id: b.id,
-        path: filePath,
-        line: b.line || lines[idx],
-        verified: b.verified !== false,
-      }));
+      return bps.map((b, idx) => {
+        const orig = breakpoints[idx];
+        const origLine = typeof orig === 'number' ? orig : orig?.line;
+        const origCond = typeof orig === 'object' ? orig?.condition : undefined;
+        return {
+          id: b.id,
+          path: filePath,
+          line: b.line || origLine,
+          condition: origCond,
+          verified: b.verified !== false,
+        };
+      });
     } catch {
-      return lines.map((l) => ({ path: filePath, line: l, verified: false }));
+      return breakpoints.map((b) => ({
+        path: filePath,
+        line: typeof b === 'number' ? b : b.line,
+        verified: false,
+      }));
     }
   }
 
@@ -440,10 +601,11 @@ export class DapService extends EventEmitter {
   }
 
   async stopSession(): Promise<void> {
-    if (!this.isSessionActive && !this.process) return;
+    if (!this.isSessionActive && !this.process && !this.socket) return;
 
     try {
-      if (this.process?.stdin) {
+      const hasTransport = (this.process && this.process.stdin) || (this.socket && !this.socket.destroyed);
+      if (hasTransport) {
         await Promise.race([
           this.sendRequest('disconnect', { terminateDebuggee: true }),
           new Promise((r) => setTimeout(r, 800)),
@@ -451,6 +613,15 @@ export class DapService extends EventEmitter {
       }
     } catch {
       /* ignore */
+    }
+
+    if (this.socket) {
+      try {
+        this.socket.destroy();
+      } catch {
+        /* ignore */
+      }
+      this.socket = null;
     }
 
     if (this.process) {

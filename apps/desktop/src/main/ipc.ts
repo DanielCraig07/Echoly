@@ -1,5 +1,6 @@
 import { shell, BrowserWindow, type IpcMain, type Dialog, type WebContents } from 'electron';
 import fs from 'node:fs';
+import path from 'node:path';
 import type {
   AppMenuId,
   AppSettings,
@@ -20,7 +21,8 @@ import type { SshSessionManager } from './ssh/SshSessionManager';
 import type { WindowRegistry } from './windowRegistry';
 import { detectMavenEnvironment, initMavenWrapper, initMavenSettings } from './mavenService';
 import { detectInstalledJdks, getAvailableOnlineJdks, installOnlineJdk } from './javaService';
-import { detectCppToolchain } from './cppToolchainService';
+import { detectCppToolchain, detectMultiLangToolchain } from './cppToolchainService';
+import { PROJECT_TEMPLATES } from '../renderer/src/utils/projectTemplates';
 
 export function registerIpc(deps: {
   ipcMain: IpcMain;
@@ -193,6 +195,56 @@ export function registerIpc(deps: {
   });
 
   ipcMain.handle(
+    'project:createFromTemplate',
+    async (
+      _event,
+      params: { templateId: string; parentDir: string; projectName: string },
+    ) => {
+      const { templateId, parentDir, projectName } = params;
+      const cleanName = (projectName || '').trim();
+      if (!parentDir || !cleanName) {
+        return { ok: false, error: '存储位置和项目名称不能为空' };
+      }
+      const targetPath = path.resolve(parentDir, cleanName);
+      const fsPromises = fs.promises;
+      try {
+        const stat = await fsPromises.stat(targetPath);
+        if (stat) {
+          const entries = await fsPromises.readdir(targetPath);
+          if (entries.length > 0) {
+            return {
+              ok: false,
+              error: `目标目录「${cleanName}」已存在且包含内容，请更换项目名或选择其他存储目录`,
+            };
+          }
+        }
+      } catch {
+        // directory does not exist, continue
+      }
+
+      try {
+        await fsPromises.mkdir(targetPath, { recursive: true });
+
+        const template = PROJECT_TEMPLATES[templateId] || PROJECT_TEMPLATES['cpp-cmake'];
+        if (!template) {
+          return { ok: false, error: `未找到工程模板: ${templateId}` };
+        }
+
+        for (const file of template.files) {
+          const filePath = path.join(targetPath, file.path);
+          const dir = path.dirname(filePath);
+          await fsPromises.mkdir(dir, { recursive: true });
+          await fsPromises.writeFile(filePath, file.content, 'utf-8');
+        }
+
+        return { ok: true, targetPath, entryFile: template.entryFile };
+      } catch (err: any) {
+        return { ok: false, error: err?.message || String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
     'dialog:pickFile',
     async (event, filters?: { name: string; extensions: string[] }[]) => {
       const win = windowFromEvent(event);
@@ -320,6 +372,9 @@ export function registerIpc(deps: {
   ipcMain.handle('lsp:getDefinition', (e, filePath: string, line: number, column: number) =>
     run(e, () => registry.current().lsp.getDefinition(filePath, line, column)),
   );
+  ipcMain.handle('lsp:getCompletion', (e, filePath: string, line: number, column: number) =>
+    run(e, () => registry.current().lsp.getCompletion(filePath, line, column)),
+  );
   ipcMain.handle(
     'lsp:notifyDocument',
     (e, filePath: string, content: string, languageId?: string) =>
@@ -329,8 +384,9 @@ export function registerIpc(deps: {
     run(e, () => registry.current().lsp.switchSourceHeader(filePath)),
   );
 
-  // ── C/C++ Toolchain & DAP Debugger ──
+  // ── C/C++ & Multi-Language Toolchain & DAP Debugger ──
   ipcMain.handle('cpp:checkToolchain', () => detectCppToolchain());
+  ipcMain.handle('multiLang:checkToolchain', () => detectMultiLangToolchain());
 
   ipcMain.handle('dap:startSession', (e, config) =>
     run(e, () => registry.current().dap.startSession(config)),

@@ -1,9 +1,15 @@
+import React, { useState } from 'react';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
+import { NewProjectWizardModal } from './NewProjectWizardModal';
 
 interface Props {
   onPickLocal: () => void;
   onPickSsh: () => void;
   onPickClone: () => void;
+  onCreateCppProject?: () => void;
+  onCreateProject?: (templateId: string) => void;
+  onOpenWorkspace?: (targetPath: string, openInNewWindow: boolean, entryFile?: string) => void;
+  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
   recentWorkspaces?: RecentWorkspaceItem[];
   onSelectRecent?: (item: RecentWorkspaceItem) => void;
   onRemoveRecent?: (path: string) => void;
@@ -21,6 +27,8 @@ export function WelcomeView({
   onPickLocal,
   onPickSsh,
   onPickClone,
+  onOpenWorkspace,
+  onShowToast,
   recentWorkspaces = [],
   onSelectRecent,
   onRemoveRecent,
@@ -28,6 +36,7 @@ export function WelcomeView({
   onMoreHistory,
 }: Props) {
   const visibleRecent = recentWorkspaces.slice(0, MAX_VISIBLE_RECENT);
+  const [showWizard, setShowWizard] = useState(false);
 
   return (
     <div className="welcome-view">
@@ -100,7 +109,47 @@ export function WelcomeView({
             </span>
             <span className="welcome-choice-hint">Clone</span>
           </button>
+
+          <button
+            type="button"
+            className="welcome-choice-row"
+            onClick={() => setShowWizard(true)}
+          >
+            <span className="welcome-choice-mark" aria-hidden style={{ color: '#38bdf8' }}>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+            </span>
+            <span className="welcome-choice-body">
+              <span className="welcome-choice-title" style={{ color: 'var(--text-bright, #fff)' }}>
+                新建标准工程向导
+              </span>
+              <span className="welcome-choice-desc">
+                一键生成 Java、Python、Go、Node/TS 或 C++ 标准开发与调试工程
+              </span>
+            </span>
+            <span className="welcome-choice-hint" style={{ color: '#38bdf8' }}>New Project</span>
+          </button>
         </div>
+
+        {/* ── 多语言项目新建向导模态弹窗 ── */}
+        <NewProjectWizardModal
+          isOpen={showWizard}
+          onClose={() => setShowWizard(false)}
+          onOpenWorkspace={(targetPath, openInNewWindow, entryFile) => {
+            onOpenWorkspace?.(targetPath, openInNewWindow, entryFile);
+          }}
+          onShowToast={onShowToast}
+        />
 
         <section className="welcome-view-recent">
           <div className="welcome-view-recent-header">

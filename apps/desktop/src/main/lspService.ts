@@ -2,8 +2,9 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import EventEmitter from 'node:events';
 import * as rpc from 'vscode-jsonrpc/node';
-import type { LspLocation } from '@deepseek-ide/shared';
+import type { LspLocation, LspCompletionItem, LspDiagnosticsEvent } from '@deepseek-ide/shared';
 import type { WorkspaceService } from './workspace';
 
 interface LspPosition {
@@ -33,11 +34,14 @@ interface ServerInstance {
   workspaceRoot: string | null;
 }
 
-export class LspService {
+export class LspService extends EventEmitter {
   private pyright: ServerInstance = this.createEmptyServerInstance();
   private clangd: ServerInstance = this.createEmptyServerInstance();
+  private gopls: ServerInstance = this.createEmptyServerInstance();
 
-  constructor(private readonly resolveWorkspace: () => WorkspaceService) {}
+  constructor(private readonly resolveWorkspace: () => WorkspaceService) {
+    super();
+  }
 
   private createEmptyServerInstance(): ServerInstance {
     return {
@@ -79,6 +83,49 @@ export class LspService {
   private isPythonFile(filePath: string, languageId?: string): boolean {
     if (languageId === 'python') return true;
     return /\.(py|pyi)$/i.test(filePath);
+  }
+
+  /**
+   * Determines if a file path belongs to Go.
+   */
+  private isGoFile(filePath: string, languageId?: string): boolean {
+    if (languageId === 'go') return true;
+    return /\.go$/i.test(filePath);
+  }
+
+  /**
+   * Finds the path to the gopls executable on the system.
+   */
+  private findGoplsExecutable(): string | null {
+    const isWin = process.platform === 'win32';
+    const binaryName = isWin ? 'gopls.exe' : 'gopls';
+
+    const homeDir = process.env.HOME || '';
+    const goPath = process.env.GOPATH || path.join(homeDir, 'go');
+
+    const candidates = [
+      '/opt/homebrew/bin/gopls',
+      '/usr/local/bin/gopls',
+      '/usr/bin/gopls',
+      path.join(goPath, 'bin', binaryName),
+    ];
+
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        return c;
+      }
+    }
+
+    const envPath = process.env.PATH || '';
+    const dirs = envPath.split(path.delimiter);
+    for (const dir of dirs) {
+      const full = path.join(dir, binaryName);
+      if (fs.existsSync(full)) {
+        return full;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -185,9 +232,33 @@ export class LspService {
             definition: { dynamicRegistration: true, linkSupport: true },
             references: { dynamicRegistration: true },
             hover: { dynamicRegistration: true, contentFormat: ['markdown', 'plaintext'] },
+            completion: {
+              dynamicRegistration: true,
+              completionItem: {
+                snippetSupport: true,
+                documentationFormat: ['markdown', 'plaintext'],
+              },
+            },
+            publishDiagnostics: {
+              relatedInformation: true,
+            },
           },
         },
         workspaceFolders: [{ uri: rootUri, name: path.basename(workspaceRoot) }],
+      });
+
+      connection.onNotification('textDocument/publishDiagnostics', (params: any) => {
+        let filePath = params.uri;
+        try {
+          filePath = fileURLToPath(params.uri);
+        } catch {
+          filePath = params.uri.replace(/^file:\/\//, '');
+        }
+        this.emit('diagnostics', {
+          uri: params.uri,
+          path: filePath,
+          diagnostics: params.diagnostics || [],
+        } as LspDiagnosticsEvent);
       });
 
       connection.sendNotification('initialized', {});
@@ -262,17 +333,52 @@ export class LspService {
       const workspaceRoot = root || process.cwd();
       const rootUri = pathToFileURL(workspaceRoot).toString();
 
+      const venvDirs = ['.venv', 'venv', 'env'];
+      let pythonInterpreter: string | undefined;
+      for (const v of venvDirs) {
+        const p = path.join(workspaceRoot, v, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+        if (fs.existsSync(p)) {
+          pythonInterpreter = p;
+          break;
+        }
+      }
+
       await connection.sendRequest('initialize', {
         processId: process.pid,
         rootUri,
+        initializationOptions: pythonInterpreter ? { python: { pythonPath: pythonInterpreter } } : undefined,
         capabilities: {
           textDocument: {
             definition: { dynamicRegistration: true, linkSupport: true },
             references: { dynamicRegistration: true },
             hover: { dynamicRegistration: true, contentFormat: ['markdown', 'plaintext'] },
+            completion: {
+              dynamicRegistration: true,
+              completionItem: {
+                snippetSupport: true,
+                documentationFormat: ['markdown', 'plaintext'],
+              },
+            },
+            publishDiagnostics: {
+              relatedInformation: true,
+            },
           },
         },
         workspaceFolders: [{ uri: rootUri, name: path.basename(workspaceRoot) }],
+      });
+
+      connection.onNotification('textDocument/publishDiagnostics', (params: any) => {
+        let filePath = params.uri;
+        try {
+          filePath = fileURLToPath(params.uri);
+        } catch {
+          filePath = params.uri.replace(/^file:\/\//, '');
+        }
+        this.emit('diagnostics', {
+          uri: params.uri,
+          path: filePath,
+          diagnostics: params.diagnostics || [],
+        } as LspDiagnosticsEvent);
       });
 
       connection.sendNotification('initialized', {});
@@ -297,6 +403,139 @@ export class LspService {
   }
 
   /**
+   * Ensures the Gopls LSP server is running and initialized for Go.
+   */
+  private async ensureGopls(): Promise<rpc.MessageConnection | null> {
+    const root = this.getRoot();
+
+    if (this.gopls.isInitialized && this.gopls.workspaceRoot !== root) {
+      this.disposeServer(this.gopls);
+    }
+
+    if (this.gopls.connection && this.gopls.isInitialized) {
+      return this.gopls.connection;
+    }
+
+    if (this.gopls.isInitializing) {
+      let retries = 20;
+      while (this.gopls.isInitializing && retries-- > 0) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      return this.gopls.connection;
+    }
+
+    this.gopls.isInitializing = true;
+
+    try {
+      const goplsBin = this.findGoplsExecutable();
+      if (!goplsBin) {
+        this.gopls.isInitializing = false;
+        return null;
+      }
+
+      const workspaceRoot = root || process.cwd();
+      const child = spawn(goplsBin, [], {
+        cwd: workspaceRoot,
+        stdio: ['pipe', 'pipe', 'inherit'],
+        windowsHide: true,
+      });
+
+      this.gopls.process = child;
+
+      const connection = rpc.createMessageConnection(
+        new rpc.StreamMessageReader(child.stdout!),
+        new rpc.StreamMessageWriter(child.stdin!),
+      );
+
+      connection.listen();
+
+      const rootUri = pathToFileURL(workspaceRoot).toString();
+
+      await connection.sendRequest('initialize', {
+        processId: process.pid,
+        rootUri,
+        capabilities: {
+          textDocument: {
+            definition: { dynamicRegistration: true, linkSupport: true },
+            references: { dynamicRegistration: true },
+            hover: { dynamicRegistration: true, contentFormat: ['markdown', 'plaintext'] },
+            completion: {
+              dynamicRegistration: true,
+              completionItem: {
+                snippetSupport: true,
+                documentationFormat: ['markdown', 'plaintext'],
+              },
+            },
+            publishDiagnostics: {
+              relatedInformation: true,
+            },
+          },
+        },
+        workspaceFolders: [{ uri: rootUri, name: path.basename(workspaceRoot) }],
+      });
+
+      connection.onNotification('textDocument/publishDiagnostics', (params: any) => {
+        let filePath = params.uri;
+        try {
+          filePath = fileURLToPath(params.uri);
+        } catch {
+          filePath = params.uri.replace(/^file:\/\//, '');
+        }
+        this.emit('diagnostics', {
+          uri: params.uri,
+          path: filePath,
+          diagnostics: params.diagnostics || [],
+        } as LspDiagnosticsEvent);
+      });
+
+      connection.sendNotification('initialized', {});
+
+      this.gopls.connection = connection;
+      this.gopls.isInitialized = true;
+      this.gopls.workspaceRoot = root;
+      this.gopls.openDocuments.clear();
+
+      child.on('exit', (code) => {
+        console.log('[LspService] Gopls server exited with code', code);
+        this.disposeServer(this.gopls);
+      });
+
+      return connection;
+    } catch (err) {
+      console.error('[LspService] Failed to start Gopls server:', err);
+      return null;
+    } finally {
+      this.gopls.isInitializing = false;
+    }
+  }
+
+  /**
+   * Resolves the corresponding LSP connection and state for a target file.
+   */
+  private async getServerForFile(
+    filePath: string,
+    languageId?: string,
+  ): Promise<{ conn: rpc.MessageConnection; instance: ServerInstance; lang: string } | null> {
+    if (this.isCppFile(filePath, languageId)) {
+      const conn = await this.ensureClangd();
+      if (!conn) return null;
+      const lang = languageId || (filePath.endsWith('.c') ? 'c' : 'cpp');
+      return { conn, instance: this.clangd, lang };
+    }
+    if (this.isPythonFile(filePath, languageId)) {
+      const conn = await this.ensurePyright();
+      if (!conn) return null;
+      return { conn, instance: this.pyright, lang: languageId || 'python' };
+    }
+    if (this.isGoFile(filePath, languageId)) {
+      const conn = await this.ensureGopls();
+      if (!conn) return null;
+      return { conn, instance: this.gopls, lang: languageId || 'go' };
+    }
+    return null;
+  }
+
+  /**
    * Converts a relative or absolute file path into an absolute file path and URI.
    */
   private resolveFilePathAndUri(filePath: string): { absPath: string; uri: string } {
@@ -313,18 +552,15 @@ export class LspService {
    * Sync document content with the corresponding LSP server.
    */
   async notifyDocument(filePath: string, content: string, languageId?: string): Promise<void> {
-    const isCpp = this.isCppFile(filePath, languageId);
-    const conn = isCpp ? await this.ensureClangd() : await this.ensurePyright();
-    if (!conn) return;
+    const srv = await this.getServerForFile(filePath, languageId);
+    if (!srv) return;
 
-    const serverInstance = isCpp ? this.clangd : this.pyright;
-    const lang = languageId || (isCpp ? (filePath.endsWith('.c') ? 'c' : 'cpp') : 'python');
-
+    const { conn, instance, lang } = srv;
     const { uri } = this.resolveFilePathAndUri(filePath);
-    const existing = serverInstance.openDocuments.get(uri);
+    const existing = instance.openDocuments.get(uri);
 
     if (!existing) {
-      serverInstance.openDocuments.set(uri, { version: 1, languageId: lang });
+      instance.openDocuments.set(uri, { version: 1, languageId: lang });
       conn.sendNotification('textDocument/didOpen', {
         textDocument: {
           uri,
@@ -335,7 +571,7 @@ export class LspService {
       });
     } else {
       const nextVersion = existing.version + 1;
-      serverInstance.openDocuments.set(uri, { version: nextVersion, languageId: lang });
+      instance.openDocuments.set(uri, { version: nextVersion, languageId: lang });
       conn.sendNotification('textDocument/didChange', {
         textDocument: {
           uri,
@@ -354,18 +590,17 @@ export class LspService {
     line: number,
     column: number,
   ): Promise<LspLocation[]> {
-    const isCpp = this.isCppFile(filePath);
-    const conn = isCpp ? await this.ensureClangd() : await this.ensurePyright();
-    if (!conn) return [];
+    const srv = await this.getServerForFile(filePath);
+    if (!srv) return [];
 
-    const serverInstance = isCpp ? this.clangd : this.pyright;
+    const { conn, instance, lang } = srv;
     const { absPath, uri } = this.resolveFilePathAndUri(filePath);
 
     // If document is not yet synced, read and sync it
-    if (!serverInstance.openDocuments.has(uri) && fs.existsSync(absPath)) {
+    if (!instance.openDocuments.has(uri) && fs.existsSync(absPath)) {
       try {
         const text = fs.readFileSync(absPath, 'utf8');
-        await this.notifyDocument(filePath, text, isCpp ? 'cpp' : 'python');
+        await this.notifyDocument(filePath, text, lang);
       } catch (err) {
         console.warn('[LspService] Could not read file for sync:', err);
       }
@@ -411,6 +646,60 @@ export class LspService {
       return results;
     } catch (err) {
       console.warn('[LspService] textDocument/definition error:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Request completion items at a given 1-based line & column.
+   */
+  async getCompletion(
+    filePath: string,
+    line: number,
+    column: number,
+  ): Promise<LspCompletionItem[]> {
+    const srv = await this.getServerForFile(filePath);
+    if (!srv) return [];
+
+    const { conn, instance, lang } = srv;
+    const { absPath, uri } = this.resolveFilePathAndUri(filePath);
+
+    if (!instance.openDocuments.has(uri) && fs.existsSync(absPath)) {
+      try {
+        const text = fs.readFileSync(absPath, 'utf8');
+        await this.notifyDocument(filePath, text, lang);
+      } catch (err) {
+        console.warn('[LspService] Could not read file for completion sync:', err);
+      }
+    }
+
+    try {
+      const rawRes = await conn.sendRequest<any>('textDocument/completion', {
+        textDocument: { uri },
+        position: {
+          line: Math.max(0, line - 1),
+          character: Math.max(0, column - 1),
+        },
+      });
+
+      if (!rawRes) return [];
+      const items: any[] = Array.isArray(rawRes) ? rawRes : (rawRes.items || []);
+
+      return items.slice(0, 50).map((it) => ({
+        label: typeof it.label === 'string' ? it.label : it.label?.label || '',
+        kind: it.kind,
+        detail: it.detail,
+        documentation:
+          typeof it.documentation === 'string'
+            ? it.documentation
+            : it.documentation?.value,
+        insertText:
+          it.insertText ||
+          (typeof it.label === 'string' ? it.label : it.label?.label || ''),
+        sortText: it.sortText,
+      }));
+    } catch (err) {
+      console.warn('[LspService] textDocument/completion error:', err);
       return [];
     }
   }
@@ -507,5 +796,6 @@ export class LspService {
   dispose(): void {
     this.disposeServer(this.pyright);
     this.disposeServer(this.clangd);
+    this.disposeServer(this.gopls);
   }
 }

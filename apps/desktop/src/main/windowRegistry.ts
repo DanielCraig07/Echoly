@@ -15,6 +15,7 @@ export class WindowSession {
   constructor(readonly webContentsId: number) {}
 
   dispose(): void {
+    this.workspace.dispose();
     this.lsp.dispose();
     this.dap.dispose();
   }
@@ -48,11 +49,23 @@ export class WindowRegistry {
       );
       if (win) win.webContents.send('workspace:changed', info);
     });
+    session.workspace.setFsChangeListener((data) => {
+      const win = BrowserWindow.getAllWindows().find(
+        (w) => !w.isDestroyed() && w.webContents.id === id,
+      );
+      if (win) win.webContents.send('workspace:fsChanged', data);
+    });
     session.dap.on('event', (event) => {
       const win = BrowserWindow.getAllWindows().find(
         (w) => !w.isDestroyed() && w.webContents.id === id,
       );
       if (win) win.webContents.send('dap:event', event);
+    });
+    session.lsp.on('diagnostics', (diag) => {
+      const win = BrowserWindow.getAllWindows().find(
+        (w) => !w.isDestroyed() && w.webContents.id === id,
+      );
+      if (win) win.webContents.send('lsp:diagnostics', diag);
     });
     wc.once('destroyed', () => {
       const s = this.sessions.get(id);

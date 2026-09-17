@@ -32,6 +32,7 @@ import { TerminalPanel } from './components/TerminalPanel';
 import { DebugPanel } from './components/DebugPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { OpenWorkspaceModal } from './components/OpenWorkspaceModal';
+import { NewProjectWizardModal } from './components/NewProjectWizardModal';
 import { CloneRepoModal } from './components/CloneRepoModal';
 import { SshConnectModal } from './components/SshConnectModal';
 import {
@@ -53,6 +54,7 @@ import { SearchPanel } from './components/SearchPanel';
 import { MavenPanel } from './components/MavenPanel';
 import { StatusBar } from './components/StatusBar';
 import { GlobalTooltip } from './components/GlobalTooltip';
+import { PROJECT_TEMPLATES } from './utils/projectTemplates';
 import {
   isImagePath,
   isUntitledPath,
@@ -179,6 +181,7 @@ export function App() {
     'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'update' | 'about' | undefined
   >(undefined);
   const [openWorkspaceOpen, setOpenWorkspaceOpen] = useState(false);
+  const [newProjectWizardOpen, setNewProjectWizardOpen] = useState(false);
   const [switchTarget, setSwitchTarget] = useState<SwitchWorkspaceTarget | null>(null);
   const switchTargetRef = useRef<SwitchWorkspaceTarget | null>(null);
   switchTargetRef.current = switchTarget;
@@ -1081,40 +1084,70 @@ export function App() {
     }, 300);
   }, []);
 
-  // ── C/C++ 调试会话与底部面板标签 ──
+  // ── 调试断点工作区隔离与持久化 ──
+  const getBreakpointsStorageKey = useCallback((ws?: string | null) => {
+    if (!ws) return 'echoly.dap.breakpoints.global';
+    return `echoly.dap.breakpoints.${ws}`;
+  }, []);
+
+  const isBreakpointBelongsToWorkspace = useCallback((bp: DapBreakpoint, ws?: string | null): boolean => {
+    if (!ws) return true;
+    const normWs = ws.replace(/\\/g, '/').replace(/\/+$/, '');
+    const normPath = bp.path.replace(/\\/g, '/');
+    if (!normPath.startsWith('/') && !/^[A-Za-z]:/.test(normPath)) {
+      return true;
+    }
+    return normPath.startsWith(normWs + '/') || normPath === normWs;
+  }, []);
+
+  const loadWorkspaceBreakpoints = useCallback((ws?: string | null): DapBreakpoint[] => {
+    try {
+      const key = getBreakpointsStorageKey(ws);
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const list: DapBreakpoint[] = JSON.parse(raw);
+        return Array.isArray(list) ? list.filter((b) => isBreakpointBelongsToWorkspace(b, ws)) : [];
+      }
+    } catch {}
+    return [];
+  }, [getBreakpointsStorageKey, isBreakpointBelongsToWorkspace]);
+
+  // ── C/C++ & 多语言调试会话与底部面板标签 ──
   const [bottomTab, setBottomTab] = useState<'terminal' | 'debug'>('terminal');
   const [isDebugging, setIsDebugging] = useState(false);
   const [debugState, setDebugState] = useState<'running' | 'paused' | 'stopped'>('stopped');
   const [breakpoints, setBreakpoints] = useState<DapBreakpoint[]>(() => {
-    try {
-      const raw = localStorage.getItem('echoly.dap.breakpoints');
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+    return loadWorkspaceBreakpoints(workspace);
   });
 
-  const handleToggleBreakpoint = useCallback((path: string, line: number) => {
+  // 当工作区切换时，自动按当前工作区重新载入隔离断点列表
+  useEffect(() => {
+    setBreakpoints(loadWorkspaceBreakpoints(workspace));
+  }, [workspace, loadWorkspaceBreakpoints]);
+
+  const handleToggleBreakpoint = useCallback((path: string, line: number, condition?: string) => {
     setBreakpoints((prev) => {
       const exists = prev.some((b) => b.path === path && b.line === line);
       const next = exists
         ? prev.filter((b) => !(b.path === path && b.line === line))
-        : [...prev, { path, line, verified: true }];
+        : [...prev, { path, line, condition: condition?.trim() || undefined, verified: true }];
       try {
-        localStorage.setItem('echoly.dap.breakpoints', JSON.stringify(next));
+        const key = getBreakpointsStorageKey(workspace);
+        localStorage.setItem(key, JSON.stringify(next));
       } catch {}
       const fileLines = next.filter((b) => b.path === path).map((b) => b.line);
       void window.ide?.dapSetBreakpoints?.(path, fileLines);
       return next;
     });
-  }, []);
+  }, [workspace, getBreakpointsStorageKey]);
 
   const handleClearBreakpoints = useCallback(() => {
     setBreakpoints([]);
     try {
-      localStorage.setItem('echoly.dap.breakpoints', '[]');
+      const key = getBreakpointsStorageKey(workspace);
+      localStorage.setItem(key, '[]');
     } catch {}
-  }, []);
+  }, [workspace, getBreakpointsStorageKey]);
 
   // 监听调试事件以自动展开底部调试面板
   useEffect(() => {
@@ -1153,13 +1186,83 @@ export function App() {
         return prev;
       });
     };
+
+    const handleStopDebug = () => {
+      setIsDebugging(false);
+      setDebugState('stopped');
+    };
+
+    const handleDebugError = (e: Event) => {
+      const custom = e as CustomEvent<{ language?: string; message?: string }>;
+      handleStopDebug();
+      if (custom.detail?.message) {
+        showToast(
+          custom.detail.language === 'python' ? '⚠️ Python 缺少 debugpy 模块' : '⚠️ 调试启动失败',
+          custom.detail.message,
+          'warn',
+        );
+      }
+    };
+
+    const handleOpenBottomTab = (e: Event) => {
+      const custom = e as CustomEvent<{ tab?: 'terminal' | 'debug' }>;
+      const target = custom.detail?.tab;
+      if (target === 'terminal' || target === 'debug') {
+        setBottomTab(target);
+        setLayout((prev) => {
+          if (!prev.bottomPanelExpanded) {
+            const next = { ...prev, bottomPanelExpanded: true };
+            persistLayout(next);
+            return next;
+          }
+          return prev;
+        });
+      }
+    };
+
+    let fsDebounce: NodeJS.Timeout | null = null;
+    const triggerFsRefresh = () => {
+      if (fsDebounce) clearTimeout(fsDebounce);
+      fsDebounce = setTimeout(() => {
+        setTreeRefreshKey((k) => k + 1);
+        void (async () => {
+          try {
+            const res = await window.ide.gitStatus();
+            setGitStatus(res);
+          } catch {}
+        })();
+      }, 80);
+    };
+
+    const unlistenFs = window.ide?.onFsChanged?.(() => {
+      triggerFsRefresh();
+    });
+
+    const handleCustomFsRefresh = () => {
+      triggerFsRefresh();
+    };
+
+    window.addEventListener('echoly:refreshFileTree', handleCustomFsRefresh);
+    window.addEventListener('echoly:refreshTree', handleCustomFsRefresh);
+    window.addEventListener('echoly:openBottomTab', handleOpenBottomTab);
     window.addEventListener('echoly:startDebug', handleStartDebug);
+    window.addEventListener('echoly:stopDebug', handleStopDebug);
+    window.addEventListener('echoly:runFinished', handleStopDebug);
+    window.addEventListener('echoly:debugError', handleDebugError);
 
     return () => {
+      if (fsDebounce) clearTimeout(fsDebounce);
       unlisten();
+      unlistenFs?.();
+      window.removeEventListener('echoly:refreshFileTree', handleCustomFsRefresh);
+      window.removeEventListener('echoly:refreshTree', handleCustomFsRefresh);
+      window.removeEventListener('echoly:openBottomTab', handleOpenBottomTab);
       window.removeEventListener('echoly:startDebug', handleStartDebug);
+      window.removeEventListener('echoly:stopDebug', handleStopDebug);
+      window.removeEventListener('echoly:runFinished', handleStopDebug);
+      window.removeEventListener('echoly:debugError', handleDebugError);
     };
-  }, [persistLayout]);
+  }, [persistLayout, showToast]);
 
   const startResize = useCallback(
     (axis: ResizeAxis, e: ReactMouseEvent) => {
@@ -1359,6 +1462,26 @@ export function App() {
     const root = await window.ide.pickWorkspace();
     if (!root) return;
     requestWorkspaceSwitch(root);
+  }
+
+  const handleOpenCreatedProject = useCallback(
+    async (targetPath: string, openInNewWindow: boolean, entryFile?: string) => {
+      if (openInNewWindow) {
+        void window.ide.openNewWindow(targetPath);
+      } else {
+        await requestWorkspaceSwitch(targetPath);
+        if (entryFile) {
+          setTimeout(() => {
+            void openFile(entryFile);
+          }, 350);
+        }
+      }
+    },
+    [requestWorkspaceSwitch, openFile],
+  );
+
+  async function createTemplateWorkspace(_templateId = 'cpp-cmake'): Promise<void> {
+    setNewProjectWizardOpen(true);
   }
 
   async function disconnectSsh(): Promise<void> {
@@ -1768,6 +1891,8 @@ export function App() {
           t.path === diff.path ? { ...t, content: diff.modified, dirty: false } : t,
         ),
       );
+      setTreeRefreshKey((k) => k + 1);
+      window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
     }
   }
 
@@ -1788,6 +1913,8 @@ export function App() {
     }
     setDiffs([]);
     setActiveDiffId(null);
+    setTreeRefreshKey((k) => k + 1);
+    window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
   }
 
   useEffect(() => {
@@ -2130,10 +2257,21 @@ export function App() {
             workspace={workspace}
             activePath={activePath}
             isBottomExpanded={layout.bottomPanelExpanded === true}
-            onExpandBottom={() => {
+            onExpandBottom={(targetTab) => {
               const next = { ...layout, bottomPanelExpanded: true };
               setLayout(next);
               persistLayout(next);
+              if (targetTab) {
+                setBottomTab(targetTab);
+              }
+            }}
+            onSelectBottomTab={(tab) => {
+              setBottomTab(tab);
+              if (!layout.bottomPanelExpanded) {
+                const next = { ...layout, bottomPanelExpanded: true };
+                setLayout(next);
+                persistLayout(next);
+              }
             }}
             onRunCommand={(cmd, cwd, terminalType, terminalTitle) => {
               terminalNonce.current += 1;
@@ -2864,7 +3002,10 @@ export function App() {
               setSshTargetForModal(null);
               setSshOpen(true);
             }}
-            onPickClone={() => setCloneOpen(true)}
+            onCreateCppProject={() => void createTemplateWorkspace('cpp-cmake')}
+            onCreateProject={(tplId) => void createTemplateWorkspace(tplId)}
+            onOpenWorkspace={handleOpenCreatedProject}
+            onShowToast={showToast}
             recentWorkspaces={recentWorkspaces}
             onSelectRecentWorkspace={(item) => void handleSelectRecentWorkspace(item)}
             onRemoveRecentWorkspace={handleRemoveRecentWorkspace}
@@ -2873,6 +3014,8 @@ export function App() {
             hoverDelay={hoverDelay}
             minimap={minimap}
             selectionAiFloat={selectionAiFloat}
+            breakpoints={breakpoints}
+            onToggleBreakpoint={handleToggleBreakpoint}
           />
 
           {workspace && (
@@ -2906,43 +3049,21 @@ export function App() {
                     flexShrink: 0,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <button
                       type="button"
+                      className={`bottom-tab-btn ${bottomTab === 'terminal' ? 'active' : ''}`}
                       onClick={() => setBottomTab('terminal')}
-                      style={{
-                        padding: '3px 10px',
-                        border: 'none',
-                        background: bottomTab === 'terminal' ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))' : 'transparent',
-                        color: bottomTab === 'terminal' ? 'var(--text-bright, #fff)' : 'var(--muted)',
-                        borderRadius: 4,
-                        fontSize: 11.5,
-                        fontWeight: bottomTab === 'terminal' ? 600 : 400,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
+                      title="切换至终端面板"
                     >
                       <span>💻</span>
                       <span>终端 (Terminal)</span>
                     </button>
                     <button
                       type="button"
+                      className={`bottom-tab-btn ${bottomTab === 'debug' ? 'active' : ''}`}
                       onClick={() => setBottomTab('debug')}
-                      style={{
-                        padding: '3px 10px',
-                        border: 'none',
-                        background: bottomTab === 'debug' ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))' : 'transparent',
-                        color: bottomTab === 'debug' ? 'var(--text-bright, #fff)' : 'var(--muted)',
-                        borderRadius: 4,
-                        fontSize: 11.5,
-                        fontWeight: bottomTab === 'debug' ? 600 : 400,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
+                      title="切换至调试工作台"
                     >
                       <span>🪲</span>
                       <span>调试控制台 (Debug)</span>
@@ -2953,6 +3074,7 @@ export function App() {
                             height: 6,
                             borderRadius: '50%',
                             background: debugState === 'paused' ? '#facc15' : '#22c55e',
+                            boxShadow: debugState === 'paused' ? '0 0 6px #facc15' : '0 0 6px #22c55e',
                           }}
                         />
                       )}
@@ -2991,6 +3113,7 @@ export function App() {
 
                 <div style={{ flex: 1, overflow: 'hidden', display: bottomTab === 'debug' ? 'flex' : 'none' }}>
                   <DebugPanel
+                    workspace={workspace}
                     breakpoints={breakpoints}
                     onToggleBreakpoint={handleToggleBreakpoint}
                     onClearBreakpoints={handleClearBreakpoints}
@@ -3002,7 +3125,18 @@ export function App() {
                     onStepOver={() => window.ide?.dapStepOver?.()}
                     onStepInto={() => window.ide?.dapStepInto?.()}
                     onStepOut={() => window.ide?.dapStepOut?.()}
-                    onStop={() => window.ide?.dapStopSession?.()}
+                    onStop={() => {
+                      void window.ide?.dapStopSession?.();
+                      setIsDebugging(false);
+                      setDebugState('stopped');
+                      window.dispatchEvent(new CustomEvent('echoly:stopDebug'));
+                      window.dispatchEvent(
+                        new CustomEvent('echoly:stopTerminalCommand', {
+                          detail: {},
+                        }),
+                      );
+                      showToast('调试已终止', undefined, 'info');
+                    }}
                   />
                 </div>
               </div>
@@ -3147,12 +3281,21 @@ export function App() {
           setSshOpen(true);
         }}
         onPickClone={() => setCloneOpen(true)}
+        onOpenNewProjectWizard={() => setNewProjectWizardOpen(true)}
         recentWorkspaces={recentWorkspaces}
         currentWorkspace={workspace}
         currentWorkspaceInfo={workspaceInfo}
         onSelectRecent={(item) => void handleSelectRecentWorkspace(item)}
         onRemoveRecent={handleRemoveRecentWorkspace}
         onClearRecent={handleClearRecentWorkspaces}
+      />
+
+      <NewProjectWizardModal
+        isOpen={newProjectWizardOpen}
+        onClose={() => setNewProjectWizardOpen(false)}
+        defaultWorkspace={workspace}
+        onOpenWorkspace={handleOpenCreatedProject}
+        onShowToast={showToast}
       />
 
       <CloneRepoModal

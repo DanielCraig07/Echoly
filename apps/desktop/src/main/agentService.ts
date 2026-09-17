@@ -304,6 +304,9 @@ export class AgentService {
         this.continues.delete(runId);
         this.runs.delete(runId);
         this.runSenders.delete(runId);
+        try {
+          workspace.notifyFsChange('agent');
+        } catch {}
       }
     })();
 

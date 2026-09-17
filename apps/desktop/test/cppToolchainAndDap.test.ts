@@ -34,6 +34,17 @@ describe('DAP Debugger Service', () => {
     expect(bps[1].line).toBe(25);
     expect(bps[2].line).toBe(42);
 
+    // Test conditional breakpoint caching and metadata
+    const condBps = await dap.setBreakpoints('/mock/workspace/src/main.cpp', [
+      { line: 15, condition: 'x > 10' },
+      { line: 20 },
+    ]);
+    expect(condBps).toHaveLength(2);
+    expect(condBps[0].line).toBe(15);
+    expect(condBps[0].condition).toBe('x > 10');
+    expect(condBps[1].line).toBe(20);
+    expect(condBps[1].condition).toBeUndefined();
+
     // Verify non-existent binary error handling
     const result = await dap.startSession({
       program: '/mock/workspace/non_existent_binary',

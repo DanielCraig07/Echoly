@@ -259,3 +259,111 @@
 .runtime-save-btn:active {
   filter: brightness(0.95);
 }
+
+/* ── macOS 风格拟真终端实时预览卡片 ── */
+.runtime-terminal-card {
+  background: #090d16;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.runtime-terminal-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #131722;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.runtime-terminal-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.runtime-terminal-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.runtime-terminal-dot.red {
+  background: #ff5f56;
+}
+
+.runtime-terminal-dot.yellow {
+  background: #ffbd2e;
+}
+
+.runtime-terminal-dot.green {
+  background: #27c93f;
+}
+
+.runtime-terminal-copy-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-bright, #fff);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.runtime-terminal-copy-btn:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
+.runtime-terminal-content {
+  padding: 10px 14px;
+  font-family: var(--font-mono, 'JetBrains Mono', 'Fira Code', Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #4ade80;
+  word-break: break-all;
+  user-select: text;
+}
+
+/* 语言切换胶囊栏 */
+.runtime-lang-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.runtime-lang-tab {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.runtime-lang-tab:hover {
+  color: var(--text-bright, #fff);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.runtime-lang-tab.active {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  font-weight: 600;
+}
+

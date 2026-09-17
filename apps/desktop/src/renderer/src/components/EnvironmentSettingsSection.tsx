@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type {
   MavenEnvironmentInfo,
   InstalledJdkInfo,
   OnlineJdkInfo,
   JdkInstallProgress,
   CppToolchainStatus,
+  MultiLangToolchainStatus,
 } from '@deepseek-ide/shared';
 import {
   loadProjectRuntimeConfig,
@@ -50,13 +51,104 @@ export function saveEnvConfig(cfg: EnvConfig, workspace?: string | null) {
   } catch {}
 }
 
+export type DetectedEnvLang = 'java' | 'cpp' | 'python' | 'go' | 'node' | 'generic';
+
+export function inferEnvWorkspaceLang(workspace?: string): DetectedEnvLang {
+  if (!workspace) return 'generic';
+  const wsLower = workspace.toLowerCase();
+  if (wsLower.includes('test-c') || wsLower.includes('cpp') || wsLower.includes('c-') || wsLower.includes('cmake')) {
+    return 'cpp';
+  }
+  if (wsLower.includes('python') || wsLower.includes('py-') || wsLower.includes('fastapi')) return 'python';
+  if (wsLower.includes('go') || wsLower.includes('golang')) return 'go';
+  if (wsLower.includes('node') || wsLower.includes('vue') || wsLower.includes('react') || wsLower.includes('next')) return 'node';
+  if (wsLower.includes('java') || wsLower.includes('maven') || wsLower.includes('spring')) return 'java';
+  return 'generic';
+}
+
 interface EnvironmentSettingsSectionProps {
   workspace?: string;
   onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
 }
 
 export function EnvironmentSettingsSection({ workspace, onShowToast }: EnvironmentSettingsSectionProps) {
-  const [subTab, setSubTab] = useState<'java' | 'maven' | 'cpp' | 'runtime'>('java');
+  const initialLang = useMemo(() => inferEnvWorkspaceLang(workspace), [workspace]);
+  const [detectedLang, setDetectedLang] = useState<DetectedEnvLang>(initialLang);
+  const [viewAllEnvironments, setViewAllEnvironments] = useState(false);
+
+  const [subTab, setSubTab] = useState<'java' | 'maven' | 'cpp' | 'python' | 'go' | 'node' | 'runtime'>(() => {
+    if (initialLang === 'cpp') return 'cpp';
+    if (initialLang === 'python') return 'python';
+    if (initialLang === 'go') return 'go';
+    if (initialLang === 'node') return 'node';
+    return 'java';
+  });
+
+  // 嗅探当前工作区根目录特征文件以实现极致精准的语言识别
+  useEffect(() => {
+    let canceled = false;
+    const initial = inferEnvWorkspaceLang(workspace);
+    setDetectedLang(initial);
+    if (initial !== 'generic') {
+      setSubTab(initial === 'java' ? 'java' : initial);
+    }
+
+    const sniffWorkspaceRoot = async () => {
+      if (!workspace || !window.ide?.listDir) return;
+      try {
+        const files = await window.ide.listDir('.');
+        if (canceled || !Array.isArray(files)) return;
+        const names = files.map((f) => f.name.toLowerCase());
+        if (names.includes('cmakelists.txt') || names.includes('makefile') || names.some((n) => /\.(cpp|cc|cxx)$/.test(n))) {
+          setDetectedLang('cpp');
+          setSubTab('cpp');
+        } else if (names.includes('pom.xml') || names.includes('mvnw') || names.includes('build.gradle')) {
+          setDetectedLang('java');
+          setSubTab('java');
+        } else if (names.includes('requirements.txt') || names.includes('pyproject.toml') || names.includes('pipfile') || names.some((n) => /\.py$/.test(n))) {
+          setDetectedLang('python');
+          setSubTab('python');
+        } else if (names.includes('go.mod') || names.some((n) => /\.go$/.test(n))) {
+          setDetectedLang('go');
+          setSubTab('go');
+        } else if (names.includes('package.json') || names.includes('tsconfig.json')) {
+          setDetectedLang('node');
+          setSubTab('node');
+        }
+      } catch {}
+    };
+
+    void sniffWorkspaceRoot();
+    return () => { canceled = true; };
+  }, [workspace]);
+
+  // 根据检测到的工程语言与用户偏好计算允许展示的 SubTab（默认按需精简，可一键展开全部）
+  const allowedTabs = useMemo(() => {
+    if (viewAllEnvironments || detectedLang === 'generic') {
+      return ['java', 'maven', 'cpp', 'python', 'go', 'node', 'runtime'] as const;
+    }
+    switch (detectedLang) {
+      case 'cpp':
+        return ['cpp', 'runtime'] as const;
+      case 'java':
+        return ['java', 'maven', 'runtime'] as const;
+      case 'python':
+        return ['python', 'runtime'] as const;
+      case 'go':
+        return ['go', 'runtime'] as const;
+      case 'node':
+        return ['node', 'runtime'] as const;
+      default:
+        return ['java', 'maven', 'cpp', 'python', 'go', 'node', 'runtime'] as const;
+    }
+  }, [viewAllEnvironments, detectedLang]);
+
+  // 当 allowedTabs 发生变动且当前选中的 subTab 不在允许列表中时，自动回退到首个合法项
+  useEffect(() => {
+    if (!allowedTabs.includes(subTab as any)) {
+      setSubTab(allowedTabs[0]);
+    }
+  }, [allowedTabs, subTab]);
 
   // Config state
   const [config, setConfig] = useState<EnvConfig>(() => loadEnvConfig(workspace));
@@ -64,70 +156,35 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
     loadProjectRuntimeConfig(workspace),
   );
 
-  // C/C++ Toolchain State
+  // C/C++ & Multi-Language Toolchain State
   const [cppToolchain, setCppToolchain] = useState<CppToolchainStatus | null>(null);
-  const [detectingCpp, setDetectingCpp] = useState(false);
-  const [creatingCppTemplate, setCreatingCppTemplate] = useState(false);
+  const [multiToolchain, setMultiToolchain] = useState<MultiLangToolchainStatus | null>(null);
+  const [detectingMulti, setDetectingMulti] = useState(false);
 
-  const detectCpp = useCallback(async () => {
-    setDetectingCpp(true);
+  const detectAllToolchains = useCallback(async () => {
+    setDetectingMulti(true);
     try {
-      if (window.ide?.cppCheckToolchain) {
+      if (window.ide?.multiLangCheckToolchain) {
+        const res = await window.ide.multiLangCheckToolchain();
+        setMultiToolchain(res);
+        if (res.cpp) setCppToolchain(res.cpp);
+      } else if (window.ide?.cppCheckToolchain) {
         const res = await window.ide.cppCheckToolchain();
         setCppToolchain(res);
       }
     } catch (e) {
-      console.error('Failed to check C++ toolchain:', e);
+      console.error('Failed to check multi-lang toolchain:', e);
     } finally {
-      setDetectingCpp(false);
+      setDetectingMulti(false);
     }
   }, []);
 
   useEffect(() => {
-    if (subTab === 'cpp') {
-      void detectCpp();
+    if (subTab === 'cpp' || subTab === 'python' || subTab === 'go' || subTab === 'node') {
+      void detectAllToolchains();
     }
-  }, [subTab, detectCpp]);
+  }, [subTab, detectAllToolchains]);
 
-  const handleCreateCppTemplate = async () => {
-    setCreatingCppTemplate(true);
-    try {
-      if (!window.ide?.writeFile) return;
-
-      await window.ide.writeFile(
-        'CMakeLists.txt',
-        `cmake_minimum_required(VERSION 3.15)\nproject(CppDemo VERSION 1.0.0 LANGUAGES CXX)\n\nset(CMAKE_CXX_STANDARD 17)\nset(CMAKE_CXX_STANDARD_REQUIRED ON)\nset(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n\ninclude_directories(include)\n\nadd_executable(app src/main.cpp)\n`,
-      );
-
-      await window.ide.writeFile(
-        'src/main.cpp',
-        `#include <iostream>\n#include "demo.h"\n\nint main(int argc, char** argv) {\n    std::cout << "🚀 Hello Echoly C++ with Clangd & LLDB-DAP!" << std::endl;\n    demoGreeting();\n    return 0;\n}\n`,
-      );
-
-      await window.ide.writeFile(
-        'include/demo.h',
-        `#pragma once\n#include <iostream>\n\ninline void demoGreeting() {\n    std::cout << "✨ Header & Source switching working seamlessly!" << std::endl;\n}\n`,
-      );
-
-      await window.ide.writeFile(
-        '.clang-format',
-        `BasedOnStyle: Google\nIndentWidth: 4\nColumnLimit: 100\n`,
-      );
-
-      await window.ide.writeFile(
-        '.gitignore',
-        `build/\n.echoly/\n*.o\n*.out\n*.exe\n`,
-      );
-
-      onShowToast?.('C++ 工程模板创建成功', '已生成 CMakeLists.txt, src/main.cpp 等标准模板', 'success');
-      // 触发文件树刷新
-      window.dispatchEvent(new CustomEvent('echoly:refreshTree'));
-    } catch (err: any) {
-      onShowToast?.('创建模板失败', err?.message || String(err), 'error');
-    } finally {
-      setCreatingCppTemplate(false);
-    }
-  };
 
   useEffect(() => {
     setConfig(loadEnvConfig(workspace));
@@ -457,106 +514,119 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
         </div>
       )}
 
-      {/* Sub-nav toggle buttons (Theme-adapted) */}
+      {/* 智能识别与环境技术栈支持说明横幅 */}
       <div
         style={{
           display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
           gap: 8,
-          borderBottom: '1px solid var(--border)',
-          paddingBottom: 8,
+          padding: '8px 12px',
+          borderRadius: 8,
+          background: 'rgba(56, 189, 248, 0.08)',
+          border: '1px solid rgba(56, 189, 248, 0.22)',
+          fontSize: 12,
         }}
       >
-        <button
-          type="button"
-          onClick={() => setSubTab('java')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '7px 16px',
-            borderRadius: 6,
-            border: '1px solid',
-            borderColor: subTab === 'java' ? 'var(--accent, #3b82f6)' : 'transparent',
-            background: subTab === 'java' ? 'var(--bg-hover, rgba(59, 130, 246, 0.12))' : 'transparent',
-            color: subTab === 'java' ? 'var(--text-bright, #fff)' : 'var(--text)',
-            fontSize: 12.5,
-            fontWeight: subTab === 'java' ? 600 : 400,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <span>☕</span>
-          <span>Java (JDK) 环境</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 14 }}>🎯</span>
+          <span style={{ color: 'var(--text-bright, #fff)' }}>
+            当前工程自动识别为:{' '}
+            <strong style={{ color: '#38bdf8' }}>
+              {detectedLang === 'cpp' && 'C / C++ (Clang / CMake)'}
+              {detectedLang === 'java' && 'Java (Maven / JDK)'}
+              {detectedLang === 'python' && 'Python (3.x)'}
+              {detectedLang === 'go' && 'Go (Module)'}
+              {detectedLang === 'node' && 'Node.js / TypeScript'}
+              {detectedLang === 'generic' && '通用工程'}
+            </strong>
+          </span>
+          {!viewAllEnvironments && detectedLang !== 'generic' && (
+            <span style={{ color: 'var(--muted)', fontSize: 11 }}>
+              (已按当前项目所需配置自动精简 Tab)
+            </span>
+          )}
+        </div>
 
-        <button
-          type="button"
-          onClick={() => setSubTab('maven')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '7px 16px',
-            borderRadius: 6,
-            border: '1px solid',
-            borderColor: subTab === 'maven' ? 'var(--accent, #3b82f6)' : 'transparent',
-            background: subTab === 'maven' ? 'var(--bg-hover, rgba(59, 130, 246, 0.12))' : 'transparent',
-            color: subTab === 'maven' ? 'var(--text-bright, #fff)' : 'var(--text)',
-            fontSize: 12.5,
-            fontWeight: subTab === 'maven' ? 600 : 400,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <span>🛠️</span>
-          <span>Maven 构建工具 &amp; settings.xml</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+            💡 Echoly 原生环境中心全面支持: <strong>Java (JDK 8~25 / Maven)、C/C++ (Clang / GCC / CMake)、Python 3、Go、Node.js</strong>
+          </span>
+          <button
+            type="button"
+            className="panel-standard-btn"
+            onClick={() => setViewAllEnvironments(!viewAllEnvironments)}
+            style={{
+              padding: '3px 8px',
+              fontSize: 11,
+              borderRadius: 4,
+              background: viewAllEnvironments ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255, 255, 255, 0.06)',
+              color: viewAllEnvironments ? '#38bdf8' : 'var(--text, #e2e8f0)',
+              border: '1px solid var(--border)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+            title={viewAllEnvironments ? '精简为仅显示当前项目环境' : '查看全部编程语言环境配置'}
+          >
+            {viewAllEnvironments ? '仅当前项目' : '查看全部环境 ▾'}
+          </button>
+        </div>
+      </div>
 
-        <button
-          type="button"
-          onClick={() => setSubTab('cpp')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '7px 16px',
-            borderRadius: 6,
-            border: '1px solid',
-            borderColor: subTab === 'cpp' ? 'var(--accent, #3b82f6)' : 'transparent',
-            background: subTab === 'cpp' ? 'var(--bg-hover, rgba(59, 130, 246, 0.12))' : 'transparent',
-            color: subTab === 'cpp' ? 'var(--text-bright, #fff)' : 'var(--text)',
-            fontSize: 12.5,
-            fontWeight: subTab === 'cpp' ? 600 : 400,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <span>🚀</span>
-          <span>C/C++ 工具链 &amp; 调试环境</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setSubTab('runtime')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '7px 16px',
-            borderRadius: 6,
-            border: '1px solid',
-            borderColor: subTab === 'runtime' ? 'var(--accent, #3b82f6)' : 'transparent',
-            background: subTab === 'runtime' ? 'var(--bg-hover, rgba(59, 130, 246, 0.12))' : 'transparent',
-            color: subTab === 'runtime' ? 'var(--text-bright, #fff)' : 'var(--text)',
-            fontSize: 12.5,
-            fontWeight: subTab === 'runtime' ? 600 : 400,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <span>⚡</span>
-          <span>全局运行时参数 (VM Options)</span>
-        </button>
+      {/* 现代化分段胶囊 Tab 导航栏 (防挤压、防竖排折行) */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '4px',
+          background: 'rgba(255, 255, 255, 0.03)',
+          borderRadius: 8,
+          border: '1px solid var(--border)',
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+        }}
+      >
+        {(
+          [
+            { key: 'java', icon: '☕', label: 'Java (JDK)' },
+            { key: 'maven', icon: '🛠️', label: 'Maven 构建' },
+            { key: 'cpp', icon: '🚀', label: 'C / C++' },
+            { key: 'python', icon: '🐍', label: 'Python' },
+            { key: 'go', icon: '🐹', label: 'Go' },
+            { key: 'node', icon: '🟢', label: 'Node.js / TS' },
+            { key: 'runtime', icon: '⚡', label: '运行参数 (VM Options)' },
+          ] as const
+        )
+          .filter((t) => (allowedTabs as readonly string[]).includes(t.key))
+          .map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setSubTab(t.key)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 13px',
+                borderRadius: 6,
+                border: '1px solid',
+                borderColor: subTab === t.key ? 'var(--accent, #3b82f6)' : 'transparent',
+                background: subTab === t.key ? 'var(--bg-hover, rgba(59, 130, 246, 0.16))' : 'transparent',
+                color: subTab === t.key ? 'var(--text-bright, #fff)' : 'var(--muted, #a1a1aa)',
+                fontSize: 12,
+                fontWeight: subTab === t.key ? 600 : 400,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span>{t.icon}</span>
+              <span>{t.label}</span>
+            </button>
+          ))}
       </div>
 
       {/* ─── TAB 1: JAVA (JDK) CONFIGURATION ─── */}
@@ -1796,26 +1866,17 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <button
                 type="button"
                 className="panel-standard-btn"
-                onClick={detectCpp}
-                disabled={detectingCpp}
+                onClick={detectAllToolchains}
+                disabled={detectingMulti}
                 style={{ fontSize: 12, padding: '6px 14px' }}
               >
-                {detectingCpp ? '检测中...' : '重新体检'}
-              </button>
-              <button
-                type="button"
-                className="panel-standard-btn primary"
-                onClick={handleCreateCppTemplate}
-                disabled={creatingCppTemplate}
-                style={{ fontSize: 12, padding: '6px 14px', background: '#3b82f6', borderColor: '#3b82f6', color: '#fff' }}
-              >
-                {creatingCppTemplate ? '生成中...' : '一键创建 CMake C++ 模板'}
+                {detectingMulti ? '检测中...' : '重新体检'}
               </button>
             </div>
           </div>
 
           {/* 工具链四件套卡片网格 */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
             {/* 1. 编译器 (Compiler) */}
             <div
               style={{
@@ -1828,8 +1889,8 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 gap: 8,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>⚙️</span>
                   <span>C/C++ 编译器 (Compiler)</span>
                 </div>
@@ -1838,6 +1899,8 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     fontSize: 11,
                     padding: '2px 8px',
                     borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     background: cppToolchain?.compiler.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                     color: cppToolchain?.compiler.installed ? '#4ade80' : '#f87171',
                   }}
@@ -1845,16 +1908,16 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   {cppToolchain?.compiler.installed ? '已就绪' : '未安装'}
                 </span>
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 命令: {cppToolchain?.compiler.command || 'clang++ / g++'}
               </div>
               {cppToolchain?.compiler.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8' }}>版本: {cppToolchain.compiler.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', wordBreak: 'break-all' }}>路径: {cppToolchain.compiler.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {cppToolchain.compiler.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.compiler.path}>路径: {cppToolchain.compiler.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171' }}>推荐安装: {cppToolchain?.compiler.installGuide || 'xcode-select --install'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {cppToolchain?.compiler.installGuide || 'xcode-select --install'}</div>
               )}
             </div>
 
@@ -1870,8 +1933,8 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 gap: 8,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🧠</span>
                   <span>Clangd 语言服务器 (LSP)</span>
                 </div>
@@ -1880,6 +1943,8 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     fontSize: 11,
                     padding: '2px 8px',
                     borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     background: cppToolchain?.clangd.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                     color: cppToolchain?.clangd.installed ? '#4ade80' : '#f87171',
                   }}
@@ -1887,16 +1952,16 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   {cppToolchain?.clangd.installed ? '已就绪' : '未安装'}
                 </span>
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 命令: {cppToolchain?.clangd.command || 'clangd'}
               </div>
               {cppToolchain?.clangd.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8' }}>版本: {cppToolchain.clangd.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', wordBreak: 'break-all' }}>路径: {cppToolchain.clangd.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {cppToolchain.clangd.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.clangd.path}>路径: {cppToolchain.clangd.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171' }}>推荐安装: {cppToolchain?.clangd.installGuide || 'brew install llvm'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {cppToolchain?.clangd.installGuide || 'brew install llvm'}</div>
               )}
             </div>
 
@@ -1912,16 +1977,18 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 gap: 8,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🪲</span>
-                  <span>LLDB-DAP 调试引擎 (Debugger)</span>
+                  <span>LLDB-DAP 调试引擎</span>
                 </div>
                 <span
                   style={{
                     fontSize: 11,
                     padding: '2px 8px',
                     borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     background: cppToolchain?.debugger.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                     color: cppToolchain?.debugger.installed ? '#4ade80' : '#f87171',
                   }}
@@ -1929,16 +1996,16 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   {cppToolchain?.debugger.installed ? '已就绪' : '未安装'}
                 </span>
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 命令: {cppToolchain?.debugger.command || 'lldb-dap'}
               </div>
               {cppToolchain?.debugger.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8' }}>版本: {cppToolchain.debugger.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', wordBreak: 'break-all' }}>路径: {cppToolchain.debugger.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {cppToolchain.debugger.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.debugger.path}>路径: {cppToolchain.debugger.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171' }}>推荐安装: {cppToolchain?.debugger.installGuide || 'xcode-select --install'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {cppToolchain?.debugger.installGuide || 'xcode-select --install'}</div>
               )}
             </div>
 
@@ -1954,16 +2021,18 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 gap: 8,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🏗️</span>
-                  <span>CMake 构建系统 (Build System)</span>
+                  <span>CMake 构建系统</span>
                 </div>
                 <span
                   style={{
                     fontSize: 11,
                     padding: '2px 8px',
                     borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     background: cppToolchain?.cmake.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                     color: cppToolchain?.cmake.installed ? '#4ade80' : '#f87171',
                   }}
@@ -1971,16 +2040,16 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   {cppToolchain?.cmake.installed ? '已就绪' : '未安装'}
                 </span>
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 命令: {cppToolchain?.cmake.command || 'cmake'}
               </div>
               {cppToolchain?.cmake.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8' }}>版本: {cppToolchain.cmake.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', wordBreak: 'break-all' }}>路径: {cppToolchain.cmake.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {cppToolchain.cmake.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.cmake.path}>路径: {cppToolchain.cmake.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171' }}>推荐安装: {cppToolchain?.cmake.installGuide || 'brew install cmake'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {cppToolchain?.cmake.installGuide || 'brew install cmake'}</div>
               )}
             </div>
           </div>
@@ -2014,6 +2083,636 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>⚡ CMake 自动感知</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
                   只要根目录存在 CMakeLists.txt，顶部运行部件即自动解析 Targets，支持一键 Build、Run 与 CTest。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Python 工具链与调试环境 ── */}
+      {subTab === 'python' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div
+            style={{
+              padding: '16px 20px',
+              borderRadius: 8,
+              background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%)',
+              border: '1px solid rgba(234, 179, 8, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 16 }}>🐍</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)' }}>
+                  Python 现代开发工具链与 debugpy 调试环境
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+                Echoly 已深度集成 Pyright 语言服务器、debugpy DAP 调试通道与虚拟环境 (.venv) 自动感知，支持智能断点调试、变量悬停求值与单元测试。
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                className="panel-standard-btn"
+                onClick={detectAllToolchains}
+                disabled={detectingMulti}
+                style={{ fontSize: 12, padding: '6px 14px' }}
+              >
+                {detectingMulti ? '检测中...' : '重新体检'}
+              </button>
+            </div>
+          </div>
+
+          {/* Python 三件套卡片 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            {/* 解释器 */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span>⚙️</span>
+                  <span>Python 解释器</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    background: multiToolchain?.python.interpreter.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: multiToolchain?.python.interpreter.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {multiToolchain?.python.interpreter.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                命令: {multiToolchain?.python.interpreter.command || 'python3'}
+              </div>
+              {multiToolchain?.python.interpreter.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.python.interpreter.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.python.interpreter.path}>路径: {multiToolchain.python.interpreter.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {multiToolchain?.python.interpreter.installGuide || 'brew install python'}</div>
+              )}
+            </div>
+
+            {/* Debugpy */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span>🐞</span>
+                  <span>debugpy 调试引擎</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    background: multiToolchain?.python.debugpy.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: multiToolchain?.python.debugpy.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {multiToolchain?.python.debugpy.installed ? '已就绪' : '推荐安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                模块: python3 -m debugpy (Port: 5678)
+              </div>
+              {multiToolchain?.python.debugpy.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>状态: 已就绪 (支持 DAP TCP 会话)</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.python.debugpy.path}>路径: {multiToolchain.python.debugpy.path || '模块级加载'}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>安装命令: {multiToolchain?.python.debugpy.installGuide || 'python3 -m pip install debugpy'}</div>
+              )}
+            </div>
+
+            {/* Pip */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span>📦</span>
+                  <span>Pip 包管理器</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    background: multiToolchain?.python.pip.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: multiToolchain?.python.pip.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {multiToolchain?.python.pip.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                命令: {multiToolchain?.python.pip.command || 'pip3'}
+              </div>
+              {multiToolchain?.python.pip.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.python.pip.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.python.pip.path}>路径: {multiToolchain.python.pip.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐引导: {multiToolchain?.python.pip.installGuide}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Python 快捷指引 */}
+          <div
+            style={{
+              padding: '16px',
+              borderRadius: 8,
+              background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#fff', marginBottom: 10 }}>
+              💡 Python 开发与调试指引
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>🌱 虚拟环境自动加载</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  工作区根目录下的 .venv / venv 会被 Pyright 与调试器自动识别，无需手动切换系统环境变量。
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>🎯 断点单步求值</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  在 Python 文件行号处点击添加断点，点击顶部 Debug 图标即可触发 debugpy 监听并无缝断点命中。
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#93c5fd', marginBottom: 4 }}>🧪 自动化测试套件</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  工程模板预置 pytest 支持，在顶部运行下拉框可直接选择运行或调试单元测试。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Go 工具链与调试环境 ── */}
+      {subTab === 'go' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div
+            style={{
+              padding: '16px 20px',
+              borderRadius: 8,
+              background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%)',
+              border: '1px solid rgba(6, 182, 212, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 16 }}>🐹</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)' }}>
+                  Go 现代开发工具链与 Delve DAP 调试引擎
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+                Echoly 已全面接入 Go 官方 Gopls 语言服务器与 Delve (dlv dap) 调试协议，支持 Go Module 依赖解析、秒级编译运行与原生断点单步调试。
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                className="panel-standard-btn"
+                onClick={detectAllToolchains}
+                disabled={detectingMulti}
+                style={{ fontSize: 12, padding: '6px 14px' }}
+              >
+                {detectingMulti ? '检测中...' : '重新体检'}
+              </button>
+            </div>
+          </div>
+
+          {/* Go 三件套卡片 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            {/* Go 编译器 */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span>⚙️</span>
+                  <span>Go 编译器 (go)</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    background: multiToolchain?.go.go.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: multiToolchain?.go.go.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {multiToolchain?.go.go.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                命令: {multiToolchain?.go.go.command || 'go'}
+              </div>
+              {multiToolchain?.go.go.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.go.go.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.go.go.path}>路径: {multiToolchain.go.go.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {multiToolchain?.go.go.installGuide || 'brew install go'}</div>
+              )}
+            </div>
+
+            {/* Delve 调试器 */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span>🐞</span>
+                  <span>Delve 调试器 (dlv dap)</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    background: multiToolchain?.go.delve.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: multiToolchain?.go.delve.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {multiToolchain?.go.delve.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                命令: dlv dap (Port: 2345)
+              </div>
+              {multiToolchain?.go.delve.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.go.delve.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.go.delve.path}>路径: {multiToolchain.go.delve.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>安装命令: {multiToolchain?.go.delve.installGuide}</div>
+              )}
+            </div>
+
+            {/* Gopls 语言服务 */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span>🧠</span>
+                  <span>Gopls 语言服务器</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    background: multiToolchain?.go.gopls.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: multiToolchain?.go.gopls.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {multiToolchain?.go.gopls.installed ? '已就绪' : '推荐安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                命令: {multiToolchain?.go.gopls.command || 'gopls'}
+              </div>
+              {multiToolchain?.go.gopls.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.go.gopls.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.go.gopls.path}>路径: {multiToolchain.go.gopls.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>安装命令: {multiToolchain?.go.gopls.installGuide}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Go 快捷指引 */}
+          <div
+            style={{
+              padding: '16px',
+              borderRadius: 8,
+              background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#fff', marginBottom: 10 }}>
+              💡 Go 开发与调试指引
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#06b6d4', marginBottom: 4 }}>📦 Go Modules 管理</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  自动感知 go.mod，保存文件时支持自动整理依赖与智能代码补全。
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>⚡ Delve DAP 调试</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  使用 Go 官方推荐的 dlv dap 协议模式，支持变量实时展开与 Goroutine 线程调用栈回溯。
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>🚀 一键运行与测试</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  顶部快捷运行面板自动检测当前激活的 main.go 与 _test.go 文件，点击即可秒级执行。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Node.js / TypeScript 工具链 ── */}
+      {subTab === 'node' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div
+            style={{
+              padding: '16px 20px',
+              borderRadius: 8,
+              background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%)',
+              border: '1px solid rgba(34, 197, 94, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 16 }}>🟢</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)' }}>
+                  Node.js / TypeScript 现代全栈运行环境
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+                支持 package.json 脚本自动嗅探、tsx 原生免编译极速执行与 V8 Inspector 9229 调试端口连接。
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                className="panel-standard-btn"
+                onClick={detectAllToolchains}
+                disabled={detectingMulti}
+                style={{ fontSize: 12, padding: '6px 14px' }}
+              >
+                {detectingMulti ? '检测中...' : '重新体检'}
+              </button>
+            </div>
+          </div>
+
+          {/* Node 三件套卡片 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            {/* Node 运行时 */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span>⚙️</span>
+                  <span>Node.js 运行时</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    background: multiToolchain?.node.node.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: multiToolchain?.node.node.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {multiToolchain?.node.node.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                命令: {multiToolchain?.node.node.command || 'node'}
+              </div>
+              {multiToolchain?.node.node.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.node.node.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.node.node.path}>路径: {multiToolchain.node.node.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {multiToolchain?.node.node.installGuide || 'brew install node'}</div>
+              )}
+            </div>
+
+            {/* NPM 包管理器 */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span>📦</span>
+                  <span>NPM 包管理器</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    background: multiToolchain?.node.npm.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: multiToolchain?.node.npm.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {multiToolchain?.node.npm.installed ? '已就绪' : '未安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                命令: {multiToolchain?.node.npm.command || 'npm'}
+              </div>
+              {multiToolchain?.node.npm.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.node.npm.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.node.npm.path}>路径: {multiToolchain.node.npm.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {multiToolchain?.node.npm.installGuide}</div>
+              )}
+            </div>
+
+            {/* TypeScript (tsc) */}
+            <div
+              style={{
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+                border: '1px solid var(--border)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span>🔷</span>
+                  <span>TypeScript 编译器 (tsc)</span>
+                </div>
+                <span
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                    background: multiToolchain?.node.typescript.installed ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    color: multiToolchain?.node.typescript.installed ? '#4ade80' : '#f87171',
+                  }}
+                >
+                  {multiToolchain?.node.typescript.installed ? '已就绪' : '推荐全局安装'}
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                命令: {multiToolchain?.node.typescript.command || 'tsc'}
+              </div>
+              {multiToolchain?.node.typescript.installed ? (
+                <>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.node.typescript.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.node.typescript.path}>路径: {multiToolchain.node.typescript.path}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>安装命令: {multiToolchain?.node.typescript.installGuide || 'npm install -g typescript tsx'}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Node 快捷指引 */}
+          <div
+            style={{
+              padding: '16px',
+              borderRadius: 8,
+              background: 'var(--bg-card, rgba(255, 255, 255, 0.03))',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#fff', marginBottom: 10 }}>
+              💡 Node.js / TypeScript 开发与调试指引
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>⚡ tsx 免构建执行</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  无需执行 tsc 编译，直接在编辑器中秒级运行 TypeScript 文件并支持 ES 模块。
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#93c5fd', marginBottom: 4 }}>🔍 V8 Inspector 调试</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  支持通过 --inspect=9229 端口接入，断点命中时精准捕获异常堆栈与异步作用域。
+                </div>
+              </div>
+              <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
+                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>📜 NPM Scripts 联动</div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  顶部运行部件实时读取 package.json 中的 scripts，一键启动 dev、build 或 test。
                 </div>
               </div>
             </div>

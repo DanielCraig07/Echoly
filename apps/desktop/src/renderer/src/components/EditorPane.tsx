@@ -54,6 +54,10 @@ interface Props {
   onPickLocal?: () => void;
   onPickSsh?: () => void;
   onPickClone?: () => void;
+  onCreateCppProject?: () => void;
+  onCreateProject?: (templateId: string) => void;
+  onOpenWorkspace?: (targetPath: string, openInNewWindow: boolean, entryFile?: string) => void;
+  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
   recentWorkspaces?: RecentWorkspaceItem[];
   onSelectRecentWorkspace?: (item: RecentWorkspaceItem) => void;
   onRemoveRecentWorkspace?: (path: string) => void;
@@ -62,6 +66,8 @@ interface Props {
   hoverDelay?: number;
   minimap?: boolean;
   selectionAiFloat?: boolean;
+  breakpoints?: DapBreakpoint[];
+  onToggleBreakpoint?: (path: string, line: number, condition?: string) => void;
 }
 
 function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
@@ -539,6 +545,10 @@ export function EditorPane({
   onPickLocal,
   onPickSsh,
   onPickClone,
+  onCreateCppProject,
+  onCreateProject,
+  onOpenWorkspace,
+  onShowToast,
   recentWorkspaces,
   onSelectRecentWorkspace,
   onRemoveRecentWorkspace,
@@ -547,6 +557,8 @@ export function EditorPane({
   hoverDelay = 500,
   minimap = true,
   selectionAiFloat = true,
+  breakpoints: controlledBreakpoints,
+  onToggleBreakpoint: controlledOnToggleBreakpoint,
 }: Props) {
   const active = tabs.find((t) => t.path === activePath) ?? null;
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
@@ -571,47 +583,57 @@ export function EditorPane({
   } | null>(null);
   const monacoTheme = uiTheme === 'light' ? 'custom-light' : 'custom-dark';
 
-  // ── C/C++ DAP 调试与断点状态 ──
-  const [breakpoints, setBreakpoints] = useState<DapBreakpoint[]>(() => {
-    try {
-      const raw = localStorage.getItem('echoly.dap.breakpoints');
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
+  // ── 调试与断点状态 (受控于 App 工作区隔离状态) ──
+  const [internalBreakpoints, setInternalBreakpoints] = useState<DapBreakpoint[]>([]);
+  const breakpoints = controlledBreakpoints ?? internalBreakpoints;
 
   const [isDebugging, setIsDebugging] = useState(false);
   const [debugState, setDebugState] = useState<'running' | 'paused' | 'stopped'>('stopped');
   const [debugStoppedInfo, setDebugStoppedInfo] = useState<{ path: string; line: number } | null>(null);
   const debugDecorationsRef = useRef<string[]>([]);
 
-  const toggleBreakpoint = useCallback((targetPath: string, line: number) => {
-    setBreakpoints((prev) => {
+  const toggleBreakpoint = useCallback((targetPath: string, line: number, condition?: string) => {
+    if (controlledOnToggleBreakpoint) {
+      controlledOnToggleBreakpoint(targetPath, line, condition);
+      return;
+    }
+    setInternalBreakpoints((prev) => {
       const exists = prev.some((b) => b.path === targetPath && b.line === line);
       const next = exists
         ? prev.filter((b) => !(b.path === targetPath && b.line === line))
-        : [...prev, { path: targetPath, line, verified: true }];
+        : [...prev, { path: targetPath, line, condition: condition?.trim() || undefined, verified: true }];
 
-      try {
-        localStorage.setItem('echoly.dap.breakpoints', JSON.stringify(next));
-      } catch {}
-
-      const fileLines = next.filter((b) => b.path === targetPath).map((b) => b.line);
-      void window.ide?.dapSetBreakpoints?.(targetPath, fileLines);
+      const fileBps = next
+        .filter((b) => b.path === targetPath)
+        .map((b) => ({ line: b.line, condition: b.condition }));
+      void window.ide?.dapSetBreakpoints?.(targetPath, fileBps);
 
       return next;
     });
+  }, [controlledOnToggleBreakpoint]);
+
+  // 停止调试：立即收回浮动条并联动终止后台终端进程与 DAP 会话
+  const handleStopDebug = useCallback(() => {
+    setIsDebugging(false);
+    setDebugState('stopped');
+    setDebugStoppedInfo(null);
+    window.dispatchEvent(new CustomEvent('echoly:stopDebug'));
+    window.dispatchEvent(new CustomEvent('echoly:stopTerminalCommand', { detail: {} }));
+    void window.ide?.dapStopSession?.();
   }, []);
 
-  // 监听 DAP 调试事件
+  // 监听 DAP 调试事件及全局停止信号
   useEffect(() => {
-    if (!window.ide?.onDapEvent) return;
-
-    const unlisten = window.ide.onDapEvent((ev) => {
+    const unlisten = window.ide?.onDapEvent ? window.ide.onDapEvent(async (ev) => {
       if (ev.type === 'stopped') {
         setIsDebugging(true);
         setDebugState('paused');
+        try {
+          const st = (await window.ide?.dapGetStackTrace?.(ev.threadId || 1)) || [];
+          if (st.length > 0 && st[0].source?.path) {
+            setDebugStoppedInfo({ path: st[0].source.path, line: st[0].line });
+          }
+        } catch {}
       } else if (ev.type === 'continued') {
         setDebugState('running');
         setDebugStoppedInfo(null);
@@ -620,19 +642,72 @@ export function EditorPane({
         setDebugState('stopped');
         setDebugStoppedInfo(null);
       }
-    });
+    }) : () => {};
 
     const handleStartDebug = () => {
       setIsDebugging(true);
       setDebugState('running');
     };
+
+    const handleStop = () => {
+      setIsDebugging(false);
+      setDebugState('stopped');
+      setDebugStoppedInfo(null);
+    };
+
     window.addEventListener('echoly:startDebug', handleStartDebug);
+    window.addEventListener('echoly:stopDebug', handleStop);
+    window.addEventListener('echoly:runFinished', handleStop);
+    window.addEventListener('echoly:debugError', handleStop);
 
     return () => {
       unlisten();
       window.removeEventListener('echoly:startDebug', handleStartDebug);
+      window.removeEventListener('echoly:stopDebug', handleStop);
+      window.removeEventListener('echoly:runFinished', handleStop);
+      window.removeEventListener('echoly:debugError', handleStop);
     };
   }, []);
+
+  // 调试暂停状态下的鼠标悬浮求值 (Hover Eval Tooltip)
+  useEffect(() => {
+    if (!isDebugging || debugState !== 'paused') return;
+
+    const hoverDisposable = monaco.languages.registerHoverProvider('*', {
+      async provideHover(model, position) {
+        if (!window.ide?.dapEvaluate) return null;
+        const word = model.getWordAtPosition(position);
+        if (!word || !word.word) return null;
+        if (/^\d+$/.test(word.word) || word.word.length < 1) return null;
+
+        try {
+          const res = await window.ide.dapEvaluate(word.word);
+          if (!res || !res.result) return null;
+
+          const typeLabel = res.type ? `*(${res.type})* ` : '';
+          const lang = model.getLanguageId() || 'text';
+          return {
+            range: new monaco.Range(
+              position.lineNumber,
+              word.startColumn,
+              position.lineNumber,
+              word.endColumn,
+            ),
+            contents: [
+              { value: `**调试变量求值 (DAP)**` },
+              {
+                value: `\`\`\`${lang}\n${word.word} = ${res.result}\n\`\`\`\n${typeLabel}`,
+              },
+            ],
+          };
+        } catch {
+          return null;
+        }
+      },
+    });
+
+    return () => hoverDisposable.dispose();
+  }, [isDebugging, debugState]);
 
   // 同步断点与命中断点行高亮至 Monaco 装订线
   useEffect(() => {
@@ -644,8 +719,14 @@ export function EditorPane({
       range: new monaco.Range(bp.line, 1, bp.line, 1),
       options: {
         isWholeLine: false,
-        glyphMarginClassName: 'debug-breakpoint-glyph',
-        glyphMarginHoverMessage: { value: `断点: 第 ${bp.line} 行` },
+        glyphMarginClassName: bp.condition
+          ? 'debug-breakpoint-glyph debug-breakpoint-conditional'
+          : 'debug-breakpoint-glyph',
+        glyphMarginHoverMessage: {
+          value: bp.condition
+            ? `条件断点: 第 ${bp.line} 行 (条件: \`${bp.condition}\`)`
+            : `断点: 第 ${bp.line} 行`,
+        },
       },
     }));
 
@@ -2881,7 +2962,7 @@ export function EditorPane({
             <button
               type="button"
               className="debug-toolbar-btn"
-              onClick={() => window.ide?.dapStopSession?.()}
+              onClick={handleStopDebug}
               title="停止调试 (Shift+F5)"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="#ef4444">
@@ -2932,15 +3013,17 @@ export function EditorPane({
                   if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
                   const content = v ?? '';
                   onChangeContent(active.path, content);
-                  if (activeLanguage === 'python' && window.ide?.lspNotifyDocument) {
-                    void window.ide.lspNotifyDocument(active.path, content, 'python');
+                  const isLsp = /^(python|cpp|c|go)$/i.test(activeLanguage) || /\.(py|cpp|cc|cxx|c|h|hpp|go)$/i.test(active.path);
+                  if (isLsp && window.ide?.lspNotifyDocument) {
+                    void window.ide.lspNotifyDocument(active.path, content, activeLanguage);
                   }
                 }}
                 onMount={(ed) => {
                   editorRef.current = ed;
                   setEditorInstance(ed);
-                  if (activeLanguage === 'python' && window.ide?.lspNotifyDocument) {
-                    void window.ide.lspNotifyDocument(active.path, active.content, 'python');
+                  const isLsp = /^(python|cpp|c|go)$/i.test(activeLanguage) || /\.(py|cpp|cc|cxx|c|h|hpp|go)$/i.test(active.path);
+                  if (isLsp && window.ide?.lspNotifyDocument) {
+                    void window.ide.lspNotifyDocument(active.path, active.content, activeLanguage);
                   }
                   // We use a ref wrapper so the keybinding closure always uses the latest onOpenFile
                   const onOpenFileRef = { current: onOpenFile };
@@ -3017,17 +3100,36 @@ export function EditorPane({
                       isGitGutterEl
                     ) {
                       const line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
-                      if (e.target.type === 2 && line && active?.path) {
-                        toggleBreakpoint(active.path, line);
+                      const isGutterClick = e.target.type === 2 || e.target.type === 3 || e.target.type === 4;
+
+                      // 若直接点击在 Git Gutter 色条元素上且该行有修改，则优先打开内联 Git Diff
+                      if (isGitGutterEl && line && modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)) {
+                        setGitInlineDiffLine(line);
                         return;
                       }
-                      if (line && modifiedRangesRef.current.length > 0) {
-                        const isModifiedLine = modifiedRangesRef.current.some(
-                          (r) => line >= r.start && line <= r.end,
-                        );
-                        if (isModifiedLine) {
-                          setGitInlineDiffLine(line);
+
+                      // 行号区或装订线点击：无论调试中还是调试前，均支持随时打上/取消红点断点
+                      if (isGutterClick && line && active?.path) {
+                        if (e.event.rightButton) {
+                          e.event.preventDefault();
+                          const existingBp = breakpoints.find((b) => b.path === active.path && b.line === line);
+                          const promptMsg = existingBp
+                            ? `编辑第 ${line} 行条件断点表达式（留空则转为普通断点，点击取消不修改）:`
+                            : `为第 ${line} 行设置条件断点表达式（例如: i > 10 或 ptr != nullptr）:`;
+                          const defaultVal = existingBp?.condition || '';
+                          const cond = window.prompt(promptMsg, defaultVal);
+                          if (cond !== null) {
+                            if (existingBp) {
+                              toggleBreakpoint(active.path, line);
+                              toggleBreakpoint(active.path, line, cond);
+                            } else {
+                              toggleBreakpoint(active.path, line, cond);
+                            }
+                          }
+                          return;
                         }
+                        toggleBreakpoint(active.path, line);
+                        return;
                       }
                     }
                   });
@@ -3405,17 +3507,36 @@ export function EditorPane({
                     isGitGutterEl
                   ) {
                     const line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
-                    if (e.target.type === 2 && line && active?.path) {
-                      toggleBreakpoint(active.path, line);
+                    const isGutterClick = e.target.type === 2 || e.target.type === 3 || e.target.type === 4;
+
+                    // 若直接点击在 Git Gutter 色条元素上且该行有修改，则优先打开内联 Git Diff
+                    if (isGitGutterEl && line && modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)) {
+                      setGitInlineDiffLine(line);
                       return;
                     }
-                    if (line && modifiedRangesRef.current.length > 0) {
-                      const isModifiedLine = modifiedRangesRef.current.some(
-                        (r) => line >= r.start && line <= r.end,
-                      );
-                      if (isModifiedLine) {
-                        setGitInlineDiffLine(line);
+
+                    // 行号区或装订线点击：无论调试中还是调试前，均支持随时打上/取消红点断点
+                    if (isGutterClick && line && active?.path) {
+                      if (e.event.rightButton) {
+                        e.event.preventDefault();
+                        const existingBp = breakpoints.find((b) => b.path === active.path && b.line === line);
+                        const promptMsg = existingBp
+                          ? `编辑第 ${line} 行条件断点表达式（留空则转为普通断点，点击取消不修改）:`
+                          : `为第 ${line} 行设置条件断点表达式（例如: i > 10 或 ptr != nullptr）:`;
+                        const defaultVal = existingBp?.condition || '';
+                        const cond = window.prompt(promptMsg, defaultVal);
+                        if (cond !== null) {
+                          if (existingBp) {
+                            toggleBreakpoint(active.path, line);
+                            toggleBreakpoint(active.path, line, cond);
+                          } else {
+                            toggleBreakpoint(active.path, line, cond);
+                          }
+                        }
+                        return;
                       }
+                      toggleBreakpoint(active.path, line);
+                      return;
                     }
                   }
                 });
@@ -3485,6 +3606,10 @@ export function EditorPane({
             onPickLocal={() => onPickLocal?.()}
             onPickSsh={() => onPickSsh?.()}
             onPickClone={() => onPickClone?.()}
+            onCreateCppProject={() => onCreateCppProject?.()}
+            onCreateProject={(tplId) => onCreateProject?.(tplId)}
+            onOpenWorkspace={onOpenWorkspace}
+            onShowToast={onShowToast}
             recentWorkspaces={recentWorkspaces}
             onSelectRecent={onSelectRecentWorkspace}
             onRemoveRecent={onRemoveRecentWorkspace}

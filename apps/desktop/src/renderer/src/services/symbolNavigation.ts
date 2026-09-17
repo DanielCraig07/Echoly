@@ -634,18 +634,24 @@ export async function findDefinitionLocations(
   const currentUri = model.uri;
   const root = opts?.getWorkspaceRoot?.();
 
-  // ── Tier 1: LSP Language Server (Python via Pyright, C/C++ via Clangd) ────
+  // ── Tier 1: LSP Language Server (Python via Pyright, C/C++ via Clangd, Go via Gopls) ────
   const isLspLang =
     lang === 'python' ||
     lang === 'cpp' ||
     lang === 'c' ||
+    lang === 'go' ||
+    /\.go$/i.test(currentUri.fsPath || currentUri.path || '') ||
     /\.(cpp|cc|cxx|c|h|hpp|hh|hxx)$/i.test(currentUri.fsPath || currentUri.path || '');
 
   if (isLspLang && window.ide?.lspGetDefinition) {
     try {
       const currentPath = currentUri.fsPath || currentUri.path || '';
       const lspLangId =
-        lang === 'python' ? 'python' : (lang === 'c' || currentPath.endsWith('.c') ? 'c' : 'cpp');
+        lang === 'python'
+          ? 'python'
+          : lang === 'go' || currentPath.endsWith('.go')
+          ? 'go'
+          : (lang === 'c' || currentPath.endsWith('.c') ? 'c' : 'cpp');
       if (window.ide.lspNotifyDocument) {
         void window.ide.lspNotifyDocument(currentPath, model.getValue(), lspLangId);
       }
@@ -1516,11 +1522,102 @@ export function setupSymbolNavigation(opts: SymbolNavigationOptions): { dispose:
     },
   });
 
+  // 4. Universal LSP Completion Provider
+  const completionDisposable = monaco.languages.registerCompletionItemProvider(
+    UNIVERSAL_LANGUAGE_SELECTOR,
+    {
+      triggerCharacters: ['.', '->', '::', '(', '/'],
+      async provideCompletionItems(model, position, _context, token) {
+        if (token.isCancellationRequested || !window.ide?.lspGetCompletion) {
+          return { suggestions: [] };
+        }
+
+        const filePath = model.uri.fsPath || model.uri.path;
+        if (!filePath) return { suggestions: [] };
+
+        try {
+          const items = await window.ide.lspGetCompletion(
+            filePath,
+            position.lineNumber,
+            position.column,
+          );
+          if (token.isCancellationRequested || !items || items.length === 0) {
+            return { suggestions: [] };
+          }
+
+          const word = model.getWordUntilPosition(position);
+          const range: monaco.IRange = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn,
+          };
+
+          const suggestions: monaco.languages.CompletionItem[] = items.map((it) => {
+            let kind = monaco.languages.CompletionItemKind.Property;
+            if (it.kind) {
+              kind = it.kind as unknown as monaco.languages.CompletionItemKind;
+            }
+            return {
+              label: it.label,
+              kind,
+              detail: it.detail,
+              documentation: it.documentation,
+              insertText: it.insertText || it.label,
+              sortText: it.sortText,
+              range,
+            };
+          });
+
+          return { suggestions };
+        } catch {
+          return { suggestions: [] };
+        }
+      },
+    },
+  );
+
+  // 5. 监听 LSP 诊断事件并渲染 Monaco 语法错误/警告波浪线
+  let diagUnlisten: (() => void) | null = null;
+  if (window.ide?.onLspDiagnostics) {
+    diagUnlisten = window.ide.onLspDiagnostics((event) => {
+      if (!event || !event.path) return;
+      const models = monaco.editor.getModels();
+      const targetModel = models.find(
+        (m) =>
+          (m.uri.fsPath || m.uri.path) === event.path ||
+          m.uri.toString() === event.uri,
+      );
+      if (!targetModel) return;
+
+      const markers: monaco.editor.IMarkerData[] = (event.diagnostics || []).map((d) => {
+        let severity = monaco.MarkerSeverity.Error;
+        if (d.severity === 2) severity = monaco.MarkerSeverity.Warning;
+        else if (d.severity === 3) severity = monaco.MarkerSeverity.Info;
+        else if (d.severity === 4) severity = monaco.MarkerSeverity.Hint;
+
+        return {
+          severity,
+          message: d.message,
+          startLineNumber: (d.range?.start?.line ?? 0) + 1,
+          startColumn: (d.range?.start?.character ?? 0) + 1,
+          endLineNumber: (d.range?.end?.line ?? 0) + 1,
+          endColumn: (d.range?.end?.character ?? 0) + 1,
+          source: d.source || 'clangd',
+        };
+      });
+
+      monaco.editor.setModelMarkers(targetModel, 'lsp', markers);
+    });
+  }
+
   const controller = {
     dispose() {
       openerDisposable.dispose();
       defDisposable.dispose();
       refDisposable.dispose();
+      completionDisposable.dispose();
+      diagUnlisten?.();
     },
   };
 

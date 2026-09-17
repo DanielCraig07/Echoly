@@ -8389,14 +8389,14 @@ body.resizing.resizing-row {
   user-select: none;
 }
 
-.panel-action-btn:hover {
+.panel-action-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.18);
   transform: scale(1.05);
 }
 
-.panel-action-btn:active {
+.panel-action-btn:active:not(:disabled) {
   transform: scale(0.95);
   background: rgba(255, 255, 255, 0.2);
 }
@@ -8422,6 +8422,94 @@ body.resizing.resizing-row {
   background: rgba(255, 255, 255, 0.25);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.28);
+}
+
+/* ── Top Run Widget Action Buttons (Maven Style Alignment) ─── */
+.panel-action-btn.run-action-btn {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+.panel-action-btn.run-action-btn:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.45);
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+}
+
+.panel-action-btn.stop-action-btn {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+.panel-action-btn.stop-action-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.22);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.55);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.panel-action-btn.debug-action-btn {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.2);
+}
+.panel-action-btn.debug-action-btn:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+}
+
+.panel-action-btn.settings-action-btn {
+  position: relative;
+  color: rgba(255, 255, 255, 0.75);
+}
+.panel-action-btn.settings-action-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* 禁用状态（不可运行/不可调试）下的禁点标识与防点击动画 */
+.panel-action-btn:disabled,
+.panel-action-btn[disabled] {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.panel-action-btn:disabled *,
+.panel-action-btn[disabled] * {
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}
+
+.panel-action-btn:disabled:hover,
+.panel-action-btn[disabled]:hover {
+  cursor: not-allowed !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.panel-action-btn.run-action-btn:disabled,
+.panel-action-btn.run-action-btn[disabled] {
+  color: rgba(255, 255, 255, 0.25) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: transparent !important;
+  cursor: not-allowed !important;
+}
+
+.panel-action-btn.debug-action-btn:disabled,
+.panel-action-btn.debug-action-btn[disabled] {
+  color: rgba(255, 255, 255, 0.25) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: transparent !important;
+  cursor: not-allowed !important;
 }
 
 [data-theme='light'] .panel-action-btn {
@@ -15190,6 +15278,11 @@ body.resizing.resizing-row {
   transform: scale(1.2);
 }
 
+.debug-breakpoint-glyph.debug-breakpoint-conditional {
+  background: radial-gradient(circle, #f59e0b 35%, #ef4444 80%) !important;
+  box-shadow: 0 0 6px #f59e0b, 0 0 10px rgba(245, 158, 11, 0.4) !important;
+}
+
 /* Monaco 编辑器停顿行黄色高亮与箭头标记 */
 .debug-stopped-line-glyph {
   width: 10px !important;
@@ -15349,5 +15442,34 @@ body.resizing.resizing-row {
 .debug-var-type {
   color: #a1a1aa;
   font-size: 10.5px;
+}
+
+/* 底部面板模式切换标签按钮（终端 / 调试工作台） */
+.bottom-tab-btn {
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted, #94a3b8);
+  border-radius: 4px;
+  font-size: 11.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.bottom-tab-btn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-bright, #fff);
+  transform: translateY(-0.5px);
+}
+
+.bottom-tab-btn.active {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.14));
+  color: var(--text-bright, #fff);
+  border-color: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
 }
 

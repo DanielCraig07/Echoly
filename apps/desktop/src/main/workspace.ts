@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import electronLog from 'electron-log';
 import type { FileTreeNode, WorkspaceInfo, WorkspaceKind } from '@deepseek-ide/shared';
@@ -26,9 +27,66 @@ export class WorkspaceService {
   private kind: WorkspaceKind = 'local';
   private label = '未打开工作区';
   private onChange: ((info: WorkspaceInfo) => void) | null = null;
+  private onFsChange: ((data: { type: string; path?: string }) => void) | null = null;
+  private watcher: fsSync.FSWatcher | null = null;
+  private watchTimer: NodeJS.Timeout | null = null;
 
   setChangeListener(cb: (info: WorkspaceInfo) => void): void {
     this.onChange = cb;
+  }
+
+  setFsChangeListener(cb: (data: { type: string; path?: string }) => void): void {
+    this.onFsChange = cb;
+  }
+
+  notifyFsChange(type: string, relPath?: string): void {
+    this.onFsChange?.({ type, path: relPath });
+  }
+
+  private stopWatcher(): void {
+    if (this.watchTimer) {
+      clearTimeout(this.watchTimer);
+      this.watchTimer = null;
+    }
+    if (this.watcher) {
+      try {
+        this.watcher.close();
+      } catch {}
+      this.watcher = null;
+    }
+  }
+
+  private startWatcher(root: string): void {
+    this.stopWatcher();
+    if (!root || !fsSync.existsSync(root)) return;
+    try {
+      this.watcher = fsSync.watch(root, { recursive: true }, (_eventType, filename) => {
+        if (filename) {
+          const fn = String(filename);
+          if (
+            fn.includes('.git') ||
+            fn.includes('node_modules') ||
+            fn.includes('.DS_Store') ||
+            fn.startsWith('.echoly/bin')
+          ) {
+            return;
+          }
+        }
+        if (this.watchTimer) clearTimeout(this.watchTimer);
+        this.watchTimer = setTimeout(() => {
+          this.notifyFsChange('watch', filename ? String(filename) : undefined);
+        }, 120);
+      });
+      this.watcher.on('error', (err) => {
+        electronLog.warn('[workspace] fs watcher error:', err);
+      });
+    } catch (e) {
+      electronLog.warn('[workspace] Failed to start fs watcher for', root, e);
+    }
+  }
+
+  dispose(): void {
+    this.stopWatcher();
   }
 
   private emit(): void {
@@ -59,11 +117,13 @@ export class WorkspaceService {
     this.backend = new LocalFsBackend(root);
     this.kind = 'local';
     this.label = root;
+    this.startWatcher(root);
     if (!opts?.silent) this.emit();
     return this.backend.root;
   }
 
   setRemoteBackend(backend: WorkspaceBackend, label: string): string {
+    this.stopWatcher();
     this.backend = backend;
     this.kind = 'ssh';
     this.label = label;
@@ -72,6 +132,7 @@ export class WorkspaceService {
   }
 
   clearRemote(): void {
+    this.stopWatcher();
     this.backend = null;
     this.kind = 'local';
     this.label = '未打开工作区';
@@ -176,22 +237,27 @@ export class WorkspaceService {
 
   async writeFile(relPath: string, content: string): Promise<void> {
     await this.requireBackend().writeFile(relPath, content);
+    this.notifyFsChange('create', relPath);
   }
 
   async mkdir(relPath: string): Promise<void> {
     await this.requireBackend().mkdir(relPath);
+    this.notifyFsChange('create', relPath);
   }
 
   async rename(fromRel: string, toRel: string): Promise<void> {
     await this.requireBackend().rename(fromRel, toRel);
+    this.notifyFsChange('rename', toRel);
   }
 
   async remove(relPath: string): Promise<void> {
     await this.requireBackend().remove(relPath);
+    this.notifyFsChange('delete', relPath);
   }
 
   async copy(fromRel: string, toRel: string): Promise<void> {
     await this.requireBackend().copy(fromRel, toRel);
+    this.notifyFsChange('create', toRel);
   }
 
   async exists(relPath: string): Promise<boolean> {

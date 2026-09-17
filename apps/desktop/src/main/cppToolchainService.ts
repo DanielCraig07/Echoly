@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CppToolchainStatus, CppToolItem } from '@deepseek-ide/shared';
+import type { CppToolchainStatus, CppToolItem, MultiLangToolchainStatus } from '@deepseek-ide/shared';
 
 function findBinaryInPath(name: string): string | null {
   const isWin = process.platform === 'win32';
@@ -141,5 +141,150 @@ export function detectCppToolchain(): CppToolchainStatus {
     clangd,
     debugger: debuggerTool,
     cmake,
+  };
+}
+
+export function detectMultiLangToolchain(): MultiLangToolchainStatus {
+  const isMac = process.platform === 'darwin';
+  const isWin = process.platform === 'win32';
+  const homeDir = process.env.HOME || '';
+  const goPath = process.env.GOPATH || path.join(homeDir, 'go');
+
+  const cpp = detectCppToolchain();
+
+  // Python 工具链检测
+  const pyInterpreter = checkTool(
+    'Python 解释器',
+    isWin ? 'python' : 'python3',
+    [
+      '/usr/bin/python3',
+      '/usr/local/bin/python3',
+      '/opt/homebrew/bin/python3',
+      '/usr/bin/python',
+    ],
+    '--version',
+    isMac ? 'brew install python' : (isWin ? 'winget install Python.Python.3' : 'sudo apt install python3 python3-pip'),
+  );
+
+  const pyDebugpy = checkTool(
+    'Debugpy 调试引擎',
+    'debugpy',
+    [
+      '/opt/homebrew/bin/debugpy',
+      '/usr/local/bin/debugpy',
+      path.join(homeDir, 'Library/Python/3.9/bin/debugpy'),
+      path.join(homeDir, 'Library/Python/3.10/bin/debugpy'),
+      path.join(homeDir, 'Library/Python/3.11/bin/debugpy'),
+      path.join(homeDir, 'Library/Python/3.12/bin/debugpy'),
+    ],
+    '--version',
+    'python3 -m pip install debugpy',
+  );
+
+  const pyPip = checkTool(
+    'Pip 包管理器',
+    'pip3',
+    [
+      '/usr/bin/pip3',
+      '/usr/local/bin/pip3',
+      '/opt/homebrew/bin/pip3',
+      '/usr/bin/pip',
+    ],
+    '--version',
+    'python3 -m ensurepip --upgrade',
+  );
+
+  // Go 工具链检测
+  const goCompiler = checkTool(
+    'Go 编译器',
+    'go',
+    [
+      '/usr/local/go/bin/go',
+      '/opt/homebrew/bin/go',
+      '/usr/local/bin/go',
+      '/usr/bin/go',
+    ],
+    'version',
+    isMac ? 'brew install go' : 'sudo apt install golang-go',
+  );
+
+  const goDelve = checkTool(
+    'Delve 调试器 (dlv dap)',
+    'dlv',
+    [
+      '/opt/homebrew/bin/dlv',
+      '/usr/local/bin/dlv',
+      path.join(goPath, 'bin', isWin ? 'dlv.exe' : 'dlv'),
+    ],
+    'version',
+    'go install github.com/go-delve/delve/cmd/dlv@latest',
+  );
+
+  const goGopls = checkTool(
+    'Gopls 语言服务器',
+    'gopls',
+    [
+      '/opt/homebrew/bin/gopls',
+      '/usr/local/bin/gopls',
+      path.join(goPath, 'bin', isWin ? 'gopls.exe' : 'gopls'),
+    ],
+    'version',
+    'go install golang.org/x/tools/gopls@latest',
+  );
+
+  // Node.js 工具链检测
+  const nodeRuntime = checkTool(
+    'Node.js 运行时',
+    'node',
+    [
+      '/usr/local/bin/node',
+      '/opt/homebrew/bin/node',
+      '/usr/bin/node',
+    ],
+    '--version',
+    isMac ? 'brew install node' : 'sudo apt install nodejs npm',
+  );
+
+  const nodeNpm = checkTool(
+    'NPM 包管理器',
+    'npm',
+    [
+      '/usr/local/bin/npm',
+      '/opt/homebrew/bin/npm',
+      '/usr/bin/npm',
+    ],
+    '--version',
+    'npm install -g npm',
+  );
+
+  const nodeTs = checkTool(
+    'TypeScript 编译器 (tsc)',
+    'tsc',
+    [
+      '/usr/local/bin/tsc',
+      '/opt/homebrew/bin/tsc',
+      path.join(homeDir, '.npm-global/bin/tsc'),
+    ],
+    '--version',
+    'npm install -g typescript tsx',
+  );
+
+  return {
+    cpp,
+    python: {
+      interpreter: pyInterpreter,
+      debugpy: pyDebugpy,
+      pip: pyPip,
+    },
+    go: {
+      go: goCompiler,
+      delve: goDelve,
+      gopls: goGopls,
+    },
+    node: {
+      node: nodeRuntime,
+      npm: nodeNpm,
+      typescript: nodeTs,
+    },
   };
 }

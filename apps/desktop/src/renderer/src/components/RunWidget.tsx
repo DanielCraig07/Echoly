@@ -18,7 +18,8 @@ interface Props {
   ) => void;
   onStopCommand?: () => void;
   isBottomExpanded: boolean;
-  onExpandBottom: () => void;
+  onExpandBottom: (targetTab?: 'terminal' | 'debug') => void;
+  onSelectBottomTab?: (tab: 'terminal' | 'debug') => void;
   onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
 }
 
@@ -305,17 +306,48 @@ export async function detectProjectScripts(
         });
       }
     } else if (ext === 'go') {
-      results.push({
-        id: `active:${relPath}`,
-        name: fileName,
-        command: `go run "${relPath}"`,
-        source: 'go',
-        badge: 'Go',
-        badgeBg: 'rgba(45, 212, 191, 0.15)',
-        badgeColor: '#2dd4bf',
-        group: 'current',
-        description: 'go run 运行当前文件',
-      });
+      const isTest = fileName.endsWith('_test.go');
+      const goCode = await tryRead(relPath);
+      const hasMain = /\bfunc\s+main\s*\(/.test(goCode || '');
+      const dirPath = relPath.includes('/') ? relPath.substring(0, relPath.lastIndexOf('/')) : '.';
+
+      if (isTest) {
+        results.push({
+          id: `active:test:${relPath}`,
+          name: `测试: ${fileName.replace('_test.go', '')}`,
+          command: `go test -v ./${dirPath}`,
+          source: 'go',
+          badge: 'Go Test',
+          badgeBg: 'rgba(45, 212, 191, 0.15)',
+          badgeColor: '#2dd4bf',
+          group: 'current',
+          description: `执行 Go 单元测试 (${fileName})`,
+        });
+      } else if (hasMain) {
+        results.push({
+          id: `active:${relPath}`,
+          name: fileName,
+          command: `go run "./${dirPath}"`,
+          source: 'go',
+          badge: 'Go',
+          badgeBg: 'rgba(45, 212, 191, 0.15)',
+          badgeColor: '#2dd4bf',
+          group: 'current',
+          description: `运行 Go 主程序 (包目录: ./${dirPath})`,
+        });
+      } else {
+        results.push({
+          id: `active:vet:${relPath}`,
+          name: `检查: ${fileName}`,
+          command: `go vet "./${dirPath}"`,
+          source: 'go',
+          badge: 'Go',
+          badgeBg: 'rgba(45, 212, 191, 0.15)',
+          badgeColor: '#2dd4bf',
+          group: 'current',
+          description: `Go 静态语法检查 (非 main 包文件)`,
+        });
+      }
     } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx' || ext === 'c' || ext === 'h' || ext === 'hpp') {
       const isCpp = ext !== 'c';
       const isHeader = ext === 'h' || ext === 'hpp';
@@ -341,11 +373,19 @@ export async function detectProjectScripts(
         ? (isCpp ? 'g++' : 'gcc')
         : (isCpp ? 'clang++' : 'clang');
 
+      // 智能识别工程头文件路径 (include, inc 等)，自动附加包含目录，防止 'demo.h' file not found
+      const incList: string[] = [];
+      if (await exists('include')) incList.push('include');
+      if (await exists('inc')) incList.push('inc');
+      if (await exists('src') && relPath.startsWith('src/')) incList.push('src');
+      const incFlags = incList.length > 0 ? incList.map((d) => `-I"${d}"`).join(' ') + ' ' : '';
+
       if (isHeader) {
+        const headerMode = isCpp && !fileName.endsWith('.hpp') ? '-x c++-header ' : '';
         results.push({
           id: `active:check:${relPath}`,
           name: `语法检查: ${fileName}`,
-          command: `${envPrefix}${defaultCompiler} -fsyntax-only "${relPath}"`.trim(),
+          command: `${envPrefix}${defaultCompiler} -fsyntax-only ${headerMode}${incFlags}"${relPath}"`.trim(),
           source: isCpp ? 'cpp' : 'c',
           badge: isCpp ? 'C++' : 'C',
           badgeBg: 'rgba(59, 130, 246, 0.15)',
@@ -359,7 +399,7 @@ export async function detectProjectScripts(
         const mkdirCmd = isWin ? `if not exist "${binDir}" mkdir "${binDir}" && ` : `mkdir -p "${binDir}" && `;
         const testLibs = /gtest/i.test(code || '') ? ' -lgtest -lgtest_main -pthread' : '';
         const stdFlag = isCpp ? '-std=c++17 ' : '-std=c11 ';
-        const compileCmd = `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}-g "${relPath}" -o "${binPath}"${testLibs} && "${binPath}"${progArgs}`.trim();
+        const compileCmd = `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}${incFlags}-g "${relPath}" -o "${binPath}"${testLibs} && "${binPath}"${progArgs}`.trim();
         results.push({
           id: `active:test:${relPath}`,
           name: `测试: ${baseName}`,
@@ -376,7 +416,7 @@ export async function detectProjectScripts(
         const binPath = isWin ? `${binDir}\\${baseName}.exe` : `${binDir}/${baseName}`;
         const mkdirCmd = isWin ? `if not exist "${binDir}" mkdir "${binDir}" && ` : `mkdir -p "${binDir}" && `;
         const stdFlag = isCpp ? '-std=c++17 ' : '-std=c11 ';
-        const compileCmd = `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}-g "${relPath}" -o "${binPath}" && "${binPath}"${progArgs}`.trim();
+        const compileCmd = `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}${incFlags}-g "${relPath}" -o "${binPath}" && "${binPath}"${progArgs}`.trim();
         results.push({
           id: `active:${relPath}`,
           name: baseName,
@@ -393,7 +433,7 @@ export async function detectProjectScripts(
         results.push({
           id: `active:compile:${relPath}`,
           name: `编译检查: ${baseName}`,
-          command: `${envPrefix}${defaultCompiler} -c "${relPath}" -o ${nullDev}`.trim(),
+          command: `${envPrefix}${defaultCompiler} -c ${incFlags}"${relPath}" -o ${nullDev}`.trim(),
           source: isCpp ? 'cpp' : 'c',
           badge: isCpp ? 'C++' : 'C',
           badgeBg: 'rgba(59, 130, 246, 0.15)',
@@ -499,10 +539,14 @@ export async function detectProjectScripts(
     });
   }
 
-  // 检测常见根目录 Python 入口
-  const pyEntries = ['main.py', 'app.py', 'run.py', 'server.py'].filter(
-    (f) => rootFiles.includes(f),
-  );
+  // 检测常见根目录及 src 分层目录下的 Python 入口
+  const candidatePy = ['src/main.py', 'src/app.py', 'main.py', 'app.py', 'run.py', 'server.py'];
+  const pyEntries: string[] = [];
+  for (const f of candidatePy) {
+    if (rootFiles.includes(f) || (await exists(f))) {
+      pyEntries.push(f);
+    }
+  }
   if (pyEntries.length === 0 && !hasManagePy && !pyproject && requirements) {
     // 有 requirements.txt 但暂未找到入口
     results.push(
@@ -783,16 +827,30 @@ export async function detectProjectScripts(
   // ── 7. Go 项目检测 ───────────────────────────────────────────────
   const hasGoMod = rootFiles.includes('go.mod') || (await exists('go.mod'));
   if (hasGoMod) {
+    let goRunCmd = 'go run .';
+    let goRunName = 'go run .';
+    if (await exists('cmd/app/main.go') || (await exists('cmd/app'))) {
+      goRunCmd = 'go run ./cmd/app';
+      goRunName = 'go run ./cmd/app';
+    } else if (await exists('cmd/server/main.go') || (await exists('cmd/server'))) {
+      goRunCmd = 'go run ./cmd/server';
+      goRunName = 'go run ./cmd/server';
+    } else if (rootFiles.includes('main.go') || (await exists('main.go'))) {
+      goRunCmd = 'go run .';
+      goRunName = 'go run .';
+    }
+
     results.push(
       {
         id: 'go:run',
-        name: 'go run .',
-        command: 'go run .',
+        name: goRunName,
+        command: goRunCmd,
         source: 'go',
         badge: 'Go',
         badgeBg: 'rgba(45, 212, 191, 0.15)',
         badgeColor: '#2dd4bf',
         group: 'project',
+        description: `执行 Go 主程序 (${goRunCmd})`,
       },
       {
         id: 'go:test',
@@ -863,6 +921,19 @@ export async function detectProjectScripts(
     // 提取 add_executable 目标
     const targetMatches = [...cmakeLists.matchAll(/add_executable\s*\(\s*([a-zA-Z0-9_.-]+)/gi)];
     const targets = targetMatches.map((m) => m[1]).filter(Boolean);
+
+    // 0. 生成配置并导出编译数据库 (CMake: Configure)
+    results.push({
+      id: 'cmake:configure',
+      name: 'CMake: Configure',
+      command: 'cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
+      source: 'cmake',
+      badge: 'CMake',
+      badgeBg: 'rgba(6, 182, 212, 0.15)',
+      badgeColor: '#06b6d4',
+      group: 'project',
+      description: `生成构建配置并导出 compile_commands.json (${projName})`,
+    });
 
     // 1. 全量配置并编译 (CMake: Build All)
     results.push({
@@ -972,6 +1043,7 @@ export function RunWidget({
   onStopCommand,
   isBottomExpanded,
   onExpandBottom,
+  onSelectBottomTab,
   onShowToast,
 }: Props) {
   const [detectedScripts, setDetectedScripts] = useState<ScriptOption[]>([]);
@@ -1170,9 +1242,17 @@ export function RunWidget({
       setRuntimeConfigModalOpen(true);
       return;
     }
+
+    // 联动下方面板：切换到终端并确保面板展开
+    onSelectBottomTab?.('terminal');
     if (!isBottomExpanded) {
-      onExpandBottom();
+      onExpandBottom('terminal');
     }
+    window.dispatchEvent(
+      new CustomEvent('echoly:openBottomTab', {
+        detail: { tab: 'terminal' },
+      }),
+    );
     setIsRunning(true);
 
     let termType: string = currentOption.source;
@@ -1203,7 +1283,7 @@ export function RunWidget({
     }
 
     onRunCommand(currentOption.command, undefined, termType, termTitle);
-  }, [currentOption, isBottomExpanded, onExpandBottom, onRunCommand]);
+  }, [currentOption, isBottomExpanded, onExpandBottom, onSelectBottomTab, onRunCommand, workspace]);
 
   const handleDebug = useCallback(async () => {
     if (!currentOption) return;
@@ -1214,9 +1294,16 @@ export function RunWidget({
       return;
     }
 
+    // 联动下方面板：切换到调试控制台并确保面板展开
+    onSelectBottomTab?.('debug');
     if (!isBottomExpanded) {
-      onExpandBottom();
+      onExpandBottom('debug');
     }
+    window.dispatchEvent(
+      new CustomEvent('echoly:openBottomTab', {
+        detail: { tab: 'debug' },
+      }),
+    );
     setIsRunning(true);
 
     const dbgConfig = resolveDebugConfig(currentOption, activePath);
@@ -1231,6 +1318,23 @@ export function RunWidget({
         },
       }),
     );
+
+    // 启动前将本地已标记的全部断点预同步给主进程，确保调试启动时能自动命中断点
+    try {
+      const bpKey = workspace ? `echoly.dap.breakpoints.${workspace}` : 'echoly.dap.breakpoints.global';
+      const rawBps = localStorage.getItem(bpKey) || localStorage.getItem('echoly.dap.breakpoints');
+      if (rawBps && window.ide?.dapSetBreakpoints) {
+        const bpsList: Array<{ path: string; line: number }> = JSON.parse(rawBps);
+        const grouped: Record<string, number[]> = {};
+        for (const b of bpsList) {
+          if (!grouped[b.path]) grouped[b.path] = [];
+          grouped[b.path].push(b.line);
+        }
+        for (const [p, lines] of Object.entries(grouped)) {
+          void window.ide.dapSetBreakpoints(p, lines);
+        }
+      }
+    } catch {}
 
     if (dbgConfig.type === 'dap') {
       let binPath = '';
@@ -1263,10 +1367,14 @@ export function RunWidget({
             });
             if (!res.success) {
               console.warn('[RunWidget] DAP startSession failed:', res.error);
+              window.dispatchEvent(new CustomEvent('echoly:stopDebug'));
+              setIsRunning(false);
             }
           }
         } catch (err) {
           console.error('[RunWidget] Failed to launch debug session:', err);
+          window.dispatchEvent(new CustomEvent('echoly:stopDebug'));
+          setIsRunning(false);
         }
       }, 1200);
       return;
@@ -1275,6 +1383,37 @@ export function RunWidget({
     // 针对 Java (JDWP)、Python (debugpy)、Node.js (inspect)、Go (Delve) 等多语言调试
     onRunCommand(dbgConfig.command, undefined, dbgConfig.terminalType, dbgConfig.terminalTitle);
     onShowToast?.('启动调试', dbgConfig.toastMessage, 'info');
+
+    if (dbgConfig.port && window.ide?.dapStartSession) {
+      setTimeout(async () => {
+        try {
+          if (window.ide?.dapStartSession) {
+            const res = await window.ide.dapStartSession({
+              program: activePath || '',
+              mode: 'socket',
+              port: dbgConfig.port,
+              language: dbgConfig.language,
+              cwd: workspace || undefined,
+              stopOnEntry: false,
+            });
+            if (!res.success) {
+              console.warn('[RunWidget] DAP socket startSession failed:', res.error);
+              if (dbgConfig.language === 'python') {
+                onShowToast?.('⚠️ Python 缺少 debugpy 模块', '未能连接到 debugpy。请在终端执行: pip3 install debugpy', 'warn');
+              } else {
+                onShowToast?.('调试连接未就绪', res.error || '无法连接到调试监听端口', 'warn');
+              }
+              window.dispatchEvent(new CustomEvent('echoly:stopDebug'));
+              setIsRunning(false);
+            }
+          }
+        } catch (err) {
+          console.error('[RunWidget] Failed to launch socket debug session:', err);
+          window.dispatchEvent(new CustomEvent('echoly:stopDebug'));
+          setIsRunning(false);
+        }
+      }, 700);
+    }
   }, [currentOption, isBottomExpanded, onExpandBottom, onRunCommand, onShowToast, activePath, workspace]);
 
   // 监听进程执行结束或报错事件，自动解除 isRunning 运行状态
@@ -1283,24 +1422,21 @@ export function RunWidget({
       setIsRunning(false);
     };
     window.addEventListener('echoly:runFinished', handleRunFinished);
+    window.addEventListener('echoly:stopDebug', handleRunFinished);
     return () => {
       window.removeEventListener('echoly:runFinished', handleRunFinished);
+      window.removeEventListener('echoly:stopDebug', handleRunFinished);
     };
   }, []);
 
   const handleStop = useCallback(() => {
     setIsRunning(false);
     onStopCommand?.();
+    window.dispatchEvent(new CustomEvent('echoly:stopDebug'));
     window.dispatchEvent(
       new CustomEvent('echoly:stopTerminalCommand', {
         detail: {
-          terminalType:
-            currentOption?.badge === 'Java' ||
-            (currentOption?.source === 'java' && currentOption?.badge !== 'Maven')
-              ? 'java'
-              : currentOption?.badge === 'Maven'
-              ? 'mvn'
-              : undefined,
+          terminalType: currentOption?.source || currentOption?.badge?.toLowerCase() || undefined,
         },
       }),
     );
@@ -1819,132 +1955,45 @@ export function RunWidget({
       {!isRunning ? (
         <button
           type="button"
+          className="panel-action-btn run-action-btn"
           onClick={handleRun}
           disabled={!currentOption}
           title={
             currentOption
-              ? `一键运行: ${currentOption.command}`
-              : '请先选择或添加一个运行配置'
+              ? `一键运行 (Run): ${currentOption.command}`
+              : '🚫 当前项目未检测到可运行配置 (不可运行)'
           }
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 26,
-            height: 26,
-            background: currentOption ? '#22c55e' : 'rgba(255, 255, 255, 0.1)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 5,
-            cursor: currentOption ? 'pointer' : 'not-allowed',
-            padding: 0,
-            opacity: currentOption ? 1 : 0.4,
-            transition: 'transform 0.1s, background 0.15s',
-          }}
-          onMouseEnter={(e) => {
-            if (currentOption) e.currentTarget.style.background = '#16a34a';
-          }}
-          onMouseLeave={(e) => {
-            if (currentOption) e.currentTarget.style.background = '#22c55e';
-          }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <polygon points="6 4 20 12 6 20 6 4" />
           </svg>
         </button>
       ) : (
         <button
           type="button"
+          className="panel-action-btn stop-action-btn"
           onClick={handleStop}
           title="停止当前运行 (Stop)"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 26,
-            height: 26,
-            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-            color: '#ffffff',
-            border: '1px solid rgba(239, 68, 68, 0.4)',
-            borderRadius: 5,
-            cursor: 'pointer',
-            padding: 0,
-            boxShadow: '0 0 8px rgba(239, 68, 68, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25)',
-            transition: 'all 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'linear-gradient(135deg, #f87171 0%, #ef4444 100%)';
-            e.currentTarget.style.boxShadow = '0 0 12px rgba(239, 68, 68, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.35)';
-            e.currentTarget.style.transform = 'scale(1.05)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
-            e.currentTarget.style.boxShadow = '0 0 8px rgba(239, 68, 68, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25)';
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.transform = 'scale(0.92)';
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.transform = 'scale(1.05)';
-          }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-            <rect x="5" y="5" width="14" height="14" rx="2.5" />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="5" y="5" width="14" height="14" rx="2" />
           </svg>
         </button>
       )}
 
-      {/* 调试按钮 🪲 (加大至 26x26px，高对比度图标与醒目轮廓) */}
+      {/* 调试按钮 🪲 */}
       <button
         type="button"
+        className="panel-action-btn debug-action-btn"
         onClick={handleDebug}
         disabled={!currentOption}
         title={
           currentOption
             ? `启动调试 (Debug): ${currentOption.name}`
-            : '请先选择一个运行配置'
+            : '🚫 当前项目未检测到可调试配置 (不可调试)'
         }
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 26,
-          height: 26,
-          background: currentOption ? 'rgba(56, 189, 248, 0.12)' : 'transparent',
-          color: currentOption ? '#38bdf8' : 'rgba(255, 255, 255, 0.2)',
-          border: currentOption ? '1px solid rgba(56, 189, 248, 0.28)' : '1px solid transparent',
-          borderRadius: 5,
-          cursor: currentOption ? 'pointer' : 'not-allowed',
-          padding: 0,
-          opacity: currentOption ? 1 : 0.4,
-          transition: 'all 0.15s ease',
-          boxShadow: currentOption ? '0 1px 3px rgba(0, 0, 0, 0.2)' : 'none',
-        }}
-        onMouseEnter={(e) => {
-          if (currentOption) {
-            e.currentTarget.style.background = 'rgba(56, 189, 248, 0.22)';
-            e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.5)';
-            e.currentTarget.style.color = '#7dd3fc';
-            e.currentTarget.style.transform = 'scale(1.05)';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (currentOption) {
-            e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
-            e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.28)';
-            e.currentTarget.style.color = '#38bdf8';
-            e.currentTarget.style.transform = 'scale(1)';
-          }
-        }}
-        onMouseDown={(e) => {
-          if (currentOption) e.currentTarget.style.transform = 'scale(0.95)';
-        }}
-        onMouseUp={(e) => {
-          if (currentOption) e.currentTarget.style.transform = 'scale(1.05)';
-        }}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="8" y="9" width="8" height="10" rx="4" />
           <line x1="6" y1="4" x2="8" y2="7" />
           <line x1="18" y1="4" x2="16" y2="7" />
@@ -1958,8 +2007,8 @@ export function RunWidget({
       {/* 运行时参数配置按钮 ⚙ */}
       <button
         type="button"
+        className="panel-action-btn settings-action-btn"
         onClick={() => setRuntimeConfigModalOpen(true)}
-        className="run-widget-settings-btn"
         title={
           hasActiveRuntimeArgs
             ? `项目运行时参数已生效 (VM: ${runtimeConfig.vmArgs || '无'}, Profile: ${runtimeConfig.activeProfiles || '无'}) - 单击修改`

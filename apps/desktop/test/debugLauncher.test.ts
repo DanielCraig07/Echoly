@@ -43,7 +43,7 @@ describe('resolveDebugConfig', () => {
     expect(res.type).toBe('terminal');
     expect(res.language).toBe('python');
     expect(res.port).toBe(5678);
-    expect(res.command).toBe('python3 -m debugpy --listen 127.0.0.1:5678 "main.py"');
+    expect(res.command).toBe('python3 -m debugpy --listen 127.0.0.1:5678 --wait-for-client "main.py"');
   });
 
   it('correctly configures Node.js and TypeScript inspect debug session', () => {
@@ -83,7 +83,7 @@ describe('resolveDebugConfig', () => {
     expect(res.type).toBe('terminal');
     expect(res.language).toBe('go');
     expect(res.port).toBe(2345);
-    expect(res.command).toContain('dlv debug --headless --listen=127.0.0.1:2345 --api-version=2');
+    expect(res.command).toContain('dlv dap --listen=127.0.0.1:2345');
   });
 
   it('correctly routes C/C++ to DAP debug mode', () => {

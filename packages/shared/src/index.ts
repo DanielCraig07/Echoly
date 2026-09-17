@@ -846,6 +846,11 @@ export interface IpcApi {
   downloadFile: (relPath: string) => Promise<string | null>;
   saveFileDialog: (defaultPath?: string) => Promise<string | null>;
   pickDirectory: () => Promise<string | null>;
+  createProjectFromTemplate: (params: {
+    templateId: string;
+    parentDir: string;
+    projectName: string;
+  }) => Promise<{ ok: boolean; targetPath?: string; entryFile?: string; error?: string }>;
   pickFile: (filters?: { name: string; extensions: string[] }[]) => Promise<string | null>;
   startAgent: (payload: {
     prompt: string;
@@ -941,6 +946,7 @@ export interface IpcApi {
   onTerminalData: (cb: (payload: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (cb: (payload: { id: string; exitCode: number }) => void) => () => void;
   onWorkspaceChanged: (cb: (info: WorkspaceInfo) => void) => () => void;
+  onFsChanged?: (cb: (data: { type: string; path?: string }) => void) => () => void;
   onGitCloneLog: (cb: (line: string) => void) => () => void;
   onGitBranchSwitched: (cb: (data: { branch: string }) => void) => () => void;
   onDownloadProgress: (
@@ -975,13 +981,20 @@ export interface IpcApi {
 
   /** LSP 语言服务器跳转到定义 */
   lspGetDefinition: (filePath: string, line: number, column: number) => Promise<LspLocation[]>;
+  /** LSP 语言服务器代码补全 */
+  lspGetCompletion?: (filePath: string, line: number, column: number) => Promise<LspCompletionItem[]>;
   /** LSP 语言服务器同步文档内容 */
   lspNotifyDocument: (filePath: string, content: string, languageId?: string) => Promise<void>;
   /** LSP C/C++ 头文件与源文件快速切换 (Alt+O) */
   lspSwitchSourceHeader?: (filePath: string) => Promise<string | null>;
+  /** 监听 LSP 实时语法诊断 (波浪线) */
+  onLspDiagnostics?: (cb: (data: LspDiagnosticsEvent) => void) => () => void;
 
   /** 检测系统 C/C++ 工具链状态 (编译器, Clangd, 调试器, CMake) */
   cppCheckToolchain?: () => Promise<CppToolchainStatus>;
+
+  /** 检测系统多语言开发与调试工具链状态 (Python, Go, Node.js 等) */
+  multiLangCheckToolchain?: () => Promise<MultiLangToolchainStatus>;
 
   /** DAP 调试会话管理 */
   dapStartSession?: (config: {
@@ -990,9 +1003,16 @@ export interface IpcApi {
     cwd?: string;
     env?: Record<string, string>;
     stopOnEntry?: boolean;
+    mode?: 'stdio' | 'socket';
+    host?: string;
+    port?: number;
+    language?: string;
   }) => Promise<{ success: boolean; error?: string }>;
   dapStopSession?: () => Promise<void>;
-  dapSetBreakpoints?: (filePath: string, lines: number[]) => Promise<DapBreakpoint[]>;
+  dapSetBreakpoints?: (
+    filePath: string,
+    breakpoints: Array<number | { line: number; condition?: string; logMessage?: string }>,
+  ) => Promise<DapBreakpoint[]>;
   dapContinue?: () => Promise<void>;
   dapStepOver?: () => Promise<void>;
   dapStepInto?: () => Promise<void>;
@@ -1043,11 +1063,58 @@ export interface CppToolchainStatus {
   cmake: CppToolItem;
 }
 
+export interface MultiLangToolchainStatus {
+  cpp: CppToolchainStatus;
+  python: {
+    interpreter: CppToolItem;
+    debugpy: CppToolItem;
+    pip: CppToolItem;
+  };
+  go: {
+    go: CppToolItem;
+    delve: CppToolItem;
+    gopls: CppToolItem;
+  };
+  node: {
+    node: CppToolItem;
+    npm: CppToolItem;
+    typescript: CppToolItem;
+  };
+}
+
 export interface DapBreakpoint {
   id?: number;
   path: string;
   line: number;
+  condition?: string;
+  logMessage?: string;
   verified?: boolean;
+}
+
+export interface LspCompletionItem {
+  label: string;
+  kind?: number;
+  detail?: string;
+  documentation?: string;
+  insertText?: string;
+  sortText?: string;
+}
+
+export interface LspDiagnostic {
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+  severity?: number; // 1: Error, 2: Warning, 3: Information, 4: Hint
+  code?: string | number;
+  source?: string;
+  message: string;
+}
+
+export interface LspDiagnosticsEvent {
+  uri: string;
+  path: string;
+  diagnostics: LspDiagnostic[];
 }
 
 export interface DapThread {

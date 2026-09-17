@@ -770,6 +770,19 @@ function TerminalSession({
           }
         }
 
+        if (data.includes('No module named debugpy')) {
+          term.writeln('\r\n\x1b[1;33m⚠️  [Echoly 调试诊断] 当前 Python 环境未安装 debugpy 调试模块。\x1b[0m');
+          term.writeln('\x1b[36m💡 提示: 请在下方终端执行命令安装依赖后重试: pip3 install debugpy (或 python3 -m pip install debugpy)\x1b[0m\r\n');
+          window.dispatchEvent(
+            new CustomEvent('echoly:debugError', {
+              detail: {
+                language: 'python',
+                message: '当前 Python 环境缺少 debugpy 模块。请在终端执行: pip3 install debugpy',
+              },
+            }),
+          );
+        }
+
         outputBuffer = (outputBuffer + data).slice(-300);
         // 严格匹配实际执行后由 printf 真实输出的数字退出码，绝不在 shell 输入回显阶段提前触发
         const match = outputBuffer.match(/(?:\r?\n|^)__ECHOLY_FIN__:(\d+)(?:\r?\n|$)/);

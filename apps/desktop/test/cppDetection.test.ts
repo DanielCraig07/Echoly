@@ -90,6 +90,12 @@ add_test(NAME unit_test COMMAND server --test)
 
     const scripts = await detectProjectScripts('/workspace');
     
+    // Check CMake: Configure
+    const configure = scripts.find((s) => s.id === 'cmake:configure');
+    expect(configure).toBeDefined();
+    expect(configure?.command).toContain('cmake -B build');
+    expect(configure?.command).toContain('CMAKE_EXPORT_COMPILE_COMMANDS=ON');
+
     // Check CMake: Build All
     const buildAll = scripts.find((s) => s.id === 'cmake:build');
     expect(buildAll).toBeDefined();
@@ -114,5 +120,26 @@ add_test(NAME unit_test COMMAND server --test)
     const clean = scripts.find((s) => s.id === 'cmake:clean');
     expect(clean).toBeDefined();
     expect(clean?.command).toContain('--target clean');
+  });
+
+  it('automatically adds -Iinclude to compile command when include directory exists', async () => {
+    (global as any).window.ide = {
+      pathExists: async (p: string) => p === 'include' || p === 'src/main.cpp',
+      readFile: async (p: string) => {
+        if (p === 'src/main.cpp') {
+          return `#include <iostream>\n#include "demo.h"\nint main() { return 0; }`;
+        }
+        return null;
+      },
+      listDir: async () => [],
+    };
+
+    const scripts = await detectProjectScripts('/workspace', '/workspace/src/main.cpp');
+    const cppScript = scripts.find((s) => s.id === 'active:src/main.cpp');
+
+    expect(cppScript).toBeDefined();
+    expect(cppScript?.command).toContain('-I"include"');
+    expect(cppScript?.command).toContain('-std=c++17');
+    expect(cppScript?.command).toContain('.echoly/bin/main');
   });
 });
