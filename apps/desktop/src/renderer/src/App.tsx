@@ -47,7 +47,7 @@ import {
   type CommandAction,
 } from './components/TopSearchBar';
 import { RunWidget } from './components/RunWidget';
-import { ExtensionPanel } from './components/ExtensionPanel';
+import { ExtensionModal } from './components/ExtensionPanel';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { GitPanel } from './components/GitPanel';
 import { SearchPanel } from './components/SearchPanel';
@@ -3002,6 +3002,7 @@ export function App() {
               setSshTargetForModal(null);
               setSshOpen(true);
             }}
+            onPickClone={() => setCloneOpen(true)}
             onCreateCppProject={() => void createTemplateWorkspace('cpp-cmake')}
             onCreateProject={(tplId) => void createTemplateWorkspace(tplId)}
             onOpenWorkspace={handleOpenCreatedProject}
@@ -3241,36 +3242,20 @@ export function App() {
       />
 
       {/* 扩展管理面板 */}
-      {extensionPanelOpen && (
-        <div className="modal-overlay" onClick={() => setExtensionPanelOpen(false)}>
-          <div className="extension-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="extension-modal-header">
-              <h2>扩展管理</h2>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setExtensionPanelOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="extension-modal-body">
-              <ExtensionPanel
-                onOpenExtension={(extId) => {
-                  setCurrentExtensionId(extId);
-                  setExtensionPanelOpen(false);
-                  setClaudePanelOpen(true);
-                  setRightPanelTab('claude'); // 切换到 Claude 标签
-                  // 展开右侧面板
-                  if (layout.chatPanelExpanded === false) {
-                    setLayout({ ...layout, chatPanelExpanded: true });
-                  }
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <ExtensionModal
+        open={extensionPanelOpen}
+        onClose={() => setExtensionPanelOpen(false)}
+        onOpenExtension={(extId) => {
+          setCurrentExtensionId(extId);
+          setExtensionPanelOpen(false);
+          setClaudePanelOpen(true);
+          setRightPanelTab('claude'); // 切换到 Claude 标签
+          // 展开右侧面板
+          if (layout.chatPanelExpanded === false) {
+            setLayout({ ...layout, chatPanelExpanded: true });
+          }
+        }}
+      />
 
       <OpenWorkspaceModal
         open={openWorkspaceOpen}

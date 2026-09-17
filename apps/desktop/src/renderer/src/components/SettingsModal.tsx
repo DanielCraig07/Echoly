@@ -11,6 +11,7 @@ import type {
 import { PERMISSION_MODE_LABELS, AI_PROVIDER_LABELS, DEFAULT_PROVIDERS, DEFAULT_MODELS } from '@deepseek-ide/shared';
 import { useI18n } from '../i18n';
 import { EnvironmentSettingsSection } from './EnvironmentSettingsSection';
+import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 
 interface Props {
   open: boolean;
@@ -37,6 +38,13 @@ const PERMISSION_HINTS: Record<PermissionMode, string> = {
 
 export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab, workspace }: Props) {
   const { locale, t, setLocale } = useI18n();
+  const { modalSize, handleResizeStart } = useModalResize({
+    storageKey: 'echoly_settings_modal_size',
+    defaultWidth: 920,
+    defaultHeight: 680,
+    minWidth: 640,
+    minHeight: 440,
+  });
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [probe, setProbe] = useState<string>('');
   const [probing, setProbing] = useState(false);
@@ -473,7 +481,17 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
 
   return (
     <div className="settings-overlay">
-      <div className="settings-modal modern-settings" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="settings-modal modern-settings"
+        style={{
+          width: modalSize.width,
+          height: modalSize.height,
+          maxWidth: '96vw',
+          maxHeight: '94vh',
+          position: 'relative',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* 顶部标题栏 */}
         <div className="settings-header">
           <div className="settings-header-left">
@@ -482,11 +500,14 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
           </div>
           <button
             type="button"
-            className="settings-close-btn"
+            className="panel-action-btn"
             onClick={onClose}
-            title={t('common.close')}
+            title={t('common.close') || '关闭 (Esc)'}
           >
-            ✕
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
 
@@ -894,7 +915,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                           return (
                             <div
                               key={m.id}
-                              className={`modern-model-card ${isActive ? 'is-active' : ''}`}
+                              className={`modern-model-card ${isActive ? 'is-active' : ''} prov-${m.provider || 'custom'}`}
                             >
                         <div className="model-card-left">
                           <div className={`model-provider-badge prov-${m.provider}`}>
@@ -1851,6 +1872,8 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
             </div>
           </div>
         )}
+        {/* 右下角全向可拖拽调整手柄 */}
+        <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
     </div>
   );

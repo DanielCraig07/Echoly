@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { PROJECT_TEMPLATE_LIST, type ProjectTemplate } from '../utils/projectTemplates';
+import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 
 interface Props {
   isOpen: boolean;
@@ -24,6 +25,13 @@ export function NewProjectWizardModal({
   onOpenWorkspace,
   onShowToast,
 }: Props) {
+  const { modalSize, handleResizeStart } = useModalResize({
+    storageKey: 'echoly_new_project_wizard_size',
+    defaultWidth: 780,
+    defaultHeight: 560,
+    minWidth: 620,
+    minHeight: 440,
+  });
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('java-maven');
   const [projectName, setProjectName] = useState<string>('java-demo');
   const [parentDir, setParentDir] = useState<string>('');
@@ -163,8 +171,11 @@ export function NewProjectWizardModal({
     >
       <div
         style={{
-          width: '100%',
-          maxWidth: 740,
+          width: modalSize.width,
+          height: modalSize.height,
+          maxWidth: '96vw',
+          maxHeight: '94vh',
+          position: 'relative',
           background: 'var(--bg-elevated, #1c1c20)',
           border: '1px solid var(--border)',
           borderRadius: 12,
@@ -202,17 +213,20 @@ export function NewProjectWizardModal({
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭"
+            title="关闭 (Esc)"
           >
-            ✕
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
 
         {/* Body */}
-        <div style={{ padding: 20, display: 'flex', gap: 18 }}>
+        <div style={{ padding: 20, display: 'flex', gap: 18, flex: 1, minHeight: 0, overflow: 'hidden' }}>
           {/* 左侧技术栈列表 (使用 PROJECT_TEMPLATE_LIST 保证无任何重复项) */}
-          <div style={{ width: 230, display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginBottom: 2 }}>
+          <div style={{ width: 230, display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, overflowY: 'auto', paddingRight: 4 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginBottom: 2, flexShrink: 0 }}>
               选择技术栈 (TECHNOLOGY)
             </div>
             {PROJECT_TEMPLATE_LIST.map((tpl) => {
@@ -226,31 +240,38 @@ export function NewProjectWizardModal({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    borderRadius: 6,
-                    border: isSelected ? '1px solid #38bdf8' : '1px solid var(--border)',
-                    background: isSelected ? 'rgba(56, 189, 248, 0.16)' : 'rgba(255, 255, 255, 0.03)',
-                    color: isSelected ? '#38bdf8' : 'var(--text)',
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    border: isSelected ? '1px solid var(--accent, #38bdf8)' : '1px solid var(--border)',
+                    background: isSelected ? 'color-mix(in srgb, var(--accent) 12%, var(--bg-panel))' : 'var(--bg-panel)',
+                    color: isSelected ? 'var(--text-bright, #fff)' : 'var(--text)',
                     cursor: 'pointer',
                     textAlign: 'left',
                     fontSize: 12.5,
-                    fontWeight: isSelected ? 600 : 400,
-                    transition: 'all 0.15s ease',
+                    fontWeight: isSelected ? 650 : 500,
+                    transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: isSelected ? '0 2px 10px rgba(56, 189, 248, 0.2)' : 'none',
+                    transform: isSelected ? 'translateX(2px)' : 'none',
                   }}
                 >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {tpl.name}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <span style={{ fontSize: 15 }}>
+                      {tpl.id.includes('java') ? '☕' : tpl.id.includes('python') ? '🐍' : tpl.id.includes('cpp') ? '⚡' : tpl.id.includes('go') ? '🐹' : '🟢'}
+                    </span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {tpl.name}
+                    </span>
+                  </div>
                   <span
                     style={{
                       fontSize: 10,
-                      padding: '1px 6px',
+                      padding: '2px 6px',
                       borderRadius: 4,
                       background: tpl.badgeBg,
                       color: tpl.badgeColor,
-                      fontWeight: 600,
+                      fontWeight: 700,
                       flexShrink: 0,
-                      marginLeft: 6,
+                      letterSpacing: '0.02em',
                     }}
                   >
                     {tpl.badge}
@@ -273,41 +294,47 @@ export function NewProjectWizardModal({
             {/* 模板头部简述 */}
             <div
               style={{
-                padding: '10px 14px',
-                borderRadius: 8,
-                background: 'rgba(255, 255, 255, 0.03)',
+                padding: '12px 16px',
+                borderRadius: 10,
+                background: 'var(--bg-panel)',
                 border: '1px solid var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <span
-                  style={{
-                    fontSize: 10.5,
-                    padding: '1px 6px',
-                    borderRadius: 4,
-                    background: activeTemplate.badgeBg,
-                    color: activeTemplate.badgeColor,
-                    fontWeight: 700,
-                  }}
-                >
-                  {activeTemplate.badge}
-                </span>
-                <span style={{ fontWeight: 600, fontSize: 13, color: '#fff' }}>
-                  {activeTemplate.name}
-                </span>
-              </div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.4 }}>
-                {activeTemplate.description}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      padding: '2px 7px',
+                      borderRadius: 4,
+                      background: activeTemplate.badgeBg,
+                      color: activeTemplate.badgeColor,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {activeTemplate.badge}
+                  </span>
+                  <span style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--text-bright)' }}>
+                    {activeTemplate.name}
+                  </span>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.45 }}>
+                  {activeTemplate.description}
+                </div>
               </div>
             </div>
 
             {/* 项目名称输入 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright, #fff)' }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
                   项目名称 (Project Name)
                 </label>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>将自动创建同名根目录</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>自动创建同名根目录</span>
               </div>
               <input
                 type="text"
@@ -319,12 +346,13 @@ export function NewProjectWizardModal({
                   boxSizing: 'border-box',
                   background: 'var(--bg-input, #131316)',
                   border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  color: '#fff',
-                  padding: '7px 10px',
+                  borderRadius: 8,
+                  color: 'var(--text-bright)',
+                  padding: '8px 12px',
                   fontSize: 12.5,
                   fontFamily: 'var(--font-mono, monospace)',
                   outline: 'none',
+                  transition: 'border-color 0.15s, box-shadow 0.15s',
                 }}
               />
             </div>
@@ -332,10 +360,10 @@ export function NewProjectWizardModal({
             {/* 上级存储位置选择 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright, #fff)' }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
                   存储位置 (Parent Directory)
                 </label>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>选择工程所在的父级目录</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>指定父级工程存放目录</span>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
@@ -348,21 +376,22 @@ export function NewProjectWizardModal({
                     boxSizing: 'border-box',
                     background: 'var(--bg-input, #131316)',
                     border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    color: '#fff',
-                    padding: '7px 10px',
+                    borderRadius: 8,
+                    color: 'var(--text-bright)',
+                    padding: '8px 12px',
                     fontSize: 12,
                     fontFamily: 'var(--font-mono, monospace)',
                     outline: 'none',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
                   }}
                 />
                 <button
                   type="button"
                   className="panel-standard-btn"
                   onClick={handlePickParentDir}
-                  style={{ fontSize: 12, padding: '6px 12px', whiteSpace: 'nowrap' }}
+                  style={{ fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}
                 >
-                  浏览...
+                  📁 浏览…
                 </button>
               </div>
             </div>
@@ -371,45 +400,95 @@ export function NewProjectWizardModal({
             <div
               style={{
                 padding: '8px 12px',
-                borderRadius: 6,
+                borderRadius: 8,
                 background: 'rgba(56, 189, 248, 0.08)',
                 border: '1px solid rgba(56, 189, 248, 0.25)',
                 fontSize: 11.5,
                 color: '#38bdf8',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
+                gap: 8,
                 overflow: 'hidden',
               }}
             >
-              <span style={{ flexShrink: 0 }}>📁</span>
+              <span style={{ flexShrink: 0 }}>📍</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fullTargetPath}>
-                完整创建路径: <strong>{fullTargetPath || '请选择父目录与项目名'}</strong>
+                即将生成至: <strong style={{ color: '#7dd3fc', fontFamily: 'var(--font-mono)' }}>{fullTargetPath || '请选择父目录与项目名'}</strong>
               </span>
             </div>
 
-            {/* 文件结构预览 */}
+            {/* 文件结构预览 (Tree Preview) */}
             <div
               style={{
-                borderRadius: 6,
+                borderRadius: 8,
                 border: '1px solid var(--border)',
-                background: 'rgba(0, 0, 0, 0.3)',
-                padding: '8px 12px',
-                maxHeight: 110,
-                overflowY: 'auto',
+                background: 'var(--bg-panel)',
+                padding: '10px 14px',
+                flex: 1,
+                minHeight: 120,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
                 fontSize: 11,
                 fontFamily: 'var(--font-mono, monospace)',
-                color: '#cbd5e1',
+                color: 'var(--text)',
                 lineHeight: 1.6,
               }}
             >
-              <div style={{ color: 'var(--muted)', marginBottom: 4 }}>📦 包含的标准工程结构:</div>
-              {activeTemplate.files.map((f) => (
-                <div key={f.path} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ opacity: 0.6 }}>📄</span>
-                  <span>{f.path}</span>
+              <div
+                style={{
+                  color: 'var(--muted)',
+                  fontWeight: 600,
+                  marginBottom: 6,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>📦</span>
+                  <span>工程生成结构预览 (Scaffold Preview):</span>
                 </div>
-              ))}
+                <span
+                  style={{
+                    fontSize: 10,
+                    padding: '1px 6px',
+                    borderRadius: 4,
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    color: 'var(--muted)',
+                  }}
+                >
+                  {activeTemplate.files.length} 个文件
+                </span>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, paddingRight: 4 }}>
+                {activeTemplate.files.map((f) => (
+                  <div
+                    key={f.path}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '3px 6px',
+                      borderRadius: 4,
+                      background: 'rgba(255, 255, 255, 0.02)',
+                    }}
+                  >
+                    <span style={{ opacity: 0.6, fontSize: 12 }}>{f.path.includes('/') ? '📁' : '📄'}</span>
+                    <span
+                      style={{
+                        color:
+                          f.path.includes('CMakeLists') || f.path.includes('pom.xml') || f.path.includes('package.json')
+                            ? '#38bdf8'
+                            : 'inherit',
+                      }}
+                    >
+                      {f.path}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -429,13 +508,12 @@ export function NewProjectWizardModal({
             type="button"
             className="panel-standard-btn"
             onClick={onClose}
-            disabled={isCreating}
-            style={{ fontSize: 12, padding: '5px 14px' }}
+            style={{ fontSize: 12, padding: '6px 14px' }}
           >
             取消
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
             <button
               type="button"
               className="panel-standard-btn"
@@ -453,11 +531,12 @@ export function NewProjectWizardModal({
               disabled={isCreating || !parentDir.trim() || !projectName.trim()}
               style={{
                 fontSize: 12,
-                padding: '6px 16px',
-                background: '#0284c7',
+                padding: '6px 18px',
+                background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
                 borderColor: '#0284c7',
                 color: '#fff',
                 fontWeight: 600,
+                boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)',
               }}
               title="生成并在全新的 IDE 独立窗口中打开"
             >
@@ -465,6 +544,8 @@ export function NewProjectWizardModal({
             </button>
           </div>
         </div>
+        {/* 右下角全向拖拽手柄 */}
+        <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
     </div>
   );

@@ -188,7 +188,17 @@ export function StatusBar({
               />
             </svg>
             <span style={{ fontWeight: 500 }}>{branch}</span>
-            {hasChanges && <span style={{ color: '#e5a54b', fontWeight: 'bold' }}>*</span>}
+            {hasChanges && <span className="status-git-dirty-dot" title="有未提交改动" />}
+            {Boolean(gitStatus?.ahead) && (
+              <span className="status-sync-pill ahead" title={`${gitStatus?.ahead} 个未推送提交`}>
+                ↑{gitStatus?.ahead}
+              </span>
+            )}
+            {Boolean(gitStatus?.behind) && (
+              <span className="status-sync-pill behind" title={`${gitStatus?.behind} 个未拉取提交`}>
+                ↓{gitStatus?.behind}
+              </span>
+            )}
           </button>
         )}
 

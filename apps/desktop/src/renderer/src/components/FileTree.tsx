@@ -592,8 +592,9 @@ function TreeNode({
         {node.name}
       </span>
       {gitMeta?.label && (
-        <span className="git-file-status-tag" style={{ color: gitMeta.color }}>
-          {gitMeta.label}
+        <span className={`git-file-status-tag ${gitMeta.label.toLowerCase()}`} style={{ color: gitMeta.color }}>
+          <span className="git-status-dot" style={{ backgroundColor: gitMeta.color }} />
+          <span>{gitMeta.label}</span>
         </span>
       )}
     </div>
@@ -726,7 +727,7 @@ function FindInFolderModal({
           </div>
           <button
             type="button"
-            className="find-folder-close-btn"
+            className="panel-action-btn"
             onClick={onClose}
             title="关闭 (Esc)"
           >

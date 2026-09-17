@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type { SearchCodeHit, SearchFileHit } from '@deepseek-ide/shared';
+import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 
 export type SearchMode = 'files' | 'actions' | 'code';
 
@@ -30,8 +31,6 @@ interface Props {
   onOpenFile: (path: string, line?: number) => void;
 }
 
-const DEFAULT_PALETTE_SIZE = { width: 640, height: 440 };
-
 function formatShortcut(shortcut?: string, isMac?: boolean) {
   if (!shortcut) return '';
   if (!isMac) return shortcut;
@@ -42,22 +41,6 @@ function formatShortcut(shortcut?: string, isMac?: boolean) {
     .replace(/Alt\+/g, '⌥')
     .replace(/Option\+/g, '⌥')
     .replace(/Ctrl\+/g, '⌃');
-}
-
-function getInitialPaletteSize(): { width: number; height: number } {
-  try {
-    const raw = localStorage.getItem('echoly_cmd_palette_size');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed.width === 'number' && typeof parsed.height === 'number') {
-        return {
-          width: Math.max(460, Math.min(window.innerWidth - 32, parsed.width)),
-          height: Math.max(240, Math.min(window.innerHeight - 32, parsed.height)),
-        };
-      }
-    }
-  } catch {}
-  return DEFAULT_PALETTE_SIZE;
 }
 
 export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSearchBar(
@@ -71,48 +54,19 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
   const [fileHits, setFileHits] = useState<SearchFileHit[]>([]);
   const [codeHits, setCodeHits] = useState<SearchCodeHit[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [size, setSize] = useState(getInitialPaletteSize);
-  const sizeRef = useRef(size);
-  sizeRef.current = size;
+  const { modalSize, handleResizeStart } = useModalResize({
+    storageKey: 'echoly_cmd_palette_size',
+    defaultWidth: 640,
+    defaultHeight: 440,
+    minWidth: 460,
+    minHeight: 240,
+  });
 
   const inputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastMousePosRef = useRef({ x: -1, y: -1 });
   const seq = useRef(0);
-
-  const handleResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startW = sizeRef.current.width;
-    const startH = sizeRef.current.height;
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
-      const newW = Math.round(Math.max(460, Math.min(window.innerWidth - 40, startW + dx * 2)));
-      const newH = Math.round(Math.max(240, Math.min(window.innerHeight - 40, startH + dy * 2)));
-      sizeRef.current = { width: newW, height: newH };
-      setSize({ width: newW, height: newH });
-    };
-
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      try {
-        localStorage.setItem('echoly_cmd_palette_size', JSON.stringify(sizeRef.current));
-      } catch {}
-    };
-
-    document.body.style.cursor = 'nwse-resize';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
 
   useImperativeHandle(ref, () => ({
     focus: (nextMode?: SearchMode) => {
@@ -362,8 +316,8 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
           className="cmd-palette-modal"
           ref={rootRef}
           style={{
-            width: `${size.width}px`,
-            height: `${size.height}px`,
+            width: `${modalSize.width}px`,
+            height: `${modalSize.height}px`,
           }}
         >
           {/* 顶部搜索输入与模式切换 */}
@@ -678,20 +632,11 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                     ? `${fileHits.length} 个文件匹配`
                     : `${groupedCodeHits.length} 个文件 · ${codeHits.length} 处匹配代码`}
               </div>
-              <div
-                className="cmd-resize-handle"
+              <ModalResizeHandle
                 onMouseDown={handleResizeStart}
-                title="拖动右下角调整大小"
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                  <path
-                    d="M8.5 1.5L1.5 8.5M8.5 5L5 8.5M8.5 8.5L8.5 8.51"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
+                className="cmd-resize-handle"
+                title="拖动右下角调整大小 (支持上下左右)"
+              />
             </div>
           </div>
         )}

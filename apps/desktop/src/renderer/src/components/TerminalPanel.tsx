@@ -65,6 +65,55 @@ function tabLabel(kind: 'local' | 'ssh', index: number): string {
   return kind === 'ssh' ? `SSH ${index}` : `本地 ${index}`;
 }
 
+function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh') {
+  const type = (tab.terminalType || '').toLowerCase();
+  const title = (tab.customTitle || '').toLowerCase();
+
+  if (type === 'mvn' || title.includes('mvn') || title.includes('maven')) {
+    return (
+      <span className="terminal-tab-icon maven" title="Maven 构建">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
+          <line x1="16" y1="8" x2="2" y2="22" />
+          <line x1="17.5" y1="15" x2="9" y2="15" />
+        </svg>
+      </span>
+    );
+  }
+  if (type === 'java' || title.includes('java')) {
+    return (
+      <span className="terminal-tab-icon java" title="Java 运行环境">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
+          <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
+          <line x1="6" y1="1" x2="6" y2="4" />
+          <line x1="10" y1="1" x2="10" y2="4" />
+        </svg>
+      </span>
+    );
+  }
+  if (terminalKind === 'ssh' || type === 'ssh') {
+    return (
+      <span className="terminal-tab-icon ssh" title="SSH 远程主机">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3ecf8e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="3" width="20" height="7" rx="2" />
+          <rect x="2" y="14" width="20" height="7" rx="2" />
+          <line x1="6" y1="6.5" x2="6.01" y2="6.5" />
+          <line x1="6" y1="17.5" x2="6.01" y2="17.5" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span className="terminal-tab-icon shell" title="终端会话">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" y1="19" x2="20" y2="19" />
+      </svg>
+    </span>
+  );
+}
+
 function IconPlus({ size = 16 }: { size?: number }) {
   return (
     <svg
@@ -1414,6 +1463,7 @@ export function TerminalPanel({
                   className={`terminal-tab${active ? ' active' : ''}`}
                   onClick={() => setActiveId(tab.clientId)}
                 >
+                  {renderTabIcon(tab, terminalKind)}
                   <span className="terminal-tab-label">{label}</span>
                   <span
                     className="terminal-tab-close"

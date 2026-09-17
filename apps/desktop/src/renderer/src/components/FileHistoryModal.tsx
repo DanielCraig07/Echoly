@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { GitCommitEntry } from '@deepseek-ide/shared';
+import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 
 interface Props {
   filePath: string | null;
@@ -14,6 +15,13 @@ interface Props {
 }
 
 export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
+  const { modalSize, handleResizeStart } = useModalResize({
+    storageKey: 'echoly_file_history_modal_size',
+    defaultWidth: 760,
+    defaultHeight: 580,
+    minWidth: 540,
+    minHeight: 400,
+  });
   const [commits, setCommits] = useState<GitCommitEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
@@ -164,13 +172,15 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
     >
       <div
         style={{
-          width: '680px',
-          maxWidth: '92vw',
-          maxHeight: '75vh',
+          width: modalSize.width,
+          height: modalSize.height,
+          maxWidth: '96vw',
+          maxHeight: '94vh',
+          position: 'relative',
           background: 'var(--bg-elevated, #252526)',
           border: '1px solid var(--border, #3c3c3c)',
-          borderRadius: 8,
-          boxShadow: '0 16px 36px rgba(0, 0, 0, 0.45)',
+          borderRadius: 10,
+          boxShadow: '0 20px 48px rgba(0, 0, 0, 0.6)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -220,19 +230,14 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
           </div>
           <button
             type="button"
+            className="panel-action-btn"
             onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--muted)',
-              fontSize: 16,
-              cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: 4,
-            }}
             title="关闭 (Esc)"
           >
-            ✕
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
 
@@ -313,6 +318,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
             filteredCommits.map((c, idx) => {
               const isSelected = idx === selectedIndex;
               const isPreviewing = previewingHash === c.hash;
+              const authorInitial = (c.author || 'U').slice(0, 1).toUpperCase();
 
               return (
                 <div
@@ -320,26 +326,58 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                   data-index={idx}
                   onClick={() => void handleSelectCommit(c)}
                   style={{
-                    padding: '8px 16px',
+                    position: 'relative',
+                    padding: '10px 16px 10px 36px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 10,
+                    gap: 12,
                     cursor: 'pointer',
                     background: isSelected ? 'var(--bg-hover, rgba(255,255,255,0.06))' : 'transparent',
-                    borderLeft: isSelected ? '3px solid var(--accent, #6a4da2)' : '3px solid transparent',
-                    transition: 'background 0.1s ease',
+                    borderLeft: isSelected ? '3px solid var(--accent, #38bdf8)' : '3px solid transparent',
+                    transition: 'all 0.15s ease',
                   }}
                   onMouseEnter={() => setSelectedIndex(idx)}
                 >
+                  {/* 时间轴连线与节点圆圈 */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 18,
+                      top: 0,
+                      bottom: 0,
+                      width: 2,
+                      background: 'rgba(255, 255, 255, 0.08)',
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 15,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: isSelected ? 'var(--accent, #38bdf8)' : 'var(--border)',
+                      boxShadow: isSelected ? '0 0 6px var(--accent)' : 'none',
+                      transition: 'all 0.15s ease',
+                      zIndex: 2,
+                    }}
+                  />
+
+                  {/* Commit Hash 胶囊 */}
                   <span
                     style={{
                       fontFamily: 'var(--font-mono)',
                       fontSize: 11,
-                      color: 'var(--accent, #6a4da2)',
-                      background: 'rgba(106, 77, 162, 0.15)',
-                      padding: '2px 6px',
+                      color: 'var(--accent, #38bdf8)',
+                      background: 'rgba(56, 189, 248, 0.12)',
+                      border: '1px solid rgba(56, 189, 248, 0.25)',
+                      padding: '2px 7px',
                       borderRadius: 4,
-                      fontWeight: 600,
+                      fontWeight: 650,
+                      letterSpacing: '0.03em',
+                      flexShrink: 0,
                     }}
                   >
                     {c.shortHash}
@@ -348,9 +386,9 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        fontSize: 12,
-                        color: 'var(--text)',
-                        fontWeight: 500,
+                        fontSize: 13,
+                        color: 'var(--text-bright)',
+                        fontWeight: 600,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -364,12 +402,37 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                         fontSize: 11,
                         color: 'var(--muted)',
                         display: 'flex',
+                        alignItems: 'center',
                         gap: 12,
-                        marginTop: 2,
+                        marginTop: 3,
                       }}
                     >
-                      <span>👤 {c.author}</span>
-                      {c.relativeDate && <span>🕒 {c.relativeDate}</span>}
+                      {/* 作者单字圆形头像徽章 */}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span
+                          style={{
+                            width: 16,
+                            height: 16,
+                            borderRadius: '50%',
+                            background: 'rgba(56, 189, 248, 0.2)',
+                            color: '#38bdf8',
+                            fontSize: 9.5,
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {authorInitial}
+                        </span>
+                        <span>{c.author}</span>
+                      </span>
+                      {c.relativeDate && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <span>🕒</span>
+                          <span>{c.relativeDate}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -377,17 +440,20 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                     type="button"
                     disabled={isPreviewing}
                     style={{
-                      padding: '4px 10px',
-                      fontSize: 11,
-                      background: isSelected ? 'var(--accent, #6a4da2)' : 'rgba(255,255,255,0.05)',
+                      padding: '5px 12px',
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      background: isSelected ? 'var(--accent, #38bdf8)' : 'rgba(255,255,255,0.05)',
                       color: isSelected ? '#fff' : 'var(--text)',
-                      border: '1px solid var(--border, #3c3c3c)',
-                      borderRadius: 4,
+                      border: isSelected ? '1px solid var(--accent)' : '1px solid var(--border)',
+                      borderRadius: 6,
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease',
+                      boxShadow: isSelected ? '0 2px 8px rgba(56, 189, 248, 0.3)' : 'none',
                     }}
                   >
-                    {isPreviewing ? '加载中...' : '比对差异 (Diff)'}
+                    {isPreviewing ? '加载中…' : '比对差异 (Diff)'}
                   </button>
                 </div>
               );
@@ -411,6 +477,8 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
           <span>提示：点击任意提交或按 Enter 可直接对比当前版本与该提交的文件 Diff</span>
           <span>Esc 关闭</span>
         </div>
+        {/* 右下角全向拖拽调整大小手柄 */}
+        <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
     </div>
   );

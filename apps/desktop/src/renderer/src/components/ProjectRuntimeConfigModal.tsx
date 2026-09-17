@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 
 export interface ProjectRuntimeConfig {
   vmArgs: string; // 编译器标志 / JVM 参数 / 解释器参数
@@ -128,6 +129,13 @@ export function ProjectRuntimeConfigModal({
   activePath,
   onShowToast,
 }: Props) {
+  const { modalSize, handleResizeStart } = useModalResize({
+    storageKey: 'echoly_runtime_config_modal_size',
+    defaultWidth: 760,
+    defaultHeight: 650,
+    minWidth: 580,
+    minHeight: 440,
+  });
   const [config, setConfig] = useState<ProjectRuntimeConfig>(DEFAULT_RUNTIME_CONFIG);
   const [detectedPresets, setDetectedPresets] = useState<DetectedEnvPreset[]>([]);
   const [_scanning, setScanning] = useState(false);
@@ -577,6 +585,13 @@ export function ProjectRuntimeConfigModal({
     >
       <div
         className="runtime-modal"
+        style={{
+          width: modalSize.width,
+          height: modalSize.height,
+          maxWidth: '96vw',
+          maxHeight: '94vh',
+          position: 'relative',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -596,9 +611,12 @@ export function ProjectRuntimeConfigModal({
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭"
+            title="关闭 (Esc)"
           >
-            ✕
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
 
@@ -1175,6 +1193,8 @@ export function ProjectRuntimeConfigModal({
             </button>
           </div>
         </div>
+        {/* 右下角全向拖拽手柄 */}
+        <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
     </div>
   );

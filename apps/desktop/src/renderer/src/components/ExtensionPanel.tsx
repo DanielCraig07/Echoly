@@ -1,12 +1,20 @@
 /**
- * Extension Panel - 扩展管理面板
- * 用于安装、管理和控制 VSCode 扩展
+ * Extension Panel - 现代扩展与插件管理面板
+ * 用于安装、管理和控制 VSCode / Claude 等核心扩展生态
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 
-interface ExtensionPanelProps {
+export interface ExtensionPanelProps {
   onOpenExtension?: (extensionId: string) => void;
+  onClose?: () => void;
+}
+
+export interface ExtensionModalProps {
+  open: boolean;
+  onClose: () => void;
+  onOpenExtension: (extensionId: string) => void;
 }
 
 declare global {
@@ -30,42 +38,17 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
   const [extensions, setExtensions] = useState<string[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{
     percent: number;
     downloaded: number;
     total: number;
   } | null>(null);
 
-  // 加载已安装的扩展
-  useEffect(() => {
-    loadExtensions();
-
-    // 监听扩展消息
-    const cleanup1 = window.extensions.onMessage((message) => {
-      console.log('Extension message:', message);
-      setMessages((prev) => [...prev.slice(-19), message]); // 保留最近20条
-    });
-
-    // 监听扩展命令
-    const cleanup2 = window.extensions.onCommand((data) => {
-      console.log('Extension command:', data);
-    });
-
-    // 监听下载进度
-    const cleanup3 =
-      window.ide.onDownloadProgress?.((progress) => {
-        setDownloadProgress(progress);
-      }) || (() => {});
-
-    return () => {
-      cleanup1();
-      cleanup2();
-      if (typeof cleanup3 === 'function') cleanup3();
-    };
-  }, []);
-
-  const loadExtensions = async () => {
+  const loadExtensions = useCallback(async () => {
     try {
+      if (!window.extensions?.getLoadedExtensions) return;
       const result = await window.extensions.getLoadedExtensions();
       if (result.success && result.extensions) {
         setExtensions(result.extensions);
@@ -73,50 +56,59 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     } catch (err: any) {
       console.error('Failed to load extensions:', err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadExtensions();
+
+    const cleanup1 = window.extensions?.onMessage?.((message) => {
+      setMessages((prev) => [...prev.slice(-19), message]);
+    }) || (() => {});
+
+    const cleanup2 = window.extensions?.onCommand?.((data) => {
+      console.log('Extension command:', data);
+    }) || (() => {});
+
+    const cleanup3 =
+      window.ide?.onDownloadProgress?.((progress) => {
+        setDownloadProgress(progress);
+      }) || (() => {});
+
+    return () => {
+      cleanup1();
+      cleanup2();
+      cleanup3();
+    };
+  }, [loadExtensions]);
 
   const handleInstallClaudeCode = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMsg(null);
     setDownloadProgress(null);
     try {
       const result = await window.extensions.installClaudeCode();
       if (result.success) {
         await loadExtensions();
-        setDownloadProgress(null);
-        alert('Claude Code 扩展安装成功！');
+        setSuccessMsg('Claude Code 官方扩展安装就绪！');
       } else {
         setError(result.error || '安装失败');
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || '安装过程中发生异常');
     } finally {
       setLoading(false);
       setDownloadProgress(null);
     }
   };
 
-  const handleExecuteCommand = async (command: string) => {
-    try {
-      const result = await window.extensions.executeCommand(command);
-      if (result.success) {
-        console.log('Command executed:', result.result);
-      } else {
-        alert(`命令执行失败: ${result.error}`);
-      }
-    } catch (err: any) {
-      alert(`命令执行错误: ${err.message}`);
-    }
-  };
-
   const handleLoadFromPath = async () => {
     setLoading(true);
     setError(null);
+    setSuccessMsg(null);
 
     try {
-      // 使用 Electron 的文件选择对话框
-      const filePath = await window.ide.pickFile([{ name: 'VSCode 扩展', extensions: ['vsix'] }]);
-
+      const filePath = await window.ide.pickFile([{ name: 'VSCode 扩展包', extensions: ['vsix'] }]);
       if (!filePath) {
         setLoading(false);
         return;
@@ -125,291 +117,256 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       const result = await window.extensions.loadFromPath(filePath);
       if (result.success) {
         await loadExtensions();
-        console.log('扩展加载成功！文件：', filePath);
-        setError(null);
+        setSuccessMsg(`扩展包「${filePath.split(/[/\\\\]/).pop()}」加载成功！`);
       } else {
-        setError(result.error || '加载失败');
+        setError(result.error || '加载本地扩展包失败');
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || '加载扩展时出错');
     } finally {
       setLoading(false);
     }
   };
 
+  const isClaudeInstalled = extensions.includes('Anthropic.claude-code');
+
   return (
-    <div className="extension-panel">
-      <div className="extension-panel-header">
-        <h2>扩展管理</h2>
+    <div className="ext-panel-container">
+      {/* 提示横幅 */}
+      {error && (
+        <div className="ext-alert ext-alert-error">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span>{error}</span>
+          <button type="button" className="ext-alert-close" onClick={() => setError(null)}>✕</button>
+        </div>
+      )}
+
+      {successMsg && (
+        <div className="ext-alert ext-alert-success">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+          <span>{successMsg}</span>
+          <button type="button" className="ext-alert-close" onClick={() => setSuccessMsg(null)}>✕</button>
+        </div>
+      )}
+
+      {/* 特色官方扩展 Hero 卡片 */}
+      <div className="ext-hero-card">
+        <div className="ext-hero-left">
+          <div className="ext-brand-avatar">
+            <span style={{ fontSize: 24 }}>⚡</span>
+          </div>
+          <div>
+            <div className="ext-hero-title-row">
+              <span className="ext-hero-title">Claude Code for VS Code</span>
+              <span className="ext-pill ext-pill-official">官方推荐</span>
+              {isClaudeInstalled && <span className="ext-pill ext-pill-active">✓ 已安装</span>}
+            </div>
+            <p className="ext-hero-desc">
+              深度整合 Anthropic 官方 Agent 编程助手，提供终端交互、代码重构与实时工程分析能力
+            </p>
+          </div>
+        </div>
+
+        <div className="ext-hero-actions">
+          {isClaudeInstalled ? (
+            <button
+              type="button"
+              className="panel-standard-btn primary"
+              onClick={() => onOpenExtension?.('Anthropic.claude-code')}
+            >
+              打开扩展
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="panel-standard-btn primary"
+              onClick={handleInstallClaudeCode}
+              disabled={loading}
+            >
+              {loading ? '安装中…' : '一键在线安装'}
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="extension-panel-body">
-        {/* 安装 Claude Code */}
-        <section className="extension-section">
-          <h3>Claude Code 扩展</h3>
-          <p className="extension-desc">
-            官方 Claude Code for VS Code 扩展，提供完整的 Claude AI 功能
-          </p>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button
-              type="button"
-              onClick={handleInstallClaudeCode}
-              disabled={loading || extensions.includes('Anthropic.claude-code')}
-              className="extension-btn primary"
-            >
-              {loading
-                ? '安装中...'
-                : extensions.includes('Anthropic.claude-code')
-                  ? '已安装'
-                  : '在线安装'}
-            </button>
-            <button
-              type="button"
-              onClick={handleLoadFromPath}
-              disabled={loading}
-              className="extension-btn"
-            >
-              从路径加载
-            </button>
+      {/* 下载进度条 */}
+      {downloadProgress && (
+        <div className="ext-progress-card">
+          <div className="ext-progress-header">
+            <span style={{ fontWeight: 600 }}>正在下载扩展组件…</span>
+            <span className="ext-progress-stat">
+              {downloadProgress.percent.toFixed(1)}% (
+              {(downloadProgress.downloaded / 1024 / 1024).toFixed(1)}MB /
+              {(downloadProgress.total / 1024 / 1024).toFixed(1)}MB)
+            </span>
           </div>
+          <div className="ext-progress-track">
+            <div className="ext-progress-bar" style={{ width: `${downloadProgress.percent}%` }} />
+          </div>
+        </div>
+      )}
 
-          {/* 下载进度 */}
-          {downloadProgress && (
-            <div className="download-progress">
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${downloadProgress.percent}%` }} />
-              </div>
-              <div className="progress-text">
-                {downloadProgress.percent.toFixed(1)}% (
-                {(downloadProgress.downloaded / 1024 / 1024).toFixed(1)}MB /
-                {(downloadProgress.total / 1024 / 1024).toFixed(1)}MB)
-              </div>
+      {/* 本地 VSIX 加载入口卡片 */}
+      <div className="ext-install-local-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="ext-local-icon">📦</div>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-bright)' }}>
+              本地安装离线扩展包 (.vsix)
             </div>
-          )}
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+              支持直接从磁盘选取已下载的 VSCode 插件安装包导入运行
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="panel-standard-btn"
+          onClick={handleLoadFromPath}
+          disabled={loading}
+        >
+          从路径载入…
+        </button>
+      </div>
 
-          {error && <div className="extension-error">{error}</div>}
-        </section>
+      {/* 已安装扩展列表 */}
+      <div className="ext-section">
+        <div className="ext-section-header">
+          <span className="ext-section-title">已安装的扩展</span>
+          <span className="ext-section-count">({extensions.length})</span>
+        </div>
 
-        {/* 已安装的扩展列表 */}
-        <section className="extension-section">
-          <h3>已安装的扩展 ({extensions.length})</h3>
-          {extensions.length === 0 ? (
-            <p className="extension-empty">暂无已安装的扩展</p>
-          ) : (
-            <ul className="extension-list">
-              {extensions.map((ext) => (
-                <li key={ext} className="extension-item">
-                  <span className="extension-name">{ext}</span>
+        {extensions.length === 0 ? (
+          <div className="ext-empty-placeholder">
+            <span style={{ fontSize: 26, opacity: 0.5 }}>🧩</span>
+            <span>暂未载入任何第三方扩展包，点击上方按钮即可一键添加</span>
+          </div>
+        ) : (
+          <div className="ext-grid">
+            {extensions.map((ext) => (
+              <div key={ext} className="ext-item-card">
+                <div className="ext-item-info">
+                  <div className="ext-item-icon">🧩</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="ext-item-name" title={ext}>{ext}</div>
+                    <div className="ext-item-meta">
+                      <span className="ext-status-dot" />
+                      <span>已启用</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ext-item-btns">
                   <button
                     type="button"
-                    className="extension-btn small"
-                    onClick={() => {
-                      if (onOpenExtension) {
-                        onOpenExtension(ext);
-                      } else {
-                        handleExecuteCommand('extension.open');
-                      }
-                    }}
+                    className="panel-standard-btn"
+                    onClick={() => onOpenExtension?.(ext)}
                   >
-                    打开
+                    管理
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* 扩展消息日志 */}
-        {messages.length > 0 && (
-          <section className="extension-section">
-            <h3>扩展消息</h3>
-            <div className="extension-messages">
-              {messages.map((msg, idx) => (
-                <div key={idx} className="extension-message">
-                  <span className="extension-message-type">[{msg.type}]</span>
-                  <span className="extension-message-text">{JSON.stringify(msg, null, 2)}</span>
                 </div>
-              ))}
-            </div>
-          </section>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
-      <style>{`
-        .download-progress {
-          margin-top: 16px;
-        }
+      {/* 消息与日志折叠栏 */}
+      {messages.length > 0 && (
+        <div className="ext-logs-section">
+          <button
+            type="button"
+            className="ext-logs-toggle-btn"
+            onClick={() => setShowLogs(!showLogs)}
+          >
+            <span>扩展通信日志 ({messages.length})</span>
+            <span>{showLogs ? '▲ 收起' : '▼ 展开'}</span>
+          </button>
 
-        .progress-bar {
-          width: 100%;
-          height: 8px;
-          background: var(--bg);
-          border-radius: 4px;
-          overflow: hidden;
-          margin-bottom: 8px;
-        }
+          {showLogs && (
+            <div className="ext-logs-content">
+              {messages.map((msg, idx) => (
+                <div key={idx} className="ext-log-line">
+                  <span className="ext-log-type">[{msg.type}]</span>
+                  <span className="ext-log-text">{JSON.stringify(msg)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
-        .progress-fill {
-          height: 100%;
-          background: linear-gradient(90deg, var(--accent), var(--accent-2));
-          transition: width 0.3s ease;
-          border-radius: 4px;
-        }
+/**
+ * 现代模态框封装，支持上下左右全向拖拽调整尺寸与持久化
+ */
+export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModalProps) {
+  const { modalSize, handleResizeStart } = useModalResize({
+    storageKey: 'echoly_extension_modal_size',
+    defaultWidth: 760,
+    defaultHeight: 580,
+    minWidth: 540,
+    minHeight: 420,
+  });
 
-        .progress-text {
-          font-size: 13px;
-          color: var(--muted);
-          text-align: center;
-        }
+  if (!open) return null;
 
-        .extension-panel {
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-          background: var(--bg);
-          color: var(--text);
-        }
+  return (
+    <div className="settings-overlay" onClick={onClose}>
+      <div
+        className="ide-modal modern-extension-modal"
+        style={{
+          width: modalSize.width,
+          height: modalSize.height,
+          maxWidth: '96vw',
+          maxHeight: '94vh',
+          position: 'relative',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <header className="ide-modal-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 18 }}>🧩</span>
+            <div>
+              <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-bright)' }}>
+                扩展与插件管理 (Extensions)
+              </h2>
+              <p className="ide-modal-desc" style={{ marginTop: 2 }}>
+                管理 VSCode 插件生态、Claude AI 扩展及本地 VSIX 安装包
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="panel-action-btn"
+            onClick={onClose}
+            title="关闭 (Esc)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </header>
 
-        .extension-panel-header {
-          padding: 16px 20px;
-          border-bottom: 1px solid var(--border);
-        }
+        {/* Body */}
+        <div className="ide-modal-body" style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+          <ExtensionPanel onOpenExtension={onOpenExtension} onClose={onClose} />
+        </div>
 
-        .extension-panel-header h2 {
-          margin: 0;
-          font-size: 18px;
-          font-weight: 600;
-        }
-
-        .extension-panel-body {
-          flex: 1;
-          overflow-y: auto;
-          padding: 20px;
-        }
-
-        .extension-section {
-          margin-bottom: 32px;
-        }
-
-        .extension-section h3 {
-          margin: 0 0 12px;
-          font-size: 16px;
-          font-weight: 600;
-        }
-
-        .extension-desc {
-          margin: 0 0 16px;
-          color: var(--text-secondary);
-          font-size: 14px;
-          line-height: 1.5;
-        }
-
-        .extension-btn {
-          padding: 8px 16px;
-          border: 1px solid var(--border);
-          border-radius: 6px;
-          background: var(--bg-panel);
-          color: var(--text);
-          font-size: 14px;
-          cursor: pointer;
-          transition: all 0.15s;
-        }
-
-        .extension-btn:hover:not(:disabled) {
-          background: var(--bg-hover);
-          border-color: var(--accent);
-        }
-
-        .extension-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .extension-btn.primary {
-          background: var(--accent);
-          border-color: var(--accent);
-          color: white;
-        }
-
-        .extension-btn.primary:hover:not(:disabled) {
-          background: var(--accent-hover);
-        }
-
-        .extension-btn.small {
-          padding: 4px 12px;
-          font-size: 12px;
-        }
-
-        .extension-error {
-          margin-top: 12px;
-          padding: 12px;
-          border-radius: 6px;
-          background: rgba(255, 100, 100, 0.1);
-          border: 1px solid rgba(255, 100, 100, 0.3);
-          color: #ff6464;
-          font-size: 13px;
-        }
-
-        .extension-empty {
-          color: var(--text-secondary);
-          font-size: 14px;
-        }
-
-        .extension-list {
-          list-style: none;
-          margin: 0;
-          padding: 0;
-        }
-
-        .extension-item {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 12px;
-          margin-bottom: 8px;
-          border-radius: 6px;
-          background: var(--bg-panel);
-          border: 1px solid var(--border);
-        }
-
-        .extension-name {
-          font-size: 14px;
-          font-family: monospace;
-        }
-
-        .extension-messages {
-          max-height: 300px;
-          overflow-y: auto;
-          padding: 12px;
-          background: var(--bg-panel);
-          border: 1px solid var(--border);
-          border-radius: 6px;
-          font-family: monospace;
-          font-size: 12px;
-        }
-
-        .extension-message {
-          margin-bottom: 8px;
-          padding-bottom: 8px;
-          border-bottom: 1px solid var(--border);
-        }
-
-        .extension-message:last-child {
-          margin-bottom: 0;
-          padding-bottom: 0;
-          border-bottom: none;
-        }
-
-        .extension-message-type {
-          display: inline-block;
-          margin-right: 8px;
-          color: var(--accent);
-        }
-
-        .extension-message-text {
-          color: var(--text-secondary);
-        }
-      `}</style>
+        {/* 右下角全向拖拽手柄 */}
+        <ModalResizeHandle onMouseDown={handleResizeStart} />
+      </div>
     </div>
   );
 }

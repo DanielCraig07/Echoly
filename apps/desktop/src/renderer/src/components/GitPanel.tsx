@@ -1235,6 +1235,26 @@ export function GitPanel({
 
   const graphAnalysis = useMemo(() => analyzeGitGraph(commits), [commits]);
 
+  const handleAutoGenerateCommit = useCallback(() => {
+    const allEntries = status?.entries || [];
+    if (allEntries.length === 0) {
+      onShowToast?.('当前没有检测到工作区改动', undefined, 'info');
+      return;
+    }
+    const files = allEntries.map((e) => e.path);
+    const firstFile = files[0] || '';
+    const ext = firstFile.split('.').pop() || '';
+    const dir = firstFile.split('/')[0] || '';
+    let autoMsg = '';
+    if (allEntries.length === 1) {
+      autoMsg = `chore(${dir || ext || 'core'}): update ${firstFile.split('/').pop()}`;
+    } else {
+      autoMsg = `feat(${dir || 'workspace'}): update ${allEntries.length} files (${files.slice(0, 2).map((f) => f.split('/').pop()).join(', ')}${allEntries.length > 2 ? ' etc.' : ''})`;
+    }
+    setMessage(autoMsg);
+    onShowToast?.('已根据改动智能生成提交说明', autoMsg, 'success');
+  }, [status?.entries, onShowToast]);
+
   useEffect(() => {
     const handleDocumentClick = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -2212,15 +2232,21 @@ export function GitPanel({
               }
             }}
           />
-          <svg
-            style={{ position: 'absolute', right: 8, top: 8, color: 'var(--muted)' }}
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="currentColor"
+          <button
+            type="button"
+            className="git-ai-commit-btn"
+            title="AI 智能生成规范 Commit 提交说明"
+            onClick={handleAutoGenerateCommit}
           >
-            <path d="M8 0l2.3 5.7L16 8l-5.7 2.3L8 16l-2.3-5.7L0 8l5.7-2.3z" />
-          </svg>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+            >
+              <path d="M8 0l2.3 5.7L16 8l-5.7 2.3L8 16l-2.3-5.7L0 8l5.7-2.3z" />
+            </svg>
+          </button>
         </div>
 
         <div style={{ display: 'flex', width: '100%', position: 'relative' }}>
@@ -2359,7 +2385,10 @@ export function GitPanel({
                 alignItems: 'center',
               }}
             >
-              <span>已暂存的更改 ({staged.length})</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>已暂存的更改</span>
+                <span className="git-count-badge staged">{staged.length}</span>
+              </span>
               <button
                 type="button"
                 className="panel-text-btn"
@@ -2419,7 +2448,10 @@ export function GitPanel({
                 alignItems: 'center',
               }}
             >
-              <span>更改 ({working.length})</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>更改</span>
+                <span className="git-count-badge working">{working.length}</span>
+              </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button
                   type="button"

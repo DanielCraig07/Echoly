@@ -14,6 +14,8 @@ interface Props {
   initialRemotePath?: string;
 }
 
+import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+
 export function SshConnectModal({
   open,
   onClose,
@@ -24,6 +26,13 @@ export function SshConnectModal({
   initialServer,
   initialRemotePath,
 }: Props) {
+  const { modalSize, handleResizeStart } = useModalResize({
+    storageKey: 'echoly_ssh_modal_size',
+    defaultWidth: 760,
+    defaultHeight: 600,
+    minWidth: 520,
+    minHeight: 420,
+  });
   const [step, setStep] = useState<'credentials' | 'pick_directory'>('credentials');
   const [host, setHost] = useState('');
   const [port, setPort] = useState('22');
@@ -46,64 +55,6 @@ export function SshConnectModal({
   const [isEditingPath, setIsEditingPath] = useState(false);
   const [pathInputVal, setPathInputVal] = useState('');
   const pathInputRef = useRef<HTMLInputElement>(null);
-
-  const [pickerSize, setPickerSize] = useState<{ width: number; height: number }>(() => {
-    try {
-      const saved = localStorage.getItem('echoly_ssh_picker_size');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed?.width === 'number' && typeof parsed?.height === 'number') {
-          if (parsed.width >= 480 && parsed.height >= 380) {
-            return {
-              width: Math.min(parsed.width, Math.max(500, window.innerWidth - 40)),
-              height: Math.min(parsed.height, Math.max(380, window.innerHeight - 40)),
-            };
-          }
-        }
-      }
-    } catch {}
-    const defaultW = typeof window !== 'undefined' ? Math.min(740, Math.max(520, Math.round(window.innerWidth * 0.58))) : 740;
-    const defaultH = typeof window !== 'undefined' ? Math.min(580, Math.max(420, Math.round(window.innerHeight * 0.72))) : 580;
-    return { width: defaultW, height: defaultH };
-  });
-
-  const pickerSizeRef = useRef(pickerSize);
-  pickerSizeRef.current = pickerSize;
-
-  const handlePickerResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startW = pickerSizeRef.current.width;
-    const startH = pickerSizeRef.current.height;
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
-      const maxW = Math.round(Math.min(1200, window.innerWidth - 30));
-      const maxH = Math.round(Math.min(960, window.innerHeight - 30));
-      const newW = Math.round(Math.max(500, Math.min(maxW, startW + dx * 2)));
-      const newH = Math.round(Math.max(400, Math.min(maxH, startH + dy * 2)));
-      pickerSizeRef.current = { width: newW, height: newH };
-      setPickerSize({ width: newW, height: newH });
-    };
-
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      try {
-        localStorage.setItem('echoly_ssh_picker_size', JSON.stringify(pickerSizeRef.current));
-      } catch {}
-    };
-
-    document.body.style.cursor = 'nwse-resize';
-    document.body.style.userSelect = 'none';
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  };
 
   const isHiddenDir = (name: string) => name.startsWith('.') || name.startsWith('__');
 
@@ -362,7 +313,13 @@ export function SshConnectModal({
     <div className="settings-overlay">
       <div
         className={`ide-modal${step === 'pick_directory' ? ' ide-modal-dir-picker' : showForm ? ' ide-modal-md' : ''}`}
-        style={step === 'pick_directory' ? { width: pickerSize.width, height: pickerSize.height } : undefined}
+        style={{
+          width: modalSize.width,
+          height: modalSize.height,
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
       >
         {step === 'credentials' ? (
           <>
@@ -377,15 +334,18 @@ export function SshConnectModal({
               </div>
               <button
                 type="button"
-                className="settings-close-btn"
+                className="panel-action-btn"
                 onClick={handleClose}
-                aria-label="关闭"
+                title="关闭 (Esc)"
               >
-                ×
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
               </button>
             </header>
 
-            <div className="ide-modal-body">
+            <div className="ide-modal-body" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               {!showForm && profiles.length > 0 && (
                 <ul className="ssh-server-list">
                   {profiles.map((p) => (
@@ -396,10 +356,49 @@ export function SshConnectModal({
                         onClick={() => void startConnectAndPickDir(p)}
                         disabled={busy}
                       >
-                        <span className="ssh-server-name">{p.name}</span>
-                        <span className="ssh-server-meta">
-                          {p.username}@{p.host}:{p.port || 22}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+                          <div
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: 7,
+                              background: 'rgba(56, 189, 248, 0.12)',
+                              color: '#38bdf8',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                              border: '1px solid rgba(56, 189, 248, 0.25)',
+                            }}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+                              <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+                              <line x1="6" y1="6" x2="6.01" y2="6" />
+                              <line x1="6" y1="18" x2="6.01" y2="18" />
+                            </svg>
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span className="ssh-server-name">{p.name}</span>
+                            <span className="ssh-server-meta">
+                              {p.username}@{p.host}
+                            </span>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: 10.5,
+                              fontFamily: 'var(--font-mono, monospace)',
+                              color: 'var(--muted, #888)',
+                              background: 'rgba(255, 255, 255, 0.06)',
+                              padding: '2px 7px',
+                              borderRadius: 4,
+                              border: '1px solid rgba(255, 255, 255, 0.08)',
+                              flexShrink: 0,
+                            }}
+                          >
+                            :{p.port || 22}
+                          </span>
+                        </div>
                       </button>
                       <button
                         type="button"
@@ -408,7 +407,10 @@ export function SshConnectModal({
                         onClick={(e) => void removeProfile(p.id, e)}
                         disabled={busy}
                       >
-                        ×
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
                       </button>
                     </li>
                   ))}
@@ -558,11 +560,14 @@ export function SshConnectModal({
               </div>
               <button
                 type="button"
-                className="settings-close-btn"
+                className="panel-action-btn"
                 onClick={handleClose}
-                aria-label="关闭"
+                title="关闭 (Esc)"
               >
-                ×
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
               </button>
             </header>
 
@@ -1015,22 +1020,10 @@ export function SshConnectModal({
                 </button>
               </div>
             </footer>
-            <div
-              className="ide-modal-resize-handle"
-              onMouseDown={handlePickerResizeStart}
-              title="拖动右下角调整大小"
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <path
-                  d="M8.5 1.5L1.5 8.5M8.5 5L5 8.5M8.5 8.5L8.5 8.51"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
           </>
         )}
+        {/* 全向拖拽调整手柄 */}
+        <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
     </div>,
     document.body,

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 import type {
   MavenEnvironmentInfo,
   InstalledJdkInfo,
@@ -37,6 +38,13 @@ export function EnvironmentConfigModal({
   onSaveConfig,
   onShowToast,
 }: EnvironmentConfigModalProps) {
+  const { modalSize, handleResizeStart } = useModalResize({
+    storageKey: 'echoly_environment_config_modal_size',
+    defaultWidth: 840,
+    defaultHeight: 640,
+    minWidth: 640,
+    minHeight: 460,
+  });
   const [activeTab, setActiveTab] = useState<'java' | 'maven'>('java');
 
   // Draft config
@@ -181,10 +189,11 @@ export function EnvironmentConfigModal({
     >
       <div
         style={{
-          width: '100%',
-          maxWidth: 820,
-          height: 620,
-          maxHeight: '90vh',
+          width: modalSize.width,
+          height: modalSize.height,
+          maxWidth: '96vw',
+          maxHeight: '94vh',
+          position: 'relative',
           background: 'linear-gradient(180deg, #1e1e2d 0%, #151520 100%)',
           border: '1px solid rgba(255, 255, 255, 0.12)',
           borderRadius: 14,
@@ -235,29 +244,14 @@ export function EnvironmentConfigModal({
 
           <button
             type="button"
+            className="panel-action-btn"
             onClick={onClose}
             title="关闭窗口 (Esc)"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'rgba(255, 255, 255, 0.5)',
-              cursor: 'pointer',
-              fontSize: 18,
-              lineHeight: 1,
-              padding: '6px 10px',
-              borderRadius: 6,
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-              e.currentTarget.style.color = '#ffffff';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = 'rgba(255, 255, 255, 0.5)';
-            }}
           >
-            ✕
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
 
@@ -990,6 +984,8 @@ export function EnvironmentConfigModal({
             </button>
           </div>
         </div>
+        {/* 右下角全向拖拽调整大小手柄 */}
+        <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
     </div>
   );
