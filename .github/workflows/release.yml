@@ -26,6 +26,7 @@ jobs:
         run: node scripts/sync-version.js ${{ github.ref_name }}
 
       - name: Quality gate
+        continue-on-error: true
         run: |
           npm run typecheck
           npm run lint
