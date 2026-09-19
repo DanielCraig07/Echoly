@@ -1227,6 +1227,10 @@ export function GitPanel({
   const [graphHeight, setGraphHeight] = useState(320);
   const [isGraphCollapsed, setIsGraphCollapsed] = useState(false);
   const [fileContextMenu, setFileContextMenu] = useState<GitContextMenuState | null>(null);
+  const isMac = useMemo(
+    () => typeof navigator !== 'undefined' && /mac/i.test(navigator.userAgent || navigator.platform),
+    [],
+  );
 
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const moreMenuBtnRef = useRef<HTMLButtonElement>(null);
@@ -2202,12 +2206,14 @@ export function GitPanel({
           borderBottom: '1px solid var(--border)',
         }}
       >
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <input
             className="git-commit-input"
             style={{
               width: '100%',
-              padding: '6px 28px 6px 8px',
+              height: 32,
+              boxSizing: 'border-box',
+              padding: '4px 106px 4px 10px',
               background: 'var(--bg-lighter, #12161c)',
               border: '1px solid var(--border)',
               borderRadius: 4,
@@ -2217,7 +2223,7 @@ export function GitPanel({
             }}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder={`消息(⌘↵ 在“${status?.branch || 'master'}”提交)`}
+            placeholder={`消息(${isMac ? '⌘Enter' : 'Ctrl+Enter'} 在“${status?.branch || 'main'}”提交)`}
             disabled={busy}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -2238,13 +2244,20 @@ export function GitPanel({
             title="AI 智能生成规范 Commit 提交说明"
             onClick={handleAutoGenerateCommit}
           >
+            <span>Generate</span>
             <svg
+              className="git-ai-commit-icon"
               width="14"
               height="14"
-              viewBox="0 0 16 16"
-              fill="currentColor"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              <path d="M8 0l2.3 5.7L16 8l-5.7 2.3L8 16l-2.3-5.7L0 8l5.7-2.3z" />
+              <path d="M11 2C11 6.5 14.5 10 19 10C14.5 10 11 13.5 11 18C11 13.5 7.5 10 3 10C7.5 10 11 6.5 11 2Z" />
+              <path d="M19 15C19 17 20.5 18.5 22.5 18.5C20.5 18.5 19 20 19 22C19 20 17.5 18.5 15.5 18.5C17.5 18.5 19 17 19 15Z" strokeWidth="1.8" />
             </svg>
           </button>
         </div>
@@ -2255,49 +2268,72 @@ export function GitPanel({
             className="git-commit-btn"
             style={{
               flex: 1,
-              padding: '6px 12px',
+              height: 32,
+              padding: '0 12px',
               background: 'var(--accent, #007acc)',
-              border: '1px solid var(--accent, #007acc)',
-              color: '#fff',
+              border: 'none',
               borderRadius: '4px 0 0 4px',
+              color: '#fff',
               cursor: busy || (status?.entries.length || 0) === 0 ? 'not-allowed' : 'pointer',
               opacity: busy || (status?.entries.length || 0) === 0 ? 0.6 : 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 6,
-              fontSize: 12,
-              fontWeight: 600,
+              gap: 8,
+              fontSize: 13,
+              fontWeight: 500,
             }}
             disabled={busy || (status?.entries.length || 0) === 0}
             onClick={() => void handleCommitAction({})}
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M13.5 3.5l-8 8-4-4 1.5-1.5 2.5 2.5 6.5-6.5z" />
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="20 6 9 17 4 12" />
             </svg>
-            提交
+            <span>提交</span>
           </button>
           <button
             ref={commitDropdownBtnRef}
             type="button"
             className="git-commit-dropdown-btn"
             title="更多提交选项"
-            onClick={() => setShowCommitDropdown((v) => !v)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowCommitDropdown((v) => !v);
+            }}
             style={{
-              padding: '6px 10px',
+              height: 32,
+              padding: '0 12px',
               background: 'var(--accent, #007acc)',
-              border: '1px solid var(--accent, #007acc)',
-              borderLeft: '1px solid rgba(0,0,0,0.25)',
-              color: '#fff',
+              border: 'none',
+              borderLeft: '1px solid rgba(255, 255, 255, 0.4)',
               borderRadius: '0 4px 4px 0',
+              color: '#fff',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M4 6l4 4 4-4z" />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="6 9 12 15 18 9" />
             </svg>
           </button>
 
@@ -2315,40 +2351,40 @@ export function GitPanel({
                 borderRadius: 6,
                 boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                 width: 140,
-                padding: '4px 0',
+                padding: 4,
                 fontSize: 12,
                 color: 'var(--text)',
               }}
             >
-              <div
-                className="search-result-item"
+              <button
+                type="button"
+                className="git-commit-dropdown-item"
                 onClick={() => void handleCommitAction({})}
-                style={{ padding: '6px 14px', cursor: 'pointer' }}
               >
                 提交
-              </div>
-              <div
-                className="search-result-item"
+              </button>
+              <button
+                type="button"
+                className="git-commit-dropdown-item"
                 onClick={() => void handleCommitAction({ amend: true })}
-                style={{ padding: '6px 14px', cursor: 'pointer' }}
               >
                 提交 (修改)
-              </div>
+              </button>
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-              <div
-                className="search-result-item"
+              <button
+                type="button"
+                className="git-commit-dropdown-item"
                 onClick={() => void handleCommitAction({ push: true })}
-                style={{ padding: '6px 14px', cursor: 'pointer' }}
               >
                 提交和推送
-              </div>
-              <div
-                className="search-result-item"
+              </button>
+              <button
+                type="button"
+                className="git-commit-dropdown-item"
                 onClick={() => void handleCommitAction({ sync: true })}
-                style={{ padding: '6px 14px', cursor: 'pointer' }}
               >
                 提交和同步
-              </div>
+              </button>
             </div>
           )}
         </div>

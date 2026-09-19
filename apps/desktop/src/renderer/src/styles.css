@@ -1844,8 +1844,13 @@ body.resizing.resizing-row {
 }
 
 .ctx-item:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: var(--accent, #007acc) !important;
+  color: #ffffff !important;
+}
+
+.ctx-item:active:not(:disabled) {
+  background: #005a9e !important;
+  color: #ffffff !important;
 }
 
 .ctx-item:disabled {
@@ -1869,85 +1874,255 @@ body.resizing.resizing-row {
 }
 
 /* ── Monaco Editor Native Context Menu Refinement ─────────────────── */
-.monaco-menu-container {
-  border-radius: 9px !important;
-  box-shadow: 0 20px 48px -4px rgba(0, 0, 0, 0.7), 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
-  background: rgba(26, 27, 33, 0.96) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
-  padding: 5px !important;
-  overflow: hidden !important;
+:root {
+  --vscode-menu-background: rgba(26, 28, 35, 0.97);
+  --vscode-menu-foreground: rgba(255, 255, 255, 0.9);
+  --vscode-menu-selectionBackground: #007acc;
+  --vscode-menu-selectionForeground: #ffffff;
+  --vscode-menu-border: rgba(255, 255, 255, 0.12);
+  --vscode-menu-separatorBackground: rgba(255, 255, 255, 0.1);
 }
 
+.context-view.monaco-component,
+.context-view .monaco-menu-container,
+.monaco-menu-container,
+.monaco-styled-menu {
+  border-radius: 8px !important;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.7), 0 4px 16px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+  background: rgba(26, 28, 35, 0.97) !important;
+  background-color: rgba(26, 28, 35, 0.97) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  padding: 5px !important;
+  min-width: 236px !important;
+  overflow: hidden !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+[data-theme='light'] .context-view .monaco-menu-container,
 [data-theme='light'] .monaco-menu-container {
-  background: rgba(255, 255, 255, 0.98) !important;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+  color: #1f2937 !important;
+}
+
+.monaco-menu {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+.monaco-menu .monaco-action-bar {
+  background: transparent !important;
 }
 
 .monaco-menu .actions-container {
   padding: 0 !important;
+  margin: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  background: transparent !important;
 }
 
 .monaco-menu .action-item {
   padding: 0 !important;
-  border-radius: 6px !important;
-  transition: all 0.12s ease !important;
+  margin: 0 !important;
+  border-radius: 5px !important;
+  transition: background 0.1s ease, color 0.1s ease !important;
+  background: transparent !important;
 }
 
 .monaco-menu .action-menu-item {
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  padding: 5px 10px !important;
-  border-radius: 6px !important;
+  padding: 6px 12px !important;
+  height: 30px !important;
+  box-sizing: border-box !important;
+  border-radius: 5px !important;
   font-size: 12.5px !important;
   font-family: inherit !important;
-  color: rgba(255, 255, 255, 0.88) !important;
-  transition: all 0.12s ease !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  transition: background 0.1s ease, color 0.1s ease !important;
+  cursor: pointer !important;
+  text-decoration: none !important;
+  background: transparent !important;
+}
+
+.monaco-menu .action-label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-size: 12.5px !important;
+  color: inherit !important;
 }
 
 [data-theme='light'] .monaco-menu .action-menu-item {
   color: #1f2937 !important;
 }
 
+/* Hover & Focus State */
 .monaco-menu .action-item.focused,
-.monaco-menu .action-item:hover {
-  background: var(--accent-soft, rgba(76, 141, 255, 0.18)) !important;
+.monaco-menu .action-item:hover,
+.monaco-menu .action-item:focus {
+  background: var(--accent, #007acc) !important;
+  background-color: var(--accent, #007acc) !important;
 }
 
 .monaco-menu .action-item.focused .action-menu-item,
-.monaco-menu .action-item:hover .action-menu-item {
+.monaco-menu .action-item:hover .action-menu-item,
+.monaco-menu .action-item.focused .action-label,
+.monaco-menu .action-item:hover .action-label {
   color: #ffffff !important;
+}
+
+.monaco-menu .action-item:active {
+  background: #005a9e !important;
+  background-color: #005a9e !important;
 }
 
 [data-theme='light'] .monaco-menu .action-item.focused .action-menu-item,
 [data-theme='light'] .monaco-menu .action-item:hover .action-menu-item {
-  color: var(--accent, #0969da) !important;
+  color: #ffffff !important;
 }
 
+/* Keybindings */
+.monaco-menu .keybinding,
 .monaco-menu .action-menu-item .keybinding {
   font-size: 11px !important;
-  color: var(--muted, #888888) !important;
-  opacity: 0.85 !important;
+  color: rgba(255, 255, 255, 0.52) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 4px !important;
+  padding: 1px 6px !important;
   margin-left: 20px !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace !important;
   letter-spacing: 0.04em !important;
+  display: inline-block !important;
+  line-height: 1.4 !important;
 }
 
 .monaco-menu .action-item.focused .keybinding,
 .monaco-menu .action-item:hover .keybinding {
-  color: rgba(255, 255, 255, 0.75) !important;
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
 }
 
-.monaco-menu .action-item.separator {
+/* Separators */
+.monaco-menu .action-item.separator,
+.monaco-menu .action-label.separator,
+.monaco-action-bar .separator {
   height: 1px !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  margin: 4px 6px !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  margin: 4px 4px !important;
   padding: 0 !important;
+  border: none !important;
+  display: block !important;
 }
 
 [data-theme='light'] .monaco-menu .action-item.separator {
   background: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Submenu indicator */
+.monaco-menu .submenu-indicator {
+  font-size: 11px !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+  margin-left: 14px !important;
+}
+
+.monaco-menu .action-item.focused .submenu-indicator,
+.monaco-menu .action-item:hover .submenu-indicator {
+  color: #ffffff !important;
+}
+
+/* AI Command items special highlight */
+.monaco-ai-menu-item .action-label {
+  color: #c084fc !important;
+  font-weight: 500 !important;
+}
+
+.monaco-ai-menu-item.focused .action-label,
+.monaco-ai-menu-item:hover .action-label {
+  color: #ffffff !important;
+}
+
+/* ── Monaco Editor Native Quick Input / Command Palette Refinement ─── */
+.quick-input-widget {
+  border-radius: 8px !important;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+  background: #1e1f26 !important;
+  background-color: #1e1f26 !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  padding: 6px !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  overflow: hidden !important;
+}
+
+[data-theme='light'] .quick-input-widget {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+  color: #1f2937 !important;
+}
+
+.quick-input-widget .quick-input-filter {
+  padding: 4px 6px !important;
+}
+
+.quick-input-widget .quick-input-box input {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 6px !important;
+  color: #ffffff !important;
+  font-size: 13px !important;
+  padding: 6px 10px !important;
+  outline: none !important;
+  transition: border-color 0.12s ease !important;
+}
+
+.quick-input-widget .quick-input-box input:focus {
+  border-color: var(--accent, #007acc) !important;
+  box-shadow: 0 0 0 1px var(--accent, #007acc) !important;
+}
+
+.quick-input-widget .quick-input-list .monaco-list-row {
+  border-radius: 5px !important;
+  transition: background 0.08s ease, color 0.08s ease !important;
+  margin: 1px 4px !important;
+  padding: 0 6px !important;
+  cursor: pointer !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* 核心：唯一聚焦项（键盘/鼠标统一由 Monaco 核心状态机直接驱动） */
+.quick-input-widget .quick-input-list .monaco-list-row.focused {
+  background: var(--accent, #007acc) !important;
+  background-color: var(--accent, #007acc) !important;
+  color: #ffffff !important;
+}
+
+.quick-input-widget .quick-input-list .monaco-list-row.focused .monaco-keybinding-key {
+  background: rgba(255, 255, 255, 0.22) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  color: #ffffff !important;
+}
+
+.quick-input-widget .quick-input-list .monaco-list-row.focused .label-name,
+.quick-input-widget .quick-input-list .monaco-list-row.focused .monaco-highlighted-label {
+  color: #ffffff !important;
+}
+
+/* 彻底清除未聚焦行的原生灰底与选区背景，杜绝任何多行选中 */
+.quick-input-widget .quick-input-list .monaco-list-row:not(.focused),
+.quick-input-widget .quick-input-list .monaco-list-row.selected:not(.focused) {
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 /* ── Find in Folder Modal (Modern macOS & IDE style) ─────────────── */
@@ -6229,26 +6404,42 @@ body.resizing.resizing-row {
 
 .git-ai-commit-btn {
   position: absolute;
-  right: 6px;
-  top: 5px;
-  width: 22px;
-  height: 22px;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 24px;
+  padding: 0 8px 0 10px;
   border-radius: 4px;
   border: none;
-  background: transparent;
-  color: var(--accent, #a78bfa);
+  background: var(--accent, #007acc);
+  color: #ffffff;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   transition: all 0.15s ease;
   z-index: 2;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .git-ai-commit-btn:hover {
-  background: rgba(99, 102, 241, 0.15);
-  transform: scale(1.12);
-  color: #c084fc;
+  filter: brightness(1.12);
+  box-shadow: 0 0 8px rgba(0, 122, 204, 0.4);
+}
+
+.git-ai-commit-btn:active {
+  transform: translateY(-50%) scale(0.97);
+  filter: brightness(0.95);
+}
+
+.git-ai-commit-icon {
+  flex-shrink: 0;
+  color: #ffffff;
+  display: block;
 }
 
 .git-count-badge {
@@ -8708,16 +8899,27 @@ body.resizing.resizing-row {
 
 .welcome-recent-kind {
   flex-shrink: 0;
-  width: 36px;
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
+  border-radius: 4px;
   text-align: center;
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--muted);
+  border: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .welcome-recent-kind.ssh {
-  color: var(--accent);
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.25);
+}
+
+.welcome-recent-kind.local {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--muted);
+  border-color: rgba(148, 163, 184, 0.18);
 }
 
 .welcome-recent-text {
@@ -9290,6 +9492,34 @@ body.resizing.resizing-row {
 .git-commit-dropdown-btn:active:not(:disabled) {
   transform: scale(0.95);
   filter: brightness(0.95);
+}
+
+.git-commit-dropdown-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text, #cccccc);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+  user-select: none;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.git-commit-dropdown-item:hover {
+  background: var(--accent, #007acc) !important;
+  color: #ffffff !important;
+}
+
+.git-commit-dropdown-item:active {
+  background: #005a9e !important;
+  color: #ffffff !important;
 }
 
 /* ── Standard Action Buttons with Hover Feedback ── */
@@ -10221,18 +10451,15 @@ body.resizing.resizing-row {
 .tab-context-menu {
   position: fixed;
   z-index: 1000;
-  background: rgba(26, 27, 33, 0.96);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 5px;
+  background: var(--bg-lighter, #252526);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  padding: 4px;
   box-shadow:
-    0 18px 42px -4px rgba(0, 0, 0, 0.65),
-    0 2px 8px rgba(0, 0, 0, 0.35),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
+    0 16px 40px rgba(0, 0, 0, 0.65),
+    0 2px 8px rgba(0, 0, 0, 0.35);
   min-width: 242px;
-  font-size: 12.5px;
+  font-size: 12px;
   user-select: none;
   animation: tabMenuPop 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -10252,15 +10479,15 @@ body.resizing.resizing-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
-  border-radius: 6px;
-  color: rgba(255, 255, 255, 0.88);
+  padding: 6px 12px;
+  border-radius: 4px;
+  color: var(--text, rgba(255, 255, 255, 0.88));
   cursor: pointer;
   transition:
-    background 0.12s ease,
-    color 0.12s ease;
+    background 0.1s ease,
+    color 0.1s ease;
   gap: 16px;
-  font-weight: 450;
+  font-size: 12px;
 }
 
 .tab-context-menu .menu-item-left {
@@ -10272,20 +10499,26 @@ body.resizing.resizing-row {
 .tab-context-menu .menu-item-icon {
   flex-shrink: 0;
   opacity: 0.75;
-  transition: opacity 0.12s;
+  transition: opacity 0.1s;
 }
 
-.tab-context-menu .menu-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+.tab-context-menu .menu-item:hover:not(.menu-item-danger) {
+  background: var(--accent, #007acc) !important;
+  color: #ffffff !important;
 }
 
-.tab-context-menu .menu-item:hover .menu-item-icon {
-  opacity: 1;
+.tab-context-menu .menu-item:hover:not(.menu-item-danger) .menu-item-icon {
+  opacity: 1 !important;
+  color: #ffffff !important;
 }
 
-.tab-context-menu .menu-item:active {
-  background: rgba(255, 255, 255, 0.13);
+.tab-context-menu .menu-item:hover:not(.menu-item-danger) .shortcut,
+.tab-context-menu .menu-item:hover:not(.menu-item-danger) .shortcut-badge {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.tab-context-menu .menu-item:active:not(.menu-item-danger) {
+  background: #005a9e !important;
 }
 
 .tab-context-menu .menu-item.menu-item-danger {
@@ -11981,6 +12214,30 @@ body.resizing.resizing-row {
   color: inherit;
   cursor: pointer;
   text-align: left;
+}
+
+.open-ws-kind-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--muted);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.open-ws-kind-pill.ssh {
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.25);
+}
+
+.open-ws-kind-pill.local {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--muted);
+  border-color: rgba(148, 163, 184, 0.18);
 }
 
 .open-ws-tech-pill {
@@ -14930,8 +15187,17 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .git-more-menu-item:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+  background: var(--accent, #007acc) !important;
+  color: #ffffff !important;
+}
+
+.git-more-menu-item:hover .chev {
+  color: #ffffff !important;
+}
+
+.git-more-menu-item:active {
+  background: #005a9e !important;
+  color: #ffffff !important;
 }
 
 .git-more-menu-item .chev {

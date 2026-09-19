@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
 import { NewProjectWizardModal } from './NewProjectWizardModal';
+import { detectTechBadge } from '../utils/techStack';
 
 interface Props {
   onPickLocal: () => void;
@@ -18,30 +19,6 @@ interface Props {
 }
 
 const MAX_VISIBLE_RECENT = 8;
-
-/**
- * Default content of the middle editor area when no workspace is open yet.
- * Full-width onboarding: open local / SSH / clone, plus recent history.
- */
-function detectTechBadge(name: string, path: string): { label: string; color: string; bg: string } {
-  const lower = `${name} ${path}`.toLowerCase();
-  if (lower.includes('maven') || lower.includes('java') || lower.includes('spring') || lower.includes('jdk') || lower.endsWith('.java')) {
-    return { label: 'Java', color: '#fb923c', bg: 'rgba(251, 146, 60, 0.15)' };
-  }
-  if (lower.includes('python') || lower.includes('py') || lower.includes('django') || lower.includes('flask') || lower.endsWith('.py')) {
-    return { label: 'Python', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)' };
-  }
-  if (lower.includes('cpp') || lower.includes('cmake') || lower.includes('c++') || lower.includes('clang')) {
-    return { label: 'C++', color: '#818cf8', bg: 'rgba(129, 140, 248, 0.15)' };
-  }
-  if (lower.includes('node') || lower.includes('react') || lower.includes('vue') || lower.includes('ts') || lower.includes('js')) {
-    return { label: 'Node', color: '#4ade80', bg: 'rgba(74, 222, 128, 0.15)' };
-  }
-  if (lower.includes('go') || lower.includes('golang')) {
-    return { label: 'Go', color: '#2dd4bf', bg: 'rgba(45, 212, 191, 0.15)' };
-  }
-  return { label: 'Git', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' };
-}
 
 export function WelcomeView({
   onPickLocal,
@@ -203,7 +180,7 @@ export function WelcomeView({
                   item.sshServer && !item.path.includes('@')
                     ? `${item.sshServer}:${item.path}`
                     : item.path;
-                const tech = detectTechBadge(item.name || '', item.path || '');
+                const tech = detectTechBadge(item.name || '', item.path || '', item.techStack);
                 return (
                   <li key={item.path}>
                     <button
@@ -211,20 +188,22 @@ export function WelcomeView({
                       className="welcome-recent-row"
                       onClick={() => onSelectRecent?.(item)}
                     >
-                      <span className={`welcome-recent-kind${isSsh ? ' ssh' : ''}`}>
+                      <span className={`welcome-recent-kind ${isSsh ? 'ssh' : 'local'}`}>
                         {isSsh ? 'SSH' : '本地'}
                       </span>
                       <span
+                        className="open-ws-tech-pill"
                         style={{
-                          fontSize: 10.5,
-                          fontWeight: 600,
-                          padding: '1px 6px',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '2px 6px',
                           borderRadius: 4,
                           color: tech.color,
                           background: tech.bg,
                           flexShrink: 0,
-                          lineHeight: '16px',
+                          letterSpacing: '0.02em',
                         }}
+                        title={`智能识别技术栈: ${tech.label}`}
                       >
                         {tech.label}
                       </span>

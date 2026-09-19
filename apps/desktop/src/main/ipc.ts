@@ -25,6 +25,7 @@ import { detectCppToolchain, detectMultiLangToolchain } from './cppToolchainServ
 import { UnifiedLlmClient } from '@deepseek-ide/llm';
 import { PROJECT_TEMPLATES, type ChatMessage, type ProviderConfig } from '@deepseek-ide/shared';
 import { RulesService } from './rulesService';
+import { detectWorkspaceTechFromDisk } from './workspaceDetector';
 
 function getActiveLlmClient(settings: SettingsStore): UnifiedLlmClient {
   const currentSettings = settings.get();
@@ -185,6 +186,9 @@ export function registerIpc(deps: {
   );
   ipcMain.handle('workspace:resolveAbsolute', (event, relPath?: string) =>
     run(event, () => registry.current().workspace.resolveAbsolute(relPath)),
+  );
+  ipcMain.handle('workspace:detectTech', (_event, rootPath: string) =>
+    detectWorkspaceTechFromDisk(rootPath),
   );
   ipcMain.handle('workspace:downloadFile', async (event, relPath: string) =>
     run(event, async () => {

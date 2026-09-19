@@ -2,6 +2,8 @@
 import { ActionViewItem } from 'monaco-editor/esm/vs/base/browser/ui/actionbar/actionViewItems.js';
 // @ts-ignore
 import { Menu } from 'monaco-editor/esm/vs/base/browser/ui/menu/menu.js';
+// @ts-ignore
+import { QuickInputTree } from 'monaco-editor/esm/vs/platform/quickinput/browser/quickInputTree.js';
 
 export const MONACO_ZH_TRANSLATIONS: Record<string, string> = {
   // AI
@@ -204,9 +206,77 @@ export function setupMonacoChineseLocalization() {
     console.warn('Failed to patch Menu.prototype.doGetActionViewItem:', e);
   }
 
+  // 3. 增强 QuickInputTree：鼠标真实移动时同步焦点，键盘滚动时严格防止静止鼠标指针劫持焦点
+  try {
+    let lastMouseClientX = -1;
+    let lastMouseClientY = -1;
+    let lastKeyboardTime = 0;
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener(
+        'keydown',
+        (e) => {
+          if (
+            e.key === 'ArrowUp' ||
+            e.key === 'ArrowDown' ||
+            e.key === 'PageUp' ||
+            e.key === 'PageDown' ||
+            e.key === 'Home' ||
+            e.key === 'End'
+          ) {
+            lastKeyboardTime = Date.now();
+          }
+        },
+        true
+      );
+    }
+
+    const treeProto = QuickInputTree.prototype as any;
+    const origRegisterHover = treeProto._registerHoverListeners;
+    if (origRegisterHover) {
+      treeProto._registerHoverListeners = function () {
+        origRegisterHover.call(this);
+        if (this._tree) {
+          this._register(
+            this._tree.onMouseOver((e: any) => {
+              // 1. 键盘导航保护：用户使用键盘方向键滚动时，严格禁止静止鼠标抢夺焦点
+              if (Date.now() - lastKeyboardTime < 350) {
+                return;
+              }
+
+              // 2. 坐标位移校验：若鼠标物理坐标未发生真实改变（如列表在静止鼠标下方滚动），坚决忽略
+              const mouseEvent = e.browserEvent;
+              if (mouseEvent && typeof mouseEvent.clientX === 'number') {
+                if (mouseEvent.clientX === lastMouseClientX && mouseEvent.clientY === lastMouseClientY) {
+                  return;
+                }
+                lastMouseClientX = mouseEvent.clientX;
+                lastMouseClientY = mouseEvent.clientY;
+              }
+
+              if (e.element && e.element.item) {
+                const currentFocus = this._tree.getFocus();
+                if (!currentFocus || currentFocus[0] !== e.element) {
+                  this._tree.setFocus([e.element]);
+                }
+              }
+            })
+          );
+        }
+      };
+    }
+  } catch (e) {
+    console.warn('Failed to patch QuickInputTree hover focus:', e);
+  }
+
   // 3. DOM 动态监听增强兜底：当 Monaco 渲染右键菜单时，即时扫描并汉化文本与补齐快捷键
   if (typeof document !== 'undefined') {
     const processMenuNode = (node: HTMLElement) => {
+      const container = node.classList.contains('monaco-menu-container')
+        ? node
+        : node.querySelector<HTMLElement>('.monaco-menu-container') || node;
+      container.classList.add('monaco-styled-menu');
+
       const items = node.querySelectorAll<HTMLElement>('.action-item, .action-menu-item');
       items.forEach((item) => {
         const labelEl = item.querySelector<HTMLElement>('.action-label');
@@ -215,6 +285,10 @@ export function setupMonacoChineseLocalization() {
           const translated = translateText(currentText);
           if (translated !== currentText) {
             labelEl.textContent = translated;
+          }
+
+          if (currentText.includes('AI') || translated.includes('AI') || currentText.includes('✦')) {
+            item.classList.add('monaco-ai-menu-item');
           }
 
           const kb = getKeybindingFor(currentText) || getKeybindingFor(translated);

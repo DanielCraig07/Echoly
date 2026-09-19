@@ -34,6 +34,7 @@ const api: IpcApi = {
   copyPath: (fromRel, toRel) => ipcRenderer.invoke('workspace:copy', fromRel, toRel),
   pathExists: (relPath) => ipcRenderer.invoke('workspace:exists', relPath),
   resolveAbsolutePath: (relPath) => ipcRenderer.invoke('workspace:resolveAbsolute', relPath),
+  detectWorkspaceTech: (rootPath: string) => ipcRenderer.invoke('workspace:detectTech', rootPath),
   downloadFile: (relPath) => ipcRenderer.invoke('workspace:downloadFile', relPath),
   saveFileDialog: (defaultPath) => ipcRenderer.invoke('dialog:saveFile', defaultPath),
   pickDirectory: () => ipcRenderer.invoke('dialog:pickDirectory'),

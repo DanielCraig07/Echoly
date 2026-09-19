@@ -56,7 +56,7 @@ import { MavenPanel } from './components/MavenPanel';
 import { ProblemsPanel } from './components/ProblemsPanel';
 import { StatusBar } from './components/StatusBar';
 import { GlobalTooltip } from './components/GlobalTooltip';
-import { PROJECT_TEMPLATES } from './utils/projectTemplates';
+import { heuristicDetectTech } from './utils/techStack';
 import {
   isImagePath,
   isUntitledPath,
@@ -587,6 +587,50 @@ export function App() {
     remotePath?: string;
   } | null>(null);
 
+  // 自动为最近工程补充或刷新真实技术栈（优先读取磁盘配置文件）
+  useEffect(() => {
+    let cancelled = false;
+    async function enrichTech() {
+      const current = readRecentWorkspaces();
+      let changed = false;
+      const updated = await Promise.all(
+        current.map(async (item) => {
+          let tech = item.techStack;
+          // 若未检测或之前检测为默认 Git，则尝试重新通过磁盘或启发式深度识别
+          if (!tech || tech === 'Git') {
+            if (item.kind !== 'ssh' && window.ide?.detectWorkspaceTech) {
+              try {
+                const detected = await window.ide.detectWorkspaceTech(item.path);
+                if (detected) tech = detected;
+              } catch {
+                // ignore
+              }
+            }
+            if (!tech || tech === 'Git') {
+              const heuristic = heuristicDetectTech(item.name || '', item.path || '');
+              if (heuristic && heuristic !== 'Git') {
+                tech = heuristic;
+              }
+            }
+            if (tech && tech !== item.techStack) {
+              changed = true;
+              return { ...item, techStack: tech };
+            }
+          }
+          return item;
+        }),
+      );
+      if (!cancelled && changed) {
+        setRecentWorkspaces(updated);
+        writeRecentWorkspaces(updated);
+      }
+    }
+    enrichTech();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     if (workspaceInfo.root) {
       const path = workspaceInfo.root;
@@ -596,19 +640,37 @@ export function App() {
         const match = workspaceInfo.label.match(/^ssh\s+([^:/]+)/);
         sshServer = match ? match[1] : workspaceInfo.label;
       }
-      setRecentWorkspaces((prev) => {
-        const filtered = prev.filter((item) => item.path !== path);
-        const newItem: RecentWorkspaceItem = {
-          path,
-          name,
-          kind: workspaceInfo.kind,
-          sshServer: sshServer || undefined,
-          lastOpenedAt: Date.now(),
-        };
-        const updated = [newItem, ...filtered].slice(0, 20);
-        writeRecentWorkspaces(updated);
-        return updated;
-      });
+
+      const detectAndSave = async () => {
+        let tech: string | undefined = undefined;
+        if (workspaceInfo.kind !== 'ssh' && window.ide?.detectWorkspaceTech) {
+          try {
+            tech = await window.ide.detectWorkspaceTech(path);
+          } catch {
+            // fallback
+          }
+        }
+        if (!tech || tech === 'Git') {
+          tech = heuristicDetectTech(name, path);
+        }
+
+        setRecentWorkspaces((prev) => {
+          const filtered = prev.filter((item) => item.path !== path);
+          const newItem: RecentWorkspaceItem = {
+            path,
+            name,
+            kind: workspaceInfo.kind,
+            sshServer: sshServer || undefined,
+            techStack: tech || undefined,
+            lastOpenedAt: Date.now(),
+          };
+          const updated = [newItem, ...filtered].slice(0, 20);
+          writeRecentWorkspaces(updated);
+          return updated;
+        });
+      };
+
+      detectAndSave();
     }
   }, [workspaceInfo]);
 

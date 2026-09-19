@@ -740,6 +740,7 @@ export interface RecentWorkspaceItem {
   lastOpenedAt: number;
   kind?: 'local' | 'ssh';
   sshServer?: string;
+  techStack?: string;
 }
 
 export interface SearchFileHit {
@@ -847,6 +848,7 @@ export interface IpcApi {
   copyPath: (fromRel: string, toRel: string) => Promise<void>;
   pathExists: (relPath: string) => Promise<boolean>;
   resolveAbsolutePath: (relPath?: string) => Promise<string>;
+  detectWorkspaceTech?: (rootPath: string) => Promise<string>;
   downloadFile: (relPath: string) => Promise<string | null>;
   saveFileDialog: (defaultPath?: string) => Promise<string | null>;
   pickDirectory: () => Promise<string | null>;

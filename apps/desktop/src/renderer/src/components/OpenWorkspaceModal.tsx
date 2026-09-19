@@ -46,34 +46,13 @@ function checkIsCurrentWorkspace(
   }
 }
 
-/**
- * 智能探测工程技术栈类型，返回对应的彩色徽标
- */
-function detectTechBadge(name: string, path: string): { label: string; color: string; bg: string } {
-  const lower = `${name} ${path}`.toLowerCase();
-  if (lower.includes('maven') || lower.includes('java') || lower.includes('spring') || lower.includes('jdk')) {
-    return { label: 'Java', color: '#fb923c', bg: 'rgba(251, 146, 60, 0.15)' };
-  }
-  if (lower.includes('python') || lower.includes('py') || lower.includes('django') || lower.includes('flask')) {
-    return { label: 'Python', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)' };
-  }
-  if (lower.includes('cpp') || lower.includes('cmake') || lower.includes('c++') || lower.includes('clang')) {
-    return { label: 'C++', color: '#818cf8', bg: 'rgba(129, 140, 248, 0.15)' };
-  }
-  if (lower.includes('node') || lower.includes('react') || lower.includes('vue') || lower.includes('ts') || lower.includes('js')) {
-    return { label: 'Node', color: '#4ade80', bg: 'rgba(74, 222, 128, 0.15)' };
-  }
-  if (lower.includes('go') || lower.includes('golang')) {
-    return { label: 'Go', color: '#2dd4bf', bg: 'rgba(45, 212, 191, 0.15)' };
-  }
-  return { label: 'Git', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' };
-}
+import { detectTechBadge } from '../utils/techStack';
 
 function formatRelativeTime(ts?: number): string {
   if (!ts) return '';
   const diff = Date.now() - ts;
   const m = Math.floor(diff / 60000);
-  if (m < 5) return '刚刚';
+  if (m < 1) return '刚刚';
   if (m < 60) return `${m}分钟前`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}小时前`;
@@ -89,6 +68,7 @@ export interface RecentWorkspaceItem {
   sshServer?: string;
   label?: string;
   lastOpenedAt: number;
+  techStack?: string;
 }
 
 interface Props {
@@ -347,7 +327,7 @@ export function OpenWorkspaceModal({
                     currentWorkspace,
                     currentWorkspaceInfo,
                   );
-                  const tech = detectTechBadge(item.name, item.path);
+                  const tech = detectTechBadge(item.name, item.path, item.techStack);
                   const relativeTime = formatRelativeTime(item.lastOpenedAt);
 
                   return (
@@ -360,13 +340,17 @@ export function OpenWorkspaceModal({
                           onSelectRecent?.(item);
                         }}
                       >
-                        {/* 技术栈彩色徽章 */}
+                        {/* 1. 连接方式徽标（本地 / SSH） */}
+                        <span className={`open-ws-kind-pill ${isSsh ? 'ssh' : 'local'}`}>
+                          {isSsh ? 'SSH' : '本地'}
+                        </span>
+                        {/* 2. 技术栈彩色徽标 */}
                         <span
                           className="open-ws-tech-pill"
                           style={{ color: tech.color, background: tech.bg }}
                           title={`智能识别技术栈: ${tech.label}`}
                         >
-                          {isSsh ? 'SSH' : tech.label}
+                          {tech.label}
                         </span>
 
                         <span className="open-ws-recent-text">

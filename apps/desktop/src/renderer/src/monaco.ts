@@ -267,6 +267,20 @@ monaco.editor.defineTheme('custom-dark', {
     'editorOverviewRuler.addedForeground': '#2ea043',
     'editorOverviewRuler.deletedForeground': '#f85149',
     'editorOverviewRuler.modifiedForeground': '#e2c08d',
+    // 菜单（右键上下文菜单、下拉菜单）高对比度品牌蓝配置
+    'menu.background': '#1e1f26',
+    'menu.foreground': '#e6e8ec',
+    'menu.selectionBackground': '#007acc',
+    'menu.selectionForeground': '#ffffff',
+    'menu.selectionBorder': '#00000000',
+    'menu.separatorBackground': '#ffffff18',
+    'menu.border': '#ffffff20',
+    // 快捷命令面板 (Command Palette - Quick Input)
+    'quickInput.background': '#1e1f26',
+    'quickInput.foreground': '#e6e8ec',
+    'quickInputList.focusBackground': '#007acc',
+    'quickInputList.focusForeground': '#ffffff',
+    'quickInputTitle.background': '#181818',
   },
 });
 
@@ -298,6 +312,20 @@ monaco.editor.defineTheme('custom-light', {
     'editorOverviewRuler.addedForeground': '#1a7f37',
     'editorOverviewRuler.deletedForeground': '#cf222e',
     'editorOverviewRuler.modifiedForeground': '#bf8700',
+    // 菜单（右键上下文菜单、下拉菜单）浅色配置
+    'menu.background': '#ffffff',
+    'menu.foreground': '#1f2937',
+    'menu.selectionBackground': '#007acc',
+    'menu.selectionForeground': '#ffffff',
+    'menu.selectionBorder': '#00000000',
+    'menu.separatorBackground': '#00000015',
+    'menu.border': '#00000015',
+    // 快捷命令面板 (Command Palette - Quick Input)
+    'quickInput.background': '#ffffff',
+    'quickInput.foreground': '#1f2937',
+    'quickInputList.focusBackground': '#007acc',
+    'quickInputList.focusForeground': '#ffffff',
+    'quickInputTitle.background': '#f8fafc',
   },
 });
 
