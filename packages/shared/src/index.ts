@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.0.25';
+export const APP_VERSION = '0.0.26';
 export const DEFAULT_LLM_BASE_URL = 'http://192.168.10.241:8002';
 export const DEFAULT_LLM_MODEL = 'deepseek-v4-flash';
 

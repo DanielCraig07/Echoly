@@ -10,9 +10,12 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 15
     steps:
+      - name: Ensure system paths
+        run: echo "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin" >> $GITHUB_PATH
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -45,8 +48,9 @@ jobs:
 
 
   windows:
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows]
     timeout-minutes: 20
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -69,8 +73,12 @@ jobs:
 
   publish:
     needs: [macos, windows]
-    runs-on: ubuntu-latest
+    if: always() && !cancelled() && (needs.macos.result == 'success' || needs.windows.result == 'success')
+    runs-on: [self-hosted, macOS]
     steps:
+      - name: Ensure system paths
+        run: echo "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin" >> $GITHUB_PATH
+
       - name: Publish Draft Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
