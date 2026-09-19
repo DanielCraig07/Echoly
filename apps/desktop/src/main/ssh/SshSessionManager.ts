@@ -375,10 +375,15 @@ export class SftpBackend implements WorkspaceBackend {
   }
 
   async exists(relPath: string): Promise<boolean> {
-    const abs = this.resolve(relPath);
-    return await new Promise((resolve) => {
-      this.sftp.stat(abs, (err) => resolve(!err));
-    });
+    if (!this.sftp) return false;
+    try {
+      const abs = this.resolve(relPath);
+      return await new Promise((resolve) => {
+        this.sftp.stat(abs, (err) => resolve(!err));
+      });
+    } catch {
+      return false;
+    }
   }
 
   async rename(fromRel: string, toRel: string): Promise<void> {

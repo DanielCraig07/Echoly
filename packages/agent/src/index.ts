@@ -62,6 +62,7 @@ export interface AgentRunOptions {
   modelProfile?: ModelProfile;
   planContext?: PlanContext;
   skillsText?: string;
+  rulesText?: string;
   backend?: WorkspaceBackend;
   openFiles?: Array<{ path: string; content: string }>;
   selection?: string;
@@ -131,6 +132,7 @@ function buildSystemPrompt(options: {
   selection?: string;
   cursor?: AgentRunOptions['cursor'];
   skillsText?: string;
+  rulesText?: string;
   planContext?: PlanContext;
   backendKind?: string;
 }): string {
@@ -141,6 +143,7 @@ function buildSystemPrompt(options: {
     selection,
     cursor,
     skillsText,
+    rulesText,
     planContext,
     backendKind,
   } = options;
@@ -188,11 +191,15 @@ ${planContext.todos.map((t) => `- [${t.status}] ${t.id}: ${t.content}`).join('\n
 `
       : '';
 
+  const rulesBlock = rulesText
+    ? `\n## Project Rules (.echolyrules)\nAlways adhere strictly to these project-level rules and conventions:\n${rulesText}\n`
+    : '';
+
   const skillsBlock = skillsText ? `\n## Skills\n${skillsText}\n` : '';
 
   return `${modeBlock}
 Workspace root: ${workspaceRoot} (${backendKind ?? 'local'})
-${formatOpenFilesBlock(openFiles)}
+${rulesBlock}${formatOpenFilesBlock(openFiles)}
 ${formatCursorContext(cursor)}${selectionBlock}${planExecBlock}${skillsBlock}`;
 }
 
@@ -414,6 +421,7 @@ export async function runAgent(
         selection,
         cursor: options.cursor,
         skillsText,
+        rulesText: options.rulesText,
         planContext,
         backendKind: backend.kind,
       }),

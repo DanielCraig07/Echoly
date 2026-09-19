@@ -20,6 +20,42 @@ self.MonacoEnvironment = {
 // 内网环境无法访问 jsDelivr CDN，改为打包本地 monaco-editor
 loader.config({ monaco });
 
+// 全局初始化 Monaco 编辑器右键菜单中文汉化及快捷键对齐
+import { setupMonacoChineseLocalization } from './monacoLocalization';
+setupMonacoChineseLocalization();
+
+// ── AI 智能快速修复提供程序 (Fix with AI - ⌥.) ──────────────────────
+monaco.languages.registerCodeActionProvider('*', {
+  provideCodeActions(model, _range, context) {
+    const markers = context.markers || [];
+    if (!markers.length) return { actions: [], dispose: () => {} };
+    const err = markers.find(
+      (m) => m.severity === monaco.MarkerSeverity.Error || m.severity === monaco.MarkerSeverity.Warning,
+    );
+    if (!err) return { actions: [], dispose: () => {} };
+
+    return {
+      actions: [
+        {
+          title: `✦ Fix with AI: 修复错误 (⌥.)`,
+          kind: 'quickfix',
+          isPreferred: true,
+          command: {
+            id: 'echoly.action.fixWithAi',
+            title: 'Fix with AI',
+            arguments: [err],
+          },
+        },
+      ],
+      dispose: () => {},
+    };
+  },
+});
+
+monaco.editor.registerCommand('echoly.action.fixWithAi', (_accessor, marker) => {
+  window.dispatchEvent(new CustomEvent('echoly:fixWithAi', { detail: marker }));
+});
+
 // ── TypeScript / JavaScript 语言服务（tsserver）配置 ─────────────────────────
 // Monaco 内置的 ts.worker 与 VS Code 的 tsserver 同源。配置好 compilerOptions 与
 // 诊断选项后，配合 @monaco-editor/react 的 `path` prop（为每个打开文件创建

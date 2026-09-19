@@ -5,6 +5,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import type { UiTheme } from '@deepseek-ide/shared';
 import { uid } from '../utils';
+import { TerminalAiKBar } from './TerminalAiKBar';
 
 interface Props {
   terminalKind: 'local' | 'ssh';
@@ -467,6 +468,8 @@ interface SessionProps {
   onCloseSearch?: () => void;
   onRegisterSession?: (clientId: string, sendCmd: (cmd: string) => void) => () => void;
   onRegisterRawSession?: (clientId: string, sendRaw: (raw: string) => void) => () => void;
+  onRegisterExtractLog?: (clientId: string, getLog: (lines?: number) => string) => () => void;
+  onTriggerAiK?: () => void;
 }
 
 
@@ -485,6 +488,8 @@ function TerminalSession({
   onCloseSearch,
   onRegisterSession,
   onRegisterRawSession,
+  onRegisterExtractLog,
+  onTriggerAiK,
 }: SessionProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -646,7 +651,6 @@ function TerminalSession({
           void window.ide.resizeTerminal(id, cols, rows);
         }
         term.refresh(0, Math.max(0, term.rows - 1));
-        if (activeRef.current) term.focus();
         return;
       }
 
@@ -695,7 +699,6 @@ function TerminalSession({
         }
         term.refresh(0, Math.max(0, term.rows - 1));
       }
-      if (activeRef.current) term.focus();
     } catch (e) {
       // ignore
     }
@@ -722,6 +725,7 @@ function TerminalSession({
     let disposed = false;
     let unreg: (() => void) | undefined = undefined;
     let unregRaw: (() => void) | undefined = undefined;
+    let unregExtract: (() => void) | undefined = undefined;
     // 初始列数固定 80：两种模式都会在挂载后由 applyTerminalSize 校准到视口宽度，
     // 不换行模式不再预展开超宽列，避免刚打开就出现巨大的横向滚动区间。
     const initialCols = 80;
@@ -757,7 +761,58 @@ function TerminalSession({
     });
 
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && e.type === 'keydown') {
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      // 终端面板展开/折叠快捷键（Cmd+J, Alt+F12, Ctrl+`）
+      if (
+        (ctrl && (e.key.toLowerCase() === 'j' || e.code === 'KeyJ')) ||
+        (e.altKey && e.key === 'F12') ||
+        (ctrl && (e.key === '`' || e.key === '~'))
+      ) {
+        if (e.type === 'keydown') {
+          e.preventDefault();
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent('echoly:toggleTerminal'));
+        }
+        return false;
+      }
+
+      // AI 对话窗口展开/折叠快捷键（Cmd+B / Ctrl+B）
+      if (ctrl && (e.key.toLowerCase() === 'b' || e.code === 'KeyB')) {
+        if (e.type === 'keydown') {
+          e.preventDefault();
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent('echoly:toggleAi'));
+        }
+        return false;
+      }
+
+      // AI 对话提问/聚焦快捷键（Cmd+L / Ctrl+L：始终打开并聚焦）
+      if (ctrl && (e.key.toLowerCase() === 'l' || e.code === 'KeyL')) {
+        if (e.type === 'keydown') {
+          e.preventDefault();
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent('echoly:focusAi'));
+        }
+        return false;
+      }
+
+      // 允许其它全局快捷键穿透终端（Cmd+P 等）
+      if (ctrl && (e.key.toLowerCase() === 'p' || e.code === 'KeyP')) {
+        return false;
+      }
+
+      // AI 生成并执行命令快捷键（Cmd+K / Ctrl+K）
+      if (ctrl && (e.key.toLowerCase() === 'k' || e.code === 'KeyK') && !e.shiftKey && !e.altKey) {
+        if (e.type === 'keydown') {
+          e.preventDefault();
+          e.stopPropagation();
+          onTriggerAiK?.();
+        }
+        return false;
+      }
+
+      if (ctrl && e.key.toLowerCase() === 'f' && e.type === 'keydown') {
         e.preventDefault();
         e.stopPropagation();
         onOpenSearch?.();
@@ -912,6 +967,25 @@ function TerminalSession({
       };
       unregRaw = onRegisterRawSession?.(clientId, sendRaw);
 
+      const getRecentLines = (lines = 50): string => {
+        const term = termRef.current;
+        if (!term) return '';
+        const sel = term.getSelection();
+        if (sel && sel.trim().length > 0) return sel;
+        const buffer = term.buffer.active;
+        const total = buffer.length;
+        const start = Math.max(0, total - lines);
+        const result: string[] = [];
+        for (let i = start; i < total; i++) {
+          const line = buffer.getLine(i);
+          if (line) {
+            result.push(line.translateToString(true));
+          }
+        }
+        return result.join('\n').trim();
+      };
+      unregExtract = onRegisterExtractLog?.(clientId, getRecentLines);
+
       // 设置兜底定时器（1500ms）：若 Shell 极端静默未触发输出数据，确保命令仍正常发出
       if (initialCommand?.trim() && !initialCmdSent && !initialCmdTimer) {
         initialCmdTimer = setTimeout(() => {
@@ -940,7 +1014,6 @@ function TerminalSession({
       const t2 = setTimeout(() => applyTerminalSize(id), 150);
       const t3 = setTimeout(() => applyTerminalSize(id), 400);
 
-      if (activeRef.current) term.focus();
       observerRef.current = resizeObserver;
     });
 
@@ -952,6 +1025,7 @@ function TerminalSession({
       }
       unreg?.();
       unregRaw?.();
+      unregExtract?.();
       if (observerRef.current) {
         observerRef.current.disconnect();
         observerRef.current = null;
@@ -1260,6 +1334,29 @@ export function TerminalPanel({
   // 终端搜索栏显隐状态
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
+  // 终端 AI 命令生成浮条 (Cmd+K)
+  const [showAiK, setShowAiK] = useState(false);
+
+  const handleAiKExecute = useCallback((command: string) => {
+    if (!activeId) return;
+    const sendCmd = sessionSendCmdRef.current.get(activeId);
+    if (sendCmd) {
+      sendCmd(command);
+    } else {
+      void window.ide.writeTerminal(activeId, command + '\r\n');
+    }
+  }, [activeId]);
+
+  const handleAiKInsert = useCallback((command: string) => {
+    if (!activeId) return;
+    const sendRaw = sessionSendRawRef.current.get(activeId);
+    if (sendRaw) {
+      sendRaw(command);
+    } else {
+      void window.ide.writeTerminal(activeId, command);
+    }
+  }, [activeId]);
+
   const toggleWordWrap = useCallback(() => {
     setWordWrap((prev) => {
       const next = !prev;
@@ -1291,6 +1388,75 @@ export function TerminalPanel({
     },
     [],
   );
+
+  const sessionExtractLogRef = useRef<Map<string, (lines?: number) => string>>(new Map());
+  const handleRegisterExtractLog = useCallback(
+    (clientId: string, getLog: (lines?: number) => string) => {
+      sessionExtractLogRef.current.set(clientId, getLog);
+      return () => {
+        sessionExtractLogRef.current.delete(clientId);
+      };
+    },
+    [],
+  );
+
+  // 跟踪各终端标签的最新错误状态 (exitCode !== 0)
+  const [tabErrors, setTabErrors] = useState<Record<string, { exitCode: number; time: number }>>({});
+
+  useEffect(() => {
+    const handleRunFinished = (e: Event) => {
+      const detail = (e as CustomEvent<{ terminalId: string; exitCode: number }>).detail;
+      if (detail && detail.terminalId) {
+        if (detail.exitCode !== 0) {
+          setTabErrors((prev) => ({
+            ...prev,
+            [detail.terminalId]: { exitCode: detail.exitCode, time: Date.now() },
+          }));
+        } else {
+          setTabErrors((prev) => {
+            if (!prev[detail.terminalId]) return prev;
+            const next = { ...prev };
+            delete next[detail.terminalId];
+            return next;
+          });
+        }
+      }
+    };
+    window.addEventListener('echoly:runFinished', handleRunFinished);
+    return () => window.removeEventListener('echoly:runFinished', handleRunFinished);
+  }, []);
+
+  const activeTab = tabs.find((t) => t.clientId === activeId) || null;
+  const activeTabError = tabErrors[activeId];
+
+  const handleDiagnoseActiveError = useCallback(() => {
+    const extractFn = sessionExtractLogRef.current.get(activeId);
+    const rawLog = extractFn?.(40) || '';
+    const cleanLog = rawLog.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
+    const exitCode = activeTabError?.exitCode ?? 1;
+    const prompt = cleanLog
+      ? `终端执行命令遇到错误（退出码 ${exitCode}），请帮我分析以下日志并给出修复方案：\n\`\`\`log\n${cleanLog}\n\`\`\``
+      : `终端执行命令遇到错误（退出码 ${exitCode}），请帮我排查可能的原因与修复步骤。`;
+    window.dispatchEvent(
+      new CustomEvent('echoly:askAi', {
+        detail: { prompt, autoSubmit: false },
+      }),
+    );
+  }, [activeId, activeTabError]);
+
+  const handleAskAiGeneral = useCallback(() => {
+    const extractFn = sessionExtractLogRef.current.get(activeId);
+    const rawLog = extractFn?.(40) || '';
+    const cleanLog = rawLog.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
+    const prompt = cleanLog
+      ? `关于终端日志的分析需求：\n\`\`\`log\n${cleanLog}\n\`\`\`\n请帮我解释上述输出或给出下一步操作建议。`
+      : `请帮我编写或解释终端相关的命令与操作。`;
+    window.dispatchEvent(
+      new CustomEvent('echoly:askAi', {
+        detail: { prompt, autoSubmit: false },
+      }),
+    );
+  }, [activeId]);
 
   // 监听全局停止命令事件，向对应的专属终端（如 Java 或 Maven）或当前活动终端发送 SIGINT (\x03)
   useEffect(() => {
@@ -1482,8 +1648,40 @@ export function TerminalPanel({
             })}
           </div>
         </div>
-
         <div className="terminal-toolbar-right">
+          {activeTabError && (
+            <button
+              type="button"
+              className="terminal-ai-diagnose-btn"
+              title={`终端命令执行失败 (退出码 ${activeTabError.exitCode})，点击向 AI 求助诊断错误`}
+              onClick={handleDiagnoseActiveError}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              <span>⚡️ AI 诊断报错</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="panel-action-btn"
+            title="向 AI 咨询终端输出 / 诊断 (Ask AI)"
+            onClick={handleAskAiGeneral}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className={`panel-action-btn${showAiK ? ' active' : ''}`}
+            title="AI 生成并执行命令 (⌘K)"
+            onClick={() => setShowAiK((v) => !v)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+            </svg>
+          </button>
           <button
             type="button"
             className="panel-action-btn"
@@ -1568,6 +1766,15 @@ export function TerminalPanel({
         </div>
       </div>
       <div className="terminal-sessions" style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        <TerminalAiKBar
+          open={showAiK}
+          onClose={() => setShowAiK(false)}
+          activeClientId={activeId}
+          cwd={activeTab?.cwd}
+          uiTheme={uiTheme}
+          onExecute={handleAiKExecute}
+          onInsert={handleAiKInsert}
+        />
         {tabs.map((tab) => (
           <TerminalSession
             key={tab.clientId}
@@ -1585,6 +1792,8 @@ export function TerminalPanel({
             onCloseSearch={() => setIsSearchOpen(false)}
             onRegisterSession={handleRegisterSession}
             onRegisterRawSession={handleRegisterRawSession}
+            onRegisterExtractLog={handleRegisterExtractLog}
+            onTriggerAiK={() => setShowAiK(true)}
           />
         ))}
       </div>

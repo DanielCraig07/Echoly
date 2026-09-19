@@ -1134,7 +1134,11 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
             if (!ok) return;
             await window.ide.removePath(node.path);
             bump();
-            window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+            window.dispatchEvent(
+              new CustomEvent('echoly:refreshFileTree', {
+                detail: { deletedPath: node.path, isDirectory: node.isDirectory },
+              }),
+            );
           }
           break;
         default:

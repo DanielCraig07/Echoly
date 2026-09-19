@@ -179,8 +179,12 @@ export class WorkspaceService {
     let entries: { name: string; isDirectory: boolean }[] = [];
     try {
       entries = await backend.listDir(relPath);
-    } catch (err) {
-      electronLog.error(`[workspace] listDir failed for "${relPath}":`, err);
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') {
+        electronLog.debug(`[workspace] listDir path not found "${relPath}"`);
+      } else {
+        electronLog.error(`[workspace] listDir failed for "${relPath}":`, err);
+      }
       return [];
     }
     const nodes: FileTreeNode[] = [];
@@ -261,7 +265,12 @@ export class WorkspaceService {
   }
 
   async exists(relPath: string): Promise<boolean> {
-    return this.requireBackend().exists(relPath);
+    if (!this.backend) return false;
+    try {
+      return await this.backend.exists(relPath);
+    } catch {
+      return false;
+    }
   }
 
   resolveAbsolute(relPath = '.'): string {

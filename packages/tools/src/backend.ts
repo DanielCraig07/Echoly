@@ -201,6 +201,10 @@ export class LocalFsBackend implements WorkspaceBackend {
 
   async exists(relPath: string): Promise<boolean> {
     try {
+      if (path.isAbsolute(relPath)) {
+        await fs.access(relPath);
+        return true;
+      }
       await fs.access(this.resolve(relPath));
       return true;
     } catch {

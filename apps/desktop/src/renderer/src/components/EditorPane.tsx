@@ -15,6 +15,7 @@ import { MarkdownMessage, extractMarkdownHeadings, type MarkdownHeadingItem } fr
 import { WelcomeView } from './WelcomeView';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
 import { setupCmdClickGesture, navigateBack, highlightJumpLocation, navigationStack, switchSourceHeader } from '../services/symbolNavigation';
+import { registerAiInlineCompletions } from '../services/inlineCompletion';
 import * as monaco from 'monaco-editor';
 
 interface Props {
@@ -44,6 +45,7 @@ interface Props {
     path: string;
     line: number;
     column?: number;
+    endLine?: number;
     nonce: number;
   } | null;
   onRevealTargetConsumed?: () => void;
@@ -579,6 +581,7 @@ export function EditorPane({
     path: string;
     line: number;
     column?: number;
+    endLine?: number;
     nonce: number;
   } | null>(null);
   const monacoTheme = uiTheme === 'light' ? 'custom-light' : 'custom-dark';
@@ -908,6 +911,14 @@ export function EditorPane({
   // Inline AI edit state (Cmd+K)
   const [showInlineAi, setShowInlineAi] = useState(false);
   const [inlinePrompt, setInlinePrompt] = useState('');
+  const [inlineAiLoading, setInlineAiLoading] = useState(false);
+  const [inlineAiDiff, setInlineAiDiff] = useState<{
+    originalText: string;
+    newText: string;
+    range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+    originalRange: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+  } | null>(null);
+  const inlineAiDecorationsRef = useRef<string[]>([]);
   const inlineInputRef = useRef<HTMLInputElement>(null);
 
   const startSplitResize = useCallback((e: React.MouseEvent) => {
@@ -927,16 +938,156 @@ export function EditorPane({
     window.addEventListener('mouseup', onUp);
   }, []);
 
-  const handleInlineAiSubmit = useCallback(() => {
-    if (!inlinePrompt.trim() || !active) return;
-    const rangeText = selectionRange
-      ? ` 第 ${selectionRange.startLine}-${selectionRange.endLine} 行`
-      : '';
-    const promptText = `请修改当前文件 \`${active.path}\`${rangeText}：\n需求：${inlinePrompt.trim()}\n\n当前选区代码：\n\`\`\`${active.language || ''}\n${selectedText}\n\`\`\``;
-    onAddToChat?.(promptText);
+  const handleInlineAiSubmit = useCallback(async () => {
+    if (!inlinePrompt.trim() || !active || !editorRef.current) return;
+    const ed = editorRef.current;
+    const model = ed.getModel();
+    if (!model) return;
+
+    setInlineAiLoading(true);
+    try {
+      const sel = ed.getSelection();
+      let targetRange: monaco.Range;
+      if (inlineAiDiff) {
+        // 若当前已有差异处于审查中，基于当前已修改范围继续叠加追问
+        targetRange = new monaco.Range(
+          inlineAiDiff.range.startLineNumber,
+          inlineAiDiff.range.startColumn,
+          inlineAiDiff.range.endLineNumber,
+          inlineAiDiff.range.endColumn,
+        );
+      } else if (selectionRange) {
+        targetRange = new monaco.Range(
+          selectionRange.startLine,
+          1,
+          selectionRange.endLine,
+          model.getLineMaxColumn(selectionRange.endLine),
+        );
+      } else if (sel && !sel.isEmpty()) {
+        targetRange = sel;
+      } else {
+        const line = sel ? sel.positionLineNumber : 1;
+        targetRange = new monaco.Range(line, 1, line, model.getLineMaxColumn(line));
+      }
+
+      const origText = inlineAiDiff ? inlineAiDiff.originalText : model.getValueInRange(targetRange);
+      const currentCode = model.getValueInRange(targetRange);
+      const fullDoc = model.getValue();
+
+      const userPrompt = `文件路径：${active.path} (${active.language || 'text'})\n修改要求：${inlinePrompt.trim()}\n\n当前选中的代码片段：\n\`\`\`${active.language || ''}\n${origText}\n\`\`\`\n\n文件上下文参考：\n\`\`\`\n${fullDoc.slice(0, 10000)}\n\`\`\``;
+      const systemPrompt = `你是一个专业的代码编辑助手。请直接输出修改后的选区替换代码。严禁附加闲聊解释，只需输出能直接原地替换的代码内容。`;
+
+      const res = await window.ide.quickPrompt({ userPrompt, systemPrompt, temperature: 0.2 });
+      let newCode = res?.text || '';
+      const match = newCode.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```$/);
+      if (match) {
+        newCode = match[1];
+      } else if (newCode.startsWith('```') && newCode.endsWith('```')) {
+        newCode = newCode.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '');
+      }
+
+      if (!newCode.trim()) {
+        onShowToast?.('AI 未返回有效代码修改', '', 'warn');
+        setInlineAiLoading(false);
+        return;
+      }
+
+      // 执行原地替换
+      ed.executeEdits('inline-ai', [
+        {
+          range: targetRange,
+          text: newCode,
+          forceMoveMarkers: true,
+        },
+      ]);
+
+      const newLinesCount = newCode.split('\n').length;
+      const newEndLine = targetRange.startLineNumber + newLinesCount - 1;
+      const newRange = new monaco.Range(
+        targetRange.startLineNumber,
+        1,
+        newEndLine,
+        ed.getModel()?.getLineMaxColumn(newEndLine) || 1,
+      );
+
+      // 施加绿色 diff 高亮
+      inlineAiDecorationsRef.current = ed.deltaDecorations(inlineAiDecorationsRef.current, [
+        {
+          range: newRange,
+          options: {
+            isWholeLine: true,
+            className: 'inline-ai-diff-green-line',
+            marginClassName: 'inline-ai-diff-green-gutter',
+          },
+        },
+      ]);
+
+      setInlineAiDiff({
+        originalText: origText,
+        newText: newCode,
+        range: {
+          startLineNumber: newRange.startLineNumber,
+          startColumn: newRange.startColumn,
+          endLineNumber: newRange.endLineNumber,
+          endColumn: newRange.endColumn,
+        },
+        originalRange: {
+          startLineNumber: targetRange.startLineNumber,
+          startColumn: targetRange.startColumn,
+          endLineNumber: targetRange.endLineNumber,
+          endColumn: targetRange.endColumn,
+        },
+      });
+
+      onChangeContent(active.path, ed.getValue());
+    } catch (err: any) {
+      console.error('[InlineAi] Error:', err);
+      onShowToast?.('行内 AI 执行失败', err?.message, 'error');
+    } finally {
+      setInlineAiLoading(false);
+    }
+  }, [active, inlinePrompt, inlineAiDiff, selectionRange, onShowToast, onChangeContent]);
+
+  const handleAcceptInlineAi = useCallback(() => {
+    if (editorRef.current && inlineAiDecorationsRef.current.length) {
+      inlineAiDecorationsRef.current = editorRef.current.deltaDecorations(
+        inlineAiDecorationsRef.current,
+        [],
+      );
+    }
+    setInlineAiDiff(null);
     setShowInlineAi(false);
     setInlinePrompt('');
-  }, [active, inlinePrompt, selectionRange, selectedText, onAddToChat]);
+    if (active?.path && editorRef.current) {
+      onChangeContent(active.path, editorRef.current.getValue());
+    }
+  }, [active?.path, onChangeContent]);
+
+  const handleRejectInlineAi = useCallback(() => {
+    if (editorRef.current && inlineAiDiff) {
+      const ed = editorRef.current;
+      const revertRange = new monaco.Range(
+        inlineAiDiff.range.startLineNumber,
+        inlineAiDiff.range.startColumn,
+        inlineAiDiff.range.endLineNumber,
+        inlineAiDiff.range.endColumn,
+      );
+      ed.executeEdits('inline-ai-revert', [
+        {
+          range: revertRange,
+          text: inlineAiDiff.originalText,
+          forceMoveMarkers: true,
+        },
+      ]);
+      inlineAiDecorationsRef.current = ed.deltaDecorations(inlineAiDecorationsRef.current, []);
+    }
+    setInlineAiDiff(null);
+    setShowInlineAi(false);
+    setInlinePrompt('');
+    if (active?.path && editorRef.current) {
+      onChangeContent(active.path, editorRef.current.getValue());
+    }
+  }, [active?.path, inlineAiDiff, onChangeContent]);
 
   const handleQuickPrompt = useCallback((txt: string) => {
     setInlinePrompt(txt);
@@ -1084,6 +1235,21 @@ export function EditorPane({
     }
   }, [activePath, active?.content, gitBlameInline, gitStatus, removeBlameWidget]);
 
+  // 当处于幽灵代码提示 (Ghost Text) 状态时，即时隐藏 Git Blame 避免重合
+  useEffect(() => {
+    const handleGhostState = (e: any) => {
+      const active = Boolean(e?.detail?.active);
+      if (blameWidgetRef.current) {
+        const dom = blameWidgetRef.current.getDomNode();
+        if (dom) {
+          dom.style.display = active ? 'none' : '';
+        }
+      }
+    };
+    window.addEventListener('echoly:ghostTextState', handleGhostState);
+    return () => window.removeEventListener('echoly:ghostTextState', handleGhostState);
+  }, []);
+
   // Track which line ranges are modified (for inline diff popup on gutter click)
   const modifiedRangesRef = useRef<Array<{ start: number; end: number }>>([]);
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
@@ -1223,10 +1389,19 @@ export function EditorPane({
       try {
         const line = target.line;
         const col = target.column ?? 1;
-        ed.revealLineInCenter(line);
+        // 区间引用：让整段代码居中显示，并高亮所有引用行
+        const endLine =
+          typeof target.endLine === 'number' && target.endLine > line
+            ? Math.min(target.endLine, model.getLineCount())
+            : undefined;
+        if (endLine) {
+          ed.revealLinesInCenter(line, endLine);
+        } else {
+          ed.revealLineInCenter(line);
+        }
         ed.setPosition({ lineNumber: line, column: col });
         ed.focus();
-        highlightJumpLocation(ed, line);
+        highlightJumpLocation(ed, line, endLine);
       } catch {
         // ignore
       } finally {
@@ -2092,6 +2267,11 @@ export function EditorPane({
       } catch {
         setInlineAiCoords(null);
       }
+      setInlineAiLoading(false);
+      setInlineAiDiff(null);
+      if (inlineAiDecorationsRef.current.length) {
+        inlineAiDecorationsRef.current = ed.deltaDecorations(inlineAiDecorationsRef.current, []);
+      }
       setShowInlineAi(true);
       setTimeout(() => {
         inlineInputRef.current?.focus();
@@ -2118,13 +2298,154 @@ export function EditorPane({
     setSelectionCoords(null);
   }, []);
 
+  const handleExplainSelection = useCallback(() => {
+    if (!editorRef.current || !active) return;
+    const ed = editorRef.current;
+    const sel = ed.getSelection();
+    let rangeLabel = '';
+    if (sel && !sel.isEmpty()) {
+      rangeLabel =
+        sel.startLineNumber === sel.endLineNumber
+          ? `L${sel.startLineNumber}`
+          : `L${sel.startLineNumber}-L${sel.endLineNumber}`;
+    }
+    const token = `@${active.path}${rangeLabel ? `:${rangeLabel}` : ''}`;
+    onAddToChatRef.current?.(`${token} 请详细解释这段代码的业务逻辑、实现细节与核心算法`);
+    setSelectionCoords(null);
+  }, [active]);
+
+  const handleTriggerFixWithAi = useCallback(
+    (ed: MonacoEditor.IStandaloneCodeEditor, explicitMarker?: any) => {
+      const model = ed.getModel();
+      if (!model) return;
+      const pos = ed.getPosition();
+      const markers = monaco.editor.getModelMarkers({ resource: model.uri });
+      const curLine = explicitMarker?.startLineNumber || (pos ? pos.lineNumber : 1);
+      const activeMarker =
+        explicitMarker ||
+        markers.find((m) => m.startLineNumber <= curLine && m.endLineNumber >= curLine) ||
+        markers[0];
+
+      if (activeMarker) {
+        const errRange = new monaco.Range(
+          activeMarker.startLineNumber,
+          1,
+          activeMarker.endLineNumber,
+          model.getLineMaxColumn(activeMarker.endLineNumber),
+        );
+        ed.setSelection(errRange);
+        openInlineAiForEditor(ed);
+        setInlinePrompt(`修复此代码报错: ${activeMarker.message}`);
+        setTimeout(() => {
+          inlineInputRef.current?.focus();
+          inlineInputRef.current?.select();
+        }, 50);
+      } else {
+        onShowToast?.('当前代码行未检测到编译或语法诊断错误', '', 'info');
+      }
+    },
+    [openInlineAiForEditor, onShowToast],
+  );
+
+  useEffect(() => {
+    const onFixEvent = (e: Event) => {
+      const customEv = e as CustomEvent;
+      if (editorRef.current) {
+        handleTriggerFixWithAi(editorRef.current, customEv.detail);
+      }
+    };
+    window.addEventListener('echoly:fixWithAi', onFixEvent);
+    return () => window.removeEventListener('echoly:fixWithAi', onFixEvent);
+  }, [handleTriggerFixWithAi]);
+
   const setupEditorKeybindings = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor, onOpenFileRef?: { current?: typeof onOpenFile }) => {
-      ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyK, () => {
-        openInlineAiForEditor(ed);
+      // 注册 AI 菜单项至 Monaco 右键菜单最顶层 (0_ai 分组)
+      ed.addAction({
+        id: 'echoly.inlineAi',
+        label: '✦ 行内 AI 编辑',
+        keybindings: [KeyMod.CtrlCmd | KeyCode.KeyK],
+        contextMenuGroupId: '0_ai',
+        contextMenuOrder: 1,
+        run: () => {
+          openInlineAiForEditor(ed);
+        },
       });
-      ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyL, () => {
-        triggerAddToChatForEditor(ed);
+      ed.addAction({
+        id: 'echoly.addToChat',
+        label: '✦ 添加到 AI 对话',
+        keybindings: [KeyMod.CtrlCmd | KeyCode.KeyL],
+        contextMenuGroupId: '0_ai',
+        contextMenuOrder: 2,
+        run: () => {
+          triggerAddToChatForEditor(ed);
+        },
+      });
+      ed.addAction({
+        id: 'echoly.fixWithAi',
+        label: '✦ Fix with AI: 修复此行错误',
+        keybindings: [KeyMod.Alt | KeyCode.Period],
+        contextMenuGroupId: '0_ai',
+        contextMenuOrder: 3,
+        run: () => {
+          handleTriggerFixWithAi(ed);
+        },
+      });
+
+      // ── 快捷键绑定 ──────────────────────────────────────────
+      // 智能一键修复：Fix with AI (Alt+. / ⌥.)
+      ed.addCommand(KeyMod.Alt | KeyCode.Period, () => {
+        handleTriggerFixWithAi(ed);
+      });
+
+      // ── 右键菜单核心功能快捷键绑定与补齐 ──────────────────────────────
+      // 导航：转到定义 (F12, Cmd+F12)
+      ed.addCommand(KeyCode.F12, () => {
+        ed.getAction('editor.action.revealDefinition')?.run();
+      });
+      ed.addCommand(KeyMod.CtrlCmd | KeyCode.F12, () => {
+        ed.getAction('editor.action.revealDefinition')?.run();
+      });
+
+      // 导航：查看定义 (Alt+F12)
+      ed.addCommand(KeyMod.Alt | KeyCode.F12, () => {
+        ed.getAction('editor.action.peekDefinition')?.run();
+      });
+
+      // 导航：转到引用 (Shift+F12)
+      ed.addCommand(KeyMod.Shift | KeyCode.F12, () => {
+        ed.getAction('editor.action.referenceSearch.trigger')?.run();
+      });
+
+      // 导航：转到符号... (Shift+Cmd+O)
+      ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyO, () => {
+        ed.getAction('editor.action.quickOutline')?.run();
+      });
+
+      // 编辑：重命名符号 (F2)
+      ed.addCommand(KeyCode.F2, () => {
+        ed.getAction('editor.action.rename')?.run();
+      });
+
+      // 编辑：更改所有匹配项 (Cmd+F2)
+      ed.addCommand(KeyMod.CtrlCmd | KeyCode.F2, () => {
+        ed.getAction('editor.action.changeAll')?.run();
+      });
+
+      // 编辑：格式化文档 (VS Code: Shift+Alt+F, IntelliJ: Cmd+Alt+L)
+      ed.addCommand(KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyL, () => {
+        ed.getAction('editor.action.formatDocument')?.run();
+      });
+      ed.addCommand(KeyMod.Shift | KeyMod.Alt | KeyCode.KeyF, () => {
+        ed.getAction('editor.action.formatDocument')?.run();
+      });
+
+      // 全局命令面板：Command Palette (Shift+Cmd+P, F1)
+      ed.addCommand(KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyP, () => {
+        ed.getAction('editor.action.quickCommand')?.run();
+      });
+      ed.addCommand(KeyCode.F1, () => {
+        ed.getAction('editor.action.quickCommand')?.run();
       });
       // Go back through jump history:
       // 1. macOS: Ctrl+- (Control + Minus, standard VS Code navigate back. NOT Cmd+- which zooms out!)
@@ -2223,6 +2544,23 @@ export function EditorPane({
 
       const isCmdOrCtrl = e.metaKey || e.ctrlKey;
       if (!isCmdOrCtrl) return;
+
+      const target = e.target as HTMLElement | null;
+      const activeEl = document.activeElement as HTMLElement | null;
+
+      // 终端处于激活状态或目标元素在终端容器内时，严禁拦截，让终端原生或终端自定义按键处理
+      const isTerminal = !!(
+        (target && (target.closest('.terminal-sessions') || target.closest('.terminal-panel') || target.closest('.xterm'))) ||
+        (activeEl && (activeEl.closest('.terminal-sessions') || activeEl.closest('.terminal-panel') || activeEl.closest('.xterm') || activeEl.classList.contains('xterm-helper-textarea')))
+      );
+      if (isTerminal) return;
+
+      // 如果不是在代码编辑区、Monaco 或行内编辑浮条内，也不要拦截
+      const isInsideEditor = !!(
+        (target && (target.closest('.editor-area') || target.closest('.monaco-editor') || target.closest('.inline-ai-widget'))) ||
+        (activeEl && (activeEl.closest('.editor-area') || activeEl.closest('.monaco-editor') || activeEl.closest('.inline-ai-widget')))
+      );
+      if (!isInsideEditor) return;
 
       const key = e.key.toLowerCase();
       if (key === 'k') {
@@ -2739,11 +3077,18 @@ export function EditorPane({
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  // 设置 dismiss key 防止 Monaco 事件重新激活浮层
+                  if (editorRef.current) {
+                    const _sel = editorRef.current.getSelection();
+                    if (_sel && !_sel.isEmpty()) {
+                      dismissedSelectionKeyRef.current = `${_sel.startLineNumber}:${_sel.startColumn}-${_sel.endLineNumber}:${_sel.endColumn}`;
+                    }
+                  }
+                  setSelectionCoords(null);
                   if (editorRef.current) {
                     triggerAddToChatForEditor(editorRef.current);
                   } else {
                     handleAddToChat(e);
-                    setSelectionCoords(null);
                   }
                 }}
                 title={`添加到 AI 会话提问 (${cmdKey}L)`}
@@ -2784,6 +3129,13 @@ export function EditorPane({
                   e.preventDefault();
                   e.stopPropagation();
                   if (editorRef.current) {
+                    const _sel = editorRef.current.getSelection();
+                    if (_sel && !_sel.isEmpty()) {
+                      dismissedSelectionKeyRef.current = `${_sel.startLineNumber}:${_sel.startColumn}-${_sel.endLineNumber}:${_sel.endColumn}`;
+                    }
+                  }
+                  setSelectionCoords(null);
+                  if (editorRef.current) {
                     openInlineAiForEditor(editorRef.current);
                   } else {
                     setShowInlineAi(true);
@@ -2798,10 +3150,58 @@ export function EditorPane({
               <div className="selection-ai-divider" />
               <button
                 type="button"
+                className="selection-ai-inline-btn"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (editorRef.current) {
+                    const _sel = editorRef.current.getSelection();
+                    if (_sel && !_sel.isEmpty()) {
+                      dismissedSelectionKeyRef.current = `${_sel.startLineNumber}:${_sel.startColumn}-${_sel.endLineNumber}:${_sel.endColumn}`;
+                    }
+                  }
+                  handleExplainSelection();
+                }}
+                title="向 AI 提问解释选中的代码"
+              >
+                <span>解释</span>
+              </button>
+              <div className="selection-ai-divider" />
+              <button
+                type="button"
+                className="selection-ai-inline-btn"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (editorRef.current) {
+                    const _sel = editorRef.current.getSelection();
+                    if (_sel && !_sel.isEmpty()) {
+                      dismissedSelectionKeyRef.current = `${_sel.startLineNumber}:${_sel.startColumn}-${_sel.endLineNumber}:${_sel.endColumn}`;
+                    }
+                  }
+                  setSelectionCoords(null);
+                  if (editorRef.current) {
+                    openInlineAiForEditor(editorRef.current);
+                    setInlinePrompt('优化此代码段的性能与可读性');
+                  }
+                }}
+                title="行内 AI 优化重构选中的代码"
+              >
+                <span>优化</span>
+              </button>
+              <div className="selection-ai-divider" />
+              <button
+                type="button"
                 className="selection-ai-close-btn"
                 onMouseDown={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  if (editorRef.current) {
+                    const _sel = editorRef.current.getSelection();
+                    if (_sel && !_sel.isEmpty()) {
+                      dismissedSelectionKeyRef.current = `${_sel.startLineNumber}:${_sel.startColumn}-${_sel.endLineNumber}:${_sel.endColumn}`;
+                    }
+                  }
                   setSelectionCoords(null);
                 }}
                 title="隐藏快捷栏 (Esc)"
@@ -2828,6 +3228,23 @@ export function EditorPane({
                   : '40px',
             }}
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                e.preventDefault();
+                if (inlineAiDiff) {
+                  handleAcceptInlineAi();
+                } else {
+                  handleInlineAiSubmit();
+                }
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                if (inlineAiDiff) {
+                  handleRejectInlineAi();
+                } else {
+                  setShowInlineAi(false);
+                }
+              }
+            }}
           >
             <div className="inline-ai-header">
               <span className="inline-ai-title">
@@ -2837,63 +3254,141 @@ export function EditorPane({
               <button
                 type="button"
                 className="inline-ai-close"
-                onClick={() => setShowInlineAi(false)}
+                onClick={() => {
+                  if (inlineAiDiff) handleRejectInlineAi();
+                  else setShowInlineAi(false);
+                }}
                 title="关闭 (Esc)"
               >
                 ×
               </button>
             </div>
-            <div className="inline-ai-input-row">
-              <input
-                ref={inlineInputRef}
-                type="text"
-                className="inline-ai-input"
-                placeholder="输入修改要求，例如：重构优化 / 增加异常捕获 (Enter 发送)"
-                value={inlinePrompt}
-                onChange={(e) => setInlinePrompt(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleInlineAiSubmit();
-                  } else if (e.key === 'Escape') {
-                    setShowInlineAi(false);
+
+            {inlineAiDiff && (() => {
+              const origLines = inlineAiDiff.originalText.split('\n').length;
+              const newLines = inlineAiDiff.newText.split('\n').length;
+              const lineDiff = newLines - origLines;
+              const diffText = lineDiff >= 0 ? `+${lineDiff}` : `${lineDiff}`;
+              return (
+                <div className="inline-ai-diff-actions">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className="inline-ai-diff-badge">✦ 差异就绪 ({diffText} 行)</span>
+                    <span style={{ fontSize: 10, color: 'var(--muted, #888)', opacity: 0.8 }}>Enter: 追问微调</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="inline-ai-accept-btn"
+                      onClick={handleAcceptInlineAi}
+                      title="接受代码变更 (⌘↵)"
+                    >
+                      ✓ 接受 (⌘↵)
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-ai-reject-btn"
+                      onClick={handleRejectInlineAi}
+                      title="放弃变更并还原 (Esc)"
+                    >
+                      ✕ 放弃 (Esc)
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {inlineAiLoading ? (
+              <div className="inline-ai-loading-row">
+                <div className="inline-ai-spinner" />
+                <span>AI 正在原地生成代码修改...</span>
+              </div>
+            ) : (
+              <div className="inline-ai-input-row">
+                <input
+                  ref={inlineInputRef}
+                  type="text"
+                  className="inline-ai-input"
+                  placeholder={
+                    inlineAiDiff
+                      ? '在当前修改基础上追问微调，如：改为异步函数、增加空值校验 (Enter 再次生成)...'
+                      : '输入修改要求，例如：重构优化 / 增加异常捕获 (Enter 发送)...'
                   }
-                }}
-              />
-              <button
-                type="button"
-                className="inline-ai-submit-btn"
-                disabled={!inlinePrompt.trim()}
-                onClick={handleInlineAiSubmit}
-              >
-                发送
-              </button>
-            </div>
+                  value={inlinePrompt}
+                  onChange={(e) => setInlinePrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+                      e.preventDefault();
+                      handleInlineAiSubmit();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="inline-ai-submit-btn"
+                  disabled={!inlinePrompt.trim()}
+                  onClick={handleInlineAiSubmit}
+                >
+                  {inlineAiDiff ? '再次微调' : '发送'}
+                </button>
+              </div>
+            )}
+
             <div className="inline-ai-tags">
-              <span
-                className="inline-ai-tag"
-                onClick={() => handleQuickPrompt('优化并简化此段代码结构')}
-              >
-                优化结构
-              </span>
-              <span
-                className="inline-ai-tag"
-                onClick={() => handleQuickPrompt('为选区代码添加清晰的中文注释')}
-              >
-                添加注释
-              </span>
-              <span
-                className="inline-ai-tag"
-                onClick={() => handleQuickPrompt('增强入参校验与异常捕获逻辑')}
-              >
-                错误处理
-              </span>
-              <span
-                className="inline-ai-tag"
-                onClick={() => handleQuickPrompt('为此代码编写对应的单元测试用例')}
-              >
-                编写单测
-              </span>
+              {inlineAiDiff ? (
+                <>
+                  <span
+                    className="inline-ai-tag"
+                    onClick={() => handleQuickPrompt('优化为 async/await 异步并发形式')}
+                  >
+                    异步优化
+                  </span>
+                  <span
+                    className="inline-ai-tag"
+                    onClick={() => handleQuickPrompt('提取复用子函数并精简主流程')}
+                  >
+                    抽取子函数
+                  </span>
+                  <span
+                    className="inline-ai-tag"
+                    onClick={() => handleQuickPrompt('补充极端情况与空值保护')}
+                  >
+                    防护增强
+                  </span>
+                  <span
+                    className="inline-ai-tag"
+                    onClick={() => handleQuickPrompt('添加关键步骤的中文行内注释')}
+                  >
+                    补充注释
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span
+                    className="inline-ai-tag"
+                    onClick={() => handleQuickPrompt('优化并简化此段代码结构')}
+                  >
+                    优化结构
+                  </span>
+                  <span
+                    className="inline-ai-tag"
+                    onClick={() => handleQuickPrompt('为选区代码添加清晰的中文注释')}
+                  >
+                    添加注释
+                  </span>
+                  <span
+                    className="inline-ai-tag"
+                    onClick={() => handleQuickPrompt('增强入参校验与异常捕获逻辑')}
+                  >
+                    错误处理
+                  </span>
+                  <span
+                    className="inline-ai-tag"
+                    onClick={() => handleQuickPrompt('编写对应的核心单元测试用例')}
+                  >
+                    生成单测
+                  </span>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -3431,6 +3926,7 @@ export function EditorPane({
               onMount={(ed, monaco) => {
                 editorRef.current = ed;
                 setEditorInstance(ed);
+                registerAiInlineCompletions();
                 try {
                   monaco?.editor?.remeasureFonts?.();
                   if (typeof document !== 'undefined' && document.fonts?.ready) {
@@ -3561,6 +4057,7 @@ export function EditorPane({
               }}
               options={{
                 fontSize: 13,
+                inlineSuggest: { enabled: true },
                 fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
                 fontWeight: '400',
                 disableMonospaceOptimizations: true,

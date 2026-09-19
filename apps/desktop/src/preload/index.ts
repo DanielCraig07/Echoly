@@ -222,6 +222,12 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('java:installProgress', listener);
   },
   openSystemSettings: (type?: string) => ipcRenderer.invoke('system:openPrivacySettings', type),
+  quickPrompt: (payload: { userPrompt: string; systemPrompt?: string; temperature?: number; maxTokens?: number }) =>
+    ipcRenderer.invoke('ai:quickPrompt', payload),
+  completeCode: (payload: { prefix: string; suffix: string; language?: string }) =>
+    ipcRenderer.invoke('ai:completeCode', payload),
+  rulesGet: (workspaceRoot?: string) => ipcRenderer.invoke('rules:get', workspaceRoot),
+  rulesSave: (content: string, workspaceRoot?: string) => ipcRenderer.invoke('rules:save', content, workspaceRoot),
 };
 
 contextBridge.exposeInMainWorld('ide', api);

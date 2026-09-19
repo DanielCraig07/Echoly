@@ -32,17 +32,20 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
     setLoading(true);
     setError(null);
     setQuery('');
-    setSelectedIndex(0);
     void window.ide.gitBranches().then((res) => {
       setLoading(false);
       if (res.ok) {
-        setBranches(res.branches || []);
-        setTags(res.tags || []);
+        const branchList = res.branches || [];
+        const tagList = res.tags || [];
+        setBranches(branchList);
+        setTags(tagList);
+        const curIdx = branchList.findIndex((b) => b.current || b.name === currentBranch);
+        setSelectedIndex(curIdx >= 0 ? curIdx : 0);
       } else {
         setError(res.detail || '无法获取 Git 分支/标签');
       }
     });
-  }, [open]);
+  }, [open, currentBranch]);
 
   useEffect(() => {
     if (open) {
@@ -61,7 +64,13 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
     activeTab === 'branches' ? filteredBranches.length : filteredTags.length;
 
   useEffect(() => {
-    setSelectedIndex(0);
+    if (activeTab === 'branches') {
+      const curIdx = filteredBranches.findIndex((b) => b.current || b.name === currentBranch);
+      setSelectedIndex(curIdx >= 0 ? curIdx : 0);
+    } else {
+      const curIdx = filteredTags.findIndex((t) => t === currentBranch);
+      setSelectedIndex(curIdx >= 0 ? curIdx : 0);
+    }
   }, [query, activeTab]);
 
   // Keep selected item visible
@@ -490,14 +499,10 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                     cursor: 'pointer',
                     background: isSelected
                       ? 'var(--accent-soft, rgba(76, 141, 255, 0.16))'
-                      : isCurrent
-                        ? 'rgba(16, 185, 129, 0.08)'
-                        : 'transparent',
+                      : 'transparent',
                     border: isSelected
                       ? '1px solid rgba(76, 141, 255, 0.28)'
-                      : isCurrent
-                        ? '1px solid rgba(16, 185, 129, 0.2)'
-                        : '1px solid transparent',
+                      : '1px solid transparent',
                     color: isCurrent
                       ? '#10b981'
                       : isSelected
@@ -649,14 +654,10 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                     cursor: 'pointer',
                     background: isSelected
                       ? 'var(--accent-soft, rgba(76, 141, 255, 0.16))'
-                      : isCurrent
-                        ? 'rgba(168, 85, 247, 0.08)'
-                        : 'transparent',
+                      : 'transparent',
                     border: isSelected
                       ? '1px solid rgba(76, 141, 255, 0.28)'
-                      : isCurrent
-                        ? '1px solid rgba(168, 85, 247, 0.2)'
-                        : '1px solid transparent',
+                      : '1px solid transparent',
                     color: isCurrent
                       ? '#c084fc'
                       : isSelected

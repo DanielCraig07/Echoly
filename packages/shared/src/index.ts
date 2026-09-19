@@ -164,6 +164,8 @@ export interface AppSettings {
   minimap?: boolean;
   /** 终端回滚缓存最大行数上限 (Scrollback lines)，默认 10000 行。 */
   terminalScrollback?: number;
+  /** 键盘快捷键预设模式 ('vscode' | 'intellij')，默认 'vscode'。 */
+  keymapPreset?: 'vscode' | 'intellij';
 }
 
 export interface UpdateFeedConfig {
@@ -218,6 +220,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   minimap: true,
   terminalScrollback: 10000,
   updateFeed: null,
+  keymapPreset: 'vscode',
 };
 
 /** Migrate legacy settings to new provider and model structure */
@@ -881,8 +884,21 @@ export interface IpcApi {
     model?: string;
     provider?: string;
   }) => Promise<{ ok: boolean; detail: string; models?: string[] }>;
+  quickPrompt: (payload: {
+    userPrompt: string;
+    systemPrompt?: string;
+    temperature?: number;
+    maxTokens?: number;
+  }) => Promise<{ text: string }>;
+  completeCode: (payload: {
+    prefix: string;
+    suffix: string;
+    language?: string;
+  }) => Promise<{ completion: string }>;
   listSkills: () => Promise<SkillInfo[]>;
   openUserSkillsDir: () => Promise<string>;
+  rulesGet: (workspaceRoot?: string) => Promise<{ ok: boolean; content?: string | null; filename?: string }>;
+  rulesSave: (content: string, workspaceRoot?: string) => Promise<{ ok: boolean }>;
   cloneRepo: (req: GitCloneRequest) => Promise<GitCloneResult>;
   gitInit: () => Promise<GitOpResult>;
   gitStatus: () => Promise<GitStatusResult>;

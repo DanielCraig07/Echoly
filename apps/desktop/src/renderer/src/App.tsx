@@ -29,6 +29,7 @@ import { FileTree, type FileTreeHandle } from './components/FileTree';
 import { EditorPane } from './components/EditorPane';
 import { ChatPanel, type ChatPanelHandle } from './components/ChatPanel';
 import { TerminalPanel } from './components/TerminalPanel';
+import { ComposerModal } from './components/ComposerModal';
 import { DebugPanel } from './components/DebugPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { OpenWorkspaceModal } from './components/OpenWorkspaceModal';
@@ -52,6 +53,7 @@ import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { GitPanel } from './components/GitPanel';
 import { SearchPanel } from './components/SearchPanel';
 import { MavenPanel } from './components/MavenPanel';
+import { ProblemsPanel } from './components/ProblemsPanel';
 import { StatusBar } from './components/StatusBar';
 import { GlobalTooltip } from './components/GlobalTooltip';
 import { PROJECT_TEMPLATES } from './utils/projectTemplates';
@@ -190,6 +192,7 @@ export function App() {
   const [sshOpen, setSshOpen] = useState(false);
   const [extensionPanelOpen, setExtensionPanelOpen] = useState(false);
   const [claudePanelOpen, setClaudePanelOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
   const [currentExtensionId, setCurrentExtensionId] = useState<string | null>(null);
   const [rightPanelTab, setRightPanelTab] = useState<'chat' | 'claude'>('chat'); // 右侧面板标签
   const [diffs, setDiffs] = useState<PendingDiff[]>([]);
@@ -243,6 +246,7 @@ export function App() {
   const middleColRef = useRef<HTMLDivElement>(null);
   const saveLayoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatRef = useRef<ChatPanelHandle>(null);
+  const pendingAddToChatRef = useRef<string | null>(null);
   const [terminalOpenRequest, setTerminalOpenRequest] = useState<{
     cwd: string;
     nonce: number;
@@ -258,6 +262,7 @@ export function App() {
     path: string;
     line: number;
     column?: number;
+    endLine?: number;
     nonce: number;
   } | null>(null);
   const revealNonceRef = useRef(0);
@@ -1113,9 +1118,137 @@ export function App() {
   }, [getBreakpointsStorageKey, isBreakpointBelongsToWorkspace]);
 
   // ── C/C++ & 多语言调试会话与底部面板标签 ──
-  const [bottomTab, setBottomTab] = useState<'terminal' | 'debug'>('terminal');
+  const [bottomTab, setBottomTab] = useState<'terminal' | 'debug' | 'problems'>('terminal');
+  const [problemsCount, setProblemsCount] = useState<number>(0);
+  const lastShiftPressRef = useRef<number>(0);
   const [isDebugging, setIsDebugging] = useState(false);
   const [debugState, setDebugState] = useState<'running' | 'paused' | 'stopped'>('stopped');
+
+  // ── 全局终端与 AI 对话切换器（保证任何焦点状态下均能无条件可靠开闭） ──
+  const lastToggleTerminalTimeRef = useRef<number>(0);
+  const toggleTerminal = useCallback(() => {
+    const now = Date.now();
+    if (now - lastToggleTerminalTimeRef.current < 120) return;
+    lastToggleTerminalTimeRef.current = now;
+
+    setLayout((prev) => {
+      const nextExpanded = !prev.bottomPanelExpanded;
+      const next = {
+        ...prev,
+        bottomPanelExpanded: nextExpanded,
+      };
+      persistLayout(next);
+      return next;
+    });
+    setBottomTab('terminal');
+  }, [persistLayout]);
+
+  const lastToggleAiTimeRef = useRef<number>(0);
+  const toggleAiChat = useCallback(() => {
+    const now = Date.now();
+    if (now - lastToggleAiTimeRef.current < 120) return;
+    lastToggleAiTimeRef.current = now;
+
+    setLayout((prev) => {
+      const willExpand = prev.chatPanelExpanded === false;
+      const next = {
+        ...prev,
+        chatPanelExpanded: willExpand,
+      };
+      persistLayout(next);
+      if (willExpand) {
+        setTimeout(() => chatRef.current?.focusInput?.(), 50);
+      }
+      return next;
+    });
+  }, [persistLayout]);
+
+  const handleAddToChat = useCallback(
+    (text: string) => {
+      setLayout((prev) => {
+        if (prev.chatPanelExpanded !== false) {
+          return prev;
+        }
+        const next = { ...prev, chatPanelExpanded: true };
+        persistLayout(next);
+        return next;
+      });
+      setRightPanelTab('chat');
+
+      if (chatRef.current) {
+        chatRef.current.insertPath(text);
+        setTimeout(() => chatRef.current?.focusInput?.(), 50);
+        return;
+      }
+
+      pendingAddToChatRef.current = text;
+      let retries = 0;
+      const interval = setInterval(() => {
+        retries++;
+        if (chatRef.current) {
+          clearInterval(interval);
+          if (pendingAddToChatRef.current) {
+            const pendingText = pendingAddToChatRef.current;
+            pendingAddToChatRef.current = null;
+            chatRef.current.insertPath(pendingText);
+          }
+          chatRef.current.focusInput?.();
+        } else if (retries > 30) {
+          clearInterval(interval);
+        }
+      }, 30);
+    },
+    [persistLayout],
+  );
+
+  const handleFocusAi = useCallback(() => {
+    setLayout((prev) => {
+      if (prev.chatPanelExpanded !== false) {
+        return prev;
+      }
+      const next = { ...prev, chatPanelExpanded: true };
+      persistLayout(next);
+      return next;
+    });
+    setRightPanelTab('chat');
+    if (chatRef.current) {
+      setTimeout(() => chatRef.current?.focusInput?.(), 50);
+    } else {
+      let retries = 0;
+      const interval = setInterval(() => {
+        retries++;
+        if (chatRef.current) {
+          clearInterval(interval);
+          chatRef.current.focusInput?.();
+        } else if (retries > 30) {
+          clearInterval(interval);
+        }
+      }, 30);
+    }
+  }, [persistLayout]);
+
+  useEffect(() => {
+    if (layout.chatPanelExpanded !== false && chatRef.current && pendingAddToChatRef.current) {
+      const text = pendingAddToChatRef.current;
+      pendingAddToChatRef.current = null;
+      chatRef.current.insertPath(text);
+      setTimeout(() => chatRef.current?.focusInput?.(), 50);
+    }
+  }, [layout.chatPanelExpanded]);
+
+  useEffect(() => {
+    const handleToggleTerminalEvent = () => toggleTerminal();
+    const handleToggleAiEvent = () => toggleAiChat();
+    const handleFocusAiEvent = () => handleFocusAi();
+    window.addEventListener('echoly:toggleTerminal', handleToggleTerminalEvent);
+    window.addEventListener('echoly:toggleAi', handleToggleAiEvent);
+    window.addEventListener('echoly:focusAi', handleFocusAiEvent);
+    return () => {
+      window.removeEventListener('echoly:toggleTerminal', handleToggleTerminalEvent);
+      window.removeEventListener('echoly:toggleAi', handleToggleAiEvent);
+      window.removeEventListener('echoly:focusAi', handleFocusAiEvent);
+    };
+  }, [toggleTerminal, toggleAiChat, handleFocusAi]);
   const [breakpoints, setBreakpoints] = useState<DapBreakpoint[]>(() => {
     return loadWorkspaceBreakpoints(workspace);
   });
@@ -1231,6 +1364,36 @@ export function App() {
             setGitStatus(res);
           } catch {}
         })();
+        // 同步清理已在文件系统中删除的文件标签页与状态，防止失效文件残留于编辑器与 @ 引用中
+        void (async () => {
+          const curTabs = tabsRef.current;
+          if (!curTabs || curTabs.length === 0) return;
+          const toClose: string[] = [];
+          for (const t of curTabs) {
+            if (isUntitledPath(t.path)) continue;
+            try {
+              const exists = await window.ide.pathExists(t.path);
+              if (!exists) {
+                toClose.push(t.path);
+              }
+            } catch {
+              // 忽略校验异常
+            }
+          }
+          if (toClose.length > 0) {
+            const closeSet = new Set(toClose.map((p) => p.replace(/\\/g, '/').replace(/^\/+/, '')));
+            setTabs((prev) => {
+              const next = prev.filter((t) => !closeSet.has(t.path.replace(/\\/g, '/').replace(/^\/+/, '')));
+              if (activePathRef.current && closeSet.has(activePathRef.current.replace(/\\/g, '/').replace(/^\/+/, ''))) {
+                const nextActive = next[next.length - 1]?.path ?? null;
+                setActivePath(nextActive);
+                activePathRef.current = nextActive;
+              }
+              return next;
+            });
+            persistOpenFilesForRoot(workspaceRef.current);
+          }
+        })();
       }, 80);
     };
 
@@ -1238,8 +1401,43 @@ export function App() {
       triggerFsRefresh();
     });
 
-    const handleCustomFsRefresh = () => {
+    const handleCustomFsRefresh = (e?: Event) => {
+      const detail = (e as CustomEvent<{ deletedPath?: string; isDirectory?: boolean }>)?.detail;
+      if (detail?.deletedPath) {
+        const delNorm = detail.deletedPath.replace(/\\/g, '/').replace(/^\/+/, '');
+        setTabs((prev) => {
+          const next = prev.filter((t) => {
+            const tp = t.path.replace(/\\/g, '/').replace(/^\/+/, '');
+            if (tp === delNorm) return false;
+            if (detail.isDirectory && tp.startsWith(delNorm + '/')) return false;
+            return true;
+          });
+          if (activePathRef.current) {
+            const ap = activePathRef.current.replace(/\\/g, '/').replace(/^\/+/, '');
+            if (ap === delNorm || (detail.isDirectory && ap.startsWith(delNorm + '/'))) {
+              const nextActive = next[next.length - 1]?.path ?? null;
+              setActivePath(nextActive);
+              activePathRef.current = nextActive;
+            }
+          }
+          return next;
+        });
+        persistOpenFilesForRoot(workspaceRef.current);
+      }
       triggerFsRefresh();
+    };
+
+    const handleAskAi = (e: Event) => {
+      const detail = (e as CustomEvent<{ prompt: string; autoSubmit?: boolean }>).detail;
+      if (detail?.prompt) {
+        setRightPanelTab('chat');
+        setLayout((prev) => {
+          const next = { ...prev, rightPanelExpanded: true };
+          persistLayout(next);
+          return next;
+        });
+        chatRef.current?.askQuestion(detail.prompt, detail.autoSubmit);
+      }
     };
 
     window.addEventListener('echoly:refreshFileTree', handleCustomFsRefresh);
@@ -1249,6 +1447,31 @@ export function App() {
     window.addEventListener('echoly:stopDebug', handleStopDebug);
     window.addEventListener('echoly:runFinished', handleStopDebug);
     window.addEventListener('echoly:debugError', handleDebugError);
+    window.addEventListener('echoly:askAi', handleAskAi);
+
+    const handleOpenFileEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.path) {
+        void openFile(detail.path, detail.line, detail.column, detail.endLine);
+      }
+    };
+    window.addEventListener('echoly:openFile', handleOpenFileEvent);
+
+    // 编辑器「选中代码 → 添加到对话」(Cmd+L 或工具栏按钮触发)
+    const handleAddRefToChat = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as {
+        path: string;
+        startLine?: number;
+        endLine?: number;
+      } | undefined;
+      if (!detail?.path) return;
+      const ref =
+        detail.startLine !== undefined
+          ? `@${detail.path}:L${detail.startLine}${detail.endLine !== undefined && detail.endLine !== detail.startLine ? `-${detail.endLine}` : ''}`
+          : `@${detail.path}`;
+      handleAddToChat(ref);
+    };
+    window.addEventListener('echoly:addRefToChat', handleAddRefToChat);
 
     return () => {
       if (fsDebounce) clearTimeout(fsDebounce);
@@ -1261,6 +1484,9 @@ export function App() {
       window.removeEventListener('echoly:stopDebug', handleStopDebug);
       window.removeEventListener('echoly:runFinished', handleStopDebug);
       window.removeEventListener('echoly:debugError', handleDebugError);
+      window.removeEventListener('echoly:askAi', handleAskAi);
+      window.removeEventListener('echoly:openFile', handleOpenFileEvent);
+      window.removeEventListener('echoly:addRefToChat', handleAddRefToChat);
     };
   }, [persistLayout, showToast]);
 
@@ -1325,7 +1551,7 @@ export function App() {
     applySettings(next);
   }
 
-  const openFile = useCallback(async (rawPath: string, line?: number, col?: number) => {
+  const openFile = useCallback(async (rawPath: string, line?: number, col?: number, endLine?: number) => {
     setScmDiff(null);
     setActiveDiffId(null);
     const ws = workspaceRef.current;
@@ -1351,6 +1577,7 @@ export function App() {
           path: existingTab.path,
           line,
           column: col ?? 1,
+          endLine,
           nonce: revealNonceRef.current,
         });
       } else {
@@ -1435,6 +1662,7 @@ export function App() {
         path,
         line,
         column: col ?? 1,
+        endLine,
         nonce: revealNonceRef.current,
       });
     } else {
@@ -1920,11 +2148,69 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
-      if (ctrl && e.key.toLowerCase() === 's') {
+
+      // Double Shift -> 类似 IntelliJ 全局搜索 (Search Everywhere)
+      if (e.key === 'Shift') {
+        const now = Date.now();
+        if (now - lastShiftPressRef.current < 350 && now - lastShiftPressRef.current > 40) {
+          lastShiftPressRef.current = 0;
+          searchRef.current?.focus('actions');
+          return;
+        }
+        lastShiftPressRef.current = now;
+      } else {
+        lastShiftPressRef.current = 0;
+      }
+
+      // ── 全局核心快捷键（无论光标在编辑区、终端、输入框、树视图或任何位置均全局生效） ──
+      // 1. 终端面板展开/折叠: Cmd+J / Ctrl+J, Alt+F12, Ctrl+`
+      if (
+        (ctrl && !e.shiftKey && (e.key.toLowerCase() === 'j' || e.code === 'KeyJ')) ||
+        (e.altKey && e.key === 'F12') ||
+        (ctrl && (e.key === '`' || e.key === '~') && !e.shiftKey)
+      ) {
         e.preventDefault();
-        void saveActive();
+        e.stopPropagation();
+        toggleTerminal();
         return;
       }
+
+      // 2. AI 窗口展开/折叠: Cmd+B / Ctrl+B
+      if (
+        ctrl &&
+        !e.shiftKey &&
+        (e.key.toLowerCase() === 'b' || e.code === 'KeyB')
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleAiChat();
+        return;
+      }
+
+      // 3. AI 提问 / 添加到对话: Cmd+L / Ctrl+L (聚焦或添加选区到 AI 对话，绝不收起)
+      if (
+        ctrl &&
+        !e.shiftKey &&
+        (e.key.toLowerCase() === 'l' || e.code === 'KeyL')
+      ) {
+        const target = e.target as HTMLElement | null;
+        const activeEl = document.activeElement as HTMLElement | null;
+        const isInsideEditor = Boolean(
+          (target && (target.closest('.editor-area') || target.closest('.monaco-editor') || target.closest('.inline-ai-widget'))) ||
+          (activeEl && (activeEl.closest('.editor-area') || activeEl.closest('.monaco-editor') || activeEl.closest('.inline-ai-widget')))
+        );
+        // 若焦点在编辑器内，放行给 Monaco Action 与 EditorPane 处理选区引用添加
+        if (isInsideEditor) {
+          return;
+        }
+        // 若在编辑器外部（如侧边栏、终端或欢迎页），统一打开并聚焦 AI 助手
+        e.preventDefault();
+        e.stopPropagation();
+        handleFocusAi();
+        return;
+      }
+
+      // 3. 全局搜索与文件快速打开
       if (ctrl && e.shiftKey && e.key.toLowerCase() === 'p') {
         e.preventDefault();
         searchRef.current?.focus('actions');
@@ -1938,18 +2224,13 @@ export function App() {
       if (ctrl && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         searchRef.current?.focus('code');
+        return;
       }
-      // Command palette 中登记的快捷键（Cmd+N/B/J/O/, 等）。这些组合键没有打字
-      // 语义，即使焦点在输入框/终端（xterm 的隐藏 textarea）里也应触发，因此不做
-      // isTyping 拦截，否则打开终端后标签页或 xterm 获得焦点就会让快捷键失效。
-      const shortcutMap: Record<string, string> = {
-        n: 'cmd-new-chat',
-        b: 'cmd-toggle-ai',
-        j: 'cmd-toggle-terminal',
-        o: 'cmd-switch-workspace',
-        ',': 'cmd-open-settings',
-        r: 'cmd-reload-window',
-      };
+      if (ctrl && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        void saveActive();
+        return;
+      }
       const isMonacoFocused = (() => {
         const el = document.activeElement as HTMLElement | null;
         return !!(el && typeof el.closest === 'function' && el.closest('.monaco-editor'));
@@ -1959,8 +2240,6 @@ export function App() {
         if (!el) return false;
         return el.classList?.contains('xterm-helper-textarea') || !!el.closest?.('.xterm');
       })();
-      // 仅当焦点在应用自带文本输入且不在编辑器/终端里时，跳过 IDE 快捷键；
-      // 编辑器与终端里的 Cmd 组合键仍交由 IDE 处理（它们不冲突于打字）。
       const skipDueToInput = (() => {
         const el = document.activeElement as HTMLElement | null;
         if (!el) return false;
@@ -1968,6 +2247,13 @@ export function App() {
         const tag = el.tagName?.toLowerCase();
         return tag === 'input' || tag === 'textarea' || el.isContentEditable;
       })();
+      const shortcutMap: Record<string, string> = {
+        n: 'cmd-new-chat',
+        i: 'cmd-open-composer',
+        o: 'cmd-switch-workspace',
+        ',': 'cmd-open-settings',
+        r: 'cmd-reload-window',
+      };
       if (ctrl && !e.shiftKey && shortcutMap[e.key.toLowerCase()]) {
         if (skipDueToInput) return;
         const action = ideActions.find((a) => a.id === shortcutMap[e.key.toLowerCase()]);
@@ -1992,13 +2278,6 @@ export function App() {
       if (ctrl && e.shiftKey && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'e')) {
         e.preventDefault();
         ideActions.find((a) => a.id === 'cmd-toggle-sidebar')?.handler();
-        return;
-      }
-      // Cmd+L (或 Ctrl+L 且非终端聚焦时) -> 展开/折叠 AI 面板
-      if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'l' && !isTerminalFocused) {
-        if (skipDueToInput) return;
-        e.preventDefault();
-        ideActions.find((a) => a.id === 'cmd-toggle-ai')?.handler();
         return;
       }
     };
@@ -2053,6 +2332,15 @@ export function App() {
 
   const ideActions: CommandAction[] = [
     {
+      id: 'cmd-open-composer',
+      title: 'Composer: 多文件智能重构协同编辑 (⌘I)',
+      category: 'AI',
+      shortcut: isMac ? '⌘I' : 'Ctrl+I',
+      handler: () => {
+        setComposerOpen(true);
+      },
+    },
+    {
       id: 'cmd-new-chat',
       title: 'AI: 新建对话会话',
       category: 'AI',
@@ -2085,28 +2373,21 @@ export function App() {
       title: '视图: 展开/折叠 AI 助手',
       category: '视图',
       shortcut: 'Cmd+B',
-      handler: () => {
-        const next = {
-          ...layoutRef.current,
-          chatPanelExpanded: layoutRef.current.chatPanelExpanded === false,
-        };
-        setLayout(next);
-        persistLayout(next);
-      },
+      handler: toggleAiChat,
+    },
+    {
+      id: 'cmd-focus-ai',
+      title: 'AI: 提问 / 聚焦 AI 助手',
+      category: 'AI',
+      shortcut: 'Cmd+L',
+      handler: handleFocusAi,
     },
     {
       id: 'cmd-toggle-terminal',
       title: '终端: 展开/折叠底部控制台',
       category: '终端',
-      shortcut: 'Cmd+J',
-      handler: () => {
-        const next = {
-          ...layoutRef.current,
-          bottomPanelExpanded: layoutRef.current.bottomPanelExpanded !== true,
-        };
-        setLayout(next);
-        persistLayout(next);
-      },
+      shortcut: 'Cmd+J / Alt+F12',
+      handler: toggleTerminal,
     },
     {
       id: 'cmd-new-terminal',
@@ -2812,7 +3093,7 @@ export function App() {
                           terminalNonce.current += 1;
                           setLayout((l) => ({ ...l, bottomPanelExpanded: true }));
                         }}
-                        onAddToChat={(path) => chatRef.current?.insertPath(path)}
+                        onAddToChat={handleAddToChat}
                         onAddToNewChat={(path) => {
                           setMessages([]);
                           chatRef.current?.startFreshWithPath(path);
@@ -2973,7 +3254,7 @@ export function App() {
               cursorLineRef.current = line;
               cursorColRef.current = col;
             }}
-            onAddToChat={(text) => chatRef.current?.insertPath(text)}
+            onAddToChat={handleAddToChat}
             previewDiff={previewDiff}
             onCloseDiff={
               scmDiff && !agentPreviewDiff
@@ -3080,6 +3361,20 @@ export function App() {
                         />
                       )}
                     </button>
+                    <button
+                      type="button"
+                      className={`bottom-tab-btn ${bottomTab === 'problems' ? 'active' : ''}`}
+                      onClick={() => setBottomTab('problems')}
+                      title="切换至代码问题与诊断面板"
+                    >
+                      <span>⚠️</span>
+                      <span>问题 (Problems)</span>
+                      {problemsCount > 0 && (
+                        <span className="problems-tab-badge">
+                          {problemsCount}
+                        </span>
+                      )}
+                    </button>
                   </div>
 
                   <button
@@ -3140,20 +3435,35 @@ export function App() {
                     }}
                   />
                 </div>
+
+                <div style={{ flex: 1, overflow: 'hidden', display: bottomTab === 'problems' ? 'flex' : 'none' }}>
+                  <ProblemsPanel
+                    workspace={workspace}
+                    onOpenFile={(p, l, c) => void openFile(p, l, c)}
+                    onCountChange={(count) => setProblemsCount(count)}
+                  />
+                </div>
               </div>
             </>
           )}
         </div>
 
-        {/* 右侧 AI 面板 */}
-        {showChatPanel && (
+        {/* 右侧 AI 面板：保持挂载以保留草稿与状态，按需显隐 */}
+        {!isWelcomeShell && (
           <>
-            <div
-              className="splitter splitter-v"
-              onMouseDown={(e) => startResize('chat', e)}
-              title="拖拽调整聊天面板宽度"
-            />
-            <aside className="panel right-chat-panel">
+            {showChatPanel && (
+              <div
+                className="splitter splitter-v"
+                onMouseDown={(e) => startResize('chat', e)}
+                title="拖拽调整聊天面板宽度"
+              />
+            )}
+            <aside
+              className="panel right-chat-panel"
+              style={{
+                display: showChatPanel ? 'flex' : 'none',
+              }}
+            >
               {/* 右侧面板标签切换（仅在打开了 Claude 扩展等多面板时显示，默认隐藏单标签的 AI 对话） */}
               {claudePanelOpen && (
                 <div className="right-panel-tabs">
@@ -3209,7 +3519,7 @@ export function App() {
                     setScmDiff(null);
                     setActiveDiffId(id);
                   }}
-                  onOpenFile={(p, l) => void openFile(p, l)}
+                  onOpenFile={(p, l, e) => void openFile(p, l, undefined, e)}
                   onOpenSettings={() => setSettingsOpen(true)}
                   onSwitchWorkspace={handleSwitchWorkspacePath}
                   models={models}
@@ -3719,6 +4029,18 @@ export function App() {
           </div>
         </div>
       )}
+      <ComposerModal
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        workspaceRoot={workspace}
+        openFiles={[
+          ...tabs.filter((t) => t.path === activePath),
+          ...tabs.filter((t) => t.path !== activePath),
+        ]
+          .filter((t) => t.language !== 'image' && !t.previewUrl && !isUntitledPath(t.path))
+          .map((t) => ({ path: t.path, content: t.content }))}
+        onOpenFile={(path, line) => openFile(path, line)}
+      />
       <GlobalTooltip delay={hoverDelay} />
     </div>
   );

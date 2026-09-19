@@ -22,7 +22,34 @@ import type { WindowRegistry } from './windowRegistry';
 import { detectMavenEnvironment, initMavenWrapper, initMavenSettings } from './mavenService';
 import { detectInstalledJdks, getAvailableOnlineJdks, installOnlineJdk } from './javaService';
 import { detectCppToolchain, detectMultiLangToolchain } from './cppToolchainService';
-import { PROJECT_TEMPLATES } from '@deepseek-ide/shared';
+import { UnifiedLlmClient } from '@deepseek-ide/llm';
+import { PROJECT_TEMPLATES, type ChatMessage, type ProviderConfig } from '@deepseek-ide/shared';
+import { RulesService } from './rulesService';
+
+function getActiveLlmClient(settings: SettingsStore): UnifiedLlmClient {
+  const currentSettings = settings.get();
+  let providerConfig: ProviderConfig;
+  const activeModel = currentSettings.models?.find((m) => m.id === currentSettings.activeModelId);
+  if (activeModel) {
+    providerConfig = {
+      provider: activeModel.provider,
+      baseUrl: activeModel.baseUrl,
+      apiKey: activeModel.apiKey,
+      model: activeModel.model,
+      enableThinking: activeModel.enableThinking,
+      thinkingTokens: activeModel.thinkingTokens,
+    };
+  } else {
+    const currentProvider = currentSettings.currentProvider || 'deepseek';
+    providerConfig = currentSettings.providers?.[currentProvider] || {
+      provider: currentProvider,
+      baseUrl: currentSettings.baseUrl || 'http://192.168.10.241:8002',
+      apiKey: currentSettings.apiKey || '',
+      model: currentSettings.model || 'deepseek-v4-flash',
+    };
+  }
+  return new UnifiedLlmClient(providerConfig);
+}
 
 export function registerIpc(deps: {
   ipcMain: IpcMain;
@@ -277,6 +304,110 @@ export function registerIpc(deps: {
   ipcMain.handle('shell:showItemInFolder', (_e, fullPath: string) => {
     shell.showItemInFolder(fullPath);
   });
+
+  const rulesService = new RulesService();
+
+  ipcMain.handle('rules:get', (e, wsRoot?: string) =>
+    run(e, () => {
+      let root = wsRoot;
+      if (!root) {
+        try {
+          root = registry.current().workspace.getRoot() || undefined;
+        } catch {
+          root = undefined;
+        }
+      }
+      return rulesService.getRules(root);
+    }),
+  );
+
+  ipcMain.handle('rules:save', (e, content: string, wsRoot?: string) =>
+    run(e, async () => {
+      let root = wsRoot;
+      if (!root) {
+        try {
+          root = registry.current().workspace.getRoot() || undefined;
+        } catch {
+          root = undefined;
+        }
+      }
+      try {
+        await registry.current().workspace.writeFile('.echolyrules', content);
+      } catch (err) {
+        console.warn('[rules:save] workspace.writeFile failed, fallback to rulesService:', err);
+      }
+      return rulesService.saveRules(content, root);
+    }),
+  );
+
+  ipcMain.handle(
+    'ai:quickPrompt',
+    (
+      e,
+      payload: {
+        userPrompt: string;
+        systemPrompt?: string;
+        temperature?: number;
+        maxTokens?: number;
+      },
+    ) =>
+      run(e, async () => {
+        const client = getActiveLlmClient(settings);
+        const messages: ChatMessage[] = [];
+        let root: string | undefined;
+        try {
+          root = registry.current().workspace.getRoot() || undefined;
+        } catch {
+          root = undefined;
+        }
+        const rules = await rulesService.getRules(root);
+        const rulesBlock = rules.content ? `\n\n【项目规则规范 (.echolyrules)】\n${rules.content}\n` : '';
+        const finalSystem = (payload.systemPrompt || '') + rulesBlock;
+        if (finalSystem.trim()) {
+          messages.push({ role: 'system', content: finalSystem.trim() });
+        }
+        messages.push({ role: 'user', content: payload.userPrompt });
+        const resp = await client.chat({
+          messages,
+          temperature: payload.temperature ?? 0.2,
+        });
+        return { text: resp.content || '' };
+      }),
+  );
+
+  ipcMain.handle(
+    'ai:completeCode',
+    async (
+      _e,
+      payload: {
+        prefix: string;
+        suffix: string;
+        language?: string;
+      },
+    ) => {
+      const client = getActiveLlmClient(settings);
+      const prompt = `你是一个极速代码补全引擎。请根据光标前后代码预测光标处应补全的代码。
+只输出需要插入补全的代码内容，严禁输出任何 Markdown 标记（如 \`\`\`）、解释或多余字符。如果无需补全，直接输出空。
+
+前缀代码：
+${payload.prefix.slice(-2000)}
+
+<CURSOR>
+
+后缀代码：
+${payload.suffix.slice(0, 1000)}
+`;
+      const resp = await client.chat({
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+      });
+      let completion = (resp.content || '').trim();
+      if (completion.startsWith('```')) {
+        completion = completion.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '');
+      }
+      return { completion };
+    },
+  );
 
   ipcMain.handle('diff:accept', (e, id: string) =>
     run(e, () => registry.current().diffs.accept(id)),

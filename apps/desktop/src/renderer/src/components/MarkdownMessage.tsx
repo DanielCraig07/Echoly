@@ -2,6 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import mermaid from 'mermaid';
+import { parseContentWithCodeRefs, CodeRefPill } from './chat/CodeRefPill';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-c';
@@ -328,6 +329,25 @@ export function extractMarkdownHeadings(content: string): MarkdownHeadingItem[] 
   return headings;
 }
 
+/**
+ * 将文本节点中的代码引用渲染为胶囊 Pill，普通文字原样输出。
+ * 用于 AI 回复中自动识别文件路径引用（双向胶囊化）。
+ */
+function renderSegmentsWithPills(
+  text: string,
+  onOpenFile?: (path: string, line?: number, endLine?: number) => void,
+): React.ReactNode[] {
+  const segments = parseContentWithCodeRefs(text);
+  // 如果没有任何引用，返回 null 让调用方走默认渲染
+  if (!segments.some((s) => s.type === 'ref')) return [];
+  return segments.map((seg, i) => {
+    if (seg.type === 'ref' && seg.ref) {
+      return <CodeRefPill key={i} codeRef={seg.ref} onOpenFile={onOpenFile} />;
+    }
+    return <React.Fragment key={i}>{seg.value}</React.Fragment>;
+  });
+}
+
 const markdownComponents = {
   pre({ children }: any) {
     const codeElement = React.isValidElement(children)
@@ -367,6 +387,24 @@ const markdownComponents = {
         {children}
       </code>
     );
+  },
+  p({ children }: any) {
+    // 将 p 内的文字节点自动解析为代码引用胶囊
+    const processed = React.Children.map(children, (child) => {
+      if (typeof child !== 'string') return child;
+      const pills = renderSegmentsWithPills(child);
+      return pills.length > 0 ? pills : child;
+    });
+    return <p>{processed}</p>;
+  },
+  li({ children }: any) {
+    // li 内的文字节点同样解析
+    const processed = React.Children.map(children, (child) => {
+      if (typeof child !== 'string') return child;
+      const pills = renderSegmentsWithPills(child);
+      return pills.length > 0 ? pills : child;
+    });
+    return <li>{processed}</li>;
   },
   table({ children }: any) {
     return (
@@ -421,12 +459,44 @@ const markdownComponents = {
   },
 };
 
-export function MarkdownMessage({ content, streaming }: { content: string; streaming?: boolean }) {
+export function MarkdownMessage({
+  content,
+  streaming,
+  onOpenFile,
+}: {
+  content: string;
+  streaming?: boolean;
+  onOpenFile?: (path: string, line?: number, endLine?: number) => void;
+}) {
   const [thinkExpanded, setThinkExpanded] = useState(false);
 
   const { thinkContent, mainContent } = parseThinkBlocks(content);
   const mathProcessed = preprocessMath(mainContent);
   const source = streaming ? stabilizeMarkdown(mathProcessed) : mathProcessed;
+
+  // 动态构建带 onOpenFile 上下文的 components
+  const components = useMemo(
+    () => ({
+      ...markdownComponents,
+      p({ children }: any) {
+        const processed = React.Children.map(children, (child) => {
+          if (typeof child !== 'string') return child;
+          const pills = renderSegmentsWithPills(child, onOpenFile);
+          return pills.length > 0 ? pills : child;
+        });
+        return <p>{processed}</p>;
+      },
+      li({ children }: any) {
+        const processed = React.Children.map(children, (child) => {
+          if (typeof child !== 'string') return child;
+          const pills = renderSegmentsWithPills(child, onOpenFile);
+          return pills.length > 0 ? pills : child;
+        });
+        return <li>{processed}</li>;
+      },
+    }),
+    [onOpenFile],
+  );
 
   return (
     <div className={`md-body${streaming ? ' streaming' : ''}`}>
@@ -443,7 +513,7 @@ export function MarkdownMessage({ content, streaming }: { content: string; strea
           </button>
           {thinkExpanded && (
             <div className="think-content">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
                 {preprocessMath(thinkContent)}
               </ReactMarkdown>
             </div>
@@ -451,7 +521,7 @@ export function MarkdownMessage({ content, streaming }: { content: string; strea
         </div>
       )}
       {source && (
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
           {source}
         </ReactMarkdown>
       )}

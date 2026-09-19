@@ -16,6 +16,7 @@ import { discoverSkills, formatSkillsForPrompt, selectSkillsForPrompt } from '@d
 import type { SettingsStore } from './settings';
 import { appendRunTrace, type WindowGetter } from './diffStore';
 import type { WindowRegistry } from './windowRegistry';
+import { RulesService } from './rulesService';
 
 interface PendingConfirm {
   resolve: (result: boolean | string) => void;
@@ -39,6 +40,7 @@ export class AgentService {
   private continues = new Map<string, PendingContinue>();
   /** runId → originating webContents.id so events go to the correct window */
   private runSenders = new Map<string, number>();
+  private rulesService = new RulesService();
 
   constructor(
     private readonly deps: {
@@ -258,6 +260,9 @@ export class AgentService {
         const selected = selectSkillsForPrompt(allSkills, payload.prompt, 3);
         const skillsText = formatSkillsForPrompt(selected);
 
+        const rulesRes = await this.rulesService.getRules(workspaceRoot);
+        const rulesText = rulesRes.content || undefined;
+
         const effectiveModelId = payload.modelId || settings.activeModelId;
         const selectedModel = settings.models?.find((m) => m.id === effectiveModelId);
 
@@ -270,6 +275,7 @@ export class AgentService {
           modelProfile: selectedModel,
           planContext: payload.planContext,
           skillsText,
+          rulesText,
           openFiles: payload.openFiles,
           selection: payload.selection,
           cursor: payload.cursor,

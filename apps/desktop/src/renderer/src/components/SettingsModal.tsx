@@ -1153,31 +1153,6 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>{t('settings.theme')}</strong>
-                    </div>
-                    <div className="theme-selector-cards">
-                      <div
-                        className={`theme-card ${settings.theme === 'dark' ? 'selected' : ''}`}
-                        onClick={() => setSettings({ ...settings, theme: 'dark' })}
-                      >
-                        <div className="theme-preview dark-preview" />
-                        <span>{t('settings.theme.dark')}</span>
-                      </div>
-                      <div
-                        className="theme-card disabled"
-                        title={t('settings.theme.light.disabledHint')}
-                      >
-                        <div className="theme-preview light-preview" />
-                        <div className="theme-card-label-row">
-                          <span>{t('settings.theme.light')}</span>
-                          <span className="theme-card-tag">{t('settings.theme.adapting')}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="setting-card">
-                    <div className="setting-card-title">
                       <strong>工具执行安全策略 (Permission Mode)</strong>
                     </div>
                     <p className="setting-card-desc">
@@ -1202,6 +1177,28 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                     <div className="perm-hint-bubble">
                       ℹ️ {PERMISSION_HINTS[settings.permissionMode]}
                     </div>
+                  </div>
+
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>快捷键操作习惯 (Keymap Preset)</strong>
+                    </div>
+                    <p className="setting-card-desc">
+                      选择您习惯的 IDE 键位方案。支持 VS Code 模式与 IntelliJ IDEA 模式（双击 Shift 全局搜索、Cmd/Ctrl+Alt+L 代码格式化、Alt+F12 切换终端等）。
+                    </p>
+                    <select
+                      className="modern-select"
+                      value={settings.keymapPreset || 'vscode'}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          keymapPreset: e.target.value as 'vscode' | 'intellij',
+                        })
+                      }
+                    >
+                      <option value="vscode">VS Code 风格 (默认 - ⌘P 快速文件，⌘⇧P 命令面板)</option>
+                      <option value="intellij">IntelliJ IDEA 风格 (双击 Shift 全局搜索，⌘⌥L 格式化)</option>
+                    </select>
                   </div>
 
                   <div className="setting-card">
@@ -1331,6 +1328,31 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                             </button>
                           );
                         })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="setting-card" style={{ marginTop: 12 }}>
+                    <div className="setting-card-title">
+                      <strong>{t('settings.theme')}</strong>
+                    </div>
+                    <div className="theme-selector-cards">
+                      <div
+                        className={`theme-card ${settings.theme === 'dark' ? 'selected' : ''}`}
+                        onClick={() => setSettings({ ...settings, theme: 'dark' })}
+                      >
+                        <div className="theme-preview dark-preview" />
+                        <span>{t('settings.theme.dark')}</span>
+                      </div>
+                      <div
+                        className="theme-card disabled"
+                        title={t('settings.theme.light.disabledHint')}
+                      >
+                        <div className="theme-preview light-preview" />
+                        <div className="theme-card-label-row">
+                          <span>{t('settings.theme.light')}</span>
+                          <span className="theme-card-tag">{t('settings.theme.adapting')}</span>
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -525,9 +525,14 @@ export function resolveRelativeImport(currentFilePath: string, moduleSpecifier: 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Temporarily highlights the destination line after a jump with a pulse animation.
+ * Temporarily highlights the destination line (or an entire range) after a jump
+ * with a pulse animation. 传入 endLine 时整段区间一起高亮，用于代码引用 Pill 跳转。
  */
-export function highlightJumpLocation(editor: monaco.editor.IStandaloneCodeEditor, line: number) {
+export function highlightJumpLocation(
+  editor: monaco.editor.IStandaloneCodeEditor,
+  line: number,
+  endLine?: number,
+) {
   try {
     const model = editor.getModel();
     if (!model) return;
@@ -535,10 +540,13 @@ export function highlightJumpLocation(editor: monaco.editor.IStandaloneCodeEdito
     if (typeof line !== 'number' || isNaN(line) || line < 1 || line > lineCount) {
       return;
     }
-    const maxCol = model.getLineMaxColumn(line);
+    const end =
+      typeof endLine === 'number' && !isNaN(endLine) && endLine > line
+        ? Math.min(endLine, lineCount)
+        : line;
     const decs = editor.createDecorationsCollection([
       {
-        range: new monaco.Range(line, 1, line, maxCol),
+        range: new monaco.Range(line, 1, end, model.getLineMaxColumn(end)),
         options: {
           isWholeLine: true,
           className: 'symbol-jump-highlight',

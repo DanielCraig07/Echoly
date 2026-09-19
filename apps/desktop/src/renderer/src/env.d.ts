@@ -19,4 +19,11 @@ declare module '*.png' {
   export default src;
 }
 
+declare module 'monaco-editor/esm/*' {
+  const content: any;
+  export default content;
+  export const ActionViewItem: any;
+  export const Menu: any;
+}
+
 export {};

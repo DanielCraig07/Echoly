@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import type {
   AgentEvent,
   AgentMode,
@@ -22,6 +22,17 @@ import { SessionModal } from './SessionModal';
 import { ThinkingBlock } from './ThinkingBlock';
 import { WorkedForGroup } from './chat/WorkedForGroup';
 import { CollapsibleUserContent } from './chat/CollapsibleUserContent';
+import { InputCodeRefOverlay, type InputCodeRefOverlayHandle } from './chat/InputCodeRefOverlay';
+import { FileLanguageIcon } from './chat/CodeRefPill';
+
+interface MentionItem {
+  id: string;
+  type: 'special' | 'file';
+  title: string;
+  desc: string;
+  path?: string;
+  insertText: string;
+}
 
 interface Props {
   workspace: string | null;
@@ -40,7 +51,7 @@ interface Props {
   onAcceptAllDiffs?: () => void;
   onRejectAllDiffs?: () => void;
   onSelectDiff?: (id: string) => void;
-  onOpenFile?: (path: string, line?: number) => void;
+  onOpenFile?: (path: string, line?: number, endLine?: number) => void;
   onOpenSettings?: () => void;
   onSwitchWorkspace?: (path: string) => void;
   models?: ModelProfile[];
@@ -52,6 +63,8 @@ export type ChatPanelHandle = {
   insertPath: (path: string) => void;
   startFreshWithPath: (path: string) => void;
   clearAndNewSession: () => void;
+  askQuestion: (prompt: string, autoSubmit?: boolean) => void;
+  focusInput: () => void;
 };
 
 export interface SessionTab {
@@ -337,7 +350,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
   const messagesElRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<InputCodeRefOverlayHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -346,6 +359,47 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const isProgrammaticScrollRef = useRef(false);
   const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number | null>(null);
+
+  // .echolyrules 规则感知与管理
+  const [hasRules, setHasRules] = useState(false);
+
+  useEffect(() => {
+    let unmounted = false;
+    const checkRules = async () => {
+      try {
+        const res = await window.ide.rulesGet(workspace || undefined);
+        if (!unmounted) {
+          setHasRules(!!res?.content);
+        }
+      } catch {
+        if (!unmounted) setHasRules(false);
+      }
+    };
+    void checkRules();
+    const timer = setInterval(() => {
+      void checkRules();
+    }, 4000);
+    return () => {
+      unmounted = true;
+      clearInterval(timer);
+    };
+  }, [workspace]);
+
+  const handleOpenOrInitRules = async () => {
+    try {
+      const res = await window.ide.rulesGet(workspace || undefined);
+      const targetFilename = res?.filename || '.echolyrules';
+      if (!res?.content) {
+        // 留空由后端智能感知当前工作区技术栈（Java/Python/C++/Go/Rust/TS）生成专属规则规范
+        await window.ide.rulesSave('', workspace || undefined);
+        setHasRules(true);
+      }
+      window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+      onOpenFile?.(targetFilename);
+    } catch (e) {
+      console.error('打开或创建 .echolyrules 失败', e);
+    }
+  };
 
   const handleCopyMessage = useCallback((content: string, id: string) => {
     void navigator.clipboard.writeText(content);
@@ -592,6 +646,227 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     .find((m) => m.role === 'user')?.id;
   const prevLastUserMsgIdRef = useRef<string | undefined>(undefined);
 
+  // @ 上下文提及联想状态与数据源
+  const [mentionState, setMentionState] = useState<{
+    isOpen: boolean;
+    query: string;
+    cursorIndex: number;
+    selectedIndex: number;
+  }>({
+    isOpen: false,
+    query: '',
+    cursorIndex: 0,
+    selectedIndex: 0,
+  });
+  const mentionListRef = useRef<HTMLDivElement>(null);
+  const mentionPopoverRef = useRef<HTMLDivElement>(null);
+  const isKeyboardNavRef = useRef(false);
+
+  // 已删除文件的路径集合：openFiles 来源于打开的编辑器标签，文件被删除后标签仍在，
+  // 会导致 @ 弹窗继续列出已失效的引用。此处对所有文件路径做一次磁盘存在性校验。
+  const [missingPaths, setMissingPaths] = useState<Set<string>>(() => new Set());
+  const fsValidationNonce = useRef(0);
+  // openFiles 每次渲染都是新数组，用稳定的路径串做依赖，避免流式输出期间反复触发 IPC 校验
+  const candidatePathsKey = useMemo(
+    () =>
+      Array.from(
+        new Set([cursor?.path, ...openFiles.map((f) => f.path)].filter(Boolean) as string[]),
+      ).join('\n'),
+    [cursor?.path, openFiles],
+  );
+
+  const validateFilePaths = useCallback(async () => {
+    const checker = window.ide?.pathExists;
+    if (!checker) return;
+    const paths = candidatePathsKey ? candidatePathsKey.split('\n').filter(Boolean) : [];
+    if (paths.length === 0) {
+      setMissingPaths((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
+    const nonce = ++fsValidationNonce.current;
+    const results = await Promise.all(
+      paths.map(async (p) => {
+        try {
+          const exists = await checker(p);
+          return { path: p, exists: Boolean(exists) };
+        } catch {
+          return { path: p, exists: false };
+        }
+      }),
+    );
+    if (nonce !== fsValidationNonce.current) return;
+    const next = new Set<string>();
+    for (const r of results) {
+      if (!r.exists) {
+        next.add(r.path);
+        const norm = r.path.replace(/\\/g, '/').replace(/^\/+/, '');
+        next.add(norm);
+      }
+    }
+    setMissingPaths((prev) => {
+      if (prev.size === next.size && Array.from(next).every((p) => prev.has(p))) return prev;
+      return next;
+    });
+  }, [candidatePathsKey]);
+
+  useEffect(() => {
+    void validateFilePaths();
+  }, [validateFilePaths]);
+
+  // 每次弹窗打开时重新校验一次：SSH 工作区不产生文件系统事件，
+  // 仅靠事件无法感知删除，必须在打开瞬间做一次实时校验
+  useEffect(() => {
+    if (mentionState.isOpen) void validateFilePaths();
+  }, [mentionState.isOpen, validateFilePaths]);
+
+  // 点击弹窗之外的任意位置即关闭（原先只有 AI 区域内的 Esc 能取消）
+  useEffect(() => {
+    if (!mentionState.isOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (mentionPopoverRef.current?.contains(target)) return;
+      if (textareaRef.current?.contains(target)) return;
+      setMentionState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+    };
+    document.addEventListener('mousedown', onPointerDown, true);
+    return () => document.removeEventListener('mousedown', onPointerDown, true);
+  }, [mentionState.isOpen]);
+
+  // 文件系统变更（新增/删除/重命名）后重新校验，保证弹窗列表实时有效
+  useEffect(() => {
+    const unlisten = window.ide?.onFsChanged?.(() => void validateFilePaths());
+    const handler = () => void validateFilePaths();
+    window.addEventListener('echoly:refreshFileTree', handler);
+    window.addEventListener('echoly:refreshTree', handler);
+    return () => {
+      unlisten?.();
+      window.removeEventListener('echoly:refreshFileTree', handler);
+      window.removeEventListener('echoly:refreshTree', handler);
+    };
+  }, [validateFilePaths]);
+
+  const mentionCandidates = useMemo<MentionItem[]>(() => {
+    const list: MentionItem[] = [];
+    const seen = new Set<string>();
+    const isStale = (p: string) => {
+      if (!p) return true;
+      if (missingPaths.has(p)) return true;
+      const norm = p.replace(/\\/g, '/').replace(/^\/+/, '');
+      if (missingPaths.has(norm)) return true;
+      for (const m of missingPaths) {
+        const normM = m.replace(/\\/g, '/').replace(/^\/+/, '');
+        if (norm === normM || norm.endsWith('/' + normM) || normM.endsWith('/' + norm)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // 1. 当前活动文件优先放置在第一位
+    const currentPath = cursor?.path || openFiles[0]?.path;
+    if (currentPath && !isStale(currentPath)) {
+      seen.add(currentPath);
+      const name = currentPath.split('/').pop() || currentPath;
+      list.push({
+        id: `current-file:${currentPath}`,
+        type: 'file',
+        title: `@${name}`,
+        desc: `当前文件 · ${currentPath}`,
+        path: currentPath,
+        insertText: `@${currentPath} `,
+      });
+    }
+
+    // 2. 其他已打开的文件（跳过已在磁盘上删除的失效引用）
+    for (const f of openFiles) {
+      if (!f.path || seen.has(f.path) || isStale(f.path)) continue;
+      seen.add(f.path);
+      const name = f.path.split('/').pop() || f.path;
+      list.push({
+        id: `file:${f.path}`,
+        type: 'file',
+        title: `@${name}`,
+        desc: f.path,
+        path: f.path,
+        insertText: `@${f.path} `,
+      });
+    }
+
+    // 3. 特殊上下文选项 (@Git, @Terminal, @Problems)
+    list.push(
+      {
+        id: 'special:git',
+        type: 'special',
+        title: '@Git',
+        desc: '引用当前工作区 Git 变更与状态',
+        insertText: '@Git ',
+      },
+      {
+        id: 'special:terminal',
+        type: 'special',
+        title: '@Terminal',
+        desc: '引用终端最近执行输出与报错',
+        insertText: '@Terminal ',
+      },
+      {
+        id: 'special:problems',
+        type: 'special',
+        title: '@Problems',
+        desc: '引用当前代码报错与诊断信息',
+        insertText: '@Problems ',
+      },
+    );
+
+    return list;
+  }, [cursor?.path, openFiles, missingPaths]);
+
+  const filteredMentions = useMemo(() => {
+    if (!mentionState.isOpen) return [];
+    const q = mentionState.query.toLowerCase().trim();
+    if (!q) return mentionCandidates;
+    return mentionCandidates.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) ||
+        item.desc.toLowerCase().includes(q) ||
+        (item.path && item.path.toLowerCase().includes(q)),
+    );
+  }, [mentionState.isOpen, mentionState.query, mentionCandidates]);
+
+  const handleSelectMention = useCallback(
+    (item: MentionItem) => {
+      const input = activeTab?.input ?? '';
+      const textBefore = input.slice(0, mentionState.cursorIndex);
+      const textAfter = input.slice(mentionState.cursorIndex);
+      const atIdx = textBefore.lastIndexOf('@');
+      if (atIdx >= 0) {
+        const nextInput = textBefore.slice(0, atIdx) + item.insertText + textAfter;
+        updateTab(activeTab.id, (t) => ({ ...t, input: nextInput }));
+        setMentionState({ isOpen: false, query: '', cursorIndex: 0, selectedIndex: 0 });
+        setTimeout(() => {
+          if (textareaRef.current) {
+            const newPos = atIdx + item.insertText.length;
+            textareaRef.current.focus();
+            textareaRef.current.setSelectionRange(newPos, newPos);
+          }
+        }, 20);
+      }
+    },
+    [activeTab?.id, activeTab?.input, mentionState.cursorIndex],
+  );
+
+  // 当上下键切换或弹窗打开时，自动滚动将当前高亮项保持在可视范围内
+  useEffect(() => {
+    if (mentionState.isOpen && mentionListRef.current) {
+      const activeEl = mentionListRef.current.querySelector(
+        '.chat-mention-item.active',
+      ) as HTMLElement | null;
+      if (activeEl) {
+        activeEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [mentionState.selectedIndex, mentionState.isOpen]);
+
   useEffect(() => {
     if (lastUserMsgId && lastUserMsgId !== prevLastUserMsgIdRef.current) {
       prevLastUserMsgIdRef.current = lastUserMsgId;
@@ -717,7 +992,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.focus();
-          const len = textareaRef.current.value.length;
+          const len = (textareaRef.current.value ?? '').length;
           textareaRef.current.setSelectionRange(len, len);
         }
       }, 50);
@@ -734,6 +1009,31 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       const reset = createEmptyTab();
       setTabs([reset]);
       setActiveTabId(reset.id);
+    },
+
+    askQuestion(prompt: string, autoSubmit = false) {
+      const currentTabId = activeTabIdRef.current;
+      if (!currentTabId) return;
+      updateTab(currentTabId, (t) => ({ ...t, input: prompt }));
+      setTimeout(() => {
+        if (autoSubmit) {
+          void send();
+        } else if (textareaRef.current) {
+          textareaRef.current.focus();
+          const len = (textareaRef.current.value ?? '').length;
+          textareaRef.current.setSelectionRange(len, len);
+        }
+      }, 50);
+    },
+
+    focusInput() {
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const len = (textareaRef.current.value ?? '').length;
+          textareaRef.current.setSelectionRange(len, len);
+        }
+      }, 30);
     },
   }));
 
@@ -1366,7 +1666,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     )}
                   </div>
                 )}
-                <CollapsibleUserContent content={m.content} />
+                <CollapsibleUserContent content={m.content} onOpenFile={onOpenFile} />
                 <div className="msg-actions msg-actions-corner">
                   <button
                     type="button"
@@ -1399,7 +1699,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 {(m as any).thinking?.length > 0 && (
                   <ThinkingBlock thinking={(m as any).thinking} />
                 )}
-                <MarkdownMessage content={m.content} />
+                <MarkdownMessage content={m.content} onOpenFile={onOpenFile} />
                 <div
                   className="msg-footer"
                   style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}
@@ -1491,7 +1791,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     {renderTurnBody(turn.body, turnKey, isLastTurn)}
                     {isLastTurn && activeTab?.streaming && (
                       <div className="msg assistant">
-                        <MarkdownMessage content={activeTab.streaming} streaming />
+                        <MarkdownMessage content={activeTab.streaming} streaming onOpenFile={onOpenFile} />
                       </div>
                     )}
                   </div>
@@ -1716,6 +2016,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         <div
           className={`chat-input-box${isDragging ? ' drag-over' : ''}`}
           style={{
+            position: 'relative',
             background: 'var(--bg-lighter)',
             borderRadius: 16,
             border: isDragging ? '1px dashed var(--accent)' : '1px solid var(--border)',
@@ -1770,7 +2071,67 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             </div>
           )}
 
-          <textarea
+          {mentionState.isOpen && filteredMentions.length > 0 && (
+            <div className="chat-mention-popover" ref={mentionPopoverRef}>
+              <div className="chat-mention-header">
+                <span>上下文引用与文件关联 (@)</span>
+                <span className="chat-mention-tip">↑↓ 切换 · ↵ / Tab 采纳 · Esc 取消</span>
+              </div>
+              <div
+                ref={mentionListRef}
+                className="chat-mention-list"
+                onMouseMove={() => {
+                  isKeyboardNavRef.current = false;
+                }}
+              >
+                {filteredMentions.map((item, idx) => {
+                  const isSelected = idx === mentionState.selectedIndex;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`chat-mention-item${isSelected ? ' active' : ''}`}
+                      onMouseEnter={() => {
+                        if (!isKeyboardNavRef.current) {
+                          setMentionState((prev) => (prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx }));
+                        }
+                      }}
+                      onMouseMove={() => {
+                        isKeyboardNavRef.current = false;
+                        setMentionState((prev) => (prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx }));
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleSelectMention(item);
+                      }}
+                    >
+                      <div className="chat-mention-icon">
+                        {item.type === 'special' ? (
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.2"
+                          >
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                          </svg>
+                        ) : (
+                          <FileLanguageIcon fileName={item.title.replace(/^@/, '')} />
+                        )}
+                      </div>
+                      <div className="chat-mention-info">
+                        <span className="chat-mention-title">{item.title}</span>
+                        <span className="chat-mention-desc">{item.desc}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <InputCodeRefOverlay
             ref={textareaRef}
             className="chat-textarea-custom"
             value={activeTab?.input ?? ''}
@@ -1781,16 +2142,34 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               minHeight: '52px',
               resize: 'none',
               fontSize: 'var(--ui-font-size, 12px)',
-              color: 'var(--text)',
             }}
+            onOpenFile={onOpenFile}
             placeholder={
               activeTab?.mode === 'ask'
-                ? '提问关于代码的问题…（Enter 发送，Cmd/Ctrl+Enter 或 Shift+Enter 换行）'
+                ? '提问关于代码的问题…（输入 @ 引用上下文，Enter 发送）'
                 : activeTab?.mode === 'plan'
-                  ? '描述目标，生成可执行计划…（Enter 发送，Cmd/Ctrl+Enter 或 Shift+Enter 换行）'
-                  : '描述任务…（Enter 发送，Cmd/Ctrl+Enter 或 Shift+Enter 换行）'
+                  ? '描述目标，生成可执行计划…（输入 @ 引用上下文，Enter 发送）'
+                  : '描述任务…（输入 @ 引用上下文，Enter 发送）'
             }
-            onChange={(e) => updateTab(activeTab.id, (t) => ({ ...t, input: e.target.value }))}
+            onChange={(val) => {
+              updateTab(activeTab.id, (t) => ({ ...t, input: val }));
+
+              // 检测 @ mention 触发
+              // 从末尾反向找光标位置（onChange 中无法直接获取 selectionStart，取全长近似）
+              const cursor = val.length;
+              const textBefore = val.slice(0, cursor);
+              const match = textBefore.match(/(?:^|\s)@([^\s@]*)$/);
+              if (match) {
+                setMentionState({
+                  isOpen: true,
+                  query: match[1],
+                  cursorIndex: cursor,
+                  selectedIndex: 0,
+                });
+              } else {
+                setMentionState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+              }
+            }}
             onCompositionStart={() => {
               isComposingRef.current = true;
             }}
@@ -1799,16 +2178,55 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             }}
             onPaste={handlePaste}
             onKeyDown={(e) => {
+              if (mentionState.isOpen && filteredMentions.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  isKeyboardNavRef.current = true;
+                  setMentionState((prev) => ({
+                    ...prev,
+                    selectedIndex: (prev.selectedIndex + 1) % filteredMentions.length,
+                  }));
+                  return;
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  isKeyboardNavRef.current = true;
+                  setMentionState((prev) => ({
+                    ...prev,
+                    selectedIndex:
+                      (prev.selectedIndex - 1 + filteredMentions.length) % filteredMentions.length,
+                  }));
+                  return;
+                }
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault();
+                  const item = filteredMentions[mentionState.selectedIndex] || filteredMentions[0];
+                  if (item) {
+                    handleSelectMention(item);
+                  }
+                  return;
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setMentionState((prev) => ({ ...prev, isOpen: false }));
+                  return;
+                }
+              }
+
               if (e.key === 'Enter') {
                 if ((e.metaKey || e.ctrlKey) && !isComposingRef.current) {
-                  // Cmd/Ctrl + Enter: insert newline at cursor
+                  // Cmd/Ctrl + Enter: insert newline at cursor (within plainText only)
                   e.preventDefault();
                   const target = e.currentTarget;
                   const start = target.selectionStart;
                   const end = target.selectionEnd;
-                  const val = target.value;
-                  const nextVal = val.substring(0, start) + '\n' + val.substring(end);
-                  updateTab(activeTab.id, (t) => ({ ...t, input: nextVal }));
+                  // target.value 是 plainText；activeTab.input 是完整値（含 refs 前缀）
+                  const plain = target.value;
+                  const fullInput = activeTab.input ?? '';
+                  const newPlain = plain.substring(0, start) + '\n' + plain.substring(end);
+                  // 保留 refs 前缀（fullInput 头部），替换 plainText 部分
+                  const refPart = fullInput.endsWith(plain) ? fullInput.slice(0, fullInput.length - plain.length) : '';
+                  updateTab(activeTab.id, (t) => ({ ...t, input: refPart + newPlain }));
                   requestAnimationFrame(() => {
                     target.selectionStart = target.selectionEnd = start + 1;
                   });
@@ -2031,6 +2449,46 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 }))}
                 onChange={(m) => onPermissionModeChange(m)}
               />
+
+              {/* .echolyrules 项目规则指示器 */}
+              <button
+                type="button"
+                className="chat-pill-btn echolyrules-pill"
+                title={
+                  hasRules
+                    ? '项目规则 (.echolyrules): 已生效，点击打开编辑'
+                    : '项目规则: 未设置，点击创建 .echolyrules 项目规则文件'
+                }
+                onClick={() => void handleOpenOrInitRules()}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 11,
+                  padding: '2px 8px',
+                  borderRadius: 9999,
+                  border: hasRules ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid var(--border)',
+                  background: hasRules ? 'rgba(168, 85, 247, 0.12)' : 'transparent',
+                  color: hasRules ? '#c084fc' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  flexShrink: 0,
+                }}
+              >
+                <span style={{ fontSize: 10, color: hasRules ? '#a855f7' : 'inherit' }}>✦</span>
+                <span style={{ fontWeight: 500 }}>.echolyrules</span>
+                {hasRules && (
+                  <span
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: '50%',
+                      backgroundColor: '#10b981',
+                      display: 'inline-block',
+                    }}
+                  />
+                )}
+              </button>
             </div>
 
             <div className="chat-toolbar-right">
