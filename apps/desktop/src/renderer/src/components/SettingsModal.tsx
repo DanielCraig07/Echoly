@@ -8,7 +8,7 @@ import type {
   ModelProviderType,
   UpdateFeedConfig,
 } from '@deepseek-ide/shared';
-import { PERMISSION_MODE_LABELS, AI_PROVIDER_LABELS, DEFAULT_PROVIDERS, DEFAULT_MODELS } from '@deepseek-ide/shared';
+import { PERMISSION_MODE_LABELS, AI_PROVIDER_LABELS, DEFAULT_PROVIDERS, DEFAULT_MODELS, APP_VERSION } from '@deepseek-ide/shared';
 import { useI18n } from '../i18n';
 import { EnvironmentSettingsSection } from './EnvironmentSettingsSection';
 import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
@@ -460,7 +460,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
   async function handleCopySystemInfo(): Promise<void> {
     const info = [
       `App: Echoly`,
-      `Version: v0.0.10 (Release)`,
+      `Version: v${APP_VERSION} (Release)`,
       `Developer: Daniel (@DanielCraig07)`,
       `Platform: ${navigator.userAgent.includes('Macintosh') ? 'macOS (Darwin)' : 'Linux/Windows'}`,
       `User Agent: ${navigator.userAgent}`,
@@ -471,7 +471,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
       await navigator.clipboard.writeText(info);
       onShowToast?.(
         t('settings.about.copied'),
-        'Echoly v0.0.10 诊断与环境信息已成功复制到剪贴板',
+        `Echoly v${APP_VERSION} 诊断与环境信息已成功复制到剪贴板`,
         'success',
       );
     } catch {
@@ -1567,7 +1567,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                     <div className="about-hero-text">
                       <div className="about-hero-title-row">
                         <h2 className="about-app-name">Echoly</h2>
-                        <span className="about-version-tag">v0.0.10</span>
+                        <span className="about-version-tag">v{APP_VERSION}</span>
                         <span className="about-badge-status">Latest Release</span>
                       </div>
                       <p className="about-tagline">{t('settings.about.desc')}</p>
@@ -1686,7 +1686,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                   <div className="about-info-table">
                     <div className="about-info-row">
                       <span className="about-info-k">Echoly Version</span>
-                      <span className="about-info-v font-mono">v0.0.10 (Production)</span>
+                      <span className="about-info-v font-mono">v{APP_VERSION} (Production)</span>
                     </div>
                     <div className="about-info-row">
                       <span className="about-info-k">Target Architecture</span>

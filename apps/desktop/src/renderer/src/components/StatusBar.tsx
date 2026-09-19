@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { GitCommitEntry, GitStatusResult } from '@deepseek-ide/shared';
+import { APP_VERSION, type GitCommitEntry, type GitStatusResult } from '@deepseek-ide/shared';
 
 interface Props {
   branch?: string;
@@ -516,7 +516,7 @@ export function StatusBar({
           type="button"
           className="status-item status-dev-badge"
           onClick={onOpenAbout}
-          title="Echoly by Daniel (v0.0.10) · 点击查看关于作者与系统设置"
+          title={`Echoly by Daniel (v${APP_VERSION}) · 点击查看关于作者与系统设置`}
         >
           <span className="status-dev-icon">⚡</span>
           <span className="status-dev-name">Daniel</span>
