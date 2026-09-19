@@ -48,7 +48,7 @@ jobs:
 
 
   windows:
-    runs-on: [self-hosted, Windows]
+    runs-on: windows-latest
     timeout-minutes: 20
     continue-on-error: true
     steps:
