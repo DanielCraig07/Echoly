@@ -642,6 +642,12 @@ export interface GitBranchInfo {
   name: string;
   current: boolean;
   remote: boolean;
+  lastCommit?: {
+    hash: string;
+    message: string;
+    relativeDate: string;
+    author: string;
+  };
 }
 
 export interface GitCommitStats {
@@ -877,6 +883,7 @@ export interface IpcApi {
   acceptDiff: (diffId: string) => Promise<void>;
   rejectDiff: (diffId: string) => Promise<void>;
   acceptAllDiffs: () => Promise<void>;
+  rejectAllDiffs: () => Promise<void>;
   listSessions: () => Promise<ChatSession[]>;
   getSession: (id: string) => Promise<ChatSession | null>;
   saveSession: (session: ChatSession) => Promise<void>;
@@ -933,6 +940,7 @@ export interface IpcApi {
   gitShowCommitDiff: (hash: string, path: string) => Promise<GitDiffResult>;
 
   searchFiles: (query: string, max?: number) => Promise<SearchFileHit[]>;
+  resolveFilePath: (fileNameOrPath: string) => Promise<string | null>;
   searchCode: (req: SearchCodeRequest) => Promise<SearchCodeHit[]>;
   sshConnect: (req: SshConnectRequest) => Promise<SshConnectResult>;
   sshDisconnect: () => Promise<void>;

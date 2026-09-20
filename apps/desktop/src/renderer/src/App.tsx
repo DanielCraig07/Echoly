@@ -199,7 +199,17 @@ export function App() {
   const [activeDiffId, setActiveDiffId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatSessionMessage[]>([]);
   const [sessionId, setSessionId] = useState(() => uid());
+  const [chatResetKey, setChatResetKey] = useState(0);
   const [terminalKey, setTerminalKey] = useState(0);
+
+  const resetAiChatSession = useCallback(() => {
+    setMessages([]);
+    setSessionId(uid());
+    setDiffs([]);
+    setScmDiff(null);
+    setActiveDiffId(null);
+    setChatResetKey((k) => k + 1);
+  }, []);
   const [selectedNode, setSelectedNode] = useState<{ path: string; isDirectory: boolean } | null>(
     null,
   );
@@ -247,6 +257,7 @@ export function App() {
   const saveLayoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatRef = useRef<ChatPanelHandle>(null);
   const pendingAddToChatRef = useRef<string | null>(null);
+  const resolvedPathCache = useRef<Map<string, string>>(new Map());
   const [terminalOpenRequest, setTerminalOpenRequest] = useState<{
     cwd: string;
     nonce: number;
@@ -760,11 +771,7 @@ export function App() {
         setWorkspaceInfo(info);
         setWorkspace(info.root);
 
-        setDiffs([]);
-        setScmDiff(null);
-        setActiveDiffId(null);
-        setMessages([]);
-        setSessionId(uid());
+        resetAiChatSession();
         setLayout((prev) => ({ ...prev, bottomPanelExpanded: false }));
         setTerminalKey((k) => k + 1);
         await restoreOpenFilesForRoot(info.root);
@@ -772,7 +779,7 @@ export function App() {
         console.error(err);
       }
     },
-    [workspaceInfo.kind, persistOpenFilesForRoot, restoreOpenFilesForRoot],
+    [workspaceInfo.kind, persistOpenFilesForRoot, restoreOpenFilesForRoot, resetAiChatSession],
   );
 
   const openTargetInCurrentWindow = useCallback(
@@ -822,8 +829,7 @@ export function App() {
               persistOpenFilesForRoot(workspaceRef.current);
               setWorkspaceInfo(info);
               setWorkspace(info.root);
-              setDiffs([]);
-              setScmDiff(null);
+              resetAiChatSession();
               setTerminalKey((k) => k + 1);
               setTreeRefreshKey((k) => k + 1);
               await restoreOpenFilesForRoot(info.root);
@@ -877,8 +883,7 @@ export function App() {
             persistOpenFilesForRoot(workspaceRef.current);
             setWorkspaceInfo(info);
             setWorkspace(info.root);
-            setDiffs([]);
-            setScmDiff(null);
+            resetAiChatSession();
             setTerminalKey((k) => k + 1);
             setTreeRefreshKey((k) => k + 1);
             await restoreOpenFilesForRoot(info.root);
@@ -1094,17 +1099,16 @@ export function App() {
       const prevRoot = workspaceRef.current;
       if (prevRoot && prevRoot !== info.root) {
         persistOpenFilesForRoot(prevRoot);
+        resetAiChatSession();
       }
       setWorkspaceInfo(info);
       setWorkspace(info.root);
-      setDiffs([]);
-      setScmDiff(null);
       setTerminalKey((k) => k + 1);
       // Collapse terminal panel — user opens it manually when needed
       setLayout((prev) => ({ ...prev, bottomPanelExpanded: false }));
       void restoreOpenFilesForRoot(info.root);
     });
-  }, [applySettings, persistOpenFilesForRoot, restoreOpenFilesForRoot, openTargetInCurrentWindow]);
+  }, [applySettings, persistOpenFilesForRoot, restoreOpenFilesForRoot, openTargetInCurrentWindow, resetAiChatSession]);
 
   // Remember open tabs for the current project (debounced).
   useEffect(() => {
@@ -1181,6 +1185,7 @@ export function App() {
 
   // ── C/C++ & 多语言调试会话与底部面板标签 ──
   const [bottomTab, setBottomTab] = useState<'terminal' | 'debug' | 'problems'>('terminal');
+  const [bottomMaximized, setBottomMaximized] = useState(false);
   const [problemsCount, setProblemsCount] = useState<number>(0);
   const lastShiftPressRef = useRef<number>(0);
   const [isDebugging, setIsDebugging] = useState(false);
@@ -1552,6 +1557,13 @@ export function App() {
     };
   }, [persistLayout, showToast]);
 
+  useEffect(() => {
+    resolvedPathCache.current.clear();
+    if (workspace && window.ide?.searchFiles) {
+      void window.ide.searchFiles('', 1);
+    }
+  }, [workspace]);
+
   const startResize = useCallback(
     (axis: ResizeAxis, e: ReactMouseEvent) => {
       e.preventDefault();
@@ -1625,6 +1637,14 @@ export function App() {
         path = path.slice(normWs.length).replace(/^\/+/, '');
       }
     }
+
+    // 优先检查已解析的相对路径缓存（0ms 极速命中）
+    if (resolvedPathCache.current.has(path)) {
+      path = resolvedPathCache.current.get(path)!;
+    } else if (resolvedPathCache.current.has(rawPath)) {
+      path = resolvedPathCache.current.get(rawPath)!;
+    }
+
     const normPath = path;
     const existingTab = tabsRef.current.find((t) => {
       const tp = t.path.replace(/\\/g, '/');
@@ -1674,17 +1694,38 @@ export function App() {
     try {
       content = await window.ide.readFile(path);
     } catch (err) {
-      // If relative path didn't hit directly, search for file across workspace (e.g. Java package path)
+      // 1. 优先使用快速定向文件解析器（毫秒级定向探测，避免全盘递归阻塞）
       let resolved = false;
-      if (window.ide.searchFiles) {
+      if (window.ide.resolveFilePath) {
+        try {
+          const resolvedPath = await window.ide.resolveFilePath(path);
+          if (resolvedPath) {
+            content = await window.ide.readFile(resolvedPath);
+            resolvedPathCache.current.set(path, resolvedPath);
+            resolvedPathCache.current.set(rawPath, resolvedPath);
+            const fileName = path.split('/').pop() || path;
+            resolvedPathCache.current.set(fileName, resolvedPath);
+            path = resolvedPath;
+            resolved = true;
+          }
+        } catch {
+          // fall through
+        }
+      }
+
+      // 2. 兜底尝试 searchFiles
+      if (!resolved && window.ide.searchFiles) {
         const fileName = path.split('/').pop() || path;
         try {
           const hits = await window.ide.searchFiles(fileName, 5);
           const matched = hits.find(
-            (h) => h.path === path || h.path.endsWith('/' + path) || h.path.endsWith(fileName),
+            (h) => h.path === path || h.path.endsWith('/' + path) || h.path.endsWith('/' + fileName) || h.path.endsWith(fileName),
           );
           if (matched) {
             content = await window.ide.readFile(matched.path);
+            resolvedPathCache.current.set(path, matched.path);
+            resolvedPathCache.current.set(rawPath, matched.path);
+            resolvedPathCache.current.set(fileName, matched.path);
             path = matched.path;
             resolved = true;
           }
@@ -1781,7 +1822,7 @@ export function App() {
     setWorkspaceInfo({ kind: 'local', root: null, label: '未打开工作区' });
     setTabs([]);
     setActivePath(null);
-    setDiffs([]);
+    resetAiChatSession();
     setTerminalKey((k) => k + 1);
   }
 
@@ -1955,9 +1996,9 @@ export function App() {
     setWorkspaceInfo({ kind: 'local', root: null, label: '未打开工作区' });
     setTabs([]);
     setActivePath(null);
-    setDiffs([]);
+    resetAiChatSession();
     setTerminalKey((k) => k + 1);
-  }, [workspaceInfo.kind, persistOpenFilesForRoot]);
+  }, [workspaceInfo.kind, persistOpenFilesForRoot, resetAiChatSession]);
 
   const createUntitledTab = useCallback(() => {
     setTabs((prev) => {
@@ -2168,6 +2209,15 @@ export function App() {
       const others = prev.filter((d) => d.path !== event.diff.path);
       return [...others, event.diff];
     });
+    // Cursor 交互效果：AI 作答修改文件时直接修改并保存对应文件
+    // 同步更新编辑器已打开标签页，内容更新并标记为已保存 (dirty: false)
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.path === event.diff.path ? { ...t, content: event.diff.modified, dirty: false } : t,
+      ),
+    );
+    setTreeRefreshKey((k) => k + 1);
+    window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
   }
 
   async function acceptDiff(id: string): Promise<void> {
@@ -2187,9 +2237,20 @@ export function App() {
   }
 
   async function rejectDiff(id: string): Promise<void> {
+    const diff = diffs.find((d) => d.id === id);
     await window.ide.rejectDiff(id);
     setDiffs((prev) => prev.filter((d) => d.id !== id));
     if (activeDiffId === id) setActiveDiffId(null);
+    if (diff) {
+      // 拒绝/撤销修改：恢复原始内容并更新标签页与文件树
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.path === diff.path ? { ...t, content: diff.original, dirty: false } : t,
+        ),
+      );
+      setTreeRefreshKey((k) => k + 1);
+      window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+    }
   }
 
   async function acceptAll(): Promise<void> {
@@ -2198,6 +2259,22 @@ export function App() {
       setTabs((prev) =>
         prev.map((t) =>
           t.path === diff.path ? { ...t, content: diff.modified, dirty: false } : t,
+        ),
+      );
+    }
+    setDiffs([]);
+    setActiveDiffId(null);
+    setTreeRefreshKey((k) => k + 1);
+    window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+  }
+
+  async function rejectAll(): Promise<void> {
+    await (window.ide.rejectAllDiffs?.() ??
+      Promise.all(diffs.map((d) => window.ide.rejectDiff(d.id))));
+    for (const diff of diffs) {
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.path === diff.path ? { ...t, content: diff.original, dirty: false } : t,
         ),
       );
     }
@@ -3190,6 +3267,7 @@ export function App() {
                     setActivePath(p);
                   }}
                   onBranchSwitched={handleBranchSwitchSync}
+                  onOpenCloneModal={() => setCloneOpen(true)}
                 />
               </div>
               <div
@@ -3279,6 +3357,18 @@ export function App() {
               setScmDiff(null);
               setTabs((prev) => prev.filter((t) => t.path === targetPath));
               setActivePath(targetPath);
+            }}
+            onCloseLeft={(targetPath) => {
+              setScmDiff(null);
+              setTabs((prev) => {
+                const idx = prev.findIndex((t) => t.path === targetPath);
+                if (idx <= 0) return prev;
+                const next = prev.slice(idx);
+                if (!next.some((t) => t.path === activePath)) {
+                  setActivePath(targetPath);
+                }
+                return next;
+              });
             }}
             onCloseRight={(targetPath) => {
               setScmDiff(null);
@@ -3374,33 +3464,44 @@ export function App() {
               <div
                 className="bottom-panel"
                 style={{
-                  height: layout.bottomPanelExpanded === true ? layout.bottomHeight : 0,
+                  height:
+                    layout.bottomPanelExpanded === true
+                      ? bottomMaximized
+                        ? '72vh'
+                        : layout.bottomHeight
+                      : 0,
                   display: layout.bottomPanelExpanded === true ? 'flex' : 'none',
                   flexDirection: 'column',
                   overflow: 'hidden',
+                  background: 'var(--bg-editor, #1e1e1e)',
                 }}
               >
                 {/* 底部面板模式切换工具栏 */}
                 <div
                   style={{
-                    height: 28,
-                    background: 'rgba(0, 0, 0, 0.25)',
+                    height: 32,
+                    boxSizing: 'border-box',
+                    background: 'var(--bg-secondary, #18191d)',
                     borderBottom: '1px solid var(--border)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '0 8px',
                     flexShrink: 0,
+                    userSelect: 'none',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: '100%' }}>
                     <button
                       type="button"
                       className={`bottom-tab-btn ${bottomTab === 'terminal' ? 'active' : ''}`}
                       onClick={() => setBottomTab('terminal')}
                       title="切换至终端面板"
                     >
-                      <span>💻</span>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="4 17 10 11 4 5" />
+                        <line x1="12" y1="19" x2="20" y2="19" />
+                      </svg>
                       <span>终端 (Terminal)</span>
                     </button>
                     <button
@@ -3409,7 +3510,19 @@ export function App() {
                       onClick={() => setBottomTab('debug')}
                       title="切换至调试工作台"
                     >
-                      <span>🪲</span>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m8 2 1.88 1.88" />
+                        <path d="M14.12 3.88 16 2" />
+                        <path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1" />
+                        <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6" />
+                        <path d="M12 20v-9" />
+                        <path d="M6.53 9C4.6 8.8 3 7.1 3 5" />
+                        <path d="M6 13H2" />
+                        <path d="M3 21c0-2.1 1.7-3.9 3.8-4" />
+                        <path d="M20.97 5c0 2.1-1.6 3.8-3.5 4" />
+                        <path d="M22 13h-4" />
+                        <path d="M17.2 17c2.1.1 3.8 1.9 3.8 4" />
+                      </svg>
                       <span>调试控制台 (Debug)</span>
                       {isDebugging && (
                         <span
@@ -3429,7 +3542,11 @@ export function App() {
                       onClick={() => setBottomTab('problems')}
                       title="切换至代码问题与诊断面板"
                     >
-                      <span>⚠️</span>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
                       <span>问题 (Problems)</span>
                       {problemsCount > 0 && (
                         <span className="problems-tab-badge">
@@ -3439,18 +3556,91 @@ export function App() {
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    className="panel-action-btn"
-                    onClick={() => {
-                      const next = { ...layout, bottomPanelExpanded: false };
-                      setLayout(next);
-                      persistLayout(next);
-                    }}
-                    title="折叠面板"
-                  >
-                    ✕
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {bottomTab === 'problems' && (
+                      <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 4 }}>
+                        {problemsCount > 0 ? `共 ${problemsCount} 处诊断` : '未发现代码问题'}
+                      </span>
+                    )}
+                    {bottomTab === 'terminal' && (
+                      <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 4 }}>
+                        {terminalKind === 'ssh' ? '远程 SSH 终端' : '本地终端'}
+                      </span>
+                    )}
+                    {bottomTab === 'debug' && (
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: isDebugging
+                            ? debugState === 'paused'
+                              ? '#facc15'
+                              : '#22c55e'
+                            : 'var(--muted)',
+                          marginRight: 4,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: isDebugging
+                              ? debugState === 'paused'
+                                ? '#facc15'
+                                : '#22c55e'
+                              : 'var(--muted)',
+                          }}
+                        />
+                        {isDebugging
+                          ? debugState === 'paused'
+                            ? '调试已暂停'
+                            : '调试进行中'
+                          : '未在调试 (就绪)'}
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      className="panel-action-btn"
+                      onClick={() => setBottomMaximized((v) => !v)}
+                      title={bottomMaximized ? '还原面板高度' : '最大化面板高度'}
+                    >
+                      {bottomMaximized ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="4 14 10 14 10 20" />
+                          <polyline points="20 10 14 10 14 4" />
+                          <line x1="14" y1="10" x2="21" y2="3" />
+                          <line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="15 3 21 3 21 9" />
+                          <polyline points="9 21 3 21 3 15" />
+                          <line x1="21" y1="3" x2="14" y2="10" />
+                          <line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="panel-action-btn"
+                      onClick={() => {
+                        const next = { ...layout, bottomPanelExpanded: false };
+                        setLayout(next);
+                        persistLayout(next);
+                      }}
+                      title="折叠面板"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ flex: 1, overflow: 'hidden', display: bottomTab === 'terminal' ? 'flex' : 'none' }}>
@@ -3547,7 +3737,7 @@ export function App() {
               {/* 根据标签显示不同内容 */}
               {rightPanelTab === 'chat' && (
                 <ChatPanel
-                  key={`${workspaceInfo.kind}-${workspace || 'none'}`}
+                  key={`${workspaceInfo.kind}-${workspace || 'none'}-${chatResetKey}`}
                   ref={chatRef}
                   workspace={workspace}
                   workspaceInfo={workspaceInfo}
@@ -3574,9 +3764,7 @@ export function App() {
                   contextWindowTokens={contextWindowTokens}
                   diffs={diffs}
                   onAcceptAllDiffs={() => void acceptAll()}
-                  onRejectAllDiffs={() => {
-                    diffs.forEach((d) => void rejectDiff(d.id));
-                  }}
+                  onRejectAllDiffs={() => void rejectAll()}
                   onSelectDiff={(id) => {
                     setScmDiff(null);
                     setActiveDiffId(id);
@@ -3587,6 +3775,7 @@ export function App() {
                   models={models}
                   activeModelId={activeModelId}
                   onActiveModelChange={handleActiveModelChange}
+                  recentWorkspaces={recentWorkspaces}
                 />
               )}
 
@@ -3677,7 +3866,7 @@ export function App() {
             persistOpenFilesForRoot(workspaceRef.current);
             setWorkspaceInfo(info);
             setWorkspace(info.root);
-            setDiffs([]);
+            resetAiChatSession();
             setTerminalKey((k) => k + 1);
             await restoreOpenFilesForRoot(info.root);
           });

@@ -50,6 +50,7 @@ const api: IpcApi = {
   acceptDiff: (diffId) => ipcRenderer.invoke('diff:accept', diffId),
   rejectDiff: (diffId) => ipcRenderer.invoke('diff:reject', diffId),
   acceptAllDiffs: () => ipcRenderer.invoke('diff:acceptAll'),
+  rejectAllDiffs: () => ipcRenderer.invoke('diff:rejectAll'),
   listSessions: () => ipcRenderer.invoke('session:list'),
   getSession: (id) => ipcRenderer.invoke('session:get', id),
   saveSession: (session: ChatSession) => ipcRenderer.invoke('session:save', session),
@@ -84,6 +85,8 @@ const api: IpcApi = {
   gitShowCommitDiff: (hash, path) => ipcRenderer.invoke('git:showCommitDiff', hash, path),
 
   searchFiles: (query, max) => ipcRenderer.invoke('search:files', query, max),
+  resolveFilePath: (fileNameOrPath: string) =>
+    ipcRenderer.invoke('search:resolveFilePath', fileNameOrPath),
   searchCode: (req: SearchCodeRequest) => ipcRenderer.invoke('search:code', req),
   sshConnect: (req: SshConnectRequest) => ipcRenderer.invoke('ssh:connect', req),
   sshDisconnect: () => ipcRenderer.invoke('ssh:disconnect'),

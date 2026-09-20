@@ -355,11 +355,10 @@ export async function runAgent(
       return ok;
     },
     enqueueDiff,
-    applyImmediately: options.applyImmediately ?? false,
+    applyImmediately: options.applyImmediately ?? true,
     getApplyImmediately: () => {
-      if (options.applyImmediately) return true;
-      const mode = getPermissionMode();
-      return mode === 'allow_all' || mode === 'allow_all_extreme';
+      if (options.applyImmediately !== undefined) return options.applyImmediately;
+      return true;
     },
   };
 

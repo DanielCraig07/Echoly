@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parseContentWithCodeRefs } from '../src/renderer/src/components/chat/CodeRefPill';
+import {
+  parseContentWithCodeRefs,
+  parseAnyCodeRef,
+  parseAiContentCodeRefs,
+  isCodeFile,
+} from '../src/renderer/src/components/chat/CodeRefPill';
 import { splitInputValue, buildValue } from '../src/renderer/src/components/chat/InputCodeRefOverlay';
 
 describe('Code Reference Parsing and Input Splitting', () => {
@@ -96,5 +101,82 @@ describe('Code Reference Parsing and Input Splitting', () => {
 
     // Valid existing file is not marked stale
     expect(isStale('src/main/java/com/tsingtec/technicalTactics/ValidFile.java')).toBe(false);
+  });
+
+  describe('AI Message Code Reference Resolution (parseAnyCodeRef & parseAiContentCodeRefs)', () => {
+    it('accurately parses file:// URI with line ranges and URI encoding', () => {
+      const ref = parseAnyCodeRef('file:///Users/developer/Echoly/apps/desktop/src/components/GitPanel.tsx#L2184-L2239');
+      expect(ref).not.toBeNull();
+      expect(ref?.fileName).toBe('GitPanel.tsx');
+      expect(ref?.path).toBe('/Users/developer/Echoly/apps/desktop/src/components/GitPanel.tsx');
+      expect(ref?.startLine).toBe(2184);
+      expect(ref?.endLine).toBe(2239);
+      expect(ref?.lineLabel).toBe('#L2184-2239');
+    });
+
+    it('accurately parses single-line file:// URI and colon formatted lines', () => {
+      const ref = parseAnyCodeRef('file:///Users/developer/Echoly/src/App.tsx:1520');
+      expect(ref).not.toBeNull();
+      expect(ref?.fileName).toBe('App.tsx');
+      expect(ref?.path).toBe('/Users/developer/Echoly/src/App.tsx');
+      expect(ref?.startLine).toBe(1520);
+      expect(ref?.endLine).toBeUndefined();
+      expect(ref?.lineLabel).toBe('#L1520');
+    });
+
+    it('handles relative path with line range', () => {
+      const ref = parseAnyCodeRef('src/components/GitPanel.tsx:2184-2239');
+      expect(ref).not.toBeNull();
+      expect(ref?.fileName).toBe('GitPanel.tsx');
+      expect(ref?.path).toBe('src/components/GitPanel.tsx');
+      expect(ref?.startLine).toBe(2184);
+      expect(ref?.endLine).toBe(2239);
+    });
+
+    it('handles standalone file reference without line numbers', () => {
+      const ref = parseAnyCodeRef('GitPanel.tsx');
+      expect(ref).not.toBeNull();
+      expect(ref?.fileName).toBe('GitPanel.tsx');
+      expect(ref?.path).toBe('GitPanel.tsx');
+      expect(ref?.startLine).toBeUndefined();
+    });
+
+    it('rejects external http/https web URLs to avoid interfering with external links', () => {
+      expect(parseAnyCodeRef('https://github.com/DanielCraig07/Echoly/blob/main/GitPanel.tsx')).toBeNull();
+      expect(parseAnyCodeRef('http://localhost:3000/index.html')).toBeNull();
+    });
+
+    it('rejects non-code files', () => {
+      expect(parseAnyCodeRef('screenshot.png:12')).toBeNull();
+      expect(parseAnyCodeRef('archive.zip')).toBeNull();
+    });
+
+    it('parses natural AI response text into text and clickable code reference segments', () => {
+      const aiResponse =
+        '建议查看 GitPanel.tsx:2184-2239 中的工具栏渲染逻辑，另外在 src/renderer/src/App.tsx:1616-1690 实现了文件跳转。';
+      const segments = parseAiContentCodeRefs(aiResponse);
+      const refs = segments.filter((s) => s.type === 'ref');
+
+      expect(refs).toHaveLength(2);
+      expect(refs[0].ref?.fileName).toBe('GitPanel.tsx');
+      expect(refs[0].ref?.startLine).toBe(2184);
+      expect(refs[0].ref?.endLine).toBe(2239);
+
+      expect(refs[1].ref?.fileName).toBe('App.tsx');
+      expect(refs[1].ref?.startLine).toBe(1616);
+      expect(refs[1].ref?.endLine).toBe(1690);
+    });
+
+    it('supports file:/// full links embedded in natural AI text', () => {
+      const text =
+        '定位到：file:///Users/developer/Echoly/apps/desktop/src/components/GitPanel.tsx#L2364 进行修改。';
+      const segments = parseAiContentCodeRefs(text);
+      const refs = segments.filter((s) => s.type === 'ref');
+
+      expect(refs).toHaveLength(1);
+      expect(refs[0].ref?.fileName).toBe('GitPanel.tsx');
+      expect(refs[0].ref?.startLine).toBe(2364);
+      expect(refs[0].ref?.path).toBe('/Users/developer/Echoly/apps/desktop/src/components/GitPanel.tsx');
+    });
   });
 });

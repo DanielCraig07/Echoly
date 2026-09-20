@@ -25,6 +25,7 @@ interface Props {
   onSelectTab: (path: string) => void;
   onCloseTab: (path: string) => void;
   onCloseOthers?: (targetPath: string) => void;
+  onCloseLeft?: (targetPath: string) => void;
   onCloseRight?: (targetPath: string) => void;
   onCloseSaved?: () => void;
   onCloseAll?: () => void;
@@ -522,7 +523,7 @@ export function EditorPane({
   onSelectTab,
   onCloseTab,
   onCloseOthers,
-
+  onCloseLeft,
   onCloseRight,
   onCloseSaved,
   onCloseAll,
@@ -1879,6 +1880,19 @@ export function EditorPane({
     setContextMenu(null);
   };
 
+  const handleCloseLeft = (targetPath: string) => {
+    if (onCloseLeft) {
+      onCloseLeft(targetPath);
+    } else {
+      onSelectTab(targetPath);
+      const idx = tabs.findIndex((t) => t.path === targetPath);
+      if (idx > 0) {
+        tabs.slice(0, idx).forEach((t) => onCloseTab(t.path));
+      }
+    }
+    setContextMenu(null);
+  };
+
   const handleCloseRight = (targetPath: string) => {
     if (onCloseRight) {
       onCloseRight(targetPath);
@@ -1926,7 +1940,8 @@ export function EditorPane({
 
   const handleShowInFinder = async (targetPath: string) => {
     try {
-      await window.ide.downloadFile(targetPath);
+      const abs = await window.ide.resolveAbsolutePath(targetPath);
+      await window.ide.showItemInFolder(abs);
     } catch (err) {
       console.error(err);
     }
@@ -4628,6 +4643,15 @@ export function EditorPane({
               <span>关闭其他</span>
             </div>
             <kbd className="shortcut-badge">{isMac ? '⌥⌘T' : 'Alt+Ctrl+T'}</kbd>
+          </div>
+          <div className="menu-item" onClick={() => handleCloseLeft(contextMenu.targetPath)}>
+            <div className="menu-item-left">
+              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="15 18 9 12 15 6" />
+                <line x1="5" y1="5" x2="5" y2="19" />
+              </svg>
+              <span>关闭左侧标签页</span>
+            </div>
           </div>
           <div className="menu-item" onClick={() => handleCloseRight(contextMenu.targetPath)}>
             <div className="menu-item-left">

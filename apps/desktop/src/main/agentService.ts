@@ -281,7 +281,7 @@ export class AgentService {
           cursor: payload.cursor,
           history: payload.history,
           attachments: payload.attachments,
-          applyImmediately: false,
+          applyImmediately: true,
           getPermissionMode: () => this.deps.settings.get().permissionMode,
           signal: controller.signal,
           requestConfirm,

@@ -26,6 +26,8 @@ export {
   filterAndScoreFiles,
   fuzzyScore,
   formatCodeHits,
+  runLocalCommand,
+  getAugmentedEnv,
 } from './search.js';
 export type { CodeSearchHit, FileSearchHit, SearchOpts } from './search.js';
 
@@ -58,9 +60,8 @@ export function currentPermissionMode(ctx: ToolContext): PermissionMode {
 
 function shouldApplyImmediately(ctx: ToolContext): boolean {
   if (ctx.getApplyImmediately) return ctx.getApplyImmediately();
-  if (ctx.applyImmediately) return true;
-  const mode = currentPermissionMode(ctx);
-  return mode === 'allow_all' || mode === 'allow_all_extreme';
+  if (ctx.applyImmediately !== undefined) return ctx.applyImmediately;
+  return true;
 }
 
 export interface ToolResult {

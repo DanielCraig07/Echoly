@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   AgentEvent,
   AgentMode,
@@ -12,6 +13,7 @@ import type {
   PlanProposal,
   PendingDiff,
   WorkspaceInfo,
+  RecentWorkspaceItem,
 } from '@deepseek-ide/shared';
 import { PERMISSION_MODE_LABELS } from '@deepseek-ide/shared';
 import { buildSessionWorkspaceMeta, uid } from '../utils';
@@ -57,6 +59,7 @@ interface Props {
   models?: ModelProfile[];
   activeModelId?: string;
   onActiveModelChange?: (modelId: string) => void;
+  recentWorkspaces?: RecentWorkspaceItem[];
 }
 
 export type ChatPanelHandle = {
@@ -314,6 +317,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     models = [],
     activeModelId,
     onActiveModelChange,
+    recentWorkspaces,
   } = props;
   // Manage multiple active session tabs
   const [tabs, setTabs] = useState<SessionTab[]>(() => {
@@ -359,6 +363,19 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const isProgrammaticScrollRef = useRef(false);
   const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number | null>(null);
+
+  // 当全屏大图预览打开时，支持按 Esc 键关闭
+  useEffect(() => {
+    if (!previewImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setPreviewImage(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [previewImage]);
 
   // .echolyrules 规则感知与管理
   const [hasRules, setHasRules] = useState(false);
@@ -436,16 +453,21 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         // Auto-save to IPC if messages changed
         if (updated.messages.length > 0) {
           const firstUserMsg = updated.messages.find((m) => m.role === 'user');
-          const title = updated.customTitle
-            ? updated.title
-            : firstUserMsg
-              ? firstUserMsg.content.slice(0, 40)
-              : updated.title;
+          const firstUserSnippet = firstUserMsg ? firstUserMsg.content.slice(0, 40) : '';
+          const isCustom =
+            updated.customTitle === true ||
+            (!!updated.title &&
+              updated.title !== 'New Chat' &&
+              updated.title !== '当前对话' &&
+              updated.title !== '对话' &&
+              (!firstUserSnippet || updated.title !== firstUserSnippet));
+
+          const title = isCustom ? updated.title : (firstUserSnippet || updated.title);
           const meta = buildSessionWorkspaceMeta(workspaceInfoRef.current);
           void window.ide.saveSession({
             id: updated.id,
             title,
-            customTitle: updated.customTitle,
+            customTitle: isCustom,
             messages: updated.messages,
             updatedAt: Date.now(),
             ...meta,
@@ -1041,10 +1063,20 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const pendingLoadSessionRef = useRef<{ session: ChatSession; path: string } | null>(null);
 
   const sessionToTab = useCallback((session: ChatSession): SessionTab => {
+    const firstUser = session.messages?.find((m) => m.role === 'user');
+    const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
+    const isCustom =
+      session.customTitle === true ||
+      (!!session.title &&
+        session.title !== 'New Chat' &&
+        session.title !== '当前对话' &&
+        session.title !== '对话' &&
+        (!firstUserSnippet || session.title !== firstUserSnippet));
+
     return {
       id: session.id,
       title: session.title,
-      customTitle: session.customTitle,
+      customTitle: isCustom,
       messages: session.messages,
       attachments: [],
       mode: 'agent',
@@ -1080,6 +1112,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         const reset = createEmptyTab();
         setTabs([reset]);
         setActiveTabId(reset.id);
+        onMessagesChangeRef.current?.([]);
+        onSessionChangeRef.current?.(reset.id);
+        setShowHistoryModal(false);
+        setPreviewImage(null);
       }
     }
     prevWorkspaceRef.current = workspace;
@@ -1348,11 +1384,26 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     };
 
     const newMessages = [...activeTab.messages, userMsg];
-    const newTitle = activeTab.messages.length === 0 ? prompt.slice(0, 40) : activeTab.title;
+    const firstUser = activeTab.messages.find((m) => m.role === 'user');
+    const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
+    const isCustom =
+      activeTab.customTitle === true ||
+      (!!activeTab.title &&
+        activeTab.title !== 'New Chat' &&
+        activeTab.title !== '当前对话' &&
+        activeTab.title !== '对话' &&
+        (!firstUserSnippet || activeTab.title !== firstUserSnippet));
+
+    const newTitle = isCustom
+      ? activeTab.title
+      : activeTab.messages.length === 0
+        ? prompt.slice(0, 40)
+        : activeTab.title;
 
     updateTab(activeTab.id, (t) => ({
       ...t,
       title: newTitle,
+      customTitle: isCustom,
       input: overridePrompt ? t.input : '',
       attachments: overridePrompt ? t.attachments : [],
       messages: newMessages,
@@ -1490,13 +1541,43 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
   const handleLoadSessionFromModal = (session: ChatSession) => {
     // 直接在当前聊天面板中打开该历史会话，不再触发切换工作区弹窗
+    const firstUser = session.messages?.find((m) => m.role === 'user');
+    const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
+    const isCustom =
+      session.customTitle === true ||
+      (!!session.title &&
+        session.title !== 'New Chat' &&
+        session.title !== '当前对话' &&
+        session.title !== '对话' &&
+        (!firstUserSnippet || session.title !== firstUserSnippet));
+
     const existing = tabs.find((t) => t.id === session.id);
     if (existing) {
+      // 无论已存在还是新打开，都确保同步最新的标题、自定义标题标记和消息
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === session.id
+            ? {
+                ...t,
+                title: session.title || t.title,
+                customTitle: isCustom,
+                messages: session.messages && session.messages.length > 0 ? session.messages : t.messages,
+              }
+            : t,
+        ),
+      );
       setActiveTabId(existing.id);
       return;
     }
+
     const tab = sessionToTab(session);
-    setTabs((prev) => [...prev, tab]);
+    // 如果当前只有一个空标签页（没有对话消息），直接替换该空标签，体验更流畅
+    setTabs((prev) => {
+      if (prev.length === 1 && prev[0].messages.length === 0) {
+        return [tab];
+      }
+      return [...prev, tab];
+    });
     setActiveTabId(tab.id);
   };
 
@@ -2569,6 +2650,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         <SessionModal
           currentSessionId={activeTabId}
           activeSessionIds={tabs.map((t) => t.id)}
+          workspaceInfo={workspaceInfo}
+          recentWorkspaces={recentWorkspaces}
           onSelectSession={handleLoadSessionFromModal}
           onNewSession={handleDeleteCurrentSessionAndOpenNew}
           onRenameSession={handleRenameSession}
@@ -2576,22 +2659,24 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         />
       )}
 
-      {/* Image Lightbox Modal */}
-      {previewImage && (
-        <div className="chat-image-lightbox" onClick={() => setPreviewImage(null)}>
-          <div className="chat-image-lightbox-content" onClick={(e) => e.stopPropagation()}>
-            <img src={previewImage} alt="Preview" />
-            <button
-              type="button"
-              className="chat-image-lightbox-close"
-              onClick={() => setPreviewImage(null)}
-              title="关闭"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Image Lightbox Modal – 使用 createPortal 挂载到 body，避免父容器 stacking context 遮挡 */}
+      {previewImage &&
+        createPortal(
+          <div className="chat-image-lightbox" onClick={() => setPreviewImage(null)}>
+            <div className="chat-image-lightbox-content" onClick={(e) => e.stopPropagation()}>
+              <img src={previewImage} alt="Preview" />
+              <button
+                type="button"
+                className="chat-image-lightbox-close"
+                onClick={() => setPreviewImage(null)}
+                title="关闭"
+              >
+                ×
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

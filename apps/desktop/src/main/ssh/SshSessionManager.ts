@@ -1433,41 +1433,106 @@ export class SshSessionManager {
     const live = this.liveForCurrent();
     if (!live) return null;
     let channel: ClientChannel | null = null;
+    let isClosed = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingResize: { cols: number; rows: number } | null =
       initialCols && initialRows ? { cols: initialCols, rows: initialRows } : null;
     const pendingWrites: string[] = [];
 
-    const shellOptions: { term: string; cols?: number; rows?: number } = {
-      term: 'xterm-256color',
-    };
-    if (initialCols && initialCols >= 20 && initialRows && initialRows >= 3) {
-      shellOptions.cols = initialCols;
-      shellOptions.rows = initialRows;
-    }
+    const MAX_RETRIES = 4;
 
-    live.client.shell(shellOptions, (err, stream) => {
-      if (err) {
-        onData(`\r\n[ssh shell error] ${err.message}\r\n`);
+    const tryOpen = (attempt: number) => {
+      if (isClosed) return;
+      const currentLive = this.liveForCurrent();
+      if (!currentLive) {
+        onData(`\r\n[ssh shell error] SSH 连接已断开\r\n`);
         onClose(1);
         return;
       }
-      channel = stream;
-      if (pendingResize) {
-        stream.setWindow(pendingResize.rows, pendingResize.cols, 0, 0);
-        pendingResize = null;
+
+      // 第 1 次尝试使用传入的 initialCols/initialRows；若发生 channel open 异常，后续重试优先使用标准 term，流就绪后再 setWindow
+      const shellOptions: { term: string; cols?: number; rows?: number } = {
+        term: 'xterm-256color',
+      };
+      if (attempt === 0 && initialCols && initialCols >= 20 && initialRows && initialRows >= 3) {
+        shellOptions.cols = initialCols;
+        shellOptions.rows = initialRows;
       }
-      while (pendingWrites.length > 0) {
-        const chunk = pendingWrites.shift();
-        if (chunk) stream.write(chunk);
+
+      try {
+        currentLive.client.shell(shellOptions, (err, stream) => {
+          if (err) {
+            if (isClosed) return;
+            const errMsg = err.message || String(err);
+            const isTransient =
+              errMsg.includes('Channel open failure') ||
+              errMsg.includes('open failed') ||
+              errMsg.includes('Resource shortage') ||
+              errMsg.includes('Administratively prohibited') ||
+              errMsg.includes('busy');
+
+            if (isTransient && attempt < MAX_RETRIES) {
+              const delay = 150 + attempt * 200; // 150ms, 350ms, 550ms, 750ms
+              electronLog.warn(
+                `[ssh] shell channel open failed (${errMsg}), retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})...`,
+              );
+              retryTimer = setTimeout(() => {
+                tryOpen(attempt + 1);
+              }, delay);
+              return;
+            }
+
+            onData(`\r\n[ssh shell error] ${errMsg}\r\n`);
+            onClose(1);
+            return;
+          }
+
+          if (isClosed) {
+            try {
+              stream.close();
+            } catch {
+              // ignore
+            }
+            return;
+          }
+
+          channel = stream;
+          if (pendingResize) {
+            try {
+              stream.setWindow(pendingResize.rows, pendingResize.cols, 0, 0);
+            } catch {
+              // ignore
+            }
+            pendingResize = null;
+          }
+          while (pendingWrites.length > 0) {
+            const chunk = pendingWrites.shift();
+            if (chunk) {
+              try {
+                stream.write(chunk);
+              } catch {
+                // ignore
+              }
+            }
+          }
+          const root = currentLive.workspace.getRoot();
+          if (root) {
+            stream.write(`cd ${shellQuote(root)}\n`);
+          }
+          stream.on('data', (d: Buffer) => onData(d.toString('utf8')));
+          stream.stderr.on('data', (d: Buffer) => onData(d.toString('utf8')));
+          stream.on('close', () => onClose(0));
+        });
+      } catch (err: any) {
+        if (isClosed) return;
+        const errMsg = err?.message || String(err);
+        onData(`\r\n[ssh shell error] ${errMsg}\r\n`);
+        onClose(1);
       }
-      const root = live.workspace.getRoot();
-      if (root) {
-        stream.write(`cd ${shellQuote(root)}\n`);
-      }
-      stream.on('data', (d: Buffer) => onData(d.toString('utf8')));
-      stream.stderr.on('data', (d: Buffer) => onData(d.toString('utf8')));
-      stream.on('close', () => onClose(0));
-    });
+    };
+
+    tryOpen(0);
+
     return {
       write: (data) => {
         if (channel) {
@@ -1483,7 +1548,14 @@ export class SshSessionManager {
           pendingResize = { cols, rows };
         }
       },
-      close: () => channel?.close(),
+      close: () => {
+        isClosed = true;
+        if (retryTimer) {
+          clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+        channel?.close();
+      },
     };
   }
 }

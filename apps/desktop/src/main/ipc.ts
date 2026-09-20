@@ -417,10 +417,9 @@ ${payload.suffix.slice(0, 1000)}
     run(e, () => registry.current().diffs.accept(id)),
   );
   ipcMain.handle('diff:reject', (e, id: string) =>
-    run(e, () => {
-      registry.current().diffs.reject(id);
-    }),
+    run(e, () => registry.current().diffs.reject(id)),
   );
+  ipcMain.handle('diff:rejectAll', (e) => run(e, () => registry.current().diffs.rejectAll()));
   ipcMain.handle('diff:acceptAll', (e) => run(e, () => registry.current().diffs.acceptAll()));
 
   ipcMain.handle('session:list', () => sessions.list());
@@ -469,6 +468,9 @@ ${payload.suffix.slice(0, 1000)}
 
   ipcMain.handle('search:files', (e, query: string, max?: number) =>
     run(e, () => search.searchFiles(query, max)),
+  );
+  ipcMain.handle('search:resolveFilePath', (e, fileNameOrPath: string) =>
+    run(e, () => search.resolveFilePath(fileNameOrPath)),
   );
   ipcMain.handle('search:code', (e, req: SearchCodeRequest) =>
     run(e, () => search.searchCode(req)),

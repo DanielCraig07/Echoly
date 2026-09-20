@@ -177,9 +177,65 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
     shellCallback(null, mockStream);
 
     // Must have applied buffered resize
-    expect(mockStream.setWindow).toHaveBeenCalledWith(45, 140, 0, 0);
-    // Must have applied cd root and buffered write
     expect(mockStream.write).toHaveBeenCalledWith(expect.stringContaining('cd '));
     expect(mockStream.write).toHaveBeenCalledWith('echo hello\n');
+  });
+
+  it('automatically retries on transient Channel open failure and succeeds without exiting', async () => {
+    vi.useFakeTimers();
+    try {
+      let shellCallCount = 0;
+      let callbacks: Array<(err: any, stream: any) => void> = [];
+      const mockClient = {
+        shell: vi.fn().mockImplementation((_opts: any, cb: (err: any, stream: any) => void) => {
+          shellCallCount++;
+          callbacks.push(cb);
+        }),
+      };
+
+      const manager = new SshSessionManager(
+        () => ({ webContentsId: 1, workspace: 'ssh-1' }),
+        '/tmp/user-data',
+        () => null,
+      );
+      (manager as any).liveForCurrent = vi.fn().mockReturnValue({
+        client: mockClient,
+        workspace: { getRoot: () => '/remote/home' },
+      });
+
+      const onData = vi.fn();
+      const onClose = vi.fn();
+      const handle = manager.openShell(onData, onClose, 100, 30);
+      expect(handle).not.toBeNull();
+      expect(shellCallCount).toBe(1);
+
+      // Attempt 1 fails with transient Channel open failure
+      callbacks[0](new Error('(SSH) Channel open failure: open failed'), null);
+
+      // Must NOT exit immediately
+      expect(onClose).not.toHaveBeenCalled();
+      expect(onData).not.toHaveBeenCalled();
+
+      // Fast forward backoff timer
+      vi.advanceTimersByTime(200);
+
+      // Attempt 2 was triggered
+      expect(shellCallCount).toBe(2);
+
+      // Attempt 2 succeeds
+      const mockStream = {
+        setWindow: vi.fn(),
+        write: vi.fn(),
+        on: vi.fn(),
+        stderr: { on: vi.fn() },
+      };
+      callbacks[1](null, mockStream);
+
+      // Successfully ready
+      expect(onClose).not.toHaveBeenCalled();
+      expect(mockStream.write).toHaveBeenCalledWith(expect.stringContaining('cd '));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

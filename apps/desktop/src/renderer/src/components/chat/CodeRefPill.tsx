@@ -9,6 +9,213 @@ export interface ParsedCodeRef {
   lineLabel?: string;
 }
 
+export const CODE_EXTENSIONS = new Set([
+  'tsx', 'ts', 'jsx', 'js', 'mjs', 'cjs',
+  'py', 'java', 'cpp', 'cc', 'c', 'h', 'hpp',
+  'go', 'rs', 'json', 'yaml', 'yml', 'toml', 'xml',
+  'css', 'scss', 'less', 'html', 'vue', 'svelte',
+  'sql', 'sh', 'bash', 'zsh', 'md', 'graphql',
+  'proto', 'gradle', 'properties', 'ini', 'env', 'txt'
+]);
+
+export function isCodeFile(fileName: string): boolean {
+  if (!fileName) return false;
+  const clean = fileName.split(/[?#:]/)[0].trim();
+  const parts = clean.split('.');
+  if (parts.length < 2) return false;
+  const ext = parts.pop()?.toLowerCase() || '';
+  return CODE_EXTENSIONS.has(ext);
+}
+
+/**
+ * 智能解析任意代码引用路径、Markdown 链接、行号等
+ * 支持：
+ * - file:///Users/user/project/src/file.tsx#L123-L145
+ * - file:///Users/user/project/src/file.tsx:123-145
+ * - src/components/GitPanel.tsx:2184-2239
+ * - GitPanel.tsx:2184
+ * - GitPanel.tsx#L2184
+ * - @[GitPanel.tsx:L2184-L2239]
+ * - @GitPanel.tsx:L2184
+ * - GitPanel.tsx
+ */
+export function parseAnyCodeRef(input: string): ParsedCodeRef | null {
+  if (!input || typeof input !== 'string') return null;
+  let str = input.trim();
+  if (!str) return null;
+
+  // 1. 去除两端可能包裹的引号、反引号、括号、中括号
+  str = str.replace(/^[`"'\(\[<]+|[`"'\)\]>]+$/g, '').trim();
+
+  // 2. 排除 http:// 和 https:// 外部网络链接
+  if (/^https?:\/\//i.test(str)) {
+    return null;
+  }
+
+  // 3. 处理 file:// 前缀
+  if (str.toLowerCase().startsWith('file://')) {
+    try {
+      str = decodeURIComponent(str.replace(/^file:\/\/{1,3}/i, ''));
+    } catch {
+      str = str.replace(/^file:\/\/{1,3}/i, '');
+    }
+    // Unix 绝对路径补齐首部斜杠
+    if (!str.startsWith('/') && !/^[a-zA-Z]:/.test(str)) {
+      str = '/' + str;
+    }
+  }
+
+  // 4. 处理 @ 前缀
+  if (str.startsWith('@')) {
+    str = str.slice(1).trim();
+  }
+
+  // 5. 提取行号与范围
+  // 支持: #L123-L145, #L123-145, #L123, #123, :L123-L145, :123-145, :123, :L123
+  let rawPath = str;
+  let startLine: number | undefined;
+  let endLine: number | undefined;
+
+  const lineMatch = /[:#](?:L)?(\d+)(?:\s*[-–—~]\s*(?:L)?(\d+))?$/i.exec(str);
+  if (lineMatch) {
+    startLine = parseInt(lineMatch[1], 10);
+    if (lineMatch[2]) {
+      endLine = parseInt(lineMatch[2], 10);
+    }
+    rawPath = str.slice(0, lineMatch.index).trim();
+  }
+
+  if (!rawPath) return null;
+
+  // 校验是否为合法的代码/配置文件
+  const fileName = rawPath.replace(/\\/g, '/').split('/').pop() || rawPath;
+  if (!isCodeFile(fileName)) {
+    return null;
+  }
+
+  let lineLabel: string | undefined;
+  if (startLine !== undefined) {
+    lineLabel =
+      endLine !== undefined && endLine !== startLine
+        ? `#L${startLine}-${endLine}`
+        : `#L${startLine}`;
+  }
+
+  return {
+    raw: input,
+    path: rawPath,
+    fileName,
+    startLine,
+    endLine,
+    lineLabel,
+  };
+}
+
+/**
+ * 专为 AI 回复打造的代码引用解析器：
+ * 既支持 @[path:L123-145] / @path:L123，
+ * 又能自动识别 AI 输出的自然文件引用（如 GitPanel.tsx:2184-2239、src/components/GitPanel.tsx:2184、file:///...#L2184）
+ */
+export function parseAiContentCodeRefs(
+  text: string,
+): Array<{ type: 'text' | 'ref'; value: string; ref?: ParsedCodeRef }> {
+  if (!text) return [];
+
+  // 正则模式：
+  // 1. @[path:L123-145] 或 @path:L123-145
+  // 2. file:///path/to/file.ext#L123-L145 (支持 file:// 与 file:///)
+  // 3. (path/)?file.ext:123-145 或 (path/)?file.ext#L123-L145
+  const pattern =
+    /(?:@\[([^\]]+?)(?::L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?\])|(?:@([^\s,;，。！？\(\)\[\]:#]+?\.[a-zA-Z0-9_]+)(?:[:#]L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?)|(?:file:\/\/{1,3}([^\s,;，。！？\(\)\[\]#]+?\.[a-zA-Z0-9_]+)(?:[#:]L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?)|(?:((?:[^\s,;，。！？\(\)\[\]:#]+[/\\])?[^\s,;，。！？\(\)\[\]:#]+\.(?:tsx|ts|jsx|js|mjs|cjs|py|java|cpp|cc|c|h|hpp|go|rs|json|yaml|yml|toml|xml|css|scss|less|html|vue|svelte|sql|sh|md|graphql|proto|swift|kt))(?::(?:L)?(\d+)(?:\s*[-–—~]\s*(?:L)?(\d+))?|#(?:L)?(\d+)(?:\s*[-–—~]\s*(?:L)?(\d+))?))/gi;
+
+  const result: Array<{ type: 'text' | 'ref'; value: string; ref?: ParsedCodeRef }> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    const start = match.index;
+    const end = pattern.lastIndex;
+
+    if (start > lastIndex) {
+      result.push({
+        type: 'text',
+        value: text.slice(lastIndex, start),
+      });
+    }
+
+    const raw = match[0];
+    let rawPath = '';
+    let startLineStr: string | undefined;
+    let endLineStr: string | undefined;
+
+    if (match[1] !== undefined) {
+      // @[path:Lstart-Lend]
+      rawPath = match[1].trim();
+      startLineStr = match[2];
+      endLineStr = match[3];
+    } else if (match[4] !== undefined) {
+      // @path:Lstart-Lend
+      rawPath = match[4].trim();
+      startLineStr = match[5];
+      endLineStr = match[6];
+    } else if (match[7] !== undefined) {
+      // file:///path#Lstart-Lend
+      rawPath = match[7].trim();
+      try {
+        rawPath = decodeURIComponent(rawPath);
+      } catch {
+        // ignore
+      }
+      if (!rawPath.startsWith('/') && !/^[a-zA-Z]:/.test(rawPath)) {
+        rawPath = '/' + rawPath;
+      }
+      startLineStr = match[8];
+      endLineStr = match[9];
+    } else if (match[10] !== undefined) {
+      // path/file.ext:start-end or #Lstart-Lend
+      rawPath = match[10].trim();
+      startLineStr = match[11] || match[13];
+      endLineStr = match[12] || match[14];
+    }
+
+    const fileName = rawPath.replace(/\\/g, '/').split('/').pop() || rawPath;
+    const startLine = startLineStr ? parseInt(startLineStr, 10) : undefined;
+    const endLine = endLineStr ? parseInt(endLineStr, 10) : undefined;
+
+    let lineLabel: string | undefined;
+    if (startLine !== undefined) {
+      lineLabel =
+        endLine !== undefined && endLine !== startLine
+          ? `#L${startLine}-${endLine}`
+          : `#L${startLine}`;
+    }
+
+    result.push({
+      type: 'ref',
+      value: raw,
+      ref: {
+        raw,
+        path: rawPath,
+        fileName,
+        startLine,
+        endLine,
+        lineLabel,
+      },
+    });
+
+    lastIndex = end;
+  }
+
+  if (lastIndex < text.length) {
+    result.push({
+      type: 'text',
+      value: text.slice(lastIndex),
+    });
+  }
+
+  return result;
+}
+
 /**
  * 解析文本中的代码引用标记，支持如下形式：
  * 1. @[/path/to/File.tsx:L393-L403] 或 @[/path/to/File.tsx:L393]
@@ -247,6 +454,7 @@ export const CodeRefPill: React.FC<{
   onOpenFile?: (path: string, line?: number, endLine?: number) => void;
 }> = ({ codeRef, onOpenFile }) => {
   const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     if (onOpenFile) {
       onOpenFile(codeRef.path, codeRef.startLine, codeRef.endLine);
@@ -263,7 +471,15 @@ export const CodeRefPill: React.FC<{
     <span
       className="chat-code-ref-pill"
       onClick={handleClick}
-      title={`点击打开文件并高亮对应代码: ${codeRef.path}${codeRef.lineLabel || ''}`}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick(e as any);
+        }
+      }}
+      title={`点击打开文件并定位高亮: ${codeRef.path}${codeRef.lineLabel || ''}`}
     >
       <FileLanguageIcon fileName={codeRef.fileName} />
       <span className="chat-code-ref-pill-name">{codeRef.fileName}</span>

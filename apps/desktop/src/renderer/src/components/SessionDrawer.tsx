@@ -90,11 +90,23 @@ export function SessionDrawer({
 
   const handleLoad = async (session: ChatSession) => {
     if (currentMessages.length > 0) {
-      const title = currentMessages.find((m) => m.role === 'user')?.content.slice(0, 40) ?? '对话';
+      const firstUser = currentMessages.find((m) => m.role === 'user');
+      const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
+      const existing = sessions.find((s) => s.id === currentSessionId);
+      const isCustom =
+        existing?.customTitle === true ||
+        (!!existing?.title &&
+          existing.title !== 'New Chat' &&
+          existing.title !== '当前对话' &&
+          existing.title !== '对话' &&
+          (!firstUserSnippet || existing.title !== firstUserSnippet));
+
+      const title = isCustom && existing?.title ? existing.title : (firstUserSnippet || '对话');
       const meta = buildSessionWorkspaceMeta(workspaceInfo);
       await window.ide.saveSession({
         id: currentSessionId,
         title,
+        customTitle: isCustom,
         messages: currentMessages,
         updatedAt: Date.now(),
         ...meta,

@@ -24,6 +24,12 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
   const [activeTab, setActiveTab] = useState<'branches' | 'tags'>('branches');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [unsavedWarning, setUnsavedWarning] = useState<{
+    target: string;
+    changedCount: number;
+    stagedCount: number;
+    unstagedCount: number;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -100,6 +106,36 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
   if (!open) return null;
 
   async function handleCheckout(target: string) {
+    if (target === currentBranch) {
+      onClose();
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      // 检查本地工作区是否有未提交/未暂存的修改
+      const st = await window.ide.gitStatus();
+      if (st.ok && st.entries && st.entries.length > 0) {
+        setLoading(false);
+        const stagedCount = st.entries.filter((e) => e.staged).length;
+        const unstagedCount = st.entries.filter((e) => !e.staged).length;
+        setUnsavedWarning({
+          target,
+          changedCount: st.entries.length,
+          stagedCount,
+          unstagedCount,
+        });
+        return;
+      }
+    } catch {
+      // 状态检查异常时不阻断签出流程
+    }
+
+    await executeCheckout(target);
+  }
+
+  async function executeCheckout(target: string) {
     setLoading(true);
     setError(null);
     try {
@@ -113,6 +149,29 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleStashAndCheckout() {
+    if (!unsavedWarning) return;
+    const target = unsavedWarning.target;
+    setLoading(true);
+    setError(null);
+    try {
+      const stashRes = await window.ide.gitStash(
+        'push',
+        `Echoly 切换至 ${target} 前自动暂存修改`,
+      );
+      if (!stashRes.ok) {
+        setError(stashRes.detail || '自动暂存修改失败');
+        setLoading(false);
+        return;
+      }
+      setUnsavedWarning(null);
+      await executeCheckout(target);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
       setLoading(false);
     }
   }
@@ -492,8 +551,8 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                   onClick={() => void handleCheckout(b.name)}
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
+                    flexDirection: 'column',
+                    gap: 3,
                     padding: '8px 12px',
                     borderRadius: 7,
                     cursor: 'pointer',
@@ -514,121 +573,177 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                   }}
                 >
                   <div
-                    style={{ display: 'flex', alignItems: 'center', gap: 9, overflow: 'hidden' }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                    }}
                   >
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 9, overflow: 'hidden' }}
+                    >
+                      {isCurrent ? (
+                        <span
+                          className="branch-pulse-dot"
+                          title="当前所在分支"
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            backgroundColor: '#10b981',
+                            boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.7)',
+                            animation: 'branchPulse 2s infinite',
+                            flexShrink: 0,
+                          }}
+                        />
+                      ) : b.remote ? (
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.7"
+                          style={{ color: '#00bcd4', flexShrink: 0 }}
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="2" y1="12" x2="22" y2="12" />
+                          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                        </svg>
+                      ) : (
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          style={{ color: '#f57c00', flexShrink: 0 }}
+                        >
+                          <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0z" />
+                        </svg>
+                      )}
+                      <span
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          fontWeight: isCurrent ? 650 : isSelected ? 500 : 400,
+                          color: isCurrent ? '#34d399' : 'inherit',
+                        }}
+                      >
+                        {b.name}
+                      </span>
+                      {b.remote ? (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: '#38bdf8',
+                            background: 'rgba(56, 189, 248, 0.12)',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            border: '1px solid rgba(56, 189, 248, 0.2)',
+                            flexShrink: 0,
+                          }}
+                        >
+                          远程
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: 'var(--muted, #888)',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            padding: '1px 5px',
+                            borderRadius: 3,
+                            flexShrink: 0,
+                          }}
+                        >
+                          本地
+                        </span>
+                      )}
+                    </div>
+
                     {isCurrent ? (
                       <span
-                        className="branch-pulse-dot"
-                        title="当前所在分支"
                         style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          backgroundColor: '#10b981',
-                          boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.7)',
-                          animation: 'branchPulse 2s infinite',
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          background: 'rgba(16, 185, 129, 0.18)',
+                          color: '#10b981',
+                          padding: '2px 8px',
+                          borderRadius: 999,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
                           flexShrink: 0,
-                        }}
-                      />
-                    ) : b.remote ? (
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.7"
-                        style={{ color: '#00bcd4', flexShrink: 0 }}
-                      >
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="2" y1="12" x2="22" y2="12" />
-                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                      </svg>
-                    ) : (
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 16 16"
-                        fill="currentColor"
-                        style={{ color: '#f57c00', flexShrink: 0 }}
-                      >
-                        <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0z" />
-                      </svg>
-                    )}
-                    <span
-                      style={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        fontWeight: isCurrent ? 650 : isSelected ? 500 : 400,
-                        color: isCurrent ? '#34d399' : 'inherit',
-                      }}
-                    >
-                      {b.name}
-                    </span>
-                    {b.remote ? (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: '#38bdf8',
-                          background: 'rgba(56, 189, 248, 0.12)',
-                          padding: '1px 6px',
-                          borderRadius: 4,
-                          border: '1px solid rgba(56, 189, 248, 0.2)',
-                          flexShrink: 0,
+                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                          letterSpacing: '0.04em',
                         }}
                       >
-                        远程
+                        CURRENT
                       </span>
-                    ) : (
+                    ) : isSelected ? (
                       <span
                         style={{
-                          fontSize: 10,
+                          fontSize: 10.5,
                           color: 'var(--muted, #888)',
-                          background: 'rgba(255, 255, 255, 0.05)',
-                          padding: '1px 5px',
-                          borderRadius: 3,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 3,
                           flexShrink: 0,
                         }}
                       >
-                        本地
+                        <kbd className="cmd-mini-kbd" style={{ fontSize: 9 }}>↵</kbd>
                       </span>
-                    )}
+                    ) : null}
                   </div>
 
-                  {isCurrent ? (
-                    <span
+                  {/* 最新提交历史记录 */}
+                  {b.lastCommit && (
+                    <div
                       style={{
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        background: 'rgba(16, 185, 129, 0.18)',
-                        color: '#10b981',
-                        padding: '2px 8px',
-                        borderRadius: 999,
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 4,
-                        flexShrink: 0,
-                        border: '1px solid rgba(16, 185, 129, 0.3)',
-                        letterSpacing: '0.04em',
+                        gap: 6,
+                        fontSize: 11,
+                        color: isSelected ? 'rgba(255, 255, 255, 0.72)' : 'var(--muted, #888)',
+                        paddingLeft: 23,
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap',
+                        textOverflow: 'ellipsis',
                       }}
                     >
-                      CURRENT
-                    </span>
-                  ) : isSelected ? (
-                    <span
-                      style={{
-                        fontSize: 10.5,
-                        color: 'var(--muted, #888)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 3,
-                        flexShrink: 0,
-                      }}
-                    >
-                      <kbd className="cmd-mini-kbd" style={{ fontSize: 9 }}>↵</kbd>
-                    </span>
-                  ) : null}
+                      <span
+                        style={{
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                          background: isSelected ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.07)',
+                          color: isSelected ? '#7dd3fc' : 'var(--muted, #aaa)',
+                          padding: '1px 5px',
+                          borderRadius: 3,
+                          fontSize: 10.5,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {b.lastCommit.hash}
+                      </span>
+                      <span
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1,
+                        }}
+                        title={b.lastCommit.message}
+                      >
+                        {b.lastCommit.message || '无提交信息'}
+                      </span>
+                      {(b.lastCommit.relativeDate || b.lastCommit.author) && (
+                        <span style={{ opacity: 0.7, flexShrink: 0, fontSize: 10.5 }}>
+                          • {b.lastCommit.relativeDate || b.lastCommit.author}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -785,6 +900,92 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
             关闭
           </button>
         </div>
+
+        {/* 未暂存或未提交修改警示弹窗 */}
+        {unsavedWarning && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 99,
+              background: 'rgba(0, 0, 0, 0.76)',
+              backdropFilter: 'blur(3px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 20,
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: 420,
+                background: 'var(--bg-elevated, #202026)',
+                border: '1px solid rgba(234, 179, 8, 0.35)',
+                borderRadius: 10,
+                boxShadow: '0 20px 50px rgba(0,0,0,0.7)',
+                padding: '18px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <span style={{ fontSize: 18 }}>⚠️</span>
+                <span style={{ fontSize: 13.5, fontWeight: 700, color: '#facc15' }}>
+                  检测到本地存在未暂存/未提交修改
+                </span>
+              </div>
+
+              <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text, #ddd)' }}>
+                当前工作区检测到 <b>{unsavedWarning.changedCount}</b> 个文件有变动
+                {unsavedWarning.stagedCount > 0 && `（已暂存 ${unsavedWarning.stagedCount} 项）`}
+                {unsavedWarning.unstagedCount > 0 && `（未暂存 ${unsavedWarning.unstagedCount} 项）`}。
+                直接签出到目标分支 <b>"{unsavedWarning.target}"</b> 可能会导致本地修改发生冲突或被覆盖。
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginTop: 6,
+                }}
+              >
+                <button
+                  type="button"
+                  className="git-modal-btn secondary"
+                  onClick={() => setUnsavedWarning(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="git-modal-btn secondary"
+                  style={{ color: '#f87171' }}
+                  onClick={() => {
+                    const target = unsavedWarning.target;
+                    setUnsavedWarning(null);
+                    void executeCheckout(target);
+                  }}
+                  title="直接执行切换（若冲突 git 会拦截）"
+                >
+                  直接签出
+                </button>
+                <button
+                  type="button"
+                  className="git-modal-btn primary"
+                  onClick={() => void handleStashAndCheckout()}
+                  title="自动将当前修改存入 Git 暂存区后切换分支"
+                >
+                  自动暂存并签出 (推荐)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 右下角全向拖拽手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>

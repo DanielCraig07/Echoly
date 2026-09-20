@@ -2,7 +2,13 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import mermaid from 'mermaid';
-import { parseContentWithCodeRefs, CodeRefPill } from './chat/CodeRefPill';
+import {
+  parseAiContentCodeRefs,
+  parseAnyCodeRef,
+  isCodeFile,
+  CodeRefPill,
+  ParsedCodeRef,
+} from './chat/CodeRefPill';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-c';
@@ -236,7 +242,17 @@ function highlightCode(code: string, language: string): string {
     .replace(/>/g, '&gt;');
 }
 
-function CodeBlock({ language, code }: { language: string; code: string }) {
+function CodeBlock({
+  language,
+  code,
+  fileRef,
+  onOpenFile,
+}: {
+  language: string;
+  code: string;
+  fileRef?: ParsedCodeRef | null;
+  onOpenFile?: (path: string, line?: number, endLine?: number) => void;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = (e: React.MouseEvent) => {
@@ -253,7 +269,12 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   return (
     <div className="md-code-block">
       <div className="md-code-header">
-        <span className="md-code-lang">{language || 'text'}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+          <span className="md-code-lang">{language || 'text'}</span>
+          {fileRef && (
+            <CodeRefPill codeRef={fileRef} onOpenFile={onOpenFile} />
+          )}
+        </div>
         <button
           type="button"
           className="md-code-copy-btn"
@@ -337,7 +358,7 @@ function renderSegmentsWithPills(
   text: string,
   onOpenFile?: (path: string, line?: number, endLine?: number) => void,
 ): React.ReactNode[] {
-  const segments = parseContentWithCodeRefs(text);
+  const segments = parseAiContentCodeRefs(text);
   // 如果没有任何引用，返回 null 让调用方走默认渲染
   if (!segments.some((s) => s.type === 'ref')) return [];
   return segments.map((seg, i) => {
@@ -348,116 +369,219 @@ function renderSegmentsWithPills(
   });
 }
 
-const markdownComponents = {
-  pre({ children }: any) {
-    const codeElement = React.isValidElement(children)
-      ? children
-      : Array.isArray(children) && React.isValidElement(children[0])
-        ? children[0]
-        : null;
-
-    if (codeElement) {
-      const codeProps = codeElement.props as any;
-      const className = codeProps?.className || '';
-      const match = /language-(\w+)/.exec(className);
-      const lang = match ? match[1].toLowerCase() : '';
-      const rawCode =
-        typeof codeProps?.children === 'string'
-          ? codeProps.children
-          : Array.isArray(codeProps?.children)
-            ? codeProps.children.join('')
-            : String(codeProps?.children || '');
-
-      if (lang === 'mermaid') {
-        return <MermaidBlock chart={rawCode.trim()} />;
-      }
-
-      if (['math', 'katex', 'latex'].includes(lang)) {
-        return <KatexBlock math={rawCode.trim()} />;
-      }
-
-      return <CodeBlock language={lang} code={rawCode.replace(/\n$/, '')} />;
-    }
-
-    return <pre className="md-code-pre">{children}</pre>;
-  },
-  code({ node, className, children, ...props }: any) {
-    return (
-      <code className={`md-inline-code ${className || ''}`} {...props}>
-        {children}
-      </code>
-    );
-  },
-  p({ children }: any) {
-    // 将 p 内的文字节点自动解析为代码引用胶囊
-    const processed = React.Children.map(children, (child) => {
+export function createMarkdownComponents(
+  onOpenFile?: (path: string, line?: number, endLine?: number) => void,
+) {
+  const processTextChildren = (children: any) => {
+    return React.Children.map(children, (child) => {
       if (typeof child !== 'string') return child;
-      const pills = renderSegmentsWithPills(child);
+      const pills = renderSegmentsWithPills(child, onOpenFile);
       return pills.length > 0 ? pills : child;
     });
-    return <p>{processed}</p>;
-  },
-  li({ children }: any) {
-    // li 内的文字节点同样解析
-    const processed = React.Children.map(children, (child) => {
-      if (typeof child !== 'string') return child;
-      const pills = renderSegmentsWithPills(child);
-      return pills.length > 0 ? pills : child;
-    });
-    return <li>{processed}</li>;
-  },
-  table({ children }: any) {
-    return (
-      <div className="md-table-wrapper">
-        <table className="md-table">{children}</table>
-      </div>
-    );
-  },
-  h1({ node, children, ...props }: any) {
-    const text = extractNodeText(children);
-    const id = slugifyHeading(text);
-    return <h1 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h1>;
-  },
-  h2({ node, children, ...props }: any) {
-    const text = extractNodeText(children);
-    const id = slugifyHeading(text);
-    return <h2 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h2>;
-  },
-  h3({ node, children, ...props }: any) {
-    const text = extractNodeText(children);
-    const id = slugifyHeading(text);
-    return <h3 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h3>;
-  },
-  h4({ node, children, ...props }: any) {
-    const text = extractNodeText(children);
-    const id = slugifyHeading(text);
-    return <h4 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h4>;
-  },
-  h5({ node, children, ...props }: any) {
-    const text = extractNodeText(children);
-    const id = slugifyHeading(text);
-    return <h5 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h5>;
-  },
-  h6({ node, children, ...props }: any) {
-    const text = extractNodeText(children);
-    const id = slugifyHeading(text);
-    return <h6 id={id} data-heading-line={node?.position?.start?.line} {...props}>{children}</h6>;
-  },
-  strong({ node, children, ...props }: any) {
-    return (
-      <strong style={{ fontWeight: 700 }} {...props}>
-        {children}
-      </strong>
-    );
-  },
-  b({ node, children, ...props }: any) {
-    return (
-      <b style={{ fontWeight: 700 }} {...props}>
-        {children}
-      </b>
-    );
-  },
-};
+  };
+
+  return {
+    pre({ children }: any) {
+      const codeElement = React.isValidElement(children)
+        ? children
+        : Array.isArray(children) && React.isValidElement(children[0])
+          ? children[0]
+          : null;
+
+      if (codeElement) {
+        const codeProps = codeElement.props as any;
+        const className = codeProps?.className || '';
+        const match = /language-(\S+)/.exec(className);
+        const rawMeta = match ? match[1] : '';
+        let lang = rawMeta;
+        let headerFileRef: ParsedCodeRef | null = null;
+        if (rawMeta.includes(':')) {
+          const colonIdx = rawMeta.indexOf(':');
+          lang = rawMeta.slice(0, colonIdx);
+          const rest = rawMeta.slice(colonIdx + 1);
+          headerFileRef = parseAnyCodeRef(rest);
+        }
+
+        const rawCode =
+          typeof codeProps?.children === 'string'
+            ? codeProps.children
+            : Array.isArray(codeProps?.children)
+              ? codeProps.children.join('')
+              : String(codeProps?.children || '');
+
+        if (lang.toLowerCase() === 'mermaid') {
+          return <MermaidBlock chart={rawCode.trim()} />;
+        }
+
+        if (['math', 'katex', 'latex'].includes(lang.toLowerCase())) {
+          return <KatexBlock math={rawCode.trim()} />;
+        }
+
+        // 若语言头中未携带路径，检测第一行注释是否为 // File: path:line
+        if (!headerFileRef) {
+          const firstLine = rawCode.split('\n')[0]?.trim() || '';
+          const commentMatch = /^(?:\/\/|#|--|\/\*)\s*(?:File|Path)?\s*[:：]?\s*([^\s*]+)(?:\*\/)?$/i.exec(firstLine);
+          if (commentMatch) {
+            const candidate = commentMatch[1];
+            const parsed = parseAnyCodeRef(candidate);
+            if (parsed && isCodeFile(parsed.fileName)) {
+              headerFileRef = parsed;
+            }
+          }
+        }
+
+        return (
+          <CodeBlock
+            language={lang}
+            code={rawCode.replace(/\n$/, '')}
+            fileRef={headerFileRef}
+            onOpenFile={onOpenFile}
+          />
+        );
+      }
+
+      return <pre className="md-code-pre">{children}</pre>;
+    },
+    code({ node, className, children, ...props }: any) {
+      const isInline = !className?.includes('language-');
+      if (isInline) {
+        const text = typeof children === 'string' ? children : extractNodeText(children);
+        if (typeof text === 'string' && !text.includes('\n')) {
+          const ref = parseAnyCodeRef(text);
+          if (ref && isCodeFile(ref.fileName)) {
+            return <CodeRefPill codeRef={ref} onOpenFile={onOpenFile} />;
+          }
+        }
+      }
+      return (
+        <code className={`md-inline-code ${className || ''}`} {...props}>
+          {children}
+        </code>
+      );
+    },
+    a({ href, children, ...props }: any) {
+      const hrefRef = href ? parseAnyCodeRef(href) : null;
+      const text = extractNodeText(children);
+      const textRef = text ? parseAnyCodeRef(text) : null;
+
+      const targetRef = hrefRef || textRef;
+      if (targetRef && isCodeFile(targetRef.fileName)) {
+        if (hrefRef && textRef) {
+          if (textRef.startLine !== undefined && hrefRef.startLine === undefined) {
+            targetRef.startLine = textRef.startLine;
+            targetRef.endLine = textRef.endLine;
+            targetRef.lineLabel = textRef.lineLabel;
+          }
+        }
+        return <CodeRefPill codeRef={targetRef} onOpenFile={onOpenFile} />;
+      }
+
+      const isExternal = href?.startsWith('http://') || href?.startsWith('https://');
+      return (
+        <a
+          href={href}
+          target={isExternal ? '_blank' : undefined}
+          rel={isExternal ? 'noopener noreferrer' : undefined}
+          onClick={(e) => {
+            if (href?.startsWith('file://')) {
+              e.preventDefault();
+              const ref = parseAnyCodeRef(href);
+              if (ref) {
+                if (onOpenFile) {
+                  onOpenFile(ref.path, ref.startLine, ref.endLine);
+                } else {
+                  window.dispatchEvent(
+                    new CustomEvent('echoly:openFile', {
+                      detail: { path: ref.path, line: ref.startLine, endLine: ref.endLine },
+                    }),
+                  );
+                }
+              }
+            }
+          }}
+          {...props}
+        >
+          {children}
+        </a>
+      );
+    },
+    p({ children }: any) {
+      return <p>{processTextChildren(children)}</p>;
+    },
+    li({ children }: any) {
+      return <li>{processTextChildren(children)}</li>;
+    },
+    blockquote({ children }: any) {
+      return <blockquote>{processTextChildren(children)}</blockquote>;
+    },
+    td({ children }: any) {
+      return <td>{processTextChildren(children)}</td>;
+    },
+    th({ children }: any) {
+      return <th>{processTextChildren(children)}</th>;
+    },
+    table({ children }: any) {
+      return (
+        <div className="md-table-wrapper">
+          <table className="md-table">{children}</table>
+        </div>
+      );
+    },
+    h1({ node, children, ...props }: any) {
+      const text = extractNodeText(children);
+      const id = slugifyHeading(text);
+      return <h1 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h1>;
+    },
+    h2({ node, children, ...props }: any) {
+      const text = extractNodeText(children);
+      const id = slugifyHeading(text);
+      return <h2 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h2>;
+    },
+    h3({ node, children, ...props }: any) {
+      const text = extractNodeText(children);
+      const id = slugifyHeading(text);
+      return <h3 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h3>;
+    },
+    h4({ node, children, ...props }: any) {
+      const text = extractNodeText(children);
+      const id = slugifyHeading(text);
+      return <h4 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h4>;
+    },
+    h5({ node, children, ...props }: any) {
+      const text = extractNodeText(children);
+      const id = slugifyHeading(text);
+      return <h5 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h5>;
+    },
+    h6({ node, children, ...props }: any) {
+      const text = extractNodeText(children);
+      const id = slugifyHeading(text);
+      return <h6 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h6>;
+    },
+    strong({ node, children, ...props }: any) {
+      return (
+        <strong style={{ fontWeight: 700 }} {...props}>
+          {processTextChildren(children)}
+        </strong>
+      );
+    },
+    b({ node, children, ...props }: any) {
+      return (
+        <b style={{ fontWeight: 700 }} {...props}>
+          {processTextChildren(children)}
+        </b>
+      );
+    },
+    em({ node, children, ...props }: any) {
+      return (
+        <em {...props}>
+          {processTextChildren(children)}
+        </em>
+      );
+    },
+  };
+}
+
+export const markdownComponents = createMarkdownComponents();
 
 export function MarkdownMessage({
   content,
@@ -476,25 +600,7 @@ export function MarkdownMessage({
 
   // 动态构建带 onOpenFile 上下文的 components
   const components = useMemo(
-    () => ({
-      ...markdownComponents,
-      p({ children }: any) {
-        const processed = React.Children.map(children, (child) => {
-          if (typeof child !== 'string') return child;
-          const pills = renderSegmentsWithPills(child, onOpenFile);
-          return pills.length > 0 ? pills : child;
-        });
-        return <p>{processed}</p>;
-      },
-      li({ children }: any) {
-        const processed = React.Children.map(children, (child) => {
-          if (typeof child !== 'string') return child;
-          const pills = renderSegmentsWithPills(child, onOpenFile);
-          return pills.length > 0 ? pills : child;
-        });
-        return <li>{processed}</li>;
-      },
-    }),
+    () => createMarkdownComponents(onOpenFile),
     [onOpenFile],
   );
 

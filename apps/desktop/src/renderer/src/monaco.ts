@@ -37,12 +37,13 @@ monaco.languages.registerCodeActionProvider('*', {
     return {
       actions: [
         {
-          title: `✦ Fix with AI: 修复错误 (⌥.)`,
+          title: `✦ Fix with AI: 智能修复此代码错误 (⌥.)`,
           kind: 'quickfix',
           isPreferred: true,
+          diagnostics: [err],
           command: {
             id: 'echoly.action.fixWithAi',
-            title: 'Fix with AI',
+            title: 'Fix with AI: 智能修复',
             arguments: [err],
           },
         },

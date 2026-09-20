@@ -12,6 +12,14 @@ import type {
 } from '@deepseek-ide/shared';
 import { RenderFileTreeIcon } from './FileTree';
 import { GitCommitPreviewCard } from './GitCommitPreviewCard';
+import {
+  GitCreateBranchModal,
+  GitCheckoutModal,
+  GitRemotesModal,
+  GitCreateTagModal,
+  GitStatusModal,
+  GitOutputModal,
+} from './GitPanelModals';
 
 interface Props {
   workspaceInfo: WorkspaceInfo | null;
@@ -21,6 +29,7 @@ interface Props {
   onViewFileHistory?: (path: string) => void;
   onRevealInExplorer?: (path: string) => void;
   onBranchSwitched?: () => void;
+  onOpenCloneModal?: () => void;
   refreshNonce?: number;
   onShowToast?: (
     title: string,
@@ -1185,16 +1194,26 @@ export function GitPanel({
   onViewFileHistory,
   onRevealInExplorer,
   onBranchSwitched,
+  onOpenCloneModal,
   refreshNonce,
   onShowToast,
 }: Props) {
   const [status, setStatus] = useState<GitStatusResult | null>(null);
   const [branches, setBranches] = useState<GitBranchInfo[]>([]);
+  const [allBranches, setAllBranches] = useState<GitBranchInfo[]>([]);
   const [commits, setCommits] = useState<GitCommitEntry[]>([]);
   const [historyResult, setHistoryResult] = useState<GitHistoryResult | null>(null);
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const [selectedCommitFiles, setSelectedCommitFiles] = useState<GitCommitFileChange[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
+
+  // Git 交互弹窗状态
+  const [createBranchModalOpen, setCreateBranchModalOpen] = useState(false);
+  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
+  const [remotesModalOpen, setRemotesModalOpen] = useState(false);
+  const [createTagModalOpen, setCreateTagModalOpen] = useState(false);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [outputModalOpen, setOutputModalOpen] = useState(false);
 
   // Commit Hover Preview Card 状态
   const [hoveredCommitInfo, setHoveredCommitInfo] = useState<{
@@ -1357,14 +1376,25 @@ export function GitPanel({
 
   const runGitAction = async (
     title: string,
-    action: () => Promise<{ ok: boolean; detail?: string }>,
+    action: () => Promise<{ ok: boolean; detail?: string; cancelled?: boolean } | null | void>,
     successMsg?: string,
   ) => {
     setShowMoreMenu(false);
-    onShowToast?.(`正在执行: ${title}...`, undefined, 'info');
     setBusy(true);
     try {
       const res = await action();
+      if (!res) {
+        // 用户主动取消输入或未执行
+        return;
+      }
+      if (
+        res.cancelled ||
+        res.detail === 'cancelled' ||
+        res.detail === '取消输入' ||
+        res.detail === '取消放弃修改'
+      ) {
+        return;
+      }
       if (res.ok) {
         onShowToast?.(`✓ ${title}成功`, res.detail || successMsg || '操作已完成', 'success');
         await refresh();
@@ -1372,7 +1402,9 @@ export function GitPanel({
           title.includes('分支') ||
           title.includes('签出') ||
           title.includes('Pull') ||
-          title.includes('拉取')
+          title.includes('拉取') ||
+          title.includes('Fetch') ||
+          title.includes('抓取')
         ) {
           onBranchSwitched?.();
         }
@@ -1571,8 +1603,13 @@ export function GitPanel({
     ]);
 
     setStatus(st);
-    if (br.ok) setBranches(br.branches.filter((b) => !b.remote));
-    else setBranches([]);
+    if (br.ok) {
+      setAllBranches(br.branches);
+      setBranches(br.branches.filter((b) => !b.remote));
+    } else {
+      setAllBranches([]);
+      setBranches([]);
+    }
 
     setHistoryResult(hist);
     if (hist.ok) setCommits(hist.commits);
@@ -1960,15 +1997,14 @@ export function GitPanel({
         </div>
       </div>
 
-      {/* 2. More (...) Dropdown Context Menu matching screenshot */}
+      {/* 2. More (...) Dropdown Context Menu */}
       {showMoreMenu && (
         <div ref={moreMenuRef} onClick={() => setShowMoreMenu(false)} className="git-more-menu">
           <div
             className="git-more-menu-item"
             onClick={() => setDisplayMode((m) => (m === 'tree' ? 'list' : 'tree'))}
           >
-            <span>查看和排序 ({displayMode === 'tree' ? '树状' : '列表'})</span>
-            <span className="chev">▸</span>
+            <span>视图模式：切换为{displayMode === 'tree' ? '列表视图' : '树状视图'}</span>
           </div>
           <div className="git-more-menu-sep" />
 
@@ -1977,20 +2013,20 @@ export function GitPanel({
           {/* 拉取 */}
           <div
             className="git-more-menu-item"
-            onClick={() => void runGitAction('Git 拉取', () => window.ide.gitPull())}
+            onClick={() => void runGitAction('Git 拉取 (Pull)', () => window.ide.gitPull())}
           >
-            拉取
+            拉取 (Pull)
           </div>
 
           {/* 推送 */}
           <div
             className="git-more-menu-item"
-            onClick={() => void runGitAction('Git 推送', () => window.ide.gitPush())}
+            onClick={() => void runGitAction('Git 推送 (Push)', () => window.ide.gitPush())}
           >
-            推送
+            推送 (Push)
           </div>
 
-          {/* 拉取，推送 */}
+          {/* 拉取并推送 */}
           <div
             className="git-more-menu-item"
             onClick={() =>
@@ -2001,16 +2037,23 @@ export function GitPanel({
               })
             }
           >
-            <span>拉取，推送</span>
-            <span className="chev">▸</span>
+            拉取并推送 (Sync)
           </div>
 
-          {/* 抓取 */}
+          {/* 刷新 / 抓取远程分支 (Fetch) */}
           <div
             className="git-more-menu-item"
-            onClick={() => void runGitAction('Git 抓取 (Fetch)', () => window.ide.gitFetch())}
+            onClick={() =>
+              void runGitAction('刷新远程分支 (Fetch)', async () => {
+                const res = await window.ide.gitFetch();
+                if (res.ok) {
+                  onBranchSwitched?.();
+                }
+                return res;
+              })
+            }
           >
-            抓取
+            刷新远程分支 (Fetch)
           </div>
 
           <div className="git-more-menu-sep" />
@@ -2020,82 +2063,56 @@ export function GitPanel({
           {/* 克隆 */}
           <div
             className="git-more-menu-item"
-            onClick={() =>
-              void runGitAction('Git 克隆', async () => {
-                const url = prompt('请输入 Git 远程仓库地址 (URL):');
-                if (!url?.trim()) return { ok: false, detail: '取消输入' };
-                return window.ide.cloneRepo({
-                  url: url.trim(),
-                  parentDir: workspaceInfo?.root || '',
-                });
-              })
-            }
+            onClick={() => {
+              setShowMoreMenu(false);
+              onOpenCloneModal?.();
+            }}
           >
-            克隆
+            克隆仓库 (Clone)...
           </div>
 
           {/* 远程 */}
           <div
             className="git-more-menu-item"
-            onClick={() =>
-              void runGitAction('Git 远程仓库', async () => {
-                const res = await window.ide.gitRemotes();
-                if (!res.ok) return res;
-                if (res.remotes.length === 0) {
-                  return { ok: true, detail: '当前项目尚未配置任何远程仓库' };
-                }
-                const detail = res.remotes.map((r) => `${r.name} → ${r.url}`).join('\n');
-                return { ok: true, detail };
-              })
-            }
+            onClick={() => {
+              setShowMoreMenu(false);
+              setRemotesModalOpen(true);
+            }}
           >
-            <span>远程</span>
-            <span className="chev">▸</span>
+            查看远程仓库 (Remotes)
           </div>
 
           {/* 分支 */}
           <div
             className="git-more-menu-item"
-            onClick={() =>
-              void runGitAction('新建分支', async () => {
-                const b = prompt('请输入新分支名称:');
-                if (!b?.trim()) return { ok: false, detail: '取消输入' };
-                return window.ide.gitCreateBranch(b.trim(), true);
-              })
-            }
+            onClick={() => {
+              setShowMoreMenu(false);
+              setCreateBranchModalOpen(true);
+            }}
           >
-            <span>分支 (新建分支)</span>
-            <span className="chev">▸</span>
+            新建分支...
           </div>
 
           {/* 签出到... */}
           <div
             className="git-more-menu-item"
-            onClick={() =>
-              void runGitAction('Git 切换分支', async () => {
-                const br = prompt('请输入要签出的目标分支名:');
-                if (!br?.trim()) return { ok: false, detail: '取消输入' };
-                return window.ide.gitCheckout(br.trim());
-              })
-            }
+            onClick={() => {
+              setShowMoreMenu(false);
+              setCheckoutModalOpen(true);
+            }}
           >
-            签出到...
+            切换分支 (Checkout)...
           </div>
 
           {/* 标记 */}
           <div
             className="git-more-menu-item"
-            onClick={() =>
-              void runGitAction('创建 Git Tag 标记', async () => {
-                const tag = prompt('请输入标签名称 (Tag name, 如 v1.0.0):');
-                if (!tag?.trim()) return { ok: false, detail: '取消输入' };
-                const msg = prompt('请输入标签说明 (可选):');
-                return window.ide.gitCreateTag(tag.trim(), msg?.trim() || undefined);
-              })
-            }
+            onClick={() => {
+              setShowMoreMenu(false);
+              setCreateTagModalOpen(true);
+            }}
           >
-            <span>标记 (Tag)</span>
-            <span className="chev">▸</span>
+            创建标签 (Tag)...
           </div>
 
           <div className="git-more-menu-sep" />
@@ -2105,76 +2122,80 @@ export function GitPanel({
           {/* 提交 */}
           <div
             className="git-more-menu-item"
-            onClick={() =>
-              void runGitAction('Git 提交', async () => {
-                const msg = message.trim() || prompt('请输入提交信息 (Commit Message):');
-                if (!msg) return { ok: false, detail: '提交信息不能为空' };
-                return window.ide.gitCommit(msg);
-              })
-            }
+            onClick={() => {
+              setShowMoreMenu(false);
+              const msg = message.trim();
+              if (!msg) {
+                onShowToast?.('请先在上方输入提交信息', undefined, 'warn');
+                return;
+              }
+              void runGitAction('Git 提交', () => window.ide.gitCommit(msg));
+            }}
           >
-            <span>提交</span>
-            <span className="chev">▸</span>
+            提交更改 (Commit)
           </div>
 
-          {/* 存储 */}
+          {/* 暂存 */}
           <div
             className="git-more-menu-item"
             onClick={() =>
-              void runGitAction('Git 存储 (Stash)', async () => {
+              void runGitAction('暂存修改 (Stash Push)', async () => {
                 const entries = status?.entries || [];
                 if (entries.length === 0) {
-                  return { ok: true, detail: '工作区干净，没有需要暂存 (stash) 的修改' };
+                  return { ok: true, detail: '工作区干净，没有需要暂存的修改' };
                 }
                 const res = await window.ide.gitStash('push', message?.trim() || undefined);
                 if (!res.ok) return res;
-                const count = res.stashes?.length ?? 0;
-                return { ok: true, detail: `已存入 ${count} 个 stash` };
+                return { ok: true, detail: `已存入暂存区 (${res.stashes?.length ?? 0} 个暂存项)` };
               })
             }
           >
-            <span>存储 (Stash)</span>
-            <span className="chev">▸</span>
+            暂存修改 (Stash Push)
           </div>
 
-          {/* 更改 */}
+          {/* 弹出暂存 */}
           <div
             className="git-more-menu-item"
             onClick={() =>
+              void runGitAction('恢复暂存 (Stash Pop)', async () => {
+                const res = await window.ide.gitStash('pop');
+                return res;
+              })
+            }
+          >
+            弹出最新暂存 (Stash Pop)
+          </div>
+
+          {/* 放弃更改 */}
+          <div
+            className="git-more-menu-item"
+            onClick={() => {
+              setShowMoreMenu(false);
+              if (!confirm('确定要放弃工作区中的所有未提交修改吗？此操作不可逆！')) {
+                return;
+              }
               void runGitAction('放弃全部修改', async () => {
-                if (!confirm('确定要放弃工作区中的所有修改吗？此操作不可逆！')) {
-                  return { ok: false, detail: '取消放弃修改' };
-                }
                 if (onDiscardPath) {
                   await onDiscardPath('');
                 } else {
                   await window.ide.gitDiscard(['.']);
                 }
                 return { ok: true, detail: '已放弃所有本地修改' };
-              })
-            }
+              });
+            }}
           >
-            <span>更改 (放弃所有修改)</span>
-            <span className="chev">▸</span>
+            放弃所有修改...
           </div>
 
           {/* 工作树 */}
           <div
             className="git-more-menu-item"
-            onClick={() =>
-              void runGitAction('Git 工作树', async () => {
-                const res = await window.ide.gitStatus();
-                const detail = res.ok
-                  ? `当前分支 ${res.branch || 'main'}，${
-                      res.entries.length ? `有 ${res.entries.length} 项变动` : '工作树干净 (Clean)'
-                    }`
-                  : res.detail || '无法读取工作树状态';
-                return { ok: res.ok, detail };
-              })
-            }
+            onClick={() => {
+              setShowMoreMenu(false);
+              setStatusModalOpen(true);
+            }}
           >
-            <span>工作树</span>
-            <span className="chev">▸</span>
+            工作树状态
           </div>
 
           <div className="git-more-menu-sep" />
@@ -2182,16 +2203,12 @@ export function GitPanel({
           {/* 显示 GIT 输出 */}
           <div
             className="git-more-menu-item"
-            onClick={() =>
-              void runGitAction('GIT 输出日志', async () => {
-                const res = await window.ide.gitOutput(50);
-                if (!res.ok) return res;
-                if (res.lines.length === 0) return { ok: true, detail: '暂无 git 输出记录' };
-                return { ok: true, detail: res.lines.join('\n') };
-              })
-            }
+            onClick={() => {
+              setShowMoreMenu(false);
+              setOutputModalOpen(true);
+            }}
           >
-            显示 GIT 输出
+            显示 GIT 执行日志
           </div>
         </div>
       )}
@@ -2747,13 +2764,7 @@ export function GitPanel({
             {/* 新建/切换分支图标 */}
             <button
               type="button"
-              onClick={() =>
-                void runGitAction('新建分支', async () => {
-                  const b = prompt('请输入新分支名称:');
-                  if (!b?.trim()) return { ok: false, detail: '取消输入' };
-                  return window.ide.gitCreateBranch(b.trim(), true);
-                })
-              }
+              onClick={() => setCreateBranchModalOpen(true)}
               title="新建分支"
               className="panel-action-btn"
             >
@@ -3252,6 +3263,75 @@ export function GitPanel({
           onViewFileHistory={(p) => onViewFileHistory?.(p)}
         />
       )}
+
+      {/* ── 交互式 Git 操作弹窗 ── */}
+      <GitCreateBranchModal
+        open={createBranchModalOpen}
+        currentBranch={status?.branch || 'HEAD'}
+        branches={branches}
+        onClose={() => setCreateBranchModalOpen(false)}
+        onCreate={async (name, checkout) => {
+          const res = await window.ide.gitCreateBranch(name, checkout);
+          if (res.ok) {
+            onShowToast?.('✓ 新建分支成功', res.detail || `已创建分支 ${name}`, 'success');
+            await refresh();
+            if (checkout) onBranchSwitched?.();
+          }
+          return res;
+        }}
+      />
+
+      <GitCheckoutModal
+        open={checkoutModalOpen}
+        currentBranch={status?.branch || 'HEAD'}
+        branches={allBranches.length > 0 ? allBranches : branches}
+        onClose={() => setCheckoutModalOpen(false)}
+        onCheckout={async (name) => {
+          const res = await window.ide.gitCheckout(name);
+          if (res.ok) {
+            onShowToast?.('✓ 切换分支成功', `已切换至分支 ${name}`, 'success');
+            await refresh();
+            onBranchSwitched?.();
+          }
+          return res;
+        }}
+      />
+
+      <GitRemotesModal
+        open={remotesModalOpen}
+        onClose={() => setRemotesModalOpen(false)}
+        onRefreshBranches={async () => {
+          await refresh();
+          onBranchSwitched?.();
+        }}
+        onShowToast={onShowToast}
+      />
+
+      <GitCreateTagModal
+        open={createTagModalOpen}
+        currentBranch={status?.branch || 'HEAD'}
+        onClose={() => setCreateTagModalOpen(false)}
+        onCreateTag={async (name, msg) => {
+          const res = await window.ide.gitCreateTag(name, msg);
+          if (res.ok) {
+            onShowToast?.('✓ 创建标签成功', res.detail || `已创建 Tag: ${name}`, 'success');
+            await refresh();
+          }
+          return res;
+        }}
+      />
+
+      <GitStatusModal
+        open={statusModalOpen}
+        status={status}
+        onClose={() => setStatusModalOpen(false)}
+        onRefresh={refresh}
+      />
+
+      <GitOutputModal
+        open={outputModalOpen}
+        onClose={() => setOutputModalOpen(false)}
+      />
     </div>
   );
 }

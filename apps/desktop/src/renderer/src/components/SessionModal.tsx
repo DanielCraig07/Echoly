@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import type { ChatSession } from '@deepseek-ide/shared';
-import { formatSessionWorkspaceLine } from '../utils';
+import type { ChatSession, WorkspaceInfo, RecentWorkspaceItem } from '@deepseek-ide/shared';
+import { formatSessionWorkspaceLine, folderNameFromPath } from '../utils';
 import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 
 interface Props {
@@ -11,6 +11,166 @@ interface Props {
   onClose: () => void;
   activeSessionIds?: string[];
   onRenameSession?: (id: string, newTitle: string) => void;
+  workspaceInfo?: WorkspaceInfo | null;
+  recentWorkspaces?: RecentWorkspaceItem[];
+}
+
+export function isSessionMatchingWorkspace(
+  session: ChatSession,
+  ws: WorkspaceInfo | null | undefined,
+): boolean {
+  if (!ws?.root) return true;
+  const norm = (str?: string) =>
+    (str || '').replace(/\\/g, '/').replace(/\/+$/, '').trim().toLowerCase();
+
+  const wsRoot = norm(ws.root);
+  const wsLabel = norm(ws.label);
+  const sessionPath = norm(session.workspacePath);
+  const sessionProject = norm(session.projectName);
+  const currentProject = norm(folderNameFromPath(ws.root));
+
+  // 1. 绝对或规范化路径直接匹配
+  if (sessionPath) {
+    if (sessionPath === wsRoot || sessionPath === wsLabel) return true;
+    if (sessionPath.endsWith('/' + wsRoot) || wsRoot.endsWith('/' + sessionPath)) return true;
+  }
+
+  // 2. 项目名称一致匹配
+  if (sessionProject && currentProject && sessionProject === currentProject) {
+    return true;
+  }
+
+  return false;
+}
+
+export function isSessionMatchingProject(
+  session: ChatSession,
+  project: { path?: string; name?: string },
+): boolean {
+  if (!project.path && !project.name) return true;
+  const norm = (str?: string) =>
+    (str || '').replace(/\\/g, '/').replace(/\/+$/, '').trim().toLowerCase();
+
+  const projPath = norm(project.path);
+  const projName = norm(project.name);
+  const sessionPath = norm(session.workspacePath);
+  const sessionProject = norm(session.projectName);
+
+  // 1. 路径直接匹配
+  if (projPath && sessionPath) {
+    if (sessionPath === projPath) return true;
+    if (sessionPath.endsWith('/' + projPath) || projPath.endsWith('/' + sessionPath)) return true;
+  }
+
+  // 2. 项目名称匹配
+  if (projName) {
+    if (sessionProject && sessionProject === projName) return true;
+    if (sessionPath) {
+      const folder = norm(folderNameFromPath(session.workspacePath || ''));
+      if (folder === projName) return true;
+    }
+  }
+
+  // 3. 从 project.path 中提取目录名匹配
+  if (projPath && !projName) {
+    const folder = norm(folderNameFromPath(project.path || ''));
+    if (sessionProject && sessionProject === folder) return true;
+  }
+
+  return false;
+}
+
+export interface AvailableProject {
+  key: string;
+  name: string;
+  path?: string;
+  isCurrent: boolean;
+  count: number;
+}
+
+function getStoredRecentWorkspaces(): RecentWorkspaceItem[] {
+  try {
+    const raw = localStorage.getItem('echoly_recent_workspaces');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function collectAvailableProjects(
+  workspaceInfo: WorkspaceInfo | null | undefined,
+  recentWorkspaces: RecentWorkspaceItem[] | undefined,
+  sessions: ChatSession[],
+): AvailableProject[] {
+  const map = new Map<string, { name: string; path?: string; isCurrent: boolean }>();
+
+  // 1. 当前打开的工作区（置顶）
+  if (workspaceInfo?.root) {
+    const currentName = folderNameFromPath(workspaceInfo.root) || workspaceInfo.label || '当前项目';
+    const normKey = workspaceInfo.root.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    map.set(normKey, {
+      name: currentName,
+      path: workspaceInfo.root,
+      isCurrent: true,
+    });
+  }
+
+  // 2. 所有最近/已知工作区（即使当前没有任何历史会话，也全部纳入并供用户选择）
+  const recents = (recentWorkspaces && recentWorkspaces.length > 0)
+    ? recentWorkspaces
+    : getStoredRecentWorkspaces();
+
+  for (const r of recents) {
+    if (!r.path && !r.name) continue;
+    const normKey = (r.path || r.name).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    if (!map.has(normKey)) {
+      map.set(normKey, {
+        name: r.name || folderNameFromPath(r.path) || '未命名项目',
+        path: r.path,
+        isCurrent: false,
+      });
+    }
+  }
+
+  // 3. 历史会话中记录的项目
+  for (const s of sessions) {
+    const sPath = s.workspacePath;
+    const sName = s.projectName || (sPath ? folderNameFromPath(sPath) : '');
+    if (!sPath && !sName) continue;
+    const normKey = (sPath || sName).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    if (!map.has(normKey)) {
+      map.set(normKey, {
+        name: sName || '历史项目',
+        path: sPath,
+        isCurrent: false,
+      });
+    }
+  }
+
+  // 计算每个项目当前匹配到的会话条数（允许为 0）
+  const result: AvailableProject[] = [];
+  for (const [key, proj] of map.entries()) {
+    const count = sessions.filter((s) => isSessionMatchingProject(s, proj)).length;
+    result.push({
+      key,
+      name: proj.name,
+      path: proj.path,
+      isCurrent: proj.isCurrent,
+      count,
+    });
+  }
+
+  // 当前项目置顶，其余项目优先按会话数降序排列，再按名称字母序排列
+  result.sort((a, b) => {
+    if (a.isCurrent) return -1;
+    if (b.isCurrent) return 1;
+    if (b.count !== a.count) return b.count - a.count;
+    return a.name.localeCompare(b.name);
+  });
+
+  return result;
 }
 
 function formatTime(ts: number): string {
@@ -38,10 +198,12 @@ export function SessionModal({
   onClose,
   activeSessionIds = [],
   onRenameSession,
+  workspaceInfo,
+  recentWorkspaces,
 }: Props) {
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_session_modal_size',
-    defaultWidth: 620,
+    defaultWidth: 640,
     defaultHeight: 560,
     minWidth: 480,
     minHeight: 380,
@@ -52,6 +214,10 @@ export function SessionModal({
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  // 筛选范围：'current' 为当前工作区，'all' 为全局全部会话，或者指定项目的 key
+  const [filterScope, setFilterScope] = useState<string>('current');
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -83,12 +249,31 @@ export function SessionModal({
           setEditingId(null);
           return;
         }
+        if (projectDropdownOpen) {
+          setProjectDropdownOpen(false);
+          return;
+        }
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [onClose, editingId]);
+  }, [onClose, editingId, projectDropdownOpen]);
+
+  // 点击外部关闭项目下拉选单
+  useEffect(() => {
+    if (!projectDropdownOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (
+        projectDropdownRef.current &&
+        !projectDropdownRef.current.contains(e.target as Node)
+      ) {
+        setProjectDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [projectDropdownOpen]);
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -130,9 +315,10 @@ export function SessionModal({
           customTitle: true,
           updatedAt: Date.now(),
         };
-        await window.ide.saveSession(updated);
+        // 关键：立即同步更新当前会话状态并通知 ChatPanel，不等待后台磁盘写入
         setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)));
         onRenameSession?.(id, trimmed);
+        await window.ide.saveSession(updated);
       }
       setEditingId(null);
     } finally {
@@ -140,7 +326,54 @@ export function SessionModal({
     }
   };
 
-  const filteredSessions = sessions.filter((s) => {
+  const currentProjectName = workspaceInfo?.root
+    ? folderNameFromPath(workspaceInfo.root)
+    : '';
+
+  const isCurrentProjectSession = useCallback(
+    (s: ChatSession) => {
+      if (!workspaceInfo?.root) return true;
+      return isSessionMatchingWorkspace(s, workspaceInfo);
+    },
+    [workspaceInfo],
+  );
+
+  const currentProjectSessions = useMemo(
+    () => sessions.filter(isCurrentProjectSession),
+    [sessions, isCurrentProjectSession],
+  );
+
+  // 收集并整理所有项目（包含无历史会话的项目）
+  const availableProjects = useMemo(
+    () => collectAvailableProjects(workspaceInfo, recentWorkspaces, sessions),
+    [workspaceInfo, recentWorkspaces, sessions],
+  );
+
+  const selectedSpecificProject = useMemo(
+    () =>
+      filterScope !== 'current' && filterScope !== 'all'
+        ? availableProjects.find((p) => p.key === filterScope)
+        : null,
+    [filterScope, availableProjects],
+  );
+
+  // 根据当前选择的范围解析会话池
+  const poolSessions = useMemo(() => {
+    if (filterScope === 'all') {
+      return sessions;
+    }
+    if (filterScope === 'current') {
+      return workspaceInfo?.root ? currentProjectSessions : sessions;
+    }
+    if (selectedSpecificProject) {
+      return sessions.filter((s) =>
+        isSessionMatchingProject(s, selectedSpecificProject),
+      );
+    }
+    return sessions;
+  }, [filterScope, sessions, workspaceInfo, currentProjectSessions, selectedSpecificProject]);
+
+  const filteredSessions = poolSessions.filter((s) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const matchTitle = s.title.toLowerCase().includes(q);
@@ -152,6 +385,17 @@ export function SessionModal({
       (s.workspacePath || '').toLowerCase().includes(q);
     return matchTitle || matchMsg || matchWs;
   });
+
+  const activeScopeBadgeText = useMemo(() => {
+    if (filterScope === 'all') return '全局会话 (全部项目)';
+    if (filterScope === 'current') {
+      return currentProjectName ? `当前项目: ${currentProjectName}` : '当前项目';
+    }
+    if (selectedSpecificProject) {
+      return `项目: ${selectedSpecificProject.name}`;
+    }
+    return '历史会话';
+  }, [filterScope, currentProjectName, selectedSpecificProject]);
 
   return createPortal(
     <div className="session-modal-overlay" onClick={onClose}>
@@ -167,11 +411,251 @@ export function SessionModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="session-modal-header">
-          <div className="session-modal-title">
+          <div className="session-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>历史会话</span>
-            <span className="session-modal-count">({sessions.length})</span>
+            <span
+              style={{
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 12,
+                background: 'var(--primary-subtle, rgba(56, 189, 248, 0.12))',
+                color: 'var(--primary, #38bdf8)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                fontWeight: 600,
+                maxWidth: 180,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={selectedSpecificProject?.path || workspaceInfo?.root || '全部项目'}
+            >
+              {activeScopeBadgeText}
+            </span>
+            <span className="session-modal-count">({filteredSessions.length})</span>
           </div>
-          <div className="session-modal-actions">
+          <div className="session-modal-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* 项目会话切换器：永久展示（放出来），支持选择所有已知项目（不管有没有历史会话） */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                background: 'var(--bg-elevated, rgba(255,255,255,0.06))',
+                borderRadius: 6,
+                padding: 2,
+                border: '1px solid var(--border)',
+                position: 'relative',
+              }}
+            >
+              {workspaceInfo?.root && (
+                <button
+                  type="button"
+                  style={{
+                    padding: '3px 8px',
+                    fontSize: 11,
+                    borderRadius: 4,
+                    border: 'none',
+                    background: filterScope === 'current' ? 'var(--primary, #38bdf8)' : 'transparent',
+                    color: filterScope === 'current' ? '#000' : 'var(--muted)',
+                    fontWeight: filterScope === 'current' ? 700 : 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onClick={() => setFilterScope('current')}
+                  title={`当前项目：${currentProjectName} (${currentProjectSessions.length} 条会话)`}
+                >
+                  当前项目 ({currentProjectSessions.length})
+                </button>
+              )}
+              <button
+                type="button"
+                style={{
+                  padding: '3px 8px',
+                  fontSize: 11,
+                  borderRadius: 4,
+                  border: 'none',
+                  background: filterScope === 'all' ? 'var(--primary, #38bdf8)' : 'transparent',
+                  color: filterScope === 'all' ? '#000' : 'var(--muted)',
+                  fontWeight: filterScope === 'all' ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+                onClick={() => setFilterScope('all')}
+                title={`全部项目历史会话 (${sessions.length} 条)`}
+              >
+                全部项目 ({sessions.length})
+              </button>
+
+              {/* 下拉选择具体项目（包含无历史会话的所有已知项目） */}
+              <div ref={projectDropdownRef} style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  style={{
+                    padding: '3px 8px',
+                    fontSize: 11,
+                    borderRadius: 4,
+                    border: 'none',
+                    background: selectedSpecificProject ? 'var(--primary, #38bdf8)' : 'transparent',
+                    color: selectedSpecificProject ? '#000' : 'var(--muted)',
+                    fontWeight: selectedSpecificProject ? 700 : 500,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    transition: 'all 0.15s ease',
+                    maxWidth: 150,
+                  }}
+                  onClick={() => setProjectDropdownOpen((v) => !v)}
+                  title="选择具体项目（包含暂无历史会话的所有已知项目）"
+                >
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {selectedSpecificProject
+                      ? `${selectedSpecificProject.name} (${selectedSpecificProject.count})`
+                      : '指定项目'}
+                  </span>
+                  <span style={{ fontSize: 9, opacity: 0.8 }}>▾</span>
+                </button>
+
+                {projectDropdownOpen && (
+                  <div className="session-project-dropdown-menu">
+                    <div className="session-project-dropdown-header">
+                      <span>切换查看项目（所有项目均可选）</span>
+                      <span className="session-project-dropdown-badge">{availableProjects.length} 个项目</span>
+                    </div>
+
+                    {/* 全局全部项目 */}
+                    <div
+                      className={`session-project-dropdown-item${filterScope === 'all' ? ' active' : ''}`}
+                      onClick={() => {
+                        setFilterScope('all');
+                        setProjectDropdownOpen(false);
+                      }}
+                    >
+                      <div className="session-project-item-left">
+                        <svg
+                          className="session-project-item-icon"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="2" y1="12" x2="22" y2="12" />
+                          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                        </svg>
+                        <span className="session-project-item-title">全部项目 (全局)</span>
+                      </div>
+                      <div className="session-project-item-right">
+                        <span className={`session-project-count-pill${sessions.length > 0 ? ' has-sessions' : ''}`}>
+                          {sessions.length} 条
+                        </span>
+                        {filterScope === 'all' && (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 当前项目 */}
+                    {workspaceInfo?.root && (
+                      <div
+                        className={`session-project-dropdown-item${filterScope === 'current' ? ' active' : ''}`}
+                        onClick={() => {
+                          setFilterScope('current');
+                          setProjectDropdownOpen(false);
+                        }}
+                      >
+                        <div className="session-project-item-left">
+                          <svg
+                            className="session-project-item-icon"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                            <circle cx="12" cy="10" r="3" />
+                          </svg>
+                          <span className="session-project-item-title" title={currentProjectName}>
+                            当前：{currentProjectName}
+                          </span>
+                          <span className="session-project-current-tag">当前</span>
+                        </div>
+                        <div className="session-project-item-right">
+                          <span className={`session-project-count-pill${currentProjectSessions.length > 0 ? ' has-sessions' : ''}`}>
+                            {currentProjectSessions.length} 条
+                          </span>
+                          {filterScope === 'current' && (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="session-project-dropdown-divider" />
+
+                    {/* 所有已知项目列表（包含 0 会话历史的项目） */}
+                    {availableProjects.map((p) => {
+                      const isSelected = filterScope === p.key;
+                      return (
+                        <div
+                          key={p.key}
+                          className={`session-project-dropdown-item${isSelected ? ' active' : ''}`}
+                          onClick={() => {
+                            setFilterScope(p.key);
+                            setProjectDropdownOpen(false);
+                          }}
+                          title={p.path || p.name}
+                        >
+                          <div className="session-project-item-left">
+                            <svg
+                              className="session-project-item-icon"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                            <span className="session-project-item-title">{p.name}</span>
+                            {p.isCurrent && (
+                              <span className="session-project-current-tag">当前</span>
+                            )}
+                          </div>
+                          <div className="session-project-item-right">
+                            <span className={`session-project-count-pill${p.count > 0 ? ' has-sessions' : ''}`}>
+                              {p.count > 0 ? `${p.count} 条` : '0'}
+                            </span>
+                            {isSelected && (
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
             <button
               type="button"
               className="primary-btn-sm"
@@ -242,8 +726,56 @@ export function SessionModal({
               <span>加载中…</span>
             </div>
           ) : filteredSessions.length === 0 ? (
-            <div className="session-modal-empty">
-              {search ? '没有匹配的会话' : '暂无历史会话记录'}
+            <div className="session-modal-empty" style={{ padding: '32px 16px', textAlign: 'center' }}>
+              {search ? (
+                '没有匹配的会话'
+              ) : filterScope === 'current' ? (
+                <div>
+                  <div style={{ color: 'var(--muted)', marginBottom: 12 }}>
+                    当前项目（{currentProjectName || '当前项目'}）暂无历史会话
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                    {sessions.length > 0 && (
+                      <button
+                        type="button"
+                        className="ghost-btn-sm"
+                        onClick={() => setFilterScope('all')}
+                        style={{ fontSize: 12, padding: '4px 12px' }}
+                      >
+                        查看全部项目会话 ({sessions.length})
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : selectedSpecificProject ? (
+                <div>
+                  <div style={{ color: 'var(--muted)', marginBottom: 12 }}>
+                    项目 “{selectedSpecificProject.name}” 暂无历史会话
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                    {workspaceInfo?.root && (
+                      <button
+                        type="button"
+                        className="ghost-btn-sm"
+                        onClick={() => setFilterScope('current')}
+                        style={{ fontSize: 12, padding: '4px 12px' }}
+                      >
+                        查看当前项目 ({currentProjectSessions.length})
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="ghost-btn-sm"
+                      onClick={() => setFilterScope('all')}
+                      style={{ fontSize: 12, padding: '4px 12px' }}
+                    >
+                      查看全部项目会话 ({sessions.length})
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                '暂无历史会话记录'
+              )}
             </div>
           ) : (
             <div className="session-modal-list">
@@ -259,27 +791,95 @@ export function SessionModal({
                     key={s.id}
                     className={`session-row${isCurrent ? ' current' : ''}${isActiveTab ? ' active-tab' : ''}`}
                     onClick={() => {
-                      if (!isEditing) {
-                        onSelectSession(s);
-                        onClose();
+                      if (isEditing) {
+                        void handleSaveRename(s.id);
+                        return;
                       }
+                      onSelectSession(s);
+                      onClose();
                     }}
                   >
                     <div className="session-row-left">
                       {isEditing ? (
-                        <input
-                          className="session-rename-input"
-                          type="text"
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') void handleSaveRename(s.id);
-                            if (e.key === 'Escape') setEditingId(null);
-                          }}
-                          onBlur={() => void handleSaveRename(s.id)}
-                          autoFocus
-                          onClick={(e) => e.stopPropagation()}
-                        />
+                        <div className="session-row-text">
+                          <div
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 22 }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              className="session-rename-input"
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void handleSaveRename(s.id);
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setEditingId(null);
+                                }
+                              }}
+                              onBlur={() => void handleSaveRename(s.id)}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              title="保存会话名称"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void handleSaveRename(s.id);
+                              }}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: 22,
+                                height: 22,
+                                borderRadius: 4,
+                                border: 'none',
+                                background: 'var(--primary, #3b82f6)',
+                                color: '#fff',
+                                cursor: 'pointer',
+                                padding: 0,
+                                flexShrink: 0,
+                              }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            </button>
+                            {isCurrent && (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  background: 'rgba(76, 141, 255, 0.18)',
+                                  color: 'var(--accent, #4c8dff)',
+                                  border: '1px solid rgba(76, 141, 255, 0.3)',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                当前
+                              </span>
+                            )}
+                          </div>
+                          <span className="session-row-project" title={ws.title || ws.text}>
+                            {ws.badge ? (
+                              <span
+                                className={`session-ws-badge${ws.kind === 'ssh' ? ' ssh' : ' local'}`}
+                              >
+                                {ws.badge}
+                              </span>
+                            ) : null}
+                            <span className="session-row-project-name">{ws.text}</span>
+                          </span>
+                        </div>
                       ) : (
                         <div className="session-row-text">
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

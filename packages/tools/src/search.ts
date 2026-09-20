@@ -512,7 +512,30 @@ async function walkCollectFilePaths(backend: WorkspaceBackend, maxFiles = 5000):
   return files;
 }
 
-async function runLocalCommand(
+export function getAugmentedEnv(): NodeJS.ProcessEnv {
+  const extraPaths = [
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
+  ];
+  const currentPath = process.env.PATH || '';
+  const pathParts = currentPath.split(':').filter(Boolean);
+  for (const p of extraPaths) {
+    if (!pathParts.includes(p)) {
+      pathParts.push(p);
+    }
+  }
+  return {
+    ...process.env,
+    PATH: pathParts.join(':'),
+  };
+}
+
+export async function runLocalCommand(
   cmd: string,
   args: string[],
   cwd: string,
@@ -520,7 +543,8 @@ async function runLocalCommand(
 ): Promise<string | null> {
   return new Promise((resolve) => {
     try {
-      const child = spawn(cmd, args, { cwd, timeout, stdio: ['ignore', 'pipe', 'ignore'] });
+      const env = getAugmentedEnv();
+      const child = spawn(cmd, args, { cwd, env, timeout, stdio: ['ignore', 'pipe', 'ignore'] });
       let stdout = '';
       child.stdout.on('data', (chunk: Buffer) => {
         stdout += chunk.toString();
@@ -608,6 +632,26 @@ export async function collectFilePathsLocal(root: string, maxFiles = 5000): Prom
     }
   } catch {
     // fall through
+  }
+
+  // 3. 尝试 Unix find 命令极速索引（~50-100ms）
+  if (process.platform !== 'win32') {
+    try {
+      const findCmd =
+        'find . -maxdepth 10 \\( -name .git -o -name node_modules -o -name dist -o -name out -o -name build -o -name .next -o -name __pycache__ -o -name vendor -o -name target -o -name .venv -o -name venv \\) -prune -o -type f -print';
+      const findOut = await runLocalCommand('sh', ['-c', findCmd], root, 3000);
+      if (findOut && findOut.trim()) {
+        const lines = findOut
+          .split(/\r?\n/)
+          .map((s) => s.trim().replace(/^\.\//, '').replace(/\\/g, '/'))
+          .filter((s) => s && s !== '.');
+        if (lines.length > 0) {
+          return lines.slice(0, maxFiles);
+        }
+      }
+    } catch {
+      // fall through
+    }
   }
 
   return [];

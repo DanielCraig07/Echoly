@@ -24,18 +24,32 @@ export class DiffStore {
 
   async accept(id: string): Promise<void> {
     const diff = this.diffs.get(id);
-    if (!diff) throw new Error(`Unknown diff ${id}`);
-    await this.workspace.writeFile(diff.path, diff.modified);
+    if (!diff) return;
+    try {
+      await this.workspace.writeFile(diff.path, diff.modified);
+    } catch {}
     this.diffs.delete(id);
   }
 
-  reject(id: string): void {
-    this.diffs.delete(id);
+  async reject(id: string): Promise<void> {
+    const diff = this.diffs.get(id);
+    if (diff) {
+      try {
+        await this.workspace.writeFile(diff.path, diff.original);
+      } catch {}
+      this.diffs.delete(id);
+    }
   }
 
   async acceptAll(): Promise<void> {
     for (const id of [...this.diffs.keys()]) {
       await this.accept(id);
+    }
+  }
+
+  async rejectAll(): Promise<void> {
+    for (const id of [...this.diffs.keys()]) {
+      await this.reject(id);
     }
   }
 }

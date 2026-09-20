@@ -770,20 +770,81 @@ export class GitService {
       return { ok: false, detail: gate.detail, branches: [] };
     }
     const { root } = gate as { root: string };
-    const res = await this.runGit(['branch', '-a', '--no-color'], root);
-    if (res.error) return { ok: false, detail: res.error, branches: [] };
-    if (res.code !== 0) return { ok: false, detail: res.stderr.trim(), branches: [] };
+
+    // 1. 获取当前分支名
+    let currentBranchName = '';
+    try {
+      const curRes = await this.runGit(['rev-parse', '--abbrev-ref', 'HEAD'], root);
+      if (curRes.code === 0) {
+        currentBranchName = curRes.stdout.trim();
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 2. 极速获取分支及其最新提交记录 (hash, message, relativeDate, author)
+    const refFormat =
+      '%(refname)|%(objectname:short)|%(subject)|%(committerdate:relative)|%(authorname)';
+    const res = await this.runGit(
+      ['for-each-ref', `--format=${refFormat}`, 'refs/heads', 'refs/remotes'],
+      root,
+    );
 
     const branches: GitBranchInfo[] = [];
-    for (const raw of res.stdout.split(/\r?\n/)) {
-      const line = raw.trim();
-      if (!line) continue;
-      const current = line.startsWith('*');
-      let name = line.replace(/^\*\s+/, '').trim();
-      if (name.includes('->')) continue; // skip symbolic refs like remotes/origin/HEAD -> origin/main
-      const remote = name.startsWith('remotes/');
-      if (remote) name = name.replace(/^remotes\//, '');
-      branches.push({ name, current, remote });
+
+    if (res.code === 0 && res.stdout.trim()) {
+      for (const raw of res.stdout.split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line) continue;
+        const [refname, hash, subject, relativeDate, author] = line.split('|');
+        if (!refname) continue;
+
+        let name = '';
+        let remote = false;
+
+        if (refname.startsWith('refs/heads/')) {
+          name = refname.slice('refs/heads/'.length);
+          remote = false;
+        } else if (refname.startsWith('refs/remotes/')) {
+          name = refname.slice('refs/remotes/'.length);
+          remote = true;
+          // 跳过 remotes/origin/HEAD 符号引用
+          if (name.endsWith('/HEAD') || name === 'HEAD') continue;
+        } else {
+          continue;
+        }
+
+        const current = !remote && (name === currentBranchName || currentBranchName === 'HEAD');
+
+        branches.push({
+          name,
+          current,
+          remote,
+          lastCommit: hash
+            ? {
+                hash,
+                message: subject || '',
+                relativeDate: relativeDate || '',
+                author: author || '',
+              }
+            : undefined,
+        });
+      }
+    } else {
+      // 回退方案：兼容异常或空仓库
+      const fallbackRes = await this.runGit(['branch', '-a', '--no-color'], root);
+      if (fallbackRes.code === 0) {
+        for (const raw of fallbackRes.stdout.split(/\r?\n/)) {
+          const line = raw.trim();
+          if (!line) continue;
+          const current = line.startsWith('*');
+          let name = line.replace(/^\*\s+/, '').trim();
+          if (name.includes('->')) continue;
+          const remote = name.startsWith('remotes/');
+          if (remote) name = name.replace(/^remotes\//, '');
+          branches.push({ name, current, remote });
+        }
+      }
     }
 
     const tagsRes = await this.runGit(['tag', '-l'], root);
