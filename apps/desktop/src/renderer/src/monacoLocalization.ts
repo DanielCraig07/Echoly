@@ -1,8 +1,8 @@
-// @ts-ignore
+// @ts-expect-error internal monaco private module
 import { ActionViewItem } from 'monaco-editor/esm/vs/base/browser/ui/actionbar/actionViewItems.js';
-// @ts-ignore
+// @ts-expect-error internal monaco private module
 import { Menu } from 'monaco-editor/esm/vs/base/browser/ui/menu/menu.js';
-// @ts-ignore
+// @ts-expect-error internal monaco private module
 import { QuickInputTree } from 'monaco-editor/esm/vs/platform/quickinput/browser/quickInputTree.js';
 
 export const MONACO_ZH_TRANSLATIONS: Record<string, string> = {

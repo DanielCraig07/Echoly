@@ -46,7 +46,7 @@ export function GitCreateBranchModal({
 
   const trimmed = branchName.trim();
   const alreadyExists = branches.some((b) => b.name === trimmed);
-  const hasInvalidChars = /[\s~^:?*\[\\]/.test(trimmed);
+  const hasInvalidChars = /[[\s~^:?*\\]/.test(trimmed);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();

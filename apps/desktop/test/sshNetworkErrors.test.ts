@@ -185,7 +185,7 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
     vi.useFakeTimers();
     try {
       let shellCallCount = 0;
-      let callbacks: Array<(err: any, stream: any) => void> = [];
+      const callbacks: Array<(err: any, stream: any) => void> = [];
       const mockClient = {
         shell: vi.fn().mockImplementation((_opts: any, cb: (err: any, stream: any) => void) => {
           shellCallCount++;

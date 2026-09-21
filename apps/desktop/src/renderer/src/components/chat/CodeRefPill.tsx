@@ -45,7 +45,7 @@ export function parseAnyCodeRef(input: string): ParsedCodeRef | null {
   if (!str) return null;
 
   // 1. 去除两端可能包裹的引号、反引号、括号、中括号
-  str = str.replace(/^[`"'\(\[<]+|[`"'\)\]>]+$/g, '').trim();
+  str = str.replace(/^[`"'([<]+|[`"')\]>]+$/g, '').trim();
 
   // 2. 排除 http:// 和 https:// 外部网络链接
   if (/^https?:\/\//i.test(str)) {
@@ -126,7 +126,7 @@ export function parseAiContentCodeRefs(
   // 2. file:///path/to/file.ext#L123-L145 (支持 file:// 与 file:///)
   // 3. (path/)?file.ext:123-145 或 (path/)?file.ext#L123-L145
   const pattern =
-    /(?:@\[([^\]]+?)(?::L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?\])|(?:@([^\s,;，。！？\(\)\[\]:#]+?\.[a-zA-Z0-9_]+)(?:[:#]L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?)|(?:file:\/\/{1,3}([^\s,;，。！？\(\)\[\]#]+?\.[a-zA-Z0-9_]+)(?:[#:]L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?)|(?:((?:[^\s,;，。！？\(\)\[\]:#]+[/\\])?[^\s,;，。！？\(\)\[\]:#]+\.(?:tsx|ts|jsx|js|mjs|cjs|py|java|cpp|cc|c|h|hpp|go|rs|json|yaml|yml|toml|xml|css|scss|less|html|vue|svelte|sql|sh|md|graphql|proto|swift|kt))(?::(?:L)?(\d+)(?:\s*[-–—~]\s*(?:L)?(\d+))?|#(?:L)?(\d+)(?:\s*[-–—~]\s*(?:L)?(\d+))?))/gi;
+    /(?:@\[([^\]]+?)(?::L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?\])|(?:@([^\s,;，。！？()[\]:#]+?\.[a-zA-Z0-9_]+)(?:[:#]L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?)|(?:file:\/\/{1,3}([^\s,;，。！？()[\]#]+?\.[a-zA-Z0-9_]+)(?:[#:]L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?)|(?:((?:[^\s,;，。！？()[\]:#]+[/\\])?[^\s,;，。！？()[\]:#]+\.(?:tsx|ts|jsx|js|mjs|cjs|py|java|cpp|cc|c|h|hpp|go|rs|json|yaml|yml|toml|xml|css|scss|less|html|vue|svelte|sql|sh|md|graphql|proto|swift|kt))(?::(?:L)?(\d+)(?:\s*[-–—~]\s*(?:L)?(\d+))?|#(?:L)?(\d+)(?:\s*[-–—~]\s*(?:L)?(\d+))?))/gi;
 
   const result: Array<{ type: 'text' | 'ref'; value: string; ref?: ParsedCodeRef }> = [];
   let lastIndex = 0;
@@ -232,7 +232,7 @@ export function parseContentWithCodeRefs(
   // 模式1: @\[([^\]]+?)(?::L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?\]
   // 模式2: @([^\s,;，。！？\(\)\[\]:#]+?\.[a-zA-Z0-9_]+)(?:[:#]L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?
   const pattern =
-    /(?:@\[([^\]]+?)(?::L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?\])|(?:@([^\s,;，。！？\(\)\[\]:#]+?\.[a-zA-Z0-9_]+)(?:[:#]L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?)/g;
+    /(?:@\[([^\]]+?)(?::L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?\])|(?:@([^\s,;，。！？()[\]:#]+?\.[a-zA-Z0-9_]+)(?:[:#]L?(\d+)(?:\s*[-–—~]\s*L?(\d+))?)?)/g;
 
   const result: Array<{ type: 'text' | 'ref'; value: string; ref?: ParsedCodeRef }> = [];
   let lastIndex = 0;

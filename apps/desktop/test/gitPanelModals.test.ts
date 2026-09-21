@@ -3,7 +3,7 @@ import type { GitBranchInfo } from '@deepseek-ide/shared';
 
 describe('Git Panel Modals & Operations', () => {
   it('validates branch names according to git ref rules', () => {
-    const invalidCharsRegex = /[\s~^:?*\[\\]/;
+    const invalidCharsRegex = /[[\s~^:?*\\]/;
     expect(invalidCharsRegex.test('feature/new-button')).toBe(false);
     expect(invalidCharsRegex.test('fix/issue-123')).toBe(false);
     expect(invalidCharsRegex.test('main')).toBe(false);
