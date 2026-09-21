@@ -8876,9 +8876,17 @@ body.resizing.resizing-row {
 }
 
 .welcome-view-recent-list > li {
+  position: relative;
   display: flex;
-  align-items: stretch;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
+  padding-right: 6px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.welcome-view-recent-list > li:hover {
+  background: var(--bg-hover);
 }
 
 .welcome-recent-row {
@@ -8894,10 +8902,6 @@ body.resizing.resizing-row {
   color: inherit;
   cursor: pointer;
   text-align: left;
-}
-
-.welcome-recent-row:hover {
-  background: var(--bg-hover);
 }
 
 .welcome-recent-kind {
@@ -8951,25 +8955,44 @@ body.resizing.resizing-row {
 }
 
 .welcome-recent-remove {
-  flex-shrink: 0;
-  width: 28px;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
   background: transparent;
-  color: var(--muted);
-  font-size: 16px;
-  line-height: 1;
+  color: var(--text-muted, #94a3b8);
   border-radius: 6px;
   cursor: pointer;
   opacity: 0;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  padding: 0;
 }
 
 .welcome-view-recent-list > li:hover .welcome-recent-remove {
-  opacity: 1;
+  opacity: 0.85;
+  color: var(--text-secondary, #cbd5e1);
 }
 
 .welcome-recent-remove:hover {
-  color: var(--text);
-  background: var(--bg-hover);
+  opacity: 1 !important;
+  color: #ff6b6b !important;
+  background: rgba(239, 68, 68, 0.2) !important;
+  border-color: rgba(239, 68, 68, 0.45) !important;
+  transform: scale(1.1);
+}
+
+.welcome-recent-remove:active {
+  transform: scale(0.95);
+  background: rgba(239, 68, 68, 0.32) !important;
+}
+
+.welcome-recent-remove-icon {
+  display: block;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 .welcome-recent-more {
@@ -10221,6 +10244,7 @@ body.resizing.resizing-row {
   cursor: pointer;
   transition: background 0.1s;
   min-height: 54px;
+  height: 54px;
   box-sizing: border-box;
 }
 
@@ -10243,18 +10267,47 @@ body.resizing.resizing-row {
 .session-row-text {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 2px;
   overflow: hidden;
   min-width: 0;
+  height: 38px;
+}
+
+.session-row-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  min-height: 20px;
+  max-height: 20px;
+  box-sizing: border-box;
+}
+
+.session-row-title-bar.editing {
+  width: 100%;
 }
 
 .session-row-title {
   font-size: 13px;
   font-weight: 600;
+  line-height: 20px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
+}
+
+.session-current-badge {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(76, 141, 255, 0.18);
+  color: var(--accent, #4c8dff);
+  border: 1px solid rgba(76, 141, 255, 0.3);
+  flex-shrink: 0;
 }
 
 .session-row-project {
@@ -10443,16 +10496,72 @@ body.resizing.resizing-row {
 }
 
 .session-rename-input {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--accent);
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid var(--primary, #38bdf8);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.16);
   border-radius: 4px;
-  color: var(--fg);
-  font-size: 12.5px;
-  height: 24px;
+  color: var(--text, #fff);
+  font-size: 13px;
+  font-weight: 600;
+  height: 20px;
+  line-height: 18px;
   box-sizing: border-box;
-  padding: 2px 6px;
+  padding: 0 6px;
   outline: none;
-  width: 100%;
+  flex: 1;
+  min-width: 100px;
+  max-width: 320px;
+  transition: all 0.15s ease;
+}
+
+.session-rename-input:focus {
+  border-color: var(--primary, #38bdf8);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.28);
+}
+
+.session-rename-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.session-rename-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.session-rename-btn.save {
+  background: rgba(56, 189, 248, 0.2);
+  color: var(--primary, #38bdf8);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.session-rename-btn.save:hover {
+  background: var(--primary, #38bdf8);
+  color: #000;
+  border-color: var(--primary, #38bdf8);
+}
+
+.session-rename-btn.cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted, #888);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.session-rename-btn.cancel:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4);
 }
 
 /* ── Chat Session Tabs (多会话 Tab 栏) ────────────────────────── */

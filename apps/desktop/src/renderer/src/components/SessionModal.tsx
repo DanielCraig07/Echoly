@@ -104,33 +104,60 @@ export function collectAvailableProjects(
   recentWorkspaces: RecentWorkspaceItem[] | undefined,
   sessions: ChatSession[],
 ): AvailableProject[] {
-  const map = new Map<string, { name: string; path?: string; isCurrent: boolean }>();
+  // key 为规范化小写项目名，确保相同项目名称在下拉列表中全局唯一，不重复出现
+  const map = new Map<
+    string,
+    { key: string; name: string; path?: string; isCurrent: boolean }
+  >();
+
+  const getCanonical = (
+    rawName?: string,
+    rawPath?: string,
+  ): { canonicalKey: string; name: string } => {
+    const n = (rawName || '').trim();
+    const folder = folderNameFromPath(rawPath || '').trim();
+    const name = n || folder || '未命名项目';
+    return {
+      canonicalKey: name.toLowerCase(),
+      name,
+    };
+  };
 
   // 1. 当前打开的工作区（置顶）
   if (workspaceInfo?.root) {
-    const currentName = folderNameFromPath(workspaceInfo.root) || workspaceInfo.label || '当前项目';
-    const normKey = workspaceInfo.root.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-    map.set(normKey, {
-      name: currentName,
+    const currentName =
+      folderNameFromPath(workspaceInfo.root) || workspaceInfo.label || '当前项目';
+    const { canonicalKey, name } = getCanonical(currentName, workspaceInfo.root);
+    map.set(canonicalKey, {
+      key: canonicalKey,
+      name,
       path: workspaceInfo.root,
       isCurrent: true,
     });
   }
 
   // 2. 所有最近/已知工作区（即使当前没有任何历史会话，也全部纳入并供用户选择）
-  const recents = (recentWorkspaces && recentWorkspaces.length > 0)
-    ? recentWorkspaces
-    : getStoredRecentWorkspaces();
+  const recents =
+    recentWorkspaces && recentWorkspaces.length > 0
+      ? recentWorkspaces
+      : getStoredRecentWorkspaces();
 
   for (const r of recents) {
     if (!r.path && !r.name) continue;
-    const normKey = (r.path || r.name).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-    if (!map.has(normKey)) {
-      map.set(normKey, {
-        name: r.name || folderNameFromPath(r.path) || '未命名项目',
+    const { canonicalKey, name } = getCanonical(r.name, r.path);
+    const existing = map.get(canonicalKey);
+    if (!existing) {
+      map.set(canonicalKey, {
+        key: canonicalKey,
+        name,
         path: r.path,
         isCurrent: false,
       });
+    } else {
+      // 若已有项缺少 path 而新项有，或者新项是更完整的路径，保留路径
+      if (!existing.path && r.path) {
+        existing.path = r.path;
+      }
     }
   }
 
@@ -139,22 +166,28 @@ export function collectAvailableProjects(
     const sPath = s.workspacePath;
     const sName = s.projectName || (sPath ? folderNameFromPath(sPath) : '');
     if (!sPath && !sName) continue;
-    const normKey = (sPath || sName).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-    if (!map.has(normKey)) {
-      map.set(normKey, {
-        name: sName || '历史项目',
+    const { canonicalKey, name } = getCanonical(sName, sPath);
+    const existing = map.get(canonicalKey);
+    if (!existing) {
+      map.set(canonicalKey, {
+        key: canonicalKey,
+        name,
         path: sPath,
         isCurrent: false,
       });
+    } else {
+      if (!existing.path && sPath) {
+        existing.path = sPath;
+      }
     }
   }
 
   // 计算每个项目当前匹配到的会话条数（允许为 0）
   const result: AvailableProject[] = [];
-  for (const [key, proj] of map.entries()) {
+  for (const proj of map.values()) {
     const count = sessions.filter((s) => isSessionMatchingProject(s, proj)).length;
     result.push({
-      key,
+      key: proj.key,
       name: proj.name,
       path: proj.path,
       isCurrent: proj.isCurrent,
@@ -566,74 +599,54 @@ export function SessionModal({
                       </div>
                     </div>
 
-                    {/* 当前项目 */}
-                    {workspaceInfo?.root && (
-                      <div
-                        className={`session-project-dropdown-item${filterScope === 'current' ? ' active' : ''}`}
-                        onClick={() => {
-                          setFilterScope('current');
-                          setProjectDropdownOpen(false);
-                        }}
-                      >
-                        <div className="session-project-item-left">
-                          <svg
-                            className="session-project-item-icon"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                            <circle cx="12" cy="10" r="3" />
-                          </svg>
-                          <span className="session-project-item-title" title={currentProjectName}>
-                            当前：{currentProjectName}
-                          </span>
-                          <span className="session-project-current-tag">当前</span>
-                        </div>
-                        <div className="session-project-item-right">
-                          <span className={`session-project-count-pill${currentProjectSessions.length > 0 ? ' has-sessions' : ''}`}>
-                            {currentProjectSessions.length} 条
-                          </span>
-                          {filterScope === 'current' && (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
                     <div className="session-project-dropdown-divider" />
 
-                    {/* 所有已知项目列表（包含 0 会话历史的项目） */}
+                    {/* 所有已知项目列表（包含 0 会话历史的项目，当前项目置顶展示） */}
                     {availableProjects.map((p) => {
-                      const isSelected = filterScope === p.key;
+                      const isSelected = p.isCurrent
+                        ? filterScope === 'current' || filterScope === p.key
+                        : filterScope === p.key;
+
                       return (
                         <div
                           key={p.key}
                           className={`session-project-dropdown-item${isSelected ? ' active' : ''}`}
                           onClick={() => {
-                            setFilterScope(p.key);
+                            setFilterScope(p.isCurrent ? 'current' : p.key);
                             setProjectDropdownOpen(false);
                           }}
-                          title={p.path || p.name}
+                          title={p.path ? `${p.name} (${p.path})` : p.name}
                         >
                           <div className="session-project-item-left">
-                            <svg
-                              className="session-project-item-icon"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                            </svg>
-                            <span className="session-project-item-title">{p.name}</span>
+                            {p.isCurrent ? (
+                              <svg
+                                className="session-project-item-icon"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                                <circle cx="12" cy="10" r="3" />
+                              </svg>
+                            ) : (
+                              <svg
+                                className="session-project-item-icon"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              </svg>
+                            )}
+                            <span className="session-project-item-title">
+                              {p.isCurrent ? `当前：${p.name}` : p.name}
+                            </span>
                             {p.isCurrent && (
                               <span className="session-project-current-tag">当前</span>
                             )}
@@ -803,7 +816,7 @@ export function SessionModal({
                       {isEditing ? (
                         <div className="session-row-text">
                           <div
-                            style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 22 }}
+                            className="session-row-title-bar editing"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <input
@@ -825,46 +838,39 @@ export function SessionModal({
                               onBlur={() => void handleSaveRename(s.id)}
                               autoFocus
                             />
-                            <button
-                              type="button"
-                              title="保存会话名称"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void handleSaveRename(s.id);
-                              }}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: 22,
-                                height: 22,
-                                borderRadius: 4,
-                                border: 'none',
-                                background: 'var(--primary, #3b82f6)',
-                                color: '#fff',
-                                cursor: 'pointer',
-                                padding: 0,
-                                flexShrink: 0,
-                              }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                            </button>
-                            {isCurrent && (
-                              <span
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: 600,
-                                  padding: '1px 6px',
-                                  borderRadius: 4,
-                                  background: 'rgba(76, 141, 255, 0.18)',
-                                  color: 'var(--accent, #4c8dff)',
-                                  border: '1px solid rgba(76, 141, 255, 0.3)',
-                                  flexShrink: 0,
+                            <div className="session-rename-actions">
+                              <button
+                                type="button"
+                                className="session-rename-btn save"
+                                title="保存名称 (Enter)"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  void handleSaveRename(s.id);
                                 }}
                               >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                className="session-rename-btn cancel"
+                                title="取消 (Esc)"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setEditingId(null);
+                                }}
+                              >
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <line x1="18" y1="6" x2="6" y2="18" />
+                                  <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                              </button>
+                            </div>
+                            {isCurrent && (
+                              <span className="session-current-badge">
                                 当前
                               </span>
                             )}
@@ -882,23 +888,12 @@ export function SessionModal({
                         </div>
                       ) : (
                         <div className="session-row-text">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div className="session-row-title-bar">
                             <span className="session-row-title" title={s.title}>
                               {s.title}
                             </span>
                             {isCurrent && (
-                              <span
-                                style={{
-                                  fontSize: 10,
-                                  fontWeight: 600,
-                                  padding: '1px 6px',
-                                  borderRadius: 4,
-                                  background: 'rgba(76, 141, 255, 0.18)',
-                                  color: 'var(--accent, #4c8dff)',
-                                  border: '1px solid rgba(76, 141, 255, 0.3)',
-                                  flexShrink: 0,
-                                }}
-                              >
+                              <span className="session-current-badge">
                                 当前
                               </span>
                             )}
@@ -932,29 +927,31 @@ export function SessionModal({
                         💬 {msgCount} 轮
                       </span>
                       <div className="session-row-actions" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <button
-                          type="button"
-                          className="session-card-icon-btn"
-                          onClick={(e) => handleStartRename(s, e)}
-                          title="重命名会话"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 24,
-                            height: 24,
-                            borderRadius: 5,
-                            border: 'none',
-                            background: 'transparent',
-                            color: 'var(--muted, #888)',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 20h9" />
-                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                          </svg>
-                        </button>
+                        {!isEditing && (
+                          <button
+                            type="button"
+                            className="session-card-icon-btn"
+                            onClick={(e) => handleStartRename(s, e)}
+                            title="重命名会话"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              width: 24,
+                              height: 24,
+                              borderRadius: 5,
+                              border: 'none',
+                              background: 'transparent',
+                              color: 'var(--muted, #888)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                            </svg>
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="session-card-delete"

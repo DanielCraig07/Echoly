@@ -1406,6 +1406,11 @@ export function setupCmdClickGesture(
 
   // Mouse down: Cmd+Click → jump
   const mouseDownSub = editor.onMouseDown((e) => {
+    // 若当前为多光标 / 块选择模式，不拦截鼠标，确保批量光标能够顺畅移动或选区
+    if ((editor.getSelections()?.length ?? 0) > 1) {
+      clearHoverLink();
+      return;
+    }
     const isCmdOrCtrl = !!(e.event.metaKey || e.event.ctrlKey);
     if (isCmdOrCtrl && e.target.position) {
       const pos = e.target.position;

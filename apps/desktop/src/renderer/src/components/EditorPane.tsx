@@ -587,7 +587,84 @@ export function EditorPane({
   } | null>(null);
   const monacoTheme = uiTheme === 'light' ? 'custom-light' : 'custom-dark';
 
-  // ── 调试与断点状态 (受控于 App 工作区隔离状态) ──
+  /**
+   * 设置多光标状态下 Option+左键点击 批量平移整列光标的原生代理拦截器
+   * 鉴于 Monaco Editor 原生在同时具备 Option 和 Shift 键（Option+Shift+左键）时能完美执行 _columnSelect，
+   * 拦截器会在检测到用户单按 Option+左键点击时，自动补全 shiftKey: true 代理派发，
+   * 驱动 Monaco 原生底层成熟的列光标移动引擎，免除手动按 Shift 的繁琐。
+   */
+  const setupMultiCursorColumnClickMove = useCallback(
+    (editor: monaco.editor.IStandaloneCodeEditor) => {
+      const domNode = editor.getDomNode();
+      if (!domNode) return { dispose: () => {} };
+
+      const onPointerOrMouseDown = (e: MouseEvent) => {
+        // 如果是已经补充注入了 shiftKey 的合成事件，放行给 Monaco 原生处理
+        if ((e as any).__echolyShiftPatched) {
+          return;
+        }
+
+        // 仅处理鼠标左键 (button === 0)
+        if (e.button !== 0) return;
+
+        // 若用户本身就已经按了 Shift 键，放行让其继续原生行为
+        if (e.shiftKey) return;
+
+        // 检查是否按下了 Option 键（兼容普通 PC 键盘在 macOS 下映射为 Cmd/Meta/Ctrl 的情况）
+        const isModifier = e.altKey || e.metaKey;
+        if (!isModifier) return;
+
+        // 检查当前编辑器是否处于多光标 / 块选择状态
+        const selections = editor.getSelections();
+        if (!selections || selections.length <= 1) return;
+
+        // 彻底拦截原生的单 Option 键点击，防止 Monaco 执行添加单光标
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        // 构造等效但附带 shiftKey: true 的代理事件，派发给点击的目标元素
+        const EventConstructor = (typeof PointerEvent !== 'undefined' && e instanceof PointerEvent)
+          ? PointerEvent
+          : MouseEvent;
+
+        const patchedEvent = new EventConstructor(e.type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          detail: e.detail,
+          screenX: e.screenX,
+          screenY: e.screenY,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          ctrlKey: e.ctrlKey,
+          altKey: true,
+          shiftKey: true, // 核心：自动注入 Shift 键，驱动 Monaco 原生 _columnSelect
+          metaKey: e.metaKey,
+          button: e.button,
+          buttons: e.buttons,
+          relatedTarget: e.relatedTarget,
+        });
+
+        (patchedEvent as any).__echolyShiftPatched = true;
+        (e.target as HTMLElement | null)?.dispatchEvent(patchedEvent);
+      };
+
+      // 在捕获阶段拦截 pointerdown 与 mousedown
+      domNode.addEventListener('pointerdown', onPointerOrMouseDown, true);
+      domNode.addEventListener('mousedown', onPointerOrMouseDown, true);
+
+      return {
+        dispose: () => {
+          domNode.removeEventListener('pointerdown', onPointerOrMouseDown, true);
+          domNode.removeEventListener('mousedown', onPointerOrMouseDown, true);
+        },
+      };
+    },
+    []
+  );
+
   const [internalBreakpoints, setInternalBreakpoints] = useState<DapBreakpoint[]>([]);
   const breakpoints = controlledBreakpoints ?? internalBreakpoints;
 
@@ -1997,8 +2074,10 @@ export function EditorPane({
   // 选区更新或滚动时计算浮层坐标：跟随鼠标位置，智能避让代码文本，绝不遮挡代码
   const repositionSelectionCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
     const sel = ed.getSelection();
+    const selections = ed.getSelections();
     const model = ed.getModel();
-    if (!sel || sel.isEmpty() || !model) {
+    // 选区为空或多选区/块选择时，不显示 AI 辅助悬浮
+    if (!sel || sel.isEmpty() || !model || (selections && selections.length > 1)) {
       setSelectionCoords(null);
       return;
     }
@@ -2182,9 +2261,20 @@ export function EditorPane({
   const updateSelectionAndCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
     const model = ed.getModel();
     const sel = ed.getSelection();
+    const selections = ed.getSelections();
     // 查找框打开时不显示 AI 悬浮提示，避免遮挡搜索框
     if (ed.getDomNode()?.querySelector('.find-widget.visible')) {
       setSelectionCoords(null);
+      return;
+    }
+    // 块选择 / 列选择 / 多光标模式 (selections 数量 > 1)：绝不显示 AI 辅助悬浮
+    if (selections && selections.length > 1) {
+      setSelectionCoords(null);
+      if (model && sel && !sel.isEmpty()) {
+        const val = model.getValueInRange(sel);
+        onSelectionChangeRef.current?.(val);
+        setSelectedText(val);
+      }
       return;
     }
     if (!model || !sel || sel.isEmpty()) {
@@ -3078,7 +3168,8 @@ export function EditorPane({
           selectionCoords &&
           !showInlineAi &&
           !findWidgetVisible &&
-          selectionAiFloat !== false && (
+          selectionAiFloat !== false &&
+          (editorRef.current?.getSelections()?.length ?? 0) <= 1 && (
             <div
               className="selection-float-widget compact"
               style={{
@@ -3550,8 +3641,10 @@ export function EditorPane({
                       return pos ? { line: pos.lineNumber, column: pos.column } : null;
                     },
                   });
+                  const multiCursorMoveGesture = setupMultiCursorColumnClickMove(ed);
                   ed.onDidDispose(() => {
                     cmdClickGesture.dispose();
+                    multiCursorMoveGesture.dispose();
                   });
                   ed.onDidChangeCursorSelection(() => {
                     if (isMouseDownRef.current) {
@@ -3768,6 +3861,10 @@ export function EditorPane({
                 onMount={(ed) => {
                   editorRef.current = ed;
                   setupEditorKeybindings(ed);
+                  const multiCursorMoveGesture = setupMultiCursorColumnClickMove(ed);
+                  ed.onDidDispose(() => {
+                    multiCursorMoveGesture.dispose();
+                  });
                   ed.onDidChangeCursorSelection(() => {
                     if (isMouseDownRef.current) {
                       updateSelectionTextOnly(ed);
@@ -3819,6 +3916,7 @@ export function EditorPane({
                   occurrencesHighlight: 'off',
                   selectionHighlight: false,
                   wordWrap: wordWrap ? 'on' : 'off',
+                  multiCursorModifier: 'alt',
                   scrollBeyondLastColumn: 0,
                   lineNumbersMinChars: 4,
                   overviewRulerLanes: 3,
@@ -3895,6 +3993,10 @@ export function EditorPane({
                     onMount={(ed) => {
                       splitEditorRef.current = ed;
                       setupEditorKeybindings(ed);
+                      const multiCursorMoveGesture = setupMultiCursorColumnClickMove(ed);
+                      ed.onDidDispose(() => {
+                        multiCursorMoveGesture.dispose();
+                      });
                     }}
                     options={{
                       fontSize: 13,
@@ -3904,6 +4006,7 @@ export function EditorPane({
                       occurrencesHighlight: 'off',
                       selectionHighlight: false,
                       wordWrap: wordWrap ? 'on' : 'off',
+                      multiCursorModifier: 'alt',
                       scrollBeyondLastColumn: 0,
                       lineNumbersMinChars: 4,
                       scrollbar: {
@@ -3965,8 +4068,10 @@ export function EditorPane({
                     return pos ? { line: pos.lineNumber, column: pos.column } : null;
                   },
                 });
+                const multiCursorMoveGesture = setupMultiCursorColumnClickMove(ed);
                 ed.onDidDispose(() => {
                   cmdClickGesture.dispose();
+                  multiCursorMoveGesture.dispose();
                 });
                 ed.onDidChangeCursorSelection(() => {
                   if (isMouseDownRef.current) {

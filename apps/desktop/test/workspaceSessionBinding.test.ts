@@ -151,6 +151,93 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
     expect(isSessionMatchingProject(mockSessions[0], { name: 'ZeroSessionProject' })).toBe(false);
   });
 
+  it('deduplicates project items with different path representations or same project name', () => {
+    const mockRemoteWs: WorkspaceInfo = {
+      root: '/root/vision-search-system',
+      label: '192.168.10.208: /root/vision-search-system',
+      isRemote: true,
+    };
+
+    const mockRecents = [
+      // 包含 ssh: 前缀与不带前缀的同名工作区
+      { path: 'ssh://192.168.10.208/root/vision-search-system', name: 'vision-search-system', lastOpened: 1 },
+      { path: 'ssh://192.168.10.208/root/security-vision-system', name: 'security-vision-system', lastOpened: 2 },
+      { path: '/Users/daniel/tsingtec_data_platform', name: 'tsingtec_data_platform', lastOpened: 3 },
+      { path: '/Users/daniel/tsingtec', name: 'tsingtec', lastOpened: 4 },
+    ];
+
+    const mockSessions: ChatSession[] = [
+      // vision-search-system 相关的 2 个会话（路径不同或缺少路径）
+      {
+        id: 's1',
+        title: 'VSS会话1',
+        messages: [],
+        updatedAt: Date.now(),
+        workspacePath: '/root/vision-search-system',
+        projectName: 'vision-search-system',
+      },
+      // security-vision-system 相关的 3 个会话（有的带路径，有的只有名字）
+      {
+        id: 's2',
+        title: 'SVS会话1',
+        messages: [],
+        updatedAt: Date.now(),
+        workspacePath: '/root/security-vision-system',
+        projectName: 'security-vision-system',
+      },
+      {
+        id: 's3',
+        title: 'SVS会话2',
+        messages: [],
+        updatedAt: Date.now(),
+        workspacePath: 'ssh://192.168.10.208/root/security-vision-system',
+        projectName: 'security-vision-system',
+      },
+      {
+        id: 's4',
+        title: 'SVS会话3',
+        messages: [],
+        updatedAt: Date.now(),
+        projectName: 'security-vision-system',
+      },
+      {
+        id: 's5',
+        title: '标注平台会话',
+        messages: [],
+        updatedAt: Date.now(),
+        workspacePath: '/Users/daniel/tsingtec_data_platform',
+        projectName: 'tsingtec_data_platform',
+      },
+    ];
+
+    const projects = collectAvailableProjects(mockRemoteWs, mockRecents, mockSessions);
+
+    // 检查项目名称列表，确保没有任何重复名称
+    const names = projects.map((p) => p.name);
+    const uniqueNames = Array.from(new Set(names.map((n) => n.toLowerCase())));
+    expect(names.length).toBe(uniqueNames.length);
+
+    // 验证当前项目置顶且唯一
+    expect(projects[0].name).toBe('vision-search-system');
+    expect(projects[0].isCurrent).toBe(true);
+    expect(projects[0].count).toBe(1);
+
+    // 验证 security-vision-system 唯一且正确聚合了 3 条会话
+    const svsProjects = projects.filter((p) => p.name.toLowerCase() === 'security-vision-system');
+    expect(svsProjects.length).toBe(1);
+    expect(svsProjects[0].count).toBe(3);
+
+    // 验证 tsingtec_data_platform 唯一且会话为 1 条
+    const dataPlatform = projects.filter((p) => p.name.toLowerCase() === 'tsingtec_data_platform');
+    expect(dataPlatform.length).toBe(1);
+    expect(dataPlatform[0].count).toBe(1);
+
+    // 验证 0 会话的 tsingtec 也正常保留且唯一
+    const tsingtec = projects.filter((p) => p.name.toLowerCase() === 'tsingtec');
+    expect(tsingtec.length).toBe(1);
+    expect(tsingtec[0].count).toBe(0);
+  });
+
   describe('Session Custom Title Preservation & Reopen Safety', () => {
     it('infers isCustom = true when title differs from first user message snippet', () => {
       const firstUserSnippet = 'Can you help me diagnose App.tsx';
