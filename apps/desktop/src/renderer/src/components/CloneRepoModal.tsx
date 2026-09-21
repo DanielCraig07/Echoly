@@ -241,9 +241,9 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                       fontSize: 10,
                       padding: '0 5px',
                       borderRadius: 3,
-                      background: protocol === 'SSH' ? 'rgba(168, 85, 247, 0.16)' : 'rgba(34, 197, 94, 0.16)',
-                      color: protocol === 'SSH' ? '#c084fc' : '#4ade80',
-                      border: protocol === 'SSH' ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid rgba(34, 197, 94, 0.3)',
+                      background: protocol === 'SSH' ? 'rgba(168, 85, 247, 0.16)' : 'rgba(56, 189, 248, 0.16)',
+                      color: protocol === 'SSH' ? '#c084fc' : '#38bdf8',
+                      border: protocol === 'SSH' ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid rgba(56, 189, 248, 0.3)',
                     }}
                   >
                     {protocol}

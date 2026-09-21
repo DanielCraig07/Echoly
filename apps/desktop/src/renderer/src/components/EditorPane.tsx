@@ -2463,6 +2463,36 @@ export function EditorPane({
     return () => window.removeEventListener('echoly:fixWithAi', onFixEvent);
   }, [handleTriggerFixWithAi]);
 
+/**
+ * 唤起编辑器查找框并自动将光标定位至输入框内，全选已有文本
+ */
+function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | undefined) {
+  if (!ed) return;
+  // 1. 运行 Monaco 内置的 actions.find 命令唤起或刷新查找组件
+  ed.getAction('actions.find')?.run();
+
+  // 2. 无论查找框是刚刚挂载还是此前已经展开，强制定位光标并全选查找输入框
+  const locateAndFocus = () => {
+    const domNode = ed.getDomNode();
+    if (!domNode) return;
+    const findWidget = domNode.querySelector('.find-widget');
+    if (!findWidget) return;
+    const input = findWidget.querySelector<HTMLTextAreaElement | HTMLInputElement>(
+      '.find-part .monaco-inputbox .input, .monaco-findInput textarea.input, .monaco-findInput input.input, textarea.input, input'
+    );
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  };
+
+  locateAndFocus();
+  requestAnimationFrame(locateAndFocus);
+  setTimeout(locateAndFocus, 25);
+  setTimeout(locateAndFocus, 80);
+  setTimeout(locateAndFocus, 200);
+}
+
   const setupEditorKeybindings = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor, onOpenFileRef?: { current?: typeof onOpenFile }) => {
       // 注册 AI 菜单项至 Monaco 右键菜单最顶层 (0_ai 分组)
@@ -2498,6 +2528,11 @@ export function EditorPane({
       });
 
       // ── 快捷键绑定 ──────────────────────────────────────────
+      // 查找：Cmd+F / Ctrl+F (打开查找并将光标自动定位到搜索框)
+      ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyF, () => {
+        focusEditorFindWidget(ed);
+      });
+
       // 智能一键修复：Fix with AI (Alt+. / ⌥.)
       ed.addCommand(KeyMod.Alt | KeyCode.Period, () => {
         handleTriggerFixWithAi(ed);
@@ -2668,7 +2703,17 @@ export function EditorPane({
       if (!isInsideEditor) return;
 
       const key = e.key.toLowerCase();
-      if (key === 'k') {
+      if (key === 'f' && !e.shiftKey && !e.altKey) {
+        const targetEd =
+          (splitEditorRef.current?.hasTextFocus() ? splitEditorRef.current : null) ||
+          editorRef.current ||
+          splitEditorRef.current;
+        if (targetEd) {
+          e.preventDefault();
+          e.stopPropagation();
+          focusEditorFindWidget(targetEd);
+        }
+      } else if (key === 'k') {
         if (editorRef.current && activeRef.current?.path) {
           e.preventDefault();
           e.stopPropagation();
@@ -2685,6 +2730,21 @@ export function EditorPane({
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [showInlineAi, openInlineAiForEditor, triggerAddToChatForEditor]);
+
+  // 监听来自全局指令层派发的编辑区搜索定位事件
+  useEffect(() => {
+    const onGlobalFocusFind = () => {
+      const targetEd =
+        (splitEditorRef.current?.hasTextFocus() ? splitEditorRef.current : null) ||
+        editorRef.current ||
+        splitEditorRef.current;
+      if (targetEd) {
+        focusEditorFindWidget(targetEd);
+      }
+    };
+    window.addEventListener('echoly:focusEditorFind', onGlobalFocusFind);
+    return () => window.removeEventListener('echoly:focusEditorFind', onGlobalFocusFind);
+  }, []);
 
   if (previewDiff) {
     const lang = languageFromPath(previewDiff.path);
@@ -2899,6 +2959,8 @@ export function EditorPane({
             language={lang}
             theme={monacoTheme}
             onMount={(diffEd) => {
+              setupEditorKeybindings(diffEd.getModifiedEditor());
+              setupEditorKeybindings(diffEd.getOriginalEditor());
               setTimeout(() => {
                 const changes = diffEd.getLineChanges();
                 if (changes && changes.length > 0) {

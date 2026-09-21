@@ -677,11 +677,11 @@ export function ProjectRuntimeConfigModal({
                       outline: 'none',
                     }}
                   >
-                    <option value="cpp" style={{ background: '#1e222d', color: '#fff' }}>🚀 C / C++</option>
-                    <option value="java" style={{ background: '#1e222d', color: '#fff' }}>☕ Java</option>
-                    <option value="python" style={{ background: '#1e222d', color: '#fff' }}>🐍 Python</option>
-                    <option value="go" style={{ background: '#1e222d', color: '#fff' }}>🐹 Go</option>
-                    <option value="node" style={{ background: '#1e222d', color: '#fff' }}>🟢 Node.js</option>
+                    <option value="cpp" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>🚀 C / C++</option>
+                    <option value="java" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>☕ Java</option>
+                    <option value="python" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>🐍 Python</option>
+                    <option value="go" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>🐹 Go</option>
+                    <option value="node" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>🟢 Node.js</option>
                   </select>
                 </div>
               </div>

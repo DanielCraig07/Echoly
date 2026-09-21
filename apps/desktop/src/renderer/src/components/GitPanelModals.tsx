@@ -462,7 +462,7 @@ export function GitCheckoutModal({
             <div
               style={{
                 width: '100%',
-                background: 'var(--bg-elevated, #202026)',
+                background: 'var(--bg-modal, #141414)',
                 border: '1px solid rgba(234, 179, 8, 0.35)',
                 borderRadius: 10,
                 boxShadow: '0 20px 50px rgba(0,0,0,0.7)',
@@ -1111,7 +1111,7 @@ export function GitOutputModal({ open, onClose }: OutputModalProps) {
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
-            background: '#0d1117',
+            background: 'var(--bg-input, #141414)',
             border: '1px solid var(--border)',
             borderRadius: 6,
             padding: 12,

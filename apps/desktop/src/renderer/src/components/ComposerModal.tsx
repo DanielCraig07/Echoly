@@ -198,7 +198,7 @@ export function ComposerModal({
           maxWidth: '96vw',
           maxHeight: '90vh',
           position: 'relative',
-          background: 'var(--bg-elevated, #1a1b20)',
+          background: 'var(--bg-modal, #141414)',
           border: '1px solid var(--border, rgba(255, 255, 255, 0.12))',
           borderRadius: 12,
           boxShadow: '0 24px 64px -8px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08)',

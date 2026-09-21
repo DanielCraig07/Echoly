@@ -1468,8 +1468,8 @@ export function RunWidget({
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        background: 'var(--bg-elevated, #222226)',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
+        background: 'rgba(255, 255, 255, 0.04)',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
         borderRadius: 6,
         height: 30,
         padding: '0 4px',
@@ -1569,10 +1569,10 @@ export function RunWidget({
             maxHeight: 380,
             display: 'flex',
             flexDirection: 'column',
-            background: 'rgba(28, 28, 32, 0.98)',
+            background: 'var(--bg-modal, #141414)',
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
-            border: '1px solid rgba(255, 255, 255, 0.14)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
             borderRadius: 8,
             boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0,0,0,0.2)',
             zIndex: 1000,
@@ -1595,8 +1595,8 @@ export function RunWidget({
               onChange={(e) => setFilterText(e.target.value)}
               style={{
                 width: '100%',
-                background: 'rgba(0, 0, 0, 0.25)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: '#0d0d0d',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
                 borderRadius: 5,
                 padding: '4px 8px',
                 fontSize: 11.5,
@@ -1860,7 +1860,7 @@ export function RunWidget({
                   gap: 8,
                   width: '100%',
                   background: hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.07)' : 'rgba(255, 255, 255, 0.03)',
-                  border: hasActiveRuntimeArgs ? '1px solid rgba(56, 189, 248, 0.25)' : '1px solid var(--border)',
+                  border: hasActiveRuntimeArgs ? '1px solid rgba(56, 189, 248, 0.25)' : '1px solid rgba(255, 255, 255, 0.08)',
                   cursor: 'pointer',
                   padding: '7px 10px',
                   borderRadius: 6,
@@ -2075,10 +2075,11 @@ function ScriptItem({
         fontSize: 12,
         color: isSelected ? '#ffffff' : 'var(--text)',
         background: isSelected
-          ? 'rgba(76, 141, 255, 0.18)'
+          ? '#242424'
           : hovered
             ? 'rgba(255, 255, 255, 0.06)'
             : 'transparent',
+        border: isSelected ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid transparent',
         marginBottom: 2,
         transition: 'background 0.1s',
       }}

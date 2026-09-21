@@ -226,8 +226,8 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'transparent',
-        backdropFilter: 'none',
+        background: 'rgba(0, 0, 0, 0.65)',
+        backdropFilter: 'blur(4px)',
         zIndex: 9999,
         display: 'flex',
         justifyContent: 'center',
@@ -244,7 +244,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
           maxWidth: '96vw',
           maxHeight: '94vh',
           position: 'relative',
-          background: 'var(--bg-elevated, #1c1c20)',
+          background: 'var(--bg-modal, #141414)',
           border: '1px solid var(--border, rgba(255, 255, 255, 0.12))',
           borderRadius: 10,
           boxShadow: '0 24px 64px -8px rgba(0, 0, 0, 0.8), 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08)',
@@ -296,7 +296,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 onClick={() => setActiveTab('branches')}
                 style={{
                   border: 'none',
-                  background: activeTab === 'branches' ? 'var(--accent, #4c8dff)' : 'transparent',
+                  background: activeTab === 'branches' ? 'rgba(255, 255, 255, 0.14)' : 'transparent',
                   color: activeTab === 'branches' ? '#fff' : 'var(--muted, #888)',
                   fontSize: 11,
                   fontWeight: 500,
@@ -313,7 +313,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 onClick={() => setActiveTab('tags')}
                 style={{
                   border: 'none',
-                  background: activeTab === 'tags' ? 'var(--accent, #4c8dff)' : 'transparent',
+                  background: activeTab === 'tags' ? 'rgba(255, 255, 255, 0.14)' : 'transparent',
                   color: activeTab === 'tags' ? '#fff' : 'var(--muted, #888)',
                   fontSize: 11,
                   fontWeight: 500,
@@ -557,13 +557,13 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                     borderRadius: 7,
                     cursor: 'pointer',
                     background: isSelected
-                      ? 'var(--accent-soft, rgba(76, 141, 255, 0.16))'
+                      ? '#242424'
                       : 'transparent',
                     border: isSelected
-                      ? '1px solid rgba(76, 141, 255, 0.28)'
+                      ? '1px solid rgba(255, 255, 255, 0.18)'
                       : '1px solid transparent',
                     color: isCurrent
-                      ? '#10b981'
+                      ? '#ffffff'
                       : isSelected
                         ? 'var(--text-bright, #fff)'
                         : 'var(--fg, #ddd)',
@@ -588,12 +588,11 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                           className="branch-pulse-dot"
                           title="当前所在分支"
                           style={{
-                            width: 8,
-                            height: 8,
+                            width: 7,
+                            height: 7,
                             borderRadius: '50%',
-                            backgroundColor: '#10b981',
-                            boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.7)',
-                            animation: 'branchPulse 2s infinite',
+                            backgroundColor: '#ffffff',
+                            boxShadow: 'none',
                             flexShrink: 0,
                           }}
                         />
@@ -668,15 +667,15 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                         style={{
                           fontSize: 10.5,
                           fontWeight: 700,
-                          background: 'rgba(16, 185, 129, 0.18)',
-                          color: '#10b981',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          color: '#ffffff',
                           padding: '2px 8px',
                           borderRadius: 999,
                           display: 'flex',
                           alignItems: 'center',
                           gap: 4,
                           flexShrink: 0,
-                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
                           letterSpacing: '0.04em',
                         }}
                       >
@@ -768,13 +767,13 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                     borderRadius: 7,
                     cursor: 'pointer',
                     background: isSelected
-                      ? 'var(--accent-soft, rgba(76, 141, 255, 0.16))'
+                      ? '#242424'
                       : 'transparent',
                     border: isSelected
-                      ? '1px solid rgba(76, 141, 255, 0.28)'
+                      ? '1px solid rgba(255, 255, 255, 0.18)'
                       : '1px solid transparent',
                     color: isCurrent
-                      ? '#c084fc'
+                      ? '#ffffff'
                       : isSelected
                         ? 'var(--text-bright, #fff)'
                         : 'var(--fg, #ddd)',
@@ -920,7 +919,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
               style={{
                 width: '100%',
                 maxWidth: 420,
-                background: 'var(--bg-elevated, #202026)',
+                background: 'var(--bg-modal, #141414)',
                 border: '1px solid rgba(234, 179, 8, 0.35)',
                 borderRadius: 10,
                 boxShadow: '0 20px 50px rgba(0,0,0,0.7)',

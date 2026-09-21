@@ -276,6 +276,12 @@ export function setupMonacoChineseLocalization() {
         ? node
         : node.querySelector<HTMLElement>('.monaco-menu-container') || node;
       container.classList.add('monaco-styled-menu');
+      container.style.border = 'none';
+      container.style.outline = 'none';
+      container.querySelectorAll<HTMLElement>('.monaco-scrollable-element, .actions-container').forEach((el) => {
+        el.style.border = 'none';
+        el.style.outline = 'none';
+      });
 
       const items = node.querySelectorAll<HTMLElement>('.action-item, .action-menu-item');
       items.forEach((item) => {

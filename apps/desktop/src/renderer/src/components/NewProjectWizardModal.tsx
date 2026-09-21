@@ -176,7 +176,7 @@ export function NewProjectWizardModal({
           maxWidth: '96vw',
           maxHeight: '94vh',
           position: 'relative',
-          background: 'var(--bg-elevated, #1c1c20)',
+          background: 'var(--bg-modal, #141414)',
           border: '1px solid var(--border)',
           borderRadius: 12,
           boxShadow: '0 24px 60px rgba(0, 0, 0, 0.8)',
@@ -195,7 +195,7 @@ export function NewProjectWizardModal({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'var(--bg-panel, #242428)',
+            background: '#141414',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -242,15 +242,15 @@ export function NewProjectWizardModal({
                     justifyContent: 'space-between',
                     padding: '10px 12px',
                     borderRadius: 8,
-                    border: isSelected ? '1px solid var(--accent, #38bdf8)' : '1px solid var(--border)',
-                    background: isSelected ? 'color-mix(in srgb, var(--accent) 12%, var(--bg-panel))' : 'var(--bg-panel)',
+                    border: isSelected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid var(--border)',
+                    background: isSelected ? '#242424' : 'rgba(255, 255, 255, 0.03)',
                     color: isSelected ? 'var(--text-bright, #fff)' : 'var(--text)',
                     cursor: 'pointer',
                     textAlign: 'left',
                     fontSize: 12.5,
                     fontWeight: isSelected ? 650 : 500,
                     transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
-                    boxShadow: isSelected ? '0 2px 10px rgba(56, 189, 248, 0.2)' : 'none',
+                    boxShadow: isSelected ? '0 2px 10px rgba(0, 0, 0, 0.4)' : 'none',
                     transform: isSelected ? 'translateX(2px)' : 'none',
                   }}
                 >
@@ -501,7 +501,7 @@ export function NewProjectWizardModal({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            background: 'var(--bg-panel, #242428)',
+            background: '#141414',
           }}
         >
           <button

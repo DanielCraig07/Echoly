@@ -177,10 +177,10 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
           maxWidth: '96vw',
           maxHeight: '94vh',
           position: 'relative',
-          background: 'var(--bg-elevated, #252526)',
-          border: '1px solid var(--border, #3c3c3c)',
-          borderRadius: 10,
-          boxShadow: '0 20px 48px rgba(0, 0, 0, 0.6)',
+          background: 'var(--bg-modal, #141414)',
+          border: '1px solid var(--border, rgba(255, 255, 255, 0.12))',
+          borderRadius: 12,
+          boxShadow: '0 24px 64px -8px rgba(0, 0, 0, 0.8), 0 4px 16px rgba(0, 0, 0, 0.4)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
@@ -190,7 +190,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
         <div
           style={{
             padding: '12px 16px',
-            borderBottom: '1px solid var(--border, #3c3c3c)',
+            borderBottom: '1px solid var(--border, rgba(255, 255, 255, 0.08))',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -245,7 +245,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
         <div
           style={{
             padding: '10px 16px',
-            borderBottom: '1px solid var(--border, #3c3c3c)',
+            borderBottom: '1px solid var(--border, rgba(255, 255, 255, 0.08))',
             display: 'flex',
             alignItems: 'center',
             gap: 8,
@@ -260,13 +260,14 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
             onKeyDown={handleKeyDown}
             style={{
               flex: 1,
-              background: 'var(--bg-main, #1e1e1e)',
-              border: '1px solid var(--border, #3c3c3c)',
-              borderRadius: 4,
-              padding: '6px 10px',
-              fontSize: 12,
+              background: '#0d0d0d',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: 6,
+              padding: '7px 12px',
+              fontSize: 12.5,
               color: 'var(--text)',
               outline: 'none',
+              transition: 'all 0.15s ease',
             }}
           />
           <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
@@ -332,7 +333,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                     alignItems: 'center',
                     gap: 12,
                     cursor: 'pointer',
-                    background: isSelected ? 'var(--bg-hover, rgba(255,255,255,0.06))' : 'transparent',
+                    background: isSelected ? '#242424' : 'transparent',
                     borderLeft: isSelected ? '3px solid var(--accent, #38bdf8)' : '3px solid transparent',
                     transition: 'all 0.15s ease',
                   }}
@@ -465,7 +466,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
         <div
           style={{
             padding: '8px 16px',
-            borderTop: '1px solid var(--border, #3c3c3c)',
+            borderTop: '1px solid var(--border, rgba(255, 255, 255, 0.08))',
             background: 'rgba(255, 255, 255, 0.02)',
             display: 'flex',
             justifyContent: 'space-between',

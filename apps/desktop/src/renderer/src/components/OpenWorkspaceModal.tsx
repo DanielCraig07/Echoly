@@ -160,7 +160,24 @@ export function OpenWorkspaceModal({
       >
         <header className="ide-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 18 }}>📂</span>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--text)',
+                flexShrink: 0,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+            </div>
             <div>
               <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-bright)' }}>
                 打开工作区 (Open Workspace)
@@ -194,7 +211,7 @@ export function OpenWorkspaceModal({
                 onPickLocal();
               }}
             >
-              <div className="open-ws-card-icon" style={{ background: 'rgba(56, 189, 248, 0.14)', color: '#38bdf8' }}>
+              <div className="open-ws-card-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
                 </svg>
@@ -213,7 +230,7 @@ export function OpenWorkspaceModal({
                 onPickSsh();
               }}
             >
-              <div className="open-ws-card-icon" style={{ background: 'rgba(168, 85, 247, 0.14)', color: '#c084fc' }}>
+              <div className="open-ws-card-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <circle cx="12" cy="12" r="9" />
                   <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
@@ -233,7 +250,7 @@ export function OpenWorkspaceModal({
                 onPickClone();
               }}
             >
-              <div className="open-ws-card-icon" style={{ background: 'rgba(34, 197, 94, 0.14)', color: '#4ade80' }}>
+              <div className="open-ws-card-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M12 3v12" />
                   <path d="m8 11 4 4 4-4" />
@@ -254,7 +271,7 @@ export function OpenWorkspaceModal({
                 onOpenNewProjectWizard?.();
               }}
             >
-              <div className="open-ws-card-icon" style={{ background: 'rgba(251, 146, 60, 0.14)', color: '#fb923c' }}>
+              <div className="open-ws-card-icon">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                   <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
                   <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />

@@ -2370,6 +2370,36 @@ export function App() {
         void saveActive();
         return;
       }
+      // Cmd+F: 编辑区与终端区域搜索唤起并自动定位光标
+      if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        const el = document.activeElement as HTMLElement | null;
+        const inTerminal = !!(
+          el &&
+          (el.classList?.contains('xterm-helper-textarea') ||
+            !!el.closest?.('.xterm') ||
+            !!el.closest?.('.terminal-panel') ||
+            !!el.closest?.('.terminal-sessions'))
+        );
+        const inMonaco = !!(el && typeof el.closest === 'function' && el.closest('.monaco-editor'));
+        const isTerminalActive = (() => {
+          if (inTerminal) return true;
+          if (inMonaco) return false;
+          const bottomPanel = document.querySelector<HTMLElement>('.bottom-panel');
+          const isBottomVisible = bottomPanel && getComputedStyle(bottomPanel).display !== 'none';
+          const isTerminalTabActive = !!document.querySelector('.bottom-tab-btn.active')?.textContent?.includes('终端');
+          return !!(isBottomVisible && isTerminalTabActive);
+        })();
+
+        if (isTerminalActive) {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent('echoly:focusTerminalSearch'));
+          return;
+        }
+
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('echoly:focusEditorFind'));
+        return;
+      }
       const isMonacoFocused = (() => {
         const el = document.activeElement as HTMLElement | null;
         return !!(el && typeof el.closest === 'function' && el.closest('.monaco-editor'));
@@ -3473,7 +3503,7 @@ export function App() {
                   display: layout.bottomPanelExpanded === true ? 'flex' : 'none',
                   flexDirection: 'column',
                   overflow: 'hidden',
-                  background: 'var(--bg-editor, #1e1e1e)',
+                  background: 'var(--bg-bottom, #141414)',
                 }}
               >
                 {/* 底部面板模式切换工具栏 */}
@@ -3481,7 +3511,7 @@ export function App() {
                   style={{
                     height: 32,
                     boxSizing: 'border-box',
-                    background: 'var(--bg-secondary, #18191d)',
+                    background: 'var(--bg-bottom, #141414)',
                     borderBottom: '1px solid var(--border)',
                     display: 'flex',
                     alignItems: 'center',

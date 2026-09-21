@@ -691,7 +691,7 @@ export function DebugPanel({
       />
 
       {/* 右半侧: 调试控制台输出与 REPL */}
-      <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', background: '#121214' }}>
+      <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', background: 'var(--bg-bottom, #141414)' }}>
           <div
             ref={logContainerRef}
             style={{

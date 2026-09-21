@@ -42,10 +42,10 @@ function terminalTheme(uiTheme: UiTheme) {
     };
   }
   return {
-    background: '#181818',
-    foreground: '#e6e8ec',
-    cursor: '#4c8dff',
-    selectionBackground: 'rgba(76, 141, 255, 0.25)',
+    background: '#141414',
+    foreground: '#cccccc',
+    cursor: '#aeafad',
+    selectionBackground: 'rgba(255, 255, 255, 0.15)',
   };
 }
 
@@ -278,6 +278,7 @@ interface TerminalSearchBarProps {
   onFindNext: () => void;
   onFindPrevious: () => void;
   onClose: () => void;
+  focusNonce?: number;
 }
 
 function TerminalSearchBar({
@@ -294,15 +295,33 @@ function TerminalSearchBar({
   onFindNext,
   onFindPrevious,
   onClose,
+  focusNonce,
 }: TerminalSearchBarProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
+    const focus = () => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    };
+    focus();
+    const rafId = requestAnimationFrame(focus);
+    const timerId = setTimeout(focus, 30);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timerId);
+    };
+  }, [focusNonce]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      e.stopPropagation();
+      inputRef.current?.select();
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       if (e.shiftKey) {
@@ -464,6 +483,7 @@ interface SessionProps {
   wordWrap?: boolean;
   scrollback?: number;
   searchOpen?: boolean;
+  searchFocusNonce?: number;
   onOpenSearch?: () => void;
   onCloseSearch?: () => void;
   onRegisterSession?: (clientId: string, sendCmd: (cmd: string) => void) => () => void;
@@ -484,6 +504,7 @@ function TerminalSession({
   wordWrap = true,
   scrollback,
   searchOpen,
+  searchFocusNonce,
   onOpenSearch,
   onCloseSearch,
   onRegisterSession,
@@ -812,7 +833,7 @@ function TerminalSession({
         return false;
       }
 
-      if (ctrl && e.key.toLowerCase() === 'f' && e.type === 'keydown') {
+      if (ctrl && e.key.toLowerCase() === 'f' && !e.shiftKey && e.type === 'keydown') {
         e.preventDefault();
         e.stopPropagation();
         onOpenSearch?.();
@@ -1283,6 +1304,7 @@ function TerminalSession({
           onFindNext={handleFindNext}
           onFindPrevious={handleFindPrevious}
           onClose={handleCloseSearch}
+          focusNonce={searchFocusNonce}
         />
       )}
       {/* no-wrap 模式下：自定义纵向滚动条，固定在 host 可视區右侧，避免原生滑动条随内容宽度跑到右边看不到 */}
@@ -1331,8 +1353,23 @@ export function TerminalPanel({
     }
   });
 
-  // 终端搜索栏显隐状态
+  // 终端搜索栏显隐状态与聚焦触发计数器
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchFocusNonce, setSearchFocusNonce] = useState(0);
+
+  const handleOpenSearch = useCallback(() => {
+    setIsSearchOpen(true);
+    setSearchFocusNonce((n) => n + 1);
+  }, []);
+
+  // 监听全局聚焦终端搜索指令 (如 App 层发出的 Cmd+F)
+  useEffect(() => {
+    const onGlobalFocus = () => {
+      handleOpenSearch();
+    };
+    window.addEventListener('echoly:focusTerminalSearch', onGlobalFocus);
+    return () => window.removeEventListener('echoly:focusTerminalSearch', onGlobalFocus);
+  }, [handleOpenSearch]);
 
   // 终端 AI 命令生成浮条 (Cmd+K)
   const [showAiK, setShowAiK] = useState(false);
@@ -1588,6 +1625,13 @@ export function TerminalPanel({
     <div
       className="bottom-section terminal-panel"
       style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+      onKeyDownCapture={(e) => {
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+          e.preventDefault();
+          e.stopPropagation();
+          handleOpenSearch();
+        }
+      }}
     >
       <div className="terminal-toolbar">
         <div className="terminal-toolbar-left">
@@ -1706,7 +1750,13 @@ export function TerminalPanel({
             type="button"
             className={`panel-action-btn${isSearchOpen ? ' active' : ''}`}
             title="在终端中搜索 (Ctrl+F / ⌘F)"
-            onClick={() => setIsSearchOpen((v) => !v)}
+            onClick={() => {
+              if (isSearchOpen) {
+                setSearchFocusNonce((n) => n + 1);
+              } else {
+                handleOpenSearch();
+              }
+            }}
           >
             <IconSearch size={16} />
           </button>
@@ -1788,7 +1838,8 @@ export function TerminalPanel({
             wordWrap={wordWrap}
             scrollback={scrollback}
             searchOpen={tab.clientId === activeId && isSearchOpen}
-            onOpenSearch={() => setIsSearchOpen(true)}
+            searchFocusNonce={searchFocusNonce}
+            onOpenSearch={handleOpenSearch}
             onCloseSearch={() => setIsSearchOpen(false)}
             onRegisterSession={handleRegisterSession}
             onRegisterRawSession={handleRegisterRawSession}
