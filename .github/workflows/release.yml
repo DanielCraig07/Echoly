@@ -10,12 +10,9 @@ permissions:
 
 jobs:
   macos:
-    runs-on: [self-hosted, macOS]
-    timeout-minutes: 15
+    runs-on: macos-latest
+    timeout-minutes: 30
     steps:
-      - name: Ensure system paths
-        run: echo "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin" >> $GITHUB_PATH
-
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
@@ -49,7 +46,7 @@ jobs:
 
   windows:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -68,16 +65,20 @@ jobs:
       - name: Package Windows x64 NSIS (publish to release)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run pack:win:publish
+        run: |
+          if ! npm run pack:win:publish; then
+            echo "::warning::pack:win:publish encountered upload error, executing fallback gh release upload..."
+            cd apps/desktop
+            gh release upload "${{ github.ref_name }}" release/*.exe release/*.exe.blockmap release/latest.yml --clobber || true
+          fi
 
 
   publish:
     needs: [macos, windows]
     if: always() && !cancelled() && (needs.macos.result == 'success' || needs.windows.result == 'success')
-    runs-on: [self-hosted, macOS]
+    runs-on: ubuntu-latest
     steps:
-      - name: Ensure system paths
-        run: echo "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin" >> $GITHUB_PATH
+      - uses: actions/checkout@v4
 
       - name: Publish Draft Release
         env:
@@ -91,6 +92,6 @@ jobs:
             gh api -X PATCH "repos/${{ github.repository }}/releases/$RELEASE_ID" -f draft=false
             echo "✓ Release $TAG (ID: $RELEASE_ID) published successfully!"
           else
-            # 备选方案：尝试直接编辑 tag 对应的 release
-            gh release edit "$TAG" --draft=false || echo "Warning: Could not automatically publish release for $TAG"
+            # 备选方案：尝试直接编辑 tag 对应的 release 或创建 release
+            gh release edit "$TAG" --draft=false 2>/dev/null || gh release create "$TAG" --title "$TAG" --generate-notes || true
           fi
