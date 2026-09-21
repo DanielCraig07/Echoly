@@ -21,3 +21,5 @@ apps/desktop/electron-dist-cache/
 .env.*
 !*.example
 
+# GitHub Actions self-hosted runner
+actions-runner/
