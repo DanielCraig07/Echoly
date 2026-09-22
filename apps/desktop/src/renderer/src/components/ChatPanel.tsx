@@ -26,6 +26,7 @@ import { WorkedForGroup } from './chat/WorkedForGroup';
 import { CollapsibleUserContent } from './chat/CollapsibleUserContent';
 import { InputCodeRefOverlay, type InputCodeRefOverlayHandle } from './chat/InputCodeRefOverlay';
 import { FileLanguageIcon } from './chat/CodeRefPill';
+import echolyAppIcon from '../assets/echoly-icon.png';
 
 interface MentionItem {
   id: string;
@@ -2173,22 +2174,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               return (
                 <>
                   <div className="chat-empty-state">
-                    <div className="chat-empty-icon">
-                      <svg
-                        width="22"
-                        height="22"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10a9.96 9.96 0 0 1-4.587-1.11L3 22l1.11-4.413A9.96 9.96 0 0 1 2 12 10 10 0 0 1 12 2z" />
-                        <circle cx="8" cy="12" r="1" fill="currentColor" />
-                        <circle cx="12" cy="12" r="1" fill="currentColor" />
-                        <circle cx="16" cy="12" r="1" fill="currentColor" />
-                      </svg>
+                    <div className="chat-empty-icon-wrap">
+                      <img
+                        src={echolyAppIcon}
+                        alt="Echoly App Icon"
+                        className="chat-empty-app-icon"
+                      />
                     </div>
                     <div className="chat-empty-title">Echoly AI 编程助手</div>
                     <div className="chat-empty-subtitle">

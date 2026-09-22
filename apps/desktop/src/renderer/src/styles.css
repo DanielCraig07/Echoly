@@ -2851,17 +2851,29 @@ body.resizing.resizing-row {
   margin: auto 0;
 }
 
-.chat-empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: var(--accent-subtle, rgba(130, 49, 142, 0.12));
-  color: var(--accent, #a855f7);
+.chat-empty-icon-wrap {
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  margin-bottom: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  background: transparent;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.35));
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-empty-icon-wrap:hover {
+  transform: scale(1.05);
+}
+
+.chat-empty-app-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 13px;
+  display: block;
 }
 
 .chat-empty-title {
@@ -2897,17 +2909,24 @@ body.resizing.resizing-row {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   border-radius: 8px;
   font-size: 12px;
-  color: var(--text, #e2e8f0);
+  color: var(--text, #cccccc);
   cursor: pointer;
   text-align: left;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .chat-prompt-pill:hover {
-  background: var(--accent-subtle, rgba(130, 49, 142, 0.1));
-  border-color: var(--accent, #a855f7);
-  color: var(--text, #ffffff);
+  background: var(--accent-soft, rgba(0, 122, 204, 0.15));
+  border-color: var(--accent, #007acc);
+  color: var(--text-bright, #ffffff);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
   transform: translateY(-1px);
+}
+
+[data-theme='light'] .chat-prompt-pill:hover {
+  background: var(--accent-soft, rgba(130, 49, 142, 0.12));
+  border-color: var(--accent, #82318e);
+  color: var(--text, #2a1b3d);
 }
 
 .chat-prompt-pill:active {
@@ -2917,6 +2936,8 @@ body.resizing.resizing-row {
 .chat-prompt-pill-icon {
   font-size: 14px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 .chat-prompt-pill-text {
@@ -2928,16 +2949,20 @@ body.resizing.resizing-row {
 }
 
 .chat-prompt-pill-arrow {
-  color: var(--muted, #64748b);
+  color: var(--muted, #858585);
   opacity: 0.6;
   font-size: 12px;
-  transition: transform 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 .chat-prompt-pill:hover .chat-prompt-pill-arrow {
   opacity: 1;
   transform: translateX(2px);
-  color: var(--accent, #a855f7);
+  color: var(--accent-light, var(--accent, #3794ff));
+}
+
+[data-theme='light'] .chat-prompt-pill:hover .chat-prompt-pill-arrow {
+  color: var(--accent, #82318e);
 }
 
 /* One user question + its reply — same structure as a file-tree folder + children */
