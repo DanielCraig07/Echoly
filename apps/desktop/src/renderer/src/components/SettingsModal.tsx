@@ -12,6 +12,7 @@ import { PERMISSION_MODE_LABELS, AI_PROVIDER_LABELS, DEFAULT_PROVIDERS, DEFAULT_
 import { useI18n } from '../i18n';
 import { EnvironmentSettingsSection } from './EnvironmentSettingsSection';
 import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import echolyAppIcon from '../assets/echoly-icon.png';
 
 interface Props {
   open: boolean;
@@ -1561,8 +1562,11 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                 <div className="about-hero-card">
                   <div className="about-hero-top">
                     <div className="about-logo-wrapper">
-                      <div className="about-logo-icon">⚡</div>
-                      <div className="about-logo-glow" />
+                      <img
+                        src={echolyAppIcon}
+                        alt="Echoly App Icon"
+                        className="about-app-icon-img"
+                      />
                     </div>
                     <div className="about-hero-text">
                       <div className="about-hero-title-row">

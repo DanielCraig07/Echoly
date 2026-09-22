@@ -68,4 +68,21 @@ for (const filePath of filesToUpdate) {
   }
 }
 
+// 同步 packages/shared/src/index.ts 的 APP_VERSION
+const sharedIndexPath = path.join(rootDir, 'packages', 'shared', 'src', 'index.ts');
+if (fs.existsSync(sharedIndexPath)) {
+  const content = fs.readFileSync(sharedIndexPath, 'utf-8');
+  const updated = content.replace(
+    /export const APP_VERSION = ['"][^'"]+['"];/,
+    `export const APP_VERSION = '${cleanVersion}';`
+  );
+  if (updated !== content) {
+    fs.writeFileSync(sharedIndexPath, updated, 'utf-8');
+    console.log(`  ✓ 更新 ${path.relative(rootDir, sharedIndexPath)}: APP_VERSION -> '${cleanVersion}'`);
+    changedCount++;
+  } else {
+    console.log(`  - 保持 ${path.relative(rootDir, sharedIndexPath)}: APP_VERSION 已经是 '${cleanVersion}'`);
+  }
+}
+
 console.log(`✅ 版本号同步完成 (共更新 ${changedCount} 个文件)`);
