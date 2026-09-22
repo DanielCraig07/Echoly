@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 export interface ProjectRuntimeConfig {
   vmArgs: string; // 编译器标志 / JVM 参数 / 解释器参数
@@ -567,6 +567,7 @@ export function ProjectRuntimeConfigModal({
   if (!isOpen) return null;
 
   const projectName = workspace ? workspace.split('/').pop() : '全局';
+  const safeOverlay = createSafeOverlayHandlers(onClose);
 
   return (
     <div
@@ -581,7 +582,7 @@ export function ProjectRuntimeConfigModal({
         backdropFilter: 'blur(5px)',
         padding: 16,
       }}
-      onClick={onClose}
+      {...safeOverlay}
     >
       <div
         className="runtime-modal"
@@ -638,9 +639,9 @@ export function ProjectRuntimeConfigModal({
                     gap: 4,
                     padding: '2px 8px',
                     borderRadius: 4,
-                    background: 'rgba(56, 189, 248, 0.16)',
-                    color: '#38bdf8',
-                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                    background: 'var(--accent-soft, rgba(0, 122, 204, 0.2))',
+                    color: 'var(--accent-light, #3794ff)',
+                    border: '1px solid var(--accent, #007acc)',
                     fontSize: 11,
                     fontWeight: 600,
                   }}
@@ -708,7 +709,7 @@ export function ProjectRuntimeConfigModal({
           {currentLang === 'java' && detectedPresets.length > 0 && (
             <div className="runtime-section runtime-preset-section">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#38bdf8' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--accent-light, #3794ff)' }}>
                   <span>💡</span> 检测到项目中存在的环境配置 (点击单选/再次点击取消):
                 </div>
                 <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>自动匹配 -Denv=...</span>
@@ -729,9 +730,9 @@ export function ProjectRuntimeConfigModal({
                         padding: '4px 10px',
                         borderRadius: 4,
                         fontSize: 11.5,
-                        background: isApplied ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.06)',
-                        border: isApplied ? '1px solid #38bdf8' : '1px solid var(--border)',
-                        color: isApplied ? '#38bdf8' : 'var(--text)',
+                        background: isApplied ? 'var(--accent, #007acc)' : 'rgba(255, 255, 255, 0.06)',
+                        border: isApplied ? '1px solid var(--accent-light, #3794ff)' : '1px solid var(--border)',
+                        color: isApplied ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                         transition: 'all 0.15s ease',
                       }}
@@ -813,9 +814,9 @@ export function ProjectRuntimeConfigModal({
                         fontSize: 10.5,
                         padding: '2px 7px',
                         borderRadius: 3,
-                        background: isPresent ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                        border: isPresent ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
-                        color: isPresent ? '#38bdf8' : 'var(--text)',
+                        background: isPresent ? 'var(--accent, #007acc)' : 'rgba(255, 255, 255, 0.05)',
+                        border: isPresent ? '1px solid var(--accent-light, #3794ff)' : '1px solid rgba(255, 255, 255, 0.1)',
+                        color: isPresent ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                       }}
                       title={isPresent ? `点击移除 ${flag}` : `点击添加 ${flag}`}
@@ -849,7 +850,7 @@ export function ProjectRuntimeConfigModal({
                     padding: '3px 9px',
                     borderRadius: 4,
                     fontSize: 11,
-                    background: showAddOptionsPopup ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.07)',
+                    background: showAddOptionsPopup ? 'var(--bg-hover-strong, #242424)' : 'rgba(255, 255, 255, 0.07)',
                     border: '1px solid var(--border)',
                     color: 'var(--text-bright)',
                     cursor: 'pointer',
@@ -929,8 +930,8 @@ export function ProjectRuntimeConfigModal({
                                 justifyContent: 'space-between',
                                 padding: '6px 12px',
                                 cursor: 'pointer',
-                                background: isChecked ? 'rgba(56, 189, 248, 0.12)' : 'transparent',
-                                borderLeft: isChecked ? '3px solid #38bdf8' : '3px solid transparent',
+                                background: isChecked ? 'rgba(0, 122, 204, 0.15)' : 'transparent',
+                                borderLeft: isChecked ? '3px solid var(--accent, #007acc)' : '3px solid transparent',
                                 transition: 'background 0.15s ease',
                               }}
                               onMouseEnter={(e) => {
@@ -952,7 +953,7 @@ export function ProjectRuntimeConfigModal({
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={(e) => setConfig({ ...config, [item.key]: e.target.checked } as ProjectRuntimeConfig)}
-                                style={{ accentColor: '#38bdf8', cursor: 'pointer' }}
+                                style={{ accentColor: 'var(--accent, #007acc)', cursor: 'pointer' }}
                               />
                             </label>
                           );
@@ -1064,9 +1065,9 @@ export function ProjectRuntimeConfigModal({
                         fontSize: 10,
                         padding: '1px 6px',
                         borderRadius: 3,
-                        background: isPresent ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                        border: isPresent ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
-                        color: isPresent ? '#38bdf8' : 'var(--text)',
+                        background: isPresent ? 'var(--accent, #007acc)' : 'rgba(255, 255, 255, 0.05)',
+                        border: isPresent ? '1px solid var(--accent-light, #3794ff)' : '1px solid rgba(255, 255, 255, 0.1)',
+                        color: isPresent ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                       }}
                       title={isPresent ? `点击移除 ${chip}` : `点击添加 ${chip}`}
@@ -1127,9 +1128,9 @@ export function ProjectRuntimeConfigModal({
                         fontSize: 10,
                         padding: '1px 6px',
                         borderRadius: 3,
-                        background: isPresent ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                        border: isPresent ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
-                        color: isPresent ? '#38bdf8' : 'var(--text)',
+                        background: isPresent ? 'var(--accent, #007acc)' : 'rgba(255, 255, 255, 0.05)',
+                        border: isPresent ? '1px solid var(--accent-light, #3794ff)' : '1px solid rgba(255, 255, 255, 0.1)',
+                        color: isPresent ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                       }}
                       title={isPresent ? `点击取消 ${preset}` : `点击应用 ${preset}`}
@@ -1163,7 +1164,7 @@ export function ProjectRuntimeConfigModal({
               </button>
             </div>
             <div className="runtime-terminal-content">
-              <span style={{ color: '#38bdf8', marginRight: 8, userSelect: 'none' }}>$</span>
+              <span style={{ color: 'var(--accent-light, #3794ff)', marginRight: 8, userSelect: 'none' }}>$</span>
               <span>{previewCommand}</span>
             </div>
           </div>

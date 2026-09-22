@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { WorkspaceInfo } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 const isMac =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
@@ -145,8 +145,10 @@ export function OpenWorkspaceModal({
 
   if (!open || typeof document === 'undefined') return null;
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return createPortal(
-    <div className="settings-overlay" onClick={onClose}>
+    <div className="settings-overlay" {...safeOverlay}>
       <div
         className="ide-modal ide-modal-md modern-open-ws-modal"
         style={{
@@ -357,18 +359,19 @@ export function OpenWorkspaceModal({
                           onSelectRecent?.(item);
                         }}
                       >
-                        {/* 1. 连接方式徽标（本地 / SSH） */}
-                        <span className={`open-ws-kind-pill ${isSsh ? 'ssh' : 'local'}`}>
-                          {isSsh ? 'SSH' : '本地'}
-                        </span>
-                        {/* 2. 技术栈彩色徽标 */}
-                        <span
-                          className="open-ws-tech-pill"
-                          style={{ color: tech.color, background: tech.bg }}
-                          title={`智能识别技术栈: ${tech.label}`}
-                        >
-                          {tech.label}
-                        </span>
+                        {/* 1 & 2. 连接方式徽标与技术栈徽标（固定宽度容器以实现项目名称严格对齐） */}
+                        <div className="open-ws-recent-badges">
+                          <span className={`open-ws-kind-pill ${isSsh ? 'ssh' : 'local'}`}>
+                            {isSsh ? 'SSH' : '本地'}
+                          </span>
+                          <span
+                            className="open-ws-tech-pill"
+                            style={{ color: tech.color, background: tech.bg }}
+                            title={`智能识别技术栈: ${tech.label}`}
+                          >
+                            {tech.label}
+                          </span>
+                        </div>
 
                         <span className="open-ws-recent-text">
                           <span className="open-ws-recent-name-wrap">
@@ -402,7 +405,7 @@ export function OpenWorkspaceModal({
                         {onRemoveRecent && (
                           <button
                             type="button"
-                            className="open-ws-action-icon-btn danger"
+                            className="open-ws-action-icon-btn remove-btn"
                             title="从历史记录中移除"
                             onClick={(e) => {
                               e.stopPropagation();

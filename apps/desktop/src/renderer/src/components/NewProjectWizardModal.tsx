@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { PROJECT_TEMPLATE_LIST, type ProjectTemplate } from '../utils/projectTemplates';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 interface Props {
   isOpen: boolean;
@@ -154,6 +154,8 @@ export function NewProjectWizardModal({
 
   if (!isOpen) return null;
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return (
     <div
       style={{
@@ -167,7 +169,7 @@ export function NewProjectWizardModal({
         backdropFilter: 'blur(6px)',
         padding: 16,
       }}
-      onClick={onClose}
+      {...safeOverlay}
     >
       <div
         style={{
@@ -236,23 +238,7 @@ export function NewProjectWizardModal({
                   key={tpl.id}
                   type="button"
                   onClick={() => handleSelectTemplate(tpl.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 12px',
-                    borderRadius: 8,
-                    border: isSelected ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid var(--border)',
-                    background: isSelected ? '#242424' : 'rgba(255, 255, 255, 0.03)',
-                    color: isSelected ? 'var(--text-bright, #fff)' : 'var(--text)',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    fontSize: 12.5,
-                    fontWeight: isSelected ? 650 : 500,
-                    transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
-                    boxShadow: isSelected ? '0 2px 10px rgba(0, 0, 0, 0.4)' : 'none',
-                    transform: isSelected ? 'translateX(2px)' : 'none',
-                  }}
+                  className={`wizard-tech-card${isSelected ? ' is-selected' : ''}`}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                     <span style={{ fontSize: 15 }}>
@@ -299,13 +285,15 @@ export function NewProjectWizardModal({
                 background: 'var(--bg-panel)',
                 border: '1px solid var(--border)',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                alignItems: 'flex-start',
                 gap: 12,
               }}
             >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 24, lineHeight: 1 }}>
+                {activeTemplate.id.includes('java') ? '☕' : activeTemplate.id.includes('python') ? '🐍' : activeTemplate.id.includes('cpp') ? '⚡' : activeTemplate.id.includes('go') ? '🐹' : '🟢'}
+              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span
                     style={{
                       fontSize: 10.5,
@@ -338,21 +326,12 @@ export function NewProjectWizardModal({
               </div>
               <input
                 type="text"
+                className="wizard-form-input"
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
                 placeholder="例如: my-awesome-project"
                 style={{
                   width: '100%',
-                  boxSizing: 'border-box',
-                  background: 'var(--bg-input, #131316)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  color: 'var(--text-bright)',
-                  padding: '8px 12px',
-                  fontSize: 12.5,
-                  fontFamily: 'var(--font-mono, monospace)',
-                  outline: 'none',
-                  transition: 'border-color 0.15s, box-shadow 0.15s',
                 }}
               />
             </div>
@@ -368,21 +347,12 @@ export function NewProjectWizardModal({
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   type="text"
+                  className="wizard-form-input"
                   value={parentDir}
                   onChange={(e) => setParentDir(e.target.value)}
                   placeholder="例如: /Users/username/Projects"
                   style={{
                     flex: 1,
-                    boxSizing: 'border-box',
-                    background: 'var(--bg-input, #131316)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 8,
-                    color: 'var(--text-bright)',
-                    padding: '8px 12px',
-                    fontSize: 12,
-                    fontFamily: 'var(--font-mono, monospace)',
-                    outline: 'none',
-                    transition: 'border-color 0.15s, box-shadow 0.15s',
                   }}
                 />
                 <button
@@ -401,10 +371,10 @@ export function NewProjectWizardModal({
               style={{
                 padding: '8px 12px',
                 borderRadius: 8,
-                background: 'rgba(56, 189, 248, 0.08)',
-                border: '1px solid rgba(56, 189, 248, 0.25)',
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
                 fontSize: 11.5,
-                color: '#38bdf8',
+                color: 'var(--text-bright)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -413,7 +383,7 @@ export function NewProjectWizardModal({
             >
               <span style={{ flexShrink: 0 }}>📍</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fullTargetPath}>
-                即将生成至: <strong style={{ color: '#7dd3fc', fontFamily: 'var(--font-mono)' }}>{fullTargetPath || '请选择父目录与项目名'}</strong>
+                即将生成至: <strong style={{ color: 'var(--accent-light, #3794ff)', fontFamily: 'var(--font-mono)' }}>{fullTargetPath || '请选择父目录与项目名'}</strong>
               </span>
             </div>
 

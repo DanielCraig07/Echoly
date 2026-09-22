@@ -139,6 +139,8 @@ export function useModalResize({
       const startW = modalSizeRef.current.width;
       const startH = modalSizeRef.current.height;
 
+      setModalResizing(true);
+
       const onMouseMove = (moveEvent: MouseEvent) => {
         const effectiveMaxW = maxWidth || getWindowMaxW();
         const effectiveMaxH = maxHeight || getWindowMaxH();
@@ -166,6 +168,20 @@ export function useModalResize({
         document.removeEventListener('mouseup', onMouseUp);
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
+
+        // 核心修复：拖动尺寸在外部松手时，拦截并吞掉紧随其后的任何 click 事件，防止误触发关闭遮罩
+        const preventGhostClick = (clickEvent: MouseEvent) => {
+          clickEvent.preventDefault();
+          clickEvent.stopPropagation();
+          clickEvent.stopImmediatePropagation();
+        };
+        window.addEventListener('click', preventGhostClick, { capture: true, once: true });
+
+        // 350ms 冷却保护期，保证拖拽完毕后鼠标在外面失焦或点击不会误关闭弹窗
+        setTimeout(() => {
+          setModalResizing(false);
+          window.removeEventListener('click', preventGhostClick, { capture: true });
+        }, 350);
 
         if (storageKey) {
           try {
@@ -205,6 +221,49 @@ export function useModalResize({
     setModalSize,
     handleResizeStart,
     resetSize,
+  };
+}
+
+/** 全局检查当前是否有弹窗正在拖拽调整大小 */
+export function isModalResizing(): boolean {
+  return typeof window !== 'undefined' && Boolean((window as any).__echoly_is_resizing_modal);
+}
+
+export function setModalResizing(val: boolean): void {
+  if (typeof window !== 'undefined') {
+    (window as any).__echoly_is_resizing_modal = val;
+  }
+}
+
+/**
+ * 为弹窗遮罩层 (Overlay) 提供安全关闭事件处理器：
+ * 1. 拖拽调整窗口尺寸（Resize）期间及冷却时间内彻底拦截关闭；
+ * 2. 严格双端校验：只有 mousedown 与 mouseup 均直接发生在遮罩层自身时才允许关闭，
+ *    彻底解决在弹窗内按住鼠标（如拖选文字、点击控件）滑到外面松手导致弹窗直接关闭的恶劣交互！
+ */
+export function createSafeOverlayHandlers(onClose?: () => void) {
+  let mouseDownOnOverlay = false;
+
+  return {
+    onMouseDown: (e: React.MouseEvent) => {
+      mouseDownOnOverlay = e.target === e.currentTarget;
+    },
+    onMouseUp: (e: React.MouseEvent) => {
+      if (isModalResizing()) {
+        mouseDownOnOverlay = false;
+        return;
+      }
+      if (mouseDownOnOverlay && e.target === e.currentTarget && onClose) {
+        onClose();
+      }
+      mouseDownOnOverlay = false;
+    },
+    onClick: (e: React.MouseEvent) => {
+      if (isModalResizing()) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
   };
 }
 

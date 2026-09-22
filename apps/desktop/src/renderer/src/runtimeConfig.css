@@ -53,10 +53,10 @@
   gap: 12px;
   padding: 9px 14px;
   border-radius: 6px;
-  background: rgba(56, 189, 248, 0.08);
-  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   font-size: 12px;
-  color: #38bdf8;
+  color: var(--text-bright, #fff);
 }
 
 /* 分节卡片：统一容器的边框、留白与内部间距 */
@@ -83,8 +83,8 @@
 }
 
 .runtime-preset-section {
-  background: rgba(56, 189, 248, 0.05);
-  border-color: rgba(56, 189, 248, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .runtime-field {
@@ -128,9 +128,9 @@
 .runtime-input {
   width: 100%;
   box-sizing: border-box;
-  background: var(--bg-input, #141414);
-  border: 1px solid var(--border);
-  border-radius: 5px;
+  background: var(--bg-input, #1e1e1e);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
   color: var(--text-bright, #fff);
   padding: 7px 10px;
   font-size: 12px;
@@ -140,7 +140,11 @@
 }
 
 .runtime-input:focus {
-  border-color: var(--accent, #4c8dff);
+  border-color: #007fd4 !important;
+  outline: 1px solid #007fd4 !important;
+  outline-offset: -1px !important;
+  box-shadow: none !important;
+  background: #1e1e1e !important;
 }
 
 .runtime-chip-row {
@@ -173,15 +177,15 @@
   padding: 3px 8px 3px 7px;
   border-radius: 4px;
   font-size: 11px;
-  background: rgba(56, 189, 248, 0.12);
-  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   color: var(--text-bright, #fff);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .runtime-option-check {
-  color: #34d399;
+  color: var(--accent, #007acc);
   font-weight: 700;
 }
 
@@ -207,17 +211,16 @@
   padding: 10px 12px;
 }
 
-/* ── 悬浮反馈：这些元素的行内样式写死了 background/border/color，
-      需要 !important 才能让 :hover 生效 ── */
+/* ── 悬浮反馈 ── */
 .runtime-preset-chip:hover {
-  border-color: rgba(56, 189, 248, 0.75) !important;
-  background: rgba(56, 189, 248, 0.16) !important;
-  color: #7dd3fc !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  background: #242424 !important;
+  color: var(--text-bright, #fff) !important;
 }
 
 .runtime-add-options-btn:hover {
-  border-color: rgba(56, 189, 248, 0.55) !important;
-  background: rgba(56, 189, 248, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  background: #242424 !important;
 }
 
 .runtime-reset-btn {
@@ -240,12 +243,12 @@
   border-color: rgba(239, 68, 68, 0.3);
 }
 
-/* 主操作按钮：绿色强调，行内样式无法表达 :hover，改用类 + filter */
+/* 主操作按钮：主题强调色 */
 .runtime-save-btn {
   font-size: 12px;
   padding: 5px 16px;
-  background: #22c55e;
-  border-color: #22c55e;
+  background: var(--accent, #007acc);
+  border-color: var(--accent, #007acc);
   color: #fff;
   transition:
     filter 0.15s ease,
@@ -253,7 +256,7 @@
 }
 
 .runtime-save-btn:hover {
-  filter: brightness(1.1);
+  filter: brightness(1.12);
 }
 
 .runtime-save-btn:active {
@@ -262,8 +265,8 @@
 
 /* ── macOS 风格拟真终端实时预览卡片 ── */
 .runtime-terminal-card {
-  background: #090d16;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
@@ -274,7 +277,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: #131722;
+  background: #1e1e1e;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -318,9 +321,9 @@
 }
 
 .runtime-terminal-copy-btn:hover {
-  background: rgba(56, 189, 248, 0.2);
-  border-color: #38bdf8;
-  color: #38bdf8;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: var(--text-bright, #fff);
 }
 
 .runtime-terminal-content {
@@ -328,7 +331,7 @@
   font-family: var(--font-mono, 'JetBrains Mono', 'Fira Code', Menlo, monospace);
   font-size: 11.5px;
   line-height: 1.5;
-  color: #4ade80;
+  color: #cccccc;
   word-break: break-all;
   user-select: text;
 }
@@ -362,8 +365,9 @@
 }
 
 .runtime-lang-tab.active {
-  background: rgba(56, 189, 248, 0.2);
-  color: #38bdf8;
+  background: #242424;
+  color: var(--text-bright, #fff);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   font-weight: 600;
 }
 

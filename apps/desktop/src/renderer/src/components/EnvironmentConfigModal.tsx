@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 import type {
   MavenEnvironmentInfo,
   InstalledJdkInfo,
@@ -61,8 +61,22 @@ export function EnvironmentConfigModal({
   useEffect(() => {
     if (isOpen) {
       setDraftConfig(currentConfig);
+      setActiveTab('java');
     }
   }, [isOpen, currentConfig]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isOpen, onClose]);
 
   // Load installed and online JDKs
   const loadJdks = useCallback(async () => {
@@ -170,6 +184,8 @@ export function EnvironmentConfigModal({
     ? '系统默认 Java (自动探测就绪)'
     : '未配置 Java 环境';
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return (
     <div
       style={{
@@ -185,7 +201,7 @@ export function EnvironmentConfigModal({
         padding: 24,
         animation: 'fadeIn 0.15s ease-out',
       }}
-      onClick={onClose}
+      {...safeOverlay}
     >
       <div
         style={{

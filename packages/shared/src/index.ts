@@ -938,6 +938,7 @@ export interface IpcApi {
   gitFileHistory: (path: string, maxCount?: number) => Promise<GitHistoryResult>;
   gitBlameLine: (path: string, line: number) => Promise<GitBlameLineResult>;
   gitShowCommitDiff: (hash: string, path: string) => Promise<GitDiffResult>;
+  gitGenerateCommitMessage: () => Promise<{ ok: boolean; message?: string; detail?: string }>;
 
   searchFiles: (query: string, max?: number) => Promise<SearchFileHit[]>;
   resolveFilePath: (fileNameOrPath: string) => Promise<string | null>;

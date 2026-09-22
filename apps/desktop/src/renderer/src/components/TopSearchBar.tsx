@@ -9,7 +9,7 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type { SearchCodeHit, SearchFileHit } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, isModalResizing } from '../hooks/useModalResize';
 
 export type SearchMode = 'files' | 'actions' | 'code';
 
@@ -245,6 +245,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
+      if (isModalResizing()) return;
       if (!rootRef.current?.contains(e.target as Node)) {
         setOpen(false);
       }

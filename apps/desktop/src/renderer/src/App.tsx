@@ -4008,13 +4008,13 @@ export function App() {
         onShowToast={showToast}
       />
 
-      {/* Bottom-Right Toast Notifications Overlay */}
+      {/* Bottom-Left Drawer Toast Notifications Overlay */}
       {toasts.length > 0 && (
         <div
           style={{
             position: 'fixed',
-            bottom: 24,
-            right: 24,
+            bottom: 28,
+            left: 24,
             zIndex: 99999,
             display: 'flex',
             flexDirection: 'column',
@@ -4033,6 +4033,7 @@ export function App() {
             return (
               <div
                 key={t.id}
+                className="toast-drawer-item"
                 onClick={() => {
                   if (isLong) {
                     setToastDetailModal({
@@ -4045,17 +4046,8 @@ export function App() {
                 }}
                 style={{
                   pointerEvents: 'auto',
-                  background: 'var(--bg-elevated, #252526)',
-                  border: '1px solid var(--border)',
-                  borderLeft: `4px solid ${
-                    t.type === 'success'
-                      ? '#4caf50'
-                      : t.type === 'error'
-                        ? '#f44336'
-                        : t.type === 'warn'
-                          ? '#ff9800'
-                          : '#2196f3'
-                  }`,
+                  background: 'var(--bg-elevated, #1e1e1e)',
+                  border: '1px solid var(--border-strong, rgba(255, 255, 255, 0.12))',
                   borderRadius: 6,
                   padding: '9px 12px',
                   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
@@ -4067,7 +4059,6 @@ export function App() {
                   width: 360,
                   boxSizing: 'border-box',
                   cursor: isLong ? 'pointer' : 'default',
-                  transition: 'transform 0.15s ease, box-shadow 0.15s ease',
                 }}
               >
                 <span

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 export interface SwitchWorkspaceTarget {
   path: string;
@@ -79,8 +79,10 @@ export function SwitchWorkspaceModal({
     targetObj.name || targetObj.path.split(/[/\\\\]/).filter(Boolean).pop() || targetObj.path;
   const isSsh = targetObj.kind === 'ssh' || !!targetObj.sshServer;
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return createPortal(
-    <div className="settings-overlay switch-workspace-overlay" onClick={onClose}>
+    <div className="settings-overlay switch-workspace-overlay" {...safeOverlay}>
       <div
         className="settings-modal switch-workspace-dialog"
         style={{

@@ -188,25 +188,27 @@ export function WelcomeView({
                       className="welcome-recent-row"
                       onClick={() => onSelectRecent?.(item)}
                     >
-                      <span className={`welcome-recent-kind ${isSsh ? 'ssh' : 'local'}`}>
-                        {isSsh ? 'SSH' : '本地'}
-                      </span>
-                      <span
-                        className="open-ws-tech-pill"
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: 4,
-                          color: tech.color,
-                          background: tech.bg,
-                          flexShrink: 0,
-                          letterSpacing: '0.02em',
-                        }}
-                        title={`智能识别技术栈: ${tech.label}`}
-                      >
-                        {tech.label}
-                      </span>
+                      <div className="welcome-recent-badges">
+                        <span className={`welcome-recent-kind ${isSsh ? 'ssh' : 'local'}`}>
+                          {isSsh ? 'SSH' : '本地'}
+                        </span>
+                        <span
+                          className="open-ws-tech-pill"
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            color: tech.color,
+                            background: tech.bg,
+                            flexShrink: 0,
+                            letterSpacing: '0.02em',
+                          }}
+                          title={`智能识别技术栈: ${tech.label}`}
+                        >
+                          {tech.label}
+                        </span>
+                      </div>
                       <span className="welcome-recent-text">
                         <span className="welcome-recent-name">{item.name}</span>
                         <span className="welcome-recent-path" title={pathLabel}>

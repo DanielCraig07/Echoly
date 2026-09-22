@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 export interface ExtensionPanelProps {
   onOpenExtension?: (extensionId: string) => void;
@@ -318,10 +318,25 @@ export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModa
     minHeight: 420,
   });
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, onClose]);
+
   if (!open) return null;
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return (
-    <div className="settings-overlay" onClick={onClose}>
+    <div className="settings-overlay" {...safeOverlay}>
       <div
         className="ide-modal modern-extension-modal"
         style={{

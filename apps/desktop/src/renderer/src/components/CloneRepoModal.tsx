@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 interface Props {
   open: boolean;
@@ -156,8 +156,10 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
 
   if (!open || typeof document === 'undefined') return null;
 
+  const safeOverlay = createSafeOverlayHandlers(busy ? undefined : onClose);
+
   return createPortal(
-    <div className="clone-repo-overlay" onClick={busy ? undefined : onClose}>
+    <div className="clone-repo-overlay" {...safeOverlay}>
       <div
         className="clone-repo-modal"
         style={{

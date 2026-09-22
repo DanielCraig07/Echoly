@@ -1550,4 +1550,72 @@ export class GitService {
     const lines = res.stdout.split('\n').filter((l) => l.trim().length > 0);
     return { ok: true, lines };
   }
+
+  // ── 新增：获取工作区实际变动及 diff 摘要（供智能生成实际可用提交文案） ──
+  async getWorkspaceChangesSummary(): Promise<{
+    ok: boolean;
+    detail?: string;
+    files: string[];
+    diffSnippet: string;
+    stagedCount: number;
+    unstagedCount: number;
+    untrackedCount: number;
+  }> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return {
+        ok: false,
+        detail: gate.detail,
+        files: [],
+        diffSnippet: '',
+        stagedCount: 0,
+        unstagedCount: 0,
+        untrackedCount: 0,
+      };
+    }
+    const { root } = gate as { root: string };
+    const status = await this.status();
+    if (!status.ok) {
+      return {
+        ok: false,
+        detail: status.detail,
+        files: [],
+        diffSnippet: '',
+        stagedCount: 0,
+        unstagedCount: 0,
+        untrackedCount: 0,
+      };
+    }
+    const files = status.entries.map((e) => e.path);
+    const stagedCount = status.entries.filter((e) => e.staged).length;
+    const unstagedCount = status.entries.filter((e) => !e.staged && !e.untracked).length;
+    const untrackedCount = status.entries.filter((e) => e.untracked).length;
+
+    if (files.length === 0) {
+      return { ok: true, files: [], diffSnippet: '', stagedCount: 0, unstagedCount: 0, untrackedCount: 0 };
+    }
+
+    // 优先读取暂存区改动；如果暂存区为空，则读取工作区未暂存改动
+    let diffRes = await this.runGit(['diff', '--cached'], root);
+    if (diffRes.code !== 0 || !diffRes.stdout.trim()) {
+      diffRes = await this.runGit(['diff', 'HEAD'], root);
+      if (diffRes.code !== 0 || !diffRes.stdout.trim()) {
+        diffRes = await this.runGit(['diff'], root);
+      }
+    }
+
+    let diffSnippet = diffRes.stdout || '';
+    if (diffSnippet.length > 7000) {
+      diffSnippet = diffSnippet.slice(0, 7000) + '\n... [diff truncated]';
+    }
+
+    return {
+      ok: true,
+      files,
+      diffSnippet,
+      stagedCount,
+      unstagedCount,
+      untrackedCount,
+    };
+  }
 }

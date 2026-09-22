@@ -362,13 +362,13 @@ export function SshConnectModal({
                               width: 32,
                               height: 32,
                               borderRadius: 7,
-                              background: 'rgba(56, 189, 248, 0.12)',
-                              color: '#38bdf8',
+                              background: 'rgba(255, 255, 255, 0.06)',
+                              color: 'var(--accent, #007acc)',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               flexShrink: 0,
-                              border: '1px solid rgba(56, 189, 248, 0.25)',
+                              border: '1px solid rgba(255, 255, 255, 0.1)',
                             }}
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

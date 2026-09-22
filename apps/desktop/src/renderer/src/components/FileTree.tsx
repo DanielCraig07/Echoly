@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { FileTreeNode, GitStatusEntry, GitStatusResult } from '@deepseek-ide/shared';
+import { createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 export type PathClipboard = {
   mode: 'cut' | 'copy';
@@ -700,8 +701,22 @@ function FindInFolderModal({
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [onClose]);
+
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return (
-    <div className="settings-overlay find-folder-overlay" onClick={onClose}>
+    <div className="settings-overlay find-folder-overlay" {...safeOverlay}>
       <div className="find-folder-modal" onClick={(e) => e.stopPropagation()}>
         <div className="find-folder-header">
           <div className="find-folder-title-row">

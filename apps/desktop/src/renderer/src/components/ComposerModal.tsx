@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { ModelProfile } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 interface Props {
   open: boolean;
@@ -169,11 +169,12 @@ export function ComposerModal({
   if (!open) return null;
 
   const pendingCount = fileDiffs.filter((d) => d.status === 'pending').length;
+  const safeOverlay = createSafeOverlayHandlers(isRunning ? undefined : onClose);
 
   return (
     <div
       className="settings-overlay composer-overlay"
-      onClick={onClose}
+      {...safeOverlay}
       style={{
         position: 'fixed',
         top: 0,

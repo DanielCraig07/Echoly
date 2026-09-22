@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { GitBranchInfo } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 interface Props {
   open: boolean;
@@ -216,10 +216,12 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
     }
   }
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return (
     <div
       className="settings-overlay"
-      onClick={onClose}
+      {...safeOverlay}
       style={{
         position: 'fixed',
         top: 0,

@@ -1258,24 +1258,28 @@ export function GitPanel({
 
   const graphAnalysis = useMemo(() => analyzeGitGraph(commits), [commits]);
 
-  const handleAutoGenerateCommit = useCallback(() => {
+  const [isGeneratingCommit, setIsGeneratingCommit] = useState(false);
+
+  const handleAutoGenerateCommit = useCallback(async () => {
     const allEntries = status?.entries || [];
     if (allEntries.length === 0) {
-      onShowToast?.('当前没有检测到工作区改动', undefined, 'info');
+      onShowToast?.('当前没有检测到工作区改动', '工作区非常干净，无需生成提交信息', 'info');
       return;
     }
-    const files = allEntries.map((e) => e.path);
-    const firstFile = files[0] || '';
-    const ext = firstFile.split('.').pop() || '';
-    const dir = firstFile.split('/')[0] || '';
-    let autoMsg = '';
-    if (allEntries.length === 1) {
-      autoMsg = `chore(${dir || ext || 'core'}): update ${firstFile.split('/').pop()}`;
-    } else {
-      autoMsg = `feat(${dir || 'workspace'}): update ${allEntries.length} files (${files.slice(0, 2).map((f) => f.split('/').pop()).join(', ')}${allEntries.length > 2 ? ' etc.' : ''})`;
+    setIsGeneratingCommit(true);
+    try {
+      const res = await window.ide.gitGenerateCommitMessage();
+      if (res && res.ok && res.message) {
+        setMessage(res.message);
+        onShowToast?.('✓ 已根据实际代码改动生成提交说明', res.message, 'success');
+      } else {
+        onShowToast?.(res?.detail || '智能生成提交说明失败', undefined, 'warn');
+      }
+    } catch (err: any) {
+      onShowToast?.('生成提交说明发生异常', err?.message, 'error');
+    } finally {
+      setIsGeneratingCommit(false);
     }
-    setMessage(autoMsg);
-    onShowToast?.('已根据改动智能生成提交说明', autoMsg, 'success');
   }, [status?.entries, onShowToast]);
 
   useEffect(() => {
@@ -2257,13 +2261,14 @@ export function GitPanel({
           />
           <button
             type="button"
-            className="git-ai-commit-btn"
-            title="AI 智能生成规范 Commit 提交说明"
-            onClick={handleAutoGenerateCommit}
+            className={`git-ai-commit-btn${isGeneratingCommit ? ' is-generating' : ''}`}
+            title="根据当前代码改动（Diff）AI 智能生成实际可用的提交说明"
+            onClick={() => void handleAutoGenerateCommit()}
+            disabled={isGeneratingCommit}
           >
-            <span>Generate</span>
+            <span>{isGeneratingCommit ? '生成中…' : 'Generate'}</span>
             <svg
-              className="git-ai-commit-icon"
+              className={`git-ai-commit-icon${isGeneratingCommit ? ' spinning' : ''}`}
               width="14"
               height="14"
               viewBox="0 0 24 24"

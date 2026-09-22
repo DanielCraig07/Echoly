@@ -1771,12 +1771,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
             const renderAssistantMsg = (m: ChatSessionMessage) => (
               <div key={m.id} id={`msg-${m.id}`} className="msg assistant">
-                <div className="msg-header">
-                  <div className="msg-role ai-role">
-                    <span className="ai-role-dot" />
-                    AI
-                  </div>
-                </div>
                 {(m as any).thinking?.length > 0 && (
                   <ThinkingBlock thinking={(m as any).thinking} />
                 )}

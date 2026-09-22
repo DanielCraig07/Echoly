@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { GitCommitEntry } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 interface Props {
   filePath: string | null;
@@ -150,6 +150,8 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
 
   const fileName = filePath.split('/').pop() || filePath;
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return (
     <div
       style={{
@@ -158,17 +160,15 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0, 0, 0, 0.65)',
-        backdropFilter: 'blur(3px)',
+        background: 'rgba(0, 0, 0, 0.6)',
+        backdropFilter: 'blur(4px)',
         zIndex: 9999,
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'center',
         paddingTop: '80px',
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      {...safeOverlay}
     >
       <div
         style={{
@@ -334,7 +334,6 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                     gap: 12,
                     cursor: 'pointer',
                     background: isSelected ? '#242424' : 'transparent',
-                    borderLeft: isSelected ? '3px solid var(--accent, #38bdf8)' : '3px solid transparent',
                     transition: 'all 0.15s ease',
                   }}
                   onMouseEnter={() => setSelectedIndex(idx)}
@@ -359,8 +358,8 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                       width: 8,
                       height: 8,
                       borderRadius: '50%',
-                      background: isSelected ? 'var(--accent, #38bdf8)' : 'var(--border)',
-                      boxShadow: isSelected ? '0 0 6px var(--accent)' : 'none',
+                      background: isSelected ? 'var(--accent, #007acc)' : 'var(--border)',
+                      boxShadow: isSelected ? '0 0 6px var(--accent, #007acc)' : 'none',
                       transition: 'all 0.15s ease',
                       zIndex: 2,
                     }}
@@ -371,9 +370,9 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                     style={{
                       fontFamily: 'var(--font-mono)',
                       fontSize: 11,
-                      color: 'var(--accent, #38bdf8)',
-                      background: 'rgba(56, 189, 248, 0.12)',
-                      border: '1px solid rgba(56, 189, 248, 0.25)',
+                      color: 'var(--accent-light, #3794ff)',
+                      background: 'rgba(0, 122, 204, 0.15)',
+                      border: '1px solid rgba(0, 122, 204, 0.3)',
                       padding: '2px 7px',
                       borderRadius: 4,
                       fontWeight: 650,
@@ -415,8 +414,8 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                             width: 16,
                             height: 16,
                             borderRadius: '50%',
-                            background: 'rgba(56, 189, 248, 0.2)',
-                            color: '#38bdf8',
+                            background: 'rgba(0, 122, 204, 0.2)',
+                            color: 'var(--accent-light, #3794ff)',
                             fontSize: 9.5,
                             fontWeight: 700,
                             display: 'inline-flex',
@@ -444,14 +443,14 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                       padding: '5px 12px',
                       fontSize: 11.5,
                       fontWeight: 600,
-                      background: isSelected ? 'var(--accent, #38bdf8)' : 'rgba(255,255,255,0.05)',
+                      background: isSelected ? 'var(--accent, #007acc)' : 'rgba(255,255,255,0.05)',
                       color: isSelected ? '#fff' : 'var(--text)',
-                      border: isSelected ? '1px solid var(--accent)' : '1px solid var(--border)',
+                      border: isSelected ? '1px solid var(--accent, #007acc)' : '1px solid var(--border)',
                       borderRadius: 6,
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',
                       transition: 'all 0.15s ease',
-                      boxShadow: isSelected ? '0 2px 8px rgba(56, 189, 248, 0.3)' : 'none',
+                      boxShadow: isSelected ? '0 2px 8px rgba(0, 122, 204, 0.3)' : 'none',
                     }}
                   >
                     {isPreviewing ? '加载中…' : '比对差异 (Diff)'}

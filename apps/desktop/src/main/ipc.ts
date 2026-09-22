@@ -465,6 +465,110 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('git:showCommitDiff', (e, hash: string, path: string) =>
     run(e, () => git.showCommitDiff(hash, path)),
   );
+  ipcMain.handle('git:generateCommitMessage', (e) =>
+    run(e, async () => {
+      const summary = await git.getWorkspaceChangesSummary();
+      if (!summary.ok) {
+        return { ok: false, detail: summary.detail || '获取改动失败' };
+      }
+      if (summary.files.length === 0) {
+        return { ok: false, detail: '当前工作区没有检测到任何变动' };
+      }
+
+      // 1. 尝试使用当前配置的 LLM 模型分析实际代码差异并生成高质量 Conventional Commits 提交说明
+      try {
+        const client = getActiveLlmClient(settings);
+        const prompt = [
+          '你是一名资深代码审查员和 Git 提交专家。请根据以下 Git 代码实际变动（受影响文件与实际 git diff 内容），生成一份专业、精准、客观、实际可用的 Git 提交文案（严格遵循 Conventional Commits 规范）。',
+          '',
+          `受影响文件 (${summary.files.length} 个):`,
+          summary.files.map((f) => `- ${f}`).join('\n'),
+          '',
+          'Git 代码差异摘要 (Diff):',
+          '```diff',
+          summary.diffSnippet || '(无具体文本 diff，包含二进制文件或新增未跟踪文件)',
+          '```',
+          '',
+          '严格要求：',
+          '1. 必须使用中文。首行格式为：<type>(<scope>): <简要总结>（例如 feat(editor): 支持分栏编辑 或 fix(git): 修复分支切换高亮色与提交历史边框）。',
+          '2. 只输出最终的提交说明文本本身，绝对禁止输出任何多余说明、包装标记或前缀后缀（严禁输出 ``` 包裹）。',
+          '3. 必须客观反映上述 diff 中的实际代码变更，杜绝毫无信息的空泛占位词。',
+        ].join('\n');
+
+        const chatRes = await client.chat({
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+        });
+
+        const fullText = typeof chatRes.content === 'string' ? chatRes.content : '';
+        const cleaned = fullText.trim().replace(/^```[a-z]*\s*/i, '').replace(/```$/, '').trim();
+        if (cleaned) {
+          return { ok: true, message: cleaned };
+        }
+      } catch {
+        // LLM 请求失败或未配置有效端点，降级至智能语义规则生成器
+      }
+
+      // 2. 智能语义分析降级：基于实际代码变更文件的语义解析
+      const files = summary.files;
+      const first = files[0] || '';
+      const ext = first.split('.').pop()?.toLowerCase() || '';
+      const baseName = first.split('/').pop() || '';
+      const hasCssOrStyle = files.some((f) => /\.(css|less|scss|sass)$/i.test(f) || f.includes('style'));
+      const hasTest = files.some((f) => /\.(test|spec)\.[a-z]+$/i.test(f) || f.includes('test/'));
+      const hasDoc = files.some((f) => /\.(md|markdown|txt)$/i.test(f));
+      const hasBuild = files.some((f) => /package\.json|tsconfig|vite|webpack|cargo|pom\.xml|go\.mod|CMakeLists/i.test(f));
+
+      let type = 'feat';
+      let scope = 'workspace';
+      let desc = '';
+
+      if (hasBuild && !hasCssOrStyle) {
+        type = 'chore';
+        scope = 'build';
+        desc = `更新构建与环境配置 (${files.length} 个文件)`;
+      } else if (hasTest && files.length === 1) {
+        type = 'test';
+        scope = baseName.replace(/\.(test|spec)\.[a-z]+$/i, '');
+        desc = `完善 ${baseName} 自动化测试用例`;
+      } else if (hasDoc && files.length === 1) {
+        type = 'docs';
+        scope = baseName;
+        desc = `更新 ${baseName} 说明文档`;
+      } else if (hasCssOrStyle && !files.some((f) => /\.(tsx|ts|js|jsx)$/i.test(f))) {
+        type = 'style';
+        scope = 'ui';
+        desc = `优化界面视觉样式与主题配色 (${files.length} 个文件)`;
+      } else {
+        if (files.some((f) => f.includes('git') || f.includes('Git'))) {
+          scope = 'git';
+          type = summary.diffSnippet.includes('fix') || summary.diffSnippet.includes('bug') ? 'fix' : 'feat';
+          desc = `优化 Git 状态管理与面板交互 (${files.length} 个文件)`;
+        } else if (files.some((f) => f.includes('terminal') || f.includes('Terminal'))) {
+          scope = 'terminal';
+          type = 'feat';
+          desc = `完善终端运行与命令行交互`;
+        } else if (files.some((f) => f.includes('editor') || f.includes('Editor'))) {
+          scope = 'editor';
+          type = 'feat';
+          desc = `增强编辑器功能与代码交互`;
+        } else if (files.some((f) => f.includes('setting') || f.includes('Setting'))) {
+          scope = 'settings';
+          type = 'feat';
+          desc = `更新偏好设置与个性化配置项`;
+        } else {
+          scope = first.split('/')[0] || ext || 'core';
+          type = summary.diffSnippet.includes('fix') || summary.diffSnippet.includes('err') ? 'fix' : 'feat';
+          desc = files.length === 1 ? `更新 ${baseName}` : `协同更新 ${files.length} 个相关模块`;
+        }
+      }
+
+      return {
+        ok: true,
+        message: `${type}(${scope}): ${desc}`,
+      };
+    }),
+  );
 
   ipcMain.handle('search:files', (e, query: string, max?: number) =>
     run(e, () => search.searchFiles(query, max)),

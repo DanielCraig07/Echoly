@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChatSession, WorkspaceInfo, RecentWorkspaceItem } from '@deepseek-ide/shared';
 import { formatSessionWorkspaceLine, folderNameFromPath } from '../utils';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 interface Props {
   currentSessionId: string;
@@ -430,8 +430,10 @@ export function SessionModal({
     return '历史会话';
   }, [filterScope, currentProjectName, selectedSpecificProject]);
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return createPortal(
-    <div className="session-modal-overlay" onClick={onClose}>
+    <div className="session-modal-overlay" {...safeOverlay}>
       <div
         className="session-modal"
         style={{

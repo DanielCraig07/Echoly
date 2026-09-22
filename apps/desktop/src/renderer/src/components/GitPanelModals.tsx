@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { GitBranchInfo, GitStatusResult } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
+import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 // ── 1. 新建分支弹窗 (GitCreateBranchModal) ──
 interface CreateBranchModalProps {
@@ -42,6 +42,19 @@ export function GitCreateBranchModal({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, onClose, submitting]);
+
   if (!open || typeof document === 'undefined') return null;
 
   const trimmed = branchName.trim();
@@ -79,8 +92,10 @@ export function GitCreateBranchModal({
     }
   };
 
+  const safeOverlay = createSafeOverlayHandlers(submitting ? undefined : onClose);
+
   return createPortal(
-    <div className="git-modal-overlay" onClick={submitting ? undefined : onClose}>
+    <div className="git-modal-overlay" {...safeOverlay}>
       <div
         className="git-modal-box"
         onClick={(e) => e.stopPropagation()}
@@ -208,6 +223,22 @@ export function GitCheckoutModal({
     }
   }, [open]);
 
+  // 支持按 Esc 键安全退出签出/切换分支弹窗
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !switching) {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, switching, onClose]);
+
+  const safeOverlay = createSafeOverlayHandlers(switching ? undefined : onClose);
+
   if (!open || typeof document === 'undefined') return null;
 
   const filtered = branches.filter((b) =>
@@ -273,7 +304,7 @@ export function GitCheckoutModal({
   };
 
   return createPortal(
-    <div className="git-modal-overlay" onClick={switching ? undefined : onClose}>
+    <div className="git-modal-overlay" {...safeOverlay}>
       <div
         className="git-modal-box"
         onClick={(e) => e.stopPropagation()}
@@ -298,7 +329,7 @@ export function GitCheckoutModal({
             </svg>
             <span style={{ fontWeight: 600, fontSize: 14 }}>签出 / 切换分支</span>
           </div>
-          <button type="button" className="panel-action-btn" title="关闭" onClick={onClose} disabled={!!switching}>
+          <button type="button" className="panel-action-btn" title="关闭 (Esc)" onClick={onClose} disabled={!!switching}>
             ✕
           </button>
         </div>
@@ -308,7 +339,7 @@ export function GitCheckoutModal({
             ref={inputRef}
             type="text"
             className="git-modal-input"
-            placeholder="搜索本地或远程分支..."
+            placeholder="搜索本地或远程分支 (按 Esc 退出)..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
@@ -337,8 +368,8 @@ export function GitCheckoutModal({
                     padding: '8px 10px',
                     borderRadius: 6,
                     cursor: isCurrent ? 'default' : 'pointer',
-                    background: isCurrent ? 'rgba(56, 189, 248, 0.1)' : 'transparent',
-                    border: isCurrent ? '1px solid rgba(56, 189, 248, 0.25)' : '1px solid transparent',
+                    background: isCurrent ? '#242424' : 'transparent',
+                    border: isCurrent ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
@@ -348,7 +379,7 @@ export function GitCheckoutModal({
                         height="14"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke={isCurrent ? '#38bdf8' : b.remote ? '#a855f7' : 'currentColor'}
+                        stroke={isCurrent ? '#ffffff' : b.remote ? 'var(--muted)' : 'currentColor'}
                         strokeWidth="2"
                       >
                         <line x1="6" y1="3" x2="6" y2="15" />
@@ -360,7 +391,7 @@ export function GitCheckoutModal({
                         style={{
                           fontSize: 12.5,
                           fontWeight: isCurrent ? 600 : 400,
-                          color: isCurrent ? '#38bdf8' : 'var(--text)',
+                          color: isCurrent ? '#ffffff' : 'var(--text)',
                           textOverflow: 'ellipsis',
                           overflow: 'hidden',
                           whiteSpace: 'nowrap',
@@ -372,12 +403,12 @@ export function GitCheckoutModal({
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {isCurrent && (
-                        <span style={{ fontSize: 10.5, color: '#38bdf8', fontWeight: 600, background: 'rgba(56, 189, 248, 0.15)', padding: '1px 6px', borderRadius: 4 }}>
+                        <span style={{ fontSize: 10.5, color: '#ffffff', fontWeight: 600, background: 'rgba(255, 255, 255, 0.15)', padding: '1px 6px', borderRadius: 4 }}>
                           当前
                         </span>
                       )}
                       {b.remote && (
-                        <span style={{ fontSize: 10.5, color: '#a855f7', background: 'rgba(168, 85, 247, 0.15)', padding: '1px 6px', borderRadius: 4 }}>
+                        <span style={{ fontSize: 10.5, color: 'var(--muted)', background: 'rgba(255, 255, 255, 0.08)', padding: '1px 6px', borderRadius: 4 }}>
                           远程
                         </span>
                       )}
@@ -406,7 +437,7 @@ export function GitCheckoutModal({
                         style={{
                           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                           background: 'rgba(255, 255, 255, 0.08)',
-                          color: '#7dd3fc',
+                          color: 'var(--accent-light, #3794ff)',
                           padding: '1px 4px',
                           borderRadius: 3,
                           fontSize: 10.5,
@@ -586,6 +617,19 @@ export function GitRemotesModal({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, onClose]);
+
   if (!open || typeof document === 'undefined') return null;
 
   const handleCopy = (name: string, url: string) => {
@@ -610,8 +654,10 @@ export function GitRemotesModal({
     }
   };
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return createPortal(
-    <div className="git-modal-overlay" onClick={onClose}>
+    <div className="git-modal-overlay" {...safeOverlay}>
       <div
         className="git-modal-box"
         onClick={(e) => e.stopPropagation()}
@@ -765,6 +811,19 @@ export function GitCreateTagModal({
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, onClose, submitting]);
+
   if (!open || typeof document === 'undefined') return null;
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -791,8 +850,10 @@ export function GitCreateTagModal({
     }
   };
 
+  const safeOverlay = createSafeOverlayHandlers(submitting ? undefined : onClose);
+
   return createPortal(
-    <div className="git-modal-overlay" onClick={submitting ? undefined : onClose}>
+    <div className="git-modal-overlay" {...safeOverlay}>
       <div
         className="git-modal-box"
         onClick={(e) => e.stopPropagation()}
@@ -898,6 +959,19 @@ export function GitStatusModal({
   });
   const [refreshing, setRefreshing] = useState(false);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, onClose]);
+
   if (!open || typeof document === 'undefined') return null;
 
   const entries = status?.entries || [];
@@ -914,8 +988,10 @@ export function GitStatusModal({
     }
   };
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return createPortal(
-    <div className="git-modal-overlay" onClick={onClose}>
+    <div className="git-modal-overlay" {...safeOverlay}>
       <div
         className="git-modal-box"
         onClick={(e) => e.stopPropagation()}
@@ -1070,6 +1146,19 @@ export function GitOutputModal({ open, onClose }: OutputModalProps) {
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [open, onClose]);
+
   if (!open || typeof document === 'undefined') return null;
 
   const handleCopy = () => {
@@ -1078,8 +1167,10 @@ export function GitOutputModal({ open, onClose }: OutputModalProps) {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  const safeOverlay = createSafeOverlayHandlers(onClose);
+
   return createPortal(
-    <div className="git-modal-overlay" onClick={onClose}>
+    <div className="git-modal-overlay" {...safeOverlay}>
       <div
         className="git-modal-box"
         onClick={(e) => e.stopPropagation()}
