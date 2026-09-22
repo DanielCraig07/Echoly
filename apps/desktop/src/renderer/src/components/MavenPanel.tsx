@@ -680,8 +680,17 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
             autoFocus
             style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: 'var(--text-bright,#fff)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', fontSize: 12, outline: 'none' }}
           />
-          <button type="button" className="panel-standard-btn primary" onClick={() => { if (customGoalText.trim()) { executeGoal(customGoalText.trim()); setCustomGoalInputOpen(false); setCustomGoalText(''); } }} style={{ padding: '3px 10px', fontSize: 12 }}>执行</button>
-          <button type="button" className="panel-action-btn" onClick={() => setCustomGoalInputOpen(false)} title="关闭" style={{ fontSize: 12 }}>✕</button>
+          <button
+            type="button"
+            className="panel-action-btn"
+            onClick={() => setCustomGoalInputOpen(false)}
+            title="关闭"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
       )}
 

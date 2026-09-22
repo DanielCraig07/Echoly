@@ -181,7 +181,7 @@ function ChatToolbarPill<T extends string>(props: {
   );
 }
 
-const STICK_THRESHOLD_PX = 60;
+const STICK_BOTTOM_THRESHOLD_PX = 8;
 
 function createEmptyTab(id?: string, title = 'New Chat'): SessionTab {
   return {
@@ -331,7 +331,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   });
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [stickToBottom, setStickToBottom] = useState(true);
   const [showJumpLatest, setShowJumpLatest] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -359,7 +358,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [exported, setExported] = useState(false);
   const stickRef = useRef(true);
+  const userInteractingRef = useRef(false);
+  const userInteractTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isProgrammaticScrollRef = useRef(false);
   const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -614,25 +616,20 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const scrollToBottom = useCallback((force = false) => {
     const el = messagesElRef.current;
     if (!el) return;
-    if (!force && !stickRef.current) return;
+    if (!force && (!stickRef.current || userInteractingRef.current)) return;
     isProgrammaticScrollRef.current = true;
     if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
     el.scrollTop = el.scrollHeight;
-    requestAnimationFrame(() => {
-      if (messagesElRef.current) {
-        messagesElRef.current.scrollTop = messagesElRef.current.scrollHeight;
-      }
-      programmaticScrollTimerRef.current = setTimeout(() => {
-        isProgrammaticScrollRef.current = false;
-      }, 100);
-    });
+    programmaticScrollTimerRef.current = setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 60);
   }, []);
 
   /** Bring the new user turn into view; stick-to-bottom keeps following the reply
    *  while CSS sticky holds the user bubble at the top (file-tree folder style). */
   const scrollToUserMsg = useCallback((msgId: string) => {
     stickRef.current = true;
-    setStickToBottom(true);
+    userInteractingRef.current = false;
     setShowJumpLatest(false);
     isProgrammaticScrollRef.current = true;
     if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
@@ -897,8 +894,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   }, [lastUserMsgId, scrollToUserMsg]);
 
   const jumpToLatest = useCallback(() => {
+    userInteractingRef.current = false;
     stickRef.current = true;
-    setStickToBottom(true);
     setShowJumpLatest(false);
     scrollToBottom(true);
   }, [scrollToBottom]);
@@ -908,30 +905,57 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
+      userInteractingRef.current = true;
+      if (userInteractTimerRef.current) clearTimeout(userInteractTimerRef.current);
+      userInteractTimerRef.current = setTimeout(() => {
+        userInteractingRef.current = false;
+      }, 250);
+
       if (e.deltaY < 0) {
         // 用户向上滚轮（主动查阅历史）：立即解除吸底并展示「回到最新」按钮
         stickRef.current = false;
-        setStickToBottom(false);
-        setShowJumpLatest(true);
+        setShowJumpLatest((prev) => (prev ? prev : true));
+      } else if (e.deltaY > 0) {
+        // 向下滚轮：仅当真正触碰最底边缘（<= 8px）时才恢复吸底
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distance <= STICK_BOTTOM_THRESHOLD_PX) {
+          stickRef.current = true;
+          setShowJumpLatest((prev) => (prev ? false : prev));
+        }
       }
-      // 向下滚轮（e.deltaY > 0）时不强行吸底！
-      // 允许用户在历史记录中自由向下平滑微调浏览，只有当真正滚到接近底部（onScroll 触发 nearBottom）时才恢复吸底。
     };
 
     let touchStartY = 0;
     const onTouchStart = (e: TouchEvent) => {
       touchStartY = e.touches[0]?.clientY ?? 0;
+      userInteractingRef.current = true;
     };
     const onTouchMove = (e: TouchEvent) => {
+      userInteractingRef.current = true;
+      if (userInteractTimerRef.current) clearTimeout(userInteractTimerRef.current);
+      userInteractTimerRef.current = setTimeout(() => {
+        userInteractingRef.current = false;
+      }, 250);
+
       const currentY = e.touches[0]?.clientY ?? 0;
       const deltaY = touchStartY - currentY;
       if (deltaY < 0) {
         // 手指向下拉（查阅历史）：立即解除吸底
         stickRef.current = false;
-        setStickToBottom(false);
-        setShowJumpLatest(true);
+        setShowJumpLatest((prev) => (prev ? prev : true));
+      } else if (deltaY > 0) {
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distance <= STICK_BOTTOM_THRESHOLD_PX) {
+          stickRef.current = true;
+          setShowJumpLatest((prev) => (prev ? false : prev));
+        }
       }
-      // 同样，手指向上推（向下看历史）时不强行吸底，避免突然跳到最底部
+    };
+    const onTouchEnd = () => {
+      if (userInteractTimerRef.current) clearTimeout(userInteractTimerRef.current);
+      userInteractTimerRef.current = setTimeout(() => {
+        userInteractingRef.current = false;
+      }, 250);
     };
 
     const onScroll = () => {
@@ -939,30 +963,57 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         return;
       }
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      const nearBottom = distance <= STICK_THRESHOLD_PX;
+      const atBottom = distance <= STICK_BOTTOM_THRESHOLD_PX;
 
-      if (nearBottom) {
-        // 只有当距离底部在安全缓冲区内（<= STICK_THRESHOLD_PX）时，才恢复吸底
+      if (userInteractingRef.current) {
+        // 用户主动滚动交互：以用户意图为最高准则
+        if (atBottom) {
+          stickRef.current = true;
+          setShowJumpLatest((prev) => (prev ? false : prev));
+        } else {
+          stickRef.current = false;
+          setShowJumpLatest((prev) => (prev ? prev : true));
+        }
+        return;
+      }
+
+      // 用户未主动滚动（当前由 AI 流式吐字或内容渲染触发）：
+      if (atBottom) {
         stickRef.current = true;
-        setStickToBottom(true);
-        setShowJumpLatest(false);
+        setShowJumpLatest((prev) => (prev ? false : prev));
+      } else if (!stickRef.current) {
+        // 用户此前已主动上滑脱离了底部，保持脱离状态并提示「回到最新」
+        setShowJumpLatest((prev) => (prev ? prev : true));
       } else {
-        // 离底部较远，说明用户脱离了底部在翻阅历史消息，解除吸底并展示「回到最新」
-        stickRef.current = false;
-        setStickToBottom(false);
-        setShowJumpLatest(true);
+        // 关键保障：此前本就处于吸底状态，distance 变大纯粹是 AI 正在流式输出使得内容撑高！
+        // 绝不误杀 stickRef，并确保滚动条平滑紧跟最新内容
+        scrollToBottom();
       }
     };
 
+    let mutationRafId: number | null = null;
+    let lastKnownScrollHeight = el.scrollHeight;
+
     const observer = new MutationObserver(() => {
-      // 只要处于吸底状态，DOM 发生变更（如流式输出、卡片展开）一律紧贴最新底部
-      if (stickRef.current && messagesElRef.current) {
-        isProgrammaticScrollRef.current = true;
-        messagesElRef.current.scrollTop = messagesElRef.current.scrollHeight;
-        if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
-        programmaticScrollTimerRef.current = setTimeout(() => {
-          isProgrammaticScrollRef.current = false;
-        }, 80);
+      if (!stickRef.current || userInteractingRef.current || isProgrammaticScrollRef.current) {
+        lastKnownScrollHeight = el.scrollHeight;
+        return;
+      }
+
+      if (el.scrollHeight !== lastKnownScrollHeight) {
+        lastKnownScrollHeight = el.scrollHeight;
+        if (mutationRafId !== null) cancelAnimationFrame(mutationRafId);
+        mutationRafId = requestAnimationFrame(() => {
+          mutationRafId = null;
+          if (stickRef.current && !userInteractingRef.current && messagesElRef.current) {
+            isProgrammaticScrollRef.current = true;
+            messagesElRef.current.scrollTop = messagesElRef.current.scrollHeight;
+            if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
+            programmaticScrollTimerRef.current = setTimeout(() => {
+              isProgrammaticScrollRef.current = false;
+            }, 60);
+          }
+        });
       }
     });
 
@@ -976,13 +1027,17 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     el.addEventListener('wheel', onWheel, { passive: true });
     el.addEventListener('touchstart', onTouchStart, { passive: true });
     el.addEventListener('touchmove', onTouchMove, { passive: true });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
     return () => {
       observer.disconnect();
+      if (mutationRafId !== null) cancelAnimationFrame(mutationRafId);
       el.removeEventListener('scroll', onScroll);
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('touchstart', onTouchStart);
       el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
       if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
+      if (userInteractTimerRef.current) clearTimeout(userInteractTimerRef.current);
     };
   }, []);
 
@@ -1587,6 +1642,114 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     );
   };
 
+  const handleExportSessionMarkdown = useCallback(() => {
+    if (!activeTab || activeTab.messages.length === 0) return;
+    const dateStr = new Date(activeTab.updatedAt || Date.now()).toLocaleString();
+    let md = `# ${activeTab.title || 'AI 对话记录'}\n\n`;
+    md += `> 导出时间：${dateStr} | 模式：${MODE_LABEL[activeTab.mode] || activeTab.mode}\n\n---\n\n`;
+
+    for (const msg of activeTab.messages) {
+      if (msg.role === 'user') {
+        md += `### 👤 User\n\n${msg.content}\n\n`;
+      } else if (msg.role === 'assistant') {
+        md += `### 🤖 Assistant\n\n`;
+        if ((msg as any).thinking) {
+          md += `<details>\n<summary>💭 思考过程 (Thinking)</summary>\n\n${(msg as any).thinking}\n\n</details>\n\n`;
+        }
+        md += `${msg.content}\n\n`;
+      }
+      md += `---\n\n`;
+    }
+
+    try {
+      void navigator.clipboard.writeText(md);
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeTitle = (activeTab.title || 'chat-session').replace(/[\\/:*?"<>|]/g, '_');
+      a.download = `${safeTitle}-${Date.now()}.md`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setExported(true);
+      setTimeout(() => setExported(false), 2000);
+    } catch {
+      setExported(true);
+      setTimeout(() => setExported(false), 2000);
+    }
+  }, [activeTab]);
+
+  const handleClearCurrentSession = useCallback(() => {
+    if (!activeTab || activeTab.messages.length === 0) return;
+    if (window.confirm('确定要清空当前会话的对话记录吗？此操作无法撤销。')) {
+      updateTab(activeTab.id, (t) => ({
+        ...t,
+        messages: [],
+        streaming: '',
+        status: 'idle',
+        thinkingStreaming: '',
+        runId: null,
+        plan: null,
+        pendingPlanContext: null,
+      }));
+    }
+  }, [activeTab, updateTab]);
+
+  const handleQuickPrompt = useCallback(
+    (type: 'explain' | 'optimize' | 'test' | 'bug') => {
+      if (!activeTab) return;
+      const activeFile = openFiles && openFiles.length > 0 ? openFiles[0] : null;
+      const hasSelection = Boolean(selection && selection.trim().length > 0);
+      const fileName = activeFile?.path ? activeFile.path.split(/[/\\]/).pop() : '';
+
+      let prompt = '';
+      switch (type) {
+        case 'explain':
+          if (hasSelection) {
+            prompt = `请详细解释以下这段选中的代码逻辑与设计意图：\n\`\`\`\n${selection}\n\`\`\``;
+          } else if (fileName) {
+            prompt = `请通读并解释当前打开的文件 @${activeFile?.path} 的核心架构与功能逻辑。`;
+          } else {
+            prompt = `请帮我梳理并解释当前项目的整体架构、模块划分与核心逻辑。`;
+          }
+          break;
+        case 'optimize':
+          if (hasSelection) {
+            prompt = `请审查以下选中的代码，分析其潜在性能瓶颈、资源占用并提供重构优化方案：\n\`\`\`\n${selection}\n\`\`\``;
+          } else if (fileName) {
+            prompt = `请分析当前文件 @${activeFile?.path} 的性能开销并给出优化重构建议。`;
+          } else {
+            prompt = `请分析并给出提升当前项目代码质量与性能的重构优化建议。`;
+          }
+          break;
+        case 'test':
+          if (hasSelection) {
+            prompt = `请为以下选中的代码编写高覆盖率的单元测试，包含边界测试与异常处理：\n\`\`\`\n${selection}\n\`\`\``;
+          } else if (fileName) {
+            prompt = `请为当前文件 @${activeFile?.path} 编写高覆盖率的单元测试用例。`;
+          } else {
+            prompt = `请为项目中的核心逻辑编写覆盖全面的单元测试。`;
+          }
+          break;
+        case 'bug':
+          if (hasSelection) {
+            prompt = `请审查以下选中的代码，排查是否存在内存泄漏、并发竞态或安全隐患：\n\`\`\`\n${selection}\n\`\`\``;
+          } else if (fileName) {
+            prompt = `请排查当前文件 @${activeFile?.path} 中是否存在隐蔽 Bug 或边界异常隐患。`;
+          } else {
+            prompt = `请检查当前工作区代码中是否存在潜在的 Bug、内存泄漏或安全隐患。`;
+          }
+          break;
+      }
+
+      updateTab(activeTab.id, (t) => ({ ...t, input: prompt }));
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+    },
+    [activeTab, openFiles, selection, updateTab],
+  );
+
   const windowTokens = activeTab?.contextUsage?.windowTokens ?? contextWindowTokens;
   const usedTokens = activeTab?.contextUsage?.usedTokens ?? 0;
   const usagePct = windowTokens > 0 ? Math.min(100, (usedTokens / windowTokens) * 100) : 0;
@@ -1649,6 +1812,66 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         </div>
 
         <div className="chat-header-actions">
+          <button
+            type="button"
+            className={`icon-btn ${exported ? 'active' : ''}`}
+            title={exported ? '已导出 Markdown' : '导出当前会话为 Markdown 文件'}
+            onClick={handleExportSessionMarkdown}
+            disabled={!activeTab || activeTab.messages.length === 0}
+            style={{ opacity: !activeTab || activeTab.messages.length === 0 ? 0.35 : 1 }}
+          >
+            {exported ? (
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#10b981"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            title="清空当前对话记录"
+            onClick={handleClearCurrentSession}
+            disabled={!activeTab || activeTab.messages.length === 0}
+            style={{ opacity: !activeTab || activeTab.messages.length === 0 ? 0.35 : 1 }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+          </button>
           <button type="button" className="icon-btn" title="新建对话" onClick={handleNewTab}>
             <svg
               width="17"
@@ -1748,14 +1971,44 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   </div>
                 )}
                 <CollapsibleUserContent content={m.content} onOpenFile={onOpenFile} />
-                <div className="msg-actions msg-actions-corner">
+                <div className={`msg-actions msg-actions-corner ${copiedId === m.id ? 'has-active' : ''}`}>
                   <button
                     type="button"
-                    className="msg-action-btn"
-                    title="复制消息内容"
+                    className={`msg-action-btn ${copiedId === m.id ? 'copied' : ''}`}
+                    title={copiedId === m.id ? '已复制' : '复制消息内容'}
                     onClick={() => handleCopyMessage(m.content, m.id)}
                   >
-                    {copiedId === m.id ? '✓ 已复制' : '📋 复制'}
+                    {copiedId === m.id ? (
+                      <>
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>已复制</span>
+                      </>
+                    ) : (
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                    )}
                   </button>
                   <button
                     type="button"
@@ -1763,7 +2016,19 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     title="回退到此消息（清除此后的 AI 回复）"
                     onClick={() => handleRollbackUserMessage(m)}
                   >
-                    ↩ 回退
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M3 10h10a5 5 0 0 1 5 5v2" />
+                      <polyline points="7 6 3 10 7 14" />
+                    </svg>
                   </button>
                 </div>
               </div>
@@ -1779,14 +2044,44 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   className="msg-footer"
                   style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}
                 >
-                  <div className="msg-actions">
+                  <div className={`msg-actions ${copiedId === m.id ? 'has-active' : ''}`}>
                     <button
                       type="button"
-                      className="msg-action-btn"
-                      title="复制消息内容"
+                      className={`msg-action-btn ${copiedId === m.id ? 'copied' : ''}`}
+                      title={copiedId === m.id ? '已复制' : '复制消息内容'}
                       onClick={() => handleCopyMessage(m.content, m.id)}
                     >
-                      {copiedId === m.id ? '✓ 已复制' : '📋 复制'}
+                      {copiedId === m.id ? (
+                        <>
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          <span>已复制</span>
+                        </>
+                      ) : (
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1873,6 +2168,77 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 </div>
               );
             });
+
+            if (msgs.length === 0 && !activeTab?.streaming) {
+              return (
+                <>
+                  <div className="chat-empty-state">
+                    <div className="chat-empty-icon">
+                      <svg
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10a9.96 9.96 0 0 1-4.587-1.11L3 22l1.11-4.413A9.96 9.96 0 0 1 2 12 10 10 0 0 1 12 2z" />
+                        <circle cx="8" cy="12" r="1" fill="currentColor" />
+                        <circle cx="12" cy="12" r="1" fill="currentColor" />
+                        <circle cx="16" cy="12" r="1" fill="currentColor" />
+                      </svg>
+                    </div>
+                    <div className="chat-empty-title">Echoly AI 编程助手</div>
+                    <div className="chat-empty-subtitle">
+                      随时提问，或点击下方快捷指令针对当前代码上下文开展分析
+                    </div>
+                    <div className="chat-prompt-pills">
+                      <button
+                        type="button"
+                        className="chat-prompt-pill"
+                        onClick={() => handleQuickPrompt('explain')}
+                      >
+                        <span className="chat-prompt-pill-icon">🔍</span>
+                        <span className="chat-prompt-pill-text">
+                          {selection?.trim() ? '解释选中的代码' : '解释当前代码逻辑'}
+                        </span>
+                        <span className="chat-prompt-pill-arrow">→</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-prompt-pill"
+                        onClick={() => handleQuickPrompt('optimize')}
+                      >
+                        <span className="chat-prompt-pill-icon">⚡</span>
+                        <span className="chat-prompt-pill-text">审查与优化执行性能</span>
+                        <span className="chat-prompt-pill-arrow">→</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-prompt-pill"
+                        onClick={() => handleQuickPrompt('test')}
+                      >
+                        <span className="chat-prompt-pill-icon">🧪</span>
+                        <span className="chat-prompt-pill-text">生成全面单元测试</span>
+                        <span className="chat-prompt-pill-arrow">→</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="chat-prompt-pill"
+                        onClick={() => handleQuickPrompt('bug')}
+                      >
+                        <span className="chat-prompt-pill-icon">🛠️</span>
+                        <span className="chat-prompt-pill-text">排查潜在 Bug 与安全隐患</span>
+                        <span className="chat-prompt-pill-arrow">→</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div ref={bottomRef} />
+                </>
+              );
+            }
 
             return (
               <>

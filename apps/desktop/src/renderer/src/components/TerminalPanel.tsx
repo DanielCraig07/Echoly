@@ -20,6 +20,7 @@ interface Props {
   } | null;
   visible?: boolean;
   scrollback?: number;
+  maximized?: boolean;
   onCollapse?: () => void;
 }
 
@@ -482,6 +483,7 @@ interface SessionProps {
   initialCommand?: string;
   wordWrap?: boolean;
   scrollback?: number;
+  maximized?: boolean;
   searchOpen?: boolean;
   searchFocusNonce?: number;
   onOpenSearch?: () => void;
@@ -503,6 +505,7 @@ function TerminalSession({
   initialCommand,
   wordWrap = true,
   scrollback,
+  maximized,
   searchOpen,
   searchFocusNonce,
   onOpenSearch,
@@ -632,6 +635,25 @@ function TerminalSession({
     updateVScrollThumb();
   }, [updateVScrollThumb]);
 
+  /** 统一将终端视口滚动到底部并保证光标所在行处于可视区（全屏备用缓冲区模式下跳过） */
+  const scrollToBottomAndCursor = useCallback(() => {
+    const term = termRef.current;
+    if (!term || term.buffer.active.type === 'alternate') return;
+    try {
+      term.scrollToBottom();
+      const vp = getXtermViewport();
+      if (vp) {
+        vp.scrollTop = vp.scrollHeight;
+      }
+      if (hostRef.current && !wordWrapRef.current && hostRef.current.scrollLeft > 0) {
+        hostRef.current.scrollLeft = 0;
+      }
+      updateVScrollThumb();
+    } catch {
+      // ignore
+    }
+  }, [updateVScrollThumb]);
+
 
 
   /**
@@ -645,6 +667,10 @@ function TerminalSession({
       return maxLineLenRef.current;
     }
   };
+
+  /** 上一次向 backend PTY 报告的列数与行数，防止尺寸相同时重复向 vim 发送 SIGWINCH */
+  const lastResizedColsRef = useRef(0);
+  const lastResizedRowsRef = useRef(0);
 
   const applyTerminalSize = (id: string) => {
     const term = termRef.current;
@@ -665,11 +691,17 @@ function TerminalSession({
           term.element.style.width = '100%';
           term.element.style.minWidth = '100%';
         }
+        selfResizingRef.current = true;
         fit.fit();
+        selfResizingRef.current = false;
         const cols = term.cols;
         const rows = term.rows;
         if (cols >= 20 && rows >= 3) {
-          void window.ide.resizeTerminal(id, cols, rows);
+          if (lastResizedColsRef.current !== cols || lastResizedRowsRef.current !== rows) {
+            lastResizedColsRef.current = cols;
+            lastResizedRowsRef.current = rows;
+            void window.ide.resizeTerminal(id, cols, rows);
+          }
         }
         term.refresh(0, Math.max(0, term.rows - 1));
         return;
@@ -681,13 +713,19 @@ function TerminalSession({
           term.element.style.width = '100%';
           term.element.style.minWidth = '100%';
         }
+        selfResizingRef.current = true;
         fit.fit();
+        selfResizingRef.current = false;
         term.refresh(0, Math.max(0, term.rows - 1));
         term.scrollToBottom();
         const cols = term.cols;
         const rows = term.rows;
         if (cols >= 20 && rows >= 3) {
-          void window.ide.resizeTerminal(id, cols, rows);
+          if (lastResizedColsRef.current !== cols || lastResizedRowsRef.current !== rows) {
+            lastResizedColsRef.current = cols;
+            lastResizedRowsRef.current = rows;
+            void window.ide.resizeTerminal(id, cols, rows);
+          }
         }
       } else {
         // 单行/不换行模式：列数 = max(视口宽度, 内容真实最宽行 + 1)，不预展开、不留固定余量。
@@ -697,29 +735,42 @@ function TerminalSession({
         const rows = dims?.rows && dims.rows >= 3 ? dims.rows : term.rows || 24;
         const viewCols = dims?.cols && dims.cols >= 20 ? dims.cols : 80;
         const longest = measureBufferWidth(term);
-        // 保持单调高水位，避免 Windows ConPTY 在刷新、换行或空行输出时导致列数在 80 和长行之间来回振荡跳动；
-        // 仅在 buffer 彻底清空重置时才重新归零。
-        if (term.buffer.active.length <= term.rows && term.buffer.active.baseY === 0 && longest === 0) {
-          maxLineLenRef.current = 0;
+        // 若当前处于首屏且无回滚历史（例如刚启动或执行了 clear 清屏），
+        // 最长行完全取决于当前屏幕实际存在的内容，允许从历史高位回落到视口宽度；
+        // 仅在已有滚动历史累积输出时，保持单调高水位，避免 Windows ConPTY 等在输出短行时发生宽度振荡跳动。
+        if (term.buffer.active.length <= term.rows && term.buffer.active.baseY === 0) {
+          maxLineLenRef.current = longest;
         } else {
           maxLineLenRef.current = Math.max(maxLineLenRef.current, longest);
         }
         const wideCols = Math.min(4000, Math.max(80, viewCols, maxLineLenRef.current + 1));
 
-        host.style.overflowX = 'auto';
+        const isOverflow = wideCols > viewCols;
+        host.style.overflowX = isOverflow ? 'auto' : 'hidden';
+        if (!isOverflow && host.scrollLeft > 0) {
+          host.scrollLeft = 0;
+        }
+
         if (wideCols !== term.cols || rows !== term.rows) {
           lastWideColsRef.current = wideCols;
           selfResizingRef.current = true;
           term.resize(wideCols, rows);
           selfResizingRef.current = false;
-          void window.ide.resizeTerminal(id, wideCols, rows);
+          if (lastResizedColsRef.current !== wideCols || lastResizedRowsRef.current !== rows) {
+            lastResizedColsRef.current = wideCols;
+            lastResizedRowsRef.current = rows;
+            void window.ide.resizeTerminal(id, wideCols, rows);
+          }
         }
         if (term.element) {
-          term.element.style.width = 'max-content';
+          term.element.style.width = isOverflow ? 'max-content' : '100%';
           term.element.style.minWidth = '100%';
         }
         term.refresh(0, Math.max(0, term.rows - 1));
       }
+
+      // 无论是换行还是不换行模式，均确保尺寸调整后将视口准确对齐到最底端及当前光标行
+      scrollToBottomAndCursor();
     } catch (e) {
       // ignore
     }
@@ -754,6 +805,8 @@ function TerminalSession({
     // 否则上一个会话的长行会把新终端的列数一起撑宽。
     maxLineLenRef.current = 0;
     lastWideColsRef.current = 0;
+    lastResizedColsRef.current = 0;
+    lastResizedRowsRef.current = 0;
     const term = new Terminal({
       allowProposedApi: true,
       convertEol: true,
@@ -869,7 +922,40 @@ function TerminalSession({
       if ((sessionId ?? idRef.current) === id) {
         // 过滤掉内部哨兵信号行，避免在终端视口中向用户显示冗余内部标记
         const cleanData = data.replace(/(?:\r?\n|^)__ECHOLY_FIN__:\d+(?:\r?\n|$)/g, '\r\n');
-        term.write(colorizeTerminalLogs(cleanData));
+
+        // 终端全屏交互程序（vim / nano / htop / less / man 等）或大数据倾泻保护：
+        // 1. 若当前终端处于备用缓冲区（term.buffer.active.type === 'alternate'）；
+        // 2. 或当前批次数据包含进入/退出备用缓冲区的转义码（\x1b[?1049, \x1b[?47 等）；
+        // 3. 或当前单包数据超过 2KB；
+        // 坚决直接原样写入 term.write，绝不进行日志背景色正则替换！
+        // 彻底杜绝破坏 vim TUI 语法高亮与光标控制符，并消除长文本正则灾难性回溯卡死。
+        const isAlternate = term.buffer.active.type === 'alternate';
+        const isTuiOrLarge =
+          isAlternate ||
+          cleanData.length > 2048 ||
+          cleanData.includes('\x1b[?1049') ||
+          cleanData.includes('\x1b[?47') ||
+          cleanData.includes('\x1b[?1047');
+
+        term.write(isTuiOrLarge ? cleanData : colorizeTerminalLogs(cleanData));
+
+        // 捕获终端清屏信号（用户执行 clear 命令或按快捷键 Ctrl+L 触发的清屏控制码）
+        // 包含 \x1b[2J (清屏), \x1b[3J (清除滚动历史), \x1bc (重置终端)
+        const isClearSignal =
+          cleanData.includes('\x1b[2J') ||
+          cleanData.includes('\x1b[3J') ||
+          cleanData.includes('\x1bc');
+
+        if (isClearSignal) {
+          maxLineLenRef.current = 0;
+          if (hostRef.current) {
+            hostRef.current.scrollLeft = 0;
+          }
+          const targetId = sessionId ?? idRef.current;
+          if (targetId) {
+            scheduleColumnFit(targetId);
+          }
+        }
 
         // 若有 initialCommand 尚未发送：等待终端 Shell 真正就绪并输出 Prompt 提示符后再写入，
         // 彻底杜绝在 Shell 启动完成前由操作系统底层 PTY 提前回显导致的「第一行是孤立纯命令，第二行才是终端提示符与命令」
@@ -1022,6 +1108,10 @@ function TerminalSession({
       const resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
         if (activeRef.current && visibleRef.current && idRef.current) {
           applyTerminalSize(idRef.current);
+          scrollToBottomAndCursor();
+          requestAnimationFrame(() => scrollToBottomAndCursor());
+          setTimeout(() => scrollToBottomAndCursor(), 40);
+          setTimeout(() => scrollToBottomAndCursor(), 120);
         }
       });
       if (hostRef.current) {
@@ -1030,10 +1120,23 @@ function TerminalSession({
 
       // Perform multiple staged fit retries to ensure initial layout settlement
       applyTerminalSize(id);
-      requestAnimationFrame(() => applyTerminalSize(id));
-      const t1 = setTimeout(() => applyTerminalSize(id), 50);
-      const t2 = setTimeout(() => applyTerminalSize(id), 150);
-      const t3 = setTimeout(() => applyTerminalSize(id), 400);
+      scrollToBottomAndCursor();
+      requestAnimationFrame(() => {
+        applyTerminalSize(id);
+        scrollToBottomAndCursor();
+      });
+      const t1 = setTimeout(() => {
+        applyTerminalSize(id);
+        scrollToBottomAndCursor();
+      }, 50);
+      const t2 = setTimeout(() => {
+        applyTerminalSize(id);
+        scrollToBottomAndCursor();
+      }, 150);
+      const t3 = setTimeout(() => {
+        applyTerminalSize(id);
+        scrollToBottomAndCursor();
+      }, 400);
 
       observerRef.current = resizeObserver;
     });
@@ -1127,10 +1230,17 @@ function TerminalSession({
       const detail = (e as CustomEvent<{ clientId: string }>).detail;
       if (detail?.clientId === clientId && termRef.current) {
         maxLineLenRef.current = 0;
+        if (hostRef.current) {
+          hostRef.current.scrollLeft = 0;
+          hostRef.current.style.overflowX = 'hidden';
+        }
         termRef.current.clear();
         termRef.current.write('\x1b[2J\x1b[3J\x1b[H');
-        if (idRef.current) {
-          applyTerminalSize(idRef.current);
+        const id = idRef.current;
+        if (id) {
+          applyTerminalSize(id);
+          requestAnimationFrame(() => applyTerminalSize(id));
+          setTimeout(() => applyTerminalSize(id), 60);
         }
       }
     };
@@ -1141,9 +1251,9 @@ function TerminalSession({
       }
     };
     const handleBottom = (e: Event) => {
-      const detail = (e as CustomEvent<{ clientId: string }>).detail;
-      if (detail?.clientId === clientId && termRef.current) {
-        termRef.current.scrollToBottom();
+      const detail = (e as CustomEvent<{ clientId?: string }>).detail;
+      if ((!detail?.clientId || detail?.clientId === clientId) && termRef.current) {
+        scrollToBottomAndCursor();
       }
     };
     window.addEventListener('echoly:clearTerminalInstance', handleClear);
@@ -1163,18 +1273,32 @@ function TerminalSession({
       if (id) {
         applyTerminalSize(id);
       }
+      scrollToBottomAndCursor();
     };
 
     doResize();
-    const timer1 = setTimeout(doResize, 50);
-    const timer2 = setTimeout(doResize, 150);
-    const timer3 = setTimeout(doResize, 400);
+    const timer1 = setTimeout(doResize, 40);
+    const timer2 = setTimeout(doResize, 120);
+    const timer3 = setTimeout(doResize, 300);
     return () => {
       clearTimeout(timer1);
       clearTimeout(timer2);
       clearTimeout(timer3);
     };
-  }, [active, visible, wordWrap]);
+  }, [active, visible, wordWrap, maximized, scrollToBottomAndCursor]);
+
+  // 最大化/还原面板高度变化时，自动将焦点保持在当前活跃终端并定位光标
+  useEffect(() => {
+    if (!active || !visible) return;
+    if (termRef.current) {
+      try {
+        termRef.current.focus();
+        scrollToBottomAndCursor();
+      } catch {
+        // ignore
+      }
+    }
+  }, [maximized, active, visible, scrollToBottomAndCursor]);
 
   // 稳健执行搜索逻辑，内置正则合法性校验与双模式容错保护
   const performSearch = useCallback(
@@ -1279,6 +1403,86 @@ function TerminalSession({
     termRef.current?.focus();
   };
 
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as Node)) {
+        setCtxMenu(null);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCtxMenu(null);
+    };
+    window.addEventListener('mousedown', handleOutside);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      window.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [ctxMenu]);
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sel = termRef.current?.getSelection();
+    // 点击右键时将菜单边界限制在视口内
+    const x = Math.min(e.clientX, window.innerWidth - 180);
+    const y = Math.min(e.clientY, window.innerHeight - 160);
+    setCtxMenu({ x, y });
+  };
+
+  const handleCopy = () => {
+    const sel = termRef.current?.getSelection();
+    if (sel) {
+      void navigator.clipboard.writeText(sel);
+    }
+    setCtxMenu(null);
+    termRef.current?.focus();
+  };
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const id = idRef.current;
+      if (text && id) {
+        void window.ide.writeTerminal(id, text);
+      }
+    } catch {
+      // ignore
+    }
+    setCtxMenu(null);
+    termRef.current?.focus();
+  };
+
+  const handleSelectAll = () => {
+    termRef.current?.selectAll();
+    setCtxMenu(null);
+    termRef.current?.focus();
+  };
+
+  const handleClearFromMenu = () => {
+    maxLineLenRef.current = 0;
+    if (hostRef.current) {
+      hostRef.current.scrollLeft = 0;
+      hostRef.current.style.overflowX = 'hidden';
+    }
+    termRef.current?.clear();
+    termRef.current?.write('\x1b[2J\x1b[3J\x1b[H');
+    const id = idRef.current;
+    if (id) {
+      applyTerminalSize(id);
+      setTimeout(() => applyTerminalSize(id), 60);
+    }
+    setCtxMenu(null);
+    termRef.current?.focus();
+  };
+
+  const hasSelection = Boolean(termRef.current?.hasSelection());
+  const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
+
   return (
     <div
       className={`terminal-session${active ? ' active' : ''}${!wordWrap ? ' no-wrap' : ''}`}
@@ -1287,7 +1491,44 @@ function TerminalSession({
         if (active) termRef.current?.focus();
       }}
     >
-      <div className={`terminal-host${!wordWrap ? ' no-wrap' : ''}`} ref={hostRef} />
+      <div
+        className={`terminal-host${!wordWrap ? ' no-wrap' : ''}`}
+        ref={hostRef}
+        onContextMenu={handleContextMenu}
+      />
+      {/* 终端右键上下文菜单 */}
+      {ctxMenu && (
+        <div
+          className="ctx-menu"
+          ref={ctxMenuRef}
+          role="menu"
+          style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 10000, minWidth: 170 }}
+        >
+          <button
+            type="button"
+            className="ctx-item"
+            onClick={handleCopy}
+            disabled={!hasSelection}
+            style={{ opacity: hasSelection ? 1 : 0.45, cursor: hasSelection ? 'pointer' : 'default' }}
+          >
+            <span>复制</span>
+            <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>{isMac ? '⌘C' : 'Ctrl+Shift+C'}</kbd>
+          </button>
+          <button type="button" className="ctx-item" onClick={() => void handlePaste()}>
+            <span>粘贴</span>
+            <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>{isMac ? '⌘V' : 'Ctrl+Shift+V'}</kbd>
+          </button>
+          <div className="ctx-sep" />
+          <button type="button" className="ctx-item" onClick={handleSelectAll}>
+            <span>全选</span>
+            <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>{isMac ? '⌘A' : 'Ctrl+A'}</kbd>
+          </button>
+          <button type="button" className="ctx-item" onClick={handleClearFromMenu}>
+            <span>清空屏幕 (Clear)</span>
+            <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>{isMac ? '⌘K' : 'Ctrl+L'}</kbd>
+          </button>
+        </div>
+      )}
       {/* 终端浮动搜索栏 */}
       {active && searchOpen && (
         <TerminalSearchBar
@@ -1332,6 +1573,7 @@ export function TerminalPanel({
   openRequest,
   visible = true,
   scrollback,
+  maximized,
   onCollapse,
 }: Props) {
   const seqRef = useRef(1);
@@ -1837,6 +2079,7 @@ export function TerminalPanel({
             initialCommand={tab.initialCommand}
             wordWrap={wordWrap}
             scrollback={scrollback}
+            maximized={maximized}
             searchOpen={tab.clientId === activeId && isSearchOpen}
             searchFocusNonce={searchFocusNonce}
             onOpenSearch={handleOpenSearch}

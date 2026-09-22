@@ -11,10 +11,14 @@ import { getLocalTerminalEnv } from './shellEnv';
 interface LocalHandle {
   kind: 'local';
   pty: IPty;
+  cols: number;
+  rows: number;
   kill: () => void;
 }
 type SshHandle = {
   kind: 'ssh';
+  cols: number;
+  rows: number;
   write: (data: string) => void;
   resize: (cols: number, rows: number) => void;
   close: () => void;
@@ -150,8 +154,11 @@ export class TerminalService {
         /* fall through */
       }
     }
-    const joined = path.join(this.getCwd(), cwdRel);
-    if (fs.existsSync(joined) && fs.statSync(joined).isDirectory()) return joined;
+    const joined = path.isAbsolute(cwdRel) ? cwdRel : path.join(this.getCwd(), cwdRel);
+    if (fs.existsSync(joined)) {
+      if (fs.statSync(joined).isDirectory()) return joined;
+      return path.dirname(joined);
+    }
     return this.getCwd();
   }
 
@@ -195,6 +202,8 @@ export class TerminalService {
     const handle: LocalHandle = {
       kind: 'local',
       pty,
+      cols: initialCols,
+      rows: initialRows,
       kill: () => {
         try {
           pty.kill();
@@ -210,6 +219,8 @@ export class TerminalService {
 
   private createSsh(cwdRel?: string, cols?: number, rows?: number): { id: string } {
     const id = randomUUID();
+    const initialCols = Math.max(20, cols || 80);
+    const initialRows = Math.max(3, rows || 24);
     if (!this.ssh?.isConnected()) {
       this.sendToWindow('terminal:data', {
         id,
@@ -224,8 +235,8 @@ export class TerminalService {
         this.sendToWindow('terminal:exit', { id, exitCode });
         this.terminals.delete(id);
       },
-      cols,
-      rows,
+      initialCols,
+      initialRows,
     );
     if (!handle) {
       this.sendToWindow('terminal:data', {
@@ -235,7 +246,7 @@ export class TerminalService {
       this.sendToWindow('terminal:exit', { id, exitCode: 1 });
       return { id };
     }
-    this.terminals.set(id, { kind: 'ssh', ...handle });
+    this.terminals.set(id, { kind: 'ssh', cols: initialCols, rows: initialRows, ...handle });
     this.sendToWindow('terminal:data', {
       id,
       data: '[ssh] 已接入远程服务器终端\r\n',
@@ -273,8 +284,19 @@ export class TerminalService {
     if (cols < 20 || rows < 3) return;
     const t = this.terminals.get(id);
     if (!t) return;
-    if (t.kind === 'local') t.pty.resize(cols, rows);
-    else t.resize(cols, rows);
+    // 尺寸完全一致时忽略，坚决不向下层 PTY 进程（如 vim、nano 等）重复投递 SIGWINCH 信号
+    if (t.cols === cols && t.rows === rows) return;
+    t.cols = cols;
+    t.rows = rows;
+    if (t.kind === 'local') {
+      try {
+        t.pty.resize(cols, rows);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      t.resize(cols, rows);
+    }
   }
 
   dispose(id: string): void {

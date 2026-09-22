@@ -254,6 +254,14 @@ function CodeBlock({
   onOpenFile?: (path: string, line?: number, endLine?: number) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [ranInTerm, setRanInTerm] = useState(false);
+  const [inserted, setInserted] = useState(false);
+  const [applied, setApplied] = useState(false);
+
+  const cleanLang = (language || '').toLowerCase().trim();
+  const isShellCommand = useMemo(() => {
+    return ['bash', 'sh', 'shell', 'zsh', 'terminal', 'powershell', 'cmd', 'ps1'].includes(cleanLang);
+  }, [cleanLang]);
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -262,27 +270,163 @@ function CodeBlock({
     setTimeout(() => setCopied(false), 1800);
   };
 
+  const handleRunInTerminal = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent('echoly:runInTerminal', { detail: { command: code } }));
+    setRanInTerm(true);
+    setTimeout(() => setRanInTerm(false), 1800);
+  };
+
+  const handleInsertToEditor = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.dispatchEvent(new CustomEvent('echoly:insertCodeToEditor', { detail: { code } }));
+    setInserted(true);
+    setTimeout(() => setInserted(false), 1800);
+  };
+
+  const handleApplyToFile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.dispatchEvent(
+      new CustomEvent('echoly:applyCodeToFile', {
+        detail: { code, path: fileRef?.path },
+      })
+    );
+    setApplied(true);
+    setTimeout(() => setApplied(false), 1800);
+  };
+
   const highlightedHtml = useMemo(() => {
     return highlightCode(code, language);
   }, [code, language]);
+
+  const hasActive = copied || ranInTerm || inserted || applied;
 
   return (
     <div className="md-code-block">
       <div className="md-code-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
           <span className="md-code-lang">{language || 'text'}</span>
-          {fileRef && (
-            <CodeRefPill codeRef={fileRef} onOpenFile={onOpenFile} />
-          )}
+          {fileRef && <CodeRefPill codeRef={fileRef} onOpenFile={onOpenFile} />}
         </div>
-        <button
-          type="button"
-          className="md-code-copy-btn"
-          onClick={handleCopy}
-          title="复制代码"
-        >
-          {copied ? '✓ 已复制' : '📋 复制'}
-        </button>
+        <div className={`md-code-actions ${hasActive ? 'has-active' : ''}`}>
+          {isShellCommand && (
+            <button
+              type="button"
+              className={`md-code-action-btn ${ranInTerm ? 'active' : ''}`}
+              onClick={handleRunInTerminal}
+              title={ranInTerm ? '已发送至终端执行' : '在集成终端中运行此命令'}
+            >
+              {ranInTerm ? (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>已运行</span>
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" y1="19" x2="20" y2="19" />
+                  </svg>
+                  <span>运行</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {!isShellCommand && (
+            <button
+              type="button"
+              className={`md-code-action-btn ${inserted ? 'active' : ''}`}
+              onClick={handleInsertToEditor}
+              title={inserted ? '已插入到当前光标处' : '插入到当前编辑器光标处'}
+            >
+              {inserted ? (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>已插入</span>
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  <span>插入</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {fileRef && (
+            <button
+              type="button"
+              className={`md-code-action-btn ${applied ? 'active' : ''}`}
+              onClick={handleApplyToFile}
+              title={applied ? '已完整应用到文件' : `应用并更新到 ${fileRef.path}`}
+            >
+              {applied ? (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span>已应用</span>
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="12" y1="18" x2="12" y2="12" />
+                    <line x1="9" y1="15" x2="15" y2="15" />
+                  </svg>
+                  <span>应用</span>
+                </>
+              )}
+            </button>
+          )}
+
+          <button
+            type="button"
+            className={`md-code-copy-btn ${copied ? 'copied' : ''}`}
+            onClick={handleCopy}
+            title={copied ? '已复制代码' : '复制代码'}
+          >
+            {copied ? (
+              <>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span>已复制</span>
+              </>
+            ) : (
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
+          </button>
+        </div>
       </div>
       <pre className="md-code-pre">
         <code

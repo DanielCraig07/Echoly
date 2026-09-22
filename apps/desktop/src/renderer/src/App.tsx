@@ -1538,7 +1538,43 @@ export function App() {
           : `@${detail.path}`;
       handleAddToChat(ref);
     };
-    window.addEventListener('echoly:addRefToChat', handleAddRefToChat);
+    // 全局支持「在集成终端中打开」(任意组件通过事件派发拉起对应路径终端)
+    const handleOpenTerminalEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as { cwd?: string; initialCommand?: string; title?: string } | undefined;
+      const cwd = detail?.cwd || workspaceRef.current || '';
+      const targetDirName =
+        cwd && cwd !== '.' ? cwd.split(/[/\\]/).filter(Boolean).pop() : undefined;
+      setBottomTab('terminal');
+      terminalNonce.current += 1;
+      setTerminalOpenRequest({
+        cwd,
+        nonce: terminalNonce.current,
+        initialCommand: detail?.initialCommand,
+        terminalTitle: detail?.title || (targetDirName ? `终端: ${targetDirName}` : '终端'),
+      });
+      const next = { ...layoutRef.current, bottomPanelExpanded: true };
+      setLayout(next);
+      persistLayout(next);
+    };
+    // 全局支持「在终端中执行命令」(AI 对话代码块等一键快速运行)
+    const handleRunInTerminalEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as { command?: string; cwd?: string } | undefined;
+      if (!detail?.command?.trim()) return;
+      const cwd = detail.cwd || workspaceRef.current || '';
+      setBottomTab('terminal');
+      terminalNonce.current += 1;
+      setTerminalOpenRequest({
+        cwd,
+        nonce: terminalNonce.current,
+        initialCommand: detail.command.trim() + '\n',
+        terminalTitle: '运行命令',
+      });
+      const next = { ...layoutRef.current, bottomPanelExpanded: true };
+      setLayout(next);
+      persistLayout(next);
+    };
+    window.addEventListener('echoly:openTerminal', handleOpenTerminalEvent);
+    window.addEventListener('echoly:runInTerminal', handleRunInTerminalEvent);
 
     return () => {
       if (fsDebounce) clearTimeout(fsDebounce);
@@ -1547,6 +1583,8 @@ export function App() {
       window.removeEventListener('echoly:refreshFileTree', handleCustomFsRefresh);
       window.removeEventListener('echoly:refreshTree', handleCustomFsRefresh);
       window.removeEventListener('echoly:openBottomTab', handleOpenBottomTab);
+      window.removeEventListener('echoly:openTerminal', handleOpenTerminalEvent);
+      window.removeEventListener('echoly:runInTerminal', handleRunInTerminalEvent);
       window.removeEventListener('echoly:startDebug', handleStartDebug);
       window.removeEventListener('echoly:stopDebug', handleStopDebug);
       window.removeEventListener('echoly:runFinished', handleStopDebug);
@@ -3259,8 +3297,18 @@ export function App() {
                         onDiscardPath={(p) => void handleDiscardPath(p)}
                         onOpenFile={(p) => void openFile(p)}
                         onOpenTerminal={(cwd) => {
+                          const targetDirName =
+                            cwd && cwd !== '.' ? cwd.split(/[/\\]/).filter(Boolean).pop() : undefined;
+                          setBottomTab('terminal');
                           terminalNonce.current += 1;
-                          setLayout((l) => ({ ...l, bottomPanelExpanded: true }));
+                          setTerminalOpenRequest({
+                            cwd: cwd || workspace || '',
+                            nonce: terminalNonce.current,
+                            terminalTitle: targetDirName ? `终端: ${targetDirName}` : '终端',
+                          });
+                          const next = { ...layoutRef.current, bottomPanelExpanded: true };
+                          setLayout(next);
+                          persistLayout(next);
                         }}
                         onAddToChat={handleAddToChat}
                         onAddToNewChat={(path) => {
@@ -3449,6 +3497,7 @@ export function App() {
             onToggleWordWrap={() => setWordWrap((w) => !w)}
             onPreviewGitDiff={handlePreviewGitDiff}
             onDiscardPath={handleDiscardPath}
+            onViewFileHistory={(p) => void handleViewFileHistory(p)}
             onRefreshGitStatus={async () => {
               const res = await window.ide.gitStatus();
               if (res.ok) setGitStatus(res);
@@ -3635,7 +3684,14 @@ export function App() {
                     <button
                       type="button"
                       className="panel-action-btn"
-                      onClick={() => setBottomMaximized((v) => !v)}
+                      onClick={() => {
+                        setBottomMaximized((v) => !v);
+                        window.dispatchEvent(
+                          new CustomEvent('echoly:scrollTerminalBottom', {
+                            detail: {},
+                          }),
+                        );
+                      }}
                       title={bottomMaximized ? '还原面板高度' : '最大化面板高度'}
                     >
                       {bottomMaximized ? (
@@ -3681,6 +3737,7 @@ export function App() {
                     openRequest={terminalOpenRequest}
                     visible={layout.bottomPanelExpanded === true && bottomTab === 'terminal'}
                     scrollback={terminalScrollback}
+                    maximized={bottomMaximized}
                     onCollapse={() => {
                       const next = { ...layout, bottomPanelExpanded: false };
                       setLayout(next);

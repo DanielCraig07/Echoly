@@ -46,6 +46,13 @@ export const MONACO_ZH_TRANSLATIONS: Record<string, string> = {
 
   // Command Palette
   'Command Palette': '命令面板',
+
+  // Git
+  'Git: View File History': 'Git: View File History',
+
+  // Terminal
+  'Open in Integrated Terminal': '在集成终端中打开',
+  '在集成终端中打开': '在集成终端中打开',
 };
 
 const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');

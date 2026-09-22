@@ -42,6 +42,7 @@ interface Props {
   onPreviewGitDiff?: (path: string) => void;
   onDiscardPath?: (path: string) => void;
   onRefreshGitStatus?: () => void;
+  onViewFileHistory?: (path: string) => void;
   revealTarget?: {
     path: string;
     line: number;
@@ -540,6 +541,7 @@ export function EditorPane({
   onPreviewGitDiff,
   onDiscardPath,
   onRefreshGitStatus,
+  onViewFileHistory,
   revealTarget,
   onRevealTargetConsumed,
   uiTheme,
@@ -572,6 +574,8 @@ export function EditorPane({
   onSelectionChangeRef.current = onSelectionChange;
   const activeRef = useRef(active);
   activeRef.current = active;
+  const onViewFileHistoryRef = useRef(onViewFileHistory);
+  onViewFileHistoryRef.current = onViewFileHistory;
   const onAddToChatRef = useRef(onAddToChat);
   onAddToChatRef.current = onAddToChat;
   const onOpenFileRef = useRef(onOpenFile);
@@ -2463,6 +2467,58 @@ export function EditorPane({
     return () => window.removeEventListener('echoly:fixWithAi', onFixEvent);
   }, [handleTriggerFixWithAi]);
 
+  useEffect(() => {
+    const onInsertCode = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as { code?: string } | undefined;
+      const code = detail?.code;
+      const ed = editorRef.current;
+      const curActive = activeRef.current;
+      if (!ed || !code || !curActive?.path) return;
+      const selection = ed.getSelection();
+      if (selection) {
+        ed.executeEdits('ai-insert', [
+          {
+            range: selection,
+            text: code,
+            forceMoveMarkers: true,
+          },
+        ]);
+        onChangeContent(curActive.path, ed.getValue());
+        ed.focus();
+        onShowToast?.('已将代码片段插入当前光标处', '', 'success');
+      }
+    };
+
+    const onApplyCode = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as { code?: string } | undefined;
+      const code = detail?.code;
+      const ed = editorRef.current;
+      const curActive = activeRef.current;
+      if (!ed || !code || !curActive?.path) return;
+      const model = ed.getModel();
+      const fullRange = model?.getFullModelRange();
+      if (fullRange) {
+        ed.executeEdits('ai-apply', [
+          {
+            range: fullRange,
+            text: code,
+            forceMoveMarkers: true,
+          },
+        ]);
+        onChangeContent(curActive.path, ed.getValue());
+        ed.focus();
+        onShowToast?.('已将代码完整应用至当前文件', '', 'success');
+      }
+    };
+
+    window.addEventListener('echoly:insertCodeToEditor', onInsertCode);
+    window.addEventListener('echoly:applyCodeToFile', onApplyCode);
+    return () => {
+      window.removeEventListener('echoly:insertCodeToEditor', onInsertCode);
+      window.removeEventListener('echoly:applyCodeToFile', onApplyCode);
+    };
+  }, [onChangeContent, onShowToast]);
+
 /**
  * 唤起编辑器查找框并自动将光标定位至输入框内，全选已有文本
  */
@@ -2524,6 +2580,36 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         contextMenuOrder: 3,
         run: () => {
           handleTriggerFixWithAi(ed);
+        },
+      });
+      ed.addAction({
+        id: 'echoly.gitViewFileHistory',
+        label: 'Git: View File History',
+        contextMenuGroupId: '2_git',
+        contextMenuOrder: 1,
+        run: () => {
+          const modelUri = ed.getModel()?.uri;
+          const uriPath = modelUri?.fsPath || modelUri?.path;
+          const filePath = activeRef.current?.path || uriPath;
+          if (filePath && !filePath.startsWith('untitled:')) {
+            onViewFileHistoryRef.current?.(filePath);
+          } else {
+            onShowToast?.('无法查看文件历史', '当前文件未保存到磁盘或无 Git 记录', 'info');
+          }
+        },
+      });
+      ed.addAction({
+        id: 'echoly.openInTerminal',
+        label: '在集成终端中打开',
+        contextMenuGroupId: '9_terminal',
+        contextMenuOrder: 1,
+        run: () => {
+          const modelUri = ed.getModel()?.uri;
+          const uriPath = modelUri?.fsPath || modelUri?.path;
+          const filePath = activeRef.current?.path || uriPath;
+          window.dispatchEvent(
+            new CustomEvent('echoly:openTerminal', { detail: { cwd: filePath } }),
+          );
         },
       });
 
@@ -4250,6 +4336,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 smoothScrolling: true,
                 wordWrap: wordWrap ? 'on' : 'off',
                 scrollBeyondLastColumn: 0,
+                scrollBeyondLastLine: false,
+                bracketPairColorization: { enabled: true },
+                guides: { bracketPairs: 'active', indentation: true },
+                cursorSmoothCaretAnimation: 'on',
+                cursorBlinking: 'smooth',
+                renderWhitespace: 'selection',
+                padding: { top: 6, bottom: 6 },
                 lineNumbersMinChars: 4,
                 lineDecorationsWidth: 10,
                 glyphMargin: true,
@@ -4881,6 +4974,28 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
 
           <div className="menu-divider" />
 
+          {!contextMenu.targetPath.startsWith('untitled:') && (
+            <>
+              <div
+                className="menu-item"
+                onClick={() => {
+                  const target = contextMenu.targetPath;
+                  setContextMenu(null);
+                  onViewFileHistory?.(target);
+                }}
+              >
+                <div className="menu-item-left">
+                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                  <span>Git: View File History</span>
+                </div>
+              </div>
+              <div className="menu-divider" />
+            </>
+          )}
+
           <div
             className="menu-item"
             onClick={() => void handleShowInFinder(contextMenu.targetPath)}
@@ -4893,6 +5008,27 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             </div>
             <kbd className="shortcut-badge">{isMac ? '⌥⌘R' : 'Alt+Ctrl+R'}</kbd>
           </div>
+
+          {!contextMenu.targetPath.startsWith('untitled:') && (
+            <div
+              className="menu-item"
+              onClick={() => {
+                const target = contextMenu.targetPath;
+                setContextMenu(null);
+                window.dispatchEvent(
+                  new CustomEvent('echoly:openTerminal', { detail: { cwd: target } }),
+                );
+              }}
+            >
+              <div className="menu-item-left">
+                <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="4 17 10 11 4 5" />
+                  <line x1="12" y1="19" x2="20" y2="19" />
+                </svg>
+                <span>在集成终端中打开</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

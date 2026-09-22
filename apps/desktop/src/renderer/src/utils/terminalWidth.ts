@@ -42,12 +42,15 @@ export interface BufferLike {
  * @param buf xterm 的 `term.buffer.active`
  * @param cols 当前列数，用于把 line.length（resize 后可能超出列数）截断到可视范围
  */
-export function measureContentColumns(buf: BufferLike, cols: number): number {
+export function measureContentColumns(buf: BufferLike, cols: number, maxLinesToScan = 300): number {
   const bufLength = buf.length;
   const scratch = buf.getNullCell();
   let widest = 0;
   let logicalBase = 0;
-  for (let y = 0; y < bufLength; y++) {
+  // 仅扫描最近活跃的最多 maxLinesToScan 行（历史最长行由 maxLineLenRef 高水位线持久保持），
+  // 彻底杜绝拥有几千上万行历史时每次遍历 100,000+ 单元格卡死渲染主线程的问题
+  const startY = Math.max(0, bufLength - maxLinesToScan);
+  for (let y = startY; y < bufLength; y++) {
     const line = buf.getLine(y);
     if (!line) continue;
     // 新的逻辑行从 0 重新累计列偏移

@@ -8,9 +8,27 @@
  */
 export function colorizeTerminalLogs(data: string): string {
   if (!data || typeof data !== 'string') return data;
-  if (data.includes('\x1b[48;2;')) return data; // 避免重复注入背景色
+  // 1. 超过 64KB 的超大数据块（大文件倾泻）直接跳过，避免阻塞渲染主线程
+  if (data.length > 65536) return data;
+  // 2. 避免重复注入背景色
+  if (data.includes('\x1b[48;2;')) return data;
+  // 3. 包含全屏交互程序（vim / nano / less / htop）进入/退出备用缓冲区的转义序列时，直接原样放行
+  if (
+    data.includes('\x1b[?1049') ||
+    data.includes('\x1b[?47') ||
+    data.includes('\x1b[?1047')
+  ) {
+    return data;
+  }
 
-  // 1. 匹配带时间戳或类名的应用程序日志行，例如：
+  // 4. 极速关键词先验预检：无日志语义关键词的普通文本 0 开销快速通过
+  const HAS_LOG_KEYWORD =
+    /\b(INFO|WARN|WARNING|ERROR|FATAL|DEBUG|TRACE|SEVERE)\b|BUILD (?:SUCCESS|FAILURE)|Exception in thread|Caused by:|Process finished with exit code/;
+  if (!HAS_LOG_KEYWORD.test(data)) {
+    return data;
+  }
+
+  // 5. 匹配带时间戳或类名的应用程序日志行，例如：
   // "2026-09-12 11:57:03 EmbeddedLeaderService.java INFO Received confirmation..."
   // "2026-09-12 11:57:03.123 [main] INFO com.tsingtec.service - ..."
   // "2026-09-12T11:57:03.123+08:00 INFO ..."
