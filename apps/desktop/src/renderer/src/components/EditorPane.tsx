@@ -74,6 +74,12 @@ interface Props {
   onToggleBreakpoint?: (path: string, line: number, condition?: string) => void;
 }
 
+const COMMON_FIND_OPTIONS: MonacoEditor.IEditorFindOptions = {
+  addExtraSpaceOnTop: false,
+  autoFindInSelection: 'never',
+  seedSearchStringFromSelection: 'always',
+};
+
 function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
   if (!path || typeof path !== 'string' || !entries || !Array.isArray(entries) || !entries.length)
     return null;
@@ -1779,16 +1785,75 @@ export function EditorPane({
   useEffect(() => {
     const ed = editorInstance;
     const domNode = ed?.getDomNode();
-    const findWidget = domNode?.querySelector('.find-widget');
+    const findWidget = domNode?.querySelector<HTMLElement>('.find-widget');
     if (!findWidget) return;
 
-    const sync = () => setFindWidgetVisible(findWidget.classList.contains('visible'));
+    const sync = () => {
+      const isVisible = findWidget.classList.contains('visible');
+      setFindWidgetVisible(isVisible);
+      if (isVisible) {
+        // 默认宽度加宽至 520px（若当前为 Monaco 默认的 419px 或未设定）
+        const curWidth = parseInt(findWidget.style.width, 10);
+        if (!curWidth || curWidth <= 420) {
+          const savedWidth = localStorage.getItem('echoly_monaco_find_width');
+          const targetW = savedWidth ? parseInt(savedWidth, 10) : 520;
+          findWidget.style.width = `${Math.max(420, targetW)}px`;
+        }
+      }
+    };
     sync();
 
     // Monaco 只切 .find-widget 的 visible class，观察它即可感知查找框开关
     const observer = new MutationObserver(sync);
     observer.observe(findWidget, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+
+    // 为左侧拖动手柄 (Sash) 绑定稳健灵敏的双向拖拽交互
+    const sash = findWidget.querySelector<HTMLElement>('.monaco-sash');
+    let removeDrag: (() => void) | undefined;
+    if (sash) {
+      const onMouseDown = (e: MouseEvent) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const startX = e.clientX;
+        const startWidth = findWidget.getBoundingClientRect().width;
+
+        const onMouseMove = (moveEvent: MouseEvent) => {
+          const deltaX = startX - moveEvent.clientX;
+          const maxAllowed = domNode ? domNode.clientWidth - 40 : window.innerWidth - 80;
+          const newWidth = Math.max(380, Math.min(maxAllowed, startWidth + deltaX));
+          findWidget.style.width = `${newWidth}px`;
+          localStorage.setItem('echoly_monaco_find_width', String(Math.round(newWidth)));
+
+          // 同步第二行替换框与第一行输入框等宽
+          const findInput = findWidget.querySelector<HTMLElement>('.find-part .monaco-findInput');
+          const replaceInput = findWidget.querySelector<HTMLElement>('.replace-part .monaco-findInput');
+          if (findInput && replaceInput) {
+            replaceInput.style.width = `${findInput.offsetWidth}px`;
+          }
+        };
+
+        const onMouseUp = () => {
+          window.removeEventListener('mousemove', onMouseMove);
+          window.removeEventListener('mouseup', onMouseUp);
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        };
+
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
+      };
+
+      sash.addEventListener('mousedown', onMouseDown);
+      removeDrag = () => sash.removeEventListener('mousedown', onMouseDown);
+    }
+
+    return () => {
+      observer.disconnect();
+      removeDrag?.();
+    };
   }, [editorInstance, activePath]);
 
   useEffect(() => {
@@ -3058,6 +3123,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             }}
             options={{
               readOnly: true,
+              find: COMMON_FIND_OPTIONS,
               renderSideBySide: true,
               smoothScrolling: true,
               renderOverviewRuler: false,
@@ -3110,7 +3176,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               <button
                 key={tab.path}
                 ref={isActive ? activeTabRef : null}
-                className={`tab ${isActive ? 'active' : ''}`}
+                className={`tab ${isActive ? 'active' : ''} ${tab.dirty ? 'is-dirty' : ''}`}
                 onClick={() => onSelectTab(tab.path)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -3155,7 +3221,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     onCloseTab(tab.path);
                   }}
                 >
-                  {tab.dirty && <span className="dirty-dot">•</span>}
+                  {tab.dirty && <span className="dirty-dot" aria-label="未保存" />}
                   <svg className="close-icon" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z" />
                   </svg>
@@ -3901,6 +3967,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 }}
                 options={{
                   fontSize: 13,
+                  find: COMMON_FIND_OPTIONS,
                   fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
                   fontWeight: '400',
                   disableMonospaceOptimizations: true,
@@ -4057,6 +4124,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 }}
                 options={{
                   fontSize: 13,
+                  find: COMMON_FIND_OPTIONS,
                   minimap: { enabled: minimap !== false },
                   hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                   automaticLayout: true,
@@ -4148,6 +4216,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     }}
                     options={{
                       fontSize: 13,
+                      find: COMMON_FIND_OPTIONS,
                       minimap: { enabled: false },
                       automaticLayout: true,
                       smoothScrolling: true,
@@ -4325,6 +4394,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               }}
               options={{
                 fontSize: 13,
+                find: COMMON_FIND_OPTIONS,
                 inlineSuggest: { enabled: true },
                 fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
                 fontWeight: '400',

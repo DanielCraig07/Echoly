@@ -1049,6 +1049,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   }, [
     activeTab?.messages,
     activeTab?.streaming,
+    activeTab?.thinkingStreaming,
     activeTab?.plan,
     activeTab?.status,
     activeTab?.stepInfo,

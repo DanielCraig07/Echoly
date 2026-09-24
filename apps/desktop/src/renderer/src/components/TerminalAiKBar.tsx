@@ -76,6 +76,11 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 若输入法正在合成字符（如中文拼音输入中按 Enter 确认上屏英文），不拦截 Enter，让原生输入法正常输入英文字符
+    if (e.nativeEvent.isComposing || e.keyCode === 229) {
+      return;
+    }
+
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -84,15 +89,26 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
     }
 
     if (e.key === 'Enter') {
-      if (e.metaKey || e.ctrlKey) {
-        // Cmd+Enter 直接执行生成的命令
-        if (generatedCmd) {
-          e.preventDefault();
-          onExecute(generatedCmd);
-          onClose();
-        }
-      } else if (!generatedCmd && prompt.trim()) {
+      // 产生命令后，按 Shift+Enter 仅插入命令
+      if (e.shiftKey && generatedCmd) {
         e.preventDefault();
+        e.stopPropagation();
+        handleInsertCommand();
+        return;
+      }
+
+      // 产生命令后，按 Enter (或 Cmd/Ctrl+Enter) 立即在终端执行命令
+      if (generatedCmd) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleRunCommand();
+        return;
+      }
+
+      // 尚未产生命令时，按 Enter 触发命令生成
+      if (prompt.trim() && !loading) {
+        e.preventDefault();
+        e.stopPropagation();
         void handleGenerate();
       }
     }

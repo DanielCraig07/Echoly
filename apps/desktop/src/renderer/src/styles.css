@@ -2671,7 +2671,7 @@ body.resizing.resizing-row {
 }
 
 .tab .tab-close-btn.is-dirty {
-  opacity: 1;
+  opacity: 1 !important;
 }
 
 .tab .tab-close-btn.is-dirty .close-icon {
@@ -2686,11 +2686,39 @@ body.resizing.resizing-row {
   display: none;
 }
 
+@keyframes dirtyDotAppear {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.3;
+  }
+  60% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 .tab .tab-close-btn .dirty-dot {
-  font-size: 15px;
-  line-height: 1;
-  color: rgba(255, 255, 255, 0.7);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.75);
   display: block;
+  flex-shrink: 0;
+  animation: dirtyDotAppear 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tab .tab-close-btn:hover .dirty-dot {
+  transform: scale(1.15);
+}
+
+[data-theme='light'] .tab .tab-close-btn .dirty-dot {
+  background-color: #d97706;
+  box-shadow: 0 0 4px rgba(217, 119, 6, 0.5);
 }
 
 .editor-area {
@@ -7338,6 +7366,12 @@ body.resizing.resizing-row {
     0 0 0 1px rgba(0, 0, 0, 0.06);
 }
 
+.unsaved-changes-dialog {
+  animation: gitModalFadeIn 0.15s ease-out;
+  user-select: none;
+}
+
+
 .settings-modal.modern-settings {
   width: min(920px, 94vw);
   height: min(680px, 86vh);
@@ -9881,10 +9915,10 @@ button.welcome-recent-remove:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 5px;
-  min-width: 22px;
-  height: 20px;
-  font-size: 11px;
+  padding: 2px 6px;
+  min-width: 24px;
+  height: 22px;
+  font-size: 11.5px;
   font-weight: 600;
   font-family: inherit;
   border-radius: 4px;
@@ -10032,8 +10066,8 @@ button.welcome-recent-remove:hover {
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
+  gap: 8px;
+  padding: 5px 8px;
   background: rgba(24, 24, 28, 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -10065,13 +10099,13 @@ button.welcome-recent-remove:hover {
   position: relative;
   display: flex;
   align-items: center;
-  width: 250px;
-  min-height: 26px;
-  height: 26px;
+  width: 320px;
+  min-height: 30px;
+  height: 30px;
   background: rgba(16, 16, 18, 0.75);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  padding-right: 76px;
+  border-radius: 7px;
+  padding-right: 86px;
   box-sizing: border-box;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
@@ -10104,18 +10138,18 @@ button.welcome-recent-remove:hover {
 .terminal-search-input {
   width: 100%;
   height: 100%;
-  padding: 2px 8px;
+  padding: 3px 10px;
   background: transparent;
   border: none;
   color: var(--text, #ffffff);
-  font-size: 12px;
+  font-size: 13px;
   outline: none;
   box-sizing: border-box;
 }
 
 .terminal-search-input::placeholder {
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.38);
+  font-size: 12px;
 }
 
 [data-theme='light'] .terminal-search-input::placeholder {
@@ -10123,12 +10157,12 @@ button.welcome-recent-remove:hover {
 }
 
 .terminal-search-badge {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted, rgba(255, 255, 255, 0.65));
   white-space: nowrap;
-  padding: 0 4px;
+  padding: 0 6px;
   user-select: none;
-  min-width: 32px;
+  min-width: 36px;
   text-align: center;
 }
 
@@ -11517,7 +11551,13 @@ button.welcome-recent-remove:hover {
   color: var(--text, #d4d4d8) !important;
   top: 10px !important;
   right: 18px !important;
-  min-width: 420px !important;
+  width: 520px;
+  min-width: 380px !important;
+  max-width: 9999px !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: 42px !important;
+  padding: 5px 0 6px 0 !important;
   box-sizing: border-box !important;
 }
 
@@ -11537,14 +11577,99 @@ button.welcome-recent-remove:hover {
   opacity: 1;
 }
 
+/* 左侧宽度拖动手柄 (Sash)：消除粗实心蓝条，默认完全透明，鼠标悬停时保持细腻微蓝细线 */
+.monaco-editor .find-widget .monaco-sash {
+  left: 0 !important;
+  top: 0 !important;
+  width: 5px !important;
+  height: 100% !important;
+  z-index: 50 !important;
+  cursor: ew-resize !important;
+  position: absolute !important;
+  background-color: transparent !important;
+  border-left: 2px solid transparent !important;
+  transition: border-color 0.15s ease, background-color 0.15s ease !important;
+  --vscode-sash-hover-size: 0px !important;
+  --vscode-sash-hoverBorder: transparent !important;
+}
+
+.monaco-editor .find-widget .monaco-sash:hover,
+.monaco-editor .find-widget .monaco-sash.hover,
+.monaco-editor .find-widget .monaco-sash.active {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+  border-left-color: rgba(59, 130, 246, 0.75) !important;
+}
+
+/* 彻底禁用 Monaco 延迟 300ms~500ms 后由 hoverDelayer 添加的 .hover 触发的 :before/:after 粗实心蓝条 */
+.monaco-editor .find-widget .monaco-sash:before,
+.monaco-editor .find-widget .monaco-sash:after,
+.monaco-editor .find-widget .monaco-sash.hover:before,
+.monaco-editor .find-widget .monaco-sash.hover:after,
+.monaco-editor .find-widget .monaco-sash.active:before,
+.monaco-editor .find-widget .monaco-sash.active:after,
+.monaco-editor .find-widget .monaco-sash.vertical:before,
+.monaco-editor .find-widget .monaco-sash.vertical:after {
+  display: none !important;
+  content: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+[data-theme='light'] .monaco-editor .find-widget {
+  background: rgba(248, 249, 250, 0.98) !important;
+  border-color: rgba(0, 0, 0, 0.15) !important;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(0, 0, 0, 0.08) !important;
+  color: var(--text, #18181b) !important;
+}
+
+/* 查找输入框容器：弹性自适应宽度，随拖动实时放大缩小 */
+.monaco-editor .find-widget > .find-part > .monaco-findInput {
+  flex: 1 1 auto !important;
+  min-width: 140px !important;
+  display: flex !important;
+  align-items: center !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+}
+
+/* 替换输入框容器：跟随查找框宽度，与查找框垂直对齐 */
+.monaco-editor .find-widget > .replace-part > .monaco-findInput {
+  flex: 0 0 auto !important;
+  min-width: 140px !important;
+  max-width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+}
+
+.monaco-editor .find-widget .monaco-findInput > .controls {
+  position: absolute !important;
+  top: 4px !important;
+  right: 4px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  z-index: 2 !important;
+}
+
 /* 输入框（查找框与替换框）样式统一与现代美化 */
+.monaco-editor .find-widget .find-input,
+.monaco-editor .find-widget .replace-input,
 .monaco-editor .find-widget .monaco-inputbox {
   background: rgba(18, 18, 22, 0.78) !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
   border-radius: 7px !important;
   box-shadow: none !important;
-  min-height: 26px !important;
-  height: 26px !important;
+  min-height: 30px !important;
+  height: 30px !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
   box-sizing: border-box !important;
   outline: none !important;
   transition:
@@ -11562,16 +11687,29 @@ button.welcome-recent-remove:hover {
   border-radius: inherit !important;
   border: none !important;
   outline: none !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox .input {
   color: var(--text, #e4e4e7) !important;
   background: transparent !important;
-  font-size: 12px !important;
-  padding: 2px 7px !important;
-  line-height: 20px !important;
+  font-size: 13px !important;
+  line-height: 22px !important;
   border: none !important;
   outline: none !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+}
+
+/* 查找框文字预留右侧空间（容纳 Aa / ab / .* 三个按钮） */
+.monaco-editor .find-widget > .find-part .monaco-inputbox .input {
+  padding: 3px 80px 3px 10px !important;
+}
+
+/* 替换框文字预留右侧空间（容纳 AB 一个按钮） */
+.monaco-editor .find-widget > .replace-part .monaco-inputbox .input {
+  padding: 3px 36px 3px 10px !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
@@ -11611,17 +11749,18 @@ button.welcome-recent-remove:hover {
   color: rgba(0, 0, 0, 0.42) !important;
 }
 
-/* 行容器布局：上行查找，下行替换 */
+/* 行容器布局：左右边距精准对齐绝对定位按钮，保持紧凑自然间距（约 5px），绝无重叠 */
 .monaco-editor .find-widget > .find-part {
-  margin: 4px 28px 4px 24px !important;
+  margin: 0 35px 0 33px !important;
   display: flex !important;
   align-items: center !important;
   gap: 6px !important;
+  height: 32px !important;
   font-size: 12px !important;
 }
 
 .monaco-editor .find-widget > .replace-part {
-  margin: 2px 28px 5px 24px !important;
+  margin: 5px 35px 0 33px !important;
   font-size: 12px !important;
 }
 
@@ -11640,20 +11779,16 @@ button.welcome-recent-remove:hover {
   display: flex !important;
   align-items: center !important;
   gap: 6px !important;
+  height: 32px !important;
 }
 
-.monaco-editor .find-widget .replace-part .replace-input {
-  min-width: 0 !important;
-  flex: 1 1 auto !important;
-}
-
-/* 左侧展开/折叠替换栏的按钮（chevron 符号）：对齐 Maven 风格 */
+/* 左侧展开/折叠替换栏的按钮（chevron 符号）：对齐 Maven 风格，距左 6px，与输入框间距 5px 紧凑不重叠 */
 .monaco-editor .find-widget .button.toggle.left,
 .monaco-editor .find-widget .left .button {
   position: absolute !important;
-  left: 3px !important;
-  top: 6px !important;
-  width: 20px !important;
+  left: 6px !important;
+  top: 9px !important;
+  width: 22px !important;
   height: 24px !important;
   border-radius: 6px !important;
   border: 1px solid transparent !important;
@@ -11683,13 +11818,13 @@ button.welcome-recent-remove:hover {
   transform: scale(0.95) !important;
 }
 
-/* 右上角关闭按钮 (✕)：对齐 Maven 风格 */
+/* 右上角关闭按钮 (✕)：距右 6px，与最右侧操作按钮保持紧凑间距（约 5px），绝不重叠也不脱节 */
 .monaco-editor .find-widget > .button.codicon-widget-close,
 .monaco-editor .find-widget > .button.close-button,
 .monaco-editor .find-widget .close-button {
   position: absolute !important;
-  top: 6px !important;
-  right: 5px !important;
+  top: 9px !important;
+  right: 6px !important;
   width: 24px !important;
   height: 24px !important;
   padding: 0 !important;
@@ -11722,14 +11857,21 @@ button.welcome-recent-remove:hover {
 }
 
 .monaco-editor .find-widget .matchesCount {
-  display: flex !important;
+  display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  flex-shrink: 0 !important;
   margin: 0 4px !important;
-  padding: 0 4px !important;
-  min-width: 40px !important;
-  font-size: 11px !important;
+  padding: 0 6px !important;
+  min-width: 66px !important;
+  font-size: 11.5px !important;
+  line-height: 24px !important;
+  height: 24px !important;
   color: var(--muted, rgba(255, 255, 255, 0.65)) !important;
+  text-align: center !important;
+  user-select: none !important;
 }
 
 .monaco-editor .find-widget.no-results .matchesCount {
@@ -11738,8 +11880,8 @@ button.welcome-recent-remove:hover {
 
 /* 输入框内部的 Aa / ab / .* / AB 切换按钮：对齐 Maven 标准 */
 .monaco-editor .find-widget .monaco-custom-toggle {
-  width: 22px !important;
-  height: 20px !important;
+  width: 24px !important;
+  height: 22px !important;
   margin: 0 1px !important;
   border-radius: 4px !important;
   border: 1px solid transparent !important;
@@ -11780,16 +11922,17 @@ button.welcome-recent-remove:hover {
   display: flex !important;
   align-items: center !important;
   gap: 3px !important;
-  height: 26px !important;
+  height: 30px !important;
+  flex-shrink: 0 !important;
 }
 
 .monaco-editor .find-widget .find-actions .button,
 .monaco-editor .find-widget .replace-actions .button,
 .monaco-editor .find-widget .button,
 .monaco-editor .find-widget .codicon-find-selection {
-  min-width: 24px !important;
-  width: 24px !important;
-  height: 24px !important;
+  min-width: 26px !important;
+  width: 26px !important;
+  height: 26px !important;
   padding: 0 !important;
   margin: 0 !important;
   border-radius: 6px !important;
@@ -11826,6 +11969,26 @@ button.welcome-recent-remove:hover {
   background: rgba(255, 255, 255, 0.2) !important;
   color: #ffffff !important;
   transform: scale(0.95) !important;
+}
+
+[data-theme='light'] .monaco-editor .find-widget .find-actions .button,
+[data-theme='light'] .monaco-editor .find-widget .replace-actions .button,
+[data-theme='light'] .monaco-editor .find-widget .button,
+[data-theme='light'] .monaco-editor .find-widget .codicon-find-selection,
+[data-theme='light'] .monaco-editor .find-widget .monaco-custom-toggle,
+[data-theme='light'] .monaco-editor .find-widget .close-button {
+  color: rgba(0, 0, 0, 0.75) !important;
+}
+
+[data-theme='light'] .monaco-editor .find-widget .find-actions .button:not(.disabled):hover,
+[data-theme='light'] .monaco-editor .find-widget .replace-actions .button:not(.disabled):hover,
+[data-theme='light'] .monaco-editor .find-widget .button:not(.disabled):hover,
+[data-theme='light'] .monaco-editor .find-widget .codicon-find-selection:not(.disabled):hover,
+[data-theme='light'] .monaco-editor .find-widget .monaco-custom-toggle:hover,
+[data-theme='light'] .monaco-editor .find-widget .close-button:hover {
+  background: rgba(0, 0, 0, 0.08) !important;
+  color: #000000 !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
 }
 
 /* 选中激活态（在选定内容中查找 ≡ 被激活） */

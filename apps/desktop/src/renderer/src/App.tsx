@@ -42,6 +42,7 @@ import {
 } from './components/SwitchWorkspaceModal';
 import { BranchSwitchModal } from './components/BranchSwitchModal';
 import { FileHistoryModal } from './components/FileHistoryModal';
+import { UnsavedChangesModal } from './components/UnsavedChangesModal';
 import {
   TopSearchBar,
   type TopSearchBarHandle,
@@ -1864,7 +1865,7 @@ export function App() {
     setTerminalKey((k) => k + 1);
   }
 
-  const saveUntitledAs = useCallback(async (tab: OpenTab): Promise<void> => {
+  const saveUntitledAs = useCallback(async (tab: OpenTab): Promise<boolean> => {
     const defaultName = `${tab.path.slice('untitled:'.length)}.txt`;
     let defaultPath = defaultName;
     const ws = workspaceRef.current;
@@ -1877,7 +1878,7 @@ export function App() {
       }
     }
     const dest = await window.ide.saveFileDialog(defaultPath);
-    if (!dest) return;
+    if (!dest) return false;
 
     let relPath = dest.replace(/\\/g, '/');
     if (ws) {
@@ -1889,15 +1890,15 @@ export function App() {
           relPath = relPath === rootAbs ? defaultName : relPath.slice(rootAbs.length + 1);
         } else {
           alert('请将文件保存到当前工作区内');
-          return;
+          return false;
         }
       } catch {
         alert('当前无法写入工作区，请先打开文件夹');
-        return;
+        return false;
       }
     } else {
       alert('请先打开工作区后再保存未命名文件');
-      return;
+      return false;
     }
 
     await window.ide.writeFile(relPath, tab.content);
@@ -1910,33 +1911,42 @@ export function App() {
     );
     setActivePath(relPath);
     setTreeRefreshKey((k) => k + 1);
+    return true;
   }, []);
+
+  const saveTab = useCallback(
+    async (tabToSave: OpenTab): Promise<boolean> => {
+      if (tabToSave.language === 'image' || tabToSave.previewUrl) return true;
+      if (isUntitledPath(tabToSave.path)) {
+        return await saveUntitledAs(tabToSave);
+      }
+      await window.ide.writeFile(tabToSave.path, tabToSave.content);
+      setTabs((prev) => prev.map((t) => (t.path === tabToSave.path ? { ...t, dirty: false } : t)));
+      void window.ide.gitStatus().then((res) => {
+        if (res.ok) {
+          setGitStatus(res);
+          setTreeRefreshKey((k) => k + 1);
+        }
+      });
+      // 延迟二次同步，保证底层 stat 刷新后无改动时 M 标识立即消失
+      setTimeout(async () => {
+        const res = await window.ide.gitStatus();
+        if (res.ok) {
+          setGitStatus(res);
+          setTreeRefreshKey((k) => k + 1);
+        }
+      }, 300);
+      return true;
+    },
+    [saveUntitledAs],
+  );
 
   const saveActive = useCallback(async (): Promise<void> => {
     const path = activePathRef.current;
     const tab = tabsRef.current.find((t) => t.path === path);
     if (!tab || tab.language === 'image' || tab.previewUrl) return;
-    if (isUntitledPath(tab.path)) {
-      await saveUntitledAs(tab);
-      return;
-    }
-    await window.ide.writeFile(tab.path, tab.content);
-    setTabs((prev) => prev.map((t) => (t.path === tab.path ? { ...t, dirty: false } : t)));
-    void window.ide.gitStatus().then((res) => {
-      if (res.ok) {
-        setGitStatus(res);
-        setTreeRefreshKey((k) => k + 1);
-      }
-    });
-    // 延迟二次同步，保证底层 stat 刷新后无改动时 M 标识立即消失
-    setTimeout(async () => {
-      const res = await window.ide.gitStatus();
-      if (res.ok) {
-        setGitStatus(res);
-        setTreeRefreshKey((k) => k + 1);
-      }
-    }, 300);
-  }, [saveUntitledAs]);
+    await saveTab(tab);
+  }, [saveTab]);
 
   const saveAsActive = useCallback(async (): Promise<void> => {
     const path = activePathRef.current;
@@ -2037,6 +2047,119 @@ export function App() {
     resetAiChatSession();
     setTerminalKey((k) => k + 1);
   }, [workspaceInfo.kind, persistOpenFilesForRoot, resetAiChatSession]);
+
+  // ── 未保存文件关闭确认弹窗逻辑 ──
+  const [closeConfirmTab, setCloseConfirmTab] = useState<OpenTab | null>(null);
+  const closeConfirmQueueRef = useRef<OpenTab[]>([]);
+
+  const closeTabDirect = useCallback((path: string) => {
+    setScmDiff((prev) => (prev?.path === path ? null : prev));
+    setTabs((prev) => {
+      const next = prev.filter((t) => t.path !== path);
+      if (activePathRef.current === path) {
+        const nextActive = next[next.length - 1]?.path ?? null;
+        setActivePath(nextActive);
+      }
+      return next;
+    });
+  }, []);
+
+  const requestCloseTab = useCallback(
+    (path: string) => {
+      const tab = tabsRef.current.find((t) => t.path === path);
+      if (!tab) return;
+      const isDirty =
+        tab.dirty &&
+        tab.language !== 'image' &&
+        !tab.previewUrl &&
+        !(isUntitledPath(tab.path) && !tab.content);
+      if (isDirty) {
+        setActivePath(path);
+        closeConfirmQueueRef.current = [tab];
+        setCloseConfirmTab(tab);
+      } else {
+        closeTabDirect(path);
+      }
+    },
+    [closeTabDirect],
+  );
+
+  const requestCloseMultipleTabs = useCallback((pathsToClose: string[]) => {
+    const currentTabs = tabsRef.current;
+    const targets = currentTabs.filter((t) => pathsToClose.includes(t.path));
+    const nonDirtyPaths = targets
+      .filter(
+        (t) =>
+          !t.dirty ||
+          t.language === 'image' ||
+          t.previewUrl ||
+          (isUntitledPath(t.path) && !t.content),
+      )
+      .map((t) => t.path);
+    const dirtyTabs = targets.filter(
+      (t) =>
+        t.dirty &&
+        t.language !== 'image' &&
+        !t.previewUrl &&
+        !(isUntitledPath(t.path) && !t.content),
+    );
+
+    if (nonDirtyPaths.length > 0) {
+      setTabs((prev) => {
+        const next = prev.filter((t) => !nonDirtyPaths.includes(t.path));
+        if (activePathRef.current && nonDirtyPaths.includes(activePathRef.current)) {
+          const nextActive = next[next.length - 1]?.path ?? null;
+          setActivePath(nextActive);
+        }
+        return next;
+      });
+    }
+
+    if (dirtyTabs.length > 0) {
+      setActivePath(dirtyTabs[0].path);
+      closeConfirmQueueRef.current = dirtyTabs;
+      setCloseConfirmTab(dirtyTabs[0]);
+    }
+  }, []);
+
+  const handleConfirmSave = useCallback(async () => {
+    if (!closeConfirmTab) return;
+    const currentTab = closeConfirmTab;
+    const success = await saveTab(currentTab);
+    if (!success) {
+      return;
+    }
+    closeTabDirect(currentTab.path);
+
+    const queue = closeConfirmQueueRef.current.filter((t) => t.path !== currentTab.path);
+    closeConfirmQueueRef.current = queue;
+    if (queue.length > 0) {
+      setActivePath(queue[0].path);
+      setCloseConfirmTab(queue[0]);
+    } else {
+      setCloseConfirmTab(null);
+    }
+  }, [closeConfirmTab, saveTab, closeTabDirect]);
+
+  const handleConfirmDontSave = useCallback(() => {
+    if (!closeConfirmTab) return;
+    const currentTab = closeConfirmTab;
+    closeTabDirect(currentTab.path);
+
+    const queue = closeConfirmQueueRef.current.filter((t) => t.path !== currentTab.path);
+    closeConfirmQueueRef.current = queue;
+    if (queue.length > 0) {
+      setActivePath(queue[0].path);
+      setCloseConfirmTab(queue[0]);
+    } else {
+      setCloseConfirmTab(null);
+    }
+  }, [closeConfirmTab, closeTabDirect]);
+
+  const handleConfirmCancel = useCallback(() => {
+    closeConfirmQueueRef.current = [];
+    setCloseConfirmTab(null);
+  }, []);
 
   const createUntitledTab = useCallback(() => {
     setTabs((prev) => {
@@ -2186,12 +2309,7 @@ export function App() {
       if (command.type === 'closeEditor') {
         const path = activePathRef.current;
         if (!path) return;
-        setTabs((prev) => {
-          const next = prev.filter((t) => t.path !== path);
-          const nextActive = next[next.length - 1]?.path ?? null;
-          setActivePath(nextActive);
-          return next;
-        });
+        requestCloseTab(path);
         return;
       }
       if (command.type === 'openWorkspace') {
@@ -2407,6 +2525,15 @@ export function App() {
         e.preventDefault();
         void saveActive();
         return;
+      }
+      // Cmd+W / Ctrl+W 关闭当前编辑器标签
+      if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'w') {
+        const path = activePathRef.current;
+        if (path) {
+          e.preventDefault();
+          requestCloseTab(path);
+          return;
+        }
       }
       // Cmd+F: 编辑区与终端区域搜索唤起并自动定位光标
       if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
@@ -3422,43 +3549,28 @@ export function App() {
               setActivePath(path);
             }}
             onCloseTab={(path) => {
-              setTabs((prev) => {
-                const next = prev.filter((t) => t.path !== path);
-                if (activePath === path) {
-                  const nextActive = next[next.length - 1]?.path ?? null;
-                  setActivePath(nextActive);
-                }
-                return next;
-              });
+              requestCloseTab(path);
             }}
             onCloseOthers={(targetPath) => {
               setScmDiff(null);
-              setTabs((prev) => prev.filter((t) => t.path === targetPath));
-              setActivePath(targetPath);
+              const paths = tabs.filter((t) => t.path !== targetPath).map((t) => t.path);
+              requestCloseMultipleTabs(paths);
             }}
             onCloseLeft={(targetPath) => {
               setScmDiff(null);
-              setTabs((prev) => {
-                const idx = prev.findIndex((t) => t.path === targetPath);
-                if (idx <= 0) return prev;
-                const next = prev.slice(idx);
-                if (!next.some((t) => t.path === activePath)) {
-                  setActivePath(targetPath);
-                }
-                return next;
-              });
+              const idx = tabs.findIndex((t) => t.path === targetPath);
+              if (idx > 0) {
+                const paths = tabs.slice(0, idx).map((t) => t.path);
+                requestCloseMultipleTabs(paths);
+              }
             }}
             onCloseRight={(targetPath) => {
               setScmDiff(null);
-              setTabs((prev) => {
-                const idx = prev.findIndex((t) => t.path === targetPath);
-                if (idx < 0) return prev;
-                const next = prev.slice(0, idx + 1);
-                if (!next.some((t) => t.path === activePath)) {
-                  setActivePath(targetPath);
-                }
-                return next;
-              });
+              const idx = tabs.findIndex((t) => t.path === targetPath);
+              if (idx >= 0) {
+                const paths = tabs.slice(idx + 1).map((t) => t.path);
+                requestCloseMultipleTabs(paths);
+              }
             }}
             onCloseSaved={() => {
               setScmDiff(null);
@@ -3472,8 +3584,8 @@ export function App() {
             }}
             onCloseAll={() => {
               setScmDiff(null);
-              setTabs([]);
-              setActivePath(null);
+              const paths = tabs.map((t) => t.path);
+              requestCloseMultipleTabs(paths);
             }}
             onNewUntitled={createUntitledTab}
             onChangeContent={onChangeContent}
@@ -3988,6 +4100,14 @@ export function App() {
           setActiveDiffId(null);
           setScmDiff(diff);
         }}
+      />
+
+      <UnsavedChangesModal
+        open={!!closeConfirmTab}
+        tab={closeConfirmTab}
+        onSave={handleConfirmSave}
+        onDontSave={handleConfirmDontSave}
+        onCancel={handleConfirmCancel}
       />
 
       <StatusBar

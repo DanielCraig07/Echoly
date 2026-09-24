@@ -381,6 +381,15 @@ export function WorkedForGroup({
   const [liveDuration, setLiveDuration] = useState(0);
   const [currentStepLiveDuration, setCurrentStepLiveDuration] = useState(0);
   const prevStreamingRef = React.useRef(isStreaming);
+  const liveThinkingBoxRef = React.useRef<HTMLDivElement>(null);
+
+  // 思考内容流式输出时自动滚动到底部跟随
+  useEffect(() => {
+    if (liveThinking && liveThinkingBoxRef.current) {
+      const el = liveThinkingBoxRef.current;
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [liveThinking]);
 
   // 当从流式运行切换为完成（AI回复最终结果之后），自动折叠思考与执行过程
   useEffect(() => {
@@ -722,6 +731,7 @@ export function WorkedForGroup({
               </div>
               {liveThinking && (
                 <div
+                  ref={liveThinkingBoxRef}
                   className="agent-timeline-thinking-box live-stream"
                   style={{
                     marginTop: 8,

@@ -491,6 +491,7 @@ interface SessionProps {
   onRegisterSession?: (clientId: string, sendCmd: (cmd: string) => void) => () => void;
   onRegisterRawSession?: (clientId: string, sendRaw: (raw: string) => void) => () => void;
   onRegisterExtractLog?: (clientId: string, getLog: (lines?: number) => string) => () => void;
+  onRegisterFocus?: (clientId: string, focusFn: () => void) => () => void;
   onTriggerAiK?: () => void;
 }
 
@@ -513,6 +514,7 @@ function TerminalSession({
   onRegisterSession,
   onRegisterRawSession,
   onRegisterExtractLog,
+  onRegisterFocus,
   onTriggerAiK,
 }: SessionProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -798,6 +800,7 @@ function TerminalSession({
     let unreg: (() => void) | undefined = undefined;
     let unregRaw: (() => void) | undefined = undefined;
     let unregExtract: (() => void) | undefined = undefined;
+    let unregFocus: (() => void) | undefined = undefined;
     // 初始列数固定 80：两种模式都会在挂载后由 applyTerminalSize 校准到视口宽度，
     // 不换行模式不再预展开超宽列，避免刚打开就出现巨大的横向滚动区间。
     const initialCols = 80;
@@ -1093,6 +1096,11 @@ function TerminalSession({
       };
       unregExtract = onRegisterExtractLog?.(clientId, getRecentLines);
 
+      const focusTerm = () => {
+        termRef.current?.focus();
+      };
+      unregFocus = onRegisterFocus?.(clientId, focusTerm);
+
       // 设置兜底定时器（1500ms）：若 Shell 极端静默未触发输出数据，确保命令仍正常发出
       if (initialCommand?.trim() && !initialCmdSent && !initialCmdTimer) {
         initialCmdTimer = setTimeout(() => {
@@ -1150,6 +1158,7 @@ function TerminalSession({
       unreg?.();
       unregRaw?.();
       unregExtract?.();
+      unregFocus?.();
       if (observerRef.current) {
         observerRef.current.disconnect();
         observerRef.current = null;
@@ -1615,6 +1624,25 @@ export function TerminalPanel({
 
   // 终端 AI 命令生成浮条 (Cmd+K)
   const [showAiK, setShowAiK] = useState(false);
+  const sessionFocusRef = useRef<Map<string, () => void>>(new Map());
+
+  const handleRegisterFocus = useCallback(
+    (clientId: string, focusFn: () => void) => {
+      sessionFocusRef.current.set(clientId, focusFn);
+      return () => {
+        sessionFocusRef.current.delete(clientId);
+      };
+    },
+    [],
+  );
+
+  const focusActiveTerminal = useCallback(() => {
+    // 延迟一帧，确保 AI 浮条关闭后焦点准确转移到 xterm 实例并唤醒光标
+    requestAnimationFrame(() => {
+      const focusFn = sessionFocusRef.current.get(activeId);
+      focusFn?.();
+    });
+  }, [activeId]);
 
   const handleAiKExecute = useCallback((command: string) => {
     if (!activeId) return;
@@ -1624,7 +1652,8 @@ export function TerminalPanel({
     } else {
       void window.ide.writeTerminal(activeId, command + '\r\n');
     }
-  }, [activeId]);
+    focusActiveTerminal();
+  }, [activeId, focusActiveTerminal]);
 
   const handleAiKInsert = useCallback((command: string) => {
     if (!activeId) return;
@@ -1634,7 +1663,8 @@ export function TerminalPanel({
     } else {
       void window.ide.writeTerminal(activeId, command);
     }
-  }, [activeId]);
+    focusActiveTerminal();
+  }, [activeId, focusActiveTerminal]);
 
   const toggleWordWrap = useCallback(() => {
     setWordWrap((prev) => {
@@ -2060,7 +2090,10 @@ export function TerminalPanel({
       <div className="terminal-sessions" style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         <TerminalAiKBar
           open={showAiK}
-          onClose={() => setShowAiK(false)}
+          onClose={() => {
+            setShowAiK(false);
+            focusActiveTerminal();
+          }}
           activeClientId={activeId}
           cwd={activeTab?.cwd}
           uiTheme={uiTheme}
@@ -2087,6 +2120,7 @@ export function TerminalPanel({
             onRegisterSession={handleRegisterSession}
             onRegisterRawSession={handleRegisterRawSession}
             onRegisterExtractLog={handleRegisterExtractLog}
+            onRegisterFocus={handleRegisterFocus}
             onTriggerAiK={() => setShowAiK(true)}
           />
         ))}
