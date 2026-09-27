@@ -202,87 +202,132 @@ export function OpenWorkspaceModal({
           </button>
         </header>
 
-        <div className="ide-modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {/* 四个卡片式入口网格 */}
-          <div className="open-ws-grid" role="list">
+        <div className="ide-modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* 四个卡片式入口网格（完全对齐欢迎页规范与文案） */}
+          <div className="welcome-view-choices" role="list">
             <button
               type="button"
-              className="open-ws-card"
+              className="welcome-choice-row local"
               onClick={() => {
                 onClose();
                 onPickLocal();
               }}
             >
-              <div className="open-ws-card-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <span className="welcome-choice-mark" aria-hidden>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
                 </svg>
-              </div>
-              <div className="open-ws-card-text">
-                <div className="open-ws-card-title">本地文件夹</div>
-                <div className="open-ws-card-desc">打开本机已有工程目录</div>
-              </div>
+              </span>
+              <span className="welcome-choice-body">
+                <span className="welcome-choice-title">本地文件夹</span>
+                <span className="welcome-choice-desc">打开本机已有目录作为工作区</span>
+              </span>
+              <span className="welcome-choice-hint">Open</span>
             </button>
 
             <button
               type="button"
-              className="open-ws-card"
+              className="welcome-choice-row ssh"
               onClick={() => {
                 onClose();
                 onPickSsh();
               }}
             >
-              <div className="open-ws-card-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <span className="welcome-choice-mark" aria-hidden>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <circle cx="12" cy="12" r="9" />
                   <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
                 </svg>
-              </div>
-              <div className="open-ws-card-text">
-                <div className="open-ws-card-title">SSH 远程主机</div>
-                <div className="open-ws-card-desc">直连远程服务器目录开发</div>
-              </div>
+              </span>
+              <span className="welcome-choice-body">
+                <span className="welcome-choice-title">SSH 远程主机</span>
+                <span className="welcome-choice-desc">通过 SSH / SFTP 安全连接远程服务</span>
+              </span>
+              <span className="welcome-choice-hint">Remote</span>
             </button>
 
             <button
               type="button"
-              className="open-ws-card"
+              className="welcome-choice-row clone"
               onClick={() => {
                 onClose();
                 onPickClone();
               }}
             >
-              <div className="open-ws-card-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M12 3v12" />
-                  <path d="m8 11 4 4 4-4" />
-                  <path d="M5 19h14" />
+              <span className="welcome-choice-mark" aria-hidden>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="18" cy="18" r="3" />
+                  <circle cx="6" cy="6" r="3" />
+                  <circle cx="6" cy="18" r="3" />
+                  <path d="M18 9a9 9 0 0 1-9 9" />
+                  <line x1="6" y1="9" x2="6" y2="15" />
                 </svg>
-              </div>
-              <div className="open-ws-card-text">
-                <div className="open-ws-card-title">从 Git 克隆</div>
-                <div className="open-ws-card-desc">支持 GitHub / Gitee / GitLab</div>
-              </div>
+              </span>
+              <span className="welcome-choice-body">
+                <span className="welcome-choice-title">从 Git 克隆</span>
+                <span className="welcome-choice-desc">拉取远程代码仓库至本地并即刻就绪</span>
+              </span>
+              <span className="welcome-choice-hint">Clone</span>
             </button>
 
             <button
               type="button"
-              className="open-ws-card"
+              className="welcome-choice-row wizard"
               onClick={() => {
                 onClose();
                 onOpenNewProjectWizard?.();
               }}
             >
-              <div className="open-ws-card-icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
-                  <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+              <span className="welcome-choice-mark" aria-hidden>
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                  <polyline points="2 17 12 22 22 17" />
+                  <polyline points="2 12 12 17 22 12" />
                 </svg>
-              </div>
-              <div className="open-ws-card-text">
-                <div className="open-ws-card-title">模板向导新建</div>
-                <div className="open-ws-card-desc">C++ / Java / Python / Go 标准模版</div>
-              </div>
+              </span>
+              <span className="welcome-choice-body">
+                <span className="welcome-choice-title">新建标准工程向导</span>
+                <span className="welcome-choice-desc">
+                  生成 Java、Python、Go、Node 或 C++ 标准开发与调试工程
+                </span>
+              </span>
+              <span className="welcome-choice-hint">Wizard</span>
             </button>
           </div>
 
@@ -359,23 +404,32 @@ export function OpenWorkspaceModal({
                           onSelectRecent?.(item);
                         }}
                       >
-                        {/* 1 & 2. 连接方式徽标与技术栈徽标（固定宽度容器以实现项目名称严格对齐） */}
-                        <div className="open-ws-recent-badges">
-                          <span className={`open-ws-kind-pill ${isSsh ? 'ssh' : 'local'}`}>
+                        {/* 1 & 2. 连接方式徽标与技术栈徽标（对齐欢迎页固定 106px 宽度容器） */}
+                        <div className="welcome-recent-badges">
+                          <span className={`welcome-recent-kind ${isSsh ? 'ssh' : 'local'}`}>
                             {isSsh ? 'SSH' : '本地'}
                           </span>
                           <span
                             className="open-ws-tech-pill"
-                            style={{ color: tech.color, background: tech.bg }}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: 4,
+                              color: tech.color,
+                              background: tech.bg,
+                              flexShrink: 0,
+                              letterSpacing: '0.02em',
+                            }}
                             title={`智能识别技术栈: ${tech.label}`}
                           >
                             {tech.label}
                           </span>
                         </div>
 
-                        <span className="open-ws-recent-text">
+                        <span className="welcome-recent-text">
                           <span className="open-ws-recent-name-wrap">
-                            <span className="open-ws-recent-name">{item.name}</span>
+                            <span className="welcome-recent-name">{item.name}</span>
                             {isCurrent && (
                               <span className="open-ws-current-badge" title="当前正在使用的工作区">
                                 <span className="open-ws-current-dot" />
@@ -386,7 +440,7 @@ export function OpenWorkspaceModal({
                               <span className="open-ws-time-pill">{relativeTime}</span>
                             )}
                           </span>
-                          <span className="open-ws-recent-path" title={pathLabel}>
+                          <span className="welcome-recent-path" title={pathLabel}>
                             {pathLabel}
                           </span>
                         </span>
@@ -439,7 +493,22 @@ export function OpenWorkspaceModal({
                               onRemoveRecent(item.path);
                             }}
                           >
-                            ✕
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 16 16"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                              aria-hidden="true"
+                            >
+                              <path
+                                d="M12 4L4 12M4 4l8 8"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
                           </button>
                         )}
                       </div>

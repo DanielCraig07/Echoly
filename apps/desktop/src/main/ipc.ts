@@ -462,8 +462,17 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('git:blameLine', (e, path: string, line: number) =>
     run(e, () => git.blameLine(path, line)),
   );
+  ipcMain.handle('git:blameFile', (e, path: string) =>
+    run(e, () => git.blameFile(path)),
+  );
   ipcMain.handle('git:showCommitDiff', (e, hash: string, path: string) =>
     run(e, () => git.showCommitDiff(hash, path)),
+  );
+  ipcMain.handle('git:showFileAtRef', (e, ref: string, path: string) =>
+    run(e, () => git.showFileAtRef(ref, path)),
+  );
+  ipcMain.handle('git:diffWithRef', (e, ref: string, path: string) =>
+    run(e, () => git.diffWithRef(ref, path)),
   );
   ipcMain.handle('git:generateCommitMessage', (e) =>
     run(e, async () => {

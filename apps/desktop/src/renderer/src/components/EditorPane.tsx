@@ -16,7 +16,9 @@ import { WelcomeView } from './WelcomeView';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
 import { setupCmdClickGesture, navigateBack, highlightJumpLocation, navigationStack, switchSourceHeader } from '../services/symbolNavigation';
 import { registerAiInlineCompletions } from '../services/inlineCompletion';
+import type { CursorPos } from '../workspaceSession';
 import * as monaco from 'monaco-editor';
+import { GitBlameAnnotationGutter } from './GitBlameAnnotationGutter';
 
 interface Props {
   tabs: OpenTab[];
@@ -33,6 +35,8 @@ interface Props {
   onChangeContent: (path: string, content: string, markDirty?: boolean) => void;
   onSelectionChange?: (text: string) => void;
   onCursorChange?: (line: number, col: number) => void;
+  onScrollChange?: (path: string, scrollTop: number, scrollLeft: number) => void;
+  initialCursorPositions?: Record<string, CursorPos>;
   onAddToChat?: (text: string) => void;
   onOpenFile?: (path: string, line?: number, column?: number) => void;
   previewDiff: PendingDiff | null;
@@ -43,6 +47,9 @@ interface Props {
   onDiscardPath?: (path: string) => void;
   onRefreshGitStatus?: () => void;
   onViewFileHistory?: (path: string) => void;
+  onCompareWithRevision?: (path: string) => void;
+  onCompareWithBranchOrTag?: (path: string) => void;
+  onAnnotateGitBlame?: (path: string) => void;
   revealTarget?: {
     path: string;
     line: number;
@@ -53,6 +60,9 @@ interface Props {
   onRevealTargetConsumed?: () => void;
   uiTheme: UiTheme;
   gitBlameInline?: boolean;
+  showBlameAnnotation?: boolean;
+  onCloseBlameAnnotation?: () => void;
+  onPreviewDiff?: (diff: PendingDiff) => void;
   /** When there is no open workspace, show the quick-start welcome screen instead of a plain hint. */
   workspace?: string | null;
   onPickLocal?: () => void;
@@ -538,6 +548,8 @@ export function EditorPane({
   onChangeContent,
   onSelectionChange,
   onCursorChange,
+  onScrollChange,
+  initialCursorPositions,
   onAddToChat,
   onOpenFile,
   previewDiff,
@@ -548,10 +560,16 @@ export function EditorPane({
   onDiscardPath,
   onRefreshGitStatus,
   onViewFileHistory,
+  onCompareWithRevision,
+  onCompareWithBranchOrTag,
+  onAnnotateGitBlame,
   revealTarget,
   onRevealTargetConsumed,
   uiTheme,
   gitBlameInline = true,
+  showBlameAnnotation = false,
+  onCloseBlameAnnotation,
+  onPreviewDiff,
   workspace,
   onPickLocal,
   onPickSsh,
@@ -596,6 +614,71 @@ export function EditorPane({
     nonce: number;
   } | null>(null);
   const monacoTheme = uiTheme === 'light' ? 'custom-light' : 'custom-dark';
+
+  // 全屏对比视图（DiffEditor）的差异块（Hunks）计数与索引状态
+  const [diffHunkIdx, setDiffHunkIdx] = useState(0);
+  const [diffHunksCount, setDiffHunksCount] = useState(0);
+  const diffEditorRef = useRef<MonacoEditor.IStandaloneDiffEditor | null>(null);
+  const diffLineChangesRef = useRef<MonacoEditor.ILineChange[]>([]);
+
+  // 预先静态计算当前对比文件的所有差异块，保证挂载前后均能即刻获取真实总数
+  const previewDiffHunks = useMemo(() => {
+    if (!previewDiff) return [];
+    try {
+      const { hunks } = computeInlineHunks(previewDiff.original || '', previewDiff.modified || '');
+      return hunks;
+    } catch {
+      return [];
+    }
+  }, [previewDiff?.original, previewDiff?.modified, previewDiff?.path]);
+
+  // 切换对比文件时重置当前差异索引
+  useEffect(() => {
+    setDiffHunkIdx(0);
+    diffLineChangesRef.current = [];
+    setDiffHunksCount(previewDiffHunks.length);
+  }, [previewDiff?.id, previewDiff?.path, previewDiffHunks.length]);
+
+  // 全屏对比视图精准跳转至指定差异块
+  const jumpToDiffHunk = useCallback(
+    (targetIndex: number) => {
+      const diffEd = diffEditorRef.current;
+      const changes = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current : previewDiffHunks;
+      const total = changes.length;
+      if (!diffEd || total === 0) return;
+
+      const clampedIdx = ((targetIndex % total) + total) % total;
+      setDiffHunkIdx(clampedIdx);
+
+      const modEd = diffEd.getModifiedEditor();
+      const origEd = diffEd.getOriginalEditor();
+
+      if (diffLineChangesRef.current.length > 0) {
+        const ch = diffLineChangesRef.current[clampedIdx];
+        const modLine =
+          ch.modifiedStartLineNumber > 0
+            ? ch.modifiedStartLineNumber
+            : Math.max(1, ch.modifiedEndLineNumber || 1);
+        const origLine =
+          ch.originalStartLineNumber > 0
+            ? ch.originalStartLineNumber
+            : Math.max(1, ch.originalEndLineNumber || 1);
+        modEd.revealLineInCenter(modLine);
+        modEd.setPosition({ lineNumber: modLine, column: 1 });
+        origEd.revealLineInCenter(origLine);
+        origEd.setPosition({ lineNumber: origLine, column: 1 });
+      } else if (previewDiffHunks[clampedIdx]) {
+        const h = previewDiffHunks[clampedIdx];
+        const modLine = h.startModLine > 0 ? h.startModLine : 1;
+        const origLine = h.startOrigLine > 0 ? h.startOrigLine : 1;
+        modEd.revealLineInCenter(modLine);
+        modEd.setPosition({ lineNumber: modLine, column: 1 });
+        origEd.revealLineInCenter(origLine);
+        origEd.setPosition({ lineNumber: origLine, column: 1 });
+      }
+    },
+    [previewDiffHunks]
+  );
 
   /**
    * 设置多光标状态下 Option+左键点击 批量平移整列光标的原生代理拦截器
@@ -677,6 +760,8 @@ export function EditorPane({
 
   const [internalBreakpoints, setInternalBreakpoints] = useState<DapBreakpoint[]>([]);
   const breakpoints = controlledBreakpoints ?? internalBreakpoints;
+  const breakpointsRef = useRef(breakpoints);
+  breakpointsRef.current = breakpoints;
 
   const [isDebugging, setIsDebugging] = useState(false);
   const [debugState, setDebugState] = useState<'running' | 'paused' | 'stopped'>('stopped');
@@ -702,6 +787,9 @@ export function EditorPane({
       return next;
     });
   }, [controlledOnToggleBreakpoint]);
+
+  const toggleBreakpointRef = useRef(toggleBreakpoint);
+  toggleBreakpointRef.current = toggleBreakpoint;
 
   // 停止调试：立即收回浮动条并联动终止后台终端进程与 DAP 会话
   const handleStopDebug = useCallback(() => {
@@ -1208,6 +1296,12 @@ export function EditorPane({
   const tocNavigatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 保存每个 md 文件的预览滚动位置，切换文件时持久化，切回时恢复
   const mdPreviewScrollCacheRef = useRef<Map<string, number>>(new Map());
+  // 保存每个代码文件的视图与滚动位置（scrollTop, scrollLeft, 光标位置），杜绝粗暴居中跳行
+  const editorScrollStateMapRef = useRef<Map<string, { scrollTop: number; scrollLeft: number; line: number; col: number }>>(new Map());
+  const editorViewStateMapRef = useRef<Map<string, MonacoEditor.ICodeEditorViewState>>(new Map());
+  // 切换文件锁定标志：在 Monaco 切换 model 期间屏蔽 reset 产生的 (1,1) 和 scrollTop=0 误写
+  const isSwitchingFileRef = useRef(false);
+  const switchFileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 用于在文件切换时读取切换前的 activePath，以便保存旧文件滚动位置
   const prevActivePathRef = useRef<string | null>(null);
 
@@ -1860,11 +1954,60 @@ export function EditorPane({
     if (findWidgetVisible) setSelectionCoords(null);
   }, [findWidgetVisible]);
 
-  // 切换文件时清空原有装饰与 diff 数据，并重置选区 AI 悬浮窗提示状态
-  // 同时保存旧文件的 md 预览滚动位置（供切回时恢复）
+  const executeRevealTargetRef = useRef(executeRevealTarget);
+  executeRevealTargetRef.current = executeRevealTarget;
+
+  const initialCursorPositionsRef = useRef(initialCursorPositions);
+  initialCursorPositionsRef.current = initialCursorPositions;
+
+  // 全局 mouseup 监听：确保鼠标在窗口内任意位置抬起时都能安全复位 isMouseDownRef，绝不卡死拖选状态
   useEffect(() => {
-    // 先保存切换前文件的预览滚动位置
+    const onGlobalMouseUp = () => {
+      isMouseDownRef.current = false;
+    };
+    window.addEventListener('mouseup', onGlobalMouseUp, true);
+    return () => {
+      window.removeEventListener('mouseup', onGlobalMouseUp, true);
+    };
+  }, []);
+
+  // 切换文件时清空原有装饰与 diff 数据，并重置选区 AI 悬浮窗提示状态
+  // 同时保存旧文件的 viewState 和滚动位置，并在切入新文件时丝滑恢复，杜绝粗暴重置或锁定光标行
+  useEffect(() => {
     const prevPath = prevActivePathRef.current;
+    const ed = editorRef.current;
+
+    // 仅在真实切换文件标签（activePath 发生改变）时执行保存旧文件与加载新文件
+    // 杜绝由于光标移动、鼠标划选导致父组件或自身重渲染时误触发 reset / setPosition 冲毁用户选区
+    if (prevPath === activePath) {
+      return;
+    }
+
+    // 1. 立即锁定切换状态，杜绝 Monaco 切换 model 期间触发默认 (1, 1) 和 scrollTop=0 冲毁数据
+    isSwitchingFileRef.current = true;
+    if (switchFileTimerRef.current) clearTimeout(switchFileTimerRef.current);
+
+    // 2. 保存切换前文件的滚动与光标位置及 viewState
+    if (ed && prevPath) {
+      try {
+        const vs = ed.saveViewState();
+        if (vs) editorViewStateMapRef.current.set(prevPath, vs);
+        const sTop = ed.getScrollTop();
+        const sLeft = ed.getScrollLeft();
+        const pos = ed.getPosition();
+        if (pos && pos.lineNumber > 0) {
+          editorScrollStateMapRef.current.set(prevPath, {
+            scrollTop: sTop,
+            scrollLeft: sLeft,
+            line: pos.lineNumber,
+            col: pos.column,
+          });
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     const previewEl = mdPreviewRef.current;
     if (prevPath && previewEl && showMdPreviewRef.current) {
       const scrollTop = previewEl.scrollTop;
@@ -1874,7 +2017,6 @@ export function EditorPane({
     }
     prevActivePathRef.current = activePath;
 
-    const ed = editorRef.current;
     if (ed) {
       decorationsRef.current = ed.deltaDecorations(decorationsRef.current, []);
     } else {
@@ -1884,6 +2026,66 @@ export function EditorPane({
     modifiedRangesRef.current = [];
     dismissedSelectionKeyRef.current = null;
     setSelectionCoords(null);
+
+    // 3. 切换到新文件时恢复其视图与滚动状态（避免死记光标居中）
+    if (activePath && ed) {
+      const restoreTarget = activePath;
+      const doRestore = () => {
+        if (!editorRef.current || activeRef.current?.path !== restoreTarget) return;
+        const currentEd = editorRef.current;
+
+        // 如果用户正在拖选代码，绝不干预选区与光标
+        if (isMouseDownRef.current) {
+          isSwitchingFileRef.current = false;
+          return;
+        }
+
+        // 如果有显式的待处理跳转目标（如搜索结果/引用跳转），则交由 executeRevealTarget 处理
+        if (pendingRevealTargetRef.current?.path === restoreTarget) {
+          executeRevealTargetRef.current(currentEd);
+          isSwitchingFileRef.current = false;
+          return;
+        }
+
+        // 优先恢复保存的 viewState
+        const vs = editorViewStateMapRef.current.get(restoreTarget);
+        if (vs) {
+          try {
+            currentEd.restoreViewState(vs);
+          } catch {
+            // ignore
+          }
+        }
+
+        // 恢复精确滚动条与光标位置，绝不强制调用 revealLineInCenter！
+        const saved = editorScrollStateMapRef.current.get(restoreTarget) ?? initialCursorPositionsRef.current?.[restoreTarget];
+        if (saved) {
+          if (typeof saved.scrollTop === 'number' && saved.scrollTop >= 0) {
+            currentEd.setScrollTop(saved.scrollTop);
+          }
+          if (typeof saved.scrollLeft === 'number' && saved.scrollLeft >= 0) {
+            currentEd.setScrollLeft(saved.scrollLeft);
+          }
+          // 仅当没有 viewState 时才使用 setPosition，避免覆盖 viewState 中完整的选区与多光标
+          if (!vs && typeof saved.line === 'number' && saved.line > 0) {
+            currentEd.setPosition({ lineNumber: saved.line, column: saved.col ?? 1 });
+          }
+        }
+
+        // 恢复完成后解除锁定，恢复正常监听
+        switchFileTimerRef.current = setTimeout(() => {
+          isSwitchingFileRef.current = false;
+        }, 80);
+      };
+
+      // 第一帧与第二帧双重保障，确保 Monaco Model 已经就绪
+      requestAnimationFrame(() => {
+        doRestore();
+        setTimeout(doRestore, 30);
+      });
+    } else {
+      isSwitchingFileRef.current = false;
+    }
   }, [activePath]);
 
   // Apply git decorations (gutter indicators & overview ruler) from diff data
@@ -1927,7 +2129,6 @@ export function EditorPane({
         options: {
           isWholeLine: true,
           linesDecorationsClassName: `git-gutter-${diff.type}`,
-          glyphMarginClassName: 'git-gutter-glyph',
           overviewRuler: {
             color: diffColor,
             position: 1, // OverviewRulerLane.Left: 占滚动条左侧 1/3 宽度，纤细清晰
@@ -2905,6 +3106,110 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
     const currentIndex = modifiedFiles.findIndex((e) => e.path === previewDiff.path);
     const displayIndex = currentIndex !== -1 ? currentIndex + 1 : 1;
 
+    const originalLines = (previewDiff.original || '').split('\n').length;
+    const modifiedLines = (previewDiff.modified || '').split('\n').length;
+
+    let leftTitle = previewDiff.originalTitle || '';
+    let rightTitle = previewDiff.modifiedTitle || '';
+    let leftBadge = {
+      text: 'HEAD',
+      bg: 'color-mix(in srgb, var(--accent, #007acc) 16%, transparent)',
+      color: 'var(--accent-light, #3794ff)',
+      border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
+    };
+    let rightBadge = {
+      text: '当前',
+      bg: 'rgba(34, 197, 94, 0.16)',
+      color: '#4ade80',
+      border: 'rgba(34, 197, 94, 0.3)',
+    };
+
+    const id = previewDiff.id || '';
+    const desc = previewDiff.description || '';
+
+    if (id.startsWith('git:ref:')) {
+      const parts = id.split(':');
+      const targetRef = parts[2] || '';
+      const isRemote = targetRef.startsWith('origin/') || targetRef.includes('/');
+      if (isRemote) {
+        leftBadge = {
+          text: '远程',
+          bg: 'rgba(167, 139, 250, 0.16)',
+          color: '#c084fc',
+          border: 'rgba(167, 139, 250, 0.3)',
+        };
+        leftTitle = targetRef;
+      } else {
+        leftBadge = {
+          text: '分支',
+          bg: 'color-mix(in srgb, var(--accent, #007acc) 16%, transparent)',
+          color: 'var(--accent-light, #3794ff)',
+          border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
+        };
+        leftTitle = targetRef;
+      }
+      if (!rightTitle) rightTitle = '当前工作区 (本地版本)';
+    } else if (id.startsWith('git:rev:') || id.startsWith('git:commit:')) {
+      const parts = id.split(':');
+      const hash = parts[2] || '';
+      const shortHash = hash.slice(0, 7);
+      leftBadge = {
+        text: '版本',
+        bg: 'color-mix(in srgb, var(--accent, #007acc) 16%, transparent)',
+        color: 'var(--accent-light, #3794ff)',
+        border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
+      };
+      leftTitle = `提交 ${shortHash}`;
+      if (!rightTitle) rightTitle = '当前工作区 (本地版本)';
+    } else if (desc.includes('↔')) {
+      const [l, r] = desc.split('↔');
+      const cleanL = l.replace(/[「」]/g, '').trim();
+      const cleanR = r.replace(/\([^)]*\)/g, '').trim();
+      leftTitle = cleanL;
+      rightTitle = cleanR || '当前工作区 (本地版本)';
+      if (cleanL.includes('origin/') || cleanL.includes('远程')) {
+        leftBadge = {
+          text: '远程',
+          bg: 'rgba(167, 139, 250, 0.16)',
+          color: '#c084fc',
+          border: 'rgba(167, 139, 250, 0.3)',
+        };
+      } else if (cleanL.includes('提交') || cleanL.includes('版本')) {
+        leftBadge = {
+          text: '版本',
+          bg: 'color-mix(in srgb, var(--accent, #007acc) 16%, transparent)',
+          color: 'var(--accent-light, #3794ff)',
+          border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
+        };
+      }
+    } else if (id.startsWith('staged:')) {
+      leftBadge = {
+        text: 'HEAD',
+        bg: 'color-mix(in srgb, var(--accent, #007acc) 16%, transparent)',
+        color: 'var(--accent-light, #3794ff)',
+        border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
+      };
+      leftTitle = '版本库基准 (HEAD)';
+      rightBadge = {
+        text: '暂存区',
+        bg: 'rgba(56, 189, 248, 0.16)',
+        color: '#38bdf8',
+        border: 'rgba(56, 189, 248, 0.3)',
+      };
+      rightTitle = '已暂存更改 (Index)';
+    } else {
+      if (!leftTitle) leftTitle = '最新提交 (HEAD)';
+      if (!rightTitle) rightTitle = '当前工作区 (未提交更改)';
+    }
+
+    const totalHunks =
+      diffLineChangesRef.current.length > 0
+        ? diffLineChangesRef.current.length
+        : diffHunksCount > 0
+          ? diffHunksCount
+          : previewDiffHunks.length;
+    const currentHunkDisplay = totalHunks > 0 ? Math.min(diffHunkIdx + 1, totalHunks) : 0;
+
     return (
       <div className="editor-area">
         <div
@@ -2922,180 +3227,200 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             boxSizing: 'border-box',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-            <span style={{ fontWeight: 600, color: 'var(--text)' }}>{currentFileName}</span>
-            <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-              Git 本地更改(工作树) - 第 {displayIndex} 个更改(共 {totalDiffs} 个)
+          {/* 左侧区域：文件名 + 对比版本描述 + 总差异数徽标 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflow: 'hidden' }}>
+            <span style={{ fontWeight: 600, color: 'var(--text)', flexShrink: 0 }}>{currentFileName}</span>
+            <span
+              style={{
+                color: 'var(--muted)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={previewDiff.description || `Git 本地更改(工作树)`}
+            >
+              {previewDiff.description || `Git 本地更改(工作树)`}
+            </span>
+            <span
+              style={{
+                fontSize: 10.5,
+                fontWeight: 600,
+                padding: '1.5px 7px',
+                borderRadius: 10,
+                background: totalHunks > 0 ? 'color-mix(in srgb, var(--accent, #007acc) 14%, transparent)' : 'rgba(255, 255, 255, 0.05)',
+                color: totalHunks > 0 ? 'var(--accent-light, #3794ff)' : 'var(--muted)',
+                border: `1px solid ${totalHunks > 0 ? 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)' : 'var(--border)'}`,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                letterSpacing: '0.02em',
+              }}
+            >
+              共 {totalHunks} 处差异
             </span>
           </div>
 
+          {/* 右侧操作按钮组：第几个差异指示 + 上一个/下一个差异箭头 + 跨文件切换 + 暂存/放弃/关闭 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-            {/* 1. Stage button + */}
-            <button
-              type="button"
-              title="暂存更改"
-              onClick={async () => {
-                await window.ide.gitStage([previewDiff.path]);
-                onRefreshGitStatus?.();
-              }}
+            {/* 差异状态定位指示：第 X / Y 个差异 */}
+            <div
               style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--muted)',
-                cursor: 'pointer',
-                padding: 4,
-                borderRadius: 4,
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                justifyContent: 'center',
+                padding: '2px 8px',
+                borderRadius: 5,
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid var(--border)',
+                fontSize: 11.5,
+                fontFamily: 'ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Monaco, monospace',
+                color: totalHunks > 0 ? 'var(--text)' : 'var(--muted)',
+                whiteSpace: 'nowrap',
+                userSelect: 'none',
+                marginRight: 2,
               }}
-              className="icon-btn"
+              title={
+                totalHunks > 0
+                  ? `当前位于第 ${currentHunkDisplay} 处差异 (共 ${totalHunks} 处)，快捷键: F5 下一个，Shift+F5 上一个`
+                  : '当前文件与目标版本内容完全一致，无差异'
+              }
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
+              {totalHunks > 0 ? (
+                <span>
+                  第{' '}
+                  <strong style={{ color: 'var(--accent-light, #3794ff)', fontWeight: 700 }}>
+                    {currentHunkDisplay}
+                  </strong>{' '}
+                  / {totalHunks} 个差异
+                </span>
+              ) : (
+                <span>无差异</span>
+              )}
+            </div>
 
-            {/* 2. Discard button ⟲ */}
+            {/* 上一个差异 ↑ */}
             <button
               type="button"
-              title="放弃更改"
+              className="panel-action-btn"
+              title={
+                totalHunks > 0
+                  ? `上一个差异 (跳转至第 ${((diffHunkIdx - 1 + totalHunks) % totalHunks) + 1}/${totalHunks} 处，快捷键: Shift+F5 或 ⌥F5)`
+                  : '上一个差异 (当前无差异)'
+              }
+              disabled={totalHunks === 0}
               onClick={() => {
-                onDiscardPath?.(previewDiff.path);
-              }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--muted)',
-                cursor: 'pointer',
-                padding: 4,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              className="icon-btn"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-              </svg>
-            </button>
-
-            {/* 3. Next diff ↓ */}
-            <button
-              type="button"
-              title="下一个更改"
-              onClick={() => {
-                if (modifiedFiles.length > 0) {
-                  const nextIdx = (currentIndex + 1) % modifiedFiles.length;
-                  onPreviewGitDiff?.(modifiedFiles[nextIdx].path);
+                if (totalHunks > 0) {
+                  jumpToDiffHunk(diffHunkIdx - 1);
                 }
               }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--muted)',
-                cursor: 'pointer',
-                padding: 4,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              className="icon-btn"
+              style={totalHunks === 0 ? { opacity: 0.35, cursor: 'not-allowed' } : undefined}
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <polyline points="19 12 12 19 5 12" />
-              </svg>
-            </button>
-
-            {/* 4. Previous diff ↑ */}
-            <button
-              type="button"
-              title="上一个更改"
-              onClick={() => {
-                if (modifiedFiles.length > 0) {
-                  const prevIdx = (currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length;
-                  onPreviewGitDiff?.(modifiedFiles[prevIdx].path);
-                }
-              }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--muted)',
-                cursor: 'pointer',
-                padding: 4,
-                borderRadius: 4,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              className="icon-btn"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="19" x2="12" y2="5" />
                 <polyline points="5 12 12 5 19 12" />
               </svg>
             </button>
 
-            {/* 5. Close ✕ */}
+            {/* 下一个差异 ↓ */}
+            <button
+              type="button"
+              className="panel-action-btn"
+              title={
+                totalHunks > 0
+                  ? `下一个差异 (跳转至第 ${((diffHunkIdx + 1) % totalHunks) + 1}/${totalHunks} 处，快捷键: F5)`
+                  : '下一个差异 (当前无差异)'
+              }
+              disabled={totalHunks === 0}
+              onClick={() => {
+                if (totalHunks > 0) {
+                  jumpToDiffHunk(diffHunkIdx + 1);
+                }
+              }}
+              style={totalHunks === 0 ? { opacity: 0.35, cursor: 'not-allowed' } : undefined}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <polyline points="19 12 12 19 5 12" />
+              </svg>
+            </button>
+
+            {/* 当存在多个修改文件时，支持跨文件切换 */}
+            {modifiedFiles.length > 1 && (
+              <>
+                <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
+                <button
+                  type="button"
+                  className="panel-action-btn"
+                  title={`上一个修改文件 (${displayIndex > 1 ? displayIndex - 1 : modifiedFiles.length}/${modifiedFiles.length}: ${modifiedFiles[(currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length]?.path.split('/').pop()})`}
+                  onClick={() => {
+                    const prevIdx = (currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length;
+                    onPreviewGitDiff?.(modifiedFiles[prevIdx].path);
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="panel-action-btn"
+                  title={`下一个修改文件 (${displayIndex < modifiedFiles.length ? displayIndex + 1 : 1}/${modifiedFiles.length}: ${modifiedFiles[(currentIndex + 1) % modifiedFiles.length]?.path.split('/').pop()})`}
+                  onClick={() => {
+                    const nextIdx = (currentIndex + 1) % modifiedFiles.length;
+                    onPreviewGitDiff?.(modifiedFiles[nextIdx].path);
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </button>
+              </>
+            )}
+
+            <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
+
+            {/* 1. Stage button + (暂存更改，仅在本地未暂存更改时显示) */}
+            {!id.startsWith('git:ref:') && !id.startsWith('git:rev:') && !id.startsWith('staged:') && (
+              <button
+                type="button"
+                className="panel-action-btn"
+                title="暂存文件更改"
+                onClick={async () => {
+                  await window.ide.gitStage([previewDiff.path]);
+                  onRefreshGitStatus?.();
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+            )}
+
+            {/* 2. Discard button ⟲ (放弃更改，仅在本地工作树改动时显示) */}
+            {!id.startsWith('git:ref:') && !id.startsWith('git:rev:') && onDiscardPath && (
+              <button
+                type="button"
+                className="panel-action-btn"
+                title="放弃更改 (还原文件)"
+                onClick={() => {
+                  onDiscardPath?.(previewDiff.path);
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
+              </button>
+            )}
+
+            {/* 3. Close ✕ */}
             {onCloseDiff && (
               <button
                 type="button"
-                title="关闭预览 (Esc)"
+                className="panel-action-btn"
+                title="关闭对比视图 (Esc)"
                 onClick={onCloseDiff}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--muted)',
-                  cursor: 'pointer',
-                  padding: 4,
-                  borderRadius: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-                className="icon-btn"
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -3103,6 +3428,116 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             )}
           </div>
         </div>
+
+        {/* ── 对齐 IDEA 规范：左右分栏分别清晰标注 [远程]/[版本]/[HEAD] 与 [当前] 标识 ── */}
+        <div
+          className="diff-panes-header-bar"
+          style={{
+            height: 28,
+            boxSizing: 'border-box',
+            display: 'flex',
+            alignItems: 'stretch',
+            borderBottom: '1px solid var(--border)',
+            background: 'rgba(0, 0, 0, 0.22)',
+            fontSize: 11.5,
+            userSelect: 'none',
+            flexShrink: 0,
+          }}
+        >
+          {/* 左侧窗格标识：远程 / 版本 / HEAD */}
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 12px',
+              borderRight: '1px solid var(--border)',
+              background: 'rgba(255, 255, 255, 0.01)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  borderRadius: 4,
+                  background: leftBadge.bg,
+                  color: leftBadge.color,
+                  border: `1px solid ${leftBadge.border}`,
+                  letterSpacing: '0.02em',
+                  flexShrink: 0,
+                }}
+              >
+                {leftBadge.text}
+              </span>
+              <span
+                style={{
+                  color: 'var(--text)',
+                  fontWeight: 500,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={leftTitle}
+              >
+                {leftTitle}
+              </span>
+            </div>
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', flexShrink: 0, marginLeft: 8 }}>
+              {originalLines} 行
+            </span>
+          </div>
+
+          {/* 右侧窗格标识：当前工作区 / 本地版本 */}
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '0 12px',
+              background: 'rgba(255, 255, 255, 0.01)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: '1px 5px',
+                  borderRadius: 4,
+                  background: rightBadge.bg,
+                  color: rightBadge.color,
+                  border: `1px solid ${rightBadge.border}`,
+                  letterSpacing: '0.02em',
+                  flexShrink: 0,
+                }}
+              >
+                {rightBadge.text}
+              </span>
+              <span
+                style={{
+                  color: 'var(--text)',
+                  fontWeight: 500,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={rightTitle}
+              >
+                {rightTitle}
+              </span>
+            </div>
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', flexShrink: 0, marginLeft: 8 }}>
+              {modifiedLines} 行
+            </span>
+          </div>
+        </div>
+
         <div className="editor-fill">
           <DiffEditor
             original={previewDiff.original}
@@ -3110,16 +3545,77 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             language={lang}
             theme={monacoTheme}
             onMount={(diffEd) => {
-              setupEditorKeybindings(diffEd.getModifiedEditor());
-              setupEditorKeybindings(diffEd.getOriginalEditor());
-              setTimeout(() => {
-                const changes = diffEd.getLineChanges();
-                if (changes && changes.length > 0) {
-                  const line =
-                    changes[0].modifiedStartLineNumber || changes[0].originalStartLineNumber || 1;
-                  diffEd.getModifiedEditor().revealLineInCenter(line);
+              diffEditorRef.current = diffEd;
+              const modEd = diffEd.getModifiedEditor();
+              const origEd = diffEd.getOriginalEditor();
+              setupEditorKeybindings(modEd);
+              setupEditorKeybindings(origEd);
+
+              const updateDiffStats = () => {
+                const changes = diffEd.getLineChanges() || [];
+                diffLineChangesRef.current = changes;
+                setDiffHunksCount(changes.length);
+              };
+
+              diffEd.onDidUpdateDiff(updateDiffStats);
+              updateDiffStats();
+
+              // 监听光标行号，实时更新当前位于第几个差异
+              modEd.onDidChangeCursorPosition((e) => {
+                const line = e.position.lineNumber;
+                const changes = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current : previewDiffHunks;
+                if (!changes || changes.length === 0) return;
+                for (let i = 0; i < changes.length; i++) {
+                  const ch = changes[i] as any;
+                  const start = ch.modifiedStartLineNumber ?? ch.startModLine;
+                  const end = ch.modifiedEndLineNumber ?? ch.endModLine ?? start;
+                  if (line >= start && line <= Math.max(start, end)) {
+                    setDiffHunkIdx(i);
+                    break;
+                  }
                 }
-              }, 150);
+              });
+
+              // 快捷键支持：F5/F7 (下一个差异)，Shift+F5/Shift+F7 (上一个差异)
+              [modEd, origEd].forEach((ed) => {
+                ed.addCommand(monaco.KeyCode.F5, () => {
+                  setDiffHunkIdx((prev) => {
+                    const total = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current.length : previewDiffHunks.length;
+                    const next = total > 0 ? (prev + 1) % total : 0;
+                    jumpToDiffHunk(next);
+                    return next;
+                  });
+                });
+                ed.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F5, () => {
+                  setDiffHunkIdx((prev) => {
+                    const total = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current.length : previewDiffHunks.length;
+                    const next = total > 0 ? (prev - 1 + total) % total : 0;
+                    jumpToDiffHunk(next);
+                    return next;
+                  });
+                });
+                ed.addCommand(monaco.KeyCode.F7, () => {
+                  setDiffHunkIdx((prev) => {
+                    const total = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current.length : previewDiffHunks.length;
+                    const next = total > 0 ? (prev + 1) % total : 0;
+                    jumpToDiffHunk(next);
+                    return next;
+                  });
+                });
+                ed.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F7, () => {
+                  setDiffHunkIdx((prev) => {
+                    const total = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current.length : previewDiffHunks.length;
+                    const next = total > 0 ? (prev - 1 + total) % total : 0;
+                    jumpToDiffHunk(next);
+                    return next;
+                  });
+                });
+              });
+
+              setTimeout(() => {
+                updateDiffStats();
+                jumpToDiffHunk(0);
+              }, 120);
             }}
             options={{
               readOnly: true,
@@ -3167,9 +3663,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           title={onNewUntitled ? '双击空白处新建文本文件' : undefined}
         >
           {tabs.map((tab) => {
-            const fileName = isUntitledPath(tab.path)
+            const fileName = tab.title || (isUntitledPath(tab.path)
               ? untitledTabLabel(tab.path)
-              : tab.path.split('/').pop() || tab.path;
+              : tab.path.split('/').pop() || tab.path);
             const gitMeta = getTabGitMeta(tab.path, gitStatus?.entries);
             const isActive = tab.path === activePath;
             return (
@@ -3188,10 +3684,29 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   });
                 }}
               >
-                <RenderFileTreeIcon name={fileName} isDirectory={false} />
+                <RenderFileTreeIcon
+                  name={fileName}
+                  isDirectory={false}
+                  contentSnippet={tab.content ? tab.content.slice(0, 1000) : undefined}
+                />
                 <span className="tab-title" style={{ color: gitMeta?.color }}>
                   {fileName}
                 </span>
+                {tab.readOnly && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: 'var(--muted)',
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                      marginLeft: 4,
+                    }}
+                    title="只读版本"
+                  >
+                    只读
+                  </span>
+                )}
                 {gitMeta?.label && (
                   <span
                     className="tab-git-badge"
@@ -3886,7 +4401,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       }
                     }
                   });
-                  // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，排除代码折叠按钮
+                  // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，支持随时点击行号及左侧区域打断点
                   ed.onMouseDown((e) => {
                     if (e.event) {
                       const b = e.event.browserEvent;
@@ -3901,6 +4416,21 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     isMouseDownRef.current = true;
                     setSelectionCoords(null);
                     const el = e.target.element as HTMLElement | null;
+                    const curPath = activeRef.current?.path ?? activePath;
+
+                    // 1. 支持直接点击吸顶粘性滚动条 (Sticky Scroll) 上的行号或左侧区域打断点
+                    const stickyLineEl = el?.closest('.sticky-line-number') ?? el?.closest('.sticky-widget-line-numbers')?.querySelector('.sticky-line-number');
+                    if (stickyLineEl && curPath) {
+                      const innerNode = stickyLineEl.querySelector('.sticky-line-number-inner') || stickyLineEl;
+                      const stickyText = innerNode?.textContent?.trim();
+                      const stickyLine = stickyText ? parseInt(stickyText, 10) : null;
+                      if (stickyLine && !isNaN(stickyLine)) {
+                        e.event?.preventDefault?.();
+                        toggleBreakpointRef.current(curPath, stickyLine);
+                        return;
+                      }
+                    }
+
                     const isGitGutterEl = !!el?.closest('[class*="git-gutter"]');
                     const isFoldingEl = !!el?.closest(
                       '[class*="codicon-folding"], [class*="folding"], [class*="codicon-chevron"], .inline-folded',
@@ -3909,27 +4439,29 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     if (isFoldingEl && !isGitGutterEl) {
                       return;
                     }
-                    // 左侧装订线区域（type 4 行装饰 / type 3 行号 / type 2 字形边距）或直接命中 git-gutter 元素
-                    if (
-                      e.target.type === 4 ||
-                      e.target.type === 3 ||
-                      e.target.type === 2 ||
-                      isGitGutterEl
-                    ) {
-                      const line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
-                      const isGutterClick = e.target.type === 2 || e.target.type === 3 || e.target.type === 4;
 
-                      // 若直接点击在 Git Gutter 色条元素上且该行有修改，则优先打开内联 Git Diff
-                      if (isGitGutterEl && line && modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)) {
-                        setGitInlineDiffLine(line);
-                        return;
+                    // 区分字形边距（行号左侧断点区 type 2 / .cgmr）与行装饰区（Git 差异色条区 type 4 / .line-decorations）：
+                    const isGlyphMarginClick = e.target.type === 2 || !!el?.closest('.debug-breakpoint-glyph, .cgmr, .glyph-margin');
+                    const isLineNumberClick = e.target.type === 3 || !!el?.closest('.line-numbers');
+                    const isGutterClick = isGlyphMarginClick || isLineNumberClick || e.target.type === 4 || isGitGutterEl;
+
+                    if (isGutterClick) {
+                      let line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
+                      if (!line && e.event) {
+                        const b = e.event.browserEvent;
+                        const clientY = b?.clientY ?? e.event.posy;
+                        const clientX = b?.clientX ?? e.event.posx;
+                        try {
+                          const target = ed.getTargetAtClientPoint(clientX, clientY);
+                          line = target?.position?.lineNumber ?? target?.range?.startLineNumber;
+                        } catch {}
                       }
 
-                      // 行号区或装订线点击：无论调试中还是调试前，均支持随时打上/取消红点断点
-                      if (isGutterClick && line && active?.path) {
+                      // 行号区或字形边距点击：无论调试中还是调试前，均绝对优先打上/取消红点断点
+                      if ((isGlyphMarginClick || isLineNumberClick) && line && curPath) {
                         if (e.event.rightButton) {
                           e.event.preventDefault();
-                          const existingBp = breakpoints.find((b) => b.path === active.path && b.line === line);
+                          const existingBp = breakpointsRef.current.find((b) => b.path === curPath && b.line === line);
                           const promptMsg = existingBp
                             ? `编辑第 ${line} 行条件断点表达式（留空则转为普通断点，点击取消不修改）:`
                             : `为第 ${line} 行设置条件断点表达式（例如: i > 10 或 ptr != nullptr）:`;
@@ -3937,15 +4469,21 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                           const cond = window.prompt(promptMsg, defaultVal);
                           if (cond !== null) {
                             if (existingBp) {
-                              toggleBreakpoint(active.path, line);
-                              toggleBreakpoint(active.path, line, cond);
+                              toggleBreakpointRef.current(curPath, line);
+                              toggleBreakpointRef.current(curPath, line, cond);
                             } else {
-                              toggleBreakpoint(active.path, line, cond);
+                              toggleBreakpointRef.current(curPath, line, cond);
                             }
                           }
                           return;
                         }
-                        toggleBreakpoint(active.path, line);
+                        toggleBreakpointRef.current(curPath, line);
+                        return;
+                      }
+
+                      // 若直接点击在 Git Gutter 色条元素上且该行有修改，则打开内联 Git Diff
+                      if (isGitGutterEl && line && modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)) {
+                        setGitInlineDiffLine(line);
                         return;
                       }
                     }
@@ -4239,19 +4777,29 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             </div>
           </div>
         ) : active ? (
-          active.isLargeFile ? (
-            <div className="large-file-placeholder">
-              <div className="large-file-icon">📄</div>
-              <div className="large-file-title">{active.path.split('/').pop() || active.path}</div>
-              <div className="large-file-hint">
-                文件较大（&gt;2MB），为避免编辑器卡顿未加载全文。可直接运行终端/搜索或让 Agent
-                按行读取。
-              </div>
-            </div>
-          ) : (
-            <Editor
-              path={active.path}
-              value={active.content}
+          <div style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
+            {showBlameAnnotation && !active.isLargeFile && (
+              <GitBlameAnnotationGutter
+                filePath={active.path}
+                editor={editorRef.current}
+                onClose={onCloseBlameAnnotation ?? (() => {})}
+                onPreviewDiff={(d) => onPreviewDiff?.(d as PendingDiff)}
+              />
+            )}
+            <div style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
+              {active.isLargeFile ? (
+                <div className="large-file-placeholder">
+                  <div className="large-file-icon">📄</div>
+                  <div className="large-file-title">{active.path.split('/').pop() || active.path}</div>
+                  <div className="large-file-hint">
+                    文件较大（&gt;2MB），为避免编辑器卡顿未加载全文。可直接运行终端/搜索或让 Agent
+                    按行读取。
+                  </div>
+                </div>
+              ) : (
+                <Editor
+                  path={active.path}
+                  value={active.content}
               language={activeLanguage}
               theme={monacoTheme}
               onChange={(v) => {
@@ -4273,6 +4821,25 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   // ignore
                 }
                 setupEditorKeybindings(ed);
+                const curP = activeRef.current?.path;
+                if (curP) {
+                  const vs = editorViewStateMapRef.current.get(curP);
+                  if (vs) {
+                    try { ed.restoreViewState(vs); } catch { /* ignore */ }
+                  }
+                  const saved = editorScrollStateMapRef.current.get(curP) ?? initialCursorPositionsRef.current?.[curP];
+                  if (saved) {
+                    if (typeof saved.scrollTop === 'number' && saved.scrollTop >= 0) {
+                      ed.setScrollTop(saved.scrollTop);
+                    }
+                    if (typeof saved.scrollLeft === 'number' && saved.scrollLeft >= 0) {
+                      ed.setScrollLeft(saved.scrollLeft);
+                    }
+                    if (!vs && typeof saved.line === 'number' && saved.line > 0) {
+                      ed.setPosition({ lineNumber: saved.line, column: saved.col ?? 1 });
+                    }
+                  }
+                }
                 const cmdClickGesture = setupCmdClickGesture(ed, {
                   getWorkspaceRoot: () => workspace,
                   onOpenFile: (targetPath, line, col) => {
@@ -4297,7 +4864,16 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     updateSelectionAndCoords(ed);
                   }
                 });
-                ed.onDidScrollChange(() => {
+                ed.onDidScrollChange((e) => {
+                  if (isSwitchingFileRef.current) return;
+                  const curActiveP = activeRef.current?.path;
+                  if (curActiveP) {
+                    const existing = editorScrollStateMapRef.current.get(curActiveP) || { line: 1, col: 1, scrollTop: 0, scrollLeft: 0 };
+                    existing.scrollTop = e.scrollTop;
+                    existing.scrollLeft = e.scrollLeft;
+                    editorScrollStateMapRef.current.set(curActiveP, existing);
+                    onScrollChange?.(curActiveP, e.scrollTop, e.scrollLeft);
+                  }
                   const sel = ed.getSelection();
                   if (sel && !sel.isEmpty()) {
                     dismissedSelectionKeyRef.current = `${sel.startLineNumber}:${sel.startColumn}-${sel.endLineNumber}:${sel.endColumn}`;
@@ -4305,11 +4881,44 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   setSelectionCoords(null);
                 });
                 ed.onDidChangeCursorPosition((e) => {
+                  if (isSwitchingFileRef.current) return;
+                  const curActiveP = activeRef.current?.path;
+                  if (curActiveP) {
+                    const existing = editorScrollStateMapRef.current.get(curActiveP) || { line: 1, col: 1, scrollTop: 0, scrollLeft: 0 };
+                    existing.line = e.position.lineNumber;
+                    existing.col = e.position.column;
+                    editorScrollStateMapRef.current.set(curActiveP, existing);
+                  }
                   onCursorChange?.(e.position.lineNumber, e.position.column);
                   updateGitBlameRef.current(e.position.lineNumber);
                   trackCursorJump(activeRef.current?.path, e.position.lineNumber, e.position.column);
                 });
-                // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，排除代码折叠按钮
+                ed.onDidChangeModel((e) => {
+                  if (!e.newModelUrl) return;
+                  const curActiveP = activeRef.current?.path;
+                  if (!curActiveP) return;
+                  const vs = editorViewStateMapRef.current.get(curActiveP);
+                  if (vs) {
+                    try { ed.restoreViewState(vs); } catch { /* ignore */ }
+                  }
+                  const saved = editorScrollStateMapRef.current.get(curActiveP) ?? initialCursorPositionsRef.current?.[curActiveP];
+                  if (saved) {
+                    if (typeof saved.scrollTop === 'number' && saved.scrollTop >= 0) {
+                      ed.setScrollTop(saved.scrollTop);
+                    }
+                    if (typeof saved.scrollLeft === 'number' && saved.scrollLeft >= 0) {
+                      ed.setScrollLeft(saved.scrollLeft);
+                    }
+                    if (!vs && typeof saved.line === 'number' && saved.line > 0) {
+                      ed.setPosition({ lineNumber: saved.line, column: saved.col ?? 1 });
+                    }
+                  }
+                  if (switchFileTimerRef.current) clearTimeout(switchFileTimerRef.current);
+                  switchFileTimerRef.current = setTimeout(() => {
+                    isSwitchingFileRef.current = false;
+                  }, 80);
+                });
+                // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，支持随时点击行号及左侧区域打断点
                 ed.onMouseDown((e) => {
                   if (e.event) {
                     const b = e.event.browserEvent;
@@ -4324,6 +4933,21 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   isMouseDownRef.current = true;
                   setSelectionCoords(null);
                   const el = e.target.element as HTMLElement | null;
+                  const curPath = activeRef.current?.path ?? activePath;
+
+                  // 1. 支持直接点击吸顶粘性滚动条 (Sticky Scroll) 上的行号或左侧区域打断点
+                  const stickyLineEl = el?.closest('.sticky-line-number') ?? el?.closest('.sticky-widget-line-numbers')?.querySelector('.sticky-line-number');
+                  if (stickyLineEl && curPath) {
+                    const innerNode = stickyLineEl.querySelector('.sticky-line-number-inner') || stickyLineEl;
+                    const stickyText = innerNode?.textContent?.trim();
+                    const stickyLine = stickyText ? parseInt(stickyText, 10) : null;
+                    if (stickyLine && !isNaN(stickyLine)) {
+                      e.event?.preventDefault?.();
+                      toggleBreakpointRef.current(curPath, stickyLine);
+                      return;
+                    }
+                  }
+
                   const isGitGutterEl = !!el?.closest('[class*="git-gutter"]');
                   const isFoldingEl = !!el?.closest(
                     '[class*="codicon-folding"], [class*="folding"], [class*="codicon-chevron"], .inline-folded',
@@ -4332,27 +4956,29 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   if (isFoldingEl && !isGitGutterEl) {
                     return;
                   }
-                  // 左侧装订线区域（type 4 行装饰 / type 3 行号 / type 2 字形边距）或直接命中 git-gutter 元素
-                  if (
-                    e.target.type === 4 ||
-                    e.target.type === 3 ||
-                    e.target.type === 2 ||
-                    isGitGutterEl
-                  ) {
-                    const line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
-                    const isGutterClick = e.target.type === 2 || e.target.type === 3 || e.target.type === 4;
 
-                    // 若直接点击在 Git Gutter 色条元素上且该行有修改，则优先打开内联 Git Diff
-                    if (isGitGutterEl && line && modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)) {
-                      setGitInlineDiffLine(line);
-                      return;
+                  // 区分字形边距（行号左侧断点区 type 2 / .cgmr）与行装饰区（Git 差异色条区 type 4 / .line-decorations）：
+                  const isGlyphMarginClick = e.target.type === 2 || !!el?.closest('.debug-breakpoint-glyph, .cgmr, .glyph-margin');
+                  const isLineNumberClick = e.target.type === 3 || !!el?.closest('.line-numbers');
+                  const isGutterClick = isGlyphMarginClick || isLineNumberClick || e.target.type === 4 || isGitGutterEl;
+
+                  if (isGutterClick) {
+                    let line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
+                    if (!line && e.event) {
+                      const b = e.event.browserEvent;
+                      const clientY = b?.clientY ?? e.event.posy;
+                      const clientX = b?.clientX ?? e.event.posx;
+                      try {
+                        const target = ed.getTargetAtClientPoint(clientX, clientY);
+                        line = target?.position?.lineNumber ?? target?.range?.startLineNumber;
+                      } catch {}
                     }
 
-                    // 行号区或装订线点击：无论调试中还是调试前，均支持随时打上/取消红点断点
-                    if (isGutterClick && line && active?.path) {
+                    // 行号区或字形边距点击：无论调试中还是调试前，均绝对优先打上/取消红点断点
+                    if ((isGlyphMarginClick || isLineNumberClick) && line && curPath) {
                       if (e.event.rightButton) {
                         e.event.preventDefault();
-                        const existingBp = breakpoints.find((b) => b.path === active.path && b.line === line);
+                        const existingBp = breakpointsRef.current.find((b) => b.path === curPath && b.line === line);
                         const promptMsg = existingBp
                           ? `编辑第 ${line} 行条件断点表达式（留空则转为普通断点，点击取消不修改）:`
                           : `为第 ${line} 行设置条件断点表达式（例如: i > 10 或 ptr != nullptr）:`;
@@ -4360,15 +4986,21 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                         const cond = window.prompt(promptMsg, defaultVal);
                         if (cond !== null) {
                           if (existingBp) {
-                            toggleBreakpoint(active.path, line);
-                            toggleBreakpoint(active.path, line, cond);
+                            toggleBreakpointRef.current(curPath, line);
+                            toggleBreakpointRef.current(curPath, line, cond);
                           } else {
-                            toggleBreakpoint(active.path, line, cond);
+                            toggleBreakpointRef.current(curPath, line, cond);
                           }
                         }
                         return;
                       }
-                      toggleBreakpoint(active.path, line);
+                      toggleBreakpointRef.current(curPath, line);
+                      return;
+                    }
+
+                    // 若直接点击在 Git Gutter 色条元素上且该行有修改，则打开内联 Git Diff
+                    if (isGitGutterEl && line && modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)) {
+                      setGitInlineDiffLine(line);
                       return;
                     }
                   }
@@ -4393,6 +5025,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 executeRevealTarget(ed);
               }}
               options={{
+                readOnly: active.readOnly ?? false,
                 fontSize: 13,
                 find: COMMON_FIND_OPTIONS,
                 inlineSuggest: { enabled: true },
@@ -4442,8 +5075,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 },
               }}
             />
-          )
-        ) : !workspace ? (
+          )}
+        </div>
+      </div>
+    ) : !workspace ? (
           <WelcomeView
             onPickLocal={() => onPickLocal?.()}
             onPickSsh={() => onPickSsh?.()}
@@ -5051,6 +5686,42 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 onClick={() => {
                   const target = contextMenu.targetPath;
                   setContextMenu(null);
+                  onCompareWithRevision?.(target);
+                }}
+              >
+                <div className="menu-item-left">
+                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                    <line x1="12" y1="4" x2="12" y2="20" />
+                  </svg>
+                  <span>与历史版本对比 (Compare with Revision)</span>
+                </div>
+              </div>
+
+              <div
+                className="menu-item"
+                onClick={() => {
+                  const target = contextMenu.targetPath;
+                  setContextMenu(null);
+                  onCompareWithBranchOrTag?.(target);
+                }}
+              >
+                <div className="menu-item-left">
+                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="6" y1="3" x2="6" y2="15" />
+                    <circle cx="18" cy="6" r="3" />
+                    <circle cx="6" cy="18" r="3" />
+                    <path d="M18 9a9 9 0 0 1-9 9" />
+                  </svg>
+                  <span>与分支或标签对比 (Compare with Branch or Tag)</span>
+                </div>
+              </div>
+
+              <div
+                className="menu-item"
+                onClick={() => {
+                  const target = contextMenu.targetPath;
+                  setContextMenu(null);
                   onViewFileHistory?.(target);
                 }}
               >
@@ -5059,7 +5730,24 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     <circle cx="12" cy="12" r="10" />
                     <polyline points="12 6 12 12 16 14" />
                   </svg>
-                  <span>Git: View File History</span>
+                  <span>查看文件历史 (Show History)</span>
+                </div>
+              </div>
+
+              <div
+                className="menu-item"
+                onClick={() => {
+                  const target = contextMenu.targetPath;
+                  setContextMenu(null);
+                  onAnnotateGitBlame?.(target);
+                }}
+              >
+                <div className="menu-item-left">
+                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                  <span>Git 追溯 (Annotate / Git Blame)</span>
                 </div>
               </div>
               <div className="menu-divider" />

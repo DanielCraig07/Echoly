@@ -42,6 +42,11 @@ import {
 } from './components/SwitchWorkspaceModal';
 import { BranchSwitchModal } from './components/BranchSwitchModal';
 import { FileHistoryModal } from './components/FileHistoryModal';
+import {
+  CompareWithRevisionModal,
+  CompareWithBranchOrTagModal,
+  RollbackFileModal,
+} from './components/GitFileModals';
 import { UnsavedChangesModal } from './components/UnsavedChangesModal';
 import {
   TopSearchBar,
@@ -69,6 +74,7 @@ import {
   clearWorkspaceOpenFiles,
   loadWorkspaceOpenFiles,
   saveWorkspaceOpenFiles,
+  type CursorPos,
 } from './workspaceSession';
 import { setupSymbolNavigation } from './services/symbolNavigation';
 
@@ -278,8 +284,12 @@ export function App() {
     nonce: number;
   } | null>(null);
   const revealNonceRef = useRef(0);
+  const handleRevealTargetConsumed = useCallback(() => {
+    setRevealTarget(null);
+  }, []);
   const cursorLineRef = useRef(1);
   const cursorColRef = useRef(1);
+  const fileCursorPositionsRef = useRef<Record<string, CursorPos>>({});
   const searchRef = useRef<TopSearchBarHandle>(null);
   const fileTreeRef = useRef<FileTreeHandle>(null);
 
@@ -290,6 +300,10 @@ export function App() {
   const [timelineFile, setTimelineFile] = useState<string | null>(null);
   const [timelineCommits, setTimelineCommits] = useState<GitCommitEntry[]>([]);
   const [fileHistoryModalPath, setFileHistoryModalPath] = useState<string | null>(null);
+  const [compareRevisionModalPath, setCompareRevisionModalPath] = useState<string | null>(null);
+  const [compareBranchOrTagModalPath, setCompareBranchOrTagModalPath] = useState<string | null>(null);
+  const [rollbackModalPath, setRollbackModalPath] = useState<string | null>(null);
+  const [annotatedBlamePath, setAnnotatedBlamePath] = useState<string | null>(null);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
   const [isTreeCollapsed, setIsTreeCollapsed] = useState(false);
 
@@ -487,8 +501,57 @@ export function App() {
         path: diff.path,
         original: diff.original,
         modified: diff.modified,
-        description: 'Git 本地更改(工作树)',
+        description: `Git 本地更改(工作树) - ${diff.path}`,
+        originalTitle: '最新提交 (HEAD)',
+        modifiedTitle: '当前工作区 (未提交更改)',
       });
+      if (diff.original === diff.modified) {
+        showToast('Git 对比', '当前文件与最新提交 (HEAD) 无差异', 'info');
+      }
+    } else {
+      showToast('获取差异失败', diff.detail || '无法对比该文件', 'warn');
+    }
+  };
+
+  const handleAnnotateGitBlame = (path: string) => {
+    if (annotatedBlamePath === path) {
+      setAnnotatedBlamePath(null);
+      showToast('Git 追溯 (Blame)', '已关闭代码追溯标注', 'info');
+    } else {
+      openFile(path);
+      setAnnotatedBlamePath(path);
+      showToast('Git 追溯 (Blame)', '已开启代码追溯标注栏', 'info');
+    }
+  };
+
+  const handleShowCurrentRevision = async (path: string) => {
+    const fileName = path.split(/[/\\]/).pop() || path;
+    const res = await window.ide.gitShowFileAtRef('HEAD', path);
+    if (res.ok && res.content != null) {
+      const headVirtualPath = `git-head:${path}`;
+      setTabs((prev) => {
+        const existing = prev.find((t) => t.path === headVirtualPath);
+        if (existing) {
+          return prev.map((t) =>
+            t.path === headVirtualPath ? { ...t, content: res.content! } : t,
+          );
+        }
+        return [
+          ...prev,
+          {
+            path: headVirtualPath,
+            content: res.content!,
+            language: languageFromPath(path),
+            dirty: false,
+            readOnly: true,
+            title: `${fileName} (HEAD)`,
+          },
+        ];
+      });
+      setActivePath(headVirtualPath);
+      showToast('Git 当前版本', `已载入 ${fileName} 的 HEAD 提交快照 (只读)`, 'info');
+    } else {
+      showToast('无法查看当前版本', res.detail || '版本库中未找到该文件', 'error');
     }
   };
 
@@ -608,8 +671,8 @@ export function App() {
       const updated = await Promise.all(
         current.map(async (item) => {
           let tech = item.techStack;
-          // 若未检测或之前检测为默认 Git，则尝试重新通过磁盘或启发式深度识别
-          if (!tech || tech === 'Git') {
+          // 若未检测或之前误检测为默认 Git 或 通用，则尝试重新通过磁盘或启发式深度识别
+          if (!tech || tech === 'Git' || tech === '通用') {
             if (item.kind !== 'ssh' && window.ide?.detectWorkspaceTech) {
               try {
                 const detected = await window.ide.detectWorkspaceTech(item.path);
@@ -623,6 +686,9 @@ export function App() {
               if (heuristic && heuristic !== 'Git') {
                 tech = heuristic;
               }
+            }
+            if (!tech || tech === 'Git') {
+              tech = '通用';
             }
             if (tech && tech !== item.techStack) {
               changed = true;
@@ -665,6 +731,9 @@ export function App() {
         if (!tech || tech === 'Git') {
           tech = heuristicDetectTech(name, path);
         }
+        if (!tech || tech === 'Git') {
+          tech = '通用';
+        }
 
         setRecentWorkspaces((prev) => {
           const filtered = prev.filter((item) => item.path !== path);
@@ -688,12 +757,19 @@ export function App() {
 
   const persistOpenFilesForRoot = useCallback((root: string | null | undefined) => {
     if (!root) return;
+    const curPath = activePathRef.current;
+    const curScroll = curPath ? fileCursorPositionsRef.current[curPath] : undefined;
     saveWorkspaceOpenFiles(
       root,
       tabsRef.current.map((t) => t.path).filter((p) => !isUntitledPath(p)),
       activePathRef.current && !isUntitledPath(activePathRef.current)
         ? activePathRef.current
         : null,
+      fileCursorPositionsRef.current,
+      cursorLineRef.current,
+      cursorColRef.current,
+      curScroll?.scrollTop,
+      curScroll?.scrollLeft,
     );
   }, []);
 
@@ -710,6 +786,19 @@ export function App() {
         setTabs([]);
         setActivePath(null);
         return;
+      }
+
+      if (saved.cursorPositions) {
+        fileCursorPositionsRef.current = { ...saved.cursorPositions };
+      }
+      if (saved.activePath && (saved.activeScrollTop != null || saved.activeLine != null)) {
+        fileCursorPositionsRef.current[saved.activePath] = {
+          ...fileCursorPositionsRef.current[saved.activePath],
+          line: saved.activeLine ?? fileCursorPositionsRef.current[saved.activePath]?.line ?? 1,
+          col: saved.activeCol ?? fileCursorPositionsRef.current[saved.activePath]?.col ?? 1,
+          scrollTop: saved.activeScrollTop ?? fileCursorPositionsRef.current[saved.activePath]?.scrollTop,
+          scrollLeft: saved.activeScrollLeft ?? fileCursorPositionsRef.current[saved.activePath]?.scrollLeft,
+        };
       }
 
       const restored: OpenTab[] = [];
@@ -752,6 +841,7 @@ export function App() {
             ? restored[restored.length - 1].path
             : null;
       setActivePath(nextActive);
+      activePathRef.current = nextActive;
     } finally {
       // Defer so the restored tabs don't immediately overwrite storage with empty.
       window.setTimeout(() => {
@@ -1118,10 +1208,16 @@ export function App() {
     openFilesPersistTimer.current = setTimeout(() => {
       if (skipOpenFilesPersistRef.current) return;
       if (workspaceRef.current !== workspace) return;
+      const curScroll = activePath ? fileCursorPositionsRef.current[activePath] : undefined;
       saveWorkspaceOpenFiles(
         workspace,
         tabs.map((t) => t.path).filter((p) => !isUntitledPath(p)),
         activePath && !isUntitledPath(activePath) ? activePath : null,
+        fileCursorPositionsRef.current,
+        cursorLineRef.current,
+        cursorColRef.current,
+        curScroll?.scrollTop,
+        curScroll?.scrollLeft,
       );
     }, 250);
     return () => {
@@ -2614,6 +2710,24 @@ export function App() {
         ideActions.find((a) => a.id === 'cmd-toggle-sidebar')?.handler();
         return;
       }
+      // Cmd+D -> 显示差异 (Show Diff)
+      if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'd') {
+        const targetP = activePath && !activePath.startsWith('untitled:') ? activePath : null;
+        if (targetP) {
+          e.preventDefault();
+          void handlePreviewGitDiff(targetP);
+          return;
+        }
+      }
+      // Alt+Cmd+Z -> 回滚修改 (Rollback)
+      if (ctrl && e.altKey && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        const targetP = activePath && !activePath.startsWith('untitled:') ? activePath : null;
+        if (targetP) {
+          e.preventDefault();
+          setRollbackModalPath(targetP);
+          return;
+        }
+      }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
@@ -3422,6 +3536,12 @@ export function App() {
                         refreshKey={treeRefreshKey}
                         onViewFileHistory={(p) => void handleViewFileHistory(p)}
                         onDiscardPath={(p) => void handleDiscardPath(p)}
+                        onPreviewGitDiff={(p) => void handlePreviewGitDiff(p)}
+                        onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
+                        onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
+                        onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
+                        onShowCurrentRevision={(p) => void handleShowCurrentRevision(p)}
+                        onRollbackPath={(p) => setRollbackModalPath(p)}
                         onOpenFile={(p) => void openFile(p)}
                         onOpenTerminal={(cwd) => {
                           const targetDirName =
@@ -3467,6 +3587,9 @@ export function App() {
                   onDiscardPath={handleDiscardPath}
                   onShowToast={showToast}
                   onViewFileHistory={(p) => void handleViewFileHistory(p)}
+                  onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
+                  onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
+                  onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
                   onRevealInExplorer={(p) => {
                     setLeftPanel('explorer');
                     setActivePath(p);
@@ -3595,7 +3718,22 @@ export function App() {
               setCursorCol(col);
               cursorLineRef.current = line;
               cursorColRef.current = col;
+              if (activePathRef.current) {
+                const cur = fileCursorPositionsRef.current[activePathRef.current];
+                fileCursorPositionsRef.current[activePathRef.current] = {
+                  ...cur,
+                  line,
+                  col,
+                };
+              }
             }}
+            onScrollChange={(path, scrollTop, scrollLeft) => {
+              if (path) {
+                const cur = fileCursorPositionsRef.current[path] || { line: 1, col: 1 };
+                fileCursorPositionsRef.current[path] = { ...cur, scrollTop, scrollLeft };
+              }
+            }}
+            initialCursorPositions={fileCursorPositionsRef.current}
             onAddToChat={handleAddToChat}
             previewDiff={previewDiff}
             onCloseDiff={
@@ -3610,14 +3748,21 @@ export function App() {
             onPreviewGitDiff={handlePreviewGitDiff}
             onDiscardPath={handleDiscardPath}
             onViewFileHistory={(p) => void handleViewFileHistory(p)}
+            onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
+            onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
+            onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
+            showBlameAnnotation={annotatedBlamePath === activePath}
+            onCloseBlameAnnotation={() => setAnnotatedBlamePath(null)}
+            onPreviewDiff={(diff) => {
+              setActiveDiffId(null);
+              setScmDiff(diff);
+            }}
             onRefreshGitStatus={async () => {
               const res = await window.ide.gitStatus();
               if (res.ok) setGitStatus(res);
             }}
             revealTarget={revealTarget}
-            onRevealTargetConsumed={() => {
-              setRevealTarget(null);
-            }}
+            onRevealTargetConsumed={handleRevealTargetConsumed}
             uiTheme={uiTheme}
             gitBlameInline={gitBlameInline}
             workspace={workspace}
@@ -4099,6 +4244,63 @@ export function App() {
         onPreviewDiff={(diff) => {
           setActiveDiffId(null);
           setScmDiff(diff);
+        }}
+      />
+
+      <CompareWithRevisionModal
+        open={!!compareRevisionModalPath}
+        filePath={compareRevisionModalPath}
+        onClose={() => setCompareRevisionModalPath(null)}
+        onPreviewDiff={async (diff) => {
+          let modified = diff.modified;
+          if (!modified && diff.path) {
+            const openTab = tabs.find((t) => t.path === diff.path || t.path.endsWith('/' + diff.path));
+            if (openTab && openTab.content) {
+              modified = openTab.content;
+            } else {
+              try {
+                modified = await window.ide.readFile(diff.path);
+              } catch {}
+            }
+          }
+          setActiveDiffId(null);
+          setScmDiff({
+            ...diff,
+            modified,
+          });
+        }}
+      />
+
+      <CompareWithBranchOrTagModal
+        open={!!compareBranchOrTagModalPath}
+        filePath={compareBranchOrTagModalPath}
+        onClose={() => setCompareBranchOrTagModalPath(null)}
+        onPreviewDiff={async (diff) => {
+          let modified = diff.modified;
+          if (!modified && diff.path) {
+            const openTab = tabs.find((t) => t.path === diff.path || t.path.endsWith('/' + diff.path));
+            if (openTab && openTab.content) {
+              modified = openTab.content;
+            } else {
+              try {
+                modified = await window.ide.readFile(diff.path);
+              } catch {}
+            }
+          }
+          setActiveDiffId(null);
+          setScmDiff({
+            ...diff,
+            modified,
+          });
+        }}
+      />
+
+      <RollbackFileModal
+        open={!!rollbackModalPath}
+        filePath={rollbackModalPath}
+        onClose={() => setRollbackModalPath(null)}
+        onConfirm={async (path) => {
+          await handleDiscardPath(path);
         }}
       />
 

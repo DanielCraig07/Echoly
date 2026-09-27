@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs';
 import type { BrowserWindow } from 'electron';
 import type {
   GitBranchInfo,
@@ -12,6 +13,8 @@ import type {
   GitDiffResult,
   GitHistoryResult,
   GitBlameLineResult,
+  GitBlameEntry,
+  GitBlameFileResult,
   GitOpResult,
   GitOutputResult,
   GitRemoteInfo,
@@ -1111,14 +1114,22 @@ export class GitService {
       return { ok: false, detail: gate.detail, commits: [] };
     }
     const { root } = gate as { root: string };
+    let posix = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (root) {
+      const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+      if (posix.startsWith(normRoot)) {
+        posix = posix.slice(normRoot.length).replace(/^\/+/, '');
+      }
+    }
     const logArgs = [
       'log',
+      '--follow',
       '--pretty=format:%H%x09%h%x09%an%x09%ae%x09%at%x09%P%x09%s',
       '--',
-      filePath,
+      posix,
     ];
     if (typeof maxCount === 'number' && maxCount > 0) {
-      logArgs.splice(1, 0, `-n${maxCount}`);
+      logArgs.splice(2, 0, `-n${maxCount}`);
     }
     const res = await this.runGit(logArgs, root);
     if (res.code !== 0) {
@@ -1377,6 +1388,162 @@ export class GitService {
       path: filePath,
       original: origRes.code === 0 ? origRes.stdout : '',
       modified: modRes.code === 0 ? modRes.stdout : '',
+      staged: false,
+    };
+  }
+
+  async blameFile(filePath: string): Promise<GitBlameFileResult> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return { ok: false, detail: gate.detail, entries: [] };
+    }
+    const { root } = gate as { root: string };
+    let posix = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (root) {
+      const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+      if (posix.startsWith(normRoot)) {
+        posix = posix.slice(normRoot.length).replace(/^\/+/, '');
+      }
+    }
+    const res = await this.runGit(['blame', '--porcelain', posix], root);
+    if (res.code !== 0 || !res.stdout.trim()) {
+      return {
+        ok: false,
+        detail: (res.stderr || '无法获取 Git Blame 追溯信息').trim(),
+        entries: [],
+      };
+    }
+
+    const lines = res.stdout.split('\n');
+    const commitMap = new Map<string, { author: string; authorTime: number; summary: string }>();
+    const entries: GitBlameEntry[] = [];
+
+    let currentHash = '';
+    let currentFinalLine = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.startsWith('\t')) {
+        const info = commitMap.get(currentHash) || { author: 'You', authorTime: 0, summary: '' };
+        const isUncommitted = !currentHash || /^0+$/.test(currentHash);
+        const { relativeDate, fullDate } = formatCommitDate(info.authorTime);
+
+        entries.push({
+          line: currentFinalLine,
+          hash: currentHash,
+          shortHash: currentHash.slice(0, 7),
+          author: isUncommitted ? 'You' : info.author,
+          date: fullDate,
+          relativeDate: isUncommitted ? '未提交的更改' : relativeDate,
+          message: isUncommitted ? '未保存或未提交的修改' : (info.summary || '无提交说明'),
+        });
+        continue;
+      }
+
+      const parts = line.split(' ');
+      if (parts.length >= 3 && /^[0-9a-f]{40}$/i.test(parts[0])) {
+        currentHash = parts[0];
+        currentFinalLine = parseInt(parts[2], 10);
+        if (!commitMap.has(currentHash)) {
+          commitMap.set(currentHash, { author: 'You', authorTime: 0, summary: '' });
+        }
+        continue;
+      }
+
+      const info = commitMap.get(currentHash);
+      if (info) {
+        if (line.startsWith('author ')) {
+          info.author = line.slice(7).trim();
+        } else if (line.startsWith('author-time ')) {
+          info.authorTime = parseInt(line.slice(12).trim(), 10) || 0;
+        } else if (line.startsWith('summary ')) {
+          info.summary = line.slice(8).trim();
+        }
+      }
+    }
+
+    return { ok: true, entries };
+  }
+
+  async showFileAtRef(ref: string, filePath: string): Promise<{ ok: boolean; content?: string; detail?: string }> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return { ok: false, detail: gate.detail };
+    }
+    const { root } = gate as { root: string };
+    let posix = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (root) {
+      const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+      if (posix.startsWith(normRoot)) {
+        posix = posix.slice(normRoot.length).replace(/^\/+/, '');
+      }
+    }
+    const showRes = await this.runGit(['show', `${ref}:${posix}`], root);
+    if (showRes.code !== 0) {
+      return {
+        ok: false,
+        detail: `在「${ref}」中未找到文件 ${posix}${showRes.stderr ? ` (${showRes.stderr.trim()})` : ''}`,
+      };
+    }
+    return {
+      ok: true,
+      content: showRes.stdout,
+    };
+  }
+
+  async diffWithRef(ref: string, filePath: string): Promise<GitDiffResult> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return {
+        ok: false,
+        detail: gate.detail,
+        path: filePath,
+        original: '',
+        modified: '',
+        staged: false,
+      };
+    }
+    const { root } = gate as { root: string };
+    let posix = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+    if (root) {
+      const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+      if (posix.startsWith(normRoot)) {
+        posix = posix.slice(normRoot.length).replace(/^\/+/, '');
+      }
+    }
+    const showRes = await this.runGit(['show', `${ref}:${posix}`], root);
+    let localContent = '';
+    try {
+      localContent = await this.workspace.readFile(posix);
+    } catch {
+      try {
+        localContent = await this.workspace.readFile(filePath);
+      } catch {
+        try {
+          const absPath = path.resolve(root, posix);
+          if (fs.existsSync(absPath)) {
+            localContent = await fs.promises.readFile(absPath, 'utf8');
+          }
+        } catch {}
+      }
+    }
+
+    if (showRes.code !== 0 && !localContent) {
+      return {
+        ok: false,
+        detail: `在「${ref}」中未找到文件 ${posix}${showRes.stderr ? ` (${showRes.stderr.trim()})` : ''}`,
+        path: posix,
+        original: '',
+        modified: '',
+        staged: false,
+      };
+    }
+
+    return {
+      ok: true,
+      path: posix,
+      original: showRes.code === 0 ? showRes.stdout : '',
+      modified: localContent,
       staged: false,
     };
   }

@@ -11,19 +11,21 @@ export const TECH_STYLES: Record<string, TechStyle> = {
   'C++': { label: 'C++', color: '#818cf8', bg: 'rgba(129, 140, 248, 0.15)' },
   Go: { label: 'Go', color: '#2dd4bf', bg: 'rgba(45, 212, 191, 0.15)' },
   Rust: { label: 'Rust', color: '#f87171', bg: 'rgba(248, 113, 113, 0.15)' },
-  Git: { label: 'Git', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' },
+  通用: { label: '通用', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' },
+  目录: { label: '目录', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' },
+  Git: { label: '通用', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' },
 };
 
 /**
- * 获取技术栈标签样式
+ * 获取技术栈标签样式（空值或遗留 Git 统一映射为通用）
  */
 export function getTechStyle(label?: string): TechStyle {
-  if (!label) return TECH_STYLES.Git;
+  if (!label || label === 'Git') return TECH_STYLES.通用;
   return TECH_STYLES[label] || { label, color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' };
 }
 
 /**
- * 启发式关键词检测（使用独立单词边界，杜绝任意子串如 'ts'/'js' 误报）
+ * 启发式关键词检测（使用独立单词边界，杜绝任意子串误报，未匹配时归类为通用目录）
  */
 export function heuristicDetectTech(name: string, path: string): string {
   const lower = `${name} ${path}`.toLowerCase();
@@ -74,7 +76,7 @@ export function heuristicDetectTech(name: string, path: string): string {
     return 'Node';
   }
 
-  return 'Git';
+  return '通用';
 }
 
 /**
@@ -85,7 +87,7 @@ export function detectTechBadge(
   path: string,
   explicitTech?: string,
 ): TechStyle {
-  if (explicitTech) {
+  if (explicitTech && explicitTech !== 'Git') {
     return getTechStyle(explicitTech);
   }
   const tech = heuristicDetectTech(name, path);

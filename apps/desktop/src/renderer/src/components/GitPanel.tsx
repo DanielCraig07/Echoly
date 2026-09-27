@@ -27,6 +27,9 @@ interface Props {
   onDiscardPath?: (path: string | string[]) => void;
   onOpenFile?: (path: string) => void;
   onViewFileHistory?: (path: string) => void;
+  onCompareWithRevision?: (path: string) => void;
+  onCompareWithBranchOrTag?: (path: string) => void;
+  onAnnotateGitBlame?: (path: string) => void;
   onRevealInExplorer?: (path: string) => void;
   onBranchSwitched?: () => void;
   onOpenCloneModal?: () => void;
@@ -1081,6 +1084,9 @@ function GitFileContextMenu({
   onShowInFolder,
   onRevealInExplorer,
   onViewFileHistory,
+  onCompareWithRevision,
+  onCompareWithBranchOrTag,
+  onAnnotateGitBlame,
 }: {
   state: GitContextMenuState;
   onClose: () => void;
@@ -1095,6 +1101,9 @@ function GitFileContextMenu({
   onShowInFolder: (path: string) => void;
   onRevealInExplorer: (path: string) => void;
   onViewFileHistory: (path: string) => void;
+  onCompareWithRevision?: (path: string) => void;
+  onCompareWithBranchOrTag?: (path: string) => void;
+  onAnnotateGitBlame?: (path: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { entry, folderNode, isFolder, staged } = state;
@@ -1181,7 +1190,10 @@ function GitFileContextMenu({
       {item(isMac ? '在访达中显示' : '在资源管理器中显示', () => onShowInFolder(entry.path))}
       {item('在资源管理器视图中显示', () => onRevealInExplorer(entry.path))}
       {sep('s3')}
-      {item('Git: View File History', () => onViewFileHistory(entry.path))}
+      {item('与历史版本对比 (Compare with Revision)', () => onCompareWithRevision?.(entry.path))}
+      {item('与分支或标签对比 (Compare with Branch or Tag)', () => onCompareWithBranchOrTag?.(entry.path))}
+      {item('查看文件历史 (Show History)', () => onViewFileHistory(entry.path))}
+      {item('Git 追溯 (Annotate / Git Blame)', () => onAnnotateGitBlame?.(entry.path))}
     </div>
   );
 }
@@ -1192,6 +1204,9 @@ export function GitPanel({
   onDiscardPath,
   onOpenFile,
   onViewFileHistory,
+  onCompareWithRevision,
+  onCompareWithBranchOrTag,
+  onAnnotateGitBlame,
   onRevealInExplorer,
   onBranchSwitched,
   onOpenCloneModal,
@@ -3266,6 +3281,9 @@ export function GitPanel({
           onShowInFolder={(p) => void handleShowInNativeFolder(p)}
           onRevealInExplorer={(p) => onRevealInExplorer?.(p)}
           onViewFileHistory={(p) => onViewFileHistory?.(p)}
+          onCompareWithRevision={(p) => onCompareWithRevision?.(p)}
+          onCompareWithBranchOrTag={(p) => onCompareWithBranchOrTag?.(p)}
+          onAnnotateGitBlame={(p) => onAnnotateGitBlame?.(p)}
         />
       )}
 

@@ -1681,21 +1681,18 @@ body.resizing.resizing-row {
 
 .file-node-dir {
   position: sticky !important;
-  background-color: var(--bg-panel, #181818) !important;
+  background-color: var(--bg-panel, #141414) !important;
   border-bottom: none !important;
   box-shadow: none !important;
-  /* 目录行必须整行不透明地盖住下方滚动内容，故取消左右圆角：
-     圆角处背景会被裁掉，下方 .file-node.active 的蓝色选中条正是从
-     这个缺口漏出来的。上下留白靠下面的伪元素补齐 */
   border-radius: 0 !important;
 }
 
-/* 行高 24px 与吸附步长一致时行间不应有缝，这里再补一条同色描边兜底 */
+/* 行高 24px 与吸附步长一致时行间不应有缝，补同色描边兜底 */
 .file-node-dir::before {
   content: '';
   position: absolute;
   inset: -1px 0;
-  background: var(--bg-panel, #181818);
+  background: var(--bg-panel, #141414);
   pointer-events: none;
   z-index: 0;
 }
@@ -1705,31 +1702,27 @@ body.resizing.resizing-row {
   z-index: 1;
 }
 
-/* 选中指示条改由伪元素绘制（不再用 inset box-shadow），避免被圆角裁剪 */
+/* 彻底取消目录节点的左侧指示条 */
 .file-node-dir::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: transparent;
-  pointer-events: none;
-  z-index: 2;
+  display: none !important;
+  content: none !important;
 }
 
-.file-node-dir.active,
 .file-node-dir:hover {
-  background-color: var(--bg-hover) !important;
+  background-color: var(--bg-hover, rgba(255, 255, 255, 0.05)) !important;
 }
 
-.file-node-dir.active::before,
 .file-node-dir:hover::before {
-  background: var(--bg-hover);
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05)) !important;
 }
 
-.file-node-dir.active::after {
-  background: var(--accent) !important;
+.file-node-dir.active {
+  background-color: #242424 !important;
+  color: #ffffff !important;
+}
+
+.file-node-dir.active::before {
+  background: #242424 !important;
 }
 
 .tree-indent-guide {
@@ -1882,6 +1875,27 @@ body.resizing.resizing-row {
   margin: 4px 6px;
   background: rgba(255, 255, 255, 0.08);
 }
+
+.ctx-shortcut {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+  font-family: inherit;
+  margin-left: 18px;
+  flex-shrink: 0;
+}
+
+.ctx-item:hover .ctx-shortcut {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.ctx-git-submenu {
+  animation: tabMenuPop 0.1s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow:
+    0 20px 48px -4px rgba(0, 0, 0, 0.85),
+    0 4px 14px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+}
+
 
 /* ── Monaco Editor Native Context Menu Refinement ─────────────────── */
 :root {
@@ -2944,17 +2958,17 @@ body.resizing.resizing-row {
 }
 
 .chat-prompt-pill:hover {
-  background: var(--accent-soft, rgba(0, 122, 204, 0.15));
-  border-color: var(--accent, #007acc);
-  color: var(--text-bright, #ffffff);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  background: #242424 !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  color: var(--text-bright, #ffffff) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
   transform: translateY(-1px);
 }
 
 [data-theme='light'] .chat-prompt-pill:hover {
-  background: var(--accent-soft, rgba(130, 49, 142, 0.12));
-  border-color: var(--accent, #82318e);
-  color: var(--text, #2a1b3d);
+  background: #e5e5e5 !important;
+  border-color: rgba(0, 0, 0, 0.15) !important;
+  color: #111827 !important;
 }
 
 .chat-prompt-pill:active {
@@ -2986,11 +3000,11 @@ body.resizing.resizing-row {
 .chat-prompt-pill:hover .chat-prompt-pill-arrow {
   opacity: 1;
   transform: translateX(2px);
-  color: var(--accent-light, var(--accent, #3794ff));
+  color: #ffffff !important;
 }
 
 [data-theme='light'] .chat-prompt-pill:hover .chat-prompt-pill-arrow {
-  color: var(--accent, #82318e);
+  color: #111827 !important;
 }
 
 /* One user question + its reply — same structure as a file-tree folder + children */
@@ -9752,13 +9766,13 @@ button.welcome-recent-remove:hover {
 }
 
 .maven-goal-item.selected {
-  background: var(--bg-hover) !important;
-  box-shadow: inset 2px 0 0 var(--accent) !important;
+  background: #242424 !important;
+  box-shadow: none !important;
   color: var(--text-bright, #ffffff) !important;
 }
 
 .maven-goal-item.selected:hover {
-  background: var(--bg-hover) !important;
+  background: #2a2a2a !important;
 }
 
 .maven-tree-leaf {
@@ -11418,8 +11432,13 @@ button.welcome-recent-remove:hover {
   background-color: transparent !important;
 }
 
-/* Only Git modification gutter markers show pointer cursor and widen on hover */
+/* Monaco 编辑器左侧字形边距（断点区域）鼠标指针样式 */
 .monaco-editor .margin-view-overlays .cgmr,
+.monaco-editor .glyph-margin {
+  cursor: pointer !important;
+}
+
+/* Only Git modification gutter markers show pointer cursor and widen on hover */
 .monaco-editor .margin-view-overlays .git-modified-gutter,
 .monaco-editor .margin-view-overlays .git-line-added,
 .monaco-editor .margin-view-overlays .git-line-modified,
@@ -11430,7 +11449,6 @@ button.welcome-recent-remove:hover {
     transform 0.15s ease !important;
 }
 
-.monaco-editor .margin-view-overlays .cgmr:hover,
 .monaco-editor .margin-view-overlays .git-modified-gutter:hover,
 .monaco-editor .margin-view-overlays .git-line-added:hover,
 .monaco-editor .margin-view-overlays .git-line-modified:hover,
@@ -11438,6 +11456,18 @@ button.welcome-recent-remove:hover {
   cursor: pointer !important;
   width: 6px !important;
   transform: scaleX(1.6);
+}
+
+/* ── Monaco Sticky Scroll Gutter & Line Numbers Alignment ───────────────────
+   Monaco Editor 的粘性滚动条 (Sticky Scroll) 中，.sticky-line-number-inner
+   由 Monaco 原生脚本内联设置 width 与 paddingLeft，其设计建立在浏览器默认的
+   box-sizing: content-box 之上。当全局样式定义 * { box-sizing: border-box } 时，
+   内联设置的 paddingLeft 会蚕食行号宽度，导致粘性滚动栏行号与下方编辑器行号无法垂直对齐。
+   显式指定 content-box 与 tabular-nums 可确保粘性行号与主编辑区行号像素级严丝合缝对齐。 */
+.monaco-editor .sticky-widget .sticky-line-number-inner,
+.monaco-editor .sticky-line-number-inner {
+  box-sizing: content-box !important;
+  font-variant-numeric: tabular-nums !important;
 }
 
 /* Hide chat tabs scrollbar thumb in AI header */
@@ -12809,6 +12839,38 @@ button.ssh-server-remove:hover {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.modern-open-ws-modal .welcome-view-choices {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 580px) {
+  .modern-open-ws-modal .welcome-view-choices {
+    grid-template-columns: 1fr;
+  }
+}
+
+.modern-open-ws-modal .welcome-choice-row {
+  padding: 12px 14px;
+  gap: 12px;
+  border-radius: 10px;
+}
+
+.modern-open-ws-modal .welcome-choice-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.modern-open-ws-modal .welcome-choice-title {
+  font-size: 13.5px;
+}
+
+.modern-open-ws-modal .welcome-choice-desc {
+  font-size: 11.5px;
 }
 
 .open-ws-grid {
@@ -16196,8 +16258,8 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row.selected,
 .monaco-editor .zone-widget .peekview-widget .body .tree .monaco-list-row.focused {
-  background-color: rgba(76, 141, 255, 0.16) !important;
-  border-left-color: var(--accent, #4c8dff) !important;
+  background-color: #242424 !important;
+  border-left-color: transparent !important;
   color: #ffffff !important;
 }
 
@@ -16455,8 +16517,8 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   .body
   .tree
   .monaco-list-row.focused {
-  background-color: rgba(76, 141, 255, 0.15) !important;
-  border-left-color: var(--accent, #4c8dff) !important;
+  background-color: #e5e5e5 !important;
+  border-left-color: transparent !important;
   color: #0f172a !important;
 }
 
@@ -16716,28 +16778,28 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .switch-workspace-option-card:hover {
-  background: rgba(59, 130, 246, 0.08);
-  border-color: rgba(59, 130, 246, 0.4);
+  background: var(--bg-hover-strong, #242424);
+  border-color: rgba(255, 255, 255, 0.18);
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 
 .switch-workspace-option-card.primary {
-  background: rgba(59, 130, 246, 0.06);
-  border-color: rgba(59, 130, 246, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .switch-workspace-option-card.primary:hover {
-  background: rgba(59, 130, 246, 0.14);
-  border-color: rgba(59, 130, 246, 0.55);
+  background: var(--bg-hover-strong, #242424);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .switch-workspace-option-icon {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: rgba(59, 130, 246, 0.12);
-  color: #60a5fa;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16746,12 +16808,14 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .switch-workspace-option-icon.secondary {
-  background: rgba(255, 255, 255, 0.06);
-  color: #d1d5db;
+  background: rgba(255, 255, 255, 0.05);
+  color: #9ca3af;
 }
 
 .switch-workspace-option-card:hover .switch-workspace-option-icon {
   transform: scale(1.05);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 .switch-workspace-option-content {
@@ -16778,7 +16842,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .switch-workspace-option-card:hover .switch-workspace-option-arrow {
-  color: #60a5fa;
+  color: #e5e7eb;
   transform: translateX(2px);
 }
 
@@ -17971,10 +18035,22 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .bottom-tab-btn.active {
-  background: var(--primary-subtle, rgba(56, 189, 248, 0.12));
-  color: var(--primary, #38bdf8);
-  border-color: rgba(56, 189, 248, 0.25);
+  background: #242424 !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
   font-weight: 600;
+}
+
+.bottom-tab-btn.active:hover {
+  background: #2a2a2a !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.24) !important;
+}
+
+[data-theme='light'] .bottom-tab-btn.active {
+  background: #e5e5e5 !important;
+  color: #111827 !important;
+  border-color: rgba(0, 0, 0, 0.15) !important;
 }
 
 .problems-tab-badge {
@@ -18135,13 +18211,15 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .git-modal-btn.primary {
-  background: var(--primary, #38bdf8);
-  color: #0f172a;
+  background: var(--accent, #007acc);
+  color: #ffffff;
   font-weight: 600;
+  border-color: var(--accent-2, #005999);
 }
 
 .git-modal-btn.primary:hover:not(:disabled) {
-  opacity: 0.92;
+  background: var(--accent-light, #3794ff);
+  opacity: 0.95;
   transform: translateY(-0.5px);
 }
 
@@ -18162,6 +18240,87 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .git-branch-list-item:hover:not(.current) {
   background: #242424 !important;
+}
+
+/* ── Git 对比弹窗列表项：悬浮色与选中色深度对齐系统主题 ───────────────── */
+.git-modal-list-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+/* 悬浮色：与系统面板、菜单悬浮反馈一致 */
+.git-modal-list-item:hover:not(.selected) {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06)) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme='light'] .git-modal-list-item:hover:not(.selected) {
+  background: var(--bg-hover, #e8dff3) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* 选中色：与应用主主题色 (--accent, 暗黑下 #007acc、浅色下 #82318e) 匹配 */
+.git-modal-list-item.selected {
+  background: var(--accent, #007acc) !important;
+  border-color: var(--accent-2, #005999) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* 选中项内部文字自适应高亮反白 */
+.git-modal-list-item.selected .git-item-title,
+.git-modal-list-item.selected .git-item-text {
+  color: #ffffff !important;
+  font-weight: 500;
+}
+
+.git-modal-list-item.selected .git-item-muted {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.git-modal-list-item.selected .git-item-badge-hash {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.35) !important;
+}
+
+.git-modal-list-item.selected .git-item-icon {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+.git-modal-list-item.selected .git-item-tag {
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.git-tab-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted);
+  transition: all 0.12s ease;
+}
+
+.git-tab-btn:hover:not(.active) {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text);
+}
+
+.git-tab-btn.active {
+  background: var(--accent, #007acc) !important;
+  color: #ffffff !important;
+  font-weight: 600;
 }
 
 /* ── Monaco 编辑区 Quick Fix / Code Action 浮窗美化 ───────────────────────── */

@@ -1,8 +1,18 @@
-/** Persist / restore which editor tabs were open for each workspace. */
+export interface CursorPos {
+  line: number;
+  col?: number;
+  scrollTop?: number;
+  scrollLeft?: number;
+}
 
 export interface WorkspaceOpenFilesState {
   paths: string[];
   activePath: string | null;
+  cursorPositions?: Record<string, CursorPos>;
+  activeLine?: number;
+  activeCol?: number;
+  activeScrollTop?: number;
+  activeScrollLeft?: number;
   updatedAt: number;
 }
 
@@ -43,12 +53,22 @@ export function saveWorkspaceOpenFiles(
   root: string,
   paths: string[],
   activePath: string | null,
+  cursorPositions?: Record<string, CursorPos>,
+  activeLine?: number,
+  activeCol?: number,
+  activeScrollTop?: number,
+  activeScrollLeft?: number,
 ): void {
   const key = normalizeRoot(root);
   const map = readAll();
   map[key] = {
     paths: [...paths],
     activePath,
+    cursorPositions: cursorPositions ? { ...cursorPositions } : undefined,
+    activeLine: activeLine != null && activeLine > 0 ? activeLine : undefined,
+    activeCol: activeCol != null && activeCol > 0 ? activeCol : undefined,
+    activeScrollTop: activeScrollTop != null && activeScrollTop >= 0 ? activeScrollTop : undefined,
+    activeScrollLeft: activeScrollLeft != null && activeScrollLeft >= 0 ? activeScrollLeft : undefined,
     updatedAt: Date.now(),
   };
 

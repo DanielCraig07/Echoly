@@ -81,5 +81,42 @@ describe('Workspace Tech Stack Accurate Detection', () => {
     // Should NOT be Node just because of 'ts' in 'tsingtec'
     const tech = heuristicDetectTech('tsingtec_data_center', '/Users/test/tsingtec_data_center');
     expect(tech).not.toBe('Node');
+    expect(tech).toBe('通用');
+  });
+
+  it('opening a directory with .git does NOT identify as Git and detects actual code or 通用', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-repo-test-'));
+    try {
+      fs.mkdirSync(path.join(tmpDir, '.git'));
+      // No config file, but contains Python script
+      fs.writeFileSync(path.join(tmpDir, 'script.py'), 'print("hello")');
+
+      const detected = detectWorkspaceTechFromDisk(tmpDir);
+      expect(detected).toBe('Python');
+      expect(detected).not.toBe('Git');
+
+      const badge = detectTechBadge('my-python-tool', tmpDir, detected);
+      expect(badge.label).toBe('Python');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('opening a plain folder with .git and no recognizable code returns 通用, never Git', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'plain-folder-'));
+    try {
+      fs.mkdirSync(path.join(tmpDir, '.git'));
+      fs.writeFileSync(path.join(tmpDir, 'notes.txt'), 'notes');
+
+      const detected = detectWorkspaceTechFromDisk(tmpDir);
+      expect(detected).toBe('通用');
+      expect(detected).not.toBe('Git');
+
+      const badge = detectTechBadge('random-notes', tmpDir, detected);
+      expect(badge.label).toBe('通用');
+      expect(badge.label).not.toBe('Git');
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

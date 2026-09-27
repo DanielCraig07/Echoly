@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.0.37';
+export const APP_VERSION = '0.0.38';
 export const DEFAULT_LLM_BASE_URL = 'http://192.168.10.241:8002';
 export const DEFAULT_LLM_MODEL = 'deepseek-v4-flash';
 
@@ -512,6 +512,8 @@ export interface PendingDiff {
   original: string;
   modified: string;
   description?: string;
+  originalTitle?: string;
+  modifiedTitle?: string;
 }
 
 export interface ConfirmRequest {
@@ -537,6 +539,10 @@ export interface OpenTab {
   content: string;
   language: string;
   dirty: boolean;
+  /** Custom display title for tab (e.g. read-only Git revision) */
+  title?: string;
+  /** Whether the tab is opened in read-only mode */
+  readOnly?: boolean;
   /** Data URL for image preview tabs (png/jpg/…); content stays empty. */
   previewUrl?: string;
   /** Large file (>2MB): content is intentionally left empty to avoid editor stalls. */
@@ -697,6 +703,22 @@ export interface GitBlameLineResult {
   detail?: string;
   commit?: GitCommitEntry;
   line?: number;
+}
+
+export interface GitBlameEntry {
+  line: number;
+  hash: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  relativeDate: string;
+  message: string;
+}
+
+export interface GitBlameFileResult {
+  ok: boolean;
+  entries?: GitBlameEntry[];
+  detail?: string;
 }
 
 export interface GitOpResult {
@@ -937,7 +959,10 @@ export interface IpcApi {
   gitCommitDetails: (hash: string) => Promise<GitCommitDetailResult>;
   gitFileHistory: (path: string, maxCount?: number) => Promise<GitHistoryResult>;
   gitBlameLine: (path: string, line: number) => Promise<GitBlameLineResult>;
+  gitBlameFile: (path: string) => Promise<GitBlameFileResult>;
   gitShowCommitDiff: (hash: string, path: string) => Promise<GitDiffResult>;
+  gitShowFileAtRef: (ref: string, path: string) => Promise<{ ok: boolean; content?: string; detail?: string }>;
+  gitDiffWithRef: (ref: string, path: string) => Promise<GitDiffResult>;
   gitGenerateCommitMessage: () => Promise<{ ok: boolean; message?: string; detail?: string }>;
 
   searchFiles: (query: string, max?: number) => Promise<SearchFileHit[]>;

@@ -1,17 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import type { GitCommitEntry } from '@deepseek-ide/shared';
+import type { GitCommitEntry, PendingDiff } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 interface Props {
   filePath: string | null;
   onClose: () => void;
-  onPreviewDiff: (diff: {
-    id: string;
-    path: string;
-    original: string;
-    modified: string;
-    description: string;
-  }) => void;
+  onPreviewDiff: (diff: PendingDiff) => void;
 }
 
 export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
@@ -118,6 +112,8 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
           original: res.original,
           modified: res.modified,
           description: `提交 ${commit.shortHash} - ${filePath}`,
+          originalTitle: `父提交 (${commit.shortHash}^)`,
+          modifiedTitle: `提交 ${commit.shortHash}`,
         });
         onClose();
       } else {
@@ -325,16 +321,17 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                 <div
                   key={c.hash}
                   data-index={idx}
+                  className={`git-modal-list-item ${isSelected ? 'selected' : ''}`}
                   onClick={() => void handleSelectCommit(c)}
                   style={{
                     position: 'relative',
                     padding: '10px 16px 10px 36px',
                     display: 'flex',
+                    flexDirection: 'row',
                     alignItems: 'center',
                     gap: 12,
                     cursor: 'pointer',
-                    background: isSelected ? '#242424' : 'transparent',
-                    transition: 'all 0.15s ease',
+                    margin: '2px 8px',
                   }}
                   onMouseEnter={() => setSelectedIndex(idx)}
                 >
@@ -346,7 +343,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                       top: 0,
                       bottom: 0,
                       width: 2,
-                      background: 'rgba(255, 255, 255, 0.08)',
+                      background: isSelected ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.08)',
                     }}
                   />
                   <div
@@ -358,8 +355,8 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                       width: 8,
                       height: 8,
                       borderRadius: '50%',
-                      background: isSelected ? 'var(--accent, #007acc)' : 'var(--border)',
-                      boxShadow: isSelected ? '0 0 6px var(--accent, #007acc)' : 'none',
+                      background: isSelected ? '#ffffff' : 'var(--border)',
+                      boxShadow: isSelected ? '0 0 6px rgba(255, 255, 255, 0.8)' : 'none',
                       transition: 'all 0.15s ease',
                       zIndex: 2,
                     }}
@@ -367,6 +364,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
 
                   {/* Commit Hash 胶囊 */}
                   <span
+                    className="git-item-badge-hash"
                     style={{
                       fontFamily: 'var(--font-mono)',
                       fontSize: 11,
@@ -385,6 +383,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
+                      className="git-item-title"
                       style={{
                         fontSize: 13,
                         color: 'var(--text-bright)',
@@ -398,6 +397,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                       {c.message}
                     </div>
                     <div
+                      className="git-item-muted"
                       style={{
                         fontSize: 11,
                         color: 'var(--muted)',
@@ -410,12 +410,13 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                       {/* 作者单字圆形头像徽章 */}
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <span
+                          className="git-item-tag"
                           style={{
                             width: 16,
                             height: 16,
                             borderRadius: '50%',
-                            background: 'rgba(0, 122, 204, 0.2)',
-                            color: 'var(--accent-light, #3794ff)',
+                            background: isSelected ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 122, 204, 0.2)',
+                            color: isSelected ? '#ffffff' : 'var(--accent-light, #3794ff)',
                             fontSize: 9.5,
                             fontWeight: 700,
                             display: 'inline-flex',

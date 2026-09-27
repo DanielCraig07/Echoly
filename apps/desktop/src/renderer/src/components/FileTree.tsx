@@ -81,14 +81,32 @@ interface MenuProps {
 
 function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
+  const gitTriggerRef = useRef<HTMLDivElement>(null);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [gitSubmenuOpen, setGitSubmenuOpen] = useState(false);
+  const [gitSubmenuPos, setGitSubmenuPos] = useState<{ x: number; y: number } | null>(null);
+
   const isBlank = state.target.kind === 'blank';
   const node = state.target.kind === 'node' ? state.target.node : null;
   const isDir = !!node?.isDirectory;
   const canPaste = !!clipboard;
 
+  const isMac = typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac');
+  const diffShortcut = isMac ? '⌘D' : 'Ctrl+D';
+  const rollbackShortcut = isMac ? '⌥⌘Z' : 'Alt+Ctrl+Z';
+
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target as Node;
+      if (ref.current && ref.current.contains(target)) {
+        return;
+      }
+      if (submenuRef.current && submenuRef.current.contains(target)) {
+        return;
+      }
+      onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -98,6 +116,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
     return () => {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey);
+      if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
     };
   }, [onClose]);
 
@@ -117,6 +136,30 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }, [state]);
+
+  const openGitSubmenu = () => {
+    if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+    if (gitTriggerRef.current) {
+      const rect = gitTriggerRef.current.getBoundingClientRect();
+      const subWidth = 260;
+      let x = rect.right + 2;
+      if (x + subWidth > window.innerWidth - 8) {
+        x = Math.max(8, rect.left - subWidth - 2);
+      }
+      let y = rect.top - 4;
+      if (y + 280 > window.innerHeight - 8) {
+        y = Math.max(8, window.innerHeight - 280 - 8);
+      }
+      setGitSubmenuPos({ x, y });
+      setGitSubmenuOpen(true);
+    }
+  };
+
+  const closeGitSubmenuWithDelay = () => {
+    leaveTimerRef.current = setTimeout(() => {
+      setGitSubmenuOpen(false);
+    }, 180);
+  };
 
   const item = (id: string, label: string, opts?: { disabled?: boolean; danger?: boolean }) => (
     <button
@@ -155,10 +198,40 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
     items.push(item('copy', '复制'));
   }
   items.push(item('paste', '粘贴', { disabled: !canPaste }));
-  if (node && !isDir) {
-    items.push(sep('s7'));
-    items.push(item('git-history', 'Git: View File History'));
+
+  // ── Git 专属级联菜单 ──
+  if (node) {
+    items.push(sep('s-git-trigger'));
+    items.push(
+      <div
+        key="git-submenu-trigger"
+        ref={gitTriggerRef}
+        className={`ctx-item${gitSubmenuOpen ? ' active-trigger' : ''}`}
+        onMouseEnter={openGitSubmenu}
+        onMouseLeave={closeGitSubmenuWithDelay}
+        onClick={() => {
+          if (gitSubmenuOpen) setGitSubmenuOpen(false);
+          else openGitSubmenu();
+        }}
+        style={{
+          background: gitSubmenuOpen ? 'var(--accent, #007acc)' : undefined,
+          color: gitSubmenuOpen ? '#ffffff' : undefined,
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: gitSubmenuOpen ? '#ffffff' : '#38bdf8' }}>
+            <line x1="6" y1="3" x2="6" y2="15" />
+            <circle cx="18" cy="6" r="3" />
+            <circle cx="6" cy="18" r="3" />
+            <path d="M18 9a9 9 0 0 1-9 9" />
+          </svg>
+          <span style={{ fontWeight: 500 }}>Git</span>
+        </span>
+        <span className="ctx-shortcut" style={{ fontSize: 13, fontWeight: 'bold' }}>›</span>
+      </div>,
+    );
   }
+
   const hasGitChange = Boolean(
     node &&
       gitStatus?.entries?.some((e) => {
@@ -168,8 +241,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
       }),
   );
   if (hasGitChange) {
-    items.push(sep('s-git'));
-    items.push(item('git-discard', '放弃更改 (Discard Changes)...', { danger: true }));
+    items.push(item('git-rollback', '放弃更改 (Rollback)...', { danger: true }));
   }
   if (node) {
     items.push(sep('s5'));
@@ -180,10 +252,149 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
     items.push(item('delete', '永久删除', { danger: true }));
   }
 
+  const handleGitAction = (actionId: string, disabled?: boolean) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled) return;
+    onAction(actionId);
+  };
+
   return (
-    <div className="ctx-menu" ref={ref} role="menu">
-      {items}
-    </div>
+    <>
+      <div className="ctx-menu" ref={ref} role="menu" onMouseDown={(e) => e.stopPropagation()}>
+        {items}
+      </div>
+
+      {/* Git 二级子菜单 (完全对齐用户附图结构及各项功能) */}
+      {gitSubmenuOpen && gitSubmenuPos && (
+        <div
+          ref={submenuRef}
+          className="ctx-menu ctx-git-submenu"
+          style={{
+            left: `${gitSubmenuPos.x}px`,
+            top: `${gitSubmenuPos.y}px`,
+            minWidth: 260,
+            zIndex: 10002,
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseEnter={() => {
+            if (leaveTimerRef.current) clearTimeout(leaveTimerRef.current);
+          }}
+          onMouseLeave={closeGitSubmenuWithDelay}
+        >
+          {/* 1. Annotate with Git Blame */}
+          <button
+            type="button"
+            className="ctx-item"
+            disabled={isDir}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleGitAction('git-annotate', isDir)}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 16, display: 'inline-block' }} />
+              <span>显示 Git 追溯标注</span>
+            </span>
+          </button>
+
+          {/* 2. Show Diff */}
+          <button
+            type="button"
+            className="ctx-item"
+            disabled={isDir}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleGitAction('git-diff', isDir)}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                <rect x="2" y="2" width="5.5" height="12" rx="1.5" stroke="#f87171" strokeWidth="1.5" />
+                <rect x="8.5" y="2" width="5.5" height="12" rx="1.5" stroke="#38bdf8" strokeWidth="1.5" />
+                <line x1="4.5" y1="5" x2="6" y2="5" stroke="#f87171" strokeWidth="1.2" />
+                <line x1="10" y1="5" x2="12" y2="5" stroke="#38bdf8" strokeWidth="1.2" />
+                <line x1="4.5" y1="8" x2="6" y2="8" stroke="#f87171" strokeWidth="1.2" />
+                <line x1="10" y1="8" x2="12" y2="8" stroke="#38bdf8" strokeWidth="1.2" />
+              </svg>
+              <span>显示差异</span>
+            </span>
+            <span className="ctx-shortcut">{diffShortcut}</span>
+          </button>
+
+          {/* 3. Compare with Revision... */}
+          <button
+            type="button"
+            className="ctx-item"
+            disabled={isDir}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleGitAction('git-compare-revision', isDir)}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 16, display: 'inline-block' }} />
+              <span>与历史版本对比...</span>
+            </span>
+          </button>
+
+          {/* 4. Compare with Branch or Tag... */}
+          <button
+            type="button"
+            className="ctx-item"
+            disabled={isDir}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleGitAction('git-compare-branch', isDir)}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 16, display: 'inline-block' }} />
+              <span>与分支或标签对比...</span>
+            </span>
+          </button>
+
+          {/* 5. Show History */}
+          <button
+            type="button"
+            className="ctx-item"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleGitAction('git-history')}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" style={{ flexShrink: 0 }}>
+                <circle cx="12" cy="12" r="9" />
+                <polyline points="12 7 12 12 15 15" />
+              </svg>
+              <span>显示文件历史记录</span>
+            </span>
+          </button>
+
+          {/* 6. Show Current Revision */}
+          <button
+            type="button"
+            className="ctx-item"
+            disabled={isDir}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleGitAction('git-current-revision', isDir)}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 16, display: 'inline-block' }} />
+              <span>查看当前提交版本</span>
+            </span>
+          </button>
+
+          {/* 7. Rollback... */}
+          <button
+            type="button"
+            className="ctx-item"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={handleGitAction('git-rollback')}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, color: 'var(--muted)' }}>
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+              <span>回滚修改...</span>
+            </span>
+            <span className="ctx-shortcut">{rollbackShortcut}</span>
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -236,8 +447,11 @@ function InlineNameInput({
   );
 }
 
-import { RenderFileTreeIcon } from './FileIcons';
-export { RenderFileTreeIcon };
+import { RenderFileTreeIcon, detectCodeSubtype, type CodeSubtype } from './FileIcons';
+export { RenderFileTreeIcon, detectCodeSubtype };
+
+// 全局缓存探测到的代码文件子类型（如 Java 类、接口、枚举等）
+const codeTypeCache = new Map<string, CodeSubtype>();
 
 
 function getNodeGitStatus(
@@ -324,6 +538,31 @@ function TreeNode({
   const [open, setOpen] = useState(depth === 0);
   const [children, setChildren] = useState<FileTreeNode[] | null>(null);
 
+  const isJava = !node.isDirectory && node.name.endsWith('.java');
+  const [detectedType, setDetectedType] = useState<CodeSubtype>(() => {
+    return codeTypeCache.get(node.path) || detectCodeSubtype(node.name);
+  });
+
+  useEffect(() => {
+    if (!isJava) return;
+    if (codeTypeCache.has(node.path)) {
+      setDetectedType(codeTypeCache.get(node.path)!);
+      return;
+    }
+    let cancelled = false;
+    if (window.ide?.readFile) {
+      window.ide.readFile(node.path).then((content) => {
+        if (cancelled || !content) return;
+        const resolved = detectCodeSubtype(node.name, content.slice(0, 800));
+        codeTypeCache.set(node.path, resolved);
+        setDetectedType(resolved);
+      }).catch(() => {});
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [node.path, isJava, node.name]);
+
   useEffect(() => {
     if (collapseKey && collapseKey > 0) {
       setOpen(false);
@@ -388,7 +627,7 @@ function TreeNode({
           />
         ) : (
           <div
-            className={`file-node file-node-dir ${selectedNode?.path === node.path ? 'active' : ''} ${gitMeta?.isIgnored ? 'is-git-ignored' : ''}`}
+            className={`file-node file-node-dir ${selectedNode?.path === node.path && !activePath ? 'active' : ''} ${gitMeta?.isIgnored ? 'is-git-ignored' : ''}`}
             style={{
               paddingLeft: 12 + depth * 16,
               position: 'sticky',
@@ -430,28 +669,7 @@ function TreeNode({
                 zIndex: 1,
               }}
             >
-              {open ? (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"
-                    fill="#eab308"
-                    opacity="0.25"
-                  />
-                  <path
-                    d="M2 10h20l-2 10H4L2 10Z"
-                    fill="#eab308"
-                    opacity="0.9"
-                  />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"
-                    fill="#eab308"
-                    opacity="0.85"
-                  />
-                </svg>
-              )}
+              <RenderFileTreeIcon name={node.name} isDirectory={true} isOpen={open} />
             </span>
             <span
               className="file-node-name"
@@ -580,7 +798,7 @@ function TreeNode({
       {indents}
       <span style={{ width: 14, zIndex: 1 }} />
       <span style={{ zIndex: 1, display: 'flex' }}>
-        <RenderFileTreeIcon name={node.name} isDirectory={false} />
+        <RenderFileTreeIcon name={node.name} isDirectory={false} codeType={detectedType} />
       </span>
       <span
         className="file-node-name"
@@ -832,7 +1050,11 @@ function FindInFolderModal({
                   onMouseEnter={() => setSelectedIndex(idx)}
                 >
                   <span className="find-folder-hit-icon">
-                    <RenderFileTreeIcon name={fileBase} isDirectory={false} />
+                    <RenderFileTreeIcon
+                      name={fileBase}
+                      isDirectory={false}
+                      codeType={codeTypeCache.get(p) || detectCodeSubtype(fileBase)}
+                    />
                   </span>
                   <span className="find-folder-hit-name" title={fileBase}>
                     {fileBase}
@@ -878,6 +1100,12 @@ interface Props extends FileTreeHandlers {
   gitStatus?: GitStatusResult | null;
   onViewFileHistory?: (path: string) => void;
   onDiscardPath?: (path: string) => void;
+  onPreviewGitDiff?: (path: string) => void;
+  onAnnotateGitBlame?: (path: string) => void;
+  onCompareWithRevision?: (path: string) => void;
+  onCompareWithBranchOrTag?: (path: string) => void;
+  onShowCurrentRevision?: (path: string) => void;
+  onRollbackPath?: (path: string) => void;
   refreshKey: number;
 }
 
@@ -889,6 +1117,12 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     gitStatus,
     onViewFileHistory,
     onDiscardPath,
+    onPreviewGitDiff,
+    onAnnotateGitBlame,
+    onCompareWithRevision,
+    onCompareWithBranchOrTag,
+    onShowCurrentRevision,
+    onRollbackPath,
     onOpenFile,
     onOpenTerminal,
     onAddToChat,
@@ -1121,8 +1355,29 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
             await window.ide.downloadFile(node.path);
           }
           break;
+        case 'git-annotate':
+          if (node && !node.isDirectory) onAnnotateGitBlame?.(node.path);
+          break;
+        case 'git-diff':
+          if (node && !node.isDirectory) onPreviewGitDiff?.(node.path);
+          break;
+        case 'git-compare-revision':
+          if (node && !node.isDirectory) onCompareWithRevision?.(node.path);
+          break;
+        case 'git-compare-branch':
+          if (node && !node.isDirectory) onCompareWithBranchOrTag?.(node.path);
+          break;
         case 'git-history':
           if (node) onViewFileHistory?.(node.path);
+          break;
+        case 'git-current-revision':
+          if (node && !node.isDirectory) onShowCurrentRevision?.(node.path);
+          break;
+        case 'git-rollback':
+          if (node) {
+            if (onRollbackPath) onRollbackPath(node.path);
+            else onDiscardPath?.(node.path);
+          }
           break;
         case 'git-discard':
           if (node) {

@@ -82,7 +82,10 @@ const api: IpcApi = {
   gitCommitDetails: (hash) => ipcRenderer.invoke('git:commitDetails', hash),
   gitFileHistory: (path, maxCount) => ipcRenderer.invoke('git:fileHistory', path, maxCount),
   gitBlameLine: (path: string, line: number) => ipcRenderer.invoke('git:blameLine', path, line),
+  gitBlameFile: (path: string) => ipcRenderer.invoke('git:blameFile', path),
   gitShowCommitDiff: (hash, path) => ipcRenderer.invoke('git:showCommitDiff', hash, path),
+  gitShowFileAtRef: (ref: string, path: string) => ipcRenderer.invoke('git:showFileAtRef', ref, path),
+  gitDiffWithRef: (ref: string, path: string) => ipcRenderer.invoke('git:diffWithRef', ref, path),
   gitGenerateCommitMessage: () => ipcRenderer.invoke('git:generateCommitMessage'),
 
   searchFiles: (query, max) => ipcRenderer.invoke('search:files', query, max),

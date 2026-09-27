@@ -930,8 +930,8 @@ export function ProjectRuntimeConfigModal({
                                 justifyContent: 'space-between',
                                 padding: '6px 12px',
                                 cursor: 'pointer',
-                                background: isChecked ? 'rgba(0, 122, 204, 0.15)' : 'transparent',
-                                borderLeft: isChecked ? '3px solid var(--accent, #007acc)' : '3px solid transparent',
+                                background: isChecked ? '#242424' : 'transparent',
+                                borderRadius: 4,
                                 transition: 'background 0.15s ease',
                               }}
                               onMouseEnter={(e) => {
