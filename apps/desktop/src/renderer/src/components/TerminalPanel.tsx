@@ -40,13 +40,15 @@ function terminalTheme(uiTheme: UiTheme) {
       background: '#f4effa',
       foreground: '#2a1b3d',
       cursor: '#82318e',
+      cursorAccent: '#ffffff',
       selectionBackground: 'rgba(130, 49, 142, 0.25)',
     };
   }
   return {
     background: '#141414',
     foreground: '#cccccc',
-    cursor: '#aeafad',
+    cursor: '#ffffff',
+    cursorAccent: '#141414',
     selectionBackground: 'rgba(255, 255, 255, 0.15)',
   };
 }
@@ -842,6 +844,8 @@ function TerminalSession({
       allowProposedApi: true,
       convertEol: true,
       cursorBlink: true,
+      cursorStyle: 'block',
+      cursorInactiveStyle: 'outline',
       fontSize: 12,
       lineHeight: 1.25,
       fontFamily: '"Cascadia Code", Consolas, "Microsoft YaHei Mono", "Microsoft YaHei", monospace',
@@ -1218,6 +1222,23 @@ function TerminalSession({
       termRef.current.options.theme = terminalTheme(uiTheme);
     }
   }, [uiTheme]);
+
+  // 当分屏主/副窗格焦点切换或标签被选中时，选中的终端立即获得焦点并使光标闪烁，未选中的窗格失焦停止闪烁
+  useEffect(() => {
+    if (!active || !visible) return;
+    const term = termRef.current;
+    if (!term) return;
+
+    if (isFocusedPane) {
+      // 延迟一帧，确保 DOM 状态更新后准确聚焦到 xterm textarea，触发 cursorBlink 闪烁
+      const raf = requestAnimationFrame(() => {
+        term.focus();
+      });
+      return () => cancelAnimationFrame(raf);
+    } else {
+      term.blur();
+    }
+  }, [active, visible, isFocusedPane]);
 
   // 当换行状态动态变化时，立即重算尺寸与重排终端文字
   useEffect(() => {
@@ -1893,32 +1914,43 @@ export function TerminalPanel({
     );
   }, [focusedTabId]);
 
-  // 分屏模式下智能切换或聚焦 Tab（槽位与焦点分离，彻底防止点击左侧右侧消失）
+  // 分屏模式下智能切换或聚焦 Tab（槽位与焦点分离，彻底防止点击左侧右侧消失，并激活目标终端光标闪烁）
   const switchOrFocusTab = useCallback(
     (targetId: string) => {
+      let nextFocused = targetId;
       if (!splitActiveId) {
         // 单屏模式：直接设置主终端
         setLeftTabId(targetId);
         setFocusedTabId(targetId);
-        return;
-      }
-      // 分屏模式：
-      if (targetId === leftTabId) {
-        // 点击左侧已激活的 Tab：仅切换焦点到左侧，右侧窗格绝对不消失
-        setFocusedTabId(leftTabId);
-      } else if (targetId === splitActiveId) {
-        // 点击右侧已激活的 Tab：仅切换焦点到右侧，左侧窗格绝对不消失
-        setFocusedTabId(splitActiveId);
+        nextFocused = targetId;
       } else {
-        // 点击未在分屏中显示的第三方 Tab：放入当前处于焦点的窗格中
-        if (focusedTabId === splitActiveId) {
-          setSplitActiveId(targetId);
-          setFocusedTabId(targetId);
+        // 分屏模式：
+        if (targetId === leftTabId) {
+          // 点击左侧已激活的 Tab：仅切换焦点到左侧，右侧窗格绝对不消失
+          setFocusedTabId(leftTabId);
+          nextFocused = leftTabId;
+        } else if (targetId === splitActiveId) {
+          // 点击右侧已激活的 Tab：仅切换焦点到右侧，左侧窗格绝对不消失
+          setFocusedTabId(splitActiveId);
+          nextFocused = splitActiveId;
         } else {
-          setLeftTabId(targetId);
-          setFocusedTabId(targetId);
+          // 点击未在分屏中显示的第三方 Tab：放入当前处于焦点的窗格中
+          if (focusedTabId === splitActiveId) {
+            setSplitActiveId(targetId);
+            setFocusedTabId(targetId);
+          } else {
+            setLeftTabId(targetId);
+            setFocusedTabId(targetId);
+          }
+          nextFocused = targetId;
         }
       }
+
+      // 主动触发目标终端聚焦与光标闪烁
+      requestAnimationFrame(() => {
+        const focusFn = sessionFocusRef.current.get(nextFocused);
+        focusFn?.();
+      });
     },
     [splitActiveId, leftTabId, focusedTabId],
   );
@@ -2126,7 +2158,10 @@ export function TerminalPanel({
                   role="tab"
                   aria-selected={isFocused}
                   className={`terminal-tab${isFocused ? ' active' : ''}${isVisibleInSplit && !isFocused ? ' in-split-secondary' : ''}`}
-                  onClick={() => switchOrFocusTab(tab.clientId)}
+                  onClick={(e) => {
+                    (e.currentTarget as HTMLElement).blur();
+                    switchOrFocusTab(tab.clientId);
+                  }}
                 >
                   {renderTabIcon(tab, terminalKind)}
                   <span className="terminal-tab-label">{label}</span>
