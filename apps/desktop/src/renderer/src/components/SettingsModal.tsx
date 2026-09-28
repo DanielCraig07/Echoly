@@ -1215,6 +1215,21 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                       <span>代码编辑自动保存到磁盘 (编辑停止约 0.8 秒后写入)</span>
                     </label>
                   </div>
+                  <div className="setting-card" style={{ marginTop: 12 }}>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.formatOnSave !== false}
+                        onChange={(e) =>
+                          setSettings({ ...settings, formatOnSave: e.target.checked })
+                        }
+                      />
+                      <span>保存时自动格式化 (Format on Save) — 触发保存时自动规范代码排版</span>
+                    </label>
+                  </div>
                   <div className="setting-control-group" style={{ marginTop: 12 }}>
                     <label
                       className="modern-checkbox-label"

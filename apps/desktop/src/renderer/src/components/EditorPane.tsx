@@ -19,6 +19,15 @@ import { registerAiInlineCompletions } from '../services/inlineCompletion';
 import type { CursorPos } from '../workspaceSession';
 import * as monaco from 'monaco-editor';
 import { GitBlameAnnotationGutter } from './GitBlameAnnotationGutter';
+import {
+  parseConflictBlocks,
+  resolveSingleConflict,
+  resolveAllConflicts,
+  registerConflictCodeLensProvider,
+  registerConflictCommands,
+  createConflictDecorations,
+  type ConflictBlock,
+} from '../services/mergeConflictResolver';
 
 interface Props {
   tabs: OpenTab[];
@@ -82,6 +91,8 @@ interface Props {
   selectionAiFloat?: boolean;
   breakpoints?: DapBreakpoint[];
   onToggleBreakpoint?: (path: string, line: number, condition?: string) => void;
+  formatOnSave?: boolean;
+  onForceLoadLargeFile?: (path: string) => void;
 }
 
 const COMMON_FIND_OPTIONS: MonacoEditor.IEditorFindOptions = {
@@ -588,10 +599,14 @@ export function EditorPane({
   selectionAiFloat = true,
   breakpoints: controlledBreakpoints,
   onToggleBreakpoint: controlledOnToggleBreakpoint,
+  formatOnSave = true,
+  onForceLoadLargeFile,
 }: Props) {
   const active = tabs.find((t) => t.path === activePath) ?? null;
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const splitEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const formatOnSaveRef = useRef(formatOnSave);
+  formatOnSaveRef.current = formatOnSave;
   // setEOL 对齐行尾期间为 true，用于拦截因此触发的 onChange 回声（避免误标脏/触发写盘）
   const eolAligningRef = useRef(false);
   const onSelectionChangeRef = useRef(onSelectionChange);
@@ -1304,6 +1319,94 @@ export function EditorPane({
   const switchFileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 用于在文件切换时读取切换前的 activePath，以便保存旧文件滚动位置
   const prevActivePathRef = useRef<string | null>(null);
+
+  // ── Git 合并冲突可视化解决状态与交互 ──────────────────────────
+  const conflictDecorationsRef = useRef<string[]>([]);
+  const conflictBlocks = useMemo(() => {
+    if (!active?.content || !active.content.includes('<<<<<<<')) return [];
+    return parseConflictBlocks(active.content);
+  }, [active?.content]);
+
+  const handleResolveConflict = useCallback(
+    (block: ConflictBlock, resolution: 'current' | 'incoming' | 'both') => {
+      if (!active?.path || !active?.content) return;
+      const updated = resolveSingleConflict(active.content, block, resolution);
+      onChangeContent(active.path, updated, true);
+      onShowToast?.(
+        'Git 冲突已解决',
+        `已应用${resolution === 'current' ? '当前' : resolution === 'incoming' ? '传入' : '双方'}更改`,
+        'success',
+      );
+    },
+    [active?.path, active?.content, onChangeContent, onShowToast],
+  );
+
+  const handleResolveAllConflicts = useCallback(
+    (resolution: 'current' | 'incoming' | 'both') => {
+      if (!active?.path || !active?.content) return;
+      const updated = resolveAllConflicts(active.content, resolution);
+      onChangeContent(active.path, updated, true);
+      onShowToast?.(
+        'Git 冲突全部解决',
+        `已批量应用${resolution === 'current' ? '当前' : resolution === 'incoming' ? '传入' : '双方'}更改`,
+        'success',
+      );
+    },
+    [active?.path, active?.content, onChangeContent, onShowToast],
+  );
+
+  const handleJumpNextConflict = useCallback(() => {
+    if (!editorRef.current || !conflictBlocks.length) return;
+    const currentLine = editorRef.current.getPosition()?.lineNumber || 1;
+    const nextBlock = conflictBlocks.find((b) => b.startLine > currentLine) || conflictBlocks[0];
+    if (nextBlock) {
+      editorRef.current.revealLineInCenter(nextBlock.startLine);
+      editorRef.current.setPosition({ lineNumber: nextBlock.startLine, column: 1 });
+      editorRef.current.focus();
+    }
+  }, [conflictBlocks]);
+
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    if (!conflictBlocks.length) {
+      if (conflictDecorationsRef.current.length) {
+        conflictDecorationsRef.current = ed.deltaDecorations(conflictDecorationsRef.current, []);
+      }
+      return;
+    }
+    const decs = createConflictDecorations(conflictBlocks);
+    conflictDecorationsRef.current = ed.deltaDecorations(conflictDecorationsRef.current, decs);
+  }, [conflictBlocks]);
+
+  useEffect(() => {
+    const onCustomResolve = (e: Event) => {
+      const custom = e as CustomEvent<{
+        block: ConflictBlock;
+        resolution: 'current' | 'incoming' | 'both';
+      }>;
+      if (custom.detail?.block && custom.detail?.resolution) {
+        handleResolveConflict(custom.detail.block, custom.detail.resolution);
+      }
+    };
+    window.addEventListener('echoly:resolveConflict', onCustomResolve);
+    return () => window.removeEventListener('echoly:resolveConflict', onCustomResolve);
+  }, [handleResolveConflict]);
+
+  useEffect(() => {
+    const handleFormat = async () => {
+      const ed = editorRef.current;
+      if (!ed || active?.isLargeFile) return;
+      try {
+        const action = ed.getAction('editor.action.formatDocument');
+        if (action && action.isSupported()) {
+          await action.run();
+        }
+      } catch {}
+    };
+    window.addEventListener('echoly:formatActiveEditor', handleFormat);
+    return () => window.removeEventListener('echoly:formatActiveEditor', handleFormat);
+  }, [active?.isLargeFile]);
 
 
 
@@ -2883,6 +2986,19 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       // 查找：Cmd+F / Ctrl+F (打开查找并将光标自动定位到搜索框)
       ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyF, () => {
         focusEditorFindWidget(ed);
+      });
+
+      // 保存文件：Cmd+S / Ctrl+S (开启 formatOnSave 时在保存前自动格式化)
+      ed.addCommand(KeyMod.CtrlCmd | KeyCode.KeyS, async () => {
+        if (formatOnSaveRef.current && !activeRef.current?.isLargeFile) {
+          try {
+            const formatAction = ed.getAction('editor.action.formatDocument');
+            if (formatAction && formatAction.isSupported()) {
+              await formatAction.run();
+            }
+          } catch {}
+        }
+        window.dispatchEvent(new CustomEvent('echoly:triggerSaveActive'));
       });
 
       // 智能一键修复：Fix with AI (Alt+. / ⌥.)
@@ -4786,15 +4902,84 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 onPreviewDiff={(d) => onPreviewDiff?.(d as PendingDiff)}
               />
             )}
+            {/* Git 合并冲突可视化操作横幅 */}
+            {conflictBlocks.length > 0 && !active.isLargeFile && (
+              <div className="editor-conflict-banner">
+                <div className="conflict-banner-info">
+                  <span className="conflict-banner-badge">{conflictBlocks.length} 处冲突</span>
+                  <span>当前文件包含未解决的 Git 合并冲突标记</span>
+                </div>
+                <div className="conflict-banner-actions">
+                  <button
+                    type="button"
+                    className="editor-conflict-btn accept-current"
+                    onClick={() => handleResolveAllConflicts('current')}
+                    title="批量采用当前分支修改 (HEAD)"
+                  >
+                    全部采用当前
+                  </button>
+                  <button
+                    type="button"
+                    className="editor-conflict-btn accept-incoming"
+                    onClick={() => handleResolveAllConflicts('incoming')}
+                    title="批量采用传入分支修改 (Incoming)"
+                  >
+                    全部采用传入
+                  </button>
+                  <button
+                    type="button"
+                    className="editor-conflict-btn"
+                    onClick={() => handleResolveAllConflicts('both')}
+                    title="保留双方修改"
+                  >
+                    全部保留双方
+                  </button>
+                  <button
+                    type="button"
+                    className="editor-conflict-btn"
+                    onClick={handleJumpNextConflict}
+                    title="跳转到下一处冲突"
+                  >
+                    下一处 ▾
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 大文件安全模式横幅 */}
+            {active.isLargeFile && (
+              <div className="large-file-guard-banner">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>⚠️ <strong>大文件安全模式</strong>：该文件体积较大，已自动关闭复杂语法解析以保障编辑器极速流畅</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="guard-btn"
+                    onClick={() => onForceLoadLargeFile?.(active.path)}
+                  >
+                    强制完全加载 (解除防护)
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
-              {active.isLargeFile ? (
+              {active.isLargeFile && !active.content ? (
                 <div className="large-file-placeholder">
                   <div className="large-file-icon">📄</div>
                   <div className="large-file-title">{active.path.split('/').pop() || active.path}</div>
                   <div className="large-file-hint">
-                    文件较大（&gt;2MB），为避免编辑器卡顿未加载全文。可直接运行终端/搜索或让 Agent
-                    按行读取。
+                    文件较大（&gt;2MB），为避免编辑器卡顿未预先加载全文。
                   </div>
+                  <button
+                    type="button"
+                    className="guard-btn"
+                    style={{ marginTop: 12, padding: '6px 14px', fontSize: 13 }}
+                    onClick={() => onForceLoadLargeFile?.(active.path)}
+                  >
+                    立即加载并查看 (安全模式)
+                  </button>
                 </div>
               ) : (
                 <Editor
@@ -4810,6 +4995,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 editorRef.current = ed;
                 setEditorInstance(ed);
                 registerAiInlineCompletions();
+                if (monaco) {
+                  registerConflictCodeLensProvider(monaco, handleResolveConflict);
+                  registerConflictCommands(monaco, handleResolveConflict);
+                }
                 try {
                   monaco?.editor?.remeasureFonts?.();
                   if (typeof document !== 'undefined' && document.fonts?.ready) {
@@ -5032,16 +5221,16 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
                 fontWeight: '400',
                 disableMonospaceOptimizations: true,
-                'semanticHighlighting.enabled': true,
-                minimap: { enabled: minimap !== false },
+                'semanticHighlighting.enabled': !active.isLargeFile,
+                minimap: { enabled: !active.isLargeFile && minimap !== false },
                 hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                 automaticLayout: true,
                 smoothScrolling: true,
-                wordWrap: wordWrap ? 'on' : 'off',
+                wordWrap: active.isLargeFile ? 'off' : (wordWrap ? 'on' : 'off'),
                 scrollBeyondLastColumn: 0,
                 scrollBeyondLastLine: false,
-                bracketPairColorization: { enabled: true },
-                guides: { bracketPairs: 'active', indentation: true },
+                bracketPairColorization: { enabled: !active.isLargeFile },
+                guides: { bracketPairs: !active.isLargeFile ? 'active' : false, indentation: true },
                 cursorSmoothCaretAnimation: 'on',
                 cursorBlinking: 'smooth',
                 renderWhitespace: 'selection',
@@ -5049,7 +5238,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 lineNumbersMinChars: 4,
                 lineDecorationsWidth: 10,
                 glyphMargin: true,
-                folding: true,
+                folding: !active.isLargeFile,
                 overviewRulerLanes: 3,
                 overviewRulerBorder: false,
                 multiCursorModifier: 'alt',

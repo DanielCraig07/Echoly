@@ -139,6 +139,9 @@ function normalize(raw: Partial<AppSettings>): AppSettings {
     gitBlameInline: raw.gitBlameInline !== false,
     hoverDelay: Math.max(500, Number(raw.hoverDelay) || DEFAULT_SETTINGS.hoverDelay || 500),
     minimap: raw.minimap !== false,
+    formatOnSave: raw.formatOnSave !== false,
+    largeFileThresholdBytes:
+      Number(raw.largeFileThresholdBytes) || DEFAULT_SETTINGS.largeFileThresholdBytes || 2 * 1024 * 1024,
   };
 }
 

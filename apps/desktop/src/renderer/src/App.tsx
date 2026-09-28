@@ -238,6 +238,12 @@ export function App() {
   const [terminalScrollback, setTerminalScrollback] = useState<number>(
     DEFAULT_SETTINGS.terminalScrollback ?? 10000,
   );
+  const [formatOnSave, setFormatOnSave] = useState(DEFAULT_SETTINGS.formatOnSave ?? true);
+  const [largeFileThresholdBytes, setLargeFileThresholdBytes] = useState(
+    DEFAULT_SETTINGS.largeFileThresholdBytes ?? 2 * 1024 * 1024,
+  );
+  const largeFileThresholdBytesRef = useRef(largeFileThresholdBytes);
+  largeFileThresholdBytesRef.current = largeFileThresholdBytes;
   const [models, setModels] = useState<ModelProfile[]>(DEFAULT_MODELS);
   const [activeModelId, setActiveModelId] = useState<string>('deepseek-local');
   const [layout, setLayout] = useState<LayoutSettings>({ ...DEFAULT_LAYOUT });
@@ -1117,6 +1123,8 @@ export function App() {
     setMinimap(s.minimap !== false);
     setSelectionAiFloat(s.selectionAiFloat !== false);
     setTerminalScrollback(s.terminalScrollback ?? 10000);
+    setFormatOnSave(s.formatOnSave !== false);
+    setLargeFileThresholdBytes(s.largeFileThresholdBytes ?? 2 * 1024 * 1024);
     if (s.models && Array.isArray(s.models) && s.models.length > 0) {
       setModels(s.models);
     }
@@ -1877,16 +1885,17 @@ export function App() {
         return;
       }
     }
-    // 大文件：超过 2MB 时不整段塞进 Monaco，避免渲染卡顿；仅提示并留空，待 agent/其它流程按需处理
-    const isLarge = content.length > 2 * 1024 * 1024;
+    // 大文件防护：超过配置阈值（默认 2MB）时开启安全模式，使用纯文本轻量加载避免 AST 卡死
+    const threshold = largeFileThresholdBytesRef.current || 2 * 1024 * 1024;
+    const isLarge = content.length > threshold;
     setTabs((prev) => {
       if (prev.some((t) => t.path === path)) return prev;
       return [
         ...prev,
         {
           path,
-          content: isLarge ? '' : content,
-          language: languageFromPath(path),
+          content,
+          language: isLarge ? 'plaintext' : languageFromPath(path),
           dirty: false,
           isLargeFile: isLarge,
         },
@@ -2041,8 +2050,59 @@ export function App() {
     const path = activePathRef.current;
     const tab = tabsRef.current.find((t) => t.path === path);
     if (!tab || tab.language === 'image' || tab.previewUrl) return;
-    await saveTab(tab);
-  }, [saveTab]);
+
+    if (formatOnSave && !tab.isLargeFile) {
+      window.dispatchEvent(new CustomEvent('echoly:formatActiveEditor'));
+      await new Promise((r) => setTimeout(r, 60));
+    }
+
+    const freshTab = tabsRef.current.find((t) => t.path === path) || tab;
+    await saveTab(freshTab);
+  }, [saveTab, formatOnSave]);
+
+  const handleForceLoadLargeFile = useCallback((filePath: string) => {
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.path === filePath
+          ? { ...t, language: languageFromPath(filePath), isLargeFile: false }
+          : t,
+      ),
+    );
+  }, []);
+
+  const handleFileMoved = useCallback((oldPath: string, newPath: string) => {
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.path === oldPath) {
+          return { ...t, path: newPath, language: languageFromPath(newPath) };
+        }
+        if (t.path.startsWith(oldPath + '/')) {
+          const sub = t.path.slice(oldPath.length);
+          const updated = `${newPath}${sub}`;
+          return { ...t, path: updated, language: languageFromPath(updated) };
+        }
+        return t;
+      }),
+    );
+    if (activePathRef.current === oldPath) {
+      setActivePath(newPath);
+    } else if (activePathRef.current?.startsWith(oldPath + '/')) {
+      const sub = activePathRef.current.slice(oldPath.length);
+      setActivePath(`${newPath}${sub}`);
+    }
+    setTreeRefreshKey((k) => k + 1);
+    void window.ide.gitStatus().then((res) => {
+      if (res.ok) setGitStatus(res);
+    });
+  }, []);
+
+  useEffect(() => {
+    const onTriggerSave = () => {
+      void saveActive();
+    };
+    window.addEventListener('echoly:triggerSaveActive', onTriggerSave);
+    return () => window.removeEventListener('echoly:triggerSaveActive', onTriggerSave);
+  }, [saveActive]);
 
   const saveAsActive = useCallback(async (): Promise<void> => {
     const path = activePathRef.current;
@@ -3542,6 +3602,8 @@ export function App() {
                         onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
                         onShowCurrentRevision={(p) => void handleShowCurrentRevision(p)}
                         onRollbackPath={(p) => setRollbackModalPath(p)}
+                        onFileMoved={handleFileMoved}
+                        onShowToast={showToast}
                         onOpenFile={(p) => void openFile(p)}
                         onOpenTerminal={(cwd) => {
                           const targetDirName =
@@ -3786,6 +3848,8 @@ export function App() {
             selectionAiFloat={selectionAiFloat}
             breakpoints={breakpoints}
             onToggleBreakpoint={handleToggleBreakpoint}
+            formatOnSave={formatOnSave}
+            onForceLoadLargeFile={handleForceLoadLargeFile}
           />
 
           {workspace && (

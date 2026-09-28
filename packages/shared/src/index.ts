@@ -167,6 +167,10 @@ export interface AppSettings {
   terminalScrollback?: number;
   /** 键盘快捷键预设模式 ('vscode' | 'intellij')，默认 'vscode'。 */
   keymapPreset?: 'vscode' | 'intellij';
+  /** 是否开启保存文件时自动格式化 (Format on Save)。默认 true。 */
+  formatOnSave?: boolean;
+  /** 大文件安全保护阈值大小（字节）。默认 2MB (2 * 1024 * 1024)。 */
+  largeFileThresholdBytes?: number;
 }
 
 export interface UpdateFeedConfig {
@@ -222,6 +226,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalScrollback: 10000,
   updateFeed: null,
   keymapPreset: 'vscode',
+  formatOnSave: true,
+  largeFileThresholdBytes: 2 * 1024 * 1024,
 };
 
 /** Migrate legacy settings to new provider and model structure */

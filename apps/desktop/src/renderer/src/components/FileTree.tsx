@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useImperativeHandle,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -10,6 +11,7 @@ import {
 } from 'react';
 import type { FileTreeNode, GitStatusEntry, GitStatusResult } from '@deepseek-ide/shared';
 import { createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { validateMove } from '../utils/fileMoveValidation';
 
 export type PathClipboard = {
   mode: 'cut' | 'copy';
@@ -516,6 +518,7 @@ function TreeNode({
   onContextNode,
   onInlineDone,
   onInlineCancel,
+  onMoveNode,
 }: {
   node: FileTreeNode;
   depth: number;
@@ -534,9 +537,11 @@ function TreeNode({
   onContextNode: (e: ReactMouseEvent, node: FileTreeNode) => void;
   onInlineDone: (edit: InlineEdit, name: string) => void;
   onInlineCancel: () => void;
+  onMoveNode?: (sourcePath: string, targetDirPath: string, sourceIsDir: boolean) => void;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [children, setChildren] = useState<FileTreeNode[] | null>(null);
+  const [isDropTarget, setIsDropTarget] = useState(false);
 
   const isJava = !node.isDirectory && node.name.endsWith('.java');
   const [detectedType, setDetectedType] = useState<CodeSubtype>(() => {
@@ -627,7 +632,37 @@ function TreeNode({
           />
         ) : (
           <div
-            className={`file-node file-node-dir ${selectedNode?.path === node.path && !activePath ? 'active' : ''} ${gitMeta?.isIgnored ? 'is-git-ignored' : ''}`}
+            draggable={!showRename && !showCreateHere}
+            onDragStart={(e) => {
+              e.dataTransfer.setData(
+                'application/json',
+                JSON.stringify({ path: node.path, isDirectory: true }),
+              );
+              e.dataTransfer.effectAllowed = 'move';
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              setIsDropTarget(true);
+            }}
+            onDragLeave={(e) => {
+              setIsDropTarget(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDropTarget(false);
+              const raw = e.dataTransfer.getData('application/json');
+              if (raw && onMoveNode) {
+                try {
+                  const data = JSON.parse(raw);
+                  onMoveNode(data.path, node.path, !!data.isDirectory);
+                } catch {}
+              }
+            }}
+            className={`file-node file-node-dir ${isDropTarget ? 'drop-target-active' : ''} ${selectedNode?.path === node.path && !activePath ? 'active' : ''} ${gitMeta?.isIgnored ? 'is-git-ignored' : ''}`}
             style={{
               paddingLeft: 12 + depth * 16,
               position: 'sticky',
@@ -719,6 +754,7 @@ function TreeNode({
                 onContextNode={onContextNode}
                 onInlineDone={onInlineDone}
                 onInlineCancel={onInlineCancel}
+                onMoveNode={onMoveNode}
               />
             ))}
           </>
@@ -784,6 +820,14 @@ function TreeNode({
   return (
     <div
       ref={nodeRef}
+      draggable={!showRename}
+      onDragStart={(e) => {
+        e.dataTransfer.setData(
+          'application/json',
+          JSON.stringify({ path: node.path, isDirectory: false }),
+        );
+        e.dataTransfer.effectAllowed = 'move';
+      }}
       className={`file-node ${selectedNode?.path === node.path || isThisActive ? 'active' : ''} ${gitMeta?.isIgnored ? 'is-git-ignored' : ''}`}
       style={{
         paddingLeft: 12 + depth * 16,
@@ -1106,6 +1150,8 @@ interface Props extends FileTreeHandlers {
   onCompareWithBranchOrTag?: (path: string) => void;
   onShowCurrentRevision?: (path: string) => void;
   onRollbackPath?: (path: string) => void;
+  onFileMoved?: (oldPath: string, newPath: string) => void;
+  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
   refreshKey: number;
 }
 
@@ -1123,6 +1169,8 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     onCompareWithBranchOrTag,
     onShowCurrentRevision,
     onRollbackPath,
+    onFileMoved,
+    onShowToast,
     onOpenFile,
     onOpenTerminal,
     onAddToChat,
@@ -1143,6 +1191,31 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
   const [inlineEdit, setInlineEdit] = useState<InlineEdit | null>(null);
   const [expandPath, setExpandPath] = useState<string | null>(null);
   const [findFolder, setFindFolder] = useState<string | null>(null);
+  const [isRootDropTarget, setIsRootDropTarget] = useState(false);
+
+  const handleMoveNode = useCallback(
+    async (sourcePath: string, targetDirPath: string, sourceIsDir: boolean) => {
+      const check = validateMove(sourcePath, targetDirPath, sourceIsDir);
+      if (!check.valid || !check.newPath) {
+        if (check.reason && check.reason !== '文件已在目标目录中') {
+          onShowToast?.('无法移动', check.reason, 'warn');
+        }
+        return;
+      }
+
+      try {
+        await window.ide.renamePath(sourcePath, check.newPath);
+        onFileMoved?.(sourcePath, check.newPath);
+        setLocalRefreshKey((k) => k + 1);
+        const fileName = sourcePath.split(/[/\\]/).pop() || sourcePath;
+        const targetLabel = targetDirPath === '.' ? '根目录' : targetDirPath;
+        onShowToast?.('移动成功', `已将 ${fileName} 移动至 ${targetLabel}`, 'success');
+      } catch (err) {
+        onShowToast?.('移动失败', err instanceof Error ? err.message : String(err), 'error');
+      }
+    },
+    [onFileMoved, onShowToast],
+  );
 
   const bump = () => setLocalRefreshKey((k) => k + 1);
 
@@ -1429,7 +1502,32 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     inlineEdit.parentPath === '.';
 
   return (
-    <div className="file-tree" onContextMenu={(e) => openMenu(e, { kind: 'blank' })}>
+    <div
+      className={`file-tree ${isRootDropTarget ? 'drop-target-root-active' : ''}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        setIsRootDropTarget(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setIsRootDropTarget(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsRootDropTarget(false);
+        const raw = e.dataTransfer.getData('application/json');
+        if (raw) {
+          try {
+            const data = JSON.parse(raw);
+            void handleMoveNode(data.path, '.', !!data.isDirectory);
+          } catch {}
+        }
+      }}
+      onContextMenu={(e) => openMenu(e, { kind: 'blank' })}
+    >
       {rootCreate && (
         <InlineNameInput
           initial=""
@@ -1459,6 +1557,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           onContextNode={(e, n) => openMenu(e, { kind: 'node', node: n })}
           onInlineDone={(edit, name) => void handleInlineDone(edit, name)}
           onInlineCancel={() => setInlineEdit(null)}
+          onMoveNode={handleMoveNode}
         />
       ))}
       {menu && (

@@ -18629,5 +18629,148 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   background: transparent !important;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   Stage 1: Git 合并冲突解决、大文件安全保护模式与文件树拖拽交互增强
+   ══════════════════════════════════════════════════════════════════ */
 
+/* Git 冲突区块 Monaco 行内背景高亮与侧边标记 */
+.conflict-current-range {
+  background-color: rgba(34, 197, 94, 0.14) !important;
+  border-left: 3px solid #22c55e !important;
+}
 
+.conflict-incoming-range {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+  border-left: 3px solid #3b82f6 !important;
+}
+
+.conflict-gutter-current {
+  background: #22c55e !important;
+  width: 4px !important;
+}
+
+.conflict-gutter-incoming {
+  background: #3b82f6 !important;
+  width: 4px !important;
+}
+
+/* 编辑区顶部 Git 合并冲突提示与快速操作横幅 */
+.editor-conflict-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.18) 0%, rgba(20, 20, 20, 0.95) 100%);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.35);
+  font-size: 12px;
+  color: var(--text, #e4e4e7);
+  z-index: 40;
+  flex-shrink: 0;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.editor-conflict-banner .conflict-banner-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.editor-conflict-banner .conflict-banner-badge {
+  background: rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #f87171;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.editor-conflict-banner .conflict-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-conflict-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text, #e4e4e7);
+  transition: all 0.12s ease;
+}
+
+.editor-conflict-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.editor-conflict-btn.accept-current {
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #4ade80;
+}
+
+.editor-conflict-btn.accept-current:hover {
+  background: rgba(34, 197, 94, 0.28);
+}
+
+.editor-conflict-btn.accept-incoming {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #60a5fa;
+}
+
+.editor-conflict-btn.accept-incoming:hover {
+  background: rgba(59, 130, 246, 0.28);
+}
+
+/* 大文件安全模式顶部横幅 */
+.large-file-guard-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: rgba(234, 179, 8, 0.12);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.3);
+  font-size: 12px;
+  color: #fef08a;
+  z-index: 40;
+  flex-shrink: 0;
+}
+
+.large-file-guard-banner .guard-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  background: rgba(234, 179, 8, 0.18);
+  color: #fef08a;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.large-file-guard-banner .guard-btn:hover {
+  background: rgba(234, 179, 8, 0.3);
+}
+
+/* 文件树拖拽释放目标高亮 */
+.file-node.drop-target-active {
+  background: rgba(59, 130, 246, 0.22) !important;
+  outline: 1.5px dashed #3b82f6 !important;
+  outline-offset: -1.5px !important;
+  border-radius: 4px !important;
+}
+
+.file-tree-container.drop-target-root-active {
+  background: rgba(59, 130, 246, 0.08) !important;
+  outline: 1.5px dashed rgba(59, 130, 246, 0.6) !important;
+  outline-offset: -2px !important;
+}
