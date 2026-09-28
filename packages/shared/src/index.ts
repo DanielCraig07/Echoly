@@ -226,7 +226,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalScrollback: 10000,
   updateFeed: null,
   keymapPreset: 'vscode',
-  formatOnSave: true,
+  formatOnSave: false,
   largeFileThresholdBytes: 2 * 1024 * 1024,
 };
 

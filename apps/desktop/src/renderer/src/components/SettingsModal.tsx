@@ -1222,7 +1222,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                     >
                       <input
                         type="checkbox"
-                        checked={settings.formatOnSave !== false}
+                        checked={Boolean(settings.formatOnSave)}
                         onChange={(e) =>
                           setSettings({ ...settings, formatOnSave: e.target.checked })
                         }

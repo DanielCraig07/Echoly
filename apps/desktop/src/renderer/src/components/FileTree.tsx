@@ -653,6 +653,7 @@ function TreeNode({
             }}
             onDrop={(e) => {
               e.preventDefault();
+              e.stopPropagation();
               setIsDropTarget(false);
               const raw = e.dataTransfer.getData('application/json');
               if (raw && onMoveNode) {
@@ -827,6 +828,14 @@ function TreeNode({
           JSON.stringify({ path: node.path, isDirectory: false }),
         );
         e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragOver={(e) => {
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'none';
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
       }}
       className={`file-node ${selectedNode?.path === node.path || isThisActive ? 'active' : ''} ${gitMeta?.isIgnored ? 'is-git-ignored' : ''}`}
       style={{
@@ -1505,12 +1514,18 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     <div
       className={`file-tree ${isRootDropTarget ? 'drop-target-root-active' : ''}`}
       onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        } else {
+          setIsRootDropTarget(false);
+        }
       }}
       onDragEnter={(e) => {
-        e.preventDefault();
-        setIsRootDropTarget(true);
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+          setIsRootDropTarget(true);
+        }
       }}
       onDragLeave={(e) => {
         if (e.currentTarget === e.target) setIsRootDropTarget(false);
@@ -1518,6 +1533,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
       onDrop={(e) => {
         e.preventDefault();
         setIsRootDropTarget(false);
+        if (e.target !== e.currentTarget) return;
         const raw = e.dataTransfer.getData('application/json');
         if (raw) {
           try {

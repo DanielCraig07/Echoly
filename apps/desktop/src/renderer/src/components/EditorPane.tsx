@@ -599,7 +599,7 @@ export function EditorPane({
   selectionAiFloat = true,
   breakpoints: controlledBreakpoints,
   onToggleBreakpoint: controlledOnToggleBreakpoint,
-  formatOnSave = true,
+  formatOnSave = false,
   onForceLoadLargeFile,
 }: Props) {
   const active = tabs.find((t) => t.path === activePath) ?? null;

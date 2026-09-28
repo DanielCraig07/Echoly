@@ -238,7 +238,7 @@ export function App() {
   const [terminalScrollback, setTerminalScrollback] = useState<number>(
     DEFAULT_SETTINGS.terminalScrollback ?? 10000,
   );
-  const [formatOnSave, setFormatOnSave] = useState(DEFAULT_SETTINGS.formatOnSave ?? true);
+  const [formatOnSave, setFormatOnSave] = useState(DEFAULT_SETTINGS.formatOnSave ?? false);
   const [largeFileThresholdBytes, setLargeFileThresholdBytes] = useState(
     DEFAULT_SETTINGS.largeFileThresholdBytes ?? 2 * 1024 * 1024,
   );
@@ -1123,7 +1123,7 @@ export function App() {
     setMinimap(s.minimap !== false);
     setSelectionAiFloat(s.selectionAiFloat !== false);
     setTerminalScrollback(s.terminalScrollback ?? 10000);
-    setFormatOnSave(s.formatOnSave !== false);
+    setFormatOnSave(s.formatOnSave === true);
     setLargeFileThresholdBytes(s.largeFileThresholdBytes ?? 2 * 1024 * 1024);
     if (s.models && Array.isArray(s.models) && s.models.length > 0) {
       setModels(s.models);
