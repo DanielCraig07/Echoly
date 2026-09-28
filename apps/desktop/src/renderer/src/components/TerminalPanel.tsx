@@ -98,7 +98,7 @@ function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh') {
   if (terminalKind === 'ssh' || type === 'ssh') {
     return (
       <span className="terminal-tab-icon ssh" title="SSH 远程主机">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3ecf8e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="2" y="3" width="20" height="7" rx="2" />
           <rect x="2" y="14" width="20" height="7" rx="2" />
           <line x1="6" y1="6.5" x2="6.01" y2="6.5" />
@@ -2125,7 +2125,7 @@ export function TerminalPanel({
                   type="button"
                   role="tab"
                   aria-selected={isFocused}
-                  className={`terminal-tab${isFocused ? ' active' : ''}${isRight ? ' is-split-active' : ''}`}
+                  className={`terminal-tab${isFocused ? ' active' : ''}${isVisibleInSplit && !isFocused ? ' in-split-secondary' : ''}`}
                   onClick={() => switchOrFocusTab(tab.clientId)}
                 >
                   {renderTabIcon(tab, terminalKind)}
@@ -2135,8 +2135,8 @@ export function TerminalPanel({
                       style={{
                         fontSize: 9,
                         marginLeft: 3,
-                        fontWeight: isFocused ? 700 : 400,
-                        opacity: isFocused ? 1 : 0.65,
+                        fontWeight: isFocused ? 600 : 400,
+                        color: isFocused ? 'var(--text-bright, #fff)' : 'var(--muted)',
                       }}
                     >
                       {isLeft ? '(左)' : '(右)'}
