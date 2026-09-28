@@ -1292,8 +1292,8 @@ function TerminalSession({
           hostRef.current.scrollLeft = 0;
           hostRef.current.style.overflowX = 'hidden';
         }
+        // 仅清空历史回滚缓冲区 (scrollback)，保留当前视口首行 Shell 提示符，严禁强行覆盖 \x1b[2J\x1b[3J\x1b[H
         termRef.current.clear();
-        termRef.current.write('\x1b[2J\x1b[3J\x1b[H');
         const id = idRef.current;
         if (id) {
           applyTerminalSize(id);
@@ -1527,13 +1527,22 @@ function TerminalSession({
       hostRef.current.scrollLeft = 0;
       hostRef.current.style.overflowX = 'hidden';
     }
-    termRef.current?.clear();
-    termRef.current?.write('\x1b[2J\x1b[3J\x1b[H');
     const id = idRef.current;
     if (id) {
+      const isWin =
+        typeof navigator !== 'undefined' && /win/i.test(navigator.platform || navigator.userAgent);
+      const isSsh = terminalKind === 'ssh';
+      if (isWin && !isSsh) {
+        void window.ide.writeTerminal(id, 'cls\r\n');
+      } else {
+        // 在 Unix / Linux / macOS / SSH 发送 \x0c (Ctrl+L)，触发 Shell 重绘当前提示符至首行
+        void window.ide.writeTerminal(id, '\x0c');
+      }
       applyTerminalSize(id);
       setTimeout(() => applyTerminalSize(id), 60);
     }
+    // 仅清空历史回滚缓冲区 (scrollback)，保留当前视口首行 Shell 提示符，严禁强行覆盖 \x1b[2J\x1b[3J\x1b[H
+    termRef.current?.clear();
     setCtxMenu(null);
     termRef.current?.focus();
   };
@@ -1900,10 +1909,13 @@ export function TerminalPanel({
     if (sendRaw) {
       const isWin =
         typeof navigator !== 'undefined' && /win/i.test(navigator.platform || navigator.userAgent);
-      if (isWin) {
+      const isSsh =
+        terminalKind === 'ssh' ||
+        tabs.find((t) => t.clientId === focusedTabId)?.terminalType === 'ssh';
+      if (isWin && !isSsh) {
         sendRaw('cls\r\n');
       } else {
-        // 在 Unix (macOS / Linux) 发送 \x0c (Ctrl+L)，通知 shell 重绘当前单行提示符到首行，不发送换行回车，彻底消除多余空行与双行提示符
+        // 在 Unix (macOS / Linux / SSH) 发送 \x0c (Ctrl+L)，通知 shell 重绘当前单行提示符到首行，不发送换行回车，彻底消除多余空行与双行提示符
         sendRaw('\x0c');
       }
     }
@@ -1912,7 +1924,7 @@ export function TerminalPanel({
         detail: { clientId: focusedTabId },
       }),
     );
-  }, [focusedTabId]);
+  }, [focusedTabId, terminalKind, tabs]);
 
   // 分屏模式下智能切换或聚焦 Tab（槽位与焦点分离，彻底防止点击左侧右侧消失，并激活目标终端光标闪烁）
   const switchOrFocusTab = useCallback(
