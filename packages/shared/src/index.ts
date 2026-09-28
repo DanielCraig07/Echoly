@@ -1104,6 +1104,8 @@ export interface IpcApi {
   onJavaInstallProgress: (cb: (progress: JdkInstallProgress) => void) => () => void;
   /** 打开系统设置（如 macOS 本地网络隐私设置） */
   openSystemSettings?: (type?: string) => Promise<boolean>;
+  /** 打开系统外部链接或本地网络服务 */
+  openExternal?: (url: string) => Promise<boolean>;
 }
 
 export interface CppToolItem {

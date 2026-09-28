@@ -236,6 +236,7 @@ const api: IpcApi = {
     ipcRenderer.invoke('ai:completeCode', payload),
   rulesGet: (workspaceRoot?: string) => ipcRenderer.invoke('rules:get', workspaceRoot),
   rulesSave: (content: string, workspaceRoot?: string) => ipcRenderer.invoke('rules:save', content, workspaceRoot),
+  openExternal: (url: string) => ipcRenderer.invoke('system:openExternal', url),
 };
 
 contextBridge.exposeInMainWorld('ide', api);

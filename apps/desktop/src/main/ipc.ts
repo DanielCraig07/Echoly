@@ -727,4 +727,16 @@ ${payload.suffix.slice(0, 1000)}
     }
     return false;
   });
+
+  ipcMain.handle('system:openExternal', async (_e, url: string) => {
+    if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+      try {
+        await shell.openExternal(url);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
 }

@@ -759,3 +759,103 @@ export async function globFilesByPattern(
   }
   return matches;
 }
+
+export type SymbolKind = 'class' | 'interface' | 'function' | 'type' | 'enum' | 'struct';
+
+export interface CodeSymbolHit {
+  name: string;
+  kind: SymbolKind;
+  path: string;
+  line: number;
+  preview: string;
+}
+
+/**
+ * 从一行源代码中提取声明的符号名称与类型
+ */
+export function extractSymbolFromLine(lineText: string): { name: string; kind: SymbolKind } | null {
+  const line = lineText.trim();
+  if (!line || line.startsWith('//') || line.startsWith('*') || line.startsWith('#')) {
+    return null;
+  }
+
+  // 1. class
+  const classMatch = line.match(/\b(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z0-9_$]+)/);
+  if (classMatch) return { name: classMatch[1], kind: 'class' };
+
+  // 2. interface
+  const ifaceMatch = line.match(/\b(?:export\s+)?interface\s+([A-Za-z0-9_$]+)/);
+  if (ifaceMatch) return { name: ifaceMatch[1], kind: 'interface' };
+
+  // 3. struct / record / trait
+  const structMatch = line.match(/\b(?:export\s+)?(?:type\s+([A-Za-z0-9_$]+)\s+struct|(?:struct|record|trait)\s+([A-Za-z0-9_$]+))/);
+  if (structMatch) return { name: structMatch[1] || structMatch[2], kind: 'struct' };
+
+  // 4. enum
+  const enumMatch = line.match(/\b(?:export\s+)?enum\s+([A-Za-z0-9_$]+)/);
+  if (enumMatch) return { name: enumMatch[1], kind: 'enum' };
+
+  // 5. type
+  const typeMatch = line.match(/\b(?:export\s+)?type\s+([A-Za-z0-9_$]+)\s*=/);
+  if (typeMatch) return { name: typeMatch[1], kind: 'type' };
+
+  // 6. function (JS/TS function / async function / Go func / Python def / Rust fn)
+  const fnMatch = line.match(/\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)|\b(?:def|func|fn)\s+([A-Za-z0-9_$]+)/);
+  if (fnMatch) return { name: fnMatch[1] || fnMatch[2], kind: 'function' };
+
+  // 7. arrow function: export const foo = () =>
+  const arrowMatch = line.match(/\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[a-zA-Z0-9_$]+)?\s*=>/);
+  if (arrowMatch) return { name: arrowMatch[1], kind: 'function' };
+
+  return null;
+}
+
+/**
+ * 检索工作区中的代码符号（类、接口、函数、结构体、枚举等）
+ */
+export async function searchSymbols(
+  backend: WorkspaceBackend,
+  query?: string,
+  opts?: SearchOpts,
+): Promise<CodeSymbolHit[]> {
+  const maxResults = opts?.maxResults ?? 50;
+  const q = (query || '').trim().toLowerCase();
+
+  // 收集工作区代码文件
+  const files = await collectFilePaths(backend, 1000);
+  const symbolHits: CodeSymbolHit[] = [];
+
+  for (const relPath of files) {
+    // 忽略非源代码文件
+    const ext = relPath.split('.').pop()?.toLowerCase();
+    if (!ext || BINARY_EXTS.has(ext)) continue;
+
+    try {
+      const content = await backend.readFile(relPath);
+      const lines = content.split(/\r?\n/);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const extracted = extractSymbolFromLine(line);
+        if (extracted) {
+          if (!q || extracted.name.toLowerCase().includes(q)) {
+            symbolHits.push({
+              name: extracted.name,
+              kind: extracted.kind,
+              path: relPath,
+              line: i + 1,
+              preview: line.trim().slice(0, 160),
+            });
+            if (symbolHits.length >= maxResults) {
+              return symbolHits;
+            }
+          }
+        }
+      }
+    } catch {
+      // 忽略无法读取的临时文件
+    }
+  }
+
+  return symbolHits;
+}
+

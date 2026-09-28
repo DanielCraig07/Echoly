@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
 import type { UiTheme } from '@deepseek-ide/shared';
 import { uid } from '../utils';
+import { detectPortsFromText } from '../utils/portDetector';
 import { TerminalAiKBar } from './TerminalAiKBar';
 
 interface Props {
@@ -265,6 +266,25 @@ function IconSearch({ size = 16 }: { size?: number }) {
   );
 }
 
+function IconSplit({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="12" y1="3" x2="12" y2="21" />
+    </svg>
+  );
+}
+
+
 interface TerminalSearchBarProps {
   query: string;
   onQueryChange: (q: string) => void;
@@ -493,6 +513,9 @@ interface SessionProps {
   onRegisterExtractLog?: (clientId: string, getLog: (lines?: number) => string) => () => void;
   onRegisterFocus?: (clientId: string, focusFn: () => void) => () => void;
   onTriggerAiK?: () => void;
+  isSplitRight?: boolean;
+  isFocusedPane?: boolean;
+  onPaneFocus?: () => void;
 }
 
 
@@ -516,6 +539,9 @@ function TerminalSession({
   onRegisterExtractLog,
   onRegisterFocus,
   onTriggerAiK,
+  isSplitRight,
+  isFocusedPane,
+  onPaneFocus,
 }: SessionProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -1494,9 +1520,10 @@ function TerminalSession({
 
   return (
     <div
-      className={`terminal-session${active ? ' active' : ''}${!wordWrap ? ' no-wrap' : ''}`}
+      className={`terminal-session${active ? ' active' : ''}${!wordWrap ? ' no-wrap' : ''}${isSplitRight ? ' is-split-right' : ''}${isFocusedPane ? ' is-focused-pane' : ''}`}
       aria-hidden={!active}
       onMouseDown={() => {
+        onPaneFocus?.();
         if (active) termRef.current?.focus();
       }}
     >
@@ -1591,6 +1618,38 @@ export function TerminalPanel({
 
   const [tabs, setTabs] = useState<TermTab[]>([bootRef.current]);
   const [activeId, setActiveId] = useState(bootRef.current.clientId);
+  // 左右分屏状态：若 splitActiveId !== null 则右侧展示该分屏终端
+  const [splitActiveId, setSplitActiveId] = useState<string | null>(null);
+  // 终端检测到的网络端口映射 clientId -> number[]
+  const [tabPorts, setTabPorts] = useState<Record<string, number[]>>({});
+
+  // 监听所有终端输出，自动检测本地网络端口
+  useEffect(() => {
+    const unsub = window.ide.onTerminalData(({ id, data }) => {
+      const ports = detectPortsFromText(data);
+      if (ports.length > 0) {
+        setTabPorts((prev) => {
+          const currentList = prev[id] || [];
+          const merged = Array.from(new Set([...currentList, ...ports]));
+          if (merged.length === currentList.length) return prev;
+          return { ...prev, [id]: merged };
+        });
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
+
+  // 聚合所有检测到的活跃端口（优先当前终端端口，平铺去重）
+  const allDetectedPorts = useMemo(() => {
+    const set = new Set<number>();
+    const currentTabPorts = tabPorts[activeId] || [];
+    currentTabPorts.forEach((p) => set.add(p));
+    Object.values(tabPorts).forEach((list) => list.forEach((p) => set.add(p)));
+    return Array.from(set);
+  }, [tabPorts, activeId]);
+
   const lastNonce = useRef(0);
   const sessionSendCmdRef = useRef<Map<string, (cmd: string) => void>>(new Map());
   const sessionSendRawRef = useRef<Map<string, (raw: string) => void>>(new Map());
@@ -1872,24 +1931,56 @@ export function TerminalPanel({
     setActiveId(tab.clientId);
   }, [openRequest, tabs]);
 
+  const handleToggleSplit = useCallback(() => {
+    if (splitActiveId) {
+      setSplitActiveId(null);
+    } else {
+      const otherTab = tabs.find((t) => t.clientId !== activeId);
+      if (otherTab) {
+        setSplitActiveId(otherTab.clientId);
+      } else {
+        seqRef.current += 1;
+        const newTab = makeTab(seqRef.current);
+        setTabs((prev) => [...prev, newTab]);
+        setSplitActiveId(newTab.clientId);
+      }
+    }
+  }, [splitActiveId, tabs, activeId]);
+
   const closeTerminal = useCallback((clientId: string) => {
     setTabs((prev) => {
       if (prev.length <= 1) {
         seqRef.current += 1;
         const fresh = makeTab(seqRef.current);
         setActiveId(fresh.clientId);
+        setSplitActiveId(null);
         return [fresh];
       }
       const next = prev.filter((t) => t.clientId !== clientId);
+      if (splitActiveId === clientId) {
+        setSplitActiveId(null);
+      }
       setActiveId((current) => {
         if (current !== clientId) return current;
+        if (splitActiveId && splitActiveId !== clientId) {
+          const nextActive = splitActiveId;
+          setSplitActiveId(null);
+          return nextActive;
+        }
         const idx = prev.findIndex((t) => t.clientId === clientId);
         const fallback = next[Math.max(0, idx - 1)] ?? next[0];
         return fallback!.clientId;
       });
       return next;
     });
-  }, []);
+
+    setTabPorts((prev) => {
+      if (!prev[clientId]) return prev;
+      const next = { ...prev };
+      delete next[clientId];
+      return next;
+    });
+  }, [splitActiveId]);
 
   const kindLabel = terminalKind === 'ssh' ? 'SSH 远程' : '本地';
 
@@ -1935,6 +2026,7 @@ export function TerminalPanel({
           <div className="terminal-tabs" role="tablist">
             {tabs.map((tab) => {
               const active = tab.clientId === activeId;
+              const isSplitRight = splitActiveId !== null && tab.clientId === splitActiveId;
               const label = tab.customTitle || tabLabel(terminalKind, tab.index);
               return (
                 <button
@@ -1942,11 +2034,16 @@ export function TerminalPanel({
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  className={`terminal-tab${active ? ' active' : ''}`}
+                  className={`terminal-tab${active ? ' active' : ''}${isSplitRight ? ' is-split-active' : ''}`}
                   onClick={() => setActiveId(tab.clientId)}
                 >
                   {renderTabIcon(tab, terminalKind)}
                   <span className="terminal-tab-label">{label}</span>
+                  {splitActiveId && (
+                    <span style={{ fontSize: 9, opacity: 0.65, marginLeft: 2 }}>
+                      {active ? (splitActiveId === tab.clientId ? '(右)' : '(左)') : isSplitRight ? '(右)' : ''}
+                    </span>
+                  )}
                   <span
                     className="terminal-tab-close"
                     title="删除终端标签"
@@ -1963,6 +2060,30 @@ export function TerminalPanel({
               );
             })}
           </div>
+
+          {allDetectedPorts.length > 0 && (
+            <div className="terminal-detected-ports">
+              {allDetectedPorts.slice(0, 3).map((port) => (
+                <button
+                  key={port}
+                  type="button"
+                  className="terminal-port-pill"
+                  title={`本地网络服务已在端口 :${port} 监听，点击在浏览器中打开 http://localhost:${port}`}
+                  onClick={() => {
+                    void window.ide.openExternal?.(`http://localhost:${port}`);
+                  }}
+                >
+                  <span className="terminal-port-dot" />
+                  <span>:{port}</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.75, marginLeft: 1 }}>
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="terminal-toolbar-right">
           {activeTabError && (
@@ -1997,6 +2118,14 @@ export function TerminalPanel({
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
             </svg>
+          </button>
+          <button
+            type="button"
+            className={`panel-action-btn${splitActiveId ? ' active' : ''}`}
+            title={splitActiveId ? '关闭分屏 (恢复单屏全宽)' : '向右拆分终端 (左右分屏协同)'}
+            onClick={handleToggleSplit}
+          >
+            <IconSplit size={14} />
           </button>
           <button
             type="button"
@@ -2087,7 +2216,10 @@ export function TerminalPanel({
           )}
         </div>
       </div>
-      <div className="terminal-sessions" style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      <div
+        className={`terminal-sessions${splitActiveId ? ' split-mode' : ''}`}
+        style={{ flex: 1, minHeight: 0, position: 'relative' }}
+      >
         <TerminalAiKBar
           open={showAiK}
           onClose={() => {
@@ -2100,30 +2232,39 @@ export function TerminalPanel({
           onExecute={handleAiKExecute}
           onInsert={handleAiKInsert}
         />
-        {tabs.map((tab) => (
-          <TerminalSession
-            key={tab.clientId}
-            clientId={tab.clientId}
-            active={tab.clientId === activeId}
-            visible={visible}
-            terminalKind={terminalKind}
-            uiTheme={uiTheme}
-            cwd={tab.cwd}
-            initialCommand={tab.initialCommand}
-            wordWrap={wordWrap}
-            scrollback={scrollback}
-            maximized={maximized}
-            searchOpen={tab.clientId === activeId && isSearchOpen}
-            searchFocusNonce={searchFocusNonce}
-            onOpenSearch={handleOpenSearch}
-            onCloseSearch={() => setIsSearchOpen(false)}
-            onRegisterSession={handleRegisterSession}
-            onRegisterRawSession={handleRegisterRawSession}
-            onRegisterExtractLog={handleRegisterExtractLog}
-            onRegisterFocus={handleRegisterFocus}
-            onTriggerAiK={() => setShowAiK(true)}
-          />
-        ))}
+        {tabs.map((tab) => {
+          const isLeft = tab.clientId === activeId;
+          const isRight = splitActiveId !== null && tab.clientId === splitActiveId;
+          const isVisible = splitActiveId ? (isLeft || isRight) : isLeft;
+
+          return (
+            <TerminalSession
+              key={tab.clientId}
+              clientId={tab.clientId}
+              active={isVisible}
+              isSplitRight={splitActiveId !== null && isRight}
+              isFocusedPane={tab.clientId === activeId}
+              onPaneFocus={() => setActiveId(tab.clientId)}
+              visible={visible}
+              terminalKind={terminalKind}
+              uiTheme={uiTheme}
+              cwd={tab.cwd}
+              initialCommand={tab.initialCommand}
+              wordWrap={wordWrap}
+              scrollback={scrollback}
+              maximized={maximized}
+              searchOpen={tab.clientId === activeId && isSearchOpen}
+              searchFocusNonce={searchFocusNonce}
+              onOpenSearch={handleOpenSearch}
+              onCloseSearch={() => setIsSearchOpen(false)}
+              onRegisterSession={handleRegisterSession}
+              onRegisterRawSession={handleRegisterRawSession}
+              onRegisterExtractLog={handleRegisterExtractLog}
+              onRegisterFocus={handleRegisterFocus}
+              onTriggerAiK={() => setShowAiK(true)}
+            />
+          );
+        })}
       </div>
     </div>
   );
