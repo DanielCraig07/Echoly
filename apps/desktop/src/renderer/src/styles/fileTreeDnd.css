@@ -1,0 +1,17 @@
+/* ══════════════════════════════════════════════════════════════════
+   文件树拖拽移动 (FileTree Drag & Drop) 模块化样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.file-node.drop-target-active {
+  background: rgba(59, 130, 246, 0.22) !important;
+  outline: 1.5px dashed #3b82f6 !important;
+  outline-offset: -1.5px !important;
+  border-radius: 4px !important;
+}
+
+.file-tree-container.drop-target-root-active,
+.file-tree.drop-target-root-active {
+  background: rgba(59, 130, 246, 0.08) !important;
+  outline: 1.5px dashed rgba(59, 130, 246, 0.6) !important;
+  outline-offset: -2px !important;
+}

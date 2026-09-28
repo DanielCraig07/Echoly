@@ -1,0 +1,63 @@
+/* ══════════════════════════════════════════════════════════════════
+   大文件安全保护模式 (Large File Guard) 模块化样式
+   ══════════════════════════════════════════════════════════════════ */
+
+.large-file-guard-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: rgba(234, 179, 8, 0.12);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.3);
+  font-size: 12px;
+  color: #fef08a;
+  z-index: 40;
+  flex-shrink: 0;
+}
+
+.large-file-guard-banner .guard-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  background: rgba(234, 179, 8, 0.18);
+  color: #fef08a;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.large-file-guard-banner .guard-btn:hover {
+  background: rgba(234, 179, 8, 0.3);
+}
+
+.large-file-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 32px;
+  text-align: center;
+  color: var(--muted, #71717a);
+  background: var(--bg-main, #141414);
+}
+
+.large-file-placeholder .large-file-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.85;
+}
+
+.large-file-placeholder .large-file-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #e4e4e7);
+  margin-bottom: 8px;
+}
+
+.large-file-placeholder .large-file-hint {
+  font-size: 13px;
+  max-width: 420px;
+  line-height: 1.5;
+  color: var(--muted, #a1a1aa);
+}

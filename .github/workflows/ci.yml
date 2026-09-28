@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    name: Typecheck, Lint & Test
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: TypeScript Strict Typecheck
+        run: npm run typecheck
+
+      - name: ESLint Code Inspection
+        run: npm run lint
+
+      - name: Automated Unit Tests
+        run: npm test
+
+      - name: Build Verification
+        run: npm run build

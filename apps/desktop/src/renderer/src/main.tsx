@@ -1,4 +1,7 @@
 import './styles.css';
+import './styles/conflict.css';
+import './styles/largeFile.css';
+import './styles/fileTreeDnd.css';
 import './runtimeConfig.css';
 import './monaco';
 import { Component, type ReactNode } from 'react';
