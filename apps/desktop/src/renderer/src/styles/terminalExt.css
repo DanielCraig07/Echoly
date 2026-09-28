@@ -9,28 +9,58 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
+  position: relative;
 }
 
 .terminal-sessions.split-mode .terminal-session {
   position: relative !important;
-  flex: 1 1 0% !important;
-  min-width: 0 !important;
   height: 100% !important;
   inset: auto !important;
   display: none;
+  min-width: 80px;
 }
 
-.terminal-sessions.split-mode .terminal-session.active,
-.terminal-sessions.split-mode .terminal-session.split-active {
+.terminal-sessions.split-mode .terminal-session.active {
   display: block !important;
 }
 
-.terminal-sessions.split-mode .terminal-session.is-split-right {
-  border-left: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+.terminal-sessions.split-mode .terminal-session.is-focused-pane {
+  box-shadow: inset 0 0 0 1.5px rgba(99, 102, 241, 0.55);
 }
 
-.terminal-sessions.split-mode .terminal-session.is-focused-pane {
-  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.4);
+/* ── 左右分屏中间可拖拽调节分割条 ── */
+.terminal-split-resizer {
+  position: relative;
+  width: 10px;
+  margin: 0 -5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 20;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.terminal-split-resizer-line {
+  width: 2px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+  transition: background 0.15s ease, width 0.15s ease, box-shadow 0.15s ease;
+}
+
+[data-theme='light'] .terminal-split-resizer-line {
+  background: rgba(0, 0, 0, 0.26);
+  box-shadow: 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.terminal-split-resizer:hover .terminal-split-resizer-line,
+.terminal-split-resizer.dragging .terminal-split-resizer-line {
+  background: var(--accent, #3b82f6) !important;
+  width: 3px !important;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.75) !important;
 }
 
 /* ── 端口感知胶囊 (Port Forwarding Pill) ── */

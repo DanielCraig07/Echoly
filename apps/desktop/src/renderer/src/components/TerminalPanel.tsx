@@ -516,6 +516,7 @@ interface SessionProps {
   isSplitRight?: boolean;
   isFocusedPane?: boolean;
   onPaneFocus?: () => void;
+  style?: React.CSSProperties;
 }
 
 
@@ -542,6 +543,7 @@ function TerminalSession({
   isSplitRight,
   isFocusedPane,
   onPaneFocus,
+  style,
 }: SessionProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -1521,6 +1523,7 @@ function TerminalSession({
   return (
     <div
       className={`terminal-session${active ? ' active' : ''}${!wordWrap ? ' no-wrap' : ''}${isSplitRight ? ' is-split-right' : ''}${isFocusedPane ? ' is-focused-pane' : ''}`}
+      style={style}
       aria-hidden={!active}
       onMouseDown={() => {
         onPaneFocus?.();
@@ -1617,9 +1620,18 @@ export function TerminalPanel({
   if (!bootRef.current) bootRef.current = makeTab(1);
 
   const [tabs, setTabs] = useState<TermTab[]>([bootRef.current]);
-  const [activeId, setActiveId] = useState(bootRef.current.clientId);
+  // 左侧固定展示的终端 clientId
+  const [leftTabId, setLeftTabId] = useState(bootRef.current.clientId);
   // 左右分屏状态：若 splitActiveId !== null 则右侧展示该分屏终端
   const [splitActiveId, setSplitActiveId] = useState<string | null>(null);
+  // 当前接受键盘输入与操作的聚焦终端 clientId
+  const [focusedTabId, setFocusedTabId] = useState(bootRef.current.clientId);
+
+  // 左右分屏宽度比例与拖拽状态 (0.18 ~ 0.82)
+  const [splitRatio, setSplitRatio] = useState<number>(0.5);
+  const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+
   // 终端检测到的网络端口映射 clientId -> number[]
   const [tabPorts, setTabPorts] = useState<Record<string, number[]>>({});
 
@@ -1644,11 +1656,11 @@ export function TerminalPanel({
   // 聚合所有检测到的活跃端口（优先当前终端端口，平铺去重）
   const allDetectedPorts = useMemo(() => {
     const set = new Set<number>();
-    const currentTabPorts = tabPorts[activeId] || [];
+    const currentTabPorts = tabPorts[focusedTabId] || [];
     currentTabPorts.forEach((p) => set.add(p));
     Object.values(tabPorts).forEach((list) => list.forEach((p) => set.add(p)));
     return Array.from(set);
-  }, [tabPorts, activeId]);
+  }, [tabPorts, focusedTabId]);
 
   const lastNonce = useRef(0);
   const sessionSendCmdRef = useRef<Map<string, (cmd: string) => void>>(new Map());
@@ -1698,32 +1710,32 @@ export function TerminalPanel({
   const focusActiveTerminal = useCallback(() => {
     // 延迟一帧，确保 AI 浮条关闭后焦点准确转移到 xterm 实例并唤醒光标
     requestAnimationFrame(() => {
-      const focusFn = sessionFocusRef.current.get(activeId);
+      const focusFn = sessionFocusRef.current.get(focusedTabId);
       focusFn?.();
     });
-  }, [activeId]);
+  }, [focusedTabId]);
 
   const handleAiKExecute = useCallback((command: string) => {
-    if (!activeId) return;
-    const sendCmd = sessionSendCmdRef.current.get(activeId);
+    if (!focusedTabId) return;
+    const sendCmd = sessionSendCmdRef.current.get(focusedTabId);
     if (sendCmd) {
       sendCmd(command);
     } else {
-      void window.ide.writeTerminal(activeId, command + '\r\n');
+      void window.ide.writeTerminal(focusedTabId, command + '\r\n');
     }
     focusActiveTerminal();
-  }, [activeId, focusActiveTerminal]);
+  }, [focusedTabId, focusActiveTerminal]);
 
   const handleAiKInsert = useCallback((command: string) => {
-    if (!activeId) return;
-    const sendRaw = sessionSendRawRef.current.get(activeId);
+    if (!focusedTabId) return;
+    const sendRaw = sessionSendRawRef.current.get(focusedTabId);
     if (sendRaw) {
       sendRaw(command);
     } else {
-      void window.ide.writeTerminal(activeId, command);
+      void window.ide.writeTerminal(focusedTabId, command);
     }
     focusActiveTerminal();
-  }, [activeId, focusActiveTerminal]);
+  }, [focusedTabId, focusActiveTerminal]);
 
   const toggleWordWrap = useCallback(() => {
     setWordWrap((prev) => {
@@ -1794,11 +1806,11 @@ export function TerminalPanel({
     return () => window.removeEventListener('echoly:runFinished', handleRunFinished);
   }, []);
 
-  const activeTab = tabs.find((t) => t.clientId === activeId) || null;
-  const activeTabError = tabErrors[activeId];
+  const activeTab = tabs.find((t) => t.clientId === focusedTabId) || null;
+  const activeTabError = tabErrors[focusedTabId];
 
   const handleDiagnoseActiveError = useCallback(() => {
-    const extractFn = sessionExtractLogRef.current.get(activeId);
+    const extractFn = sessionExtractLogRef.current.get(focusedTabId);
     const rawLog = extractFn?.(40) || '';
     const cleanLog = rawLog.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
     const exitCode = activeTabError?.exitCode ?? 1;
@@ -1810,10 +1822,10 @@ export function TerminalPanel({
         detail: { prompt, autoSubmit: false },
       }),
     );
-  }, [activeId, activeTabError]);
+  }, [focusedTabId, activeTabError]);
 
   const handleAskAiGeneral = useCallback(() => {
-    const extractFn = sessionExtractLogRef.current.get(activeId);
+    const extractFn = sessionExtractLogRef.current.get(focusedTabId);
     const rawLog = extractFn?.(40) || '';
     const cleanLog = rawLog.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
     const prompt = cleanLog
@@ -1824,7 +1836,7 @@ export function TerminalPanel({
         detail: { prompt, autoSubmit: false },
       }),
     );
-  }, [activeId]);
+  }, [focusedTabId]);
 
   // 监听全局停止命令事件，向对应的专属终端（如 Java 或 Maven）或当前活动终端发送 SIGINT (\x03)
   useEffect(() => {
@@ -1833,7 +1845,7 @@ export function TerminalPanel({
       const targetType = detail?.terminalType;
       let targetTab = targetType ? tabs.find((t) => t.terminalType === targetType) : null;
       if (!targetTab) {
-        targetTab = tabs.find((t) => t.clientId === activeId) || tabs[0] || null;
+        targetTab = tabs.find((t) => t.clientId === focusedTabId) || tabs[0] || null;
       }
       if (targetTab) {
         const sendRaw = sessionSendRawRef.current.get(targetTab.clientId);
@@ -1844,26 +1856,26 @@ export function TerminalPanel({
     };
     window.addEventListener('echoly:stopTerminalCommand', handleStop);
     return () => window.removeEventListener('echoly:stopTerminalCommand', handleStop);
-  }, [tabs, activeId]);
+  }, [tabs, focusedTabId]);
 
   const handleScrollToTop = useCallback(() => {
     window.dispatchEvent(
       new CustomEvent('echoly:scrollTerminalTop', {
-        detail: { clientId: activeId },
+        detail: { clientId: focusedTabId },
       }),
     );
-  }, [activeId]);
+  }, [focusedTabId]);
 
   const handleScrollToBottom = useCallback(() => {
     window.dispatchEvent(
       new CustomEvent('echoly:scrollTerminalBottom', {
-        detail: { clientId: activeId },
+        detail: { clientId: focusedTabId },
       }),
     );
-  }, [activeId]);
+  }, [focusedTabId]);
 
   const handleClearTerminal = useCallback(() => {
-    const sendRaw = sessionSendRawRef.current.get(activeId);
+    const sendRaw = sessionSendRawRef.current.get(focusedTabId);
     if (sendRaw) {
       const isWin =
         typeof navigator !== 'undefined' && /win/i.test(navigator.platform || navigator.userAgent);
@@ -1876,19 +1888,49 @@ export function TerminalPanel({
     }
     window.dispatchEvent(
       new CustomEvent('echoly:clearTerminalInstance', {
-        detail: { clientId: activeId },
+        detail: { clientId: focusedTabId },
       }),
     );
-  }, [activeId]);
+  }, [focusedTabId]);
+
+  // 分屏模式下智能切换或聚焦 Tab（槽位与焦点分离，彻底防止点击左侧右侧消失）
+  const switchOrFocusTab = useCallback(
+    (targetId: string) => {
+      if (!splitActiveId) {
+        // 单屏模式：直接设置主终端
+        setLeftTabId(targetId);
+        setFocusedTabId(targetId);
+        return;
+      }
+      // 分屏模式：
+      if (targetId === leftTabId) {
+        // 点击左侧已激活的 Tab：仅切换焦点到左侧，右侧窗格绝对不消失
+        setFocusedTabId(leftTabId);
+      } else if (targetId === splitActiveId) {
+        // 点击右侧已激活的 Tab：仅切换焦点到右侧，左侧窗格绝对不消失
+        setFocusedTabId(splitActiveId);
+      } else {
+        // 点击未在分屏中显示的第三方 Tab：放入当前处于焦点的窗格中
+        if (focusedTabId === splitActiveId) {
+          setSplitActiveId(targetId);
+          setFocusedTabId(targetId);
+        } else {
+          setLeftTabId(targetId);
+          setFocusedTabId(targetId);
+        }
+      }
+    },
+    [splitActiveId, leftTabId, focusedTabId],
+  );
 
   const addTerminal = useCallback(
     (cwd?: string, initialCommand?: string, terminalType?: string, customTitle?: string) => {
       seqRef.current += 1;
       const tab = makeTab(seqRef.current, cwd, initialCommand, terminalType, customTitle);
       setTabs((prev) => [...prev, tab]);
-      setActiveId(tab.clientId);
+      switchOrFocusTab(tab.clientId);
     },
-    [],
+    [switchOrFocusTab],
   );
 
   useEffect(() => {
@@ -1903,7 +1945,7 @@ export function TerminalPanel({
       const existing = tabs.find((t) => t.terminalType === terminalType);
       if (existing) {
         // 切换到已存在的专属终端，并在其中直接执行命令
-        setActiveId(existing.clientId);
+        switchOrFocusTab(existing.clientId);
         if (initialCommand) {
           const send = sessionSendCmdRef.current.get(existing.clientId);
           if (send) {
@@ -1928,59 +1970,106 @@ export function TerminalPanel({
       terminalTitle || (terminalType === 'mvn' ? 'Maven' : terminalType === 'java' ? 'Java' : undefined),
     );
     setTabs((prev) => [...prev, tab]);
-    setActiveId(tab.clientId);
-  }, [openRequest, tabs]);
+    switchOrFocusTab(tab.clientId);
+  }, [openRequest, tabs, switchOrFocusTab]);
 
   const handleToggleSplit = useCallback(() => {
     if (splitActiveId) {
       setSplitActiveId(null);
+      setFocusedTabId(leftTabId);
     } else {
-      const otherTab = tabs.find((t) => t.clientId !== activeId);
+      const otherTab = tabs.find((t) => t.clientId !== leftTabId);
       if (otherTab) {
         setSplitActiveId(otherTab.clientId);
+        setFocusedTabId(otherTab.clientId);
       } else {
         seqRef.current += 1;
         const newTab = makeTab(seqRef.current);
         setTabs((prev) => [...prev, newTab]);
         setSplitActiveId(newTab.clientId);
+        setFocusedTabId(newTab.clientId);
       }
+      setSplitRatio(0.5);
     }
-  }, [splitActiveId, tabs, activeId]);
+  }, [splitActiveId, tabs, leftTabId]);
 
-  const closeTerminal = useCallback((clientId: string) => {
-    setTabs((prev) => {
-      if (prev.length <= 1) {
-        seqRef.current += 1;
-        const fresh = makeTab(seqRef.current);
-        setActiveId(fresh.clientId);
-        setSplitActiveId(null);
-        return [fresh];
-      }
-      const next = prev.filter((t) => t.clientId !== clientId);
-      if (splitActiveId === clientId) {
-        setSplitActiveId(null);
-      }
-      setActiveId((current) => {
-        if (current !== clientId) return current;
-        if (splitActiveId && splitActiveId !== clientId) {
-          const nextActive = splitActiveId;
+  // 左右分屏中间分割条拖拽宽度调节
+  const handleSplitResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDraggingSplit(true);
+      document.body.classList.add('resizing');
+
+      const container = splitContainerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const startX = e.clientX;
+      const initialRatio = splitRatio;
+
+      const onMouseMove = (me: MouseEvent) => {
+        const deltaX = me.clientX - startX;
+        const newRatio = Math.max(0.18, Math.min(0.82, initialRatio + deltaX / rect.width));
+        setSplitRatio(newRatio);
+      };
+
+      const onMouseUp = () => {
+        setIsDraggingSplit(false);
+        document.body.classList.remove('resizing');
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        window.dispatchEvent(new Event('resize'));
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    },
+    [splitRatio],
+  );
+
+  const closeTerminal = useCallback(
+    (clientId: string) => {
+      setTabs((prev) => {
+        if (prev.length <= 1) {
+          seqRef.current += 1;
+          const fresh = makeTab(seqRef.current);
+          setLeftTabId(fresh.clientId);
           setSplitActiveId(null);
-          return nextActive;
+          setFocusedTabId(fresh.clientId);
+          return [fresh];
         }
-        const idx = prev.findIndex((t) => t.clientId === clientId);
-        const fallback = next[Math.max(0, idx - 1)] ?? next[0];
-        return fallback!.clientId;
-      });
-      return next;
-    });
+        const next = prev.filter((t) => t.clientId !== clientId);
 
-    setTabPorts((prev) => {
-      if (!prev[clientId]) return prev;
-      const next = { ...prev };
-      delete next[clientId];
-      return next;
-    });
-  }, [splitActiveId]);
+        if (splitActiveId === clientId) {
+          setSplitActiveId(null);
+          setFocusedTabId(leftTabId);
+        } else if (leftTabId === clientId) {
+          if (splitActiveId && splitActiveId !== clientId) {
+            setLeftTabId(splitActiveId);
+            setSplitActiveId(null);
+            setFocusedTabId(splitActiveId);
+          } else {
+            const idx = prev.findIndex((t) => t.clientId === clientId);
+            const fallback = next[Math.max(0, idx - 1)] ?? next[0];
+            setLeftTabId(fallback!.clientId);
+            setFocusedTabId(fallback!.clientId);
+          }
+        } else if (focusedTabId === clientId) {
+          setFocusedTabId(leftTabId);
+        }
+
+        return next;
+      });
+
+      setTabPorts((prev) => {
+        if (!prev[clientId]) return prev;
+        const next = { ...prev };
+        delete next[clientId];
+        return next;
+      });
+    },
+    [splitActiveId, leftTabId, focusedTabId],
+  );
 
   const kindLabel = terminalKind === 'ssh' ? 'SSH 远程' : '本地';
 
@@ -2025,23 +2114,32 @@ export function TerminalPanel({
 
           <div className="terminal-tabs" role="tablist">
             {tabs.map((tab) => {
-              const active = tab.clientId === activeId;
-              const isSplitRight = splitActiveId !== null && tab.clientId === splitActiveId;
+              const isFocused = tab.clientId === focusedTabId;
+              const isLeft = tab.clientId === leftTabId;
+              const isRight = splitActiveId !== null && tab.clientId === splitActiveId;
+              const isVisibleInSplit = isLeft || isRight;
               const label = tab.customTitle || tabLabel(terminalKind, tab.index);
               return (
                 <button
                   key={tab.clientId}
                   type="button"
                   role="tab"
-                  aria-selected={active}
-                  className={`terminal-tab${active ? ' active' : ''}${isSplitRight ? ' is-split-active' : ''}`}
-                  onClick={() => setActiveId(tab.clientId)}
+                  aria-selected={isFocused}
+                  className={`terminal-tab${isFocused ? ' active' : ''}${isRight ? ' is-split-active' : ''}`}
+                  onClick={() => switchOrFocusTab(tab.clientId)}
                 >
                   {renderTabIcon(tab, terminalKind)}
                   <span className="terminal-tab-label">{label}</span>
-                  {splitActiveId && (
-                    <span style={{ fontSize: 9, opacity: 0.65, marginLeft: 2 }}>
-                      {active ? (splitActiveId === tab.clientId ? '(右)' : '(左)') : isSplitRight ? '(右)' : ''}
+                  {splitActiveId && isVisibleInSplit && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        marginLeft: 3,
+                        fontWeight: isFocused ? 700 : 400,
+                        opacity: isFocused ? 1 : 0.65,
+                      }}
+                    >
+                      {isLeft ? '(左)' : '(右)'}
                     </span>
                   )}
                   <span
@@ -2189,7 +2287,7 @@ export function TerminalPanel({
             type="button"
             className="panel-action-btn"
             title="删除当前终端标签 (Kill)"
-            onClick={() => closeTerminal(activeId)}
+            onClick={() => closeTerminal(focusedTabId)}
           >
             <IconTrash size={16} />
           </button>
@@ -2217,6 +2315,7 @@ export function TerminalPanel({
         </div>
       </div>
       <div
+        ref={splitContainerRef}
         className={`terminal-sessions${splitActiveId ? ' split-mode' : ''}`}
         style={{ flex: 1, minHeight: 0, position: 'relative' }}
       >
@@ -2226,25 +2325,75 @@ export function TerminalPanel({
             setShowAiK(false);
             focusActiveTerminal();
           }}
-          activeClientId={activeId}
+          activeClientId={focusedTabId}
           cwd={activeTab?.cwd}
           uiTheme={uiTheme}
           onExecute={handleAiKExecute}
           onInsert={handleAiKInsert}
         />
+
+        {/* 左右分屏模式下的可拖拽分割条 */}
+        {splitActiveId && (
+          <div
+            className={`terminal-split-resizer${isDraggingSplit ? ' dragging' : ''}`}
+            style={{ order: 2 }}
+            onMouseDown={handleSplitResizeMouseDown}
+            title="左右拖动调整分屏比例"
+          >
+            <div className="terminal-split-resizer-line" />
+          </div>
+        )}
+
+        {/* 全局拖拽遮罩，防止鼠标快速滑过 xterm 区域导致丢失 mousemove 事件或误选文字 */}
+        {isDraggingSplit && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 99999,
+              cursor: 'col-resize',
+            }}
+          />
+        )}
+
         {tabs.map((tab) => {
-          const isLeft = tab.clientId === activeId;
+          const isLeft = tab.clientId === leftTabId;
           const isRight = splitActiveId !== null && tab.clientId === splitActiveId;
           const isVisible = splitActiveId ? (isLeft || isRight) : isLeft;
+
+          // 计算各窗格在分屏下的样式
+          let paneStyle: React.CSSProperties | undefined;
+          if (splitActiveId) {
+            if (isLeft) {
+              paneStyle = {
+                order: 1,
+                flex: `0 0 calc(${splitRatio * 100}% - 5px)`,
+                width: `calc(${splitRatio * 100}% - 5px)`,
+                minWidth: 80,
+                maxWidth: 'calc(100% - 85px)',
+              };
+            } else if (isRight) {
+              paneStyle = {
+                order: 3,
+                flex: `0 0 calc(${(1 - splitRatio) * 100}% - 5px)`,
+                width: `calc(${(1 - splitRatio) * 100}% - 5px)`,
+                minWidth: 80,
+                maxWidth: 'calc(100% - 85px)',
+              };
+            } else {
+              paneStyle = { display: 'none' };
+            }
+          }
 
           return (
             <TerminalSession
               key={tab.clientId}
               clientId={tab.clientId}
               active={isVisible}
+              style={paneStyle}
               isSplitRight={splitActiveId !== null && isRight}
-              isFocusedPane={tab.clientId === activeId}
-              onPaneFocus={() => setActiveId(tab.clientId)}
+              isFocusedPane={tab.clientId === focusedTabId}
+              onPaneFocus={() => setFocusedTabId(tab.clientId)}
               visible={visible}
               terminalKind={terminalKind}
               uiTheme={uiTheme}
@@ -2253,7 +2402,7 @@ export function TerminalPanel({
               wordWrap={wordWrap}
               scrollback={scrollback}
               maximized={maximized}
-              searchOpen={tab.clientId === activeId && isSearchOpen}
+              searchOpen={tab.clientId === focusedTabId && isSearchOpen}
               searchFocusNonce={searchFocusNonce}
               onOpenSearch={handleOpenSearch}
               onCloseSearch={() => setIsSearchOpen(false)}
