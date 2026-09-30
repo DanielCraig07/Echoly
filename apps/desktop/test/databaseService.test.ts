@@ -30,7 +30,16 @@ function makeFakeWorkspace(root: string): DbWorkspaceIo {
   };
 }
 
-describe('DatabaseService', () => {
+let hasSqlite = false;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('node:sqlite');
+  hasSqlite = Boolean(mod && mod.DatabaseSync);
+} catch {
+  hasSqlite = false;
+}
+
+describe.skipIf(!hasSqlite)('DatabaseService', () => {
   const service = new DatabaseService();
   const tmpDir = path.join(os.tmpdir(), `echoly_db_test_${Date.now()}`);
   fs.mkdirSync(tmpDir, { recursive: true });
