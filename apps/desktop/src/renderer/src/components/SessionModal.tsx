@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import type { ChatSession, WorkspaceInfo, RecentWorkspaceItem } from '@deepseek-ide/shared';
 import { formatSessionWorkspaceLine, folderNameFromPath } from '../utils';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 
 interface Props {
   currentSessionId: string;
@@ -244,6 +246,8 @@ export function SessionModal({
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  // 删除确认走应用内弹窗（理由见 handleDelete 的注释）
+  const confirm = useDbConfirm();
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -278,6 +282,8 @@ export function SessionModal({
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
+        // 删除确认框挂着时让 Esc 归它：否则按 Esc 想取消删除，却把整个历史会话窗口关掉了
+        if (confirm.isOpen) return;
         if (editingId) {
           setEditingId(null);
           return;
@@ -291,7 +297,7 @@ export function SessionModal({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [onClose, editingId, projectDropdownOpen]);
+  }, [onClose, editingId, projectDropdownOpen, confirm.isOpen]);
 
   // 点击外部关闭项目下拉选单
   useEffect(() => {
@@ -308,8 +314,31 @@ export function SessionModal({
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [projectDropdownOpen]);
 
+  /**
+   * 删除一条会话。
+   *
+   * 整个会话的消息、思考链、计划与任务上下文都在这一下里没了，且没有回收站，
+   * 所以必须过一道明确写清「删的是哪一条」的确认 —— 历史列表里相邻两行的标题往往
+   * 长得一模一样，只写「确认删除？」等于拦不住手滑。
+   */
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const target = sessions.find((s) => s.id === id);
+    const ok = await confirm.confirm({
+      title: '删除历史会话',
+      content: buildSqlConfirmMarkdown({
+        intro: '这条会话的全部对话记录将被永久删除，且**无法撤销**。',
+        statements: [],
+      }),
+      details: [
+        { label: '标题', value: target?.title?.trim() || '（无标题）' },
+        { label: '时间', value: target ? formatTime(target.updatedAt) : '未知' },
+        { label: '轮次', value: `${target?.messages?.length ?? 0} 轮` },
+      ],
+      tone: 'danger',
+      confirmLabel: '确认删除',
+    });
+    if (ok === null) return;
     setDeleting(id);
     try {
       await window.ide.deleteSession(id);
@@ -989,6 +1018,9 @@ export function SessionModal({
         {/* 右下角全向拖拽调整大小手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
+      {/* 删除确认弹窗挂在这一层而不是 overlay 内部：overlay 自带「点外部即关闭」，
+          确认弹窗的遮罩若落在它里面，点遮罩会连带把整个历史会话窗口一起关掉 */}
+      {confirm.modal}
     </div>,
     document.body,
   );

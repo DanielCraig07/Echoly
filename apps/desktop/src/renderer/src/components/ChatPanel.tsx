@@ -21,6 +21,8 @@ import { buildAgentHistory } from '../chatHistory';
 import { MarkdownMessage } from './MarkdownMessage';
 import { PlanPanel } from './PlanPanel';
 import { SessionModal } from './SessionModal';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { ThinkingBlock } from './ThinkingBlock';
 import { WorkedForGroup } from './chat/WorkedForGroup';
 import { CollapsibleUserContent } from './chat/CollapsibleUserContent';
@@ -332,6 +334,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   });
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  // 清空对话等不可逆操作走应用内确认框（系统 window.confirm 不是应用主题色，也没法列出影响范围）
+  const confirm = useDbConfirm();
   const [showJumpLatest, setShowJumpLatest] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -481,17 +485,45 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     );
   }, []);
 
+  /**
+   * 回退到某条用户消息：把这条之后的消息全部丢弃。
+   *
+   * 只在**确实有东西可丢**时才确认：它是最后一条消息的话，回退不过是把文字挪回输入框，
+   * 没有任何损失；但若后面已经攒了若干轮 AI 回复（尤其是还在跑的那一轮），
+   * 这一次点击就是不可逆地删掉它们。
+   */
   const handleRollbackUserMessage = useCallback(
-    (msg: ChatSessionMessage) => {
+    async (msg: ChatSessionMessage) => {
       const currentTabId = activeTabIdRef.current;
       if (!currentTabId) return;
       const targetTab = tabsRef.current.find((t) => t.id === currentTabId);
+      const allMessages = targetTab?.messages ?? [];
+      const idx = allMessages.findIndex((mm) => mm.id === msg.id);
+      const droppedCount = idx >= 0 ? allMessages.length - idx - 1 : 0;
+      const hasRunning = Boolean(targetTab?.runId);
+      if (droppedCount > 0 || hasRunning) {
+        const ok = await confirm.confirm({
+          title: '回退到此消息',
+          content: buildSqlConfirmMarkdown({
+            intro: '这条消息之后的**全部对话内容都会被丢弃**（含 AI 回复与思考过程），且**无法撤销**。',
+            statements: [],
+            notes: ['消息正文会被放回输入框，改完可以直接重新发送。'],
+          }),
+          details: [
+            { label: '丢弃', value: `${droppedCount} 条消息` },
+            ...(hasRunning ? [{ label: '进行中', value: '有 AI 任务正在执行，会被中断' }] : []),
+          ],
+          tone: 'danger',
+          confirmLabel: '确认回退',
+        });
+        if (ok === null) return;
+      }
       if (targetTab?.runId) {
         void window.ide.cancelAgent(targetTab.runId);
       }
       updateTab(currentTabId, (t) => {
-        const idx = t.messages.findIndex((mm) => mm.id === msg.id);
-        const truncated = idx >= 0 ? t.messages.slice(0, idx) : t.messages;
+        const i = t.messages.findIndex((mm) => mm.id === msg.id);
+        const truncated = i >= 0 ? t.messages.slice(0, i) : t.messages;
         return {
           ...t,
           input: msg.content,
@@ -507,7 +539,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       });
       textareaRef.current?.focus();
     },
-    [updateTab],
+    [updateTab, confirm],
   );
 
   const processFiles = useCallback(
@@ -1245,6 +1277,17 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           case 'tool_start': {
             next.streaming = '';
             next.thinkingStreaming = '';
+            try {
+              window.dispatchEvent(
+                new CustomEvent('echoly:agent-step-start', {
+                  detail: {
+                    toolName: event.name,
+                    toolArgs: event.args,
+                    id: event.id,
+                  },
+                }),
+              );
+            } catch { /* ignore */ }
             const newMsg: ChatSessionMessage = {
               id: event.id || uid(),
               role: 'tool',
@@ -1303,6 +1346,19 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               };
               next.messages = [...next.messages, newMsg];
             }
+            try {
+              window.dispatchEvent(
+                new CustomEvent('echoly:agent-step-done', {
+                  detail: {
+                    toolName: event.name,
+                    status: event.isError ? 'failed' : 'completed',
+                    result: event.result,
+                    isError: event.isError,
+                    id: event.id,
+                  },
+                }),
+              );
+            } catch { /* ignore */ }
             break;
           }
           case 'assistant_message': {
@@ -1389,6 +1445,15 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             }
             next.status = 'done';
             next.runId = null;
+            try {
+              window.dispatchEvent(
+                new CustomEvent('echoly:agent-task-completed', {
+                  detail: {
+                    summary: textToDisplay || '任务已全部执行完成',
+                  },
+                }),
+              );
+            } catch { /* ignore */ }
             break;
           }
           case 'error':
@@ -1407,6 +1472,15 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             next.stepInfo = null;
             next.status = 'error';
             next.runId = null;
+            try {
+              window.dispatchEvent(
+                new CustomEvent('echoly:agent-task-failed', {
+                  detail: {
+                    error: event.message,
+                  },
+                }),
+              );
+            } catch { /* ignore */ }
             break;
         }
         return next;
@@ -1431,6 +1505,17 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       rawPrompt ||
       (currentAttachments.some((a) => a.type === 'image') ? '请分析图片' : '请分析附件');
     const runMode = overrideMode ?? activeTab.mode;
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent('echoly:agent-task-start', {
+          detail: {
+            prompt,
+            workspace,
+          },
+        }),
+      );
+    } catch { /* ignore */ }
 
     const userMsg: ChatSessionMessage = {
       id: uid(),
@@ -1577,10 +1662,31 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     setActiveTabId(newTab.id);
   };
 
-  const handleCloseTab = (id: string, e: React.MouseEvent) => {
+  /**
+   * 关闭一个对话 Tab。
+   *
+   * 值得确认的只有一种情形：**这个 Tab 正在跑 agent**，关掉会连带 `cancelAgent` 掐断它。
+   * 空 Tab / 已结束的 Tab 关掉没有任何代价，每次弹窗只会让人厌烦 ——
+   * 「所有删除都要有确认」拦的是会丢东西的那一下，不是让人对弹窗脱敏。
+   */
+  const handleCloseTab = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const tabToClose = tabs.find((t) => t.id === id);
     if (tabToClose?.runId) {
+      const ok = await confirm.confirm({
+        title: '关闭对话标签',
+        content: buildSqlConfirmMarkdown({
+          intro: '这个标签下**正在运行的 AI 任务会被中断**，且**无法续跑**（对话记录本身会保留在历史会话里）。',
+          statements: [],
+        }),
+        details: [
+          { label: '标题', value: tabToClose.title?.trim() || '（无标题）' },
+          { label: '状态', value: '执行中' },
+        ],
+        tone: 'danger',
+        confirmLabel: '确认关闭',
+      });
+      if (ok === null) return;
       void window.ide.cancelAgent(tabToClose.runId);
     }
     if (tabs.length === 1) {
@@ -1681,21 +1787,33 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     }
   }, [activeTab]);
 
-  const handleClearCurrentSession = useCallback(() => {
+  const handleClearCurrentSession = useCallback(async () => {
     if (!activeTab || activeTab.messages.length === 0) return;
-    if (window.confirm('确定要清空当前会话的对话记录吗？此操作无法撤销。')) {
-      updateTab(activeTab.id, (t) => ({
-        ...t,
-        messages: [],
-        streaming: '',
-        status: 'idle',
-        thinkingStreaming: '',
-        runId: null,
-        plan: null,
-        pendingPlanContext: null,
-      }));
-    }
-  }, [activeTab, updateTab]);
+    const ok = await confirm.confirm({
+      title: '清空当前对话记录',
+      content: buildSqlConfirmMarkdown({
+        intro: '当前 Tab 里的全部消息、思考链与计划都会被清除，且**无法撤销**（历史会话列表里若已保存过副本则不受影响）。',
+        statements: [],
+      }),
+      details: [
+        { label: '消息', value: `${activeTab.messages.length} 条` },
+        { label: '标题', value: activeTab.title?.trim() || '（无标题）' },
+      ],
+      tone: 'danger',
+      confirmLabel: '确认清空',
+    });
+    if (ok === null) return;
+    updateTab(activeTab.id, (t) => ({
+      ...t,
+      messages: [],
+      streaming: '',
+      status: 'idle',
+      thinkingStreaming: '',
+      runId: null,
+      plan: null,
+      pendingPlanContext: null,
+    }));
+  }, [activeTab, updateTab, confirm]);
 
   const handleQuickPrompt = useCallback(
     (type: 'explain' | 'optimize' | 'test' | 'bug') => {
@@ -1800,7 +1918,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   <button
                     type="button"
                     className="chat-tab-close"
-                    onClick={(e) => handleCloseTab(t.id, e)}
+                    onClick={(e) => void handleCloseTab(t.id, e)}
                     title="关闭 Tab"
                   >
                     <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor">
@@ -2016,7 +2134,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     type="button"
                     className="msg-action-btn"
                     title="回退到此消息（清除此后的 AI 回复）"
-                    onClick={() => handleRollbackUserMessage(m)}
+                    onClick={() => void handleRollbackUserMessage(m)}
                   >
                     <svg
                       width="12"
@@ -3029,6 +3147,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           </div>,
           document.body,
         )}
+
+      {confirm.modal}
     </div>
   );
 };

@@ -4,6 +4,7 @@ import path from 'node:path';
 import electronLog from 'electron-log';
 import type { FileTreeNode, WorkspaceInfo, WorkspaceKind } from '@deepseek-ide/shared';
 import { LocalFsBackend, type WorkspaceBackend } from '@deepseek-ide/tools';
+import { projectConfigChildPath, projectConfigDir } from './projectConfig';
 
 const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',
@@ -111,6 +112,68 @@ export class WorkspaceService {
 
   getKind(): WorkspaceKind {
     return this.kind;
+  }
+
+  // ── 项目级配置（数据库连接 / 查询脚本）的落盘位置 ─────────────────────────
+  //
+  // 配置**不写进工作区**，而是落到 `~/.echoly/projects/<工作区哈希>/`：项目里不留多余目录，
+  // 换台机器 clone 下来也不会看到一份没用的、解不开的密码文件。但配置仍然与项目绑定 ——
+  // 目录按工作区根派生，切项目就换目录。
+  //
+  // 目录本身**不预先创建**：打开一个文件夹就往用户主目录里落一个目录太粗暴，
+  // 而且大多数项目根本没用过这些功能。写第一个文件时父目录自然就有了。
+  //
+  // 下面这几个方法只服务「用户直接操作的项目配置」通道（IPC projectConfig:*）；
+  // 数据库连接走的是 windowRegistry 里的另一层映射，两者共用 projectConfig 的路径规则。
+
+  /** 配置目录下的某个文件（工作区相对路径 → 本地绝对路径） */
+  resolveProjectConfigPath(relPath: string): string | null {
+    const root = this.getRoot();
+    if (!root) return null;
+    return projectConfigChildPath(root, relPath);
+  }
+
+  /** 读取配置目录里的文件；不存在或读不了都返回 null（配置永远是可选的） */
+  async readProjectConfigFile(relPath: string): Promise<string | null> {
+    const abs = this.resolveProjectConfigPath(relPath);
+    if (!abs) return null;
+    try {
+      return await fs.readFile(abs, 'utf8');
+    } catch {
+      return null;
+    }
+  }
+
+  /** 写配置目录里的文件，父目录自动创建 */
+  async writeProjectConfigFile(relPath: string, content: string): Promise<void> {
+    const abs = this.resolveProjectConfigPath(relPath);
+    if (!abs) throw new Error('未打开工作区，无法保存项目配置');
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    await fs.writeFile(abs, content, 'utf8');
+  }
+
+  /** 列配置目录下的子项（只回名字与是否目录，够渲染层拼查询脚本清单用） */
+  async listProjectConfigDir(relPath = ''): Promise<Array<{ name: string; isDirectory: boolean }>> {
+    const abs = this.resolveProjectConfigPath(relPath);
+    if (!abs) return [];
+    try {
+      const entries = await fs.readdir(abs, { withFileTypes: true });
+      return entries.map((e) => ({ name: e.name, isDirectory: e.isDirectory() }));
+    } catch {
+      // 目录不存在是常态（还没存过任何脚本），不是错误
+      return [];
+    }
+  }
+
+  /** 删除配置目录里的一个文件 */
+  async removeProjectConfigFile(relPath: string): Promise<void> {
+    const abs = this.resolveProjectConfigPath(relPath);
+    if (!abs) return;
+    try {
+      await fs.rm(abs, { force: true });
+    } catch {
+      // 已经不在就算了
+    }
   }
 
   setRoot(root: string, opts?: { silent?: boolean }): string {

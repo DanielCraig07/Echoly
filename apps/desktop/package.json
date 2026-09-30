@@ -1,6 +1,6 @@
 {
   "name": "@echoly/desktop",
-  "version": "0.0.38",
+  "version": "0.0.39",
   "private": true,
   "description": "Echoly Desktop App",
   "author": "Echoly",
@@ -36,7 +36,9 @@
     "katex": "^0.16.47",
     "mermaid": "^11.17.2",
     "monaco-editor": "^0.52.2",
+    "mysql2": "^3.24.4",
     "node-pty": "^1.1.0",
+    "pg": "^8.23.0",
     "prismjs": "^1.30.0",
     "pyright": "^1.1.413",
     "react": "^19.0.0",

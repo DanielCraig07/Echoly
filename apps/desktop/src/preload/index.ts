@@ -33,6 +33,11 @@ const api: IpcApi = {
   removePath: (relPath) => ipcRenderer.invoke('workspace:remove', relPath),
   copyPath: (fromRel, toRel) => ipcRenderer.invoke('workspace:copy', fromRel, toRel),
   pathExists: (relPath) => ipcRenderer.invoke('workspace:exists', relPath),
+  readProjectConfigFile: (relPath) => ipcRenderer.invoke('projectConfig:read', relPath),
+  writeProjectConfigFile: (relPath, content) =>
+    ipcRenderer.invoke('projectConfig:write', relPath, content),
+  listProjectConfigDir: (relPath) => ipcRenderer.invoke('projectConfig:list', relPath),
+  removeProjectConfigFile: (relPath) => ipcRenderer.invoke('projectConfig:remove', relPath),
   resolveAbsolutePath: (relPath) => ipcRenderer.invoke('workspace:resolveAbsolute', relPath),
   detectWorkspaceTech: (rootPath: string) => ipcRenderer.invoke('workspace:detectTech', rootPath),
   downloadFile: (relPath) => ipcRenderer.invoke('workspace:downloadFile', relPath),
@@ -103,6 +108,11 @@ const api: IpcApi = {
   saveSshProfile: (profile) => ipcRenderer.invoke('ssh:saveProfile', profile),
   deleteSshProfile: (id) => ipcRenderer.invoke('ssh:deleteProfile', id),
   listRemoteDir: (remotePath?: string) => ipcRenderer.invoke('ssh:listRemoteDir', remotePath),
+  startSshPortForward: (remotePort: number, localPort?: number) =>
+    ipcRenderer.invoke('ssh:startPortForward', remotePort, localPort),
+  stopSshPortForward: (remotePort: number) =>
+    ipcRenderer.invoke('ssh:stopPortForward', remotePort),
+  listSshPortForwards: () => ipcRenderer.invoke('ssh:listPortForwards'),
   createTerminal: (options?: TerminalCreateOptions) =>
     ipcRenderer.invoke('terminal:create', options),
   writeTerminal: (id, data) => ipcRenderer.invoke('terminal:write', id, data),
@@ -237,6 +247,27 @@ const api: IpcApi = {
   rulesGet: (workspaceRoot?: string) => ipcRenderer.invoke('rules:get', workspaceRoot),
   rulesSave: (content: string, workspaceRoot?: string) => ipcRenderer.invoke('rules:save', content, workspaceRoot),
   openExternal: (url: string) => ipcRenderer.invoke('system:openExternal', url),
+
+  dbConnect: (options) => ipcRenderer.invoke('db:connect', options),
+  dbDisconnect: (connectionId) => ipcRenderer.invoke('db:disconnect', connectionId),
+  dbListConnections: () => ipcRenderer.invoke('db:listConnections'),
+  dbSaveConnection: (config) => ipcRenderer.invoke('db:saveConnection', config),
+  dbDeleteConnection: (id) => ipcRenderer.invoke('db:deleteConnection', id),
+  dbConnectSaved: (id) => ipcRenderer.invoke('db:connectSaved', id),
+  dbListSchemas: (connectionId) => ipcRenderer.invoke('db:listSchemas', connectionId),
+  dbListTables: (connectionId, schemaName) =>
+    ipcRenderer.invoke('db:listTables', connectionId, schemaName),
+  dbGetTableSchema: (connectionId, tableName, schemaName) =>
+    ipcRenderer.invoke('db:getTableSchema', connectionId, tableName, schemaName),
+  dbGetTableDdl: (connectionId, tableName, schemaName) =>
+    ipcRenderer.invoke('db:getTableDdl', connectionId, tableName, schemaName),
+  dbListObjects: (connectionId, schemaName) =>
+    ipcRenderer.invoke('db:listObjects', connectionId, schemaName),
+  dbQuery: (connectionId, sql, page, pageSize, schemaName) =>
+    ipcRenderer.invoke('db:query', connectionId, sql, page, pageSize, schemaName),
+  dbCreateDemoDb: (targetPath) => ipcRenderer.invoke('db:createDemoDb', targetPath),
+  dbExecuteBatch: (connectionId, statements, schemaName) =>
+    ipcRenderer.invoke('db:executeBatch', connectionId, statements, schemaName),
 };
 
 contextBridge.exposeInMainWorld('ide', api);

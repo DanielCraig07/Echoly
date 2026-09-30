@@ -11,6 +11,8 @@ interface Props {
 }
 
 const DEFAULT_PROJECT_NAMES: Record<string, string> = {
+  'nextjs-ai': 'nextjs-ai-demo',
+  'fastapi-ai': 'fastapi-agent-demo',
   'java-maven': 'java-demo',
   'python': 'python-demo',
   'go': 'go-demo',

@@ -5,6 +5,7 @@ import type {
   GitCommitFileChange,
   GitCommitStats,
   GitHistoryResult,
+  GitStashEntry,
   GitStatusEntry,
   GitStatusResult,
   PendingDiff,
@@ -12,6 +13,8 @@ import type {
 } from '@deepseek-ide/shared';
 import { RenderFileTreeIcon } from './FileTree';
 import { GitCommitPreviewCard } from './GitCommitPreviewCard';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import {
   GitCreateBranchModal,
   GitCheckoutModal,
@@ -24,7 +27,7 @@ import {
 interface Props {
   workspaceInfo: WorkspaceInfo | null;
   onPreviewDiff: (diff: PendingDiff | null) => void;
-  onDiscardPath?: (path: string | string[]) => void;
+  onDiscardPath?: (path: string | string[]) => void | Promise<void>;
   onOpenFile?: (path: string) => void;
   onViewFileHistory?: (path: string) => void;
   onCompareWithRevision?: (path: string) => void;
@@ -1213,6 +1216,9 @@ export function GitPanel({
   refreshNonce,
   onShowToast,
 }: Props) {
+  // 放弃更改 / 删除暂存这类不可逆操作统一走应用内确认框：
+  // 系统 window.confirm 在 Electron 里不是应用主题色，也没法把「要放弃哪几个文件」列出来核对
+  const confirm = useDbConfirm();
   const [status, setStatus] = useState<GitStatusResult | null>(null);
   const [branches, setBranches] = useState<GitBranchInfo[]>([]);
   const [allBranches, setAllBranches] = useState<GitBranchInfo[]>([]);
@@ -1221,6 +1227,11 @@ export function GitPanel({
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const [selectedCommitFiles, setSelectedCommitFiles] = useState<GitCommitFileChange[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
+
+  // Git Stash 状态
+  const [stashes, setStashes] = useState<GitStashEntry[]>([]);
+  const [isStashesCollapsed, setIsStashesCollapsed] = useState(false);
+  const [loadingStash, setLoadingStash] = useState(false);
 
   // Git 交互弹窗状态
   const [createBranchModalOpen, setCreateBranchModalOpen] = useState(false);
@@ -1437,6 +1448,12 @@ export function GitPanel({
     }
   };
 
+  /**
+   * 放弃更改（还原到 HEAD）。
+   *
+   * **确认不在这里**：App 的 `handleDiscardPath` 是全应用放弃修改的唯一收口点，
+   * 确认放在那一层，这里再问一次就成了连续两个弹窗。本组件只负责把范围整理好交上去。
+   */
   const handleDiscard = async (target: string | string[]) => {
     if (typeof target === 'string') {
       setSelectedStatusPath(target);
@@ -1446,8 +1463,7 @@ export function GitPanel({
       if (onDiscardPath) {
         await onDiscardPath(target);
       } else {
-        const isArray = Array.isArray(target);
-        const paths = isArray
+        const paths = Array.isArray(target)
           ? target
           : !target || target === '.' || target === 'ALL' || target === 'all'
             ? ['.']
@@ -1615,10 +1631,11 @@ export function GitPanel({
       setCommits([]);
       return;
     }
-    const [st, br, hist] = await Promise.all([
+    const [st, br, hist, stashRes] = await Promise.all([
       window.ide.gitStatus(),
       window.ide.gitBranches(),
       window.ide.gitHistory(),
+      window.ide.gitStash('list').catch(() => ({ ok: false, stashes: [] })),
     ]);
 
     setStatus(st);
@@ -1634,10 +1651,140 @@ export function GitPanel({
     if (hist.ok) setCommits(hist.commits);
     else setCommits([]);
 
+    if (stashRes?.ok && stashRes.stashes) {
+      setStashes(stashRes.stashes);
+    } else {
+      setStashes([]);
+    }
+
     if (!st.ok && st.detail) setError(st.detail);
     else if (!hist.ok && hist.detail && !hist.emptyRepo) setError(hist.detail);
     else setError(null);
   }, [workspaceInfo]);
+
+  const handleStashPush = useCallback(async () => {
+    const msg = window.prompt(
+      '请输入暂存说明 (可选):',
+      `暂存修改 - ${new Date().toLocaleTimeString()}`,
+    );
+    if (msg === null) return;
+    setLoadingStash(true);
+    try {
+      const res = await window.ide.gitStash('push', msg.trim() || undefined);
+      if (res.ok) {
+        onShowToast?.('✓ 暂存成功', res.detail || '已将当前修改存入 Stash', 'success');
+        await refresh();
+      } else {
+        onShowToast?.('暂存失败', res.detail, 'error');
+      }
+    } finally {
+      setLoadingStash(false);
+    }
+  }, [onShowToast, refresh]);
+
+  /**
+   * Stash Pop：把改动应用回工作区，同时**把那条 stash 记录删掉**。
+   *
+   * 这里之所以要确认，是因为它比 Apply 多了一步「删记录」，而这步有个真实的陷阱：
+   * 工作区若已有同名改动，git 可能只应用一半就把记录弹掉了（记录已丢、改动没全回来）。
+   * Apply 不删记录，因此不拦。
+   */
+  const handleStashPop = useCallback(
+    async (index?: number) => {
+      const ref = typeof index === 'number' ? `stash@{${index}}` : 'stash@{0}';
+      const entry =
+        typeof index === 'number' ? stashes.find((s) => s.index === index) : stashes[0];
+      const ok = await confirm.confirm({
+        title: '弹出暂存 (Pop)',
+        content: buildSqlConfirmMarkdown({
+          intro: '改动会应用到工作区，同时**这条 stash 记录会被删除**，且**无法撤销**。',
+          statements: [],
+          notes: [
+            '若工作区已有冲突改动，git 可能只应用一部分就删掉记录 —— 建议先提交或暂存当前改动。',
+            '只想保留记录，请改用「应用 (Apply) 不删除」。',
+          ],
+        }),
+        details: [
+          { label: '记录', value: ref },
+          ...(entry?.message ? [{ label: '说明', value: entry.message }] : []),
+        ],
+        tone: 'danger',
+        confirmLabel: '确认弹出',
+      });
+      if (ok === null) return;
+      setLoadingStash(true);
+      try {
+        const res = await window.ide.gitStash('pop', ref);
+        if (res.ok) {
+          onShowToast?.('✓ 恢复暂存成功', res.detail || '已恢复修改并移出 Stash', 'success');
+          await refresh();
+        } else {
+          onShowToast?.('恢复暂存失败', res.detail, 'error');
+        }
+      } finally {
+        setLoadingStash(false);
+      }
+    },
+    [onShowToast, refresh, confirm, stashes],
+  );
+
+  const handleStashApply = useCallback(
+    async (index: number) => {
+      setLoadingStash(true);
+      try {
+        const ref = `stash@{${index}}`;
+        const res = await window.ide.gitStash('apply', ref);
+        if (res.ok) {
+          onShowToast?.(
+            '✓ 应用暂存成功',
+            res.detail || '已将暂存修改应用至工作区 (保留在 Stash 中)',
+            'success',
+          );
+          await refresh();
+        } else {
+          onShowToast?.('应用暂存失败', res.detail, 'error');
+        }
+      } finally {
+        setLoadingStash(false);
+      }
+    },
+    [onShowToast, refresh],
+  );
+
+  const handleStashDrop = useCallback(
+    async (index: number) => {
+      const entry = stashes.find((s) => s.index === index);
+      const ok = await confirm.confirm({
+        title: '删除暂存记录',
+        content: buildSqlConfirmMarkdown({
+          intro: '这条 stash 记录会从栈里移除，且**无法撤销**（Drop 不会把改动还原回工作区）。',
+          statements: [],
+          notes: ['只想恢复改动、不想丢记录，请改用「弹出 / 应用 (Pop)」。'],
+        }),
+        details: [
+          { label: '记录', value: `stash@{${index}}` },
+          ...(entry?.message ? [{ label: '说明', value: entry.message }] : []),
+        ],
+        tone: 'danger',
+        confirmLabel: '确认删除',
+      });
+      if (ok === null) return;
+      setLoadingStash(true);
+      try {
+        const ref = `stash@{${index}}`;
+        const res = await window.ide.gitStash('drop', ref);
+        if (res.ok) {
+          onShowToast?.('✓ 删除暂存成功', res.detail || `已删除 stash@{${index}}`, 'success');
+          await refresh();
+        } else {
+          onShowToast?.('删除暂存失败', res.detail, 'error');
+        }
+      } finally {
+        setLoadingStash(false);
+      }
+    },
+    [onShowToast, refresh, confirm, stashes],
+  );
 
   useEffect(() => {
     void refresh();
@@ -2190,9 +2337,7 @@ export function GitPanel({
             className="git-more-menu-item"
             onClick={() => {
               setShowMoreMenu(false);
-              if (!confirm('确定要放弃工作区中的所有未提交修改吗？此操作不可逆！')) {
-                return;
-              }
+              // 确认由 App 的 handleDiscardPath 统一负责（那里是全应用放弃修改的收口点）
               void runGitAction('放弃全部修改', async () => {
                 if (onDiscardPath) {
                   await onDiscardPath('');
@@ -2684,6 +2829,192 @@ export function GitPanel({
         title="上下拖动调整图形高度"
       />
 
+      {/* 5.5 Stash 暂存管理 Section */}
+      <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+        <div
+          onClick={() => setIsStashesCollapsed((v) => !v)}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '0 10px',
+            background: 'rgba(255, 255, 255, 0.02)',
+            borderBottom: '1px solid var(--border)',
+            fontSize: 11,
+            fontWeight: 600,
+            color: 'var(--muted)',
+            height: 30,
+            minHeight: 30,
+            boxSizing: 'border-box',
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span className="chevron" style={{ fontSize: 11, color: 'var(--muted)', width: 10 }}>
+              {isStashesCollapsed ? '›' : '▾'}
+            </span>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>暂存区 (Stash)</span>
+            <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
+              ({stashes.length})
+            </span>
+          </div>
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="panel-action-btn"
+              title="暂存当前修改 (Stash Push)"
+              disabled={loadingStash}
+              onClick={() => void handleStashPush()}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+            {stashes.length > 0 && (
+              <button
+                type="button"
+                className="panel-action-btn"
+                title="恢复最新暂存并删除 (Stash Pop)"
+                disabled={loadingStash}
+                onClick={() => void handleStashPop()}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 14 4 9 9 4" />
+                  <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+                </svg>
+              </button>
+            )}
+            <button
+              type="button"
+              className="panel-action-btn"
+              title="刷新暂存列表"
+              disabled={loadingStash}
+              onClick={() => void refresh()}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {!isStashesCollapsed && (
+          <div
+            style={{
+              maxHeight: 180,
+              overflowY: 'auto',
+              padding: '4px 6px',
+              borderBottom: '1px solid var(--border)',
+              background: 'rgba(0, 0, 0, 0.1)',
+            }}
+          >
+            {stashes.length === 0 ? (
+              <div
+                style={{
+                  padding: '10px 8px',
+                  color: 'var(--muted)',
+                  fontSize: 11,
+                  textAlign: 'center',
+                }}
+              >
+                暂无暂存记录
+              </div>
+            ) : (
+              stashes.map((s) => (
+                <div
+                  key={s.index}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    gap: 6,
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    margin: '2px 0',
+                  }}
+                  className="search-result-item"
+                >
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span
+                        style={{
+                          fontFamily: 'var(--font-mono, monospace)',
+                          fontSize: 10,
+                          color: 'var(--accent, #58a6ff)',
+                          background: 'rgba(88, 166, 255, 0.1)',
+                          padding: '1px 5px',
+                          borderRadius: 3,
+                          fontWeight: 600,
+                        }}
+                      >
+                        stash@{`{${s.index}}`}
+                      </span>
+                      <span
+                        style={{
+                          color: 'var(--text)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          fontSize: 11,
+                        }}
+                        title={s.message}
+                      >
+                        {s.message}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      className="panel-action-btn"
+                      title="恢复并从暂存区移除 (Pop)"
+                      disabled={loadingStash}
+                      onClick={() => void handleStashPop(s.index)}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 14 4 9 9 4" />
+                        <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="panel-action-btn"
+                      title="应用暂存但保留记录 (Apply)"
+                      disabled={loadingStash}
+                      onClick={() => void handleStashApply(s.index)}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="panel-action-btn"
+                      title="删除该暂存记录 (Drop)"
+                      disabled={loadingStash}
+                      onClick={() => void handleStashDrop(s.index)}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {/* 6. Resizable 图形 Section - Git Commit Graph (VS Code Style) */}
       <div
         style={{
@@ -2731,23 +3062,12 @@ export function GitPanel({
             <button
               type="button"
               className="panel-action-btn active"
-              style={{
-                height: 24,
-                minWidth: 44,
-                padding: '0 6px',
-                fontSize: 11,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 3,
-                color: 'var(--accent, #58a6ff)',
-                fontWeight: 500,
-              }}
-              title="自动同步状态"
+              title="自动同步状态 (点击立即刷新)"
               onClick={() => void refresh()}
             >
               <svg
-                width="12"
-                height="12"
+                width="14"
+                height="14"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -2756,7 +3076,6 @@ export function GitPanel({
                 <circle cx="12" cy="12" r="4" />
                 <path d="M12 2v2m0 16v2M2 12h2m16 0h2" />
               </svg>
-              自动
             </button>
 
             {/* 聚焦 HEAD 图标 */}
@@ -3355,6 +3674,8 @@ export function GitPanel({
         open={outputModalOpen}
         onClose={() => setOutputModalOpen(false)}
       />
+
+      {confirm.modal}
     </div>
   );
 }

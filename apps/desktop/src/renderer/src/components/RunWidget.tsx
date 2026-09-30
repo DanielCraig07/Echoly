@@ -6,6 +6,8 @@ import {
   type ProjectRuntimeConfig,
 } from './ProjectRuntimeConfigModal';
 import { resolveDebugConfig } from '../utils/debugLauncher';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 
 interface Props {
   workspace: string | null;
@@ -1046,6 +1048,8 @@ export function RunWidget({
   onSelectBottomTab,
   onShowToast,
 }: Props) {
+  // 删除自定义运行配置走应用内确认框（系统 window.confirm 不是应用主题色）
+  const confirm = useDbConfirm();
   const [detectedScripts, setDetectedScripts] = useState<ScriptOption[]>([]);
   const [customConfigs, setCustomConfigs] = useState<CustomConfig[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
@@ -1215,10 +1219,25 @@ export function RunWidget({
     setDropdownOpen(false);
   };
 
-  const handleDeleteCustom = (e: React.MouseEvent, id: string) => {
+  const handleDeleteCustom = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (!workspace) return;
     const realId = id.replace(/^custom:/, '');
+    const target = customConfigs.find((c) => c.id === realId);
+    const ok = await confirm.confirm({
+      title: '删除运行配置',
+      content: buildSqlConfirmMarkdown({
+        intro: '这条自定义运行配置会被移除，且**无法撤销**。项目文件不受影响。',
+        statements: [],
+      }),
+      details: [
+        { label: '名称', value: target?.name || '（未命名）' },
+        ...(target?.command ? [{ label: '命令', value: target.command }] : []),
+      ],
+      tone: 'danger',
+      confirmLabel: '确认删除',
+    });
+    if (ok === null) return;
     const nextList = customConfigs.filter((c) => c.id !== realId);
     setCustomConfigs(nextList);
     try {
@@ -2043,6 +2062,8 @@ export function RunWidget({
         activePath={activePath || undefined}
         onShowToast={onShowToast}
       />
+
+      {confirm.modal}
     </div>
   );
 }

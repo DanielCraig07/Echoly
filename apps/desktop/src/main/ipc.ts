@@ -184,6 +184,19 @@ export function registerIpc(deps: {
   ipcMain.handle('workspace:exists', (event, relPath: string) =>
     run(event, () => registry.current().workspace.exists(relPath)),
   );
+  // ── 项目配置（数据库连接 / 查询脚本）：落在用户主目录，不写进工作区 ──────────
+  ipcMain.handle('projectConfig:read', (event, relPath: string) =>
+    run(event, () => registry.current().workspace.readProjectConfigFile(relPath)),
+  );
+  ipcMain.handle('projectConfig:write', (event, relPath: string, content: string) =>
+    run(event, () => registry.current().workspace.writeProjectConfigFile(relPath, content)),
+  );
+  ipcMain.handle('projectConfig:list', (event, relPath?: string) =>
+    run(event, () => registry.current().workspace.listProjectConfigDir(relPath)),
+  );
+  ipcMain.handle('projectConfig:remove', (event, relPath: string) =>
+    run(event, () => registry.current().workspace.removeProjectConfigFile(relPath)),
+  );
   ipcMain.handle('workspace:resolveAbsolute', (event, relPath?: string) =>
     run(event, () => registry.current().workspace.resolveAbsolute(relPath)),
   );
@@ -603,6 +616,15 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('ssh:listRemoteDir', (e, remotePath?: string) =>
     run(e, () => ssh.listRemoteDir(remotePath)),
   );
+  ipcMain.handle('ssh:startPortForward', (e, remotePort: number, localPort?: number) =>
+    run(e, () => ssh.startPortForward(remotePort, localPort)),
+  );
+  ipcMain.handle('ssh:stopPortForward', (e, remotePort: number) =>
+    run(e, () => ssh.stopPortForward(remotePort)),
+  );
+  ipcMain.handle('ssh:listPortForwards', (e) =>
+    run(e, () => ssh.listPortForwards()),
+  );
 
   ipcMain.handle('terminal:create', (e, options?: TerminalCreateOptions) =>
     run(e, () => terminals.create(options, e.sender.id)),
@@ -739,4 +761,80 @@ ${payload.suffix.slice(0, 1000)}
     }
     return false;
   });
+
+  ipcMain.handle('db:connect', async (e, options) => {
+    return run(e, () => registry.current().db.connect(options));
+  });
+  ipcMain.handle('db:disconnect', async (e, connectionId: string) => {
+    return run(e, () => registry.current().db.disconnect(connectionId));
+  });
+  ipcMain.handle('db:listConnections', async (e) => {
+    return run(e, () => registry.current().db.listConnections());
+  });
+  // 连接配置跟随工作区（项目）：读写都走当前窗口 session 的 workspace，本地 / SSH 通用
+  ipcMain.handle('db:saveConnection', async (e, config) => {
+    return run(e, () => registry.current().db.saveConnection(config));
+  });
+  ipcMain.handle('db:deleteConnection', async (e, id: string) => {
+    return run(e, () => registry.current().db.deleteConnection(id));
+  });
+  ipcMain.handle('db:connectSaved', async (e, id: string) => {
+    return run(e, () => registry.current().db.connectSaved(id));
+  });
+  ipcMain.handle('db:listSchemas', async (e, connectionId: string) => {
+    return run(e, () => registry.current().db.listSchemas(connectionId));
+  });
+  ipcMain.handle('db:listTables', async (e, connectionId: string, schemaName?: string) => {
+    return run(e, () => registry.current().db.listTables(connectionId, schemaName));
+  });
+  ipcMain.handle(
+    'db:getTableSchema',
+    async (e, connectionId: string, tableName: string, schemaName?: string) => {
+      return run(e, () => registry.current().db.getTableSchema(connectionId, tableName, schemaName));
+    },
+  );
+  ipcMain.handle(
+    'db:getTableDdl',
+    async (e, connectionId: string, tableName: string, schemaName?: string) => {
+      return run(e, () => registry.current().db.getTableDdl(connectionId, tableName, schemaName));
+    },
+  );
+  // 库展开时的六类对象清单（表 / 视图 / 索引 / 存储过程 / 触发器 / 事件）
+  ipcMain.handle('db:listObjects', async (e, connectionId: string, schemaName?: string) => {
+    return run(e, () => registry.current().db.listObjects(connectionId, schemaName));
+  });
+  ipcMain.handle(
+    'db:query',
+    async (
+      e,
+      connectionId: string,
+      sql: string,
+      page?: number,
+      pageSize?: number,
+      schemaName?: string,
+    ) => {
+      return run(e, () =>
+        registry.current().db.query(connectionId, sql, page, pageSize, schemaName),
+      );
+    },
+  );
+  ipcMain.handle('db:createDemoDb', async (e, targetPath?: string) => {
+    let destPath = targetPath;
+    if (!destPath) {
+      const root = run(e, () => registry.current().workspace.getRoot());
+      if (root) {
+        // 注意：本地工作区拼接正确；SSH 工作区的 POSIX root 用 path.join 在此处拼不出正确路径，
+        // 属既有缺陷（本轮不修）—— SSH 场景请由调用方显式传 targetPath。
+        destPath = path.join(root, 'demo.db');
+      }
+    }
+    return run(e, () => registry.current().db.createDemoDb(destPath));
+  });
+  // 表数据批量增删改：在一个事务里执行，失败整体回滚（DDL 不走这里，见 DatabaseService.executeBatch 注释）
+  ipcMain.handle(
+    'db:executeBatch',
+    async (e, connectionId: string, statements: string[], schemaName?: string) => {
+      return run(e, () => registry.current().db.executeBatch(connectionId, statements, schemaName));
+    },
+  );
 }

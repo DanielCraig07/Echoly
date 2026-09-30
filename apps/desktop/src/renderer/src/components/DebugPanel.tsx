@@ -5,6 +5,8 @@ import type {
   DapStackFrame,
   DapVariable,
 } from '@deepseek-ide/shared';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 
 interface DebugPanelProps {
   workspace?: string | null;
@@ -37,6 +39,8 @@ export function DebugPanel({
   onStepOut,
   onStop,
 }: DebugPanelProps) {
+  // 清除全部断点走应用内确认框（断点存在 localStorage 里，清掉就没了）
+  const confirm = useDbConfirm();
   // ── 折叠状态 ──
   const [collapsed, setCollapsed] = useState<{ [key: string]: boolean }>({
     variables: false,
@@ -590,8 +594,30 @@ export function DebugPanel({
                 <button
                   type="button"
                   className="panel-action-btn"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
+                    const ok = await confirm.confirm({
+                      title: '清除全部断点',
+                      content: buildSqlConfirmMarkdown({
+                        intro: `当前工作区的 ${breakpoints.length} 个断点都会被清除，且**无法撤销**。`,
+                        statements: [],
+                      }),
+                      details: [
+                        { label: '数量', value: `${breakpoints.length} 个断点` },
+                        ...breakpoints
+                          .slice(0, 8)
+                          .map((bp, i) => ({
+                            label: i === 0 ? '位置' : '',
+                            value: `${bp.path}:${bp.line}`,
+                          })),
+                        ...(breakpoints.length > 8
+                          ? [{ label: '', value: `…另有 ${breakpoints.length - 8} 个` }]
+                          : []),
+                      ],
+                      tone: 'danger',
+                      confirmLabel: '确认清除',
+                    });
+                    if (ok === null) return;
                     onClearBreakpoints();
                   }}
                   title="清除全部断点"
@@ -770,6 +796,8 @@ export function DebugPanel({
           </form>
         </div>
       </div>
+
+      {confirm.modal}
     </div>
   );
 }

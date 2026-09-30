@@ -69,6 +69,8 @@ export interface RecentWorkspaceItem {
   label?: string;
   lastOpenedAt: number;
   techStack?: string;
+  gitBranch?: string;
+  uncommittedCount?: number;
 }
 
 interface Props {
@@ -434,6 +436,29 @@ export function OpenWorkspaceModal({
                               <span className="open-ws-current-badge" title="当前正在使用的工作区">
                                 <span className="open-ws-current-dot" />
                                 正在使用
+                              </span>
+                            )}
+                            {item.gitBranch && (
+                              <span
+                                className="welcome-git-pill"
+                                style={{
+                                  fontSize: 10,
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  background: 'rgba(255, 255, 255, 0.06)',
+                                  color: 'var(--muted)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
+                                }}
+                                title={`当前分支: ${item.gitBranch}${item.uncommittedCount ? ` (${item.uncommittedCount} 个未提交修改)` : ''}`}
+                              >
+                                <span>⎇ {item.gitBranch}</span>
+                                {item.uncommittedCount && item.uncommittedCount > 0 ? (
+                                  <span style={{ color: '#e5a54b', fontWeight: 600 }}>
+                                    ● {item.uncommittedCount}
+                                  </span>
+                                ) : null}
                               </span>
                             )}
                             {relativeTime && (

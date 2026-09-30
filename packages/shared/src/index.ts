@@ -549,6 +549,19 @@ export interface OpenTab {
   title?: string;
   /** Whether the tab is opened in read-only mode */
   readOnly?: boolean;
+  /** 虚拟标签的附属数据（SQL 控制台的脚本落盘路径与会话目标、表结构视图的表定位） */
+  virtual?: {
+    scriptPath?: string;
+    scriptTarget?: { connectionId: string; schemaName?: string };
+    /**
+     * `db://structure/` 标签要看的表。
+     *
+     * 路径里其实已经带了这三段（并能从路径解析出来），这里再存一份是因为
+     * `EditorPane` 渲染时手上只有标签对象：解析路径要再引一次路径约定，
+     * 而虚拟标签的元数据本来就是干这个的。
+     */
+    dbStructure?: { connectionId: string; schemaName?: string; tableName: string };
+  };
   /** Data URL for image preview tabs (png/jpg/…); content stays empty. */
   previewUrl?: string;
   /** Large file (>2MB): content is intentionally left empty to avoid editor stalls. */
@@ -775,6 +788,167 @@ export interface RecentWorkspaceItem {
   kind?: 'local' | 'ssh';
   sshServer?: string;
   techStack?: string;
+  gitBranch?: string;
+  uncommittedCount?: number;
+}
+
+export interface DatabaseConnectionInfo {
+  id: string;
+  name: string;
+  type: 'sqlite' | 'mysql' | 'postgres';
+  path?: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  connectedAt: number;
+}
+
+/**
+ * 落盘到 `~/.echoly/projects/<工作区哈希>/db-connections.json` 的连接配置。
+ *
+ * 与 `DatabaseConnectionInfo` 刻意分开：那个描述的是「此刻正连着的会话」，本类型描述的是
+ * 「这个项目保存了哪些连接」。id 由连接参数派生（见 databaseService.makeSavedId），
+ * 因此同一份配置在多次会话之间保持同一个 id。
+ */
+export interface DbSavedConnection {
+  id: string;
+  name: string;
+  type: 'sqlite' | 'mysql' | 'postgres';
+  /** SQLite 数据库文件路径 */
+  path?: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  user?: string;
+  /** safeStorage 加密后的密码（`enc:v1:` 前缀）；环境不支持加密时降级为明文 */
+  password?: string;
+  updatedAt: number;
+}
+
+/** 传给渲染层的连接视图：项目里保存的配置 + 当前是否已连上 */
+export interface DbConnectionView extends DbSavedConnection {
+  connected: boolean;
+  /**
+   * `connected` 只是「此刻是否有会话」的结果，会因切工作区时主进程先断连而短暂为 false，
+   * 此时点一下通常能连上。这里用两个标记把「点了能不能连上」说清楚：
+   * - `passwordSaved`: 配置里存了密码 → 点击即可自动重连
+   * - `requiresPassword`: 配置里没存密码 → 点击需先补密码（走「编辑连接…」）
+   */
+  passwordSaved?: boolean;
+  requiresPassword?: boolean;
+}
+
+export interface DatabaseColumnMeta {
+  cid: number;
+  name: string;
+  type: string;
+  notnull: boolean;
+  dflt_value: any;
+  pk: boolean;
+  /**
+   * 数据库里的列注释。
+   *
+   * MySQL 取自 `information_schema.columns.COLUMN_COMMENT`，PostgreSQL 取自 `pg_description`；
+   * **SQLite 没有列注释这个概念，恒为 null**（不编造）。缺失 / 空串都表示「没有注释」，
+   * 消费方据此决定要不要渲染那一行。
+   */
+  comment?: string | null;
+  /**
+   * 该列的额外属性原文（图4 的「Extra」列）。
+   *
+   * MySQL 取自 `information_schema.columns.EXTRA`（`auto_increment`、`on update CURRENT_TIMESTAMP`、
+   * `VIRTUAL GENERATED` 等）；PostgreSQL / SQLite 没有等价概念，为 null。
+   *
+   * 存在的理由：自增标记只能从这里读出来。表结构视图若拿不到它，
+   * 就会把一个自增主键当成普通列回写 `MODIFY`，把 AUTO_INCREMENT 属性悄悄抹掉。
+   */
+  extra?: string | null;
+}
+
+/** 库 / Schema 节点：MySQL 下是 database，PostgreSQL 下是 schema，SQLite 下是附加库（main 等） */
+export interface DatabaseSchemaInfo {
+  name: string;
+  kind: 'database' | 'schema';
+  tableCount?: number;
+}
+
+export interface DatabaseTableInfo {
+  name: string;
+  rowCount?: number;
+  comment?: string;
+  columns?: DatabaseColumnMeta[];
+  /**
+   * 这个条目究竟是哪种对象。
+   *
+   * 树上需要把「表」和「视图」分开展示（各自一个分组节点），而重建视图的语句与表并不相同。
+   * 缺省视为 `table`：老调用方（以及只关心表的地方）不必逐个补齐这个字段。
+   */
+  kind?: 'table' | 'view';
+}
+
+/** 库 / schema 展开后的六个分组 */
+export type DbObjectGroup =
+  | 'tables'
+  | 'views'
+  | 'indexes'
+  | 'procedures'
+  | 'triggers'
+  | 'events';
+
+/**
+ * 一个库 / schema 下的对象清单，按树上要展示的分组切开。
+ *
+ * 每类都是一个扁平的名字数组 —— 树上就是照名字列的，不需要更细的元数据；
+ * 真正需要细节时（列、DDL）再单独去取，免得展开一个库就要把全库的对象都读一遍。
+ */
+export interface DbSchemaObjects {
+  tables: string[];
+  views: string[];
+  indexes: string[];
+  procedures: string[];
+  triggers: string[];
+  events: string[];
+  /** 该驱动是否支持这一组。为 false 时树上显示「不支持」并置灰，而不是伪装成「空」 */
+  supported: Record<DbObjectGroup, boolean>;
+  /** 单组的错误（某类查询失败不该拖垮整个展开），键即组名 */
+  errors?: Partial<Record<DbObjectGroup, string>>;
+}
+
+export interface DatabaseQueryResult {
+  ok: boolean;
+  columns: string[];
+  rows: Record<string, any>[];
+  total?: number;
+  affectedRows?: number;
+  executionTimeMs: number;
+  error?: string;
+}
+
+/** 批量事务里单条语句的执行结果 */
+export interface DbBatchStatementResult {
+  sql: string;
+  ok: boolean;
+  affectedRows?: number;
+  error?: string;
+}
+
+/**
+ * 批量事务执行结果。
+ *
+ * 与 `DatabaseQueryResult` 刻意分开：批次只跑 DML（增删改行），不返回结果集，
+ * 且要把「第几条成功、第几条失败」逐条带回来，供数据视图在失败时保留暂存态。
+ */
+export interface DbBatchResult {
+  ok: boolean;
+  results: DbBatchStatementResult[];
+  /**
+   * 事务是否真的回滚成功（仅在 `ok === false` 时有意义）。
+   * 回滚本身也可能失败（例如连接已断），此时置 false 并在 `error` 里说明 ——
+   * 用户需要知道「数据可能处于半改状态」，不能只看到一句「失败」。
+   */
+  rolledBack?: boolean;
+  executionTimeMs: number;
+  error?: string;
 }
 
 export interface SearchFileHit {
@@ -882,6 +1056,24 @@ export interface IpcApi {
   copyPath: (fromRel: string, toRel: string) => Promise<void>;
   pathExists: (relPath: string) => Promise<boolean>;
   resolveAbsolutePath: (relPath?: string) => Promise<string>;
+  // ── 项目配置（数据库连接 / 查询脚本） ──────────────────────────────────────
+  //
+  // 这些内容**不写进工作区**，而是落在用户主目录的项目配置目录
+  // （`~/.echoly/projects/<工作区哈希>/`）。参数与工作区文件接口同形：传的都是
+  // 工作区相对的 POSIX 路径，由主进程映射到配置目录。
+  //
+  // 为什么要单开一组而不是复用 readFile/writeFile：那组走的是工作区后端，SSH 工作区
+  // 下会写到远端去；而这些文件始终在**用户自己这台机器**上，与工作区是本地还是远端无关。
+  /** 读配置目录里的文件；不存在返回 null（配置永远是可选的） */
+  readProjectConfigFile: (relPath: string) => Promise<string | null>;
+  /** 写配置目录里的文件，父目录自动创建 */
+  writeProjectConfigFile: (relPath: string, content: string) => Promise<void>;
+  /** 列配置目录下的子项 */
+  listProjectConfigDir: (
+    relPath?: string,
+  ) => Promise<Array<{ name: string; isDirectory: boolean }>>;
+  /** 删除配置目录里的一个文件 */
+  removeProjectConfigFile: (relPath: string) => Promise<void>;
   detectWorkspaceTech?: (rootPath: string) => Promise<string>;
   downloadFile: (relPath: string) => Promise<string | null>;
   saveFileDialog: (defaultPath?: string) => Promise<string | null>;
@@ -995,6 +1187,90 @@ export interface IpcApi {
   listRemoteDir: (
     remotePath?: string,
   ) => Promise<{ ok: boolean; entries?: RemoteDirEntry[]; currentPath?: string; detail?: string }>;
+  startSshPortForward: (
+    remotePort: number,
+    localPort?: number,
+  ) => Promise<{ ok: boolean; localPort: number; error?: string }>;
+  stopSshPortForward: (remotePort: number) => Promise<{ ok: boolean }>;
+  listSshPortForwards: () => Promise<Array<{ remotePort: number; localPort: number }>>;
+  dbConnect: (options: {
+    path?: string;
+    name?: string;
+    type?: 'sqlite' | 'mysql' | 'postgres';
+    host?: string;
+    port?: number;
+    database?: string;
+    user?: string;
+    username?: string;
+    password?: string;
+  }) => Promise<{ ok: boolean; connection?: DatabaseConnectionInfo; error?: string }>;
+  dbDisconnect: (connectionId: string) => Promise<{ ok: boolean }>;
+  /** 当前工作区（项目）里保存的连接配置 + 各自的连接状态 */
+  dbListConnections: () => Promise<DbConnectionView[]>;
+  /** 新增 / 更新一条连接配置（写盘到 ~/.echoly/projects/<工作区哈希>/db-connections.json） */
+  dbSaveConnection: (
+    config: Omit<Partial<DbSavedConnection>, 'password'> & { password?: string },
+  ) => Promise<{ ok: boolean; connection?: DbSavedConnection; error?: string }>;
+  /** 删除一条连接配置（若正连着会先断开） */
+  dbDeleteConnection: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 用已保存的配置（含密码）重新连接 */
+  dbConnectSaved: (
+    id: string,
+  ) => Promise<{ ok: boolean; connection?: DatabaseConnectionInfo; error?: string }>;
+  /** 列出连接下的库 / schema（MySQL: SHOW DATABASES；PG: information_schema.schemata；SQLite: PRAGMA database_list） */
+  dbListSchemas: (
+    connectionId: string,
+  ) => Promise<{ ok: boolean; schemas: DatabaseSchemaInfo[]; error?: string }>;
+  dbListTables: (
+    connectionId: string,
+    schemaName?: string,
+  ) => Promise<{ ok: boolean; tables: DatabaseTableInfo[]; error?: string }>;
+  dbGetTableSchema: (
+    connectionId: string,
+    tableName: string,
+    schemaName?: string,
+  ) => Promise<{ ok: boolean; columns: DatabaseColumnMeta[]; error?: string }>;
+  dbGetTableDdl: (
+    connectionId: string,
+    tableName: string,
+    schemaName?: string,
+  ) => Promise<{ ok: boolean; ddl?: string; error?: string }>;
+  /**
+   * 库 / schema 下的各类对象分布（表、视图、索引、存储过程、触发器、事件）。
+   *
+   * 与 `dbListTables` 分开：后者是数据浏览的主路径（要行数、要快），
+   * 而这里要的是一次把六个分组都拿齐 —— 树上一个库展开时就该看到完整分类，
+   * 而不是先只看表、别的等用户点开才知道有没有。
+   */
+  dbListObjects: (
+    connectionId: string,
+    schemaName?: string,
+  ) => Promise<{ ok: boolean; objects?: DbSchemaObjects; error?: string }>;
+  dbQuery: (
+    connectionId: string,
+    sql: string,
+    page?: number,
+    pageSize?: number,
+    schemaName?: string,
+  ) => Promise<DatabaseQueryResult>;
+  dbCreateDemoDb: (targetPath?: string) => Promise<{
+    ok: boolean;
+    path: string;
+    connection: DatabaseConnectionInfo;
+    error?: string;
+  }>;
+  /**
+   * 在一个事务里顺序执行多条语句（DML 专用）。
+   *
+   * 为什么只有这个方法带事务、DDL 不走它：MySQL 的 DDL 会**隐式提交**当前事务，
+   * 把 CREATE/ALTER/DROP 混进批次会静默破坏原子性，所以表结构变更一律单条走 `dbQuery`。
+   * 批次里若出现 BEGIN / COMMIT 等事务控制语句会被直接拒绝（见主进程实现）。
+   */
+  dbExecuteBatch: (
+    connectionId: string,
+    statements: string[],
+    schemaName?: string,
+  ) => Promise<DbBatchResult>;
   createTerminal: (options?: TerminalCreateOptions) => Promise<{ id: string }>;
   writeTerminal: (id: string, data: string) => Promise<void>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>;

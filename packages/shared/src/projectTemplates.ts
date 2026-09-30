@@ -473,6 +473,171 @@ ColumnLimit: 100
       },
     ],
   },
+
+  'nextjs-ai': {
+    id: 'nextjs-ai',
+    name: 'Next.js 15 (AI Native)',
+    badge: 'Next/AI',
+    badgeColor: '#ec4899',
+    badgeBg: 'rgba(236, 72, 153, 0.15)',
+    description: '现代 React 19 + Next.js App Router 全栈 AI 应用工程，内置流式对话接口',
+    entryFile: 'app/page.tsx',
+    files: [
+      {
+        path: 'package.json',
+        content: `{
+  "name": "nextjs-ai-starter",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "15.0.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "ai": "^3.0.0",
+    "lucide-react": "^0.400.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.0.0"
+  }
+}
+`,
+      },
+      {
+        path: 'app/layout.tsx',
+        content: `export const metadata = {
+  title: 'Echoly AI App',
+  description: 'AI Native Application powered by Echoly',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="zh-CN">
+      <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#0f172a', color: '#f8fafc' }}>
+        {children}
+      </body>
+    </html>
+  );
+}
+`,
+      },
+      {
+        path: 'app/page.tsx',
+        content: `'use client';
+import React, { useState } from 'react';
+
+export default function Home() {
+  const [messages, setMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([
+    { role: 'assistant', content: '你好！我是由 Echoly 创建的 AI 助理，请问有什么可以帮助你？' }
+  ]);
+  const [input, setInput] = useState('');
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    setMessages((prev) => [...prev, { role: 'user', content: input }]);
+    const currentInput = input;
+    setInput('');
+    setTimeout(() => {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: \`收到你的消息: "\${currentInput}"。本地 AI 接口已就绪！\` }
+      ]);
+    }, 600);
+  };
+
+  return (
+    <main style={{ maxWidth: 720, margin: '40px auto', padding: '0 20px' }}>
+      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Echoly AI Native Starter</h1>
+      <p style={{ color: '#94a3b8', marginBottom: 24 }}>Next.js 15 + React 19 全栈智能助手模板</p>
+      <div style={{ background: '#1e293b', borderRadius: 8, padding: 20, minHeight: 320, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {messages.map((m, idx) => (
+          <div key={idx} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', background: m.role === 'user' ? '#3b82f6' : '#334155', padding: '10px 14px', borderRadius: 8, maxWidth: '80%' }}>
+            {m.content}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          placeholder="输入问题..."
+          style={{ flex: 1, padding: '10px 14px', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#fff' }}
+        />
+        <button onClick={handleSend} style={{ padding: '10px 20px', borderRadius: 6, border: 'none', background: '#3b82f6', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>发送</button>
+      </div>
+    </main>
+  );
+}
+`,
+      },
+      {
+        path: '.gitignore',
+        content: `node_modules/\n.next/\n.echoly/\nout/\n.env*.local\n`,
+      },
+      {
+        path: 'README.md',
+        content: `# Next.js 15 AI Native Starter\n\n- 启动本地开发: \`npm run dev\`，终端感知后自动弹出 \`http://localhost:3000\` 预览\n- 构建: \`npm run build\`\n`,
+      },
+    ],
+  },
+
+  'fastapi-ai': {
+    id: 'fastapi-ai',
+    name: 'FastAPI (Python AI Agent)',
+    badge: 'Python/AI',
+    badgeColor: '#10b981',
+    badgeBg: 'rgba(16, 185, 129, 0.15)',
+    description: '高性能 Python 异步 AI Agent 服务，开箱即用支持 FastAPI 与流式推理',
+    entryFile: 'main.py',
+    files: [
+      {
+        path: 'requirements.txt',
+        content: `fastapi>=0.110.0\nuvicorn>=0.28.0\npydantic>=2.6.0\nrequests>=2.31.0\n`,
+      },
+      {
+        path: 'main.py',
+        content: `from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI(title="Echoly Python AI Agent Service", version="1.0.0")
+
+class ChatRequest(BaseModel):
+    message: str
+
+@app.get("/")
+def read_root():
+    return {"status": "ok", "service": "Echoly AI Agent Engine", "version": "1.0.0"}
+
+@app.post("/api/chat")
+def chat_agent(req: ChatRequest):
+    return {
+        "reply": f"AI Agent 已处理您的请求: {req.message}",
+        "confidence": 0.98
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+`,
+      },
+      {
+        path: '.gitignore',
+        content: `__pycache__/\n*.pyc\nvenv/\n.env\n.echoly/\n`,
+      },
+      {
+        path: 'README.md',
+        content: `# FastAPI AI Agent Service\n\n- 运行服务: \`uvicorn main:app --reload --port 8000\`\n- 访问 Swagger 接口文档: \`http://127.0.0.1:8000/docs\`\n`,
+      },
+    ],
+  },
 };
 
 // 别名兼容映射
@@ -480,6 +645,8 @@ PROJECT_TEMPLATES['python-standard'] = PROJECT_TEMPLATES['python'];
 PROJECT_TEMPLATES['go-module'] = PROJECT_TEMPLATES['go'];
 
 export const PROJECT_TEMPLATE_LIST: ProjectTemplate[] = [
+  PROJECT_TEMPLATES['nextjs-ai'],
+  PROJECT_TEMPLATES['fastapi-ai'],
   PROJECT_TEMPLATES['java-maven'],
   PROJECT_TEMPLATES['python'],
   PROJECT_TEMPLATES['go'],

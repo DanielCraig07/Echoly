@@ -2,6 +2,8 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { RemoteDirEntry, SshProfile } from '@deepseek-ide/shared';
 import type { SwitchWorkspaceTarget } from './SwitchWorkspaceModal';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 
 interface Props {
   open: boolean;
@@ -47,6 +49,8 @@ export function SshConnectModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
+  // 删除确认走应用内弹窗（理由见 removeProfile 的注释）
+  const confirm = useDbConfirm();
 
   const [remoteDirs, setRemoteDirs] = useState<RemoteDirEntry[]>([]);
   const [dirLoading, setDirLoading] = useState(false);
@@ -276,8 +280,30 @@ export function SshConnectModal({
     onClose();
   }
 
+  /**
+   * 删除一条已保存的 SSH 配置。
+   *
+   * 配置里的主机 / 用户名 / 密钥路径都是用户手工填的，删掉就得重填，所以先确认。
+   * 确认框里点名是哪一台：列表里同一台机器的不同账号、或同一账号的不同端口
+   * 在界面上只差最后几个字符。
+   */
   async function removeProfile(id: string, e: React.MouseEvent): Promise<void> {
     e.stopPropagation();
+    const target = profiles.find((p) => p.id === id);
+    const ok = await confirm.confirm({
+      title: '删除 SSH 配置',
+      content: buildSqlConfirmMarkdown({
+        intro: '这条配置会从列表里移除，且无法撤销。**服务器上的文件不受影响。**',
+        statements: [],
+      }),
+      details: [
+        { label: '主机', value: `${target?.host ?? '未知'}:${target?.port || 22}` },
+        { label: '用户', value: target?.username || '（未指定）' },
+      ],
+      tone: 'danger',
+      confirmLabel: '确认删除',
+    });
+    if (ok === null) return;
     await window.ide.deleteSshProfile(id);
     const saved = await window.ide.listSshProfiles();
     const local = await window.ide.listLocalSshConfig();
@@ -1025,6 +1051,9 @@ export function SshConnectModal({
         {/* 全向拖拽调整手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
+      {/* 确认弹窗放在 overlay 的子 div 之外：overlay 自带「点外部即关闭」，
+          弹窗的遮罩若落在它里面，点遮罩会连带把整个 SSH 窗口一起关掉 */}
+      {confirm.modal}
     </div>,
     document.body,
   );

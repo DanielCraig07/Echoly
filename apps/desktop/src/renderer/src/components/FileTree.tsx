@@ -11,6 +11,8 @@ import {
 } from 'react';
 import type { FileTreeNode, GitStatusEntry, GitStatusResult } from '@deepseek-ide/shared';
 import { createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { validateMove } from '../utils/fileMoveValidation';
 
 export type PathClipboard = {
@@ -621,7 +623,7 @@ function TreeNode({
   if (node.isDirectory) {
     const stickyTop = (depth - 1) * 24;
     return (
-      <div>
+      <div className="file-tree-dir-group" style={{ position: 'relative' }}>
         {showRename ? (
           <InlineNameInput
             initial={node.name}
@@ -668,7 +670,7 @@ function TreeNode({
               paddingLeft: 12 + depth * 16,
               position: 'sticky',
               top: stickyTop,
-              zIndex: 50 - depth,
+              zIndex: Math.max(1, 20 - depth),
               opacity: gitMeta?.isIgnored ? 0.52 : undefined,
             }}
             onClick={() => {
@@ -1152,7 +1154,7 @@ interface Props extends FileTreeHandlers {
   selectedNode?: { path: string; isDirectory: boolean } | null;
   gitStatus?: GitStatusResult | null;
   onViewFileHistory?: (path: string) => void;
-  onDiscardPath?: (path: string) => void;
+  onDiscardPath?: (path: string) => void | Promise<void>;
   onPreviewGitDiff?: (path: string) => void;
   onAnnotateGitBlame?: (path: string) => void;
   onCompareWithRevision?: (path: string) => void;
@@ -1198,6 +1200,8 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [clipboard, setClipboard] = useState<PathClipboard>(null);
   const [inlineEdit, setInlineEdit] = useState<InlineEdit | null>(null);
+  // 永久删除文件走应用内确认框：系统 window.confirm 不是应用主题色，也列不出完整路径与目录规模
+  const confirm = useDbConfirm();
   const [expandPath, setExpandPath] = useState<string | null>(null);
   const [findFolder, setFindFolder] = useState<string | null>(null);
   const [isRootDropTarget, setIsRootDropTarget] = useState(false);
@@ -1463,7 +1467,9 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           break;
         case 'git-discard':
           if (node) {
-            onDiscardPath?.(node.path);
+            // 确认由 App 的 handleDiscardPath 统一负责（全应用放弃修改的收口点）；
+            // 这里先 await 再刷新，否则用户取消后文件树仍会被刷一遍、看着像已经还原了
+            await onDiscardPath?.(node.path);
             bump();
             window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
           }
@@ -1482,8 +1488,22 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           break;
         case 'delete':
           if (node) {
-            const ok = window.confirm(`永久删除「${node.name}」？此操作不可撤销。`);
-            if (!ok) return;
+            const ok = await confirm.confirm({
+              title: node.isDirectory ? '永久删除文件夹' : '永久删除文件',
+              content: buildSqlConfirmMarkdown({
+                intro: node.isDirectory
+                  ? '该文件夹及其**全部内容**会从磁盘上永久删除，**不进回收站、无法撤销**。'
+                  : '该文件会从磁盘上永久删除，**不进回收站、无法撤销**。',
+                statements: [],
+              }),
+              details: [
+                { label: '路径', value: node.path },
+                ...(node.isDirectory ? [{ label: '类型', value: '文件夹（递归删除）' }] : []),
+              ],
+              tone: 'danger',
+              confirmLabel: '确认删除',
+            });
+            if (ok === null) return;
             await window.ide.removePath(node.path);
             bump();
             window.dispatchEvent(
@@ -1592,6 +1612,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           onClose={() => setFindFolder(null)}
         />
       )}
+      {confirm.modal}
     </div>
   );
 });

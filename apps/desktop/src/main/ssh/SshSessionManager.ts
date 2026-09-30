@@ -610,6 +610,7 @@ export class SshSessionManager {
   private readonly profilesPath: string;
   private readonly live = new Map<number, LiveSsh>();
   private readonly browseLive = new Map<number, LiveSsh>();
+  private readonly portForwards = new Map<string, { server: net.Server; localPort: number; remotePort: number }>();
 
   constructor(
     private readonly resolveSession: () => WindowSession,
@@ -793,11 +794,117 @@ export class SshSessionManager {
     if (!live.browseOnly && live.workspace.getKind() === 'ssh') {
       live.workspace.clearRemote();
     }
-    try {
-      live.client.end();
-    } catch {
-      // ignore
+    // 清理该窗口下建立的所有端口转发隧道
+    for (const [key, entry] of this.portForwards.entries()) {
+      if (key.startsWith(`${webContentsId}:`)) {
+        try {
+          entry.server.close();
+        } catch {
+          // ignore
+        }
+        this.portForwards.delete(key);
+      }
     }
+  }
+
+  async startPortForward(
+    remotePort: number,
+    localPort?: number,
+  ): Promise<{ ok: boolean; localPort: number; error?: string }> {
+    const live = this.liveForCurrent();
+    if (!live || !live.client) {
+      return { ok: false, localPort: 0, error: '未找到活跃的 SSH 连接会话' };
+    }
+    const targetLocalPort = localPort || remotePort;
+    const forwardKey = `${live.webContentsId}:${remotePort}`;
+
+    const existing = this.portForwards.get(forwardKey);
+    if (existing) {
+      return { ok: true, localPort: existing.localPort };
+    }
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const server = net.createServer((socket) => {
+        live.client.forwardOut(
+          '127.0.0.1',
+          socket.remotePort || 0,
+          '127.0.0.1',
+          remotePort,
+          (err, stream) => {
+            if (err) {
+              socket.destroy();
+              return;
+            }
+            socket.pipe(stream).pipe(socket);
+            socket.on('error', () => {
+              try {
+                stream.close();
+              } catch {
+                /* ignore */
+              }
+            });
+            stream.on('error', () => {
+              try {
+                socket.destroy();
+              } catch {
+                /* ignore */
+              }
+            });
+          },
+        );
+      });
+
+      const onListenSuccess = () => {
+        if (resolved) return;
+        resolved = true;
+        const addr = server.address() as net.AddressInfo;
+        const assignedPort = addr ? addr.port : targetLocalPort;
+        this.portForwards.set(forwardKey, { server, localPort: assignedPort, remotePort });
+        resolve({ ok: true, localPort: assignedPort });
+      };
+
+      server.once('error', (err: any) => {
+        if (resolved) return;
+        if (err.code === 'EADDRINUSE' && targetLocalPort !== 0) {
+          // 目标端口被占用，自动选择一个可用空闲端口重试
+          server.listen(0, '127.0.0.1', onListenSuccess);
+        } else {
+          resolved = true;
+          resolve({ ok: false, localPort: 0, error: err.message || '端口监听失败' });
+        }
+      });
+
+      server.listen(targetLocalPort, '127.0.0.1', onListenSuccess);
+    });
+  }
+
+  async stopPortForward(remotePort: number): Promise<{ ok: boolean }> {
+    const live = this.liveForCurrent();
+    const forwardKey = `${live ? live.webContentsId : ''}:${remotePort}`;
+    const entry = this.portForwards.get(forwardKey);
+    if (entry) {
+      try {
+        entry.server.close();
+      } catch {
+        /* ignore */
+      }
+      this.portForwards.delete(forwardKey);
+    }
+    return { ok: true };
+  }
+
+  listPortForwards(): Array<{ remotePort: number; localPort: number }> {
+    const live = this.liveForCurrent();
+    if (!live) return [];
+    const prefix = `${live.webContentsId}:`;
+    const list: Array<{ remotePort: number; localPort: number }> = [];
+    for (const [key, entry] of this.portForwards.entries()) {
+      if (key.startsWith(prefix)) {
+        list.push({ remotePort: entry.remotePort, localPort: entry.localPort });
+      }
+    }
+    return list;
   }
 
   getActiveSession(): {

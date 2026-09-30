@@ -7,6 +7,16 @@ import type { UiTheme } from '@deepseek-ide/shared';
 import { uid } from '../utils';
 import { detectPortsFromText } from '../utils/portDetector';
 import { TerminalAiKBar } from './TerminalAiKBar';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+
+/**
+ * 终端标签「有内容」的判定：只要被写进过输出，关闭就会丢 scrollback。
+ * 刚开的空标签（用户还没敲任何命令）关掉没有代价，不拦。
+ */
+function tabHasContent(flags: Map<string, boolean>, clientId: string): boolean {
+  return flags.get(clientId) === true;
+}
 
 interface Props {
   terminalKind: 'local' | 'ssh';
@@ -23,6 +33,13 @@ interface Props {
   scrollback?: number;
   maximized?: boolean;
   onCollapse?: () => void;
+  /**
+   * 由宿主决定「关标签是否需要确认」。
+   *
+   * 只有这一份终端面板挂在屏幕上时才为 true（见 App 里的判断）：
+   * 用户没在看终端、只是程序在跑测试时，一个后台回调触发关标签不该弹窗吓人一跳。
+   */
+  onRequestCloseConfirm?: boolean;
 }
 
 interface TermTab {
@@ -1644,7 +1661,10 @@ export function TerminalPanel({
   scrollback,
   maximized,
   onCollapse,
+  onRequestCloseConfirm,
 }: Props) {
+  // 关闭有内容的终端标签前确认（系统 window.confirm 不是应用主题色，也没法说明会丢什么）
+  const confirm = useDbConfirm();
   const seqRef = useRef(1);
   const bootRef = useRef<TermTab | null>(null);
   if (!bootRef.current) bootRef.current = makeTab(1);
@@ -1657,17 +1677,35 @@ export function TerminalPanel({
   // 当前接受键盘输入与操作的聚焦终端 clientId
   const [focusedTabId, setFocusedTabId] = useState(bootRef.current.clientId);
 
-  // 左右分屏宽度比例与拖拽状态 (0.18 ~ 0.82)
+  // 左右/上下分屏宽度比例与拖拽状态 (0.18 ~ 0.82)
   const [splitRatio, setSplitRatio] = useState<number>(0.5);
+  const [splitDirection, setSplitDirection] = useState<'horizontal' | 'vertical'>('horizontal');
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
+
+  // SSH 远程端口自动转发映射 remotePort -> localPort
+  const [forwardedSshPorts, setForwardedSshPorts] = useState<Record<number, number>>({});
 
   // 终端检测到的网络端口映射 clientId -> number[]
   const [tabPorts, setTabPorts] = useState<Record<string, number[]>>({});
 
+  // 「这个标签被写过输出」的标记。放在 ref 里而不是 state：它只是个开关，
+  // 关标签那一刻读一次就够，不需要为它触发任何重渲染
+  const everWroteRef = useRef<Map<string, boolean>>(new Map());
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const markTabEverWrote = useCallback((clientId: string) => {
+    everWroteRef.current.set(clientId, true);
+  }, []);
+
   // 监听所有终端输出，自动检测本地网络端口
   useEffect(() => {
     const unsub = window.ide.onTerminalData(({ id, data }) => {
+      // 有输出流过就说明这个标签不再是「刚开的空壳」，关闭它要问一声（见 closeTerminal）。
+      // 放在这个全局订阅里而不是 TerminalSession 内部：单个会话组件只关心自己那一路输出，
+      // 而「哪些标签被写过」是面板级的账，得由一个能看到全部终端的地方来记。
+      if (data.trim()) markTabEverWrote(id);
+
       const ports = detectPortsFromText(data);
       if (ports.length > 0) {
         setTabPorts((prev) => {
@@ -1681,7 +1719,7 @@ export function TerminalPanel({
     return () => {
       unsub();
     };
-  }, []);
+  }, [markTabEverWrote]);
 
   // 聚合所有检测到的活跃端口（优先当前终端端口，平铺去重）
   const allDetectedPorts = useMemo(() => {
@@ -2049,12 +2087,19 @@ export function TerminalPanel({
       if (!container) return;
       const rect = container.getBoundingClientRect();
       const startX = e.clientX;
+      const startY = e.clientY;
       const initialRatio = splitRatio;
 
       const onMouseMove = (me: MouseEvent) => {
-        const deltaX = me.clientX - startX;
-        const newRatio = Math.max(0.18, Math.min(0.82, initialRatio + deltaX / rect.width));
-        setSplitRatio(newRatio);
+        if (splitDirection === 'vertical') {
+          const deltaY = me.clientY - startY;
+          const newRatio = Math.max(0.18, Math.min(0.82, initialRatio + deltaY / rect.height));
+          setSplitRatio(newRatio);
+        } else {
+          const deltaX = me.clientX - startX;
+          const newRatio = Math.max(0.18, Math.min(0.82, initialRatio + deltaX / rect.width));
+          setSplitRatio(newRatio);
+        }
       };
 
       const onMouseUp = () => {
@@ -2068,11 +2113,37 @@ export function TerminalPanel({
       window.addEventListener('mousemove', onMouseMove);
       window.addEventListener('mouseup', onMouseUp);
     },
-    [splitRatio],
+    [splitRatio, splitDirection],
   );
 
+  /**
+   * 关闭一个终端标签。
+   *
+   * 有确认，但**只在这个标签里有东西可丢时才问**：终端一旦销毁，scrollback（滚上去的历史输出）
+   * 就跟着没了，而正在跑的构建 / 服务也会被一并掐断。反过来，一个刚开、光标还停在提示符上的
+   * 空标签关掉没有任何代价 —— 对每一步都弹窗只会让人对弹窗脱敏。
+   */
   const closeTerminal = useCallback(
-    (clientId: string) => {
+    async (clientId: string) => {
+      if (onRequestCloseConfirm) {
+        const tab = tabsRef.current.find((t) => t.clientId === clientId);
+        if (tab && tabHasContent(everWroteRef.current, clientId)) {
+          const ok = await confirm.confirm({
+            title: '关闭终端标签',
+            content: buildSqlConfirmMarkdown({
+              intro: '这个终端会被销毁：**滚动的历史输出会丢失**，其中正在运行的进程也会被终止，且**无法撤销**。',
+              statements: [],
+            }),
+            details: [
+              { label: '标签', value: tab.customTitle || tabLabel(terminalKind, tab.index) },
+              { label: '类型', value: terminalKind === 'ssh' ? 'SSH 远程' : '本地' },
+            ],
+            tone: 'danger',
+            confirmLabel: '确认关闭',
+          });
+          if (ok === null) return;
+        }
+      }
       setTabs((prev) => {
         if (prev.length <= 1) {
           seqRef.current += 1;
@@ -2112,7 +2183,33 @@ export function TerminalPanel({
         return next;
       });
     },
-    [splitActiveId, leftTabId, focusedTabId],
+    [splitActiveId, leftTabId, focusedTabId, confirm, terminalKind, onRequestCloseConfirm],
+  );
+
+  const handlePortClick = useCallback(
+    async (port: number) => {
+      if (terminalKind === 'ssh') {
+        const existingLocal = forwardedSshPorts[port];
+        if (existingLocal) {
+          void window.ide.openExternal?.(`http://localhost:${existingLocal}`);
+          return;
+        }
+        try {
+          const res = await window.ide.startSshPortForward?.(port);
+          if (res && res.ok && res.localPort) {
+            setForwardedSshPorts((prev) => ({ ...prev, [port]: res.localPort! }));
+            void window.ide.openExternal?.(`http://localhost:${res.localPort}`);
+          } else {
+            void window.ide.openExternal?.(`http://localhost:${port}`);
+          }
+        } catch {
+          void window.ide.openExternal?.(`http://localhost:${port}`);
+        }
+      } else {
+        void window.ide.openExternal?.(`http://localhost:${port}`);
+      }
+    },
+    [terminalKind, forwardedSshPorts],
   );
 
   const kindLabel = terminalKind === 'ssh' ? 'SSH 远程' : '本地';
@@ -2186,7 +2283,13 @@ export function TerminalPanel({
                         color: isFocused ? 'var(--text-bright, #fff)' : 'var(--muted)',
                       }}
                     >
-                      {isLeft ? '(左)' : '(右)'}
+                      {splitDirection === 'vertical'
+                        ? isLeft
+                          ? '(上)'
+                          : '(下)'
+                        : isLeft
+                          ? '(左)'
+                          : '(右)'}
                     </span>
                   )}
                   <span
@@ -2208,25 +2311,47 @@ export function TerminalPanel({
 
           {allDetectedPorts.length > 0 && (
             <div className="terminal-detected-ports">
-              {allDetectedPorts.slice(0, 3).map((port) => (
-                <button
-                  key={port}
-                  type="button"
-                  className="terminal-port-pill"
-                  title={`本地网络服务已在端口 :${port} 监听，点击在浏览器中打开 http://localhost:${port}`}
-                  onClick={() => {
-                    void window.ide.openExternal?.(`http://localhost:${port}`);
-                  }}
-                >
-                  <span className="terminal-port-dot" />
-                  <span>:{port}</span>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.75, marginLeft: 1 }}>
-                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                    <polyline points="15 3 21 3 21 9" />
-                    <line x1="10" y1="14" x2="21" y2="3" />
-                  </svg>
-                </button>
-              ))}
+              {allDetectedPorts.slice(0, 3).map((port) => {
+                const isForwarded = terminalKind === 'ssh' && Boolean(forwardedSshPorts[port]);
+                const localPort = isForwarded ? forwardedSshPorts[port] : null;
+                const tooltip =
+                  terminalKind === 'ssh'
+                    ? isForwarded
+                      ? `SSH 端口 :${port} 已建立本地隧道转发至 :${localPort}，点击在浏览器中打开`
+                      : `SSH 远程服务监听 :${port}，点击建立本地转发隧道并在浏览器中预览`
+                    : `本地网络服务已在端口 :${port} 监听，点击在浏览器中打开 http://localhost:${port}`;
+
+                return (
+                  <button
+                    key={port}
+                    type="button"
+                    className={`terminal-port-pill${isForwarded ? ' forwarded' : ''}`}
+                    title={tooltip}
+                    onClick={() => handlePortClick(port)}
+                  >
+                    <span className="terminal-port-dot" />
+                    <span>
+                      :{port}
+                      {isForwarded ? ` ➔ :${localPort}` : ''}
+                    </span>
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ opacity: 0.75, marginLeft: 1 }}
+                    >
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -2267,11 +2392,31 @@ export function TerminalPanel({
           <button
             type="button"
             className={`panel-action-btn${splitActiveId ? ' active' : ''}`}
-            title={splitActiveId ? '关闭分屏 (恢复单屏全宽)' : '向右拆分终端 (左右分屏协同)'}
+            title={splitActiveId ? '关闭分屏 (恢复单屏全宽)' : '拆分终端协同工作'}
             onClick={handleToggleSplit}
           >
             <IconSplit size={14} />
           </button>
+          {splitActiveId && (
+            <button
+              type="button"
+              className="panel-action-btn"
+              title={splitDirection === 'horizontal' ? '切换为上下拆分' : '切换为左右拆分'}
+              onClick={() => setSplitDirection((d) => (d === 'horizontal' ? 'vertical' : 'horizontal'))}
+            >
+              {splitDirection === 'horizontal' ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="12" y1="3" x2="12" y2="21" />
+                </svg>
+              )}
+            </button>
+          )}
           <button
             type="button"
             className="panel-action-btn"
@@ -2363,7 +2508,7 @@ export function TerminalPanel({
       </div>
       <div
         ref={splitContainerRef}
-        className={`terminal-sessions${splitActiveId ? ' split-mode' : ''}`}
+        className={`terminal-sessions${splitActiveId ? ` split-mode ${splitDirection}` : ''}`}
         style={{ flex: 1, minHeight: 0, position: 'relative' }}
       >
         <TerminalAiKBar
@@ -2379,13 +2524,13 @@ export function TerminalPanel({
           onInsert={handleAiKInsert}
         />
 
-        {/* 左右分屏模式下的可拖拽分割条 */}
+        {/* 分屏模式下的可拖拽分割条 */}
         {splitActiveId && (
           <div
-            className={`terminal-split-resizer${isDraggingSplit ? ' dragging' : ''}`}
+            className={`terminal-split-resizer ${splitDirection}${isDraggingSplit ? ' dragging' : ''}`}
             style={{ order: 2 }}
             onMouseDown={handleSplitResizeMouseDown}
-            title="左右拖动调整分屏比例"
+            title={splitDirection === 'horizontal' ? '左右拖动调整分屏比例' : '上下拖动调整分屏比例'}
           >
             <div className="terminal-split-resizer-line" />
           </div>
@@ -2398,7 +2543,7 @@ export function TerminalPanel({
               position: 'fixed',
               inset: 0,
               zIndex: 99999,
-              cursor: 'col-resize',
+              cursor: splitDirection === 'horizontal' ? 'col-resize' : 'row-resize',
             }}
           />
         )}
@@ -2412,21 +2557,41 @@ export function TerminalPanel({
           let paneStyle: React.CSSProperties | undefined;
           if (splitActiveId) {
             if (isLeft) {
-              paneStyle = {
-                order: 1,
-                flex: `0 0 calc(${splitRatio * 100}% - 5px)`,
-                width: `calc(${splitRatio * 100}% - 5px)`,
-                minWidth: 80,
-                maxWidth: 'calc(100% - 85px)',
-              };
+              paneStyle =
+                splitDirection === 'vertical'
+                  ? {
+                      order: 1,
+                      flex: `0 0 calc(${splitRatio * 100}% - 4px)`,
+                      height: `calc(${splitRatio * 100}% - 4px)`,
+                      width: '100%',
+                      minHeight: 50,
+                      maxHeight: 'calc(100% - 55px)',
+                    }
+                  : {
+                      order: 1,
+                      flex: `0 0 calc(${splitRatio * 100}% - 4px)`,
+                      width: `calc(${splitRatio * 100}% - 4px)`,
+                      minWidth: 80,
+                      maxWidth: 'calc(100% - 85px)',
+                    };
             } else if (isRight) {
-              paneStyle = {
-                order: 3,
-                flex: `0 0 calc(${(1 - splitRatio) * 100}% - 5px)`,
-                width: `calc(${(1 - splitRatio) * 100}% - 5px)`,
-                minWidth: 80,
-                maxWidth: 'calc(100% - 85px)',
-              };
+              paneStyle =
+                splitDirection === 'vertical'
+                  ? {
+                      order: 3,
+                      flex: `0 0 calc(${(1 - splitRatio) * 100}% - 4px)`,
+                      height: `calc(${(1 - splitRatio) * 100}% - 4px)`,
+                      width: '100%',
+                      minHeight: 50,
+                      maxHeight: 'calc(100% - 55px)',
+                    }
+                  : {
+                      order: 3,
+                      flex: `0 0 calc(${(1 - splitRatio) * 100}% - 4px)`,
+                      width: `calc(${(1 - splitRatio) * 100}% - 4px)`,
+                      minWidth: 80,
+                      maxWidth: 'calc(100% - 85px)',
+                    };
             } else {
               paneStyle = { display: 'none' };
             }
@@ -2462,6 +2627,8 @@ export function TerminalPanel({
           );
         })}
       </div>
+
+      {confirm.modal}
     </div>
   );
 }

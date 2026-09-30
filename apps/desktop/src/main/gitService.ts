@@ -694,11 +694,30 @@ export class GitService {
       };
     }
 
-    let posix = relPath.replace(/\\/g, '/').replace(/^\/+/, '');
+    let posix = relPath.replace(/\\/g, '/');
     if (root) {
+      try {
+        if (path.isAbsolute(relPath)) {
+          const rel = path.relative(root, relPath);
+          if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+            posix = rel.replace(/\\/g, '/');
+          }
+        }
+      } catch {}
       const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
-      if (posix.startsWith(normRoot)) {
-        posix = posix.slice(normRoot.length).replace(/^\/+/, '');
+      const normPosix = posix.replace(/^\/+/, '');
+      if (normPosix.startsWith(normRoot)) {
+        posix = normPosix.slice(normRoot.length);
+      }
+    }
+    posix = posix.replace(/^\/+/, '');
+
+    // 权威对齐：若已在 git 索引中，获取准确的仓库相对路径
+    const lsRes = await this.runGit(['ls-files', '--full-name', posix], root);
+    if (lsRes.code === 0 && lsRes.stdout.trim().length > 0) {
+      const canonical = lsRes.stdout.trim().split(/\r?\n/)[0].trim();
+      if (canonical) {
+        posix = canonical;
       }
     }
 

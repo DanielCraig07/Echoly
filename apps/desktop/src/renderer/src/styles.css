@@ -55,6 +55,19 @@
   --shadow-jump: 0 4px 18px rgba(0, 0, 0, 0.6);
   --overlay: rgba(0, 0, 0, 0.65);
   --usage-fill: var(--accent);
+  /* ── 数据库面板专用语义色 ──
+     行状态色原先写死成暗色十六进制，亮色主题下几乎看不出新增/删除。
+     收敛成一组 token 后，两套主题各给一次值即可，面板样式里不再出现裸色值。 */
+  --db-bg: var(--bg-panel);
+  --db-bg-alt: rgba(255, 255, 255, 0.022);
+  --db-bg-header: rgba(255, 255, 255, 0.03);
+  --db-bg-hover: rgba(255, 255, 255, 0.06);
+  --db-row-selected: rgba(55, 148, 255, 0.14);
+  --db-row-new: rgba(74, 222, 128, 0.13);
+  --db-row-deleted: rgba(241, 76, 76, 0.13);
+  --db-row-staged: rgba(204, 167, 0, 0.12);
+  --db-border-cell: var(--border);
+  --db-accent-bar: var(--accent-light);
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, Monaco, monospace;
   --ui-font-size: 12px;
@@ -109,6 +122,16 @@
   --shadow-jump: 0 4px 18px rgba(90, 40, 120, 0.16);
   --overlay: rgba(42, 27, 61, 0.35);
   --usage-fill: linear-gradient(90deg, #82318e, #3d8bfd);
+  /* 亮色下的行状态色：底色要浅到不压住文字，又深到能与白底拉开 */
+  --db-bg: var(--bg-panel);
+  --db-bg-alt: rgba(90, 40, 120, 0.035);
+  --db-bg-header: rgba(90, 40, 120, 0.06);
+  --db-bg-hover: rgba(130, 49, 142, 0.08);
+  --db-row-selected: rgba(130, 49, 142, 0.14);
+  --db-row-new: rgba(31, 157, 102, 0.15);
+  --db-row-deleted: rgba(194, 59, 76, 0.13);
+  --db-row-staged: rgba(196, 146, 26, 0.16);
+  --db-accent-bar: var(--accent);
   color-scheme: light;
 }
 
@@ -1262,8 +1285,6 @@ select:focus {
   flex: 1;
   min-height: 0;
   overflow: visible;
-  /* 滚动时目录行 sticky 吸附在上方，行的圆角与 1px 行距会露出下面的文件，
-     用与 .file-node-dir 一致的底色填充行间缝隙 */
   background: var(--bg-panel, #181818);
   border-radius: 0 0 6px 0;
 }
@@ -1680,21 +1701,18 @@ body.resizing.resizing-row {
 }
 
 .file-node-dir {
-  position: sticky !important;
-  background-color: var(--bg-panel, #141414) !important;
+  position: relative;
+  width: 100% !important;
+  min-width: 100% !important;
+  box-sizing: border-box !important;
+  background-color: var(--bg-panel, #18181b) !important;
   border-bottom: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) !important;
 }
 
-/* 行高 24px 与吸附步长一致时行间不应有缝，补同色描边兜底 */
-.file-node-dir::before {
-  content: '';
-  position: absolute;
-  inset: -1px 0;
-  background: var(--bg-panel, #141414);
-  pointer-events: none;
-  z-index: 0;
+[data-theme='light'] .file-node-dir {
+  background-color: var(--bg-panel, #ffffff) !important;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04) !important;
 }
 
 .file-node-dir > * {
@@ -1709,20 +1727,21 @@ body.resizing.resizing-row {
 }
 
 .file-node-dir:hover {
-  background-color: var(--bg-hover, rgba(255, 255, 255, 0.05)) !important;
+  background-color: #242428 !important;
 }
 
-.file-node-dir:hover::before {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.05)) !important;
+[data-theme='light'] .file-node-dir:hover {
+  background-color: #f4f4f5 !important;
 }
 
 .file-node-dir.active {
-  background-color: #242424 !important;
+  background-color: #28282e !important;
   color: #ffffff !important;
 }
 
-.file-node-dir.active::before {
-  background: #242424 !important;
+[data-theme='light'] .file-node-dir.active {
+  background-color: #e4e4e7 !important;
+  color: #18181b !important;
 }
 
 .tree-indent-guide {
@@ -2599,6 +2618,7 @@ body.resizing.resizing-row {
   gap: 6px;
   padding: 0 10px;
   height: 35px;
+  flex-shrink: 0;
   border: none;
   border-top: 2px solid transparent;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
@@ -3658,126 +3678,190 @@ body.resizing.resizing-row {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* ── Prism Syntax Highlighting (Dark Theme / One Dark) ── */
+/* ── Prism Syntax Highlighting (Dark Theme / One Dark) ──
+   作用域同时覆盖 `.md-code-pre`（助手消息里的代码块）与 `.db-sql-block`（数据库面板的完整 SQL 预览）。
+   两组选择器**并列**而不是复制一整套调色板 —— 复制意味着以后调色要改两处、必然走偏。 */
 .md-code-pre .token.comment,
+.db-sql-block .token.comment,
 .md-code-pre .token.prolog,
+.db-sql-block .token.prolog,
 .md-code-pre .token.doctype,
-.md-code-pre .token.cdata {
+.db-sql-block .token.doctype,
+.md-code-pre .token.cdata,
+.db-sql-block .token.cdata {
   color: #5c6370;
   font-style: italic;
 }
 
-.md-code-pre .token.punctuation {
+.md-code-pre .token.punctuation,
+.db-sql-block .token.punctuation {
   color: #abb2bf;
 }
 
 .md-code-pre .token.property,
+.db-sql-block .token.property,
 .md-code-pre .token.tag,
+.db-sql-block .token.tag,
 .md-code-pre .token.boolean,
+.db-sql-block .token.boolean,
 .md-code-pre .token.number,
+.db-sql-block .token.number,
 .md-code-pre .token.constant,
+.db-sql-block .token.constant,
 .md-code-pre .token.symbol,
-.md-code-pre .token.deleted {
+.db-sql-block .token.symbol,
+.md-code-pre .token.deleted,
+.db-sql-block .token.deleted {
   color: #d19a66;
 }
 
 .md-code-pre .token.selector,
+.db-sql-block .token.selector,
 .md-code-pre .token.attr-name,
+.db-sql-block .token.attr-name,
 .md-code-pre .token.string,
+.db-sql-block .token.string,
 .md-code-pre .token.char,
+.db-sql-block .token.char,
 .md-code-pre .token.builtin,
-.md-code-pre .token.inserted {
+.db-sql-block .token.builtin,
+.md-code-pre .token.inserted,
+.db-sql-block .token.inserted {
   color: #98c379;
 }
 
 .md-code-pre .token.operator,
+.db-sql-block .token.operator,
 .md-code-pre .token.entity,
+.db-sql-block .token.entity,
 .md-code-pre .token.url,
+.db-sql-block .token.url,
 .md-code-pre .language-css .token.string,
 .md-code-pre .style .token.string {
   color: #56b6c2;
 }
 
 .md-code-pre .token.atrule,
+.db-sql-block .token.atrule,
 .md-code-pre .token.attr-value,
+.db-sql-block .token.attr-value,
 .md-code-pre .token.keyword,
+.db-sql-block .token.keyword,
 .md-code-pre .token.instruction,
-.md-code-pre .token.instruction .token.property {
+.db-sql-block .token.instruction,
+.md-code-pre .token.instruction .token.property,
+.db-sql-block .token.instruction .token.property {
   color: #c678dd;
   font-weight: 600;
 }
 
 .md-code-pre .token.function,
-.md-code-pre .token.class-name {
+.db-sql-block .token.function,
+.md-code-pre .token.class-name,
+.db-sql-block .token.class-name {
   color: #61afef;
 }
 
 .md-code-pre .token.regex,
+.db-sql-block .token.regex,
 .md-code-pre .token.important,
-.md-code-pre .token.variable {
+.db-sql-block .token.important,
+.md-code-pre .token.variable,
+.db-sql-block .token.variable {
   color: #e06c75;
 }
 
 .md-code-pre .token.important,
-.md-code-pre .token.bold {
+.db-sql-block .token.important,
+.md-code-pre .token.bold,
+.db-sql-block .token.bold {
   font-weight: 600;
 }
 
-.md-code-pre .token.italic {
+.md-code-pre .token.italic,
+.db-sql-block .token.italic {
   font-style: italic;
 }
 
 /* ── Prism Syntax Highlighting (Light Theme) ── */
 [data-theme='light'] .md-code-pre .token.comment,
+[data-theme='light'] .db-sql-block .token.comment,
 [data-theme='light'] .md-code-pre .token.prolog,
+[data-theme='light'] .db-sql-block .token.prolog,
 [data-theme='light'] .md-code-pre .token.doctype,
-[data-theme='light'] .md-code-pre .token.cdata {
+[data-theme='light'] .db-sql-block .token.doctype,
+[data-theme='light'] .md-code-pre .token.cdata,
+[data-theme='light'] .db-sql-block .token.cdata {
   color: #a0a1a7;
 }
 
-[data-theme='light'] .md-code-pre .token.punctuation {
+[data-theme='light'] .md-code-pre .token.punctuation,
+[data-theme='light'] .db-sql-block .token.punctuation {
   color: #383a42;
 }
 
 [data-theme='light'] .md-code-pre .token.property,
+[data-theme='light'] .db-sql-block .token.property,
 [data-theme='light'] .md-code-pre .token.tag,
+[data-theme='light'] .db-sql-block .token.tag,
 [data-theme='light'] .md-code-pre .token.boolean,
+[data-theme='light'] .db-sql-block .token.boolean,
 [data-theme='light'] .md-code-pre .token.number,
+[data-theme='light'] .db-sql-block .token.number,
 [data-theme='light'] .md-code-pre .token.constant,
-[data-theme='light'] .md-code-pre .token.symbol {
+[data-theme='light'] .db-sql-block .token.constant,
+[data-theme='light'] .md-code-pre .token.symbol,
+[data-theme='light'] .db-sql-block .token.symbol {
   color: #986801;
 }
 
 [data-theme='light'] .md-code-pre .token.selector,
+[data-theme='light'] .db-sql-block .token.selector,
 [data-theme='light'] .md-code-pre .token.attr-name,
+[data-theme='light'] .db-sql-block .token.attr-name,
 [data-theme='light'] .md-code-pre .token.string,
+[data-theme='light'] .db-sql-block .token.string,
 [data-theme='light'] .md-code-pre .token.char,
-[data-theme='light'] .md-code-pre .token.builtin {
+[data-theme='light'] .db-sql-block .token.char,
+[data-theme='light'] .md-code-pre .token.builtin,
+[data-theme='light'] .db-sql-block .token.builtin {
   color: #50a14f;
 }
 
 [data-theme='light'] .md-code-pre .token.operator,
+[data-theme='light'] .db-sql-block .token.operator,
 [data-theme='light'] .md-code-pre .token.entity,
-[data-theme='light'] .md-code-pre .token.url {
+[data-theme='light'] .db-sql-block .token.entity,
+[data-theme='light'] .md-code-pre .token.url,
+[data-theme='light'] .db-sql-block .token.url {
   color: #0184bc;
 }
 
 [data-theme='light'] .md-code-pre .token.atrule,
+[data-theme='light'] .db-sql-block .token.atrule,
 [data-theme='light'] .md-code-pre .token.attr-value,
+[data-theme='light'] .db-sql-block .token.attr-value,
 [data-theme='light'] .md-code-pre .token.keyword,
+[data-theme='light'] .db-sql-block .token.keyword,
 [data-theme='light'] .md-code-pre .token.instruction,
-[data-theme='light'] .md-code-pre .token.instruction .token.property {
+[data-theme='light'] .db-sql-block .token.instruction,
+[data-theme='light'] .md-code-pre .token.instruction .token.property,
+[data-theme='light'] .db-sql-block .token.instruction .token.property {
   color: #a626a4;
   font-weight: 600;
 }
 
 [data-theme='light'] .md-code-pre .token.function,
-[data-theme='light'] .md-code-pre .token.class-name {
+[data-theme='light'] .db-sql-block .token.function,
+[data-theme='light'] .md-code-pre .token.class-name,
+[data-theme='light'] .db-sql-block .token.class-name {
   color: #4078f2;
 }
 
 [data-theme='light'] .md-code-pre .token.regex,
-[data-theme='light'] .md-code-pre .token.variable {
+[data-theme='light'] .db-sql-block .token.regex,
+[data-theme='light'] .md-code-pre .token.variable,
+[data-theme='light'] .db-sql-block .token.variable {
   color: #e45649;
 }
 
@@ -6816,14 +6900,36 @@ body.resizing.resizing-row {
 .editor-breadcrumb {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  background: rgba(0, 0, 0, 0.15);
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 10px;
+  background: rgba(0, 0, 0, 0.16);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--muted);
+  min-height: 28px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  overflow: visible;
+  position: relative;
+}
+
+.editor-breadcrumb-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   overflow-x: auto;
   white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.editor-breadcrumb-crumbs::-webkit-scrollbar {
+  height: 2px;
+}
+.editor-breadcrumb-crumbs::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
 }
 
 .editor-breadcrumb .crumb-item {
@@ -6831,10 +6937,153 @@ body.resizing.resizing-row {
   align-items: center;
   gap: 4px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .editor-breadcrumb .crumb-item:hover {
   color: var(--fg);
+}
+
+.crumb-symbol-container {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.crumb-symbol-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.crumb-symbol-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent, #58a6ff);
+}
+
+.symbol-kind-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.symbol-kind-tag.class {
+  background: rgba(255, 165, 0, 0.2);
+  color: #ffa500;
+}
+
+.symbol-kind-tag.interface {
+  background: rgba(88, 166, 255, 0.2);
+  color: #58a6ff;
+}
+
+.symbol-kind-tag.type {
+  background: rgba(163, 113, 247, 0.2);
+  color: #a371f7;
+}
+
+.symbol-kind-tag.function,
+.symbol-kind-tag.method {
+  background: rgba(210, 168, 255, 0.2);
+  color: #d2a8ff;
+}
+
+.symbol-kind-tag.variable {
+  background: rgba(126, 231, 135, 0.2);
+  color: #7ee787;
+}
+
+.symbol-outline-dropdown {
+  position: fixed;
+  background: var(--bg-elevated, #1f242c);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  white-space: normal;
+  animation: tabMenuPop 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.symbol-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.symbol-dropdown-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.symbol-dropdown-close:hover {
+  color: var(--text);
+}
+
+.symbol-dropdown-list {
+  overflow-y: auto;
+  padding: 4px;
+  flex: 1;
+}
+
+.symbol-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11.5px;
+  transition: background 0.1s ease;
+}
+
+.symbol-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.symbol-dropdown-item.current {
+  background: rgba(88, 166, 255, 0.15);
+}
+
+.symbol-dropdown-item .symbol-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.symbol-dropdown-item .symbol-line {
+  font-size: 10px;
+  color: var(--muted);
+  opacity: 0.7;
 }
 
 /* Markdown Live Preview Panel */
@@ -9817,6 +10066,1644 @@ button.welcome-recent-remove:hover {
   background: var(--bg-hover, rgba(255, 255, 255, 0.08)) !important;
 }
 
+/* ── Database Navigator 树行（连接 / 库 / 表），视觉对齐 .maven-goal-item ── */
+.db-tree-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  box-sizing: border-box;
+  color: var(--text);
+  font-size: 12.5px;
+  transition: background 0.1s ease, color 0.1s ease;
+  margin: 1px 0;
+}
+
+.db-tree-row:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05)) !important;
+}
+
+/* 动作按钮默认隐藏，hover 或键盘聚焦时才出现，避免树行过于嘈杂 */
+.db-tree-row .panel-action-btn {
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.db-tree-row:hover .panel-action-btn,
+.db-tree-row:focus-within .panel-action-btn {
+  opacity: 1;
+}
+
+/* 不支持的分组（如 SQLite 没有 Events）：只是占位说明，不该有可点的样子 */
+.db-tree-row.disabled {
+  cursor: default;
+}
+
+.db-tree-row.disabled:hover {
+  background: transparent !important;
+}
+
+/* ── 表数据视图（DbTableDataView）：列头排序 / 筛选、单元格编辑、暂存标记 ── */
+
+.db-data-th {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  white-space: nowrap;
+  background: var(--bg-editor, #141414);
+  /* sticky 同时充当分隔条的定位上下文（分隔条贴在右边缘、略微越界，热区才够宽） */
+  position: sticky;
+  top: 0;
+  /* 与数据行同处一个 sticky 层叠上下文；行号表头靠 z-index: 3 压在普通表头之上 */
+  z-index: 2;
+  /* 表头本身不裁切溢出内容，否则越界的拖拽热区会被切掉 */
+  overflow: visible;
+}
+
+.db-data-th.index {
+  padding: 6px 10px;
+  width: 46px;
+  min-width: 46px;
+  text-align: center;
+  color: var(--text-muted);
+  /* 与 .db-data-cell.index 用同一条分隔线：.db-data-th 默认那条是 rgba(255,255,255,.05)，
+     亮色主题下等于没有。表头与表体的冻结列分界必须在同一位置、同一明暗，否则纵向看是一条断线 */
+  border-right: 1px solid var(--border);
+  /* 冻结行号列：横向滚动时行号始终可见（表头同时 sticky top + left，两个方向都钉住） */
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--bg-editor, #141414);
+}
+
+/* 列头一行内容：字段名（纯标签，可省略）+ 若干标记 + 右侧只占一个箭头宽度的下拉热区 */
+.db-col-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  /* 与触发器原来那圈 -4px 外扩对齐，箭头贴到列右边缘 */
+  padding-right: 4px;
+}
+
+/* 列头触发器：只有这个箭头是排序 / 筛选下拉的热区。
+   早年它被拉成整列宽，点列名想拖宽 / 选中都会误开菜单，也让列名看起来可点 */
+.db-col-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 1px 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+/* 表头只显示字段名：类型太长会把列名挤成省略号，它已移到 title 里。
+   flex: 1 让它独占剩余空间，长名截断而不是把箭头挤出去 */
+.db-col-trigger .db-col-name,
+.db-col-head .db-col-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 主键标记：类型从表头撤掉后，主键身份要留一个一眼可见的记号 */
+.db-col-pk-dot {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+/* 拖列宽的分隔条：贴在列头右边缘，热区比视觉宽一点（2px 的线很难点中） */
+.db-col-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 4;
+  touch-action: none;
+}
+
+.db-col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 15%;
+  bottom: 15%;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.db-col-resizer:hover::after,
+.db-col-resizer.active::after {
+  background: var(--accent, #4c8dff);
+}
+
+/* 拖动期间整页禁用选中：否则会顺手选中指针扫过的一堆单元格文本 */
+body.db-col-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+body.db-col-resizing .db-data-cell {
+  cursor: col-resize;
+}
+
+.db-col-trigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.db-col-trigger.open {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.db-col-trigger.sorted .db-col-name,
+.db-col-trigger.filtered .db-col-name {
+  color: var(--accent-light, #3794ff);
+}
+
+.db-col-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-col-dir {
+  color: var(--accent-light, #3794ff);
+  font-size: 9px;
+  letter-spacing: -0.5px;
+  flex-shrink: 0;
+}
+
+.db-col-filter-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  flex-shrink: 0;
+}
+
+.db-col-caret {
+  opacity: 0.35;
+  flex-shrink: 0;
+}
+
+.db-col-trigger:hover .db-col-caret,
+.db-col-trigger.open .db-col-caret {
+  opacity: 0.85;
+}
+
+.db-col-type {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+.db-col-type.pk {
+  color: #f59e0b;
+}
+
+/* 已暂存的单元格：橙色左边框 + 淡黄底，提交前一直可见 */
+.db-data-cell {
+  padding: 5px 12px;
+  border-right: 1px solid var(--db-border-cell);
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 2px solid transparent;
+}
+
+.db-data-cell.index {
+  /* 宽度只是兜底：表格是 tableLayout: fixed + colgroup，第一列由 colgroup 的
+     <col width={INDEX_COLUMN_WIDTH}> 钉在 46px，写在格子上的 width 本来就不参与布局。
+     保持与 .db-data-th.index 写同一组数字，是为了这个类被单独复用时不至于失去宽度。
+     注意：全局 box-sizing: border-box，所以这里的 46px 含左右 padding 与边框 */
+  width: 46px;
+  min-width: 46px;
+  padding: 5px 10px;
+  text-align: center;
+  color: var(--text-muted);
+  /* 分隔线用主题变量而不是写死的 rgba(255,255,255,.04)：后者在亮色主题下等于没有，
+     冻结列与右侧数据列之间就只剩一格空白，数字和相邻单元格被截断的文本贴在一起，
+     看起来就是「行号和表数据重叠」。这条线是两列之间唯一的分界，必须两个主题都可见 */
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  border-left: none;
+  /* 与表头一起冻结在左侧：单元格默认背景是透明的，横向滚动时下面的列会从行号上穿过去，
+     所以这里必须给出不透明底色 */
+  position: sticky;
+  left: 0;
+  /* 必须高过数据格：.db-data-cell 没有自己的 z-index，同处一个层叠上下文时按 DOM 顺序绘制，
+     即后面的数据列会盖在冻结的行号之上。冻结列一旦被盖住就等于没冻结。
+     不能再往上抬到 2：表头 <tr> 与 .db-data-th 正是 z-index: 2，body 在 DOM 里晚于 thead，
+     同层级按顺序绘制会让行号格盖住表头 —— 纵向滚动时表头会被数字吃掉 */
+  z-index: 1;
+  background: var(--bg-editor, #141414);
+  /* 等宽数字：比例数字里 1 比 8 窄，行号列会左右跳；表格本身已是 monospace，
+     这里显式声明是为了这个类被挪到别处时行为不变 */
+  font-variant-numeric: tabular-nums;
+}
+
+/* 行状态底色统一走 --db-* token：原先写死的 #17211d / #1d1616 / #172230 只适合暗色，
+   亮色主题下新增行和删除行几乎看不出差别。
+   行号格必须是不透明实色才挡得住横向滚过的数据，而 token 是半透明的，
+   所以照搬悬浮行那套写法：background-color give 实色兜底、background-image 叠色调。 */
+.db-data-row.new > .db-data-cell.index {
+  background-color: var(--bg-editor, #141414);
+  background-image: linear-gradient(var(--db-row-new), var(--db-row-new));
+}
+
+.db-data-row.deleted > .db-data-cell.index {
+  background-color: var(--bg-editor, #141414);
+  background-image: linear-gradient(var(--db-row-deleted), var(--db-row-deleted));
+}
+
+/* 选中行：冻结列左侧一道 2px 竖条。
+   用 inset box-shadow 而不是 border-left —— 表格是 tableLayout: fixed、行号列宽由 colgroup
+   钉死在 46px，加边框会把这 2px 从内容宽度里吃掉，数字会被挤动。 */
+.db-data-row.selected > .db-data-cell.index {
+  background-color: var(--bg-editor, #141414);
+  background-image: linear-gradient(var(--db-row-selected), var(--db-row-selected));
+  box-shadow: inset 2px 0 0 var(--db-accent-bar);
+}
+
+/* 行号格自带不透明底色，因此横向滚动时被冻结的数字始终盖在数据之上。
+   这里不再依赖父行给底色 —— 父行的底色是画在行号格**下面**的，撑不起遮挡。 */
+
+/* 整行一起高亮（而不是只有行号列变色）：行本身是可点击选中的，没有悬浮反馈会让人
+   不确定点没点到。已被暂存标记的行（新增 / 待删 / 已选中）保留自己的底色，不参与悬浮变色。 */
+.db-data-row:not(.new):not(.deleted):not(.selected):hover > .db-data-cell {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+}
+
+/* 悬浮行的行号格不能用半透明色（挡不住横向滚过的数据）。
+   这里不是盖一层实色，而是「不透明底色 + 半透明高亮叠上去」：
+   --bg-hover 在暗色下是 rgba(255,255,255,0.05)，直接当 background 用会让格子透光；
+   拆成 background-color（实色，负责遮挡）+ background-image 渐变（负责色调），
+   两个主题都能既保持遮挡又拿到和整行一致的悬浮色。 */
+.db-data-row:not(.new):not(.deleted):not(.selected):hover > .db-data-cell.index {
+  background-color: var(--bg-editor, #141414);
+  background-image: linear-gradient(
+    var(--bg-hover, rgba(255, 255, 255, 0.05)),
+    var(--bg-hover, rgba(255, 255, 255, 0.05))
+  );
+}
+
+.db-data-cell.staged {
+  border-left-color: #f59e0b;
+}
+
+.db-data-cell.editing {
+  padding: 2px 4px;
+}
+
+.db-data-cell.struck {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.db-cell-editor {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-panel, #1e1e1e);
+  color: var(--text);
+  border: 1px solid var(--accent, #4c8dff);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+.db-data-row.selected > .db-data-cell.index {
+  color: var(--accent, #4c8dff);
+  font-weight: 700;
+}
+
+/* 选中行的整行底色：光点亮行号不够 —— 用户点行号的意图是「选中这一行数据」 */
+.db-data-row.selected > .db-data-cell {
+  background: var(--db-row-selected);
+}
+
+/* 极淡斑马纹：行多时眼睛容易串行。放在新/删/选中之前定义，
+   后三者的底色在同等特异性下靠后生效，不会被斑马纹盖掉。
+   显式排除 .index：行号格必须是不透明实色，斑马纹是半透明的，
+   一旦命中就会让冻结列透出横向滚过的数据（:not 同时把特异性抬到斑马纹之上） */
+.db-data-table tbody tr:nth-child(even) > .db-data-cell:not(.index) {
+  background: var(--db-bg-alt);
+}
+
+.db-data-row.deleted {
+  background: var(--db-row-deleted);
+}
+
+.db-data-row.new {
+  background: var(--db-row-new);
+}
+
+.db-new-badge {
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  background: transparent;
+  color: #4ade80;
+  cursor: pointer;
+}
+
+/* ── 完整 SQL 预览条（DbFilterSqlBar）：筛选 chip 之上直接给出真正下发的语句 ── */
+.db-sql-bar {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  background: var(--db-bg);
+  flex-shrink: 0;
+}
+
+.db-sql-bar-head {
+  height: 26px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* 折叠开关：整条左侧可点（箭头 + 「当前查询」），折叠后这是唯一的展开入口。
+   做成 <button> 而不是给 <span> 挂 onClick —— 键盘也能聚焦展开，且不与该行右侧的复制按钮抢事件。 */
+.db-sql-bar-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.db-sql-bar-toggle:hover .db-sql-bar-label {
+  color: var(--text);
+}
+
+.db-sql-bar-chevron {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.db-sql-bar-head .db-sql-bar-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+/* SQL 语句块：等宽、可横向滚动（长 SELECT 不折行，折行后反而更难逐字核对） */
+.db-sql-block {
+  margin: 0 10px 6px;
+  padding: 6px 10px;
+  max-height: 132px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre;
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+}
+
+/* 没有 Prism 兜底时的纯文本分支：不引入高亮也要能把语句读出来 */
+.db-sql-block.plain {
+  color: var(--text);
+}
+
+.db-sql-placeholder {
+  margin: 0 10px 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg-code);
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+}
+
+/* 筛选 / 排序条件 chip 栏（现位于 SQL 块之下，提示「这些 chip 就是上面 SQL 的来源」） */
+.db-view-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 10px 6px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.db-view-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text);
+}
+
+.db-view-chip.filter {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.db-view-chip.sort {
+  border-color: rgba(245, 158, 11, 0.5);
+  cursor: default;
+}
+
+.db-chip-close {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.db-chip-close:hover {
+  color: #ef4444;
+}
+
+.db-chip-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  text-decoration: underline;
+}
+
+.db-chip-clear:hover {
+  color: var(--text);
+}
+
+.db-no-pk-banner {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+  flex-shrink: 0;
+}
+
+/* 新增行里「数据库会替你填什么」的灰色提示。
+   注意：它是**纯展示**，不是一个已填入的值 —— 用户不动这格，该列就不会出现在 INSERT 里，
+   数据库应用真实默认值（CURRENT_TIMESTAMP 这类才不会被写死成字符串）。 */
+.db-cell-default-hint {
+  color: var(--muted);
+  font-style: italic;
+  opacity: 0.75;
+  user-select: none;
+}
+
+/* ── 字段悬浮卡片（DbHoverCard）：列头悬浮时给出类型约束与数据库列注释 ──
+   不复用 .tab-context-menu：那套背景写死 #141414 !important 且没有亮色覆写。
+   这里的颜色全部走主题变量，两个主题都能读。 */
+.db-hover-card {
+  position: fixed;
+  z-index: 3000;
+  max-width: 340px;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 6px;
+  box-shadow: var(--shadow-jump);
+  font-size: 11.5px;
+  line-height: 1.55;
+  pointer-events: none;
+}
+
+.db-hover-card-title {
+  font-weight: 700;
+  color: var(--text-bright, var(--text));
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.db-hover-card-type {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  color: var(--accent-light, var(--accent));
+  word-break: break-all;
+}
+
+.db-hover-card-table {
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.db-hover-card-desc {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── 数据库面板顶部的「项目查询脚本」列表（图3）──
+   数据来自项目目录 queries/，不是当前打开的标签：关掉标签脚本依然在。
+   位置在导航树**之上**，靠 `db-scripts-head` 的下边框与树分隔，容器本身不再画线，
+   否则收起时会和标题条的下边框叠成双线。 */
+.db-scripts {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--db-bg);
+}
+
+.db-scripts.collapsed {
+  /* 收起时只剩标题条 */
+  flex-shrink: 0;
+}
+
+.db-scripts-head {
+  height: 30px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.db-scripts-head .db-scripts-count {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.db-scripts-list {
+  max-height: 168px;
+  overflow: auto;
+  padding: 2px 0;
+}
+
+.db-script-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.db-script-row:hover {
+  background: var(--db-bg-hover);
+}
+
+/* 已在该连接下打开过的脚本：给一个一眼可辨的记号 */
+.db-script-row.open {
+  color: var(--accent-light, var(--accent));
+}
+
+.db-script-row .db-script-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-script-row .db-script-meta {
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* 行内动作按钮平时隐藏，悬浮才出现（与 .db-tree-row 同一套做法） */
+.db-script-row .panel-action-btn {
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.db-script-row:hover .panel-action-btn,
+.db-script-row:focus-within .panel-action-btn {
+  opacity: 1;
+}
+
+.db-scripts-empty {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ── 通用主题色下拉控件（PanelSelect）：替代原生 <select> ── */
+.panel-select {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.panel-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 6px;
+  background: var(--bg-panel, #1e1e1e);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.panel-select-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.panel-select-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.panel-select-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.panel-select-arrow {
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.panel-select-menu {
+  position: fixed;
+  z-index: 3000;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-panel, #1e1e1e);
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.14));
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  animation: tabMenuPop 0.1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panel-select-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.panel-select-item:hover {
+  background: var(--accent, #007acc);
+  color: #ffffff;
+}
+
+.panel-select-item.selected {
+  color: var(--accent-light, #3794ff);
+  font-weight: 600;
+}
+
+.panel-select-item.selected:hover {
+  color: #ffffff;
+}
+
+.panel-select-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-select-check {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+/* 列头下拉菜单（排序 / 筛选）。用两个类名是为了压过 `.tab-context-menu` 的 min-width ——
+   那条声明在本文件里出现得更晚，单类名会被它盖掉 */
+.tab-context-menu.db-column-menu {
+  min-width: 212px;
+}
+
+.db-column-menu-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 列菜单项带「更多筛选」展开后可能变高，把内容兜在滚动里，别顶出窗口 */
+.tab-context-menu.db-column-menu {
+  max-height: min(72vh, 520px);
+  overflow-y: auto;
+}
+
+.db-column-menu-name {
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-column-menu-type {
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.db-column-menu-hint {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--accent-light, #3794ff);
+}
+
+.tab-context-menu .menu-item.menu-item-checked {
+  color: var(--accent-light, #3794ff);
+}
+
+.db-column-menu-summary {
+  padding: 2px 10px 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 列菜单里的筛选条件项 ──
+   比一级菜单项缩进一档：让用户在视觉上分清「这是筛选的下级动作」，
+   而不是又一堆与排序并列的独立功能。 */
+.tab-context-menu .menu-item.db-column-menu-sub-item {
+  padding-left: 22px;
+  font-size: 11.5px;
+}
+
+.tab-context-menu .menu-item.db-column-menu-sub-item .menu-item-icon {
+  opacity: 0.5;
+  font-size: 11px;
+  width: 12px;
+  text-align: center;
+}
+
+.tab-context-menu .menu-item.db-column-menu-sub-item-deep {
+  padding-left: 38px;
+}
+
+/* ── 列选择器（DbColumnPicker，右上角「显示字段」） ──
+   字段多的表里这是唯一能一次看全字段名的地方，条目要密、要能搜。 */
+.tab-context-menu.db-column-picker {
+  width: 240px;
+  padding: 0 0 6px;
+  max-height: min(70vh, 460px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.db-column-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 6px;
+  flex-shrink: 0;
+}
+
+.db-column-picker-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.db-column-picker-search {
+  margin: 0 10px 6px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  background: var(--bg-panel, #1e1e1e);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  outline: none;
+}
+
+.db-column-picker-search:focus {
+  border-color: var(--accent, #4c8dff);
+}
+
+.db-column-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 6px;
+  flex-shrink: 0;
+}
+
+.db-column-picker-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--accent-light, #3794ff);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.db-column-picker-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.db-column-picker-link:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.db-column-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.db-column-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.db-column-picker-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.db-column-picker-item input[type='checkbox'] {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.db-column-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-column-picker-empty {
+  padding: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ── 数据库写操作确认弹窗（DbConfirmModal） ──
+   正文走 Markdown 渲染，代码块自带复制按钮；这里只负责弹窗自己的外壳。 */
+.db-confirm-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px;
+  font-size: 12.5px;
+}
+
+/* 确认弹窗里的「删的是哪一个」：名字与路径原样列出，让用户有机会发现点错了 */
+.confirm-details {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--db-bg-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.confirm-detail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.confirm-detail-label {
+  flex-shrink: 0;
+  width: 48px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.confirm-detail-value {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+/* 确认弹窗里的 Markdown 比聊天区更紧凑：这是要读完就点按钮的场景，不该滚半天 */
+.db-confirm-modal .md-body {
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.db-confirm-modal .md-body .md-code-block {
+  margin: 8px 0 12px;
+}
+
+.db-confirm-modal .md-body .md-code-header {
+  padding: 3px 10px;
+}
+
+.db-confirm-modal .md-body blockquote {
+  margin: 8px 0 12px;
+  border-left-color: rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.06);
+  color: var(--text);
+}
+
+.db-confirm-typing {
+  padding: 8px 16px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.db-confirm-typing-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.db-confirm-typing-hint code {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+}
+
+.db-confirm-typing-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-editor, #141414);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  padding: 6px 9px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.db-confirm-typing-input:focus {
+  border-color: var(--accent, #4c8dff);
+}
+
+.db-confirm-typing-error {
+  margin-top: 5px;
+  font-size: 11px;
+  color: #f87171;
+}
+
+/* 弹窗按钮：沿用 panel-action-btn 的尺寸与微动效，只补主 / 危险两套配色 */
+.panel-action-btn.db-confirm-btn {
+  width: auto;
+  padding: 0 14px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+}
+
+.panel-action-btn.db-confirm-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.panel-action-btn.db-confirm-btn.primary {
+  background: var(--accent, #4c8dff);
+  border-color: var(--accent, #4c8dff);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.panel-action-btn.db-confirm-btn.primary:hover:not(:disabled) {
+  background: var(--accent-light, #3794ff);
+  border-color: var(--accent-light, #3794ff);
+}
+
+.panel-action-btn.db-confirm-btn.primary.danger {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #f87171;
+}
+
+.panel-action-btn.db-confirm-btn.primary.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(239, 68, 68, 0.8);
+}
+
+.panel-action-btn.db-confirm-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── 表数据视图的两个主操作按钮 ──
+   撤销是描边次要按钮、提交是实心主按钮：两者相邻且都会随暂存状态出现，
+   不做区分的话用户在暗色下很容易把「清空改动」当成「写库」。 */
+.db-btn-undo,
+.db-btn-commit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.db-btn-undo {
+  background: transparent;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+}
+
+.db-btn-undo:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.7);
+}
+
+.db-btn-commit {
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(34, 197, 94, 0.5);
+  color: #4ade80;
+}
+
+.db-btn-commit:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.26);
+  border-color: rgba(34, 197, 94, 0.75);
+}
+
+.db-btn-undo:active:not(:disabled),
+.db-btn-commit:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.db-btn-undo:disabled,
+.db-btn-commit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* SQL 控制台顶栏的会话目标：连接 / 库，两个下拉紧挨着显示成「连接 / 库」 */
+.db-console-target {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.db-console-target .db-console-target-select {
+  /* 长连接名 / 长库名到此为止，别把右侧的执行状态挤出可视区 */
+  max-width: 180px;
+}
+
+.db-console-target .panel-select-btn {
+  height: 22px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 3px;
+}
+
+.db-console-target-sep {
+  color: var(--text-muted);
+  font-size: 11px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* 表结构弹窗里的类型下拉：撑满单元格，与旁边的输入框同高 */
+.db-structure-select {
+  display: block;
+  width: 100%;
+}
+
+.db-structure-select .panel-select-btn {
+  height: 22px;
+  background: var(--bg-editor, #141414);
+  border-radius: 3px;
+}
+
+/* 筛选浮层里的运算符下拉 */
+.db-filter-popover-select {
+  display: block;
+  flex: 1;
+}
+
+.db-filter-popover-select .panel-select-btn {
+  background: var(--bg-panel, #1e1e1e);
+  border-radius: 4px;
+}
+
+/* 列筛选浮层 */
+.db-filter-popover {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.db-filter-popover-title {
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.db-filter-popover-type {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.db-filter-popover-row {
+  display: flex;
+  gap: 6px;
+}
+
+.db-filter-popover-control {
+  flex: 1;
+  box-sizing: border-box;
+  background: var(--bg-panel, #1e1e1e);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  outline: none;
+}
+
+.db-filter-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.db-filter-popover-btn {
+  min-width: auto;
+  height: 22px;
+  font-size: 11px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+}
+
+.db-filter-popover-btn.primary:not(:disabled) {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+/* 表结构弹窗 */
+.db-structure-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.db-structure-table th {
+  text-align: left;
+  padding: 6px 4px;
+  color: var(--text-muted);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel, #1e1e1e);
+}
+
+.db-structure-table td {
+  padding: 2px 4px;
+  /* 与 .db-data-cell.index 同源的缺陷：写死的 rgba(255,255,255,.04) 在亮色主题下等于没有，
+     表格只剩一片白 */
+  border-bottom: 1px solid var(--border);
+}
+
+.db-structure-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-editor, #141414);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-size: 11px;
+  outline: none;
+}
+
+.db-structure-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.db-structure-add {
+  margin-top: 8px;
+  width: 100%;
+  padding: 5px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.db-structure-add:hover {
+  color: var(--text);
+  border-color: var(--accent, #4c8dff);
+}
+
+.db-structure-preview {
+  flex: 1;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+.db-structure-problems,
+.db-structure-skipped {
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.db-structure-problems {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.db-structure-skipped {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+/* ── 编辑区里的「查看表结构」标签（db://structure/*） ── */
+
+.db-structure-view {
+  /* 必须用 `height: 100%` 而不是 `flex: 1`：父级 `.editor-fill` 是**块容器**
+     （只有 flex: 1 + min-height: 0，没有 display: flex），`flex: 1` 在这里等于没写，
+     高度退化成内容高度 —— 列清单靠内容撑还能看，DDL 那个 Monaco 容器因此拿到
+     不确定高度，`automaticLayout` 量出接近 0 的高度，整块渲染成一团被裁切的行。
+     同级的 `DbTableDataView` 用的也是 `height: '100%'`，这里对齐。 */
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-editor, #141414);
+}
+
+/* 工具条：对齐 Maven 二级面板规范 */
+.db-structure-toolbar {
+  height: 30px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.db-structure-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.db-structure-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.db-structure-count {
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* DDL / 列 分段切换 */
+.db-segmented {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.db-segmented-btn {
+  height: 20px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.db-segmented-btn:hover {
+  color: var(--text);
+}
+
+.db-segmented-btn.active {
+  background: var(--db-bg-hover);
+  color: var(--accent-light, #3794ff);
+  font-weight: 600;
+}
+
+.db-structure-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ── 列清单视图（图4） ── */
+
+.db-columns-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 表级元信息：一行放不下就换行，别把它挤成省略号 */
+/* ── 表级元信息：**纵向列表**（图4）。
+   原来是横向 wrap 的一排，标签与值要来回对位才看得懂，且缺值的项直接 return null，
+   导致同一张表在 MySQL / SQLite 下长得完全不同。现在一行一项，缺值显示「—」。 */
+.db-meta-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--db-bg-header);
+  flex-shrink: 0;
+  /* 行数不多（MySQL 7 行），但不设上限的话 SQLite 这种缺项的会显得很空，
+     给个滚动上限以防未来加项时把列清单挤没 */
+  max-height: 190px;
+  overflow: auto;
+}
+
+.db-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* 行高按输入框定（22px + 上下各 1px），输入框才不会把行撑得忽高忽低 */
+  min-height: 24px;
+  padding: 1px 0;
+}
+
+/* 标签固定宽度：值那一列要对齐，否则扫一眼看不出哪一行的值是哪一项的 */
+.db-meta-row .db-meta-label {
+  width: 62px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.db-meta-row .db-meta-value {
+  font-size: 11.5px;
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 缺值：用「—」如实说明「这一项没有 / 读不到」，而不是整行不渲染 */
+.db-meta-row .db-meta-value.empty {
+  color: var(--muted);
+  font-style: italic;
+  font-family: inherit;
+}
+
+/**
+ * 可编辑的元信息输入框（表名 / 注释 / 引擎 / 字符集 / 排序规则）。
+ *
+ * 五行是**同一种控件**：统一走 `.db-meta-input`，不叠 `.db-structure-input`。
+ * 之前注释那一行是个「看着像文本、点一下才变输入框」的开关，其余三行是常驻输入框，
+ * 同一列里两种形态会让人以为开关那几项「不能随便动」，也说不清哪几项是改过的。
+ * 现在全部常驻可编辑 + 统一的 `:focus` 高亮，改没改由底部的变更条与「撤销」负责说。
+ */
+.db-meta-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text);
+  background: var(--bg-input, var(--bg-code));
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.db-meta-input::placeholder {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.db-meta-input:hover {
+  border-color: var(--border-strong, var(--accent));
+}
+
+.db-meta-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+/* 只读的值（驱动 / 列数 / SQLite 的「不支持表注释」）：与输入框左边对齐，
+   但不画框 —— 一眼能分出「能改的」和「看看的」 */
+.db-meta-row .db-meta-value {
+  padding-left: 8px;
+}
+
+.db-meta-dirty {
+  margin-top: 4px;
+}
+
+.db-meta-dirty-text {
+  font-size: 11px;
+  color: var(--accent-light, var(--accent));
+}
+
+/* 校验没过时说清楚原因，而不是只有一个灰掉的「应用」 */
+.db-meta-dirty-text.invalid {
+  color: #f87171;
+}
+
+.db-columns-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px 12px;
+}
+
+.db-columns-table th {
+  background: var(--bg-editor, #141414);
+}
+
+/* 改动过的行：左侧一道细色条（用 box-shadow 不占盒模型宽度，避免列宽漂移） */
+.db-column-row.dirty td {
+  background: var(--db-row-staged);
+}
+
+.db-column-row.dirty > td:first-child {
+  box-shadow: inset 2px 0 0 var(--db-accent-bar);
+}
+
+.db-column-extra {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+}
+
+.db-columns-idle {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* 底部操作栏：同样对齐 Maven 二级栏规范 */
+.db-columns-foot {
+  height: 30px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.db-columns-foot-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.db-columns-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.db-columns-foot-label {
+  font-size: 11px;
+  padding: 0 4px;
+}
+
+.db-columns-foot-label.primary {
+  color: #4ade80;
+}
+
+
 /* ── Panel Header Text Action Button (如 "暂存全部", "取消暂存全部") ── */
 .panel-text-btn {
   display: inline-flex;
@@ -11609,7 +13496,7 @@ button.welcome-recent-remove:hover {
   top: 10px !important;
   right: 18px !important;
   width: 520px;
-  min-width: 380px !important;
+  min-width: 460px !important;
   max-width: 9999px !important;
   height: auto !important;
   max-height: none !important;
@@ -11683,72 +13570,104 @@ button.welcome-recent-remove:hover {
   color: var(--text, #18181b) !important;
 }
 
-/* 查找输入框容器：弹性自适应宽度，随拖动实时放大缩小 */
-.monaco-editor .find-widget > .find-part > .monaco-findInput {
-  flex: 1 1 auto !important;
-  min-width: 140px !important;
+/* 查找输入框容器：弹性自适应宽度，整体作为美化胶囊外壳 */
+.monaco-editor .find-widget .find-part .monaco-findInput,
+.monaco-editor .find-widget .replace-part .monaco-findInput {
   display: flex !important;
+  flex-direction: row !important;
   align-items: center !important;
   position: relative !important;
-  box-sizing: border-box !important;
-}
-
-/* 替换输入框容器：跟随查找框宽度，与查找框垂直对齐 */
-.monaco-editor .find-widget > .replace-part > .monaco-findInput {
-  flex: 0 0 auto !important;
-  min-width: 140px !important;
-  max-width: 100% !important;
-  display: flex !important;
-  align-items: center !important;
-  position: relative !important;
-  box-sizing: border-box !important;
-}
-
-.monaco-editor .find-widget .monaco-findInput > .controls {
-  position: absolute !important;
-  top: 4px !important;
-  right: 4px !important;
-  display: flex !important;
-  align-items: center !important;
-  gap: 2px !important;
-  z-index: 2 !important;
-}
-
-/* 输入框（查找框与替换框）样式统一与现代美化 */
-.monaco-editor .find-widget .find-input,
-.monaco-editor .find-widget .replace-input,
-.monaco-editor .find-widget .monaco-inputbox {
-  background: rgba(18, 18, 22, 0.78) !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: rgba(18, 18, 22, 0.88) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
   border-radius: 7px !important;
-  box-shadow: none !important;
+  box-sizing: border-box !important;
   min-height: 30px !important;
   height: 30px !important;
-  width: 100% !important;
-  min-width: 100% !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-  outline: none !important;
+  padding: 0 4px 0 6px !important;
   transition:
     border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1),
     background 0.18s ease !important;
 }
 
-.monaco-editor .find-widget .monaco-inputbox:hover:not(.synthetic-focus) {
-  border-color: rgba(255, 255, 255, 0.26) !important;
-  background: rgba(24, 24, 28, 0.88) !important;
+.monaco-editor .find-widget .find-part .monaco-findInput {
+  flex: 1 1 auto !important;
+  min-width: 140px !important;
 }
 
-.monaco-editor .find-widget .monaco-inputbox .wrapper {
-  border-radius: inherit !important;
+.monaco-editor .find-widget .replace-part .monaco-findInput {
+  flex: 0 0 auto !important;
+  min-width: 140px !important;
+  max-width: 100% !important;
+}
+
+.monaco-editor .find-widget .monaco-findInput:hover {
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  background: rgba(24, 24, 28, 0.94) !important;
+}
+
+.monaco-editor .find-widget .monaco-findInput:focus-within {
+  border: 1px solid #007fd4 !important;
+  outline: 1px solid #007fd4 !important;
+  outline-offset: -1px !important;
+  background: #1e1e1e !important;
+}
+
+[data-theme='light'] .monaco-editor .find-widget .find-part .monaco-findInput,
+[data-theme='light'] .monaco-editor .find-widget .replace-part .monaco-findInput {
+  background: rgba(255, 255, 255, 0.94) !important;
+  border-color: rgba(0, 0, 0, 0.18) !important;
+}
+
+[data-theme='light'] .monaco-editor .find-widget .monaco-findInput:hover {
+  border-color: rgba(0, 0, 0, 0.3) !important;
+  background: #ffffff !important;
+}
+
+[data-theme='light'] .monaco-editor .find-widget .monaco-findInput:focus-within {
+  border: 1px solid #007fd4 !important;
+  outline: 1px solid #007fd4 !important;
+  outline-offset: -1px !important;
+  background: #ffffff !important;
+}
+
+/* 输入框内部滚动容器：占满左侧剩余空间，物理阻隔与右侧按钮，绝不穿透覆盖 */
+.monaco-editor .find-widget .monaco-findInput > .monaco-scrollable-element,
+.monaco-editor .find-widget .monaco-findInput > .monaco-inputbox {
+  flex: 1 1 auto !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.monaco-editor .find-widget .monaco-findInput .monaco-inputbox {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+}
+
+.monaco-editor .find-widget .monaco-findInput .monaco-inputbox .wrapper,
+.monaco-editor .find-widget .monaco-findInput .monaco-inputbox .ibwrapper {
+  background: transparent !important;
   border: none !important;
   outline: none !important;
   width: 100% !important;
   height: 100% !important;
+  overflow: hidden !important;
 }
 
-.monaco-editor .find-widget .monaco-inputbox .input {
+.monaco-editor .find-widget .monaco-findInput .monaco-inputbox .input {
   color: var(--text, #e4e4e7) !important;
   background: transparent !important;
   font-size: 13px !important;
@@ -11757,44 +13676,24 @@ button.welcome-recent-remove:hover {
   outline: none !important;
   box-sizing: border-box !important;
   width: 100% !important;
+  height: 100% !important;
+  padding: 3px 0 !important;
+  white-space: nowrap !important;
 }
 
-/* 查找框文字预留右侧空间（容纳 Aa / ab / .* 三个按钮） */
-.monaco-editor .find-widget > .find-part .monaco-inputbox .input {
-  padding: 3px 80px 3px 10px !important;
+[data-theme='light'] .monaco-editor .find-widget .monaco-findInput .monaco-inputbox .input {
+  color: #18181b !important;
 }
 
-/* 替换框文字预留右侧空间（容纳 AB 一个按钮） */
-.monaco-editor .find-widget > .replace-part .monaco-inputbox .input {
-  padding: 3px 36px 3px 10px !important;
-}
-
-.monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
-  border: 1px solid #007fd4 !important;
-  outline: 1px solid #007fd4 !important;
-  outline-offset: -1px !important;
-  box-shadow: none !important;
-  background: #1e1e1e !important;
-}
-
-[data-theme='light'] .monaco-editor .find-widget .monaco-inputbox {
-  background: rgba(255, 255, 255, 0.92) !important;
-  border-color: rgba(0, 0, 0, 0.16) !important;
-  border-radius: 7px !important;
-  outline: none !important;
-}
-
-[data-theme='light'] .monaco-editor .find-widget .monaco-inputbox:hover:not(.synthetic-focus) {
-  border-color: rgba(0, 0, 0, 0.28) !important;
-  background: #ffffff !important;
-}
-
-[data-theme='light'] .monaco-editor .find-widget .monaco-inputbox.synthetic-focus {
-  border: 1px solid #007fd4 !important;
-  outline: 1px solid #007fd4 !important;
-  outline-offset: -1px !important;
-  box-shadow: none !important;
-  background: #ffffff !important;
+/* 右侧控制按钮（Aa / |ab| / .* / AB）：静态排列在右侧，与左侧文本物理分隔，绝无重叠 */
+.monaco-editor .find-widget .monaco-findInput > .controls {
+  position: static !important;
+  flex: 0 0 auto !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  margin-left: 4px !important;
+  z-index: 2 !important;
 }
 
 .monaco-editor .find-widget .monaco-inputbox .input::placeholder {
@@ -11804,6 +13703,18 @@ button.welcome-recent-remove:hover {
 
 [data-theme='light'] .monaco-editor .find-widget .monaco-inputbox .input::placeholder {
   color: rgba(0, 0, 0, 0.42) !important;
+}
+
+/* 编辑区选中文本全文档即时高亮匹配样式 */
+.monaco-editor .monaco-selection-occurrence-highlight {
+  background-color: rgba(56, 189, 248, 0.28) !important;
+  border: 1px solid rgba(56, 189, 248, 0.65) !important;
+  border-radius: 2px !important;
+}
+
+[data-theme='light'] .monaco-editor .monaco-selection-occurrence-highlight {
+  background-color: rgba(14, 99, 156, 0.22) !important;
+  border: 1px solid rgba(14, 99, 156, 0.55) !important;
 }
 
 /* 行容器布局：左右边距精准对齐绝对定位按钮，保持紧凑自然间距（约 5px），绝无重叠 */

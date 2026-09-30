@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { KeyMod, KeyCode, editor as MonacoEditor } from 'monaco-editor';
 import type {
@@ -8,8 +9,16 @@ import type {
   PendingDiff,
   UiTheme,
   DapBreakpoint,
+  DbConnectionView,
 } from '@deepseek-ide/shared';
-import { isImagePath, isUntitledPath, languageFromPath, untitledTabLabel } from '../utils';
+import {
+  isImagePath,
+  isSameFileByPath,
+  isUntitledPath,
+  isVirtualPath,
+  languageFromPath,
+  untitledTabLabel,
+} from '../utils';
 import { RenderFileTreeIcon } from './FileTree';
 import { MarkdownMessage, extractMarkdownHeadings, type MarkdownHeadingItem } from './MarkdownMessage';
 import { WelcomeView } from './WelcomeView';
@@ -19,6 +28,13 @@ import { registerAiInlineCompletions } from '../services/inlineCompletion';
 import type { CursorPos } from '../workspaceSession';
 import * as monaco from 'monaco-editor';
 import { GitBlameAnnotationGutter } from './GitBlameAnnotationGutter';
+import type { DbConfirmHandle } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { DbTableDataView } from './DbTableDataView';
+import { DbConsoleView } from './DbConsoleView';
+import { connectionIdFromTabPath } from '../services/dbQueryScripts';
+import { DbStructureView } from './DbStructureView';
+import type { DbTableViewState } from '../services/dbTableQuery';
 import {
   parseConflictBlocks,
   resolveSingleConflict,
@@ -28,6 +44,11 @@ import {
   createConflictDecorations,
   type ConflictBlock,
 } from '../services/mergeConflictResolver';
+import {
+  extractCodeSymbols,
+  findCurrentSymbol,
+  type CodeSymbol,
+} from '../services/codeSymbolService';
 
 interface Props {
   tabs: OpenTab[];
@@ -53,7 +74,7 @@ interface Props {
   wordWrap?: boolean;
   onToggleWordWrap?: () => void;
   onPreviewGitDiff?: (path: string) => void;
-  onDiscardPath?: (path: string) => void;
+  onDiscardPath?: (path: string) => void | Promise<void>;
   onRefreshGitStatus?: () => void;
   onViewFileHistory?: (path: string) => void;
   onCompareWithRevision?: (path: string) => void;
@@ -81,6 +102,66 @@ interface Props {
   onCreateProject?: (templateId: string) => void;
   onOpenWorkspace?: (targetPath: string, openInNewWindow: boolean, entryFile?: string) => void;
   onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  /**
+   * 由宿主 App 注入的确认弹窗句柄。
+   *
+   * 编辑器里只有「放弃此块更改」这一处是**直接写盘、不走 Git** 的破坏性操作，
+   * 因此它不能像其他放弃改动那样依赖 App 的 handleDiscardPath 收口，
+   * 必须自己问一声 —— 所以这个句柄是从 App 传进来的，而不是本组件自己 new 一个。
+   */
+  confirm: DbConfirmHandle;
+  /** 打开一个带初始内容的内置虚拟标签页（如 SQL 控制台），路径形如 db://console/... */
+  onOpenVirtualTab?: (
+    path: string,
+    content: string,
+    title: string,
+    language?: string,
+    replaceContent?: boolean,
+    readOnly?: boolean,
+    meta?: {
+      scriptPath?: string;
+      scriptTarget?: { connectionId: string; schemaName?: string };
+      dbStructure?: { connectionId: string; schemaName?: string; tableName: string };
+    },
+  ) => void;
+  /** 关闭一个内置虚拟标签页（SQL 控制台在标签内换连接后，旧路径要收掉） */
+  onCloseVirtualTab?: (path: string) => void;
+  /**
+   * 表结构标签改了表名（`db://structure/*`）。
+   *
+   * 表名是**标签路径与标题的一部分**，改完必须把路径、标题、虚拟标签里的表身份
+   * 一起换掉 —— 只更新内容不更新身份，下次点开这张表会同时冒出两个标签。
+   * 怎么改由 App 统一做（`handleTableRenamed`），这里只把「哪一页、改成什么」报上去。
+   */
+  onTableRenamed?: (oldPath: string, newTableName: string) => void;
+  /**
+   * SQL 控制台在标签内改了「连接 / 库」。
+   *
+   * 只上报意图（哪一页、换成什么），路径怎么拼、脚本文件挪到哪，都由 App 决定 ——
+   * 标签路径与脚本落盘路径的规则集中在 `dbQueryScripts`，不该在两个组件里各写一份。
+   */
+  onRetargetConsole?: (
+    oldPath: string,
+    target: { connectionId: string; schemaName?: string },
+    kind: 'connection' | 'schema',
+  ) => void;
+  /**
+   * 表数据视图「生成 SQL 到控制台」。
+   *
+   * 与树上开控制台走同一条路：都需要「先挑一个没被占用的脚本名、必要时落盘」，
+   * 这套规则在 App 里（`dbQueryScripts`），组件只交出 SQL 文本。
+   */
+  onOpenConsoleForTable?: (
+    connectionId: string,
+    schemaName: string | undefined,
+    sql: string,
+    title: string,
+  ) => void;
+  /**
+   * 外部（左侧树「按此列排序 / 筛选」）下发给表数据视图的初始筛选排序状态。
+   * `path` 匹配当前标签时作为 `initialView` 透传，`nonce` 变化触发重新套用。
+   */
+  dbViewRequest?: { path: string; view: DbTableViewState; nonce: number } | null;
   recentWorkspaces?: RecentWorkspaceItem[];
   onSelectRecentWorkspace?: (item: RecentWorkspaceItem) => void;
   onRemoveRecentWorkspace?: (path: string) => void;
@@ -108,8 +189,8 @@ function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
   try {
     const matched = entries.find((e) => {
       if (!e?.path) return false;
-      const ep = e.path.replace(/\\/g, '/').replace(/^\/+/, '');
-      return ep === norm || norm.endsWith('/' + ep) || ep.endsWith('/' + norm);
+      // 虚拟标签（db:// / git-head:）与 git 条目是两套东西，只认精确相等
+      return isSameFileByPath(e.path, norm);
     });
     if (!matched) return null;
     if (matched.untracked) return { label: 'U', color: '#73c991' };
@@ -589,6 +670,13 @@ export function EditorPane({
   onCreateProject,
   onOpenWorkspace,
   onShowToast,
+  confirm,
+  onOpenVirtualTab,
+  onCloseVirtualTab,
+  onTableRenamed,
+  onRetargetConsole,
+  onOpenConsoleForTable,
+  dbViewRequest,
   recentWorkspaces,
   onSelectRecentWorkspace,
   onRemoveRecentWorkspace,
@@ -1299,6 +1387,7 @@ export function EditorPane({
   const [mdPreviewScrollTo, setMdPreviewScrollTo] = useState<string | null>(null);
   const mdPreviewRef = useRef<HTMLDivElement>(null);
   const decorationsRef = useRef<string[]>([]);
+  const fileDecorationsMapRef = useRef<Map<string, string[]>>(new Map());
   const blameWidgetRef = useRef<MonacoEditor.IContentWidget | null>(null);
   const blameWidgetPosRef = useRef<MonacoEditor.IContentWidgetPosition | null>(null);
   const blameOwnerEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
@@ -1307,6 +1396,8 @@ export function EditorPane({
   const blameCacheRef = useRef<Map<string, { text: string; lineNumber: number }>>(new Map());
   const [gitInlineDiffLine, setGitInlineDiffLine] = useState<number | null>(null);
   const [editorInstance, setEditorInstance] = useState<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  // 数据库连接类型缓存：db:// 虚拟标签只带 connectionId，需要它来决定标识符引号与库名限定
+  const [dbConnections, setDbConnections] = useState<DbConnectionView[]>([]);
   const isSyncingScrollRef = useRef(false);
   const tocNavigatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 保存每个 md 文件的预览滚动位置，切换文件时持久化，切回时恢复
@@ -1319,6 +1410,54 @@ export function EditorPane({
   const switchFileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 用于在文件切换时读取切换前的 activePath，以便保存旧文件滚动位置
   const prevActivePathRef = useRef<string | null>(null);
+
+  // 仅在打开 db:// 标签时拉取一次连接列表（驱动类型决定标识符引号与库名限定）
+  const hasDbTab = tabs.some((t) => t.path.startsWith('db://'));
+  useEffect(() => {
+    if (!hasDbTab || dbConnections.length > 0) return;
+    let cancelled = false;
+    void window.ide
+      ?.dbListConnections?.()
+      .then((conns) => {
+        if (!cancelled) setDbConnections(conns || []);
+      })
+      .catch(() => {
+        // 连接列表拿不到时退回 sqlite 口径（不加库名限定），不影响 SQL 控制台使用
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasDbTab, dbConnections.length]);
+
+  // ── 代码大纲与符号导航状态 ──────────────────────────
+  const [showSymbolDropdown, setShowSymbolDropdown] = useState(false);
+  const [cursorLine, setCursorLine] = useState<number>(1);
+  const [symbolDropdownCoords, setSymbolDropdownCoords] = useState<{ top: number; left: number } | null>(null);
+  const [symbolFilter, setSymbolFilter] = useState('');
+  const symbolBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!showSymbolDropdown) return;
+    const handleDocClick = (e: MouseEvent) => {
+      const portalEl = document.getElementById('symbol-outline-portal');
+      if (
+        portalEl &&
+        !portalEl.contains(e.target as Node) &&
+        !symbolBtnRef.current?.contains(e.target as Node)
+      ) {
+        setShowSymbolDropdown(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowSymbolDropdown(false);
+    };
+    document.addEventListener('mousedown', handleDocClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleDocClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showSymbolDropdown]);
 
   // ── Git 合并冲突可视化解决状态与交互 ──────────────────────────
   const conflictDecorationsRef = useRef<string[]>([]);
@@ -1451,7 +1590,7 @@ export function EditorPane({
       }
       if (blameTimerRef.current) clearTimeout(blameTimerRef.current);
 
-      if (!ed || !activePath || activePath.startsWith('untitled:')) {
+      if (!ed || !activePath || isVirtualPath(activePath)) {
         removeBlameWidget();
         return;
       }
@@ -1540,30 +1679,55 @@ export function EditorPane({
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    if (activeTabRef.current) {
-      activeTabRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'nearest',
-      });
+    const tabEl = activeTabRef.current;
+    if (tabEl) {
+      const container = tabEl.parentElement;
+      if (container && container.classList.contains('tabs')) {
+        const cLeft = container.scrollLeft;
+        const cRight = cLeft + container.clientWidth;
+        const tLeft = tabEl.offsetLeft;
+        const tRight = tLeft + tabEl.offsetWidth;
+        if (tLeft < cLeft) {
+          container.scrollTo({ left: Math.max(0, tLeft - 20), behavior: 'smooth' });
+        } else if (tRight > cRight) {
+          container.scrollTo({ left: tRight - container.clientWidth + 20, behavior: 'smooth' });
+        }
+      }
     }
   }, [activePath]);
 
   const isMarkdown = Boolean(activePath?.endsWith('.md'));
   const activeLanguage = useMemo(() => {
     if (!active) return 'plaintext';
-    if (active.language && active.language !== 'plaintext') return active.language;
+    if (active.language) return active.language;
     return languageFromPath(active.path);
-  }, [active]);
+  }, [active?.language, active?.path]);
   const splitActiveLanguage = useMemo(() => {
     if (!splitActive) return 'plaintext';
-    if (splitActive.language && splitActive.language !== 'plaintext') return splitActive.language;
+    if (splitActive.language) return splitActive.language;
     return languageFromPath(splitActive.path);
-  }, [splitActive]);
+  }, [splitActive?.language, splitActive?.path]);
   const mdHeadings = useMemo(() => {
     if (!active || !isMarkdown) return [];
     return extractMarkdownHeadings(active.content);
   }, [active?.content, isMarkdown]);
+  const fileSymbols = useMemo(() => {
+    if (!active?.content || !activeLanguage || isMarkdown) return [];
+    return extractCodeSymbols(active.content, activeLanguage);
+  }, [active?.content, activeLanguage, isMarkdown]);
+
+  const currentSymbol = useMemo(() => {
+    if (fileSymbols.length === 0) return null;
+    return findCurrentSymbol(fileSymbols, cursorLine);
+  }, [fileSymbols, cursorLine]);
+
+  const filteredSymbols = useMemo(() => {
+    if (!symbolFilter.trim()) return fileSymbols;
+    const query = symbolFilter.toLowerCase().trim();
+    return fileSymbols.filter(
+      (s) => s.name.toLowerCase().includes(query) || s.kind.toLowerCase().includes(query),
+    );
+  }, [fileSymbols, symbolFilter]);
   const isImage = Boolean(
     active && (active.language === 'image' || active.previewUrl || isImagePath(active.path)),
   );
@@ -1572,11 +1736,10 @@ export function EditorPane({
   useEffect(() => {
     if (
       !activePath ||
-      activePath.startsWith('untitled:') ||
+      isVirtualPath(activePath) ||
       isImage ||
       !window.ide?.gitDiff ||
-      gitStatus?.isRepo === false ||
-      activeGitMeta?.label === 'U'
+      gitStatus?.isRepo === false
     ) {
       setGitDiffData(null);
       return;
@@ -1587,7 +1750,11 @@ export function EditorPane({
       .then((res) => {
         if (cancelled) return;
         if (res && res.ok && res.isTracked !== false) {
-          setGitDiffData({ path: activePath, original: res.original, modified: res.modified });
+          setGitDiffData({
+            path: activePath,
+            original: res.original,
+            modified: res.modified,
+          });
         } else {
           setGitDiffData(null);
         }
@@ -1598,7 +1765,7 @@ export function EditorPane({
     return () => {
       cancelled = true;
     };
-  }, [activePath, gitStatus, isImage, active?.dirty, activeGitMeta?.label]);
+  }, [activePath, gitStatus, isImage, active?.dirty]);
 
   // 外部重载内容（放弃修改 / Agent 改写文件 / 磁盘同步）时，@monaco-editor/react 通过 executeEdits
   // 写入新内容，而 Monaco 的 applyEdits 会把插入文本的行尾规范化为 model 既有 EOL。
@@ -1639,6 +1806,16 @@ export function EditorPane({
     pendingRevealTargetRef.current = revealTarget ?? null;
   }, [revealTarget]);
 
+  // 切到内置虚拟视图（db:// 数据/结构/控制台）或图片预览时，主编辑区的 <Editor> 整体卸载，
+  // 其 Monaco 实例已被 @monaco-editor/react dispose。这里同步清空引用，避免后续 ⌘I / ⌘K /
+  // 插入代码等入口拿一个已销毁的实例去读写，把内容落回到上一个标签的路径上。
+  useEffect(() => {
+    if (!activePath) return;
+    if (!isVirtualPath(activePath) && !isImagePath(activePath)) return;
+    editorRef.current = null;
+    setEditorInstance(null);
+  }, [activePath]);
+
   const executeRevealTarget = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor) => {
       const target = pendingRevealTargetRef.current;
@@ -1652,16 +1829,10 @@ export function EditorPane({
       const targetPath = target.path.replace(/\\/g, '/');
 
       const matchesActive =
-        Boolean(curActive && targetPath) &&
-        (curActive === targetPath ||
-          curActive.endsWith('/' + targetPath) ||
-          targetPath.endsWith('/' + curActive));
+        Boolean(curActive && targetPath) && isSameFileByPath(curActive, targetPath);
 
       const matchesModel =
-        Boolean(modelUri && targetPath) &&
-        (modelUri === targetPath ||
-          modelUri.endsWith('/' + targetPath) ||
-          targetPath.endsWith('/' + modelUri));
+        Boolean(modelUri && targetPath) && isSameFileByPath(modelUri, targetPath);
 
       if (!matchesActive || !matchesModel) {
         return;
@@ -1709,10 +1880,7 @@ export function EditorPane({
       const curActive = (activePath || '').replace(/\\/g, '/');
       const targetPath = pendingRevealTargetRef.current.path.replace(/\\/g, '/');
       const matches =
-        Boolean(curActive && targetPath) &&
-        (curActive === targetPath ||
-          curActive.endsWith('/' + targetPath) ||
-          targetPath.endsWith('/' + curActive));
+        Boolean(curActive && targetPath) && isSameFileByPath(curActive, targetPath);
       if (!matches) {
         pendingRevealTargetRef.current = null;
         onRevealTargetConsumed?.();
@@ -2192,29 +2360,38 @@ export function EditorPane({
   }, [activePath]);
 
   // Apply git decorations (gutter indicators & overview ruler) from diff data
-  useEffect(() => {
+  const applyGitDecorations = useCallback(() => {
     const ed = editorRef.current;
-    if (!ed || !gitDiffData || gitDiffData.path !== activePath) {
-      if (ed) {
-        decorationsRef.current = ed.deltaDecorations(decorationsRef.current, []);
-      }
-      modifiedRangesRef.current = [];
-      return;
-    }
+    if (!ed || !activePath) return;
 
     const model = ed.getModel();
     if (!model || model.isDisposed()) return;
 
+    const prevDecos = fileDecorationsMapRef.current.get(activePath) ?? [];
+
+    if (!gitDiffData || !isSameFileByPath(gitDiffData.path, activePath)) {
+      const cleared = model.deltaDecorations(prevDecos, []);
+      fileDecorationsMapRef.current.set(activePath, cleared);
+      decorationsRef.current = cleared;
+      modifiedRangesRef.current = [];
+      return;
+    }
+
     const originalText = gitDiffData.original;
-    const currentText = active?.content ?? gitDiffData.modified;
+    // 优先读取 Monaco Model 内存中最实时的最新代码，确保 0 延迟响应输入、删除与恢复
+    const currentText = model.getValue();
     const diffs = computeLineDiffs(originalText, currentText);
 
     const decorations: MonacoEditor.IModelDeltaDecoration[] = [];
     const ranges: Array<{ start: number; end: number }> = [];
     const isLight = uiTheme === 'light';
 
+    const lineCount = model.getLineCount();
+
     for (const diff of diffs) {
-      ranges.push({ start: diff.startLine, end: diff.endLine });
+      const startLine = Math.min(Math.max(1, diff.startLine), lineCount);
+      const endLine = Math.min(Math.max(startLine, diff.endLine), lineCount);
+      ranges.push({ start: startLine, end: endLine });
       const diffColor =
         diff.type === 'added'
           ? (isLight ? '#1a7f37' : '#2ea043')
@@ -2224,9 +2401,9 @@ export function EditorPane({
 
       decorations.push({
         range: {
-          startLineNumber: diff.startLine,
+          startLineNumber: startLine,
           startColumn: 1,
-          endLineNumber: diff.endLine,
+          endLineNumber: endLine,
           endColumn: 1,
         },
         options: {
@@ -2234,15 +2411,81 @@ export function EditorPane({
           linesDecorationsClassName: `git-gutter-${diff.type}`,
           overviewRuler: {
             color: diffColor,
-            position: 1, // OverviewRulerLane.Left: 占滚动条左侧 1/3 宽度，纤细清晰
+            position: 1, // OverviewRulerLane.Left: 占滚动条左侧 1/3 宽度
+          },
+          minimap: {
+            color: diffColor,
+            position: 2, // MinimapPosition.Gutter: 在缩略图对应行左边缘槽位精确绘制色条，与缩略图代码 1:1 精确对齐
           },
         },
       });
     }
 
     modifiedRangesRef.current = ranges;
-    decorationsRef.current = ed.deltaDecorations(decorationsRef.current, decorations);
-  }, [gitDiffData, active?.content, activePath, editorInstance, uiTheme]);
+    const nextDecos = model.deltaDecorations(prevDecos, decorations);
+    fileDecorationsMapRef.current.set(activePath, nextDecos);
+    decorationsRef.current = nextDecos;
+  }, [activePath, gitDiffData, uiTheme]);
+
+  useEffect(() => {
+    applyGitDecorations();
+  }, [applyGitDecorations, editorInstance]);
+
+  // 监听编辑区实时内容变动：打字时即时呈现修改行，恢复/撤销后即时清除色条
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const disposable = ed.onDidChangeModelContent(() => {
+      applyGitDecorations();
+    });
+    return () => disposable.dispose();
+  }, [applyGitDecorations, editorInstance]);
+
+  // 监听 Monaco Model 切换事件：完成切换时立即对齐 Git 差异色条与语言模式
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const disposable = ed.onDidChangeModel(() => {
+      applyGitDecorations();
+      // 微任务延迟兜底，确保 model 切换完成后 git 色条稳定绘制
+      queueMicrotask(() => {
+        applyGitDecorations();
+      });
+      const m = ed.getModel();
+      if (m && !m.isDisposed() && activeLanguage) {
+        if (m.getLanguageId() !== activeLanguage) {
+          monaco.editor.setModelLanguage(m, activeLanguage);
+        }
+      }
+    });
+    return () => disposable.dispose();
+  }, [applyGitDecorations, activeLanguage, activePath, editorInstance]);
+
+  // 语言模式切换时立即动态更新 Monaco Model 语言与语法高亮
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed || !activeLanguage) return;
+    const model = ed.getModel();
+    if (!model || model.isDisposed()) return;
+    if (model.getLanguageId() !== activeLanguage) {
+      monaco.editor.setModelLanguage(model, activeLanguage);
+    }
+  }, [activeLanguage, editorInstance]);
+
+  // 监听全局即时语言切换广播事件（状态栏切换语言时广播触发）
+  useEffect(() => {
+    const handleLangChange = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail?.language) return;
+      const ed = editorRef.current;
+      if (!ed) return;
+      const model = ed.getModel();
+      if (!model || model.isDisposed()) return;
+      monaco.editor.setModelLanguage(model, detail.language);
+    };
+    window.addEventListener('echoly:changeEditorLanguage', handleLangChange);
+    return () => window.removeEventListener('echoly:changeEditorLanguage', handleLangChange);
+  }, []);
 
   // 按 Esc 键退出 Git 差异对比、差异预览，或关闭选区浮动工具栏，或关闭目录大纲
   useEffect(() => {
@@ -2286,6 +2529,24 @@ export function EditorPane({
   // Single-Hunk Discard Handler (reverts ONLY the target modified hunk, leaving other changes in the file intact)
   const handleDiscardSingleHunk = async () => {
     if (!active?.path || !gitDiffData || gitDiffData.path !== activePath || gitInlineDiffLine == null) return;
+    // 兜底防线：虚拟标签（db:// / git-head:）绝不写盘
+    if (isVirtualPath(active.path)) return;
+    // 这里直接写盘还原、不经过 Git，是编辑器里唯一没有第二份的改动 —— 必须确认
+    const ok = await confirm.confirm({
+      title: '放弃此块更改',
+      content: buildSqlConfirmMarkdown({
+        intro: '这一块改动会被还原成 HEAD 里的内容并**直接写回磁盘**，且**无法撤销**。',
+        statements: [],
+        notes: ['只影响光标所在的这一块（hunk），文件里其他改动保持不动。'],
+      }),
+      details: [
+        { label: '文件', value: active.path },
+        { label: '行', value: String(gitInlineDiffLine) },
+      ],
+      tone: 'danger',
+      confirmLabel: '确认放弃',
+    });
+    if (ok === null) return;
     const currentContent = active.content ?? gitDiffData.modified;
     const { hunks } = computeInlineHunks(gitDiffData.original, currentContent);
     const targetL = gitInlineDiffLine;
@@ -2418,8 +2679,57 @@ export function EditorPane({
 
   const isMouseDownRef = useRef(false);
   const lastMousePosRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const selectionHighlightDecosRef = useRef<Map<MonacoEditor.IStandaloneCodeEditor, string[]>>(new Map());
+
+  // 选中文本全文档即时高亮显示：划选任何单词/短语/符号时，全文档所有相同匹配项同步高亮发光并在标尺上指示
+  const updateSelectionOccurrenceHighlights = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
+    const model = ed.getModel();
+    const prevDecos = selectionHighlightDecosRef.current.get(ed) ?? [];
+    if (!model || model.isDisposed()) {
+      if (prevDecos.length > 0) {
+        selectionHighlightDecosRef.current.delete(ed);
+      }
+      return;
+    }
+    const sel = ed.getSelection();
+    if (!sel || sel.isEmpty()) {
+      if (prevDecos.length > 0) {
+        const next = ed.deltaDecorations(prevDecos, []);
+        selectionHighlightDecosRef.current.set(ed, next);
+      }
+      return;
+    }
+    const text = model.getValueInRange(sel);
+    if (!text || text.trim().length === 0 || text.includes('\n')) {
+      if (prevDecos.length > 0) {
+        const next = ed.deltaDecorations(prevDecos, []);
+        selectionHighlightDecosRef.current.set(ed, next);
+      }
+      return;
+    }
+
+    try {
+      const matches = model.findMatches(text, false, false, true, null, true);
+      const decos: MonacoEditor.IModelDeltaDecoration[] = matches.slice(0, 2000).map((m) => ({
+        range: m.range,
+        options: {
+          className: 'monaco-selection-occurrence-highlight',
+          description: 'selection-occurrence-highlight',
+          overviewRuler: {
+            color: uiTheme === 'light' ? 'rgba(37, 99, 235, 0.45)' : 'rgba(255, 255, 255, 0.45)',
+            position: 4, // OverviewRulerLane.Center
+          },
+        },
+      }));
+      const next = ed.deltaDecorations(prevDecos, decos);
+      selectionHighlightDecosRef.current.set(ed, next);
+    } catch {
+      // 容错忽略
+    }
+  }, [uiTheme]);
 
   const updateSelectionTextOnly = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
+    updateSelectionOccurrenceHighlights(ed);
     const model = ed.getModel();
     const sel = ed.getSelection();
     if (!model || !sel || sel.isEmpty()) {
@@ -2632,6 +2942,7 @@ export function EditorPane({
   }, []);
 
   const updateSelectionAndCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
+    updateSelectionOccurrenceHighlights(ed);
     const model = ed.getModel();
     const sel = ed.getSelection();
     const selections = ed.getSelections();
@@ -2688,7 +2999,7 @@ export function EditorPane({
 
     dismissedSelectionKeyRef.current = null;
     repositionSelectionCoords(ed);
-  }, [repositionSelectionCoords]);
+  }, [repositionSelectionCoords, updateSelectionOccurrenceHighlights]);
 
   const openInlineAiForEditor = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor) => {
@@ -2923,8 +3234,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       // 注册 AI 菜单项至 Monaco 右键菜单最顶层 (0_ai 分组)
       ed.addAction({
         id: 'echoly.inlineAi',
-        label: '✦ 行内 AI 编辑',
-        keybindings: [KeyMod.CtrlCmd | KeyCode.KeyK],
+        label: '✦ 行内 AI 编辑 (⌘I / ⌘K)',
+        keybindings: [KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyI],
         contextMenuGroupId: '0_ai',
         contextMenuOrder: 1,
         run: () => {
@@ -2960,7 +3271,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           const modelUri = ed.getModel()?.uri;
           const uriPath = modelUri?.fsPath || modelUri?.path;
           const filePath = activeRef.current?.path || uriPath;
-          if (filePath && !filePath.startsWith('untitled:')) {
+          if (filePath && !isVirtualPath(filePath)) {
             onViewFileHistoryRef.current?.(filePath);
           } else {
             onShowToast?.('无法查看文件历史', '当前文件未保存到磁盘或无 Git 记录', 'info');
@@ -2976,6 +3287,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           const modelUri = ed.getModel()?.uri;
           const uriPath = modelUri?.fsPath || modelUri?.path;
           const filePath = activeRef.current?.path || uriPath;
+          // 虚拟标签的路径不是真实目录，开终端只会得到一个不存在的工作目录
+          if (!filePath || isVirtualPath(filePath)) return;
           window.dispatchEvent(
             new CustomEvent('echoly:openTerminal', { detail: { cwd: filePath } }),
           );
@@ -3181,7 +3494,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           e.stopPropagation();
           focusEditorFindWidget(targetEd);
         }
-      } else if (key === 'k') {
+      } else if (key === 'k' || key === 'i') {
         if (editorRef.current && activeRef.current?.path) {
           e.preventDefault();
           e.stopPropagation();
@@ -3747,8 +4060,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               lineNumbersMinChars: 4,
               lineDecorationsWidth: 10,
               folding: true,
-              occurrencesHighlight: 'off',
-              selectionHighlight: false,
+              occurrencesHighlight: 'singleFile',
+              selectionHighlight: true,
               wordWrap: wordWrap ? 'on' : 'off',
               scrollbar: {
                 vertical: 'visible',
@@ -3867,15 +4180,155 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       {/* Breadcrumb Navigation Bar (Match User Screenshot 2) */}
       {typeof activePath === 'string' && activePath.trim().length > 0 && (
         <div className="editor-breadcrumb">
-          {(isUntitledPath(activePath)
-            ? [untitledTabLabel(activePath)]
-            : activePath.split('/')
-          ).map((part, i, arr) => (
-            <span key={i} className="crumb-item">
-              <span>{part}</span>
-              {i < arr.length - 1 && <span className="crumb-sep">&gt;</span>}
-            </span>
-          ))}
+          <div className="editor-breadcrumb-crumbs">
+            {(isUntitledPath(activePath)
+              ? [untitledTabLabel(activePath)]
+              : activePath.split('/')
+            ).map((part, i, arr) => (
+              <span key={i} className="crumb-item">
+                <span>{part}</span>
+                {i < arr.length - 1 && <span className="crumb-sep">&gt;</span>}
+              </span>
+            ))}
+
+            {currentSymbol && (
+              <div
+                className="crumb-symbol-container"
+                style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+              >
+                <span className="crumb-sep" style={{ margin: '0 4px', opacity: 0.6 }}>
+                  &gt;
+                </span>
+                <button
+                  ref={symbolBtnRef}
+                  type="button"
+                  className="crumb-symbol-btn"
+                  title={`当前位于: ${currentSymbol.name} (第 ${currentSymbol.line} 行)，点击查看当前文件符号大纲`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (showSymbolDropdown) {
+                      setShowSymbolDropdown(false);
+                    } else {
+                      if (symbolBtnRef.current) {
+                        const rect = symbolBtnRef.current.getBoundingClientRect();
+                        const popupWidth = 320;
+                        const left = Math.max(10, Math.min(rect.left, window.innerWidth - popupWidth - 10));
+                        setSymbolDropdownCoords({ top: rect.bottom + 4, left });
+                      }
+                      setSymbolFilter('');
+                      setShowSymbolDropdown(true);
+                    }
+                  }}
+                >
+                  <span className={`symbol-kind-tag ${currentSymbol.kind}`}>
+                    {currentSymbol.kind === 'class'
+                      ? 'C'
+                      : currentSymbol.kind === 'interface'
+                        ? 'I'
+                        : currentSymbol.kind === 'type'
+                          ? 'T'
+                          : 'ƒ'}
+                  </span>
+                  <span className="symbol-label">{currentSymbol.name}</span>
+                  <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>▾</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {showSymbolDropdown && symbolDropdownCoords && fileSymbols.length > 0 &&
+            createPortal(
+              <div
+                id="symbol-outline-portal"
+                className="symbol-outline-dropdown"
+                style={{
+                  position: 'fixed',
+                  top: symbolDropdownCoords.top,
+                  left: symbolDropdownCoords.left,
+                  width: 320,
+                  zIndex: 10000,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="symbol-dropdown-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontWeight: 600, color: 'var(--text)' }}>文件符号大纲</span>
+                    <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 4, color: 'var(--muted)' }}>
+                      {filteredSymbols.length}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="symbol-dropdown-close"
+                    onClick={() => setShowSymbolDropdown(false)}
+                    title="关闭 (Esc)"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.1)' }}>
+                  <input
+                    type="text"
+                    value={symbolFilter}
+                    onChange={(e) => setSymbolFilter(e.target.value)}
+                    placeholder="搜索符号 (类、方法、变量)..."
+                    autoFocus
+                    style={{
+                      width: '100%',
+                      background: 'var(--bg-editor, #141414)',
+                      color: 'var(--text)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 4,
+                      padding: '4px 7px',
+                      fontSize: 11,
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                <div className="symbol-dropdown-list" style={{ maxHeight: 260, overflowY: 'auto', padding: 4 }}>
+                  {filteredSymbols.length === 0 ? (
+                    <div style={{ padding: '14px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
+                      未找到匹配的符号
+                    </div>
+                  ) : (
+                    filteredSymbols.map((sym, idx) => {
+                      const isCurrent = sym.line === currentSymbol?.line && sym.name === currentSymbol?.name;
+                      return (
+                        <div
+                          key={`${sym.name}-${sym.line}-${idx}`}
+                          className={`symbol-dropdown-item${isCurrent ? ' current' : ''}`}
+                          onClick={() => {
+                            setShowSymbolDropdown(false);
+                            editorRef.current?.revealLineInCenter(sym.line);
+                            editorRef.current?.setPosition({ lineNumber: sym.line, column: 1 });
+                            editorRef.current?.focus();
+                            if (editorRef.current) {
+                              highlightJumpLocation(editorRef.current, sym.line);
+                            }
+                          }}
+                        >
+                          <span className={`symbol-kind-tag ${sym.kind}`}>
+                            {sym.kind === 'class'
+                              ? 'C'
+                              : sym.kind === 'interface'
+                                ? 'I'
+                                : sym.kind === 'type'
+                                  ? 'T'
+                                  : 'ƒ'}
+                          </span>
+                          <span className="symbol-name">{sym.name}</span>
+                          <span className="symbol-line">:{sym.line}</span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>,
+              document.body
+            )}
           <div className="editor-breadcrumb-actions">
             <button
               type="button"
@@ -4418,7 +4871,68 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           </div>
         )}
 
-        {active && isImage ? (
+        {active && active.path.startsWith('db://data/') ? (
+          (() => {
+            const parts = active.path.replace('db://data/', '').split('/');
+            const connId = parts[0] || '';
+            // 新格式 db://data/<connId>/<schema>/<table>；兼容旧的 2 段式
+            const schemaName = parts.length > 2 ? decodeURIComponent(parts[1]) : '';
+            const tableName = parts.length > 2 ? decodeURIComponent(parts[2]) : decodeURIComponent(parts[1] || '');
+            // 只把「发给当前这张表」的请求透传下去：否则切到别的表标签页会误套用别人的筛选条件
+            const viewRequest = dbViewRequest?.path === active.path ? dbViewRequest : null;
+            return (
+              <DbTableDataView
+                connectionId={connId}
+                tableName={tableName}
+                schemaName={schemaName || undefined}
+                driver={
+                  dbConnections.find((c) => c.id === connId)?.type ??
+                  (schemaName === 'main' ? 'sqlite' : 'mysql')
+                }
+                initialView={viewRequest?.view}
+                viewNonce={viewRequest?.nonce}
+                onShowToast={onShowToast}
+                onOpenConsole={(sql) => {
+                  // 「生成 SQL 到控制台」只是把文本交出去，落在哪个脚本文件、叫什么名字由 App 决定
+                  onOpenConsoleForTable?.(connId, schemaName || undefined, sql, `查询 - ${tableName}`);
+                }}
+              />
+            );
+          })()
+        ) : active && active.virtual?.dbStructure ? (
+          <DbStructureView
+            /**
+             * 与 SQL 控制台同理，这个组件在 `db://structure/*` 各标签之间复用：
+             * 把表身份当 key，换表后它自己重取列与 DDL，不会把上一张表的列清单留在屏幕上。
+             */
+            key={active.path}
+            connectionId={active.virtual.dbStructure.connectionId}
+            schemaName={active.virtual.dbStructure.schemaName}
+            tableName={active.virtual.dbStructure.tableName}
+            theme={monacoTheme}
+            connections={dbConnections}
+            onRenamed={(newTableName) => onTableRenamed?.(active.path, newTableName)}
+            onShowToast={onShowToast}
+          />
+        ) : active && active.path.startsWith('db://console/') ? (
+          <DbConsoleView
+            /**
+             * 这个组件在 `db://console/*` 各个标签之间按位置**复用**（这里不给 key）：
+             * 它内部的暂存、结果集、会话目标等本地状态在切标签后仍然留着。
+             * 因此把标签身份（路径 + 连接 + 库）当 key 传下去，让它自己识别「换页了」并清空 ——
+             * 新开一个查询时如果还挂着上一个查询的结果表，用户会以为那结果是自己刚写的 SQL 跑出来的。
+             */
+            key={active.path}
+            connectionId={connectionIdFromTabPath(active.path)}
+            schemaName={active.virtual?.scriptTarget?.schemaName}
+            initialSql={active.content}
+            theme={monacoTheme}
+            connections={dbConnections}
+            onChangeContent={(nextSql) => onChangeContent(active.path, nextSql, false)}
+            onShowToast={onShowToast}
+            onRetarget={(target, kind) => onRetargetConsole?.(active.path, target, kind)}
+          />
+        ) : active && isImage ? (
           <div className="image-preview-pane">
             {active.previewUrl ? (
               <>
@@ -4506,6 +5020,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     setSelectionCoords(null);
                   });
                   ed.onDidChangeCursorPosition((e) => {
+                    setCursorLine(e.position.lineNumber);
                     onCursorChange?.(e.position.lineNumber, e.position.column);
                     updateGitBlameRef.current(e.position.lineNumber);
                     // Track cursor line text for md preview sync
@@ -4630,6 +5145,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   automaticLayout: true,
                   smoothScrolling: true,
                   wordWrap: wordWrap ? 'on' : 'off',
+                  scrollBeyondLastLine: false,
                   lineNumbersMinChars: 4,
                   lineDecorationsWidth: 10,
                   glyphMargin: true,
@@ -4647,8 +5163,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   },
                   multiCursorModifier: 'alt',
                   links: true,
-                  occurrencesHighlight: 'off',
-                  selectionHighlight: false,
+                  occurrencesHighlight: 'singleFile',
+                  selectionHighlight: true,
                   gotoLocation: {
                     multiple: 'goto',
                     multipleDefinitions: 'peek',
@@ -4749,6 +5265,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     setSelectionCoords(null);
                   });
                   ed.onDidChangeCursorPosition((e) => {
+                    setCursorLine(e.position.lineNumber);
                     onCursorChange?.(e.position.lineNumber, e.position.column);
                     updateGitBlameRef.current(e.position.lineNumber);
                   });
@@ -4783,11 +5300,12 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                   automaticLayout: true,
                   smoothScrolling: true,
-                  occurrencesHighlight: 'off',
-                  selectionHighlight: false,
+                  occurrencesHighlight: 'singleFile',
+                  selectionHighlight: true,
                   wordWrap: wordWrap ? 'on' : 'off',
                   multiCursorModifier: 'alt',
                   scrollBeyondLastColumn: 0,
+                  scrollBeyondLastLine: false,
                   lineNumbersMinChars: 4,
                   overviewRulerLanes: 3,
                   overviewRulerBorder: false,
@@ -4874,8 +5392,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       minimap: { enabled: false },
                       automaticLayout: true,
                       smoothScrolling: true,
-                      occurrencesHighlight: 'off',
-                      selectionHighlight: false,
+                      occurrencesHighlight: 'singleFile',
+                      selectionHighlight: true,
                       wordWrap: wordWrap ? 'on' : 'off',
                       multiCursorModifier: 'alt',
                       scrollBeyondLastColumn: 0,
@@ -5078,6 +5596,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     existing.col = e.position.column;
                     editorScrollStateMapRef.current.set(curActiveP, existing);
                   }
+                  setCursorLine(e.position.lineNumber);
                   onCursorChange?.(e.position.lineNumber, e.position.column);
                   updateGitBlameRef.current(e.position.lineNumber);
                   trackCursorJump(activeRef.current?.path, e.position.lineNumber, e.position.column);
@@ -5243,8 +5762,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 overviewRulerBorder: false,
                 multiCursorModifier: 'alt',
                 links: true,
-                occurrencesHighlight: 'off',
-                selectionHighlight: false,
+                occurrencesHighlight: 'singleFile',
+                selectionHighlight: true,
                 gotoLocation: {
                   multiple: 'peek',
                   multipleDefinitions: 'peek',

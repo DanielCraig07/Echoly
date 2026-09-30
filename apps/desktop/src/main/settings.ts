@@ -30,7 +30,7 @@ function isEncAvailable(): boolean {
   }
 }
 
-function encryptSecret(plain: string | undefined): string | undefined {
+export function encryptSecret(plain: string | undefined): string | undefined {
   if (!plain) return plain;
   if (!isEncAvailable()) return plain;
   try {
@@ -40,7 +40,7 @@ function encryptSecret(plain: string | undefined): string | undefined {
   }
 }
 
-function decryptSecret(stored: string | undefined): string | undefined {
+export function decryptSecret(stored: string | undefined): string | undefined {
   if (!stored) return stored;
   if (stored.startsWith(ENC_PREFIX)) {
     try {

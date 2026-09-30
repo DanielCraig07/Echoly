@@ -5,6 +5,22 @@ export interface CursorPos {
   scrollLeft?: number;
 }
 
+/**
+ * 虚拟标签（目前是 SQL 控制台）的重开信息。
+ *
+ * 与磁盘文件分开存：`paths` 里的每一项都能直接 `readFile` 还原，而虚拟标签要先知道
+ * 它是什么类型、连的是哪个连接 / 哪个库，再去读它自己的脚本文件。
+ */
+export interface VirtualTabState {
+  /** 标签路径，形如 `db://console/<连接 id>/<脚本文件名>` */
+  path: string;
+  language: string;
+  title?: string;
+  /** 脚本在工作区内的相对路径；缺失表示这个标签没有落盘的脚本（不该发生，兜底跳过） */
+  scriptPath?: string;
+  scriptTarget?: { connectionId: string; schemaName?: string };
+}
+
 export interface WorkspaceOpenFilesState {
   paths: string[];
   activePath: string | null;
@@ -13,6 +29,8 @@ export interface WorkspaceOpenFilesState {
   activeCol?: number;
   activeScrollTop?: number;
   activeScrollLeft?: number;
+  /** 上次打开时开着的 SQL 控制台（还原顺序排在普通文件之后） */
+  virtualTabs?: VirtualTabState[];
   updatedAt: number;
 }
 
@@ -58,6 +76,7 @@ export function saveWorkspaceOpenFiles(
   activeCol?: number,
   activeScrollTop?: number,
   activeScrollLeft?: number,
+  virtualTabs?: VirtualTabState[],
 ): void {
   const key = normalizeRoot(root);
   const map = readAll();
@@ -69,6 +88,7 @@ export function saveWorkspaceOpenFiles(
     activeCol: activeCol != null && activeCol > 0 ? activeCol : undefined,
     activeScrollTop: activeScrollTop != null && activeScrollTop >= 0 ? activeScrollTop : undefined,
     activeScrollLeft: activeScrollLeft != null && activeScrollLeft >= 0 ? activeScrollLeft : undefined,
+    virtualTabs: virtualTabs && virtualTabs.length > 0 ? virtualTabs.map((v) => ({ ...v })) : undefined,
     updatedAt: Date.now(),
   };
 

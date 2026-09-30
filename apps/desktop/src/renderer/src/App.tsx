@@ -26,6 +26,8 @@ import type {
 } from '@deepseek-ide/shared';
 import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, DEFAULT_MODELS } from '@deepseek-ide/shared';
 import { FileTree, type FileTreeHandle } from './components/FileTree';
+import { useDbConfirm } from './hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from './services/dbConfirmContent';
 import { EditorPane } from './components/EditorPane';
 import { ChatPanel, type ChatPanelHandle } from './components/ChatPanel';
 import { TerminalPanel } from './components/TerminalPanel';
@@ -59,6 +61,8 @@ import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { GitPanel } from './components/GitPanel';
 import { SearchPanel } from './components/SearchPanel';
 import { MavenPanel } from './components/MavenPanel';
+import { DatabasePanel } from './components/DatabasePanel';
+import { AgentTaskPanel } from './components/AgentTaskPanel';
 import { ProblemsPanel } from './components/ProblemsPanel';
 import { StatusBar } from './components/StatusBar';
 import { GlobalTooltip } from './components/GlobalTooltip';
@@ -66,6 +70,10 @@ import { heuristicDetectTech } from './utils/techStack';
 import {
   isImagePath,
   isUntitledPath,
+  isVirtualPath,
+  isDbPath,
+  requiresExactPathMatch,
+  isSameFileByPath,
   languageFromPath,
   uid,
   buildSessionWorkspaceMeta,
@@ -75,11 +83,27 @@ import {
   loadWorkspaceOpenFiles,
   saveWorkspaceOpenFiles,
   type CursorPos,
+  type VirtualTabState,
 } from './workspaceSession';
 import { setupSymbolNavigation } from './services/symbolNavigation';
+import type { DbTableViewState } from './services/dbTableQuery';
+import type { DbProjectScriptEntry } from './components/DatabasePanel';
+import {
+  PROJECT_SCRIPT_SCOPE,
+  QUERIES_DIR,
+  consoleTabPath,
+  isQueryScriptName,
+  nextScriptFileName,
+  parseScriptRelPath,
+  projectScriptPathFor,
+  scriptDirFor,
+  scriptFileNameFromTabPath,
+  scriptPathFor,
+  scriptTitleFromFileName,
+} from './services/dbQueryScripts';
 
 type ResizeAxis = 'explorer' | 'chat' | 'bottom';
-type LeftPanel = 'explorer' | 'search' | 'git' | 'maven';
+type LeftPanel = 'explorer' | 'search' | 'git' | 'maven' | 'database' | 'agent-tasks';
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -175,6 +199,8 @@ function normalizeWorkspacePath(p: string | null | undefined): string {
 }
 
 export function App() {
+  // 删除脚本 / 放弃更改等不可逆操作的统一确认框（全应用每个组件各持一个实例）
+  const confirm = useDbConfirm();
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfo>({
     kind: 'local',
@@ -261,6 +287,13 @@ export function App() {
   const skipOpenFilesPersistRef = useRef(false);
   const openFilesPersistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  /**
+   * SQL 控制台脚本的落盘定时器，键是**脚本文件路径**（不是标签路径）。
+   *
+   * 单独一个 Map：虚拟标签本来完全不写盘，这一条落盘是「控制台脚本跟项目走」这个需求的实现，
+   * 混进 autoSaveTimers 会让那条路径的语义（草稿/虚拟标签跳过）变得自相矛盾。
+   */
+  const scriptTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   // Paths currently being discarded: within suppression window, Monaco's onChange
   // will NOT trigger auto-save or mark dirty, preventing discarded files from being saved back.
   const suppressAutoSaveUntilRef = useRef<Map<string, number>>(new Map());
@@ -280,6 +313,11 @@ export function App() {
   } | null>(null);
   const terminalNonce = useRef(0);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('explorer');
+  useEffect(() => {
+    if ((leftPanel as string) === 'agent-tasks') {
+      setLeftPanel('explorer');
+    }
+  }, [leftPanel]);
   const [scmDiff, setScmDiff] = useState<PendingDiff | null>(null);
   // 严格绑定文件路径的一次性行号跳转目标，跳转完毕立即消费清空，彻底杜绝跨文件行号粘连
   const [revealTarget, setRevealTarget] = useState<{
@@ -354,25 +392,78 @@ export function App() {
     [],
   );
 
+  /**
+   * 项目里保存的查询脚本清单（数据库面板底部那份）。
+   *
+   * 数据源是**项目配置目录的磁盘内容**，不是打开的标签：用户关掉标签后脚本并没消失，
+   * 能在列表里再找到它才是这个清单的价值。因此凡是「脚本文件可能变了」的地方都要刷新：
+   * 新建控制台、脚本首次落盘、删除脚本、切换工作区。
+   *
+   * 定义在很靠前的位置（紧跟 showToast）：切工作区那条 effect 要用它，
+   * 而 effect 在文件里出现得比开控制台的逻辑早，const 放在后面会撞上暂时性死区。
+   */
+  const [projectScripts, setProjectScripts] = useState<DbProjectScriptEntry[]>([]);
+
+  const refreshProjectScripts = useCallback(async () => {
+    if (!window.ide?.listProjectConfigDir) return;
+    try {
+      const connDirs = await window.ide.listProjectConfigDir(QUERIES_DIR);
+      const found: DbProjectScriptEntry[] = [];
+      for (const connDir of connDirs) {
+        if (!connDir.isDirectory) continue;
+        const scopes = await window.ide.listProjectConfigDir(`${QUERIES_DIR}/${connDir.name}`);
+        for (const scope of scopes) {
+          if (!scope.isDirectory) continue;
+          const files = await window.ide.listProjectConfigDir(
+            `${QUERIES_DIR}/${connDir.name}/${scope.name}`,
+          );
+          for (const f of files) {
+            if (f.isDirectory || !isQueryScriptName(f.name)) continue;
+            found.push({
+              scriptPath: `${QUERIES_DIR}/${connDir.name}/${scope.name}/${f.name}`,
+              fileName: f.name,
+              title: scriptTitleFromFileName(f.name),
+              connectionId: connDir.name,
+              scope: scope.name,
+            });
+          }
+        }
+      }
+      // 按连接、再按文件名排：目录的 readdir 顺序不可依赖，而列表每次刷新都换序会让人眼花
+      found.sort(
+        (a, b) =>
+          a.connectionId.localeCompare(b.connectionId) || a.fileName.localeCompare(b.fileName),
+      );
+      setProjectScripts(found);
+    } catch {
+      // 读不到就是空列表 —— 面板底部少一块，不该影响整个面板
+      setProjectScripts([]);
+    }
+  }, []);
+
   // 判断某个路径是否处于“放弃修改抑制期”（防止 Monaco onChange 触发 auto-save 误将已放弃的内容又写回磁盘）
   const isPathSuppressed = useCallback((path: string): boolean => {
     if (!path) return false;
-    const norm = path.replace(/\\/g, '/').replace(/^\/+/, '');
     const now = Date.now();
     for (const [suppressedPath, until] of suppressAutoSaveUntilRef.current.entries()) {
       if (now >= until) continue;
-      const normSuppressed = suppressedPath.replace(/\\/g, '/').replace(/^\/+/, '');
-      if (
-        norm === normSuppressed ||
-        norm.endsWith('/' + normSuppressed) ||
-        normSuppressed.endsWith('/' + norm)
-      ) {
+      // 虚拟标签（db:// / git-head:）只认精确相等：否则表名恰好与某个被放弃文件的裸名相同时，
+      // 会把「刚放弃修改」的抑制态误加到 db 标签上，静默吞掉它的脏标记
+      if (isSameFileByPath(path, suppressedPath)) {
         return true;
       }
     }
     return false;
   }, []);
 
+  /**
+   * 放弃更改（还原到 HEAD）。
+   *
+   * **这是全应用放弃修改的唯一收口点**：Git 面板的行内按钮与右键菜单、文件树的「放弃更改」、
+   * 编辑器的 diff 工具条与单块放弃、命令面板的 Discard All，最终都落到这里。
+   * 未提交的修改没有第二份，放弃了就找不回来 —— 因此确认放在这一层，
+   * 而不是散在各个入口（散着放必然会漏，早前「放弃单块更改」就是这么漏掉的）。
+   */
   const handleDiscardPath = async (pathOrPaths: string | string[]) => {
     const isAll =
       !pathOrPaths ||
@@ -385,6 +476,35 @@ export function App() {
     const pathsToDiscard = (Array.isArray(pathOrPaths) ? pathOrPaths : [pathOrPaths]).filter(
       Boolean,
     );
+
+    const discardDetails = isAll
+      ? [{ label: '范围', value: '工作区中全部未提交的修改' }]
+      : [
+          { label: '范围', value: `${pathsToDiscard.length} 个文件` },
+          ...pathsToDiscard.slice(0, 8).map((p, i) => ({ label: i === 0 ? '文件' : '', value: p })),
+          ...(pathsToDiscard.length > 8
+            ? [{ label: '', value: `…另有 ${pathsToDiscard.length - 8} 个文件` }]
+            : []),
+        ];
+
+    const discardOk = await confirm.confirm({
+      title: isAll
+        ? '放弃全部未提交修改'
+        : pathsToDiscard.length > 1
+          ? `放弃 ${pathsToDiscard.length} 个文件的修改`
+          : '放弃更改',
+      content: buildSqlConfirmMarkdown({
+        intro: isAll
+          ? '工作区中**所有未提交的修改**都会被还原到 HEAD，且**无法撤销**。'
+          : '该文件未提交的修改会被还原到 HEAD，且**无法撤销**。',
+        statements: [],
+        notes: ['已暂存（git add）但尚未提交的改动也会一并还原。'],
+      }),
+      details: discardDetails,
+      tone: 'danger',
+      confirmLabel: '确认放弃',
+    });
+    if (discardOk === null) return;
 
     // 1. 立即锁定抑制窗口（3000ms），阻止任何 Monaco onChange 重绘误触发写盘
     const suppressUntilTime = Date.now() + 3000;
@@ -408,8 +528,7 @@ export function App() {
       for (const dp of pathsToDiscard) {
         const normDp = dp.replace(/\\/g, '/').replace(/^\/+/, '');
         for (const [k, timer] of autoSaveTimers.current.entries()) {
-          const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
-          if (normK === normDp || normK.endsWith('/' + normDp) || normDp.endsWith('/' + normK)) {
+          if (isSameFileByPath(k, normDp)) {
             clearTimeout(timer);
             autoSaveTimers.current.delete(k);
           }
@@ -423,10 +542,7 @@ export function App() {
       if (isAll) return { ...prev, entries: [] };
       const cleanTargets = pathsToDiscard.map((p) => p.replace(/\\/g, '/').replace(/^\/+/, ''));
       const remaining = prev.entries.filter((e) => {
-        const ep = e.path.replace(/\\/g, '/').replace(/^\/+/, '');
-        return !cleanTargets.some(
-          (tp) => ep === tp || ep.endsWith('/' + tp) || tp.endsWith('/' + ep),
-        );
+        return !cleanTargets.some((tp) => isSameFileByPath(e.path, tp));
       });
       return { ...prev, entries: remaining };
     });
@@ -442,12 +558,11 @@ export function App() {
 
     // 5. 重新读取磁盘真实内容更新 affectedTabs
     const affectedTabs = tabsRef.current.filter((tab) => {
+      // 虚拟标签（草稿 / db:// / git-head:）没有磁盘内容可回读：
+      // 一旦被卷进这里，下面的 readFile 必然失败，标签页会被静默关掉
+      if (isVirtualPath(tab.path)) return false;
       if (isAll) return true;
-      const normTp = tab.path.replace(/\\/g, '/').replace(/^\/+/, '');
-      return pathsToDiscard.some((dp) => {
-        const normDp = dp.replace(/\\/g, '/').replace(/^\/+/, '');
-        return normTp === normDp || normTp.endsWith('/' + normDp) || normDp.endsWith('/' + normTp);
-      });
+      return pathsToDiscard.some((dp) => isSameFileByPath(tab.path, dp));
     });
 
     for (const tab of affectedTabs) {
@@ -570,6 +685,8 @@ export function App() {
 
     for (const tab of currentTabs) {
       if (tab.dirty) continue;
+      // 虚拟标签（草稿 / db:// / git-head:）没有磁盘内容可回读，跳过以免无谓的读失败
+      if (isVirtualPath(tab.path)) continue;
 
       if (tab.language === 'image' || tab.previewUrl || isImagePath(tab.path)) {
         try {
@@ -741,6 +858,20 @@ export function App() {
           tech = '通用';
         }
 
+        let gitBranch: string | undefined = undefined;
+        let uncommittedCount: number | undefined = undefined;
+        if (workspaceInfo.kind !== 'ssh' && window.ide?.gitStatus) {
+          try {
+            const st = await window.ide.gitStatus();
+            if (st && st.ok) {
+              gitBranch = st.branch || undefined;
+              uncommittedCount = st.entries?.length || 0;
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         setRecentWorkspaces((prev) => {
           const filtered = prev.filter((item) => item.path !== path);
           const newItem: RecentWorkspaceItem = {
@@ -749,6 +880,8 @@ export function App() {
             kind: workspaceInfo.kind,
             sshServer: sshServer || undefined,
             techStack: tech || undefined,
+            gitBranch,
+            uncommittedCount,
             lastOpenedAt: Date.now(),
           };
           const updated = [newItem, ...filtered].slice(0, 20);
@@ -765,10 +898,21 @@ export function App() {
     if (!root) return;
     const curPath = activePathRef.current;
     const curScroll = curPath ? fileCursorPositionsRef.current[curPath] : undefined;
+    // 开着的 SQL 控制台（虚拟标签）单独存一份：它的内容不在磁盘文件里，
+    // 而是各自挂在自己的脚本文件上，还原时要先知道「哪一页连着哪个连接 / 哪个库」
+    const virtualTabs: VirtualTabState[] = tabsRef.current
+      .filter((t) => t.path.startsWith('db://console/') && t.virtual?.scriptPath)
+      .map((t) => ({
+        path: t.path,
+        language: t.language,
+        title: t.title,
+        scriptPath: t.virtual?.scriptPath,
+        scriptTarget: t.virtual?.scriptTarget,
+      }));
     saveWorkspaceOpenFiles(
       root,
-      tabsRef.current.map((t) => t.path).filter((p) => !isUntitledPath(p)),
-      activePathRef.current && !isUntitledPath(activePathRef.current)
+      tabsRef.current.map((t) => t.path).filter((p) => !isVirtualPath(p)),
+      activePathRef.current && !isVirtualPath(activePathRef.current)
         ? activePathRef.current
         : null,
       fileCursorPositionsRef.current,
@@ -776,6 +920,7 @@ export function App() {
       cursorColRef.current,
       curScroll?.scrollTop,
       curScroll?.scrollLeft,
+      virtualTabs,
     );
   }, []);
 
@@ -788,7 +933,8 @@ export function App() {
         return;
       }
       const saved = loadWorkspaceOpenFiles(root);
-      if (!saved?.paths.length) {
+      // 只有虚拟标签（SQL 控制台）也算「有东西要还原」，不能因为 paths 为空就整页清空
+      if (!saved || (saved.paths.length === 0 && (saved.virtualTabs?.length ?? 0) === 0)) {
         setTabs([]);
         setActivePath(null);
         return;
@@ -810,6 +956,8 @@ export function App() {
       const restored: OpenTab[] = [];
       for (const p of saved.paths) {
         try {
+          // 防御性跳过虚拟路径：db:// / untitled: 不对应磁盘文件，pathExists 必然失败
+          if (isVirtualPath(p)) continue;
           const exists = await window.ide.pathExists(p);
           if (!exists) continue;
           if (isImagePath(p)) {
@@ -847,7 +995,41 @@ export function App() {
             ? restored[restored.length - 1].path
             : null;
       setActivePath(nextActive);
-      activePathRef.current = nextActive;
+
+      // 还原 SQL 控制台：脚本内容在读回来之前就是标签的内容（与保存时刻的最后一次编辑一致），
+      // 结果集不还原 —— 它是那一刻数据库的快照，重新连上再跑一次才是可信的
+      const consoleTabs: OpenTab[] = [];
+      for (const v of saved.virtualTabs ?? []) {
+        try {
+          if (!v.scriptPath) continue;
+          // 脚本存在用户主目录的项目配置里，不是工作区文件：走配置通道读，
+          // 否则 SSH 工作区会去远端找这个文件（远端根本没有）
+          const content = await window.ide.readProjectConfigFile(v.scriptPath);
+          if (content === null) continue;
+          const fileName = scriptFileNameFromTabPath(v.path);
+          consoleTabs.push({
+            path: v.path,
+            content,
+            language: v.language || 'db-console',
+            dirty: false,
+            title: v.title || scriptTitleFromFileName(fileName),
+            readOnly: false,
+            virtual: { scriptPath: v.scriptPath, scriptTarget: v.scriptTarget },
+          });
+        } catch {
+          // 脚本文件被删掉了：这一页就没有内容可还原，跳过（不拿空脚本假装它还在）
+        }
+      }
+      if (consoleTabs.length > 0) {
+        setTabs((prev) => [...prev, ...consoleTabs]);
+        if (!nextActive) {
+          const lastConsole = consoleTabs[consoleTabs.length - 1].path;
+          setActivePath(lastConsole);
+          activePathRef.current = lastConsole;
+        }
+      } else {
+        activePathRef.current = nextActive;
+      }
     } finally {
       // Defer so the restored tabs don't immediately overwrite storage with empty.
       window.setTimeout(() => {
@@ -1096,6 +1278,7 @@ export function App() {
     [requestWorkspaceOpen],
   );
 
+  /** 从最近打开里移除一条：随时可以重新打开同一个目录加回来，不必打扰用户确认 */
   const handleRemoveRecentWorkspace = useCallback((path: string) => {
     setRecentWorkspaces((prev) => {
       const updated = prev.filter((item) => item.path !== path);
@@ -1105,12 +1288,36 @@ export function App() {
     clearWorkspaceOpenFiles(path);
   }, []);
 
-  const handleClearRecentWorkspaces = useCallback(() => {
+  /**
+   * 清空全部最近打开记录。
+   *
+   * 一次抹掉整份列表，重建只能靠一个个目录重新打开 —— 有确认的价值。
+   * （单条移除见上：那条随时能加回来，不值得拦一道。）
+   */
+  const handleClearRecentWorkspaces = useCallback(async () => {
+    const count = recentWorkspaces.length;
+    if (count > 0) {
+      const ok = await confirm.confirm({
+        title: '清空最近打开记录',
+        content: buildSqlConfirmMarkdown({
+          intro: '全部最近打开记录都会被清除，且**无法撤销**。',
+          statements: [],
+          notes: [
+            '只清空这份列表，**磁盘上的项目文件不受影响**；需要时重新打开目录即可。',
+            '各项目记录的文件树展开状态与已打开文件列表会一并清除。',
+          ],
+        }),
+        details: [{ label: '数量', value: `${count} 条记录` }],
+        tone: 'danger',
+        confirmLabel: '确认清空',
+      });
+      if (ok === null) return;
+    }
     setRecentWorkspaces([]);
     try {
       localStorage.removeItem(RECENT_WORKSPACES_KEY);
     } catch {}
-  }, []);
+  }, [confirm, recentWorkspaces]);
 
   const applySettings = useCallback((s: AppSettings) => {
     setPermissionMode(s.permissionMode);
@@ -1191,6 +1398,7 @@ export function App() {
         setWorkspace(info.root);
         if (info.root) {
           void restoreOpenFilesForRoot(info.root);
+          void refreshProjectScripts();
         }
       });
     }
@@ -1206,8 +1414,10 @@ export function App() {
       // Collapse terminal panel — user opens it manually when needed
       setLayout((prev) => ({ ...prev, bottomPanelExpanded: false }));
       void restoreOpenFilesForRoot(info.root);
+      // 项目脚本清单是按工作区哈希存的（配置目录不同），换项目必须重读
+      void refreshProjectScripts();
     });
-  }, [applySettings, persistOpenFilesForRoot, restoreOpenFilesForRoot, openTargetInCurrentWindow, resetAiChatSession]);
+  }, [applySettings, persistOpenFilesForRoot, restoreOpenFilesForRoot, openTargetInCurrentWindow, resetAiChatSession, refreshProjectScripts]);
 
   // Remember open tabs for the current project (debounced).
   useEffect(() => {
@@ -1217,15 +1427,25 @@ export function App() {
       if (skipOpenFilesPersistRef.current) return;
       if (workspaceRef.current !== workspace) return;
       const curScroll = activePath ? fileCursorPositionsRef.current[activePath] : undefined;
+      const virtualTabs: VirtualTabState[] = tabs
+        .filter((t) => t.path.startsWith('db://console/') && t.virtual?.scriptPath)
+        .map((t) => ({
+          path: t.path,
+          language: t.language,
+          title: t.title,
+          scriptPath: t.virtual?.scriptPath,
+          scriptTarget: t.virtual?.scriptTarget,
+        }));
       saveWorkspaceOpenFiles(
         workspace,
-        tabs.map((t) => t.path).filter((p) => !isUntitledPath(p)),
-        activePath && !isUntitledPath(activePath) ? activePath : null,
+        tabs.map((t) => t.path).filter((p) => !isVirtualPath(p)),
+        activePath && !isVirtualPath(activePath) ? activePath : null,
         fileCursorPositionsRef.current,
         cursorLineRef.current,
         cursorColRef.current,
         curScroll?.scrollTop,
         curScroll?.scrollLeft,
+        virtualTabs,
       );
     }, 250);
     return () => {
@@ -1542,7 +1762,7 @@ export function App() {
           if (!curTabs || curTabs.length === 0) return;
           const toClose: string[] = [];
           for (const t of curTabs) {
-            if (isUntitledPath(t.path)) continue;
+            if (isVirtualPath(t.path)) continue;
             try {
               const exists = await window.ide.pathExists(t.path);
               if (!exists) {
@@ -1791,7 +2011,10 @@ export function App() {
     const normPath = path;
     const existingTab = tabsRef.current.find((t) => {
       const tp = t.path.replace(/\\/g, '/');
-      return tp === normPath || tp.endsWith('/' + normPath) || normPath.endsWith('/' + tp);
+      if (tp === normPath) return true;
+      // 虚拟路径与磁盘文件互不匹配：db:// 标签只能被同名 db:// 路径命中
+      if (requiresExactPathMatch(tp) || requiresExactPathMatch(normPath)) return false;
+      return tp.endsWith('/' + normPath) || normPath.endsWith('/' + tp);
     });
     if (existingTab) {
       setActivePath(existingTab.path);
@@ -2025,6 +2248,11 @@ export function App() {
       if (isUntitledPath(tabToSave.path)) {
         return await saveUntitledAs(tabToSave);
       }
+      // 数据库内置视图不是磁盘文件，只能存在于标签页状态里
+      if (isDbPath(tabToSave.path)) {
+        setTabs((prev) => prev.map((t) => (t.path === tabToSave.path ? { ...t, dirty: false } : t)));
+        return true;
+      }
       await window.ide.writeFile(tabToSave.path, tabToSave.content);
       setTabs((prev) => prev.map((t) => (t.path === tabToSave.path ? { ...t, dirty: false } : t)));
       void window.ide.gitStatus().then((res) => {
@@ -2112,6 +2340,10 @@ export function App() {
       await saveUntitledAs(tab);
       return;
     }
+    if (isDbPath(tab.path)) {
+      // 数据库视图没有「另存为」语义
+      return;
+    }
     const defaultName = tab.path.split(/[/\\]/).pop() || 'file.txt';
     const ws = workspaceRef.current;
     let defaultPath = defaultName;
@@ -2162,7 +2394,7 @@ export function App() {
     for (const tab of dirtyTabs) {
       if (isUntitledPath(tab.path)) {
         await saveUntitledAs(tab);
-      } else {
+      } else if (!isDbPath(tab.path)) {
         await window.ide.writeFile(tab.path, tab.content);
       }
     }
@@ -2175,9 +2407,16 @@ export function App() {
     });
   }, [saveUntitledAs]);
 
+  /**
+   * 从磁盘重读当前文件，丢弃编辑器里未保存的内容（命令面板 `revertFile`）。
+   *
+   * 这是唯一一处「没有二次确认也过得去」的破坏性操作：它丢的只是**内存里**的未保存编辑，
+   * 磁盘上的文件一个字节没动，撤销回去也只是再改一遍，代价可控。
+   * 真正会丢数据的「放弃更改（还原到 HEAD）」在 `handleDiscardPath` 里，那一处是强确认的。
+   */
   const revertActiveFile = useCallback(async (): Promise<void> => {
     const path = activePathRef.current;
-    if (!path || isUntitledPath(path)) return;
+    if (!path || isUntitledPath(path) || isDbPath(path)) return;
     try {
       const diskContent = await window.ide.readFile(path);
       setTabs((prev) =>
@@ -2188,7 +2427,37 @@ export function App() {
     }
   }, []);
 
+  /**
+   * 关闭工作区（命令面板 `closeWorkspace`）。
+   *
+   * 关闭前先拦一道：**有未保存的文件就问一声**。当前实现直接清空 tabs，
+   * 未保存的编辑会无声消失（`persistOpenFilesForRoot` 只记路径，不记内容）。
+   * 这是先前就存在的丢数据缺口，与本次「所有删除都要确认」的诉求同源，一并补上。
+   */
   const closeCurrentWorkspace = useCallback(async (): Promise<void> => {
+    const dirtyTabs = tabsRef.current.filter((t) => t.dirty && !isVirtualPath(t.path));
+    if (dirtyTabs.length > 0) {
+      const ok = await confirm.confirm({
+        title: '关闭工作区',
+        content: buildSqlConfirmMarkdown({
+          intro: '关闭后**未保存的修改会丢失**，且**无法撤销**。',
+          statements: [],
+          notes: ['已保存到磁盘的内容不受影响，重新打开工作区即可继续。'],
+        }),
+        details: [
+          { label: '未保存', value: `${dirtyTabs.length} 个文件` },
+          ...dirtyTabs
+            .slice(0, 8)
+            .map((t, i) => ({ label: i === 0 ? '文件' : '', value: t.path })),
+          ...(dirtyTabs.length > 8
+            ? [{ label: '', value: `…另有 ${dirtyTabs.length - 8} 个文件` }]
+            : []),
+        ],
+        tone: 'danger',
+        confirmLabel: '仍然关闭',
+      });
+      if (ok === null) return;
+    }
     if (workspaceRef.current) {
       persistOpenFilesForRoot(workspaceRef.current);
     }
@@ -2202,7 +2471,7 @@ export function App() {
     setActivePath(null);
     resetAiChatSession();
     setTerminalKey((k) => k + 1);
-  }, [workspaceInfo.kind, persistOpenFilesForRoot, resetAiChatSession]);
+  }, [workspaceInfo.kind, persistOpenFilesForRoot, resetAiChatSession, confirm]);
 
   // ── 未保存文件关闭确认弹窗逻辑 ──
   const [closeConfirmTab, setCloseConfirmTab] = useState<OpenTab | null>(null);
@@ -2329,8 +2598,352 @@ export function App() {
     });
   }, []);
 
+  /**
+   * 新建 / 复用一个 db:// 虚拟标签页（数据视图 / DDL / SQL 控制台），内容只存在于标签页状态中。
+   * 虚拟标签与磁盘文件是两套独立的东西：绝不与真实文件标签合并，也不写盘。
+   */
+  const openVirtualTab = useCallback(
+    (
+      path: string,
+      content: string,
+      title: string,
+      language: string = 'db-console',
+      /** false 时保留标签页里已有的内容（切换标签页回流场景，避免覆盖用户改动） */
+      replaceContent: boolean = true,
+      /** 是否只读：DDL / 数据视图为 true（默认），SQL 控制台传 false 才能编辑 */
+      readOnly: boolean = true,
+      /** 虚拟标签的附属数据（SQL 控制台的脚本落盘路径与会话目标） */
+      meta?: {
+        scriptPath?: string;
+        scriptTarget?: { connectionId: string; schemaName?: string };
+        dbStructure?: { connectionId: string; schemaName?: string; tableName: string };
+      },
+    ) => {
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.path === path);
+        if (idx >= 0) {
+          if (!replaceContent) {
+            // 已存在：切前台即可（但路径里仍可能带旧标题 / 旧的会话参数，顺手对齐）
+            const same = { ...prev[idx], title, virtual: meta ?? prev[idx].virtual };
+            if (
+              prev[idx].title === same.title &&
+              prev[idx].virtual === same.virtual
+            ) {
+              return prev;
+            }
+            const copy = [...prev];
+            copy[idx] = same;
+            return copy;
+          }
+          const copy = [...prev];
+          // 内容在查看期间可能被用户改过（SQL 控制台），仅在明确要求替换时覆盖，且不改变 dirty
+          copy[idx] = { ...copy[idx], content, title, language, readOnly, virtual: meta ?? copy[idx].virtual };
+          return copy;
+        }
+        return [
+          ...prev,
+          { path, content, language, dirty: false, title, readOnly, virtual: meta },
+        ];
+      });
+      setActivePath(path);
+      activePathRef.current = path;
+    },
+    [],
+  );
+
+  /** 当前打开着的脚本相对路径：面板底部据此标出「已打开」 */
+  const openScriptPaths = useMemo(
+    () =>
+      tabs
+        .filter((t) => t.path.startsWith('db://console/') && t.virtual?.scriptPath)
+        .map((t) => t.virtual!.scriptPath as string),
+    [tabs],
+  );
+
+  /** 点开项目里的一个脚本：已开着就切前台，否则读回来新建一个控制台标签 */
+  const openProjectScript = useCallback(
+    async (script: DbProjectScriptEntry) => {
+      const existing = tabsRef.current.find(
+        (t) => t.virtual?.scriptPath === script.scriptPath,
+      );
+      if (existing) {
+        setActivePath(existing.path);
+        activePathRef.current = existing.path;
+        return;
+      }
+      let content = '';
+      try {
+        content = (await window.ide.readProjectConfigFile(script.scriptPath)) ?? '';
+      } catch (err: any) {
+        showToast('打开脚本失败', err?.message || String(err), 'error');
+        return;
+      }
+      // 目标连接不记得是谁了：脚本路径里的连接段就是连接 id，直接用它当会话目标。
+      // （面板上不会显示连接名——`connectionLabel` 要连接列表才填得出来，本轮留空。）
+      openVirtualTab(
+        consoleTabPath(script.connectionId, script.fileName),
+        content,
+        script.title,
+        'db-console',
+        true,
+        false,
+        { scriptPath: script.scriptPath, scriptTarget: { connectionId: script.connectionId } },
+      );
+    },
+    [openVirtualTab, showToast],
+  );
+
+  /** 删除一个脚本文件（不可撤销，所以先确认） */
+  const deleteProjectScript = useCallback(
+    async (script: DbProjectScriptEntry) => {
+      const ok = await confirm.confirm({
+        title: '删除查询脚本',
+        content: buildSqlConfirmMarkdown({
+          intro: '这个脚本文件会从磁盘上删除，且**无法撤销**。',
+          statements: [],
+        }),
+        details: [
+          { label: '名称', value: script.title },
+          { label: '路径', value: script.scriptPath },
+        ],
+        tone: 'danger',
+        confirmLabel: '确认删除',
+      });
+      if (ok === null) return;
+      try {
+        await window.ide.removeProjectConfigFile(script.scriptPath);
+        // 标签还开着的话一并收掉：否则它继续显示着一段已经不存在的内容，
+        // 之后的自动保存会把它又写回去，删除等于没删
+        const tab = tabsRef.current.find((t) => t.virtual?.scriptPath === script.scriptPath);
+        if (tab) closeTabDirect(tab.path);
+        await refreshProjectScripts();
+        showToast('已删除脚本', script.fileName, 'success');
+      } catch (err: any) {
+        showToast('删除脚本失败', err?.message || String(err), 'error');
+      }
+    },
+    [closeTabDirect, refreshProjectScripts, showToast],
+  );
+
+  /**
+   * 打开一个 SQL 控制台。
+   *
+   * 标签路径只有两段：**连接 + 脚本文件名**，不含库 ——
+   * 库是「这条 SQL 打到哪里去」的执行目标，换它不该把用户手里的脚本挪个地方
+   * （早前按「连接 × 库」另开标签，同一个脚本会分裂成两页各自演化）。
+   *
+   * 脚本一律落进连接的**项目段** `queries/<连接>/_project/`（见 `projectScriptPathFor`）：
+   * 脚本属于项目，不属于某个库。早前落到 `queries/<连接>/<库>/` 时，
+   * 「同一个脚本换到另一个库跑」会表现为文件搬家 —— 而这只是换个执行目标而已。
+   *
+   * 文件名在「该连接下已知的脚本名」里取第一个空位，于是新开的查询天然不重名，
+   * 落盘后也各占一个文件。脚本**先落盘再开标签**：这样标签一出现就已有归属，
+   * 用户随手关掉窗口也不会丢。
+   */
+  const openSqlConsole = useCallback(
+    async (
+      connId: string,
+      schemaName: string | undefined,
+      initialSql: string,
+      title: string,
+    ) => {
+      const taken = new Set<string>();
+      // 已在标签里的先占位，免得「磁盘上没有、但正开着」的名字被再次选中
+      for (const t of tabsRef.current) {
+        if (t.path.startsWith('db://console/')) taken.add(scriptFileNameFromTabPath(t.path));
+      }
+      // 再扫一遍该连接下**所有已落盘的脚本名**：只靠标签会漏掉「上次关掉但文件还在」的那些，
+      // 选出同名文件就会把旧脚本覆盖掉。新老两种布局（`_project` 段与按库分段）都要扫到，
+      // 否则老脚本的名字会被新脚本撞上。
+      try {
+        const connDirs = await window.ide.listProjectConfigDir(QUERIES_DIR);
+        const connSeg = scriptDirFor(connId).split('/')[1];
+        if (connDirs.some((d) => d.isDirectory && d.name === connSeg)) {
+          const scopes = await window.ide.listProjectConfigDir(`${QUERIES_DIR}/${connSeg}`);
+          for (const scope of scopes) {
+            if (!scope.isDirectory) continue;
+            const files = await window.ide.listProjectConfigDir(
+              `${QUERIES_DIR}/${connSeg}/${scope.name}`,
+            );
+            for (const f of files) {
+              if (!f.isDirectory && isQueryScriptName(f.name)) taken.add(f.name);
+            }
+          }
+        }
+      } catch {
+        // 目录不存在是常态（该连接下还没建过脚本），按空目录处理
+      }
+
+      const fileName = nextScriptFileName(Array.from(taken));
+      const tabPath = consoleTabPath(connId, fileName);
+      const scriptPath = projectScriptPathFor(connId, fileName);
+
+      // 落盘是「尽力而为」：配置目录写不进去时，控制台照样能开、能跑 SQL，
+      // 只是这次的内容不会留下 —— 为此把整页操作挡下来是本末倒置。
+      void window.ide
+        .writeProjectConfigFile(scriptPath, initialSql)
+        .then(() => refreshProjectScripts())
+        .catch((err) => console.warn('[db] 保存查询脚本失败:', err));
+
+      openVirtualTab(
+        tabPath,
+        initialSql,
+        title || scriptTitleFromFileName(fileName),
+        'db-console',
+        true,
+        false,
+        { scriptPath, scriptTarget: { connectionId: connId, schemaName } },
+      );
+    },
+    [openVirtualTab, refreshProjectScripts],
+  );
+
+  /**
+   * 控制台里改了连接 / 库。
+   *
+   * **换库：只更新会话目标** —— 脚本文件、标签路径全都不动。「这条 SQL 打到哪里去」
+   * 是执行目标，不是脚本的归属；早前换库会把文件从 `queries/<连接>/<旧库>/` 搬到
+   * `queries/<连接>/<新库>/`，同一个脚本在磁盘上搬来搬去，而它本身一个字都没改。
+   * 新脚本现在一律落在连接的 `_project` 段下，这个「不搬」的语义才是自洽的。
+   *
+   * 换连接：脚本确实得挪（新旧连接各有一份文件才找得回），落到新连接的**同一段**下 ——
+   * 老脚本留在 `queries/<旧连接>/<库>/`，就搬进 `queries/<新连接>/<库>/`，
+   * 而不是硬塞进 `_project`：那会让老脚本莫名其妙地换个目录，也可能与已有文件撞名。
+   *
+   * 顺序上是「先建新标签、再关旧的」：反过来的话，中间那一帧 activePath 指向一个不存在的标签，
+   * 控制台会被卸载，整棵状态白重建一次。
+   */
+  const retargetConsole = useCallback(
+    (
+      oldPath: string,
+      target: { connectionId: string; schemaName?: string },
+      kind: 'connection' | 'schema',
+    ) => {
+      const tab = tabsRef.current.find((t) => t.path === oldPath);
+      if (!tab) return;
+
+      if (kind === 'schema') {
+        const scriptPath = tab.virtual?.scriptPath;
+        const nextVirtual = {
+          scriptPath,
+          scriptTarget: { connectionId: target.connectionId, schemaName: target.schemaName },
+        };
+        setTabs((prev) =>
+          prev.map((t) => (t.path === oldPath ? { ...t, virtual: nextVirtual } : t)),
+        );
+        return;
+      }
+
+      // 换连接：把脚本搬到新连接的目录下，文件名与所属段都保持不变（用户认的是这个名字）
+      const fileName = scriptFileNameFromTabPath(oldPath);
+      const oldScriptPath = tab.virtual?.scriptPath;
+      const parsed = oldScriptPath ? parseScriptRelPath(oldScriptPath) : null;
+      const nextScriptPath = scriptPathFor(
+        target.connectionId,
+        parsed?.scope ?? PROJECT_SCRIPT_SCOPE,
+        fileName,
+      );
+      const nextPath = consoleTabPath(target.connectionId, fileName);
+      const nextVirtual = {
+        scriptPath: nextScriptPath,
+        scriptTarget: { connectionId: target.connectionId, schemaName: target.schemaName },
+      };
+
+      if (nextScriptPath !== oldScriptPath) {
+        void window.ide
+          .writeProjectConfigFile(nextScriptPath, tab.content)
+          .then(() =>
+            oldScriptPath ? window.ide.removeProjectConfigFile(oldScriptPath) : undefined,
+          )
+          .then(() => refreshProjectScripts())
+          .catch((err: any) => console.warn('[db] 迁移查询脚本失败:', err));
+      }
+
+      if (nextPath === oldPath) {
+        setTabs((prev) => prev.map((t) => (t.path === oldPath ? { ...t, virtual: nextVirtual } : t)));
+        return;
+      }
+      openVirtualTab(nextPath, tab.content, tab.title ?? scriptTitleFromFileName(fileName), 'db-console', true, false, nextVirtual);
+      closeTabDirect(oldPath);
+    },
+    [closeTabDirect, openVirtualTab, refreshProjectScripts],
+  );
+
+  /**
+   * 表结构视图里把表改名了（`db://structure/*`）。
+   *
+   * 表名不只是一个显示文本，它是**标签路径、标签标题、虚拟标签里的表身份**三处的组成部分，
+   * 因此改名是一次「换标签」而不是「刷新内容」：
+   *
+   * 1. 新路径已经在标签里 → 只关旧的，切到那一个（两张表页各自加载自己的结构）；
+   * 2. 否则**复用同一个标签对象**换掉 path / title / virtual，而不是「先关旧再开新」——
+   *    旧路径上还挂着一个 `<DbStructureView>`，先关会先触发一次「按旧表名取数」，
+   *    必然报「表不存在」。就地改 key 让 React 直接把它换成新表的那一个。
+   *
+   * 树上的表清单也顺手刷新一次：否则左侧还挂着旧表名，点它又是一次「表不存在」。
+   */
+  const handleTableRenamed = useCallback(
+    (oldPath: string, newTableName: string) => {
+      const tab = tabsRef.current.find((t) => t.path === oldPath);
+      const meta = tab?.virtual?.dbStructure;
+      if (!tab || !meta) return;
+
+      const schemaSeg = meta.schemaName ? `${encodeURIComponent(meta.schemaName)}/` : '';
+      const nextPath = `db://structure/${meta.connectionId}/${schemaSeg}${encodeURIComponent(newTableName)}`;
+      const nextVirtual = {
+        dbStructure: {
+          connectionId: meta.connectionId,
+          schemaName: meta.schemaName,
+          tableName: newTableName,
+        },
+      };
+
+      if (nextPath !== oldPath) {
+        const existing = tabsRef.current.find((t) => t.path === nextPath);
+        if (existing) {
+          // 目标表本来就开着：不要造出第二个标签，收掉旧的、切过去
+          setTabs((prev) =>
+            prev
+              .filter((t) => t.path !== oldPath)
+              .map((t) => (t.path === nextPath ? { ...t, virtual: nextVirtual } : t)),
+          );
+          setActivePath(nextPath);
+          activePathRef.current = nextPath;
+        } else {
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.path === oldPath
+                ? { ...t, path: nextPath, title: `📜 ${newTableName}`, virtual: nextVirtual }
+                : t,
+            ),
+          );
+          setActivePath(nextPath);
+          activePathRef.current = nextPath;
+        }
+      }
+
+      // 树上的旧名字要立刻消失，否则用户点它会去查一张已经不存在的表
+      window.dispatchEvent(new CustomEvent('echoly:refreshDbTree'));
+    },
+    [],
+  );
+
+  /**
+   * 左侧树下发给表数据视图的筛选 / 排序请求。
+   *
+   * 「按此列排序」是在**树**上点的，要生效得让**编辑区**里那个数据视图重新查询 ——
+   * 两个组件之间没有直接通路。这里用一个带 nonce 的请求对象中转：nonce 变化即「重新套用一次」，
+   * 否则同一张表连续下发两次不同排序时，后一次会因为值相同而被 React 判为没变化。
+   */
+  const [dbViewRequest, setDbViewRequest] = useState<{
+    path: string;
+    view: DbTableViewState;
+    nonce: number;
+  } | null>(null);
+  const dbViewNonceRef = useRef(0);
+
   const savePath = useCallback(async (path: string, content: string): Promise<void> => {
-    if (isUntitledPath(path)) return;
+    if (isUntitledPath(path) || isDbPath(path)) return;
     await window.ide.writeFile(path, content);
     setTabs((prev) =>
       prev.map((t) => (t.path === path && t.content === content ? { ...t, dirty: false } : t)),
@@ -2352,22 +2965,48 @@ export function App() {
   }, []);
 
   function onChangeContent(path: string, content: string, markDirty = true): void {
-    // 处于抑制期的路径（刚执行过放弃修改），严格拦截 Monaco 重绘产生的 onChange，保证 dirty=false 且绝不写盘
-    if (isPathSuppressed(path)) {
+    // 路径匹配统一走 isSameFileByPath：磁盘路径保留前后缀追赶兜底，
+    // 虚拟标签（草稿 / db:// / git-head:）只认精确相等——否则一次表结构或控制台的回流
+    // 就可能顺着后缀匹配落到某个已打开的代码文件标签上。
+    const matches = (target: string, candidate: string): boolean =>
+      isSameFileByPath(target, candidate);
+
+    // 内置虚拟标签（草稿 / db:// / git-head:）的内容只活在标签页状态里：
+    // 只允许精确命中自己，既不标脏也不外发，从源头堵死任何写盘与跨标签回写
+    if (requiresExactPathMatch(path)) {
       setTabs((prev) => {
-        const normP = path.replace(/\\/g, '/').replace(/^\/+/, '');
-        return prev.map((t) => {
-          const tp = t.path.replace(/\\/g, '/').replace(/^\/+/, '');
-          if (tp === normP || tp.endsWith('/' + normP) || normP.endsWith('/' + tp)) {
-            return { ...t, content, dirty: false };
-          }
-          return t;
-        });
+        const idx = prev.findIndex((t) => t.path === path);
+        if (idx < 0) return prev;
+        const tab = prev[idx];
+        const nextDirty = isUntitledPath(path) ? markDirty : tab.dirty;
+        if (tab.content === content && tab.dirty === nextDirty) return prev;
+        const copy = [...prev];
+        copy[idx] = { ...tab, content, dirty: nextDirty };
+        return copy;
       });
+      // SQL 控制台例外：它的脚本要落盘（跟项目走）。虚拟标签的「不写盘」原则针对的是
+      // 标签**自身**不对应磁盘文件，而控制台另外挂着一个明确的脚本文件，写它不算破例。
+      const consoleTab = tabsRef.current.find((t) => t.path === path);
+      const scriptPath = consoleTab?.virtual?.scriptPath;
+      if (scriptPath) {
+        const prevTimer = scriptTimers.current.get(scriptPath);
+        if (prevTimer) clearTimeout(prevTimer);
+        // 与自动保存同节奏地防抖：Monaco 每次按键都会回调，逐字写盘既费 IO 也无意义
+        scriptTimers.current.set(
+          scriptPath,
+          setTimeout(() => {
+            scriptTimers.current.delete(scriptPath);
+            void window.ide
+              .writeProjectConfigFile(scriptPath, content)
+              // 新脚本是「先落盘再开标签」，一般不会走到这里；但路径换了段的迁移、
+              // 以及首次写入失败后的重试都要靠这一刷把清单对齐
+              .then(() => refreshProjectScripts())
+              .catch((err: any) => console.warn('[db] 保存查询脚本失败:', err));
+          }, 800),
+        );
+      }
       for (const [k, timer] of autoSaveTimers.current.entries()) {
-        const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
-        const normP = path.replace(/\\/g, '/').replace(/^\/+/, '');
-        if (normK === normP || normK.endsWith('/' + normP) || normP.endsWith('/' + normK)) {
+        if (k === path) {
           clearTimeout(timer);
           autoSaveTimers.current.delete(k);
         }
@@ -2375,11 +3014,21 @@ export function App() {
       return;
     }
 
-    const normTarget = path.replace(/\\/g, '/').replace(/^\/+/, '');
-    const currentTab = tabsRef.current.find((t) => {
-      const tp = t.path.replace(/\\/g, '/').replace(/^\/+/, '');
-      return tp === normTarget || tp.endsWith('/' + normTarget) || normTarget.endsWith('/' + tp);
-    });
+    // 处于抑制期的路径（刚执行过放弃修改），严格拦截 Monaco 重绘产生的 onChange，保证 dirty=false 且绝不写盘
+    if (isPathSuppressed(path)) {
+      setTabs((prev) => {
+        return prev.map((t) => (matches(path, t.path) ? { ...t, content, dirty: false } : t));
+      });
+      for (const [k, timer] of autoSaveTimers.current.entries()) {
+        if (matches(path, k)) {
+          clearTimeout(timer);
+          autoSaveTimers.current.delete(k);
+        }
+      }
+      return;
+    }
+
+    const currentTab = tabsRef.current.find((t) => matches(path, t.path));
 
     // 如果内容未曾改变且未标记为 dirty，直接忽略，避免空写盘
     if (currentTab && currentTab.content === content && !currentTab.dirty && !markDirty) {
@@ -2387,23 +3036,12 @@ export function App() {
     }
 
     setTabs((prev) => {
-      return prev.map((t) => {
-        const tp = t.path.replace(/\\/g, '/').replace(/^\/+/, '');
-        if (tp === normTarget || tp.endsWith('/' + normTarget) || normTarget.endsWith('/' + tp)) {
-          return { ...t, content, dirty: markDirty };
-        }
-        return t;
-      });
+      return prev.map((t) => (matches(path, t.path) ? { ...t, content, dirty: markDirty } : t));
     });
 
     if (!markDirty) {
       for (const [k, timer] of autoSaveTimers.current.entries()) {
-        const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
-        if (
-          normK === normTarget ||
-          normK.endsWith('/' + normTarget) ||
-          normTarget.endsWith('/' + normK)
-        ) {
+        if (matches(path, k)) {
           clearTimeout(timer);
           autoSaveTimers.current.delete(k);
         }
@@ -2411,15 +3049,16 @@ export function App() {
       return;
     }
 
+    // 只有确实命中了某个真实标签才需要排自动保存：没有匹配（例如已被关闭）时排进去的
+    // 定时器永远无人消费，还会在 800ms 后凭空写一次盘
+    if (!currentTab || isVirtualPath(path)) return;
+
     if (isUntitledPath(path) || !autoSaveRef.current) return;
 
+    // 定时器键取自调用方传入的原始路径，比较时同样尊重 exactOnly 语义
+    const timerMatches = (key: string): boolean => matches(path, key);
     for (const [k, timer] of autoSaveTimers.current.entries()) {
-      const normK = k.replace(/\\/g, '/').replace(/^\/+/, '');
-      if (
-        normK === normTarget ||
-        normK.endsWith('/' + normTarget) ||
-        normTarget.endsWith('/' + normK)
-      ) {
+      if (timerMatches(k)) {
         clearTimeout(timer);
         autoSaveTimers.current.delete(k);
       }
@@ -2440,6 +3079,10 @@ export function App() {
     return () => {
       for (const timer of autoSaveTimers.current.values()) clearTimeout(timer);
       autoSaveTimers.current.clear();
+      // 控制台脚本的待写定时器同样要清掉，否则退出前最后一笔编辑会落在一个已经没人收拾的
+      // 回调里（更糟的是它写的是已经切走的那个工作区的相对路径）
+      for (const timer of scriptTimers.current.values()) clearTimeout(timer);
+      scriptTimers.current.clear();
     };
   }, []);
 
@@ -3365,6 +4008,28 @@ export function App() {
                     </svg>
                   </button>
                 )}
+                <button
+                  type="button"
+                  className={leftPanel === 'database' ? 'active' : ''}
+                  onClick={() => setLeftPanel('database')}
+                  title="轻量数据库"
+                  style={{ width: 28, height: 28, borderRadius: 6 }}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <ellipse cx="12" cy="5" rx="9" ry="3" />
+                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                  </svg>
+                </button>
               </div>
               <div
                 className="explorer-wrapper"
@@ -3709,6 +4374,74 @@ export function App() {
                   }}
                 />
               </div>
+              <div
+                className="database-panel-wrapper"
+                style={{
+                  display: leftPanel === 'database' ? 'flex' : 'none',
+                  minHeight: 0,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  height: '100%',
+                  width: '100%',
+                }}
+              >
+                <DatabasePanel
+                  onOpenTableData={(connId, tableName, schemaName, view) => {
+                    const schemaSeg = schemaName ? `${encodeURIComponent(schemaName)}/` : '';
+                    const tabPath = `db://data/${connId}/${schemaSeg}${encodeURIComponent(tableName)}`;
+                    // 走统一的虚拟标签入口：已存在则切前台（内容交给 DbTableDataView 自己重载），不存在才新建
+                    openVirtualTab(tabPath, '', `📊 ${tableName}`, 'db-data', false);
+                    // 带筛选 / 排序打开时下发请求：数据视图挂载后按 nonce 套用并立刻按新条件查询。
+                    // 放在 openVirtualTab 之后 —— 先让标签存在，再变更请求，避免视图拿到一个还没打开的路径。
+                    if (view) {
+                      dbViewNonceRef.current += 1;
+                      setDbViewRequest({ path: tabPath, view, nonce: dbViewNonceRef.current });
+                    }
+                  }}
+                  onOpenTableStructure={(connId, tableName, schemaName) => {
+                    const schemaSeg = schemaName ? `${encodeURIComponent(schemaName)}/` : '';
+                    const tabPath = `db://structure/${connId}/${schemaSeg}${encodeURIComponent(tableName)}`;
+                    // DDL 正文由 DbStructureView 自己去拉（DDL / 列清单两个视图都要用到，
+                    // 且「应用」之后还得重新拉一次），这里不预先取。
+                    openVirtualTab(tabPath, '', `📜 ${tableName}`, 'db-structure', false, true, {
+                      dbStructure: { connectionId: connId, schemaName, tableName },
+                    });
+                  }}
+                  onOpenSqlConsole={openSqlConsole}
+                  scripts={projectScripts}
+                  onOpenScript={(s) => void openProjectScript(s)}
+                  onDeleteScript={(s) => void deleteProjectScript(s)}
+                  openScriptPaths={openScriptPaths}
+                  onShowToast={showToast}
+                />
+              </div>
+              <div
+                className="agent-task-panel-wrapper"
+                style={{
+                  display: leftPanel === 'agent-tasks' ? 'flex' : 'none',
+                  minHeight: 0,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  height: '100%',
+                  width: '100%',
+                }}
+              >
+                <AgentTaskPanel
+                  workspaceRoot={workspace}
+                  onOpenFile={(p) => void openFile(p)}
+                  onShowToast={showToast}
+                  onSendToChat={(prompt) => {
+                    if (layout.chatPanelExpanded === false) {
+                      const next = { ...layout, chatPanelExpanded: true };
+                      setLayout(next);
+                      persistLayout(next);
+                    }
+                    setTimeout(() => {
+                      chatRef.current?.askQuestion(prompt, true);
+                    }, 100);
+                  }}
+                />
+              </div>
             </aside>
 
             <div
@@ -3773,6 +4506,12 @@ export function App() {
               requestCloseMultipleTabs(paths);
             }}
             onNewUntitled={createUntitledTab}
+            onOpenVirtualTab={openVirtualTab}
+            onCloseVirtualTab={closeTabDirect}
+            onTableRenamed={handleTableRenamed}
+            onRetargetConsole={retargetConsole}
+            onOpenConsoleForTable={openSqlConsole}
+            dbViewRequest={dbViewRequest}
             onChangeContent={onChangeContent}
             onSelectionChange={setEditorSelection}
             onCursorChange={(line, col) => {
@@ -3838,6 +4577,7 @@ export function App() {
             onCreateProject={(tplId) => void createTemplateWorkspace(tplId)}
             onOpenWorkspace={handleOpenCreatedProject}
             onShowToast={showToast}
+            confirm={confirm}
             recentWorkspaces={recentWorkspaces}
             onSelectRecentWorkspace={(item) => void handleSelectRecentWorkspace(item)}
             onRemoveRecentWorkspace={handleRemoveRecentWorkspace}
@@ -4059,6 +4799,7 @@ export function App() {
                     visible={layout.bottomPanelExpanded === true && bottomTab === 'terminal'}
                     scrollback={terminalScrollback}
                     maximized={bottomMaximized}
+                    onRequestCloseConfirm={layout.bottomPanelExpanded === true && bottomTab === 'terminal'}
                     onCollapse={() => {
                       const next = { ...layout, bottomPanelExpanded: false };
                       setLayout(next);
@@ -4154,7 +4895,11 @@ export function App() {
                     ...tabs.filter((t) => t.path !== activePath),
                   ]
                     .filter(
-                      (t) => t.language !== 'image' && !t.previewUrl && !isUntitledPath(t.path),
+                      (t) =>
+                        t.language !== 'image' &&
+                        !t.previewUrl &&
+                        !isUntitledPath(t.path) &&
+                        !isDbPath(t.path),
                     )
                     .map((t) => ({ path: t.path, content: t.content }))}
                   selection={editorSelection}
@@ -4391,7 +5136,14 @@ export function App() {
             };
           })()
         }
-        language={activeLanguage}
+        language={
+          (() => {
+            const tab = tabs.find((t) => t.path === activePath);
+            if (tab?.language) return tab.language;
+            if (activePath && !isVirtualPath(activePath)) return languageFromPath(activePath);
+            return 'plaintext';
+          })()
+        }
         eol={
           (() => {
             const tab = tabs.find((t) => t.path === activePath);
@@ -4425,7 +5177,8 @@ export function App() {
           showToast(`已跳转到第 ${line} 行`, undefined, 'info');
         }}
         onToggleEol={(nextEol) => {
-          if (!activePath) return;
+          // 虚拟标签（db:// / untitled:) 没有磁盘 EOL 语义，改行尾毫无意义且会误标脏
+          if (!activePath || isVirtualPath(activePath)) return;
           setTabs((prev) =>
             prev.map((t) => {
               if (t.path !== activePath) return t;
@@ -4438,9 +5191,14 @@ export function App() {
           );
         }}
         onSelectLanguage={(lang) => {
-          if (!activePath) return;
+          if (!activePath || isDbPath(activePath)) return;
           setTabs((prev) =>
-            prev.map((t) => (t.path === activePath ? { ...t, language: lang } : t)),
+            prev.map((t) => (isSameFileByPath(t.path, activePath) ? { ...t, language: lang } : t)),
+          );
+          window.dispatchEvent(
+            new CustomEvent('echoly:changeEditorLanguage', {
+              detail: { path: activePath, language: lang },
+            }),
           );
           showToast(`语言模式已切换为 ${lang}`, undefined, 'info');
         }}
@@ -4752,11 +5510,15 @@ export function App() {
           ...tabs.filter((t) => t.path === activePath),
           ...tabs.filter((t) => t.path !== activePath),
         ]
-          .filter((t) => t.language !== 'image' && !t.previewUrl && !isUntitledPath(t.path))
+          .filter(
+            (t) =>
+              t.language !== 'image' && !t.previewUrl && !isUntitledPath(t.path) && !isDbPath(t.path),
+          )
           .map((t) => ({ path: t.path, content: t.content }))}
         onOpenFile={(path, line) => openFile(path, line)}
       />
       <GlobalTooltip delay={hoverDelay} />
+      {confirm.modal}
     </div>
   );
 }

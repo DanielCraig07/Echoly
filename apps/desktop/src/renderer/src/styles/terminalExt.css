@@ -63,6 +63,29 @@
   box-shadow: 0 0 10px rgba(59, 130, 246, 0.75) !important;
 }
 
+/* ── 纵向上下分屏模式与横向分割条 ── */
+.terminal-sessions.split-mode.vertical {
+  flex-direction: column !important;
+}
+
+.terminal-split-resizer.vertical {
+  width: 100%;
+  height: 10px;
+  margin: -5px 0;
+  cursor: row-resize;
+}
+
+.terminal-split-resizer.vertical .terminal-split-resizer-line {
+  width: 100%;
+  height: 2px;
+}
+
+.terminal-split-resizer.vertical:hover .terminal-split-resizer-line,
+.terminal-split-resizer.vertical.dragging .terminal-split-resizer-line {
+  height: 3px !important;
+  width: 100% !important;
+}
+
 /* ── 端口感知胶囊 (Port Forwarding Pill) ── */
 .terminal-detected-ports {
   display: flex;

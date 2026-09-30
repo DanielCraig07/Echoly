@@ -20,6 +20,20 @@ interface Props {
 
 const MAX_VISIBLE_RECENT = 8;
 
+function formatRelativeTime(ts: number): string {
+  if (!ts) return '';
+  const now = Date.now();
+  const diffSec = Math.floor((now - ts) / 1000);
+  if (diffSec < 60) return '刚刚';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}分钟前`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}小时前`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays}天前`;
+  return new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+}
+
 export function WelcomeView({
   onPickLocal,
   onPickSsh,
@@ -181,6 +195,7 @@ export function WelcomeView({
                     ? `${item.sshServer}:${item.path}`
                     : item.path;
                 const tech = detectTechBadge(item.name || '', item.path || '', item.techStack);
+                const relativeTime = formatRelativeTime(item.lastOpenedAt);
                 return (
                   <li key={item.path}>
                     <button
@@ -210,7 +225,35 @@ export function WelcomeView({
                         </span>
                       </div>
                       <span className="welcome-recent-text">
-                        <span className="welcome-recent-name">{item.name}</span>
+                        <span className="open-ws-recent-name-wrap">
+                          <span className="welcome-recent-name">{item.name}</span>
+                          {item.gitBranch && (
+                            <span
+                              className="welcome-git-pill"
+                              style={{
+                                fontSize: 10,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                background: 'rgba(255, 255, 255, 0.06)',
+                                color: 'var(--muted)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                              }}
+                              title={`当前分支: ${item.gitBranch}${item.uncommittedCount ? ` (${item.uncommittedCount} 个未提交修改)` : ''}`}
+                            >
+                              <span>⎇ {item.gitBranch}</span>
+                              {item.uncommittedCount && item.uncommittedCount > 0 ? (
+                                <span style={{ color: '#e5a54b', fontWeight: 600 }}>
+                                  ● {item.uncommittedCount}
+                                </span>
+                              ) : null}
+                            </span>
+                          )}
+                          {relativeTime && (
+                            <span className="open-ws-time-pill">{relativeTime}</span>
+                          )}
+                        </span>
                         <span className="welcome-recent-path" title={pathLabel}>
                           {pathLabel}
                         </span>

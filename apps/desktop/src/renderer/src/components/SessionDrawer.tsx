@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { ChatSession, ChatSessionMessage, WorkspaceInfo } from '@deepseek-ide/shared';
 import { buildSessionWorkspaceMeta, formatSessionWorkspaceLine } from '../utils';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 
 interface Props {
   currentSessionId: string;
@@ -46,6 +48,9 @@ export function SessionDrawer({
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  // 删除确认走应用内弹窗：系统 `window.confirm` 在 Electron 里既不是应用主题色，
+  // 也没法把「删的是哪一条、有多少轮对话」摆成可核对的键值行
+  const confirm = useDbConfirm();
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -66,15 +71,39 @@ export function SessionDrawer({
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
+        // 删除确认框挂着时让 Esc 归它，别把整个抽屉一起关掉
+        if (confirm.isOpen) return;
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [onClose]);
+  }, [onClose, confirm.isOpen]);
 
+  /**
+   * 删除一条会话（含全部对话记录，无回收站）。
+   *
+   * 确认文案里点名是哪一条：抽屉里相邻两行的标题常常一模一样，
+   * 只说「确认删除？」拦不住手滑点错的那一下。
+   */
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const target = sessions.find((s) => s.id === id);
+    const ok = await confirm.confirm({
+      title: '删除历史会话',
+      content: buildSqlConfirmMarkdown({
+        intro: '这条会话的全部对话记录将被永久删除，且**无法撤销**。',
+        statements: [],
+      }),
+      details: [
+        { label: '标题', value: target?.title?.trim() || '（无标题）' },
+        { label: '时间', value: target ? formatTime(target.updatedAt) : '未知' },
+        { label: '轮次', value: `${target?.messages?.length ?? 0} 轮` },
+      ],
+      tone: 'danger',
+      confirmLabel: '确认删除',
+    });
+    if (ok === null) return;
     setDeleting(id);
     try {
       await window.ide.deleteSession(id);
@@ -172,6 +201,7 @@ export function SessionDrawer({
           )}
         </div>
       </div>
+      {confirm.modal}
     </>
   );
 }

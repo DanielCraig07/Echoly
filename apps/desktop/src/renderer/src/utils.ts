@@ -12,6 +12,57 @@ export function isUntitledPath(filePath: string): boolean {
   return filePath.startsWith('untitled:');
 }
 
+/**
+ * 内置虚拟标签页（草稿 untitled: / 数据库 db:// 数据视图、DDL、SQL 控制台）。
+ * 这些路径不对应磁盘文件，既不能进「打开文件」持久化，也不能被文件系统变更回调当作已删除清理掉。
+ */
+export function isVirtualPath(filePath: string): boolean {
+  return isUntitledPath(filePath) || isDbPath(filePath);
+}
+
+/** 数据库内置视图标签页（db://data|ddl|console/...），内容只存在于标签页状态里 */
+export function isDbPath(filePath: string): boolean {
+  return filePath.startsWith('db://');
+}
+
+/**
+ * 路径匹配是否必须走精确比较（不做 `endsWith` 双向追赶）。
+ *
+ * `endsWith('/' + p)` 这类宽松匹配是给「同一文件在磁盘绝对路径与工作区相对路径下各有一份 tab」
+ * 的历史遗留兜底用的；但内置虚拟标签（`db://...` / `untitled:` / `git-head:`）与磁盘文件是
+ * 两套互不相干的东西，一旦参与追赶匹配就可能把对虚拟标签的编辑回写到某个代码文件标签上。
+ */
+export function requiresExactPathMatch(filePath: string): boolean {
+  return isVirtualPath(filePath) || filePath.startsWith('git-head:');
+}
+
+/** 路径归一化：统一分隔符、剥离 file:// 协议头并去掉开头的斜杠，供路径比较统一使用 */
+export function normalizePathKey(filePath: string): string {
+  let p = filePath.replace(/\\/g, '/');
+  if (p.startsWith('file://')) {
+    p = p.slice('file://'.length);
+    try {
+      p = decodeURIComponent(p);
+    } catch {}
+  }
+  return p.replace(/^\/+/, '');
+}
+
+/**
+ * 统一的「同一个文件」判定。
+ *
+ * 磁盘路径保留 `endsWith` 双向追赶（同一文件在磁盘绝对路径与工作区相对路径下各有一份 tab 的
+ * 历史遗留兜底）；虚拟标签（草稿 / `db://` / `git-head:`）只认精确相等，绝不参与追赶，
+ * 否则一次表结构或 SQL 控制台的回流就可能落到某个代码文件标签上。
+ */
+export function isSameFileByPath(a: string, b: string): boolean {
+  const x = normalizePathKey(a);
+  const y = normalizePathKey(b);
+  if (x === y) return true;
+  if (requiresExactPathMatch(x) || requiresExactPathMatch(y)) return false;
+  return x.endsWith('/' + y) || y.endsWith('/' + x);
+}
+
 export function untitledTabLabel(filePath: string): string {
   return isUntitledPath(filePath) ? filePath.slice('untitled:'.length) : filePath;
 }
