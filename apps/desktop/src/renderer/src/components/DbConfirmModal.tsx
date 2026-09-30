@@ -81,7 +81,6 @@ export function DbConfirmModal({
   useEffect(() => {
     if (isOpen) setTyped(input?.defaultValue ?? '');
     // defaultValue 只在「打开」这一刻有意义；后续外部改动不该覆盖用户正在敲的内容
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   useEffect(() => {

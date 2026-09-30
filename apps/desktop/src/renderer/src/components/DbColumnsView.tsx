@@ -140,7 +140,7 @@ export function DbColumnsView({
     // 结构刷新同时把表级草稿清掉，否则「应用」之后屏幕上还留着刚才那份改动
     setOptDraft(null);
     setNameDraft(null);
-  }, [columnsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [columnsKey]);
 
   const patchRow = useCallback((key: string, patch: Partial<EditableColumn>) => {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));

@@ -547,7 +547,6 @@ export function DbTableDataView({
   // 首次加载与页大小变化
   useEffect(() => {
     void loadData(1, pageSize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId, tableName, schemaName, pageSize]);
 
   // 外部（左侧树）下发的排序 / 筛选：nonce 变化时套用并立即按新条件重查。
@@ -559,7 +558,6 @@ export function DbTableDataView({
     appliedNonceRef.current = viewNonce;
     setView(initialView);
     void loadData(1, pageSize, initialView);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewNonce]);
 
   /** 筛选 / 排序变化后统一从这里重查：回到第 1 页，避免停在越界页码上看空表 */

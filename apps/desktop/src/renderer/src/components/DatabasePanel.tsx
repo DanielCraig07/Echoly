@@ -961,7 +961,6 @@ export function DatabasePanel({
       setLoading(false);
     }
     // expandedSchemas / expandedTables 仅作刷新时的读取快照，避免把展开动作变成重复刷新
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onShowToast, loadSchemas, loadTables, loadObjects, loadTableSchema]);
 
   useEffect(() => {
@@ -1343,7 +1342,6 @@ export function DatabasePanel({
       else toggleTable(target.connId, target.schemaName, target.tableName);
     },
     // toggleConn / toggleSchema / toggleTable 是本组件内的普通函数，依赖它们的读取快照即可
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [expandedConns, expandedSchemas, expandedTables, schemasMap, tablesMap, columnsMap],
   );
 
