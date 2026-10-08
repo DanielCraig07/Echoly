@@ -579,7 +579,7 @@ function findLinksInLine(
   }
 
   const FILE_LINE_REGEX =
-    /(?:^|[\s("'`<[])((?:(?:\/|[a-zA-Z]:[\\/]|(?:\.{1,2}[\\/]))|[\w@.-]+[\\/])[\w@./\\-]+\.[a-zA-Z0-9_-]+(?:(?::\d+){1,2}|:\s*\[\d+(?:,\s*\d+)?\]|\(\d+(?:,\s*\d+)?\))?)/gi;
+    /(?:^|[\s("'`<\x5b])((?:(?:\/|[a-zA-Z]:[\\/]|(?:\.{1,2}[\\/]))|[\w@.-]+[\\/])[\w@./\\-]+\.[a-zA-Z0-9_-]+(?:(?::\d+){1,2}|:\s*\[\d+(?:,\s*\d+)?\]|\(\d+(?:,\s*\d+)?\))?)/gi;
   let fMatch: RegExpExecArray | null;
   while ((fMatch = FILE_LINE_REGEX.exec(text)) !== null) {
     const raw = fMatch[1];

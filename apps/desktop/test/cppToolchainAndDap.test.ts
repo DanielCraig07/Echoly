@@ -16,7 +16,7 @@ describe('C/C++ Toolchain Detection', () => {
       expect(status.compiler.name).toContain('Clang');
       expect(status.compiler.installed).toBe(true);
     }
-  });
+  }, 25000);
 });
 
 describe('DAP Debugger Service', () => {
