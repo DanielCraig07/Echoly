@@ -338,7 +338,6 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
 
   const isMac =
     typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
-  const cmdKey = isMac ? '⌘' : 'Ctrl+';
 
   const handleTabSwitch = () => {
     setActiveIndex(0);

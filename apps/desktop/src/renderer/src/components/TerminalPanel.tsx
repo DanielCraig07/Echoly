@@ -9,6 +9,9 @@ import { detectPortsFromText } from '../utils/portDetector';
 import { TerminalAiKBar } from './TerminalAiKBar';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { colorizeTerminalLogs } from '../utils/terminalLogColorizer';
+import { measureContentColumns } from '../utils/terminalWidth';
+export { colorizeTerminalLogs };
 
 /**
  * 终端标签「有内容」的判定：只要被写进过输出，关闭就会丢 scrollback。
@@ -509,17 +512,13 @@ function wrapCommand(cmd: string): string {
   return `(${trimmed}); __ret=$?; echo ""; echo "[Process finished with exit code $__ret]"; printf "__ECHOLY_%s:%d\\n" "FIN__" $__ret`;
 }
 
-import { colorizeTerminalLogs } from '../utils/terminalLogColorizer';
-import { measureContentColumns } from '../utils/terminalWidth';
-export { colorizeTerminalLogs };
-
 function parseFilePathAndLoc(raw: string): { filePath: string; line?: number; col?: number } {
-  let filePath = raw;
+  let filePath = raw.trim();
   let line: number | undefined;
   let col: number | undefined;
 
   const mavenMatch = filePath.match(/:\[(\d+)(?:,\s*(\d+))?\]$/);
-  if (mavenMatch) {
+  if (mavenMatch && mavenMatch.index !== undefined) {
     filePath = filePath.slice(0, mavenMatch.index);
     line = parseInt(mavenMatch[1], 10);
     if (mavenMatch[2]) col = parseInt(mavenMatch[2], 10);
@@ -527,7 +526,7 @@ function parseFilePathAndLoc(raw: string): { filePath: string; line?: number; co
   }
 
   const parenMatch = filePath.match(/\((\d+)(?:,\s*(\d+))?\)$/);
-  if (parenMatch) {
+  if (parenMatch && parenMatch.index !== undefined) {
     filePath = filePath.slice(0, parenMatch.index);
     line = parseInt(parenMatch[1], 10);
     if (parenMatch[2]) col = parseInt(parenMatch[2], 10);
@@ -535,7 +534,7 @@ function parseFilePathAndLoc(raw: string): { filePath: string; line?: number; co
   }
 
   const colonMatch = filePath.match(/:(\d+)(?::(\d+))?$/);
-  if (colonMatch) {
+  if (colonMatch && colonMatch.index !== undefined) {
     filePath = filePath.slice(0, colonMatch.index);
     line = parseInt(colonMatch[1], 10);
     if (colonMatch[2]) col = parseInt(colonMatch[2], 10);
@@ -580,7 +579,7 @@ function findLinksInLine(
   }
 
   const FILE_LINE_REGEX =
-    /(?:^|[\s("'`<\[])((?:(?:\/|[a-zA-Z]:[\\/]|(?:\.{1,2}[\\/]))|[\w@.-]+[\\/])[\w@./\\-]+\.[a-zA-Z0-9_-]+(?:(?::\d+){1,2}|:\s*\[\d+(?:,\s*\d+)?\]|\(\d+(?:,\s*\d+)?\))?)/gi;
+    /(?:^|[\s("'`<[])((?:(?:\/|[a-zA-Z]:[\\/]|(?:\.{1,2}[\\/]))|[\w@.-]+[\\/])[\w@./\\-]+\.[a-zA-Z0-9_-]+(?:(?::\d+){1,2}|:\s*\[\d+(?:,\s*\d+)?\]|\(\d+(?:,\s*\d+)?\))?)/gi;
   let fMatch: RegExpExecArray | null;
   while ((fMatch = FILE_LINE_REGEX.exec(text)) !== null) {
     const raw = fMatch[1];
