@@ -29,6 +29,7 @@ interface Props {
   enabled: boolean;
   actions?: CommandAction[];
   onOpenFile: (path: string, line?: number) => void;
+  activePath?: string;
 }
 
 function formatShortcut(shortcut?: string, isMac?: boolean) {
@@ -44,7 +45,7 @@ function formatShortcut(shortcut?: string, isMac?: boolean) {
 }
 
 export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSearchBar(
-  { enabled, actions = [], onOpenFile },
+  { enabled, actions = [], onOpenFile, activePath },
   ref,
 ) {
   const [mode, setMode] = useState<SearchMode>('files');
@@ -67,6 +68,10 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastMousePosRef = useRef({ x: -1, y: -1 });
   const seq = useRef(0);
+
+  const isLineJump = query.startsWith(':');
+  const lineMatch = query.match(/^:\s*(\d*)/);
+  const jumpLine = lineMatch && lineMatch[1] ? parseInt(lineMatch[1], 10) : undefined;
 
   useImperativeHandle(ref, () => ({
     focus: (nextMode?: SearchMode) => {
@@ -94,8 +99,13 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
     return act.title.toLowerCase().includes(cleanQ) || act.category.toLowerCase().includes(cleanQ);
   });
 
-  const hitsCount =
-    mode === 'files' ? fileHits.length : mode === 'actions' ? actionHits.length : codeHits.length;
+  const hitsCount = isLineJump
+    ? (activePath ? 1 : 0)
+    : mode === 'files'
+      ? fileHits.length
+      : mode === 'actions'
+        ? actionHits.length
+        : codeHits.length;
 
   interface CodeGroup {
     path: string;
@@ -156,13 +166,32 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
       return;
     }
 
+    if (query.startsWith(':')) {
+      setFileHits([]);
+      setCodeHits([]);
+      setLoading(false);
+      return;
+    }
+
     if (mode === 'actions') {
       setActiveIndex(0);
       setLoading(false);
       return;
     }
 
-    if (!query.trim() || query.startsWith('>')) {
+    let effectiveQuery = query.trim();
+    if (mode === 'files') {
+      const fileWithLine = effectiveQuery.match(/^(.*?):(\d+)$/);
+      if (fileWithLine) {
+        effectiveQuery = fileWithLine[1].trim();
+      }
+    } else if (mode === 'code') {
+      if (effectiveQuery.startsWith('@')) {
+        effectiveQuery = effectiveQuery.slice(1).trim();
+      }
+    }
+
+    if (!effectiveQuery || effectiveQuery.startsWith('>')) {
       setFileHits([]);
       setCodeHits([]);
       setLoading(false);
@@ -176,14 +205,14 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
       void (async () => {
         try {
           if (mode === 'files') {
-            const hits = await window.ide.searchFiles(query, 40);
+            const hits = await window.ide.searchFiles(effectiveQuery, 40);
             if (id !== seq.current) return;
             setFileHits(hits);
             setCodeHits([]);
             setActiveIndex(0);
           } else {
             const hits = await window.ide.searchCode({
-              query,
+              query: effectiveQuery,
               caseInsensitive: true,
               max: 60,
             });
@@ -288,8 +317,16 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
     }
     if (e.key === 'Enter') {
       e.preventDefault();
+      if (isLineJump) {
+        if (activePath && jumpLine && jumpLine > 0) {
+          selectFile(activePath, jumpLine);
+        }
+        return;
+      }
       if (mode === 'files' && fileHits[activeIndex]) {
-        selectFile(fileHits[activeIndex].path);
+        const fileWithLine = query.match(/:(\d+)$/);
+        const targetLine = fileWithLine ? parseInt(fileWithLine[1], 10) : undefined;
+        selectFile(fileHits[activeIndex].path, targetLine);
       } else if (mode === 'actions' && actionHits[activeIndex]) {
         executeAction(actionHits[activeIndex]);
       } else if (mode === 'code' && codeHits[activeIndex]) {
@@ -310,6 +347,19 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
     else setMode('actions');
   };
 
+  const placeholderText = useMemo(() => {
+    if (isLineJump) {
+      return activePath ? `输入行号快速跳转… (当前文件: ${activePath})` : '输入行号以跳转… (当前未打开活动文件)';
+    }
+    if (mode === 'actions') {
+      return '输入关键字搜索全局动作与命令…';
+    }
+    if (mode === 'code') {
+      return '搜索全文代码片段与符号…';
+    }
+    return '搜索文件… (输入 > 搜命令，@ 搜代码，: 跳行，Tab 切换)';
+  }, [isLineJump, activePath, mode]);
+
   return (
     <>
       {open && (
@@ -327,6 +377,20 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                 <div className="cmd-palette-icon">
                   {loading ? (
                     <div className="cmd-mini-spinner" />
+                  ) : isLineJump ? (
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="7 13 12 18 17 13" />
+                      <polyline points="7 6 12 11 17 6" />
+                    </svg>
                   ) : mode === 'actions' ? (
                     <svg
                       width="16"
@@ -369,19 +433,15 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                   className="cmd-palette-input"
                   type="text"
                   disabled={!enabled && mode !== 'actions'}
-                  placeholder={
-                    mode === 'actions'
-                      ? '输入关键词搜索全局动作与命令…'
-                      : mode === 'files'
-                        ? '搜索项目文件… (按 Tab 切换到命令模式)'
-                        : '搜索全文代码片段…'
-                  }
+                  placeholder={placeholderText}
                   value={query}
                   onChange={(e) => {
                     const val = e.target.value;
                     setQuery(val);
                     if (val.startsWith('>') && mode !== 'actions') {
                       setMode('actions');
+                    } else if (val.startsWith('@') && mode !== 'code') {
+                      setMode('code');
                     }
                     setOpen(true);
                   }}
@@ -480,19 +540,54 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                 </div>
               )}
 
-              {!loading && !query.trim() && mode !== 'actions' && (
+              {isLineJump && (
+                <div className="cmd-palette-list">
+                  {activePath ? (
+                    <div
+                      data-index={0}
+                      className="cmd-item active"
+                      onClick={() => {
+                        if (jumpLine && jumpLine > 0) {
+                          selectFile(activePath, jumpLine);
+                        }
+                      }}
+                    >
+                      <div className="cmd-item-left">
+                        <span className="cmd-category-tag cat-navigation">
+                          跳转
+                        </span>
+                        <span className="cmd-item-title">
+                          {jumpLine ? `跳转至第 ${jumpLine} 行` : '输入目标行号并按回车… (例如 :42)'}
+                        </span>
+                        <span className="cmd-item-path" style={{ marginLeft: 8, opacity: 0.65, fontSize: 12 }}>
+                          {activePath}
+                        </span>
+                      </div>
+                      <div className="cmd-item-right">
+                        <kbd className="cmd-kbd">↵ 跳转</kbd>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="cmd-palette-state">
+                      <span className="cmd-state-hint">当前未打开任何编辑文件，无法按行跳转</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!isLineJump && !loading && !query.trim() && mode !== 'actions' && (
                 <div className="cmd-palette-state">
                   <span className="cmd-state-hint">键入文件名或路径片段快速定位文件</span>
                 </div>
               )}
 
-              {!loading && hitsCount === 0 && query.trim() && (
+              {!isLineJump && !loading && hitsCount === 0 && query.trim() && (
                 <div className="cmd-palette-state">
                   <span className="cmd-state-hint">未找到匹配的结果</span>
                 </div>
               )}
 
-              {mode === 'actions' && actionHits.length > 0 && (
+              {!isLineJump && mode === 'actions' && actionHits.length > 0 && (
                 <div className="cmd-palette-list">
                   {actionHits.map((act, i) => {
                     const isSelected = i === activeIndex;
@@ -521,7 +616,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                 </div>
               )}
 
-              {mode === 'files' && fileHits.length > 0 && (
+              {!isLineJump && mode === 'files' && fileHits.length > 0 && (
                 <div className="cmd-palette-list">
                   {fileHits.map((h, i) => {
                     const isSelected = i === activeIndex;
@@ -533,7 +628,11 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                         data-index={i}
                         className={`cmd-item ${isSelected ? 'active' : ''}`}
                         onMouseMove={(e) => handleItemMouseMove(i, e)}
-                        onClick={() => selectFile(h.path)}
+                        onClick={() => {
+                          const fileWithLine = query.match(/:(\d+)$/);
+                          const targetLine = fileWithLine ? parseInt(fileWithLine[1], 10) : undefined;
+                          selectFile(h.path, targetLine);
+                        }}
                       >
                         <div className="cmd-item-left">
                           <svg
@@ -622,16 +721,27 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                 <span className="cmd-shortcut-tip">
                   <kbd className="cmd-mini-kbd">Tab</kbd> 模式切换
                 </span>
+                <span className="cmd-shortcut-tip" title="输入 > 搜索全局命令">
+                  <kbd className="cmd-mini-kbd">&gt;</kbd> 命令
+                </span>
+                <span className="cmd-shortcut-tip" title="输入 @ 搜索代码符号">
+                  <kbd className="cmd-mini-kbd">@</kbd> 代码
+                </span>
+                <span className="cmd-shortcut-tip" title="输入 : 行号跳转">
+                  <kbd className="cmd-mini-kbd">:</kbd> 跳行
+                </span>
                 <span className="cmd-shortcut-tip">
                   <kbd className="cmd-mini-kbd">Esc</kbd> 退出
                 </span>
               </div>
               <div className="cmd-footer-count">
-                {mode === 'actions'
-                  ? `${actionHits.length} 个动作指令`
-                  : mode === 'files'
-                    ? `${fileHits.length} 个文件匹配`
-                    : `${groupedCodeHits.length} 个文件 · ${codeHits.length} 处匹配代码`}
+                {isLineJump
+                  ? '行号直达模式'
+                  : mode === 'actions'
+                    ? `${actionHits.length} 个动作指令`
+                    : mode === 'files'
+                      ? `${fileHits.length} 个文件匹配`
+                      : `${groupedCodeHits.length} 个文件 · ${codeHits.length} 处匹配代码`}
               </div>
               <ModalResizeHandle
                 onMouseDown={handleResizeStart}

@@ -250,9 +250,11 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
     items.push(item('git-rollback', '放弃更改 (Rollback)...', { danger: true }));
   }
   if (node) {
+    const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
     items.push(sep('s5'));
     items.push(item('copy-abs', '复制路径'));
     items.push(item('copy-rel', '复制相对路径'));
+    items.push(item('reveal-in-finder', isMac ? '在访达中显示' : '在资源管理器中显示'));
     items.push(sep('s6'));
     items.push(item('rename', '重命名...'));
     items.push(item('delete', '永久删除', { danger: true }));
@@ -546,6 +548,13 @@ function TreeNode({
   const [open, setOpen] = useState(depth === 0);
   const [children, setChildren] = useState<FileTreeNode[] | null>(null);
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const dragHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (dragHoverTimerRef.current) clearTimeout(dragHoverTimerRef.current);
+    };
+  }, []);
 
   const isJava = !node.isDirectory && node.name.endsWith('.java');
   const [detectedType, setDetectedType] = useState<CodeSubtype>(() => {
@@ -651,14 +660,28 @@ function TreeNode({
             onDragEnter={(e) => {
               e.preventDefault();
               setIsDropTarget(true);
+              if (!open) {
+                if (dragHoverTimerRef.current) clearTimeout(dragHoverTimerRef.current);
+                dragHoverTimerRef.current = setTimeout(() => {
+                  setOpen(true);
+                }, 500);
+              }
             }}
-            onDragLeave={(e) => {
+            onDragLeave={() => {
               setIsDropTarget(false);
+              if (dragHoverTimerRef.current) {
+                clearTimeout(dragHoverTimerRef.current);
+                dragHoverTimerRef.current = null;
+              }
             }}
             onDrop={(e) => {
               e.preventDefault();
               e.stopPropagation();
               setIsDropTarget(false);
+              if (dragHoverTimerRef.current) {
+                clearTimeout(dragHoverTimerRef.current);
+                dragHoverTimerRef.current = null;
+              }
               const raw = e.dataTransfer.getData('application/json');
               if (raw && onMoveNode) {
                 try {
@@ -673,7 +696,6 @@ function TreeNode({
               position: 'sticky',
               top: stickyTop,
               zIndex: Math.max(1, 20 - depth),
-              opacity: gitMeta?.isIgnored ? 0.52 : undefined,
             }}
             onClick={() => {
               if (onSelectNode) onSelectNode({ path: node.path, isDirectory: true });
@@ -1479,6 +1501,12 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           break;
         case 'copy-rel':
           if (node) await navigator.clipboard.writeText(node.path);
+          break;
+        case 'reveal-in-finder':
+          if (node) {
+            const abs = await window.ide.resolveAbsolutePath(node.path);
+            await window.ide.showItemInFolder(abs);
+          }
           break;
         case 'rename':
           if (node) setInlineEdit({ mode: 'rename', node });

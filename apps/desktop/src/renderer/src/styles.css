@@ -1676,12 +1676,17 @@ body.resizing.resizing-row {
 
 .file-tree {
   overflow: visible;
-  padding: 4px 8px;
+  padding: 2px 0 6px 0;
   font-family: var(--font-mono);
   font-size: 12px;
   min-width: 100%;
   width: max-content;
   box-sizing: border-box;
+  background-color: var(--bg-panel, #18181b);
+}
+
+[data-theme='light'] .file-tree {
+  background-color: var(--bg-panel, #ffffff);
 }
 
 .file-node {
@@ -1706,13 +1711,27 @@ body.resizing.resizing-row {
   min-width: 100% !important;
   box-sizing: border-box !important;
   background-color: var(--bg-panel, #18181b) !important;
+  border-radius: 0 !important;
   border-bottom: none !important;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+  box-shadow: none !important;
 }
 
 [data-theme='light'] .file-node-dir {
   background-color: var(--bg-panel, #ffffff) !important;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04) !important;
+  box-shadow: none !important;
+}
+
+/* 彻底封死 sticky 目录行之间的任何缝隙（覆盖 Retina 屏 0.5px / 1px 亚像素微缝及行间接缝） */
+.file-node-dir::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  background-color: inherit;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .file-node-dir > * {
@@ -1730,7 +1749,15 @@ body.resizing.resizing-row {
   background-color: #242428 !important;
 }
 
+.file-node-dir:hover::before {
+  background-color: #242428 !important;
+}
+
 [data-theme='light'] .file-node-dir:hover {
+  background-color: #f4f4f5 !important;
+}
+
+[data-theme='light'] .file-node-dir:hover::before {
   background-color: #f4f4f5 !important;
 }
 
@@ -1739,9 +1766,17 @@ body.resizing.resizing-row {
   color: #ffffff !important;
 }
 
+.file-node-dir.active::before {
+  background-color: #28282e !important;
+}
+
 [data-theme='light'] .file-node-dir.active {
   background-color: #e4e4e7 !important;
   color: #18181b !important;
+}
+
+[data-theme='light'] .file-node-dir.active::before {
+  background-color: #e4e4e7 !important;
 }
 
 .tree-indent-guide {
@@ -7475,6 +7510,11 @@ body.resizing.resizing-row {
   min-height: 100px;
   overflow-x: auto;
   overflow-y: auto;
+  background-color: var(--bg-panel, #18181b);
+}
+
+[data-theme='light'] .explorer-tree-body {
+  background-color: var(--bg-panel, #ffffff);
 }
 
 .timeline-item {

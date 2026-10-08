@@ -3904,6 +3904,7 @@ export function App() {
             ref={searchRef}
             enabled={!!workspace}
             actions={ideActions}
+            activePath={activePath || undefined}
             onOpenFile={(path, line) => void openFile(path, line)}
           />
         </div>
@@ -4805,6 +4806,7 @@ export function App() {
                       setLayout(next);
                       persistLayout(next);
                     }}
+                    onOpenFile={(p, l, c) => void openFile(p, l, c)}
                   />
                 </div>
 

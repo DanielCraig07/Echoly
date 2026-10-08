@@ -4085,6 +4085,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         <div
           className={`tabs ${tabsScrolling ? 'tabs-scrolling' : ''}`}
           onScroll={handleTabsScroll}
+          onWheel={(e) => {
+            if (e.deltaY !== 0 && e.deltaX === 0) {
+              e.currentTarget.scrollLeft += e.deltaY;
+            }
+          }}
           onDoubleClick={(e) => {
             if ((e.target as HTMLElement).closest('.tab')) return;
             onNewUntitled?.();
@@ -4103,6 +4108,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 ref={isActive ? activeTabRef : null}
                 className={`tab ${isActive ? 'active' : ''} ${tab.dirty ? 'is-dirty' : ''}`}
                 onClick={() => onSelectTab(tab.path)}
+                onAuxClick={(e) => {
+                  if (e.button === 1) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onCloseTab(tab.path);
+                  }
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();

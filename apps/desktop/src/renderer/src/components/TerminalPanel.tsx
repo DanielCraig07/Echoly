@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Terminal } from '@xterm/xterm';
+import { Terminal, type ILink } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
@@ -40,6 +40,7 @@ interface Props {
    * 用户没在看终端、只是程序在跑测试时，一个后台回调触发关标签不该弹窗吓人一跳。
    */
   onRequestCloseConfirm?: boolean;
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
 }
 
 interface TermTab {
@@ -512,6 +513,111 @@ import { colorizeTerminalLogs } from '../utils/terminalLogColorizer';
 import { measureContentColumns } from '../utils/terminalWidth';
 export { colorizeTerminalLogs };
 
+function parseFilePathAndLoc(raw: string): { filePath: string; line?: number; col?: number } {
+  let filePath = raw;
+  let line: number | undefined;
+  let col: number | undefined;
+
+  const mavenMatch = filePath.match(/:\[(\d+)(?:,\s*(\d+))?\]$/);
+  if (mavenMatch) {
+    filePath = filePath.slice(0, mavenMatch.index);
+    line = parseInt(mavenMatch[1], 10);
+    if (mavenMatch[2]) col = parseInt(mavenMatch[2], 10);
+    return { filePath, line, col };
+  }
+
+  const parenMatch = filePath.match(/\((\d+)(?:,\s*(\d+))?\)$/);
+  if (parenMatch) {
+    filePath = filePath.slice(0, parenMatch.index);
+    line = parseInt(parenMatch[1], 10);
+    if (parenMatch[2]) col = parseInt(parenMatch[2], 10);
+    return { filePath, line, col };
+  }
+
+  const colonMatch = filePath.match(/:(\d+)(?::(\d+))?$/);
+  if (colonMatch) {
+    filePath = filePath.slice(0, colonMatch.index);
+    line = parseInt(colonMatch[1], 10);
+    if (colonMatch[2]) col = parseInt(colonMatch[2], 10);
+    return { filePath, line, col };
+  }
+
+  return { filePath, line, col };
+}
+
+function findLinksInLine(
+  text: string,
+  bufferLineNumber: number,
+  cwd?: string,
+  onOpenFile?: (path: string, line?: number, column?: number) => void,
+): ILink[] {
+  const links: ILink[] = [];
+  const urlRanges: Array<{ start: number; end: number }> = [];
+
+  const URL_REGEX = /https?:\/\/[^\s"'`<>]+/g;
+  let uMatch: RegExpExecArray | null;
+  while ((uMatch = URL_REGEX.exec(text)) !== null) {
+    const url = uMatch[0];
+    const startX = uMatch.index + 1;
+    const endX = uMatch.index + url.length;
+    urlRanges.push({ start: uMatch.index, end: uMatch.index + url.length });
+
+    links.push({
+      range: {
+        start: { x: startX, y: bufferLineNumber },
+        end: { x: endX, y: bufferLineNumber },
+      },
+      text: url,
+      decorations: { pointerCursor: true, underline: true },
+      activate: (_e, linkText) => {
+        if (window.ide?.openExternal) {
+          void window.ide.openExternal(linkText);
+        } else {
+          window.open(linkText, '_blank');
+        }
+      },
+    });
+  }
+
+  const FILE_LINE_REGEX =
+    /(?:^|[\s("'`<\[])((?:(?:\/|[a-zA-Z]:[\\/]|(?:\.{1,2}[\\/]))|[\w@.-]+[\\/])[\w@./\\-]+\.[a-zA-Z0-9_-]+(?:(?::\d+){1,2}|:\s*\[\d+(?:,\s*\d+)?\]|\(\d+(?:,\s*\d+)?\))?)/gi;
+  let fMatch: RegExpExecArray | null;
+  while ((fMatch = FILE_LINE_REGEX.exec(text)) !== null) {
+    const raw = fMatch[1];
+    const startIndex = fMatch.index + (fMatch[0].length - raw.length);
+    const endIndex = startIndex + raw.length;
+
+    if (urlRanges.some((r) => startIndex >= r.start && startIndex < r.end)) {
+      continue;
+    }
+
+    const { filePath, line, col } = parseFilePathAndLoc(raw);
+    const resolvedPath =
+      cwd && !filePath.startsWith('/') && !/^[a-zA-Z]:/.test(filePath)
+        ? `${cwd.replace(/[\\/]+$/, '')}/${filePath.replace(/^\.[\\/]/, '')}`
+        : filePath;
+
+    const startX = startIndex + 1;
+    const endX = endIndex;
+
+    links.push({
+      range: {
+        start: { x: startX, y: bufferLineNumber },
+        end: { x: endX, y: bufferLineNumber },
+      },
+      text: raw,
+      decorations: { pointerCursor: true, underline: true },
+      activate: (_e, _linkText) => {
+        if (onOpenFile) {
+          onOpenFile(resolvedPath, line, col);
+        }
+      },
+    });
+  }
+
+  return links;
+}
+
 interface SessionProps {
   clientId: string;
   active: boolean;
@@ -536,6 +642,7 @@ interface SessionProps {
   isFocusedPane?: boolean;
   onPaneFocus?: () => void;
   style?: React.CSSProperties;
+  onOpenFile?: (path: string, line?: number, column?: number) => void;
 }
 
 
@@ -563,6 +670,7 @@ function TerminalSession({
   isFocusedPane,
   onPaneFocus,
   style,
+  onOpenFile,
 }: SessionProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -576,6 +684,10 @@ function TerminalSession({
   visibleRef.current = visible;
   const wordWrapRef = useRef(wordWrap);
   wordWrapRef.current = wordWrap;
+  const onOpenFileRef = useRef(onOpenFile);
+  onOpenFileRef.current = onOpenFile;
+  const cwdRef = useRef(cwd);
+  cwdRef.current = cwd;
 
   // 搜索状态管理
   const [searchQuery, setSearchQuery] = useState('');
@@ -884,6 +996,23 @@ function TerminalSession({
     const searchChangeDisposable = searchAddon.onDidChangeResults((e: { resultIndex: number; resultCount: number }) => {
       setSearchResultIndex(e.resultIndex);
       setSearchResultCount(e.resultCount);
+    });
+
+    const linkDisposable = term.registerLinkProvider({
+      provideLinks(bufferLineNumber: number, callback: (links: ILink[] | undefined) => void) {
+        const bufLine = term.buffer.active.getLine(bufferLineNumber - 1);
+        if (!bufLine) {
+          callback(undefined);
+          return;
+        }
+        const lineText = bufLine.translateToString(true);
+        if (!lineText) {
+          callback(undefined);
+          return;
+        }
+        const detected = findLinksInLine(lineText, bufferLineNumber, cwdRef.current, onOpenFileRef.current);
+        callback(detected.length > 0 ? detected : undefined);
+      },
     });
 
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -1217,6 +1346,7 @@ function TerminalSession({
       searchChangeDisposable.dispose();
       searchAddon.dispose();
       searchAddonRef.current = null;
+      linkDisposable.dispose();
       writeParsedDisposable?.dispose();
       writeParsedDisposable = null;
       onResizeDisposable.dispose();
@@ -1662,6 +1792,7 @@ export function TerminalPanel({
   maximized,
   onCollapse,
   onRequestCloseConfirm,
+  onOpenFile,
 }: Props) {
   // 关闭有内容的终端标签前确认（系统 window.confirm 不是应用主题色，也没法说明会丢什么）
   const confirm = useDbConfirm();
@@ -2623,6 +2754,7 @@ export function TerminalPanel({
               onRegisterExtractLog={handleRegisterExtractLog}
               onRegisterFocus={handleRegisterFocus}
               onTriggerAiK={() => setShowAiK(true)}
+              onOpenFile={onOpenFile}
             />
           );
         })}
