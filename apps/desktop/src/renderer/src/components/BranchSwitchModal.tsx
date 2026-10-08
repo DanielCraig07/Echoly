@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { GitBranchInfo } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
@@ -216,9 +217,11 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
     }
   }
 
+  if (typeof document === 'undefined') return null;
+
   const safeOverlay = createSafeOverlayHandlers(onClose);
 
-  return (
+  return createPortal(
     <div
       className="settings-overlay"
       {...safeOverlay}
@@ -990,6 +993,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
         {/* 右下角全向拖拽手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

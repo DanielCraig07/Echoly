@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { PROJECT_TEMPLATE_LIST, type ProjectTemplate } from '../utils/projectTemplates';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
@@ -154,11 +155,11 @@ export function NewProjectWizardModal({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
   const safeOverlay = createSafeOverlayHandlers(onClose);
 
-  return (
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -519,6 +520,7 @@ export function NewProjectWizardModal({
         {/* 右下角全向拖拽手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { DatabaseConnectionInfo, DbSavedConnection } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 import {
@@ -221,7 +222,9 @@ export function NewDbConnectionModal({
     }
   };
 
-  return (
+  if (!isOpen || typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
       className="modal-overlay"
       {...overlayHandlers}
@@ -655,6 +658,7 @@ export function NewDbConnectionModal({
         {/* 右下角拖动调整尺寸手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

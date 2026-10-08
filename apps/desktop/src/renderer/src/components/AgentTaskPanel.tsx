@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { PanelChevron } from './PanelChevron';
 
 export interface AgentTaskStep {
   id: string;
@@ -792,6 +793,7 @@ export function AgentTaskPanel({
         }}
       >
         <div
+          className="panel-header-title"
           style={{
             fontSize: 12,
             fontWeight: 700,
@@ -799,10 +801,11 @@ export function AgentTaskPanel({
             letterSpacing: '0.05em',
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 5,
           }}
         >
-          <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>▾</span> AI 任务看板
+          <PanelChevron expanded={true} size={12} />
+          <span>AI 任务看板</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button

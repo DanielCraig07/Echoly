@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { SearchCodeHit } from '@deepseek-ide/shared';
 import { RenderFileTreeIcon } from './FileTree';
+import { PanelChevron } from './PanelChevron';
 
 interface Props {
   onOpenFile: (path: string, line?: number) => void;
@@ -96,12 +97,7 @@ function SearchTreeNodeView({
           }}
           className="search-result-item"
         >
-          <span
-            className="chevron"
-            style={{ fontSize: 11, color: 'var(--muted)', width: 12, display: 'inline-block' }}
-          >
-            {isCollapsed ? '▸' : '▾'}
-          </span>
+          <PanelChevron expanded={!isCollapsed} size={11} color="var(--muted)" />
           <RenderFileTreeIcon name={node.name} isDirectory={true} isOpen={!isCollapsed} />
           <span style={{ color: 'var(--text)', fontWeight: 500 }}>{node.name}</span>
         </div>
@@ -146,12 +142,7 @@ function SearchTreeNodeView({
         }}
         className="search-result-item"
       >
-        <span
-          className="chevron"
-          style={{ fontSize: 11, color: 'var(--muted)', width: 12, display: 'inline-block' }}
-        >
-          {isCollapsed ? '▸' : '▾'}
-        </span>
+        <PanelChevron expanded={!isCollapsed} size={11} color="var(--muted)" />
         <RenderFileTreeIcon name={node.name} isDirectory={false} />
         <span style={{ color: 'var(--text)', fontWeight: 600 }}>{node.name}</span>
         <span
@@ -455,6 +446,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
         }}
       >
         <div
+          className="panel-header-title"
           style={{
             fontSize: 12,
             fontWeight: 700,
@@ -462,13 +454,11 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             letterSpacing: '0.05em',
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 5,
           }}
         >
-          <span className="chevron" style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>
-            ▾
-          </span>{' '}
-          搜索
+          <PanelChevron expanded={true} size={12} />
+          <span>搜索</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           <button
@@ -841,9 +831,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                           userSelect: 'none',
                         }}
                       >
-                        <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>
-                          {isCollapsed ? '▸' : '▾'}
-                        </span>
+                        <PanelChevron expanded={!isCollapsed} size={11} color="var(--muted)" />
                         <RenderFileTreeIcon name={group.fileName} isDirectory={false} />
                         <span
                           style={{

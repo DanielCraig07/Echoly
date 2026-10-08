@@ -8,6 +8,7 @@ import {
 import { resolveDebugConfig } from '../utils/debugLauncher';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { PanelChevron } from './PanelChevron';
 
 interface Props {
   workspace: string | null;
@@ -1574,7 +1575,7 @@ export function RunWidget({
         ) : (
           <span style={{ color: 'var(--muted)' }}>无运行配置</span>
         )}
-        <span style={{ fontSize: 9, opacity: 0.6, marginLeft: 2, flexShrink: 0 }}>▾</span>
+        <PanelChevron expanded={dropdownOpen} size={10} style={{ opacity: 0.7, marginLeft: 3 }} />
       </button>
 
       {/* 下拉浮层 */}

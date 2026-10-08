@@ -9833,6 +9833,29 @@ button.welcome-recent-remove:hover {
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* ── Panel Header Chevron & Title Styles ────────────────────────── */
+.panel-chevron-icon {
+  color: rgba(255, 255, 255, 0.65);
+  transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1), color 0.15s ease;
+  user-select: none;
+}
+
+.panel-header-title:hover .panel-chevron-icon,
+.panel-section-header:hover .panel-chevron-icon,
+.explorer-section-title:hover .panel-chevron-icon {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+[data-theme='light'] .panel-chevron-icon {
+  color: rgba(0, 0, 0, 0.55);
+}
+
+[data-theme='light'] .panel-header-title:hover .panel-chevron-icon,
+[data-theme='light'] .panel-section-header:hover .panel-chevron-icon,
+[data-theme='light'] .explorer-section-title:hover .panel-chevron-icon {
+  color: rgba(0, 0, 0, 0.88);
+}
+
 .panel-action-btn:focus {
   outline: none;
 }

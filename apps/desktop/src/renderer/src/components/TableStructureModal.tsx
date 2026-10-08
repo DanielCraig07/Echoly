@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 import { PanelSelect } from './PanelSelect';
@@ -180,7 +181,9 @@ export function TableStructureModal({
 
   const types = COLUMN_TYPES[driver];
 
-  return (
+  if (!isOpen || typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
       className="modal-overlay"
       {...overlayHandlers}
@@ -191,7 +194,7 @@ export function TableStructureModal({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 2000,
+        zIndex: 10000,
       }}
     >
       <div
@@ -468,6 +471,7 @@ export function TableStructureModal({
         }}
         onCancel={() => setConfirmContent(null)}
       />
-    </div>
+    </div>,
+    document.body,
   );
 }

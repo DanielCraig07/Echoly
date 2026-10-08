@@ -7,6 +7,7 @@ import type {
 } from '@deepseek-ide/shared';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { PanelChevron } from './PanelChevron';
 
 interface DebugPanelProps {
   workspace?: string | null;
@@ -429,8 +430,9 @@ export function DebugPanel({
         >
           {/* 1. 变量 (Variables) */}
           <div className="debug-section">
-            <div className="debug-section-header" onClick={() => toggleSection('variables')}>
-              <span>{collapsed.variables ? '▸' : '▾'} 变量 (VARIABLES)</span>
+            <div className="debug-section-header" onClick={() => toggleSection('variables')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <PanelChevron expanded={!collapsed.variables} size={11} color="var(--muted)" />
+              <span>变量 (VARIABLES)</span>
             </div>
             {!collapsed.variables && (
               <div className="debug-section-content">
@@ -468,8 +470,9 @@ export function DebugPanel({
 
           {/* 2. 调用堆栈 (Call Stack) */}
           <div className="debug-section">
-            <div className="debug-section-header" onClick={() => toggleSection('callStack')}>
-              <span>{collapsed.callStack ? '▸' : '▾'} 调用堆栈 (CALL STACK)</span>
+            <div className="debug-section-header" onClick={() => toggleSection('callStack')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <PanelChevron expanded={!collapsed.callStack} size={11} color="var(--muted)" />
+              <span>调用堆栈 (CALL STACK)</span>
             </div>
             {!collapsed.callStack && (
               <div className="debug-section-content">
@@ -510,8 +513,9 @@ export function DebugPanel({
               className="debug-section-header"
               style={{ display: 'flex', justifyContent: 'space-between' }}
             >
-              <span onClick={() => toggleSection('watch')}>
-                {collapsed.watch ? '▸' : '▾'} 监视表达式 (WATCH)
+              <span onClick={() => toggleSection('watch')} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <PanelChevron expanded={!collapsed.watch} size={11} color="var(--muted)" />
+                <span>监视表达式 (WATCH)</span>
               </span>
               <button
                 type="button"
@@ -587,8 +591,9 @@ export function DebugPanel({
               className="debug-section-header"
               style={{ display: 'flex', justifyContent: 'space-between' }}
             >
-              <span onClick={() => toggleSection('breakpoints')}>
-                {collapsed.breakpoints ? '▸' : '▾'} 断点列表 (BREAKPOINTS - {breakpoints.length})
+              <span onClick={() => toggleSection('breakpoints')} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <PanelChevron expanded={!collapsed.breakpoints} size={11} color="var(--muted)" />
+                <span>断点列表 (BREAKPOINTS - {breakpoints.length})</span>
               </span>
               {breakpoints.length > 0 && (
                 <button

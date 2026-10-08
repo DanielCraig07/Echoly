@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type { GitCommitEntry, PendingDiff } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
@@ -142,13 +143,13 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
     }
   };
 
-  if (!filePath) return null;
+  if (!filePath || typeof document === 'undefined') return null;
 
   const fileName = filePath.split('/').pop() || filePath;
 
   const safeOverlay = createSafeOverlayHandlers(onClose);
 
-  return (
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -481,6 +482,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
         {/* 右下角全向拖拽调整大小手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

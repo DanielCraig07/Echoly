@@ -12,6 +12,7 @@ import type {
 } from '@deepseek-ide/shared';
 import { NewDbConnectionModal } from './NewDbConnectionModal';
 import { TableStructureModal } from './TableStructureModal';
+import { PanelChevron } from './PanelChevron';
 import {
   DbGroupRow,
   DbObjectRow,
@@ -249,19 +250,11 @@ function IconKey() {
 }
 
 function IconChevronRight() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
-  );
+  return <PanelChevron expanded={false} size={12} />;
 }
 
 function IconChevronDown() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
+  return <PanelChevron expanded={true} size={12} />;
 }
 
 function IconDatabase() {
@@ -415,9 +408,7 @@ function ProjectScriptsList({
           }
         }}
       >
-        <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}>
-          {collapsed ? <IconChevronRight /> : <IconChevronDown />}
-        </span>
+        <PanelChevron expanded={!collapsed} size={12} color="var(--text-muted)" />
         <span>
           项目查询脚本
           {scripts.length > 0 && <span className="db-scripts-count">({scripts.length})</span>}
@@ -1798,6 +1789,7 @@ export function DatabasePanel({
         }}
       >
         <div
+          className="panel-header-title"
           style={{
             fontSize: 12,
             fontWeight: 700,
@@ -1805,10 +1797,11 @@ export function DatabasePanel({
             letterSpacing: '0.05em',
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 5,
           }}
         >
-          <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>▾</span> 数据库集成
+          <PanelChevron expanded={true} size={12} />
+          <span>数据库集成</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

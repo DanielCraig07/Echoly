@@ -28,6 +28,7 @@ import { WorkedForGroup } from './chat/WorkedForGroup';
 import { CollapsibleUserContent } from './chat/CollapsibleUserContent';
 import { InputCodeRefOverlay, type InputCodeRefOverlayHandle } from './chat/InputCodeRefOverlay';
 import { FileLanguageIcon } from './chat/CodeRefPill';
+import { PanelChevron } from './PanelChevron';
 import echolyAppIcon from '../assets/echoly-icon.png';
 
 interface MentionItem {
@@ -156,7 +157,7 @@ function ChatToolbarPill<T extends string>(props: {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="chat-model-name">{current?.label ?? String(value)}</span>
-        <span className="chat-model-arrow">▾</span>
+        <PanelChevron expanded={open} size={10} style={{ opacity: 0.6, marginLeft: 3 }} />
       </button>
       {open && (
         <div className="chat-model-dropdown-menu compact">
@@ -2870,7 +2871,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         <span className="chat-model-name">
                           {currentModel?.name || currentModelId}
                         </span>
-                        <span className="chat-model-arrow">▾</span>
+                        <PanelChevron expanded={modelDropdownOpen} size={10} style={{ opacity: 0.6, marginLeft: 3 }} />
                       </button>
 
                       {modelDropdownOpen && (

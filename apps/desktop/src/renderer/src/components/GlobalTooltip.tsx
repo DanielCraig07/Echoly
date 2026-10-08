@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface TargetRect {
   left: number;
@@ -190,11 +191,12 @@ export const GlobalTooltip: React.FC<GlobalTooltipProps> = ({ delay = 500 }) => 
     el.style.opacity = '1';
   }, [state.visible, state.targetRect, state.text, state.mouseY]);
 
-  if (!state.visible || !state.text) return null;
+  if (!state.visible || !state.text || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div ref={tooltipRef} className="global-app-tooltip">
       {state.text}
-    </div>
+    </div>,
+    document.body,
   );
 };

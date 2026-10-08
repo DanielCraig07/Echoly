@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { ModelProfile } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
@@ -166,12 +167,12 @@ export function ComposerModal({
     setFileDiffs((prev) => prev.map((d) => ({ ...d, status: 'rejected' })));
   };
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
   const pendingCount = fileDiffs.filter((d) => d.status === 'pending').length;
   const safeOverlay = createSafeOverlayHandlers(isRunning ? undefined : onClose);
 
-  return (
+  return createPortal(
     <div
       className="settings-overlay composer-overlay"
       {...safeOverlay}
@@ -511,6 +512,7 @@ export function ComposerModal({
 
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

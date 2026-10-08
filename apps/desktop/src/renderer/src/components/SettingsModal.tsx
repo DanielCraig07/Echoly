@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   AppSettings,
   PermissionMode,
@@ -480,7 +481,9 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
     }
   }
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div className="settings-overlay">
       <div
         className="settings-modal modern-settings"
@@ -1916,6 +1919,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
         {/* 右下角全向可拖拽调整手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

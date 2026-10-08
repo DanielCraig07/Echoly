@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { WorkspaceInfo, MavenEnvironmentInfo } from '@deepseek-ide/shared';
 import { loadEnvConfig, saveEnvConfig, type EnvConfig } from './EnvironmentSettingsSection';
 import { EnvironmentConfigModal } from './EnvironmentConfigModal';
+import { PanelChevron } from './PanelChevron';
 
 export interface MavenPanelProps {
   workspaceInfo?: WorkspaceInfo | null;
@@ -312,9 +313,7 @@ function TreeNode({ label, icon, badge, badgeColor = 'var(--muted)', collapsed, 
           margin: '1px 4px',
         }}
       >
-        <span style={{ width: 12, fontSize: 10, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          {collapsed ? '▸' : '▾'}
-        </span>
+        <PanelChevron expanded={!collapsed} size={11} color="var(--muted)" />
         <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
         <span style={{
           fontSize: depth === 0 ? 13 : 12.5,
@@ -614,6 +613,7 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
       {/* ── Header: Height 30px, Typography & Actions Unified with Explorer/Search/Git ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 30, padding: '0 10px', boxSizing: 'border-box', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div
+          className="panel-header-title"
           style={{
             fontSize: 12,
             fontWeight: 700,
@@ -621,13 +621,11 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
             letterSpacing: '0.05em',
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 5,
           }}
         >
-          <span className="chevron" style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>
-            ▾
-          </span>{' '}
-          Maven
+          <PanelChevron expanded={true} size={12} />
+          <span>Maven</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

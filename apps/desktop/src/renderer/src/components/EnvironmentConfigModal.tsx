@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 import type {
   MavenEnvironmentInfo,
@@ -184,9 +185,11 @@ export function EnvironmentConfigModal({
     ? '系统默认 Java (自动探测就绪)'
     : '未配置 Java 环境';
 
+  if (!isOpen || typeof document === 'undefined') return null;
+
   const safeOverlay = createSafeOverlayHandlers(onClose);
 
-  return (
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -1003,6 +1006,7 @@ export function EnvironmentConfigModal({
         {/* 右下角全向拖拽调整大小手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

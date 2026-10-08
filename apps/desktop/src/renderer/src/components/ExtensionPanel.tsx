@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 export interface ExtensionPanelProps {
@@ -331,11 +332,11 @@ export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModa
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
   const safeOverlay = createSafeOverlayHandlers(onClose);
 
-  return (
+  return createPortal(
     <div className="settings-overlay" {...safeOverlay}>
       <div
         className="ide-modal modern-extension-modal"
@@ -382,6 +383,7 @@ export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModa
         {/* 右下角全向拖拽手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

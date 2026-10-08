@@ -9,11 +9,13 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { FileTreeNode, GitStatusEntry, GitStatusResult } from '@deepseek-ide/shared';
 import { createSafeOverlayHandlers } from '../hooks/useModalResize';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { validateMove } from '../utils/fileMoveValidation';
+import { PanelChevron } from './PanelChevron';
 
 export type PathClipboard = {
   mode: 'cut' | 'copy';
@@ -680,23 +682,15 @@ function TreeNode({
             onContextMenu={(e) => onContextNode(e, node)}
           >
             {indents}
-            <span
-              className="chevron"
+            <PanelChevron
+              expanded={open}
+              size={12}
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 14,
-                height: 14,
-                fontSize: 10,
-                color: 'rgba(255, 255, 255, 0.65)',
                 marginRight: 2,
                 position: 'relative',
                 zIndex: 1,
               }}
-            >
-              {open ? '▾' : '▸'}
-            </span>
+            />
             <span
               className="folder-icon"
               style={{
@@ -988,7 +982,9 @@ function FindInFolderModal({
 
   const safeOverlay = createSafeOverlayHandlers(onClose);
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div className="settings-overlay find-folder-overlay" {...safeOverlay}>
       <div className="find-folder-modal" onClick={(e) => e.stopPropagation()}>
         <div className="find-folder-header">
@@ -1136,7 +1132,8 @@ function FindInFolderModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

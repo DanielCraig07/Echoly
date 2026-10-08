@@ -58,6 +58,7 @@ import {
 import { RunWidget } from './components/RunWidget';
 import { ExtensionModal } from './components/ExtensionPanel';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
+import { PanelChevron } from './components/PanelChevron';
 import { GitPanel } from './components/GitPanel';
 import { SearchPanel } from './components/SearchPanel';
 import { MavenPanel } from './components/MavenPanel';
@@ -4064,18 +4065,17 @@ export function App() {
                     onClick={() => setWorkspaceExpanded((v) => !v)}
                   >
                     <div
+                      className="panel-header-title"
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 4,
+                        gap: 5,
                         minWidth: 0,
                         flex: 1,
                         marginRight: 8,
                       }}
                     >
-                      <span className="chevron" style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>
-                        {workspaceExpanded ? '▾' : '▸'}
-                      </span>
+                      <PanelChevron expanded={workspaceExpanded} size={12} />
                       <span
                         title={workspaceInfo.label || workspaceInfo.root || 'PROJECT-IDE'}
                         style={{

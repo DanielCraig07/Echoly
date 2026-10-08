@@ -12,6 +12,7 @@ import type {
   WorkspaceInfo,
 } from '@deepseek-ide/shared';
 import { RenderFileTreeIcon } from './FileTree';
+import { PanelChevron } from './PanelChevron';
 import { GitCommitPreviewCard } from './GitCommitPreviewCard';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
@@ -214,9 +215,7 @@ function GitTreeItemView({
           }}
           className="search-result-item"
         >
-          <span style={{ fontSize: 10, color: 'var(--muted)', width: 12, textAlign: 'center' }}>
-            {collapsed ? '▸' : '▾'}
-          </span>
+          <PanelChevron expanded={!collapsed} size={11} color="var(--muted)" />
           <RenderFileTreeIcon
             name={node.name.includes(' / ') ? node.name.split(' / ').pop()! : node.name}
             isDirectory={true}
@@ -2074,6 +2073,7 @@ export function GitPanel({
         }}
       >
         <div
+          className="panel-header-title"
           style={{
             fontSize: 12,
             fontWeight: 700,
@@ -2081,13 +2081,11 @@ export function GitPanel({
             letterSpacing: '0.05em',
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 5,
           }}
         >
-          <span className="chevron" style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>
-            ▾
-          </span>{' '}
-          源代码
+          <PanelChevron expanded={true} size={12} />
+          <span>源代码</span>
         </div>
 
         {/* Header Actions: 1. Tree structure toggle, 2. Refresh, 3. More (...) dropdown */}
@@ -2851,9 +2849,7 @@ export function GitPanel({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span className="chevron" style={{ fontSize: 11, color: 'var(--muted)', width: 10 }}>
-              {isStashesCollapsed ? '›' : '▾'}
-            </span>
+            <PanelChevron expanded={!isStashesCollapsed} size={11} color="var(--muted)" />
             <span style={{ color: 'var(--text)', fontWeight: 600 }}>暂存区 (Stash)</span>
             <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
               ({stashes.length})
@@ -3046,9 +3042,7 @@ export function GitPanel({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span className="chevron" style={{ fontSize: 11, color: 'var(--muted)', width: 10 }}>
-              {isGraphCollapsed ? '›' : '▾'}
-            </span>
+            <PanelChevron expanded={!isGraphCollapsed} size={11} color="var(--muted)" />
             <span style={{ color: 'var(--text)', fontWeight: 600 }}>图形</span>
             <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
               ({commits.length})

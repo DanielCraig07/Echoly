@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 import { MarkdownMessage } from './MarkdownMessage';
 import { isTypingConfirmed, type DbConfirmTone } from '../services/dbConfirmContent';
@@ -92,7 +93,7 @@ export function DbConfirmModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onCancel]);
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
   const inputError = input?.validate ? input.validate(typed) : null;
   const typingOk = requireTyping === undefined || isTypingConfirmed(requireTyping, typed);
@@ -104,7 +105,7 @@ export function DbConfirmModal({
     onConfirm(typed);
   };
 
-  return (
+  return createPortal(
     <div
       className="modal-overlay"
       {...overlayHandlers}
@@ -116,7 +117,7 @@ export function DbConfirmModal({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 12000,
+        zIndex: 100000,
       }}
     >
       <div
@@ -245,6 +246,7 @@ export function DbConfirmModal({
 
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

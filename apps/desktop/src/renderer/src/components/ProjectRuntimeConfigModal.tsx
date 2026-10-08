@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 
 export interface ProjectRuntimeConfig {
@@ -564,12 +565,12 @@ export function ProjectRuntimeConfigModal({
     setTimeout(() => setCopied(false), 2000);
   }, [previewCommand, onShowToast]);
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
   const projectName = workspace ? workspace.split('/').pop() : '全局';
   const safeOverlay = createSafeOverlayHandlers(onClose);
 
-  return (
+  return createPortal(
     <div
       style={{
         position: 'fixed',
@@ -1230,6 +1231,7 @@ export function ProjectRuntimeConfigModal({
         {/* 右下角全向拖拽手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
