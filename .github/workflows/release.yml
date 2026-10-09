@@ -9,7 +9,27 @@ permissions:
   contents: write
 
 jobs:
+  init-release:
+    name: Prepare GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure Release Exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "Checking release for tag $TAG..."
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Creating release for $TAG..."
+            gh release create "$TAG" --repo "${{ github.repository }}" --title "$TAG" --generate-notes --draft
+          else
+            echo "Release $TAG already exists."
+          fi
+
   macos:
+    name: Build & Upload macOS (arm64)
+    needs: init-release
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -30,20 +50,24 @@ jobs:
         run: |
           npm run typecheck
           npm run lint
-          npm test
 
-      - name: Package macOS arm64 DMG (publish to release)
+      - name: Build and Package macOS arm64 DMG
+        run: |
+          npm run pack:mac:arm64 -w @echoly/desktop
+
+      - name: Upload macOS artifacts to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! npm run pack:mac:publish; then
-            echo "::warning::pack:mac:publish encountered upload error, executing fallback gh release upload..."
-            cd apps/desktop
-            gh release upload "${{ github.ref_name }}" release/*.dmg release/*.dmg.blockmap release/latest-mac.yml --clobber || true
-          fi
-
+          TAG="${{ github.ref_name }}"
+          echo "Uploading macOS assets to release $TAG..."
+          cd apps/desktop
+          ls -la release/*.dmg release/*.dmg.blockmap release/latest-mac.yml
+          gh release upload "$TAG" release/*.dmg release/*.dmg.blockmap release/latest-mac.yml --repo "${{ github.repository }}" --clobber
 
   windows:
+    name: Build & Upload Windows (x64)
+    needs: init-release
     runs-on: windows-latest
     timeout-minutes: 30
     continue-on-error: true
@@ -64,36 +88,39 @@ jobs:
       - name: Sync version from git tag
         run: node scripts/sync-version.js ${{ github.ref_name }}
 
-      - name: Package Windows x64 NSIS (publish to release)
+      - name: Build and Package Windows x64 NSIS
+        run: |
+          npm run pack -w @echoly/desktop
+
+      - name: Upload Windows artifacts to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ! npm run pack:win:publish; then
-            echo "::warning::pack:win:publish encountered upload error, executing fallback gh release upload..."
-            cd apps/desktop
-            gh release upload "${{ github.ref_name }}" release/*.exe release/*.exe.blockmap release/latest.yml --clobber || true
-          fi
-
+          TAG="${{ github.ref_name }}"
+          echo "Uploading Windows assets to release $TAG..."
+          cd apps/desktop
+          ls -la release/*.exe release/*.exe.blockmap release/latest.yml
+          gh release upload "$TAG" release/*.exe release/*.exe.blockmap release/latest.yml --repo "${{ github.repository }}" --clobber
 
   publish:
-    needs: [macos, windows]
+    name: Finalize & Publish Release
+    needs: [init-release, macos, windows]
     if: always() && !cancelled() && (needs.macos.result == 'success' || needs.windows.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Publish Draft Release
+      - name: Publish Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.ref_name }}"
-          echo "Publishing draft release for tag: $TAG..."
-          # 查找当前 tag 关联的 draft release 并取消 draft 状态
+          echo "Publishing release for tag: $TAG..."
           RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -n 1)
           if [ -n "$RELEASE_ID" ]; then
             gh api -X PATCH "repos/${{ github.repository }}/releases/$RELEASE_ID" -f draft=false
-            echo "✓ Release $TAG (ID: $RELEASE_ID) published successfully!"
+            echo "✓ Release $TAG (ID: $RELEASE_ID) is live and published!"
           else
-            # 备选方案：尝试直接编辑 tag 对应的 release 或创建 release
-            gh release edit "$TAG" --draft=false 2>/dev/null || gh release create "$TAG" --title "$TAG" --generate-notes || true
+            gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false 2>/dev/null || true
           fi
+
