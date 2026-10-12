@@ -1457,13 +1457,17 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             } catch { /* ignore */ }
             break;
           }
-          case 'error':
+          case 'error': {
+            const isConnErr = /econnrefused|fetch failed|timeout|network|connect|enotfound|offline|abort/i.test(event.message);
+            const errContent = isConnErr
+              ? `⚠️ **模型连通性异常**：连接大语言模型服务失败 (${event.message})。\n\n> **诊断与恢复指引**：\n> 1. 若使用本地自建模型（如 Ollama / LM Studio），请检查服务是否运行或端口是否正确监听；\n> 2. 若在离线局域网环境，请检查网络路由与内网代理是否正常；\n> 3. 建议在顶部模型下拉框中，一键切换至当前标记为绿色的备用可用模型。`
+              : `错误：${event.message}`;
             next.messages = [
               ...next.messages,
               {
                 id: uid(),
                 role: 'assistant',
-                content: `错误：${event.message}`,
+                content: errContent,
                 createdAt: Date.now(),
               },
             ];
@@ -1483,6 +1487,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               );
             } catch { /* ignore */ }
             break;
+          }
         }
         return next;
       });

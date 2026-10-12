@@ -2540,11 +2540,22 @@ export function EditorPane({
           e.stopPropagation();
           onCloseDiff();
         }
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === '\\' || e.code === 'Backslash')) {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsSplit((v) => {
+          const next = !v;
+          if (next && !splitPath) {
+            const otherTab = tabs.find((t) => t.path !== activePath);
+            setSplitPath(otherTab ? otherTab.path : activePath);
+          }
+          return next;
+        });
       }
     };
     window.addEventListener('keydown', handleKey, true);
     return () => window.removeEventListener('keydown', handleKey, true);
-  }, [gitInlineDiffLine, previewDiff, onCloseDiff, selectionCoords, showToc]);
+  }, [gitInlineDiffLine, previewDiff, onCloseDiff, selectionCoords, showToc, splitPath, tabs, activePath]);
 
   useEffect(() => {
     if (!active) {
@@ -3287,6 +3298,23 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         contextMenuOrder: 3,
         run: () => {
           handleTriggerFixWithAi(ed);
+        },
+      });
+      ed.addAction({
+        id: 'echoly.toggleSplitEditor',
+        label: 'View: 切换拆分编辑器 (⌘\\)',
+        keybindings: [KeyMod.CtrlCmd | KeyCode.Backslash],
+        contextMenuGroupId: '1_modification',
+        contextMenuOrder: 10,
+        run: () => {
+          setIsSplit((v) => {
+            const next = !v;
+            if (next && !splitPath) {
+              const otherTab = tabs.find((t) => t.path !== activePath);
+              setSplitPath(otherTab ? otherTab.path : activePath);
+            }
+            return next;
+          });
         },
       });
       ed.addAction({

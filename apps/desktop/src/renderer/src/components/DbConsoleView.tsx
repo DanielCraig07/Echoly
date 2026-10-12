@@ -42,6 +42,21 @@ interface StatementRun {
   result: DatabaseQueryResult;
 }
 
+export interface SqlHistoryItem {
+  id: string;
+  sql: string;
+  time: number;
+  connectionId: string;
+  ok: boolean;
+}
+
+export interface SqlFavoriteItem {
+  id: string;
+  title: string;
+  sql: string;
+  time: number;
+}
+
 /** 语句摘要：取第一行非空文本，过长则截断 */
 function summarizeSql(sql: string, max = 60): string {
   const firstLine = sql
@@ -67,6 +82,28 @@ export function DbConsoleView({
   const [activeRunIndex, setActiveRunIndex] = useState<number>(0);
   const [executing, setExecuting] = useState<boolean>(false);
   const [splitRatio, setSplitRatio] = useState<number>(0.45); // 上部编辑器占比 45%
+
+  // ── SQL 执行历史与常用收藏 ──
+  const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
+  const [showFavoriteModal, setShowFavoriteModal] = useState<boolean>(false);
+  const [historySearch, setHistorySearch] = useState<string>('');
+  const [favoriteSearch, setFavoriteSearch] = useState<string>('');
+  const [historyList, setHistoryList] = useState<SqlHistoryItem[]>(() => {
+    try {
+      const raw = localStorage.getItem('echoly:db_sql_history');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [favoritesList, setFavoritesList] = useState<SqlFavoriteItem[]>(() => {
+    try {
+      const raw = localStorage.getItem('echoly:db_sql_favorites');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // ── 连接 / 库切换 ──
   //
@@ -298,6 +335,24 @@ export function DbConsoleView({
 
         const failed = collected.filter((r) => !r.result.ok);
         const totalMs = collected.reduce((sum, r) => sum + (r.result.executionTimeMs || 0), 0);
+
+        // 自动存入 SQL 执行历史记录 (最多保留 50 条)
+        const historyItem: SqlHistoryItem = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          sql: targetSql.trim(),
+          time: Date.now(),
+          connectionId: activeConnId,
+          ok: failed.length === 0,
+        };
+        setHistoryList((prev) => {
+          const filtered = prev.filter((item) => item.sql !== historyItem.sql);
+          const next = [historyItem, ...filtered].slice(0, 50);
+          try {
+            localStorage.setItem('echoly:db_sql_history', JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+
         if (failed.length === 0) {
           onShowToast?.(
             statements.length > 1
@@ -320,6 +375,63 @@ export function DbConsoleView({
       }
     },
     [sql, activeConnId, activeSchema, onShowToast],
+  );
+
+  const handleSaveFavorite = useCallback(() => {
+    if (!sql.trim()) {
+      onShowToast?.('当前编辑器为空，无法收藏', undefined, 'warn');
+      return;
+    }
+    const defaultTitle = summarizeSql(sql, 28);
+    const title = window.prompt('请输入收藏名称：', defaultTitle) || defaultTitle;
+    const item: SqlFavoriteItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      title: title.trim(),
+      sql: sql.trim(),
+      time: Date.now(),
+    };
+    setFavoritesList((prev) => {
+      const filtered = prev.filter((fav) => fav.sql !== item.sql);
+      const next = [item, ...filtered].slice(0, 50);
+      try {
+        localStorage.setItem('echoly:db_sql_favorites', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    onShowToast?.('已加入常用 SQL 收藏夹', title, 'success');
+  }, [sql, onShowToast]);
+
+  const handleDeleteFavorite = useCallback((id: string) => {
+    setFavoritesList((prev) => {
+      const next = prev.filter((fav) => fav.id !== id);
+      try {
+        localStorage.setItem('echoly:db_sql_favorites', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const handleClearHistory = useCallback(() => {
+    setHistoryList([]);
+    try {
+      localStorage.removeItem('echoly:db_sql_history');
+    } catch {}
+    onShowToast?.('已清空 SQL 执行历史', undefined, 'info');
+  }, [onShowToast]);
+
+  const handleApplySqlToEditor = useCallback(
+    (targetSqlText: string, append = false) => {
+      if (append) {
+        const next = sql.trim() ? `${sql.trim()}\n\n${targetSqlText}` : targetSqlText;
+        handleEditorChange(next);
+      } else {
+        handleEditorChange(targetSqlText);
+      }
+      setShowHistoryModal(false);
+      setShowFavoriteModal(false);
+      onShowToast?.('已填入 SQL 编辑器', undefined, 'success');
+    },
+    [sql, handleEditorChange, onShowToast],
   );
 
   const formatSql = () => {
@@ -481,6 +593,46 @@ export function DbConsoleView({
             </svg>
           </button>
 
+          <button
+            type="button"
+            className="panel-action-btn"
+            title="收藏当前 SQL 语句"
+            onClick={handleSaveFavorite}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            className={`panel-action-btn${showFavoriteModal ? ' active' : ''}`}
+            title={`常用 SQL 收藏夹 (${favoritesList.length})`}
+            onClick={() => {
+              setShowFavoriteModal((v) => !v);
+              setShowHistoryModal(false);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            className={`panel-action-btn${showHistoryModal ? ' active' : ''}`}
+            title={`SQL 执行历史记录 (${historyList.length})`}
+            onClick={() => {
+              setShowHistoryModal((v) => !v);
+              setShowFavoriteModal(false);
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          </button>
+
           {/* 快捷键提示随左区一起被挤掉，而不是把中间的目标选择器顶偏 */}
           <span
             style={{
@@ -556,6 +708,342 @@ export function DbConsoleView({
           )}
         </div>
       </div>
+
+      {/* ── SQL 执行历史抽屉浮层 ── */}
+      {showHistoryModal && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 31,
+            left: 10,
+            zIndex: 100,
+            width: 440,
+            maxHeight: 380,
+            background: 'var(--bg-secondary, #1e1e1e)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              padding: '8px 12px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(255, 255, 255, 0.03)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12 }}>
+              <span>🕒 SQL 执行历史</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>({historyList.length})</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {historyList.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearHistory}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    color: '#f87171',
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    padding: '2px 6px',
+                  }}
+                >
+                  清空历史
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(false)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text-muted)',
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            </div>
+          </div>
+
+          <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
+            <input
+              type="text"
+              placeholder="搜索历史 SQL..."
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '4px 8px',
+                fontSize: 11,
+                borderRadius: 4,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-tertiary, #141414)',
+                color: 'var(--text)',
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0', maxHeight: 280 }}>
+            {historyList.filter((item) =>
+              historySearch ? item.sql.toLowerCase().includes(historySearch.toLowerCase()) : true,
+            ).length === 0 ? (
+              <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
+                暂无历史执行记录
+              </div>
+            ) : (
+              historyList
+                .filter((item) =>
+                  historySearch ? item.sql.toLowerCase().includes(historySearch.toLowerCase()) : true,
+                )
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      padding: '8px 12px',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 10, color: item.ok ? '#34d399' : '#f87171' }}>
+                        {item.ok ? '✓ 执行成功' : '✕ 执行失败'} · {new Date(item.time).toLocaleTimeString()}
+                      </span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          onClick={() => handleApplySqlToEditor(item.sql, false)}
+                          style={{
+                            border: '1px solid var(--border)',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            color: 'var(--text)',
+                            borderRadius: 3,
+                            fontSize: 10,
+                            padding: '2px 6px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          填入
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApplySqlToEditor(item.sql, true)}
+                          style={{
+                            border: '1px solid var(--border)',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            color: 'var(--text)',
+                            borderRadius: 3,
+                            fontSize: 10,
+                            padding: '2px 6px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          追加
+                        </button>
+                      </div>
+                    </div>
+                    <pre
+                      style={{
+                        margin: 0,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        color: 'var(--text)',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                        maxHeight: 60,
+                        overflow: 'hidden',
+                        opacity: 0.85,
+                      }}
+                    >
+                      {item.sql}
+                    </pre>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 常用 SQL 收藏夹抽屉浮层 ── */}
+      {showFavoriteModal && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 31,
+            left: 10,
+            zIndex: 100,
+            width: 440,
+            maxHeight: 380,
+            background: 'var(--bg-secondary, #1e1e1e)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              padding: '8px 12px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'rgba(255, 255, 255, 0.03)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12 }}>
+              <span>⭐ 常用 SQL 收藏夹</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>({favoritesList.length})</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowFavoriteModal(false)}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--text-muted)',
+                fontSize: 14,
+                cursor: 'pointer',
+                lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
+            <input
+              type="text"
+              placeholder="搜索收藏 SQL..."
+              value={favoriteSearch}
+              onChange={(e) => setFavoriteSearch(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '4px 8px',
+                fontSize: 11,
+                borderRadius: 4,
+                border: '1px solid var(--border)',
+                background: 'var(--bg-tertiary, #141414)',
+                color: 'var(--text)',
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0', maxHeight: 280 }}>
+            {favoritesList.filter(
+              (item) =>
+                !favoriteSearch ||
+                item.title.toLowerCase().includes(favoriteSearch.toLowerCase()) ||
+                item.sql.toLowerCase().includes(favoriteSearch.toLowerCase()),
+            ).length === 0 ? (
+              <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
+                暂无收藏项（点击工具栏书签图标收藏当前 SQL）
+              </div>
+            ) : (
+              favoritesList
+                .filter(
+                  (item) =>
+                    !favoriteSearch ||
+                    item.title.toLowerCase().includes(favoriteSearch.toLowerCase()) ||
+                    item.sql.toLowerCase().includes(favoriteSearch.toLowerCase()),
+                )
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      padding: '8px 12px',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{item.title}</span>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleApplySqlToEditor(item.sql, false)}
+                          style={{
+                            border: '1px solid var(--border)',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            color: 'var(--text)',
+                            borderRadius: 3,
+                            fontSize: 10,
+                            padding: '2px 6px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          填入
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApplySqlToEditor(item.sql, true)}
+                          style={{
+                            border: '1px solid var(--border)',
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            color: 'var(--text)',
+                            borderRadius: 3,
+                            fontSize: 10,
+                            padding: '2px 6px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          追加
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFavorite(item.id)}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: '#f87171',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                            padding: '0 2px',
+                          }}
+                          title="删除收藏"
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </div>
+                    <pre
+                      style={{
+                        margin: 0,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        color: 'var(--text-muted)',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                        maxHeight: 50,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {item.sql}
+                    </pre>
+                  </div>
+                ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── 多语句执行日志条 ── */}
       {runs.length > 1 && (
