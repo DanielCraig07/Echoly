@@ -1390,6 +1390,11 @@ export interface IpcApi {
   openSystemSettings?: (type?: string) => Promise<boolean>;
   /** 打开系统外部链接或本地网络服务 */
   openExternal?: (url: string) => Promise<boolean>;
+
+  /** 代码库全局符号索引与自然语言语义搜索 */
+  codebaseIndex: () => Promise<CodebaseIndexStatus>;
+  codebaseSearch: (query: string, limit?: number) => Promise<CodebaseSymbolHit[]>;
+  codebaseStatus: () => Promise<CodebaseIndexStatus>;
 }
 
 export interface CppToolItem {
@@ -1561,9 +1566,28 @@ export interface LspLocation {
 
 export * from './projectTemplates';
 
+export interface CodebaseSymbolHit {
+  filePath: string;
+  name: string;
+  kind: 'function' | 'class' | 'interface' | 'type' | 'variable' | 'doc';
+  line: number;
+  endLine: number;
+  content: string;
+  doc?: string;
+  score: number;
+}
+
+export interface CodebaseIndexStatus {
+  indexedFiles: number;
+  totalSymbols: number;
+  lastIndexedTime: number;
+  isIndexing: boolean;
+}
+
 declare global {
   interface Window {
     ide: IpcApi;
   }
 }
+
 

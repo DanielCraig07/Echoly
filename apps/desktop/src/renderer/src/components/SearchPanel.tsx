@@ -224,6 +224,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
   const [isRegex, setIsRegex] = useState(false);
   const [preserveCase, setPreserveCase] = useState(false);
   const [displayMode, setDisplayMode] = useState<'list' | 'tree'>('list');
+  const [isSemanticMode, setIsSemanticMode] = useState(false);
 
   const [showDetails, setShowDetails] = useState(false);
   const [includesPattern, setIncludesPattern] = useState('');
@@ -245,6 +246,30 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
     }
     const currentSeq = ++seq.current;
     setLoading(true);
+
+    // 自然语言 @codebase 语义搜索模式
+    if (q.startsWith('@codebase ') || isSemanticMode) {
+      try {
+        const cleanQuery = q.replace(/^@codebase\s*/, '').trim();
+        const hits = await window.ide.codebaseSearch(cleanQuery, 60);
+        if (currentSeq === seq.current) {
+          const transformed: SearchCodeHit[] = hits.map((h) => ({
+            path: h.filePath,
+            line: h.line,
+            preview: `[${h.kind}] ${h.name}${h.doc ? ` (${h.doc.split('\n')[0]})` : ''}: ${h.content.split('\n')[0]}`,
+          }));
+          setRawHits(transformed);
+          setLoading(false);
+        }
+      } catch {
+        if (currentSeq === seq.current) {
+          setRawHits([]);
+          setLoading(false);
+        }
+      }
+      return;
+    }
+
     try {
       const hits = await window.ide.searchCode({
         query: q,
@@ -261,7 +286,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [isSemanticMode]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -461,6 +486,15 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           <span>搜索</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+          <button
+            type="button"
+            className={`panel-action-btn${isSemanticMode ? ' active' : ''}`}
+            title={isSemanticMode ? '语义搜索模式已启用 (基于 AST 符号与倒排特征分析)' : '开启 @codebase 自然语言语义搜索'}
+            onClick={() => setIsSemanticMode((v) => !v)}
+            style={{ color: isSemanticMode ? 'var(--accent, #6366f1)' : undefined }}
+          >
+            <span style={{ fontSize: 11, fontWeight: 600 }}>✦ 语义</span>
+          </button>
           <button
             type="button"
             className="panel-action-btn"

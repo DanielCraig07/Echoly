@@ -662,6 +662,17 @@ ${payload.suffix.slice(0, 1000)}
     run(e, () => registry.current().lsp.switchSourceHeader(filePath)),
   );
 
+  // ── Codebase Indexing & Semantic Search ──
+  ipcMain.handle('codebase:index', (e) =>
+    run(e, () => registry.current().codebase.buildIndex()),
+  );
+  ipcMain.handle('codebase:search', (e, query: string, limit?: number) =>
+    run(e, () => registry.current().codebase.search(query, limit)),
+  );
+  ipcMain.handle('codebase:status', (e) =>
+    run(e, () => registry.current().codebase.getStatus()),
+  );
+
   // ── C/C++ & Multi-Language Toolchain & DAP Debugger ──
   ipcMain.handle('cpp:checkToolchain', () => detectCppToolchain());
   ipcMain.handle('multiLang:checkToolchain', () => detectMultiLangToolchain());

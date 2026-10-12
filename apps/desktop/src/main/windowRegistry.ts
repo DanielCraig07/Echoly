@@ -6,6 +6,7 @@ import { DiffStore } from './diffStore';
 import { LspService } from './lspService';
 import { DapService } from './dapService';
 import { DatabaseService } from './db/databaseService';
+import { CodebaseService } from './codebaseService';
 import { PROJECT_META_FILE, buildProjectConfigMeta, projectConfigDir } from './projectConfig';
 
 /**
@@ -76,6 +77,7 @@ export class WindowSession {
    * 工作区才能定位那份配置；多窗口各开不同项目时，各自的连接池与配置列表互不干扰。
    */
   readonly db = new DatabaseService(() => projectConfigWorkspaceIo(this.workspace));
+  readonly codebase = new CodebaseService(() => this.workspace);
   constructor(readonly webContentsId: number) {}
 
   dispose(): void {

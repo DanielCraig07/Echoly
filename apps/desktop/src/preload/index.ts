@@ -205,6 +205,10 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('lsp:diagnostics', listener);
   },
 
+  codebaseIndex: () => ipcRenderer.invoke('codebase:index'),
+  codebaseSearch: (query, limit) => ipcRenderer.invoke('codebase:search', query, limit),
+  codebaseStatus: () => ipcRenderer.invoke('codebase:status'),
+
   cppCheckToolchain: () => ipcRenderer.invoke('cpp:checkToolchain'),
   multiLangCheckToolchain: () => ipcRenderer.invoke('multiLang:checkToolchain'),
 

@@ -44,6 +44,7 @@ import {
   createConflictDecorations,
   type ConflictBlock,
 } from '../services/mergeConflictResolver';
+import { ThreeWayMergeModal } from './ThreeWayMergeModal';
 import {
   extractCodeSymbols,
   findCurrentSymbol,
@@ -1506,6 +1507,8 @@ export function EditorPane({
     },
     [active?.path, active?.content, onChangeContent, onShowToast],
   );
+
+  const [showThreeWayModal, setShowThreeWayModal] = useState<boolean>(false);
 
   const handleResolveAllConflicts = useCallback(
     (resolution: 'current' | 'incoming' | 'both') => {
@@ -5578,6 +5581,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <div className="conflict-banner-actions">
                   <button
                     type="button"
+                    className="editor-conflict-btn"
+                    onClick={() => setShowThreeWayModal(true)}
+                    title="开启独立三方合并解决器 (Current | Base | Incoming 三栏对比)"
+                    style={{ background: 'var(--accent, #6366f1)', color: '#fff', fontWeight: 600 }}
+                  >
+                    ⚡️ 3-Way 三栏合并解决器
+                  </button>
+                  <button
+                    type="button"
                     className="editor-conflict-btn accept-current"
                     onClick={() => handleResolveAllConflicts('current')}
                     title="批量采用当前分支修改 (HEAD)"
@@ -6644,6 +6656,19 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             </div>
           )}
         </div>
+      )}
+
+      {showThreeWayModal && active && (
+        <ThreeWayMergeModal
+          filePath={active.path}
+          initialContent={active.content}
+          theme={monacoTheme}
+          onSave={(merged) => {
+            onChangeContent(active.path, merged, true);
+            onShowToast?.('三方合并已保存', '冲突已成功解决并写回文件', 'success');
+          }}
+          onClose={() => setShowThreeWayModal(false)}
+        />
       )}
     </div>
   );
