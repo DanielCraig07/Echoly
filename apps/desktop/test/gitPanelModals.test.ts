@@ -135,4 +135,43 @@ describe('Git Panel Modals & Operations', () => {
     expect(branches[3].name).toBe('origin/wzh');
     expect(branches[3].remote).toBe(true);
   });
+
+  it('correctly partitions and filters local and remote branches for tab modes', () => {
+    const branches: GitBranchInfo[] = [
+      { name: 'develop', current: false, remote: false },
+      { name: 'main', current: false, remote: false },
+      { name: 'streaming-compute', current: true, remote: false },
+      { name: 'origin/develop', current: false, remote: true },
+      { name: 'origin/main', current: false, remote: true },
+      { name: 'origin/streaming-compute', current: false, remote: true },
+    ];
+
+    const localBranches = branches.filter((b) => !b.remote);
+    const remoteBranches = branches.filter((b) => b.remote);
+
+    expect(localBranches).toHaveLength(3);
+    expect(remoteBranches).toHaveLength(3);
+
+    // Tab: all
+    const getVisible = (tab: 'all' | 'local' | 'remote', query = '') => {
+      const q = query.trim().toLowerCase();
+      const filteredLocal = q ? localBranches.filter((b) => b.name.toLowerCase().includes(q)) : localBranches;
+      const filteredRemote = q ? remoteBranches.filter((b) => b.name.toLowerCase().includes(q)) : remoteBranches;
+      if (tab === 'local') return filteredLocal;
+      if (tab === 'remote') return filteredRemote;
+      return [...filteredLocal, ...filteredRemote];
+    };
+
+    expect(getVisible('all')).toHaveLength(6);
+    expect(getVisible('local')).toEqual(localBranches);
+    expect(getVisible('remote')).toEqual(remoteBranches);
+
+    // Filtering
+    expect(getVisible('all', 'streaming')).toHaveLength(2);
+    expect(getVisible('local', 'streaming')).toHaveLength(1);
+    expect(getVisible('local', 'streaming')[0].name).toBe('streaming-compute');
+    expect(getVisible('remote', 'streaming')).toHaveLength(1);
+    expect(getVisible('remote', 'streaming')[0].name).toBe('origin/streaming-compute');
+  });
 });
+

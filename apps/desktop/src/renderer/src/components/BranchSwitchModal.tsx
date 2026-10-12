@@ -22,7 +22,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
   const [tags, setTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'branches' | 'tags'>('branches');
+  const [activeTab, setActiveTab] = useState<'all' | 'local' | 'remote' | 'tags'>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [unsavedWarning, setUnsavedWarning] = useState<{
@@ -64,18 +64,29 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
   }, [open, activeTab]);
 
   const q = query.trim().toLowerCase();
-  const filteredBranches = q ? branches.filter((b) => b.name.toLowerCase().includes(q)) : branches;
+  const localBranches = branches.filter((b) => !b.remote);
+  const remoteBranches = branches.filter((b) => b.remote);
+
+  const filteredLocal = q ? localBranches.filter((b) => b.name.toLowerCase().includes(q)) : localBranches;
+  const filteredRemote = q ? remoteBranches.filter((b) => b.name.toLowerCase().includes(q)) : remoteBranches;
   const filteredTags = q ? tags.filter((t) => t.toLowerCase().includes(q)) : tags;
 
+  const visibleBranches =
+    activeTab === 'local'
+      ? filteredLocal
+      : activeTab === 'remote'
+        ? filteredRemote
+        : [...filteredLocal, ...filteredRemote];
+
   const currentListLength =
-    activeTab === 'branches' ? filteredBranches.length : filteredTags.length;
+    activeTab === 'tags' ? filteredTags.length : visibleBranches.length;
 
   useEffect(() => {
-    if (activeTab === 'branches') {
-      const curIdx = filteredBranches.findIndex((b) => b.current || b.name === currentBranch);
+    if (activeTab === 'tags') {
+      const curIdx = filteredTags.findIndex((t) => t === currentBranch);
       setSelectedIndex(curIdx >= 0 ? curIdx : 0);
     } else {
-      const curIdx = filteredTags.findIndex((t) => t === currentBranch);
+      const curIdx = visibleBranches.findIndex((b) => b.current || b.name === currentBranch);
       setSelectedIndex(curIdx >= 0 ? curIdx : 0);
     }
   }, [query, activeTab]);
@@ -202,17 +213,29 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
 
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (activeTab === 'branches' && filteredBranches[selectedIndex]) {
-        void handleCheckout(filteredBranches[selectedIndex].name);
-      } else if (activeTab === 'tags' && filteredTags[selectedIndex]) {
-        void handleCheckout(filteredTags[selectedIndex]);
+      if (activeTab === 'tags') {
+        if (filteredTags[selectedIndex]) {
+          void handleCheckout(filteredTags[selectedIndex]);
+        }
+      } else {
+        if (visibleBranches[selectedIndex]) {
+          void handleCheckout(visibleBranches[selectedIndex].name);
+        }
       }
       return;
     }
 
     if (e.key === 'Tab') {
       e.preventDefault();
-      setActiveTab((prev) => (prev === 'branches' ? 'tags' : 'branches'));
+      const tabs: ('all' | 'local' | 'remote' | 'tags')[] = ['all', 'local', 'remote', 'tags'];
+      const curIdx = tabs.indexOf(activeTab);
+      if (e.shiftKey) {
+        const prevIdx = (curIdx - 1 + tabs.length) % tabs.length;
+        setActiveTab(tabs[prevIdx]);
+      } else {
+        const nextIdx = (curIdx + 1) % tabs.length;
+        setActiveTab(tabs[nextIdx]);
+      }
       return;
     }
   }
@@ -290,28 +313,66 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
             <div
               style={{
                 display: 'flex',
-                background: 'rgba(0, 0, 0, 0.25)',
+                background: 'rgba(0, 0, 0, 0.28)',
                 padding: 2,
                 borderRadius: 6,
                 border: '1px solid var(--border, rgba(255,255,255,0.06))',
+                flexShrink: 0,
               }}
             >
               <button
                 type="button"
-                onClick={() => setActiveTab('branches')}
+                onClick={() => setActiveTab('all')}
                 style={{
                   border: 'none',
-                  background: activeTab === 'branches' ? 'rgba(255, 255, 255, 0.14)' : 'transparent',
-                  color: activeTab === 'branches' ? '#fff' : 'var(--muted, #888)',
+                  background: activeTab === 'all' ? 'rgba(255, 255, 255, 0.14)' : 'transparent',
+                  color: activeTab === 'all' ? '#fff' : 'var(--muted, #888)',
                   fontSize: 11,
                   fontWeight: 500,
-                  padding: '3px 9px',
+                  padding: '3px 8px',
                   borderRadius: 4,
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                分支 ({branches.length})
+                全部 ({branches.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('local')}
+                style={{
+                  border: 'none',
+                  background: activeTab === 'local' ? 'rgba(255, 255, 255, 0.14)' : 'transparent',
+                  color: activeTab === 'local' ? '#fff' : 'var(--muted, #888)',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                本地 ({localBranches.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('remote')}
+                style={{
+                  border: 'none',
+                  background: activeTab === 'remote' ? 'rgba(255, 255, 255, 0.14)' : 'transparent',
+                  color: activeTab === 'remote' ? '#fff' : 'var(--muted, #888)',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: '3px 8px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                远程 ({remoteBranches.length})
               </button>
               <button
                 type="button"
@@ -322,10 +383,11 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                   color: activeTab === 'tags' ? '#fff' : 'var(--muted, #888)',
                   fontSize: 11,
                   fontWeight: 500,
-                  padding: '3px 9px',
+                  padding: '3px 8px',
                   borderRadius: 4,
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 Tag 标签 ({tags.length})
@@ -380,9 +442,13 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
             ref={inputRef}
             type="text"
             placeholder={
-              activeTab === 'branches'
+              activeTab === 'all'
                 ? '搜索或切换分支… (支持 ↑↓ 键选择，Enter 确认)'
-                : '搜索或切换 Tag 标签…'
+                : activeTab === 'local'
+                  ? '搜索本地分支… (支持 ↑↓ 键选择，Enter 确认)'
+                  : activeTab === 'remote'
+                    ? '搜索远程分支… (支持 ↑↓ 键选择，Enter 确认)'
+                    : '搜索或切换 Tag 标签…'
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -516,7 +582,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
             </div>
           )}
 
-          {!loading && activeTab === 'branches' && filteredBranches.length === 0 && (
+          {!loading && activeTab !== 'tags' && visibleBranches.length === 0 && (
             <div
               style={{
                 padding: '36px 0',
@@ -525,7 +591,17 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 fontSize: 12,
               }}
             >
-              未找到与 "{query}" 匹配的分支
+              {query
+                ? activeTab === 'local'
+                  ? `未找到与 "${query}" 匹配的本地分支`
+                  : activeTab === 'remote'
+                    ? `未找到与 "${query}" 匹配的远程分支`
+                    : `未找到与 "${query}" 匹配的分支`
+                : activeTab === 'local'
+                  ? '暂无本地分支'
+                  : activeTab === 'remote'
+                    ? '暂无远程分支（可通过 git remote 关联远端）'
+                    : '暂无可用分支'}
             </div>
           )}
 
@@ -538,219 +614,378 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 fontSize: 12,
               }}
             >
-              未找到与 "{query}" 匹配的 Tag 标签
+              {query ? `未找到与 "${query}" 匹配的 Tag 标签` : '暂无 Tag 标签'}
             </div>
           )}
 
+          {/* 分支单项渲染器 */}
           {!loading &&
-            activeTab === 'branches' &&
-            filteredBranches.map((b, index) => {
-              const isCurrent = b.current || b.name === currentBranch;
-              const isSelected = index === selectedIndex;
+            activeTab !== 'tags' &&
+            (() => {
+              const renderBranchItem = (b: GitBranchInfo, index: number) => {
+                const isCurrent = b.current || b.name === currentBranch;
+                const isSelected = index === selectedIndex;
 
-              return (
-                <div
-                  key={b.name}
-                  data-index={index}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                  onClick={() => void handleCheckout(b.name)}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 3,
-                    padding: '8px 12px',
-                    borderRadius: 7,
-                    cursor: 'pointer',
-                    background: isSelected
-                      ? '#242424'
-                      : 'transparent',
-                    border: isSelected
-                      ? '1px solid rgba(255, 255, 255, 0.18)'
-                      : '1px solid transparent',
-                    color: isCurrent
-                      ? '#ffffff'
-                      : isSelected
-                        ? 'var(--text-bright, #fff)'
-                        : 'var(--fg, #ddd)',
-                    fontSize: 12,
-                    transition: 'all 0.12s ease',
-                    userSelect: 'none',
-                  }}
-                >
+                return (
                   <div
+                    key={b.name}
+                    data-index={index}
+                    onMouseEnter={() => setSelectedIndex(index)}
+                    onClick={() => void handleCheckout(b.name)}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 3,
+                      padding: '8px 12px',
+                      borderRadius: 7,
+                      cursor: 'pointer',
+                      background: isSelected ? '#242424' : 'transparent',
+                      border: isSelected
+                        ? '1px solid rgba(255, 255, 255, 0.18)'
+                        : '1px solid transparent',
+                      color: isCurrent
+                        ? '#ffffff'
+                        : isSelected
+                          ? 'var(--text-bright, #fff)'
+                          : 'var(--fg, #ddd)',
+                      fontSize: 12,
+                      transition: 'all 0.12s ease',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        width: '100%',
+                      }}
+                    >
+                      <div
+                        style={{ display: 'flex', alignItems: 'center', gap: 9, overflow: 'hidden' }}
+                      >
+                        {isCurrent ? (
+                          <span
+                            className="branch-pulse-dot"
+                            title="当前所在分支"
+                            style={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: '50%',
+                              backgroundColor: '#ffffff',
+                              boxShadow: 'none',
+                              flexShrink: 0,
+                            }}
+                          />
+                        ) : b.remote ? (
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                            style={{ color: '#0ea5e9', flexShrink: 0 }}
+                          >
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="2" y1="12" x2="22" y2="12" />
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                          </svg>
+                        ) : (
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 16 16"
+                            fill="currentColor"
+                            style={{ color: '#f59e0b', flexShrink: 0 }}
+                          >
+                            <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0z" />
+                          </svg>
+                        )}
+                        {b.remote && b.name.includes('/') ? (
+                          <span
+                            style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              fontSize: 12.5,
+                            }}
+                          >
+                            <span style={{ opacity: 0.55, color: 'inherit' }}>
+                              {b.name.slice(0, b.name.indexOf('/') + 1)}
+                            </span>
+                            <span
+                              style={{
+                                fontWeight: isCurrent ? 650 : isSelected ? 550 : 450,
+                                color: isCurrent ? '#34d399' : isSelected ? '#fff' : 'inherit',
+                              }}
+                            >
+                              {b.name.slice(b.name.indexOf('/') + 1)}
+                            </span>
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              fontWeight: isCurrent ? 650 : isSelected ? 500 : 400,
+                              color: isCurrent ? '#34d399' : 'inherit',
+                              fontSize: 12.5,
+                            }}
+                          >
+                            {b.name}
+                          </span>
+                        )}
+                        {b.remote ? (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              color: '#38bdf8',
+                              background: 'rgba(56, 189, 248, 0.12)',
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              border: '1px solid rgba(56, 189, 248, 0.22)',
+                              flexShrink: 0,
+                              fontWeight: 500,
+                            }}
+                          >
+                            远程
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              color: 'var(--muted, #94a3b8)',
+                              background: 'rgba(255, 255, 255, 0.06)',
+                              padding: '1px 5px',
+                              borderRadius: 3,
+                              flexShrink: 0,
+                            }}
+                          >
+                            本地
+                          </span>
+                        )}
+                      </div>
+
+                      {isCurrent ? (
+                        <span
+                          style={{
+                            fontSize: 10.5,
+                            fontWeight: 700,
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            color: '#ffffff',
+                            padding: '2px 8px',
+                            borderRadius: 999,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            flexShrink: 0,
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            letterSpacing: '0.04em',
+                          }}
+                        >
+                          CURRENT
+                        </span>
+                      ) : isSelected ? (
+                        <span
+                          style={{
+                            fontSize: 10.5,
+                            color: b.remote ? '#38bdf8' : 'var(--muted, #888)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <span style={{ fontSize: 10, opacity: 0.85 }}>
+                            {b.remote ? '检出' : '切换'}
+                          </span>
+                          <kbd className="cmd-mini-kbd" style={{ fontSize: 9 }}>↵</kbd>
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {/* 最新提交历史记录 */}
+                    {b.lastCommit && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 11,
+                          color: isSelected ? 'rgba(255, 255, 255, 0.72)' : 'var(--muted, #888)',
+                          paddingLeft: 23,
+                          overflow: 'hidden',
+                          whiteSpace: 'nowrap',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                            background: isSelected ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.07)',
+                            color: isSelected ? '#7dd3fc' : 'var(--muted, #aaa)',
+                            padding: '1px 5px',
+                            borderRadius: 3,
+                            fontSize: 10.5,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {b.lastCommit.hash}
+                        </span>
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1,
+                          }}
+                          title={b.lastCommit.message}
+                        >
+                          {b.lastCommit.message || '无提交信息'}
+                        </span>
+                        {(b.lastCommit.relativeDate || b.lastCommit.author) && (
+                          <span style={{ opacity: 0.7, flexShrink: 0, fontSize: 10.5 }}>
+                            • {b.lastCommit.relativeDate || b.lastCommit.author}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+
+              const renderSectionHeader = (
+                type: 'local' | 'remote',
+                count: number,
+                isFirst = false,
+              ) => {
+                const isLocal = type === 'local';
+                return (
+                  <div
+                    key={`header-${type}`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      width: '100%',
+                      padding: '6px 8px 3px 8px',
+                      marginTop: isFirst ? 0 : 8,
+                      marginBottom: 2,
+                      borderTop: isFirst ? 'none' : '1px solid rgba(255, 255, 255, 0.08)',
+                      userSelect: 'none',
                     }}
                   >
-                    <div
-                      style={{ display: 'flex', alignItems: 'center', gap: 9, overflow: 'hidden' }}
-                    >
-                      {isCurrent ? (
-                        <span
-                          className="branch-pulse-dot"
-                          title="当前所在分支"
-                          style={{
-                            width: 7,
-                            height: 7,
-                            borderRadius: '50%',
-                            backgroundColor: '#ffffff',
-                            boxShadow: 'none',
-                            flexShrink: 0,
-                          }}
-                        />
-                      ) : b.remote ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {isLocal ? (
                         <svg
-                          width="14"
-                          height="14"
+                          width="12"
+                          height="12"
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          style={{ color: '#f59e0b', opacity: 0.9 }}
+                        >
+                          <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0z" />
+                        </svg>
+                      ) : (
+                        <svg
+                          width="12"
+                          height="12"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
-                          strokeWidth="1.7"
-                          style={{ color: '#00bcd4', flexShrink: 0 }}
+                          strokeWidth="2"
+                          style={{ color: '#0ea5e9', opacity: 0.9 }}
                         >
                           <circle cx="12" cy="12" r="10" />
                           <line x1="2" y1="12" x2="22" y2="12" />
                           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                         </svg>
-                      ) : (
-                        <svg
-                          width="14"
-                          height="14"
-                          viewBox="0 0 16 16"
-                          fill="currentColor"
-                          style={{ color: '#f57c00', flexShrink: 0 }}
-                        >
-                          <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0z" />
-                        </svg>
                       )}
                       <span
                         style={{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          fontWeight: isCurrent ? 650 : isSelected ? 500 : 400,
-                          color: isCurrent ? '#34d399' : 'inherit',
-                        }}
-                      >
-                        {b.name}
-                      </span>
-                      {b.remote ? (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            color: '#38bdf8',
-                            background: 'rgba(56, 189, 248, 0.12)',
-                            padding: '1px 6px',
-                            borderRadius: 4,
-                            border: '1px solid rgba(56, 189, 248, 0.2)',
-                            flexShrink: 0,
-                          }}
-                        >
-                          远程
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            color: 'var(--muted, #888)',
-                            background: 'rgba(255, 255, 255, 0.05)',
-                            padding: '1px 5px',
-                            borderRadius: 3,
-                            flexShrink: 0,
-                          }}
-                        >
-                          本地
-                        </span>
-                      )}
-                    </div>
-
-                    {isCurrent ? (
-                      <span
-                        style={{
-                          fontSize: 10.5,
+                          fontSize: 11,
                           fontWeight: 700,
-                          background: 'rgba(255, 255, 255, 0.08)',
-                          color: '#ffffff',
-                          padding: '2px 8px',
-                          borderRadius: 999,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          flexShrink: 0,
-                          border: '1px solid rgba(255, 255, 255, 0.15)',
                           letterSpacing: '0.04em',
+                          color: 'var(--muted, #94a3b8)',
                         }}
                       >
-                        CURRENT
+                        {isLocal ? '本地分支' : '远程分支'}
                       </span>
-                    ) : isSelected ? (
                       <span
                         style={{
-                          fontSize: 10.5,
-                          color: 'var(--muted, #888)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 3,
-                          flexShrink: 0,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: '0 5px',
+                          borderRadius: 999,
+                          background: isLocal
+                            ? 'rgba(255, 255, 255, 0.08)'
+                            : 'rgba(14, 165, 233, 0.16)',
+                          color: isLocal ? 'var(--muted, #aaa)' : '#38bdf8',
+                          lineHeight: '16px',
                         }}
                       >
-                        <kbd className="cmd-mini-kbd" style={{ fontSize: 9 }}>↵</kbd>
+                        {count}
                       </span>
-                    ) : null}
-                  </div>
-
-                  {/* 最新提交历史记录 */}
-                  {b.lastCommit && (
-                    <div
+                    </div>
+                    <span
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        fontSize: 11,
-                        color: isSelected ? 'rgba(255, 255, 255, 0.72)' : 'var(--muted, #888)',
-                        paddingLeft: 23,
-                        overflow: 'hidden',
-                        whiteSpace: 'nowrap',
-                        textOverflow: 'ellipsis',
+                        fontSize: 10,
+                        color: 'var(--muted, #71717a)',
+                        letterSpacing: '0.02em',
                       }}
                     >
-                      <span
-                        style={{
-                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                          background: isSelected ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.07)',
-                          color: isSelected ? '#7dd3fc' : 'var(--muted, #aaa)',
-                          padding: '1px 5px',
-                          borderRadius: 3,
-                          fontSize: 10.5,
-                          flexShrink: 0,
-                        }}
-                      >
-                        {b.lastCommit.hash}
-                      </span>
-                      <span
-                        style={{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          flex: 1,
-                        }}
-                        title={b.lastCommit.message}
-                      >
-                        {b.lastCommit.message || '无提交信息'}
-                      </span>
-                      {(b.lastCommit.relativeDate || b.lastCommit.author) && (
-                        <span style={{ opacity: 0.7, flexShrink: 0, fontSize: 10.5 }}>
-                          • {b.lastCommit.relativeDate || b.lastCommit.author}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                      {isLocal ? 'Local' : 'Remote'}
+                    </span>
+                  </div>
+                );
+              };
+
+              if (activeTab === 'all') {
+                return (
+                  <>
+                    {filteredLocal.length > 0 && (
+                      <>
+                        {renderSectionHeader('local', filteredLocal.length, true)}
+                        {filteredLocal.map((b, i) => renderBranchItem(b, i))}
+                      </>
+                    )}
+                    {filteredRemote.length > 0 && (
+                      <>
+                        {renderSectionHeader(
+                          'remote',
+                          filteredRemote.length,
+                          filteredLocal.length === 0,
+                        )}
+                        {filteredRemote.map((b, i) =>
+                          renderBranchItem(b, filteredLocal.length + i),
+                        )}
+                      </>
+                    )}
+                  </>
+                );
+              }
+
+              if (activeTab === 'local' && filteredLocal.length > 0) {
+                return (
+                  <>
+                    {renderSectionHeader('local', filteredLocal.length, true)}
+                    {filteredLocal.map((b, i) => renderBranchItem(b, i))}
+                  </>
+                );
+              }
+
+              if (activeTab === 'remote' && filteredRemote.length > 0) {
+                return (
+                  <>
+                    {renderSectionHeader('remote', filteredRemote.length, true)}
+                    {filteredRemote.map((b, i) => renderBranchItem(b, i))}
+                  </>
+                );
+              }
+
+              return null;
+            })()}
 
           {!loading &&
             activeTab === 'tags' &&
@@ -882,7 +1117,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
               <kbd className="cmd-mini-kbd">Enter</kbd> 切换
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <kbd className="cmd-mini-kbd">Tab</kbd> 换页
+              <kbd className="cmd-mini-kbd">Tab</kbd> 换页/筛选
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <kbd className="cmd-mini-kbd">Esc</kbd> 退出
