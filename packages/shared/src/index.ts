@@ -1161,6 +1161,14 @@ export interface IpcApi {
   gitShowCommitDiff: (hash: string, path: string) => Promise<GitDiffResult>;
   gitShowFileAtRef: (ref: string, path: string) => Promise<{ ok: boolean; content?: string; detail?: string }>;
   gitDiffWithRef: (ref: string, path: string) => Promise<GitDiffResult>;
+  gitCompareBranches: (baseRef: string, targetRef: string) => Promise<{
+    ok: boolean;
+    ahead: number;
+    behind: number;
+    files: { status: string; path: string }[];
+    detail?: string;
+  }>;
+  gitDiffBetweenRefs: (baseRef: string, targetRef: string, path: string) => Promise<GitDiffResult>;
   gitGenerateCommitMessage: () => Promise<{ ok: boolean; message?: string; detail?: string }>;
 
   searchFiles: (query: string, max?: number) => Promise<SearchFileHit[]>;

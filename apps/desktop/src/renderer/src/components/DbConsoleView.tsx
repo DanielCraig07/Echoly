@@ -322,6 +322,32 @@ export function DbConsoleView({
     [sql, activeConnId, activeSchema, onShowToast],
   );
 
+  const formatSql = () => {
+    if (!sql.trim()) return;
+    try {
+      const keywords = [
+        'SELECT', 'FROM', 'WHERE', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'JOIN',
+        'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET',
+        'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
+        'UNION ALL', 'UNION', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE',
+      ];
+      let formatted = sql;
+      keywords.forEach((kw) => {
+        const regex = new RegExp(`\\b${kw}\\b`, 'gi');
+        formatted = formatted.replace(regex, kw);
+      });
+      ['FROM', 'WHERE', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'JOIN', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'SET', 'VALUES'].forEach((clause) => {
+        const regex = new RegExp(`\\s+(${clause})\\b`, 'g');
+        formatted = formatted.replace(regex, `\n$1`);
+      });
+      setSql(formatted);
+      onChangeContent?.(formatted);
+      onShowToast?.('SQL 语句已格式化', undefined, 'success');
+    } catch {
+      onShowToast?.('格式化失败', undefined, 'error');
+    }
+  };
+
   const activeRun = runs.find((r) => r.index === activeRunIndex) || runs[runs.length - 1] || null;
   const result = activeRun?.result ?? null;
 
@@ -439,6 +465,20 @@ export function DbConsoleView({
               <line x1="22" y1="5" x2="22" y2="19" />
             </svg>
             运行全部
+          </button>
+
+          <button
+            type="button"
+            className="panel-action-btn"
+            title="美化/格式化 SQL 语句"
+            onClick={formatSql}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="21" y1="10" x2="7" y2="10" />
+              <line x1="21" y1="6" x2="3" y2="6" />
+              <line x1="21" y1="14" x2="3" y2="14" />
+              <line x1="21" y1="18" x2="7" y2="18" />
+            </svg>
           </button>
 
           {/* 快捷键提示随左区一起被挤掉，而不是把中间的目标选择器顶偏 */}

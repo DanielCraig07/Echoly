@@ -1804,4 +1804,70 @@ export class GitService {
       untrackedCount,
     };
   }
+
+  async compareBranches(baseRef: string, targetRef: string): Promise<{
+    ok: boolean;
+    ahead: number;
+    behind: number;
+    files: { status: string; path: string }[];
+    detail?: string;
+  }> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return { ok: false, ahead: 0, behind: 0, files: [], detail: gate.detail };
+    }
+    const { root } = gate as { root: string };
+    try {
+      const countRes = await this.runGit(
+        ['rev-list', '--left-right', '--count', `${baseRef}...${targetRef}`],
+        root,
+      );
+      let behind = 0;
+      let ahead = 0;
+      if (countRes.code === 0 && countRes.stdout.trim()) {
+        const parts = countRes.stdout.trim().split(/\s+/).map(Number);
+        if (parts.length >= 2) {
+          behind = parts[0] || 0;
+          ahead = parts[1] || 0;
+        }
+      }
+
+      const diffRes = await this.runGit(
+        ['diff', '--name-status', `${baseRef}...${targetRef}`],
+        root,
+      );
+      const files: { status: string; path: string }[] = [];
+      if (diffRes.code === 0 && diffRes.stdout.trim()) {
+        const lines = diffRes.stdout.trim().split('\n');
+        for (const line of lines) {
+          const parts = line.split(/\s+/);
+          if (parts.length >= 2) {
+            files.push({ status: parts[0], path: parts.slice(1).join(' ') });
+          }
+        }
+      }
+
+      return { ok: true, ahead, behind, files };
+    } catch (err: any) {
+      return { ok: false, ahead: 0, behind: 0, files: [], detail: err?.message || String(err) };
+    }
+  }
+
+  async diffBetweenRefs(baseRef: string, targetRef: string, filePath: string): Promise<GitDiffResult> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return { ok: false, detail: gate.detail, path: filePath, original: '', modified: '', staged: false };
+    }
+    const { root } = gate as { root: string };
+    const baseShow = await this.runGit(['show', `${baseRef}:${filePath}`], root);
+    const targetShow = await this.runGit(['show', `${targetRef}:${filePath}`], root);
+    return {
+      ok: true,
+      path: filePath,
+      original: baseShow.code === 0 ? baseShow.stdout : '',
+      modified: targetShow.code === 0 ? targetShow.stdout : '',
+      staged: false,
+    };
+  }
 }
+

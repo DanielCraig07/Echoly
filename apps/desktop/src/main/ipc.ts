@@ -487,6 +487,12 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('git:diffWithRef', (e, ref: string, path: string) =>
     run(e, () => git.diffWithRef(ref, path)),
   );
+  ipcMain.handle('git:compareBranches', (e, baseRef: string, targetRef: string) =>
+    run(e, () => git.compareBranches(baseRef, targetRef)),
+  );
+  ipcMain.handle('git:diffBetweenRefs', (e, baseRef: string, targetRef: string, path: string) =>
+    run(e, () => git.diffBetweenRefs(baseRef, targetRef, path)),
+  );
   ipcMain.handle('git:generateCommitMessage', (e) =>
     run(e, async () => {
       const summary = await git.getWorkspaceChangesSummary();

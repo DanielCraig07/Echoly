@@ -91,6 +91,10 @@ const api: IpcApi = {
   gitShowCommitDiff: (hash, path) => ipcRenderer.invoke('git:showCommitDiff', hash, path),
   gitShowFileAtRef: (ref: string, path: string) => ipcRenderer.invoke('git:showFileAtRef', ref, path),
   gitDiffWithRef: (ref: string, path: string) => ipcRenderer.invoke('git:diffWithRef', ref, path),
+  gitCompareBranches: (baseRef: string, targetRef: string) =>
+    ipcRenderer.invoke('git:compareBranches', baseRef, targetRef),
+  gitDiffBetweenRefs: (baseRef: string, targetRef: string, path: string) =>
+    ipcRenderer.invoke('git:diffBetweenRefs', baseRef, targetRef, path),
   gitGenerateCommitMessage: () => ipcRenderer.invoke('git:generateCommitMessage'),
 
   searchFiles: (query, max) => ipcRenderer.invoke('search:files', query, max),

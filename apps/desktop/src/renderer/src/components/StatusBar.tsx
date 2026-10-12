@@ -80,8 +80,37 @@ export function StatusBar({
   const [currentTabSize, setCurrentTabSize] = useState(tabSize);
   const [currentEncoding, setCurrentEncoding] = useState(encoding);
   const [currentEol, setCurrentEol] = useState<'LF' | 'CRLF'>(eol);
+  const [copilotActive, setCopilotActive] = useState(false);
+  const [copilotEnabled, setCopilotEnabled] = useState(true);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const gotoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleGhostState = (e: Event) => {
+      const custom = e as CustomEvent<{ active: boolean }>;
+      setCopilotActive(Boolean(custom.detail?.active));
+    };
+    window.addEventListener('echoly:ghostTextState', handleGhostState);
+    return () => window.removeEventListener('echoly:ghostTextState', handleGhostState);
+  }, []);
+
+  const handleCheckUpdate = async () => {
+    if (checkingUpdate) return;
+    setCheckingUpdate(true);
+    try {
+      const res = await window.ide?.checkUpdate?.();
+      if (res?.hasUpdate && res?.version) {
+        onShowToast?.(`发现新版本 v${res.version}`, '点击设置关于页面可下载更新', 'info');
+      } else {
+        onShowToast?.(`当前已是最新版本 (v${APP_VERSION})`, undefined, 'success');
+      }
+    } catch {
+      onShowToast?.(`当前版本 v${APP_VERSION}`, '无法连接更新服务器', 'info');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   // 同步外部传入的配置
   useEffect(() => {
@@ -511,7 +540,47 @@ export function StatusBar({
           )}
         </div>
 
-        {/* 7. 开发者个性徽标（点击直达关于作者与设置） */}
+        {/* 7. AI 行内代码幽灵补全指示 */}
+        <button
+          type="button"
+          className={`status-item status-copilot-badge${copilotActive ? ' is-thinking' : ''}`}
+          onClick={() => {
+            const next = !copilotEnabled;
+            setCopilotEnabled(next);
+            onShowToast?.(next ? 'AI 行内代码补全已启用' : 'AI 行内代码补全已暂停', undefined, 'info');
+          }}
+          title={
+            copilotEnabled
+              ? copilotActive
+                ? 'AI Copilot 正在生成行内代码补全建议...'
+                : 'AI Copilot 行内补全: 已就绪 (Tab 键采纳建议)'
+              : 'AI Copilot 行内补全: 已暂停 (点击启用)'
+          }
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            opacity: copilotEnabled ? 1 : 0.6,
+          }}
+        >
+          <span style={{ color: copilotActive ? '#38bdf8' : copilotEnabled ? '#10b981' : 'var(--text-muted)' }}>
+            ✨
+          </span>
+          <span>Copilot</span>
+        </button>
+
+        {/* 8. 版本检查更新快捷入口 */}
+        <button
+          type="button"
+          className="status-item status-version-badge"
+          onClick={() => void handleCheckUpdate()}
+          title={`Echoly v${APP_VERSION} · 点击检查版本更新`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        >
+          <span>v{APP_VERSION}</span>
+        </button>
+
+        {/* 9. 开发者个性徽标（点击直达关于作者与设置） */}
         <button
           type="button"
           className="status-item status-dev-badge"

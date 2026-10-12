@@ -1631,7 +1631,6 @@ function TerminalSession({
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const sel = termRef.current?.getSelection();
     // 点击右键时将菜单边界限制在视口内
     const x = Math.min(e.clientX, window.innerWidth - 180);
     const y = Math.min(e.clientY, window.innerHeight - 160);
@@ -1642,6 +1641,23 @@ function TerminalSession({
     const sel = termRef.current?.getSelection();
     if (sel) {
       void navigator.clipboard.writeText(sel);
+    }
+    setCtxMenu(null);
+    termRef.current?.focus();
+  };
+
+  const handleAskAiSelection = () => {
+    const sel = termRef.current?.getSelection()?.trim();
+    if (sel) {
+      const isErr = /error|exception|failed|fatal|cannot|not found|syntaxerror/i.test(sel);
+      const prompt = isErr
+        ? `终端出现以下错误，请帮我分析原因并给出具体的修复命令：\n\`\`\`log\n${sel}\n\`\`\``
+        : `请帮我分析以下终端内容并给出操作建议：\n\`\`\`log\n${sel}\n\`\`\``;
+      window.dispatchEvent(
+        new CustomEvent('echoly:askAi', {
+          detail: { prompt, autoSubmit: false },
+        }),
+      );
     }
     setCtxMenu(null);
     termRef.current?.focus();
@@ -1733,6 +1749,20 @@ function TerminalSession({
             <span>粘贴</span>
             <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>{isMac ? '⌘V' : 'Ctrl+Shift+V'}</kbd>
           </button>
+          {hasSelection && (
+            <>
+              <div className="ctx-sep" />
+              <button
+                type="button"
+                className="ctx-item"
+                onClick={handleAskAiSelection}
+                style={{ color: 'var(--accent, #6366f1)' }}
+              >
+                <span>⚡️ 让 AI 诊断/修复选中内容</span>
+                <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>Ask AI</kbd>
+              </button>
+            </>
+          )}
           <div className="ctx-sep" />
           <button type="button" className="ctx-item" onClick={handleSelectAll}>
             <span>全选</span>
@@ -2026,8 +2056,11 @@ export function TerminalPanel({
     const extractFn = sessionExtractLogRef.current.get(focusedTabId);
     const rawLog = extractFn?.(40) || '';
     const cleanLog = rawLog.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
+    const hasError = /error|exception|failed|fatal|cannot find|not found|syntaxerror/i.test(cleanLog);
     const prompt = cleanLog
-      ? `关于终端日志的分析需求：\n\`\`\`log\n${cleanLog}\n\`\`\`\n请帮我解释上述输出或给出下一步操作建议。`
+      ? hasError
+        ? `终端最新运行输出中包含报错信息，请帮我分析原因并给出具体的修复方案与命令：\n\`\`\`log\n${cleanLog}\n\`\`\``
+        : `关于终端日志的分析需求：\n\`\`\`log\n${cleanLog}\n\`\`\`\n请帮我解释上述输出或给出下一步操作建议。`
       : `请帮我编写或解释终端相关的命令与操作。`;
     window.dispatchEvent(
       new CustomEvent('echoly:askAi', {

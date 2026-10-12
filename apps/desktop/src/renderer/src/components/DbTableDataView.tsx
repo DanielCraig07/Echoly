@@ -633,6 +633,22 @@ export function DbTableDataView({
     onShowToast?.(`已导出 CSV: ${tableName}_export.csv`, undefined, 'success');
   };
 
+  const handleExportJson = () => {
+    if (!queryResult?.rows || queryResult.rows.length === 0) {
+      onShowToast?.('当前无数据可导出');
+      return;
+    }
+    const jsonContent = JSON.stringify(queryResult.rows, null, 2);
+    const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${tableName}_export.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    onShowToast?.(`已导出 JSON: ${tableName}_export.json`, undefined, 'success');
+  };
+
   // ── 单元格编辑 ────────────────────────────────────────────────────────────
 
   const beginEdit = (
@@ -1179,6 +1195,21 @@ export function DbTableDataView({
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            className="panel-action-btn"
+            title="导出当前结果为 JSON"
+            onClick={handleExportJson}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
             </svg>
           </button>
 

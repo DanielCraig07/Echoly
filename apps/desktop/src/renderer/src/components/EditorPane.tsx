@@ -1182,10 +1182,34 @@ export function EditorPane({
 
   // Split editor state
   const [isSplit, setIsSplit] = useState(false);
+  const [splitOrientation, setSplitOrientation] = useState<'horizontal' | 'vertical'>('horizontal');
   const [splitPath, setSplitPath] = useState<string | null>(null);
   const splitActive = (splitPath ? tabs.find((t) => t.path === splitPath) : null) ?? active;
   const [splitRatio, setSplitRatio] = useState<number>(0.5);
   const editorSplitContainerRef = useRef<HTMLDivElement>(null);
+
+  // Monaco Model 生命周期管理与防内存泄露：清理已关闭且不再使用的 Model
+  useEffect(() => {
+    try {
+      const activeUris = new Set<string>();
+      for (const t of tabs) {
+        activeUris.add(monaco.Uri.file(t.path).toString());
+        activeUris.add(monaco.Uri.file(t.path + ':split').toString());
+      }
+      const models = monaco.editor.getModels();
+      for (const model of models) {
+        const uriStr = model.uri.toString();
+        // 排除系统内部与只读临时 model，如果此 model 对应的路径不在当前打开的 tabs 中，安全 dispose 释放内存
+        if (uriStr.startsWith('file://')) {
+          if (!activeUris.has(uriStr) && !uriStr.includes('git-diff-temp') && !uriStr.includes('inmemory://')) {
+            model.dispose();
+          }
+        }
+      }
+    } catch {
+      // 容错防止 dispose 抛出异常
+    }
+  }, [tabs]);
 
   // Inline AI edit state (Cmd+K)
   const [showInlineAi, setShowInlineAi] = useState(false);
@@ -1205,9 +1229,12 @@ export function EditorPane({
     const container = editorSplitContainerRef.current;
     if (!container) return;
     const rect = container.getBoundingClientRect();
+    const isVert = splitOrientation === 'vertical';
     const onMove = (ev: MouseEvent) => {
-      const ratio = (ev.clientX - rect.left) / rect.width;
-      setSplitRatio(Math.max(0.2, Math.min(0.8, ratio)));
+      const ratio = isVert
+        ? (ev.clientY - rect.top) / rect.height
+        : (ev.clientX - rect.left) / rect.width;
+      setSplitRatio(Math.max(0.15, Math.min(0.85, ratio)));
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
@@ -1215,7 +1242,7 @@ export function EditorPane({
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, []);
+  }, [splitOrientation]);
 
   const handleInlineAiSubmit = useCallback(async () => {
     if (!inlinePrompt.trim() || !active || !editorRef.current) return;
@@ -4463,9 +4490,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   setSplitPath(otherTab ? otherTab.path : activePath);
                 }
               }}
-              title={isSplit ? '关闭拆分' : '拆分编辑器 (双栏编辑/对比)'}
+              title={isSplit ? '关闭拆分视图' : '拆分编辑器 (双栏并排/上下对照编辑)'}
             >
-              ◫ 拆分
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, verticalAlign: -1 }}>
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="12" y1="3" x2="12" y2="21" />
+              </svg>
+              <span>{isSplit ? '关闭拆分' : '拆分'}</span>
             </button>
           </div>
         </div>
@@ -5243,9 +5274,21 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           <div
             className="split-editor-layout"
             ref={editorSplitContainerRef}
-            style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}
+            style={{
+              display: 'flex',
+              flexDirection: splitOrientation === 'vertical' ? 'column' : 'row',
+              width: '100%',
+              height: '100%',
+              overflow: 'hidden',
+            }}
           >
-            <div style={{ width: `${splitRatio * 100}%`, height: '100%', position: 'relative' }}>
+            <div
+              style={{
+                width: splitOrientation === 'vertical' ? '100%' : `${splitRatio * 100}%`,
+                height: splitOrientation === 'vertical' ? `${splitRatio * 100}%` : '100%',
+                position: 'relative',
+              }}
+            >
               <Editor
                 path={active.path}
                 value={active.content}
@@ -5334,46 +5377,111 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               />
             </div>
             <div
-              className="splitter splitter-v split-editor-splitter"
+              className={`splitter ${splitOrientation === 'vertical' ? 'splitter-h' : 'splitter-v'} split-editor-splitter`}
               onMouseDown={startSplitResize}
-              title="拖动调整双栏宽度"
+              title={`拖动调整${splitOrientation === 'vertical' ? '上下' : '左右'}分屏比例`}
+              style={
+                splitOrientation === 'vertical'
+                  ? { height: 4, width: '100%', cursor: 'row-resize', background: 'var(--border)' }
+                  : { width: 4, height: '100%', cursor: 'col-resize', background: 'var(--border)' }
+              }
             />
             <div
               style={{
-                width: `${(1 - splitRatio) * 100}%`,
-                height: '100%',
+                width: splitOrientation === 'vertical' ? '100%' : `${(1 - splitRatio) * 100}%`,
+                height: splitOrientation === 'vertical' ? `${(1 - splitRatio) * 100}%` : '100%',
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
-                borderLeft: '1px solid var(--border)',
+                ...(splitOrientation === 'vertical'
+                  ? { borderTop: '1px solid var(--border)' }
+                  : { borderLeft: '1px solid var(--border)' }),
               }}
             >
-              <div className="split-secondary-header">
-                <span className="split-label">拆分窗格</span>
-                <select
-                  value={splitActive?.path || ''}
-                  onChange={(e) => setSplitPath(e.target.value)}
-                  className="split-file-selector"
-                >
-                  {tabs.map((t) => {
-                    const name = isUntitledPath(t.path)
-                      ? untitledTabLabel(t.path)
-                      : t.path.split('/').pop() || t.path;
-                    return (
-                      <option key={t.path} value={t.path}>
-                        {name}
-                      </option>
-                    );
-                  })}
-                </select>
-                <button
-                  type="button"
-                  className="split-close-btn"
-                  onClick={() => setIsSplit(false)}
-                  title="关闭拆分视图"
-                >
-                  ×
-                </button>
+              <div
+                className="split-secondary-header"
+                style={{
+                  height: 30,
+                  padding: '0 10px',
+                  boxSizing: 'border-box',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: '1px solid var(--border)',
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                      color: 'var(--text-secondary, #999)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    拆分窗格
+                  </span>
+                  <select
+                    value={splitActive?.path || ''}
+                    onChange={(e) => setSplitPath(e.target.value)}
+                    className="split-file-selector"
+                    style={{
+                      height: 22,
+                      fontSize: 11,
+                      padding: '0 6px',
+                      background: 'var(--bg-tertiary, #222)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 4,
+                      color: 'var(--text, #fff)',
+                      outline: 'none',
+                      maxWidth: 220,
+                    }}
+                  >
+                    {tabs.map((t) => {
+                      const name = isUntitledPath(t.path)
+                        ? untitledTabLabel(t.path)
+                        : t.path.split('/').pop() || t.path;
+                      return (
+                        <option key={t.path} value={t.path}>
+                          {name}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    type="button"
+                    className="panel-action-btn"
+                    title={splitOrientation === 'horizontal' ? '切换为上下拆分' : '切换为左右拆分'}
+                    onClick={() => setSplitOrientation((o) => (o === 'horizontal' ? 'vertical' : 'horizontal'))}
+                  >
+                    {splitOrientation === 'horizontal' ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <line x1="3" y1="12" x2="21" y2="12" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <line x1="12" y1="3" x2="12" y2="21" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="panel-action-btn"
+                    title="关闭拆分视图"
+                    onClick={() => setIsSplit(false)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div style={{ flex: 1, position: 'relative' }}>
                 {splitActive && (
