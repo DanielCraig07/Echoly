@@ -17636,6 +17636,18 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   margin-left: 3px;
 }
 
+/* Smart Apply diff highlight & animation */
+.smart-apply-diff-line {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+  transition: background-color 0.3s ease;
+}
+
+.smart-apply-diff-gutter {
+  background-color: #10b981 !important;
+  width: 4px !important;
+  margin-left: 3px;
+}
+
 /* Inline AI diff action bar */
 .inline-ai-diff-actions {
   display: flex;

@@ -1189,7 +1189,18 @@ export function EditorPane({
   const [splitRatio, setSplitRatio] = useState<number>(0.5);
   const editorSplitContainerRef = useRef<HTMLDivElement>(null);
 
-  // Monaco Model 生命周期管理与防内存泄露：清理已关闭且不再使用的 Model
+  // 记录每个 Tab 的最近访问时间戳
+  const tabAccessTimesRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (active?.path) {
+      tabAccessTimesRef.current.set(active.path, Date.now());
+    }
+  }, [active?.path]);
+
+  // Monaco Model 生命周期管理与防内存泄露：
+  // 1. 清理已关闭且不再使用的 Model
+  // 2. 当打开超过 30+ 标签页时，启用 LRU 虚拟化休眠机制，回收远端非活跃标签页的 TextModel
   useEffect(() => {
     try {
       const activeUris = new Set<string>();
@@ -1197,12 +1208,33 @@ export function EditorPane({
         activeUris.add(monaco.Uri.file(t.path).toString());
         activeUris.add(monaco.Uri.file(t.path + ':split').toString());
       }
+
+      // LRU 虚拟化休眠：当标签总数超过 30 时，休眠最久未访问的远端非活跃 Tab
+      const lruEvictedUris = new Set<string>();
+      if (tabs.length > 30) {
+        const sortedTabs = [...tabs]
+          .filter((t) => t.path !== active?.path && t.path !== splitActive?.path)
+          .sort((a, b) => {
+            const timeA = tabAccessTimesRef.current.get(a.path) || 0;
+            const timeB = tabAccessTimesRef.current.get(b.path) || 0;
+            return timeA - timeB; // 升序，最旧的在前面
+          });
+        // 保留活跃以及最近访问的 20 个标签，其余旧标签的 Model 予以休眠释放
+        const toEvict = sortedTabs.slice(0, Math.max(0, tabs.length - 20));
+        for (const t of toEvict) {
+          lruEvictedUris.add(monaco.Uri.file(t.path).toString());
+          lruEvictedUris.add(monaco.Uri.file(t.path + ':split').toString());
+        }
+      }
+
       const models = monaco.editor.getModels();
       for (const model of models) {
         const uriStr = model.uri.toString();
-        // 排除系统内部与只读临时 model，如果此 model 对应的路径不在当前打开的 tabs 中，安全 dispose 释放内存
+        // 排除系统内部与只读临时 model，如果此 model 对应的路径不在当前打开的 tabs 中或已被 LRU 休眠，安全 dispose 释放内存
         if (uriStr.startsWith('file://')) {
-          if (!activeUris.has(uriStr) && !uriStr.includes('git-diff-temp') && !uriStr.includes('inmemory://')) {
+          const isNotActiveTab = !activeUris.has(uriStr);
+          const isLruEvicted = lruEvictedUris.has(uriStr);
+          if ((isNotActiveTab || isLruEvicted) && !uriStr.includes('git-diff-temp') && !uriStr.includes('inmemory://')) {
             model.dispose();
           }
         }
@@ -1210,7 +1242,54 @@ export function EditorPane({
     } catch {
       // 容错防止 dispose 抛出异常
     }
-  }, [tabs]);
+  }, [tabs, active?.path, splitActive?.path]);
+
+  // ── Smart Apply 差异审查状态 (Cursor 风格 Interactive Diff Review) ──────
+  const [smartApplyDiff, setSmartApplyDiff] = useState<{
+    originalText: string;
+    newText: string;
+    targetPath: string;
+    addedLinesCount: number;
+    removedLinesCount: number;
+  } | null>(null);
+  const smartApplyDecorationsRef = useRef<string[]>([]);
+
+  const handleAcceptSmartApply = useCallback(() => {
+    if (editorRef.current && smartApplyDecorationsRef.current.length) {
+      smartApplyDecorationsRef.current = editorRef.current.deltaDecorations(
+        smartApplyDecorationsRef.current,
+        [],
+      );
+    }
+    if (smartApplyDiff && active?.path) {
+      onChangeContent(active.path, editorRef.current?.getValue() || smartApplyDiff.newText);
+      onShowToast?.('✓ 已采纳 Smart Apply 代码修改', '', 'success');
+    }
+    setSmartApplyDiff(null);
+  }, [smartApplyDiff, active?.path, onChangeContent, onShowToast]);
+
+  const handleRejectSmartApply = useCallback(() => {
+    if (editorRef.current && smartApplyDiff) {
+      const ed = editorRef.current;
+      const model = ed.getModel();
+      if (model) {
+        ed.executeEdits('smart-apply-revert', [
+          {
+            range: model.getFullModelRange(),
+            text: smartApplyDiff.originalText,
+            forceMoveMarkers: true,
+          },
+        ]);
+        smartApplyDecorationsRef.current = ed.deltaDecorations(
+          smartApplyDecorationsRef.current,
+          [],
+        );
+        onChangeContent(smartApplyDiff.targetPath, smartApplyDiff.originalText);
+        onShowToast?.('✗ 已拒绝并撤销 Smart Apply 代码修改', '', 'info');
+      }
+    }
+    setSmartApplyDiff(null);
+  }, [smartApplyDiff, onChangeContent, onShowToast]);
 
   // Inline AI edit state (Cmd+K)
   const [showInlineAi, setShowInlineAi] = useState(false);
@@ -3217,19 +3296,53 @@ export function EditorPane({
       const curActive = activeRef.current;
       if (!ed || !code || !curActive?.path) return;
       const model = ed.getModel();
-      const fullRange = model?.getFullModelRange();
-      if (fullRange) {
-        ed.executeEdits('ai-apply', [
-          {
-            range: fullRange,
-            text: code,
-            forceMoveMarkers: true,
-          },
-        ]);
-        onChangeContent(curActive.path, ed.getValue());
-        ed.focus();
-        onShowToast?.('已将代码完整应用至当前文件', '', 'success');
+      if (!model) return;
+
+      const origText = ed.getValue();
+      if (origText === code) {
+        onShowToast?.('当前代码与建议修改一致，无需更新', '', 'info');
+        return;
       }
+
+      const origLines = origText.split('\n');
+      const newLines = code.split('\n');
+      const addedLinesCount = Math.max(0, newLines.length - origLines.length);
+      const removedLinesCount = Math.max(0, origLines.length - newLines.length);
+
+      const fullRange = model.getFullModelRange();
+      ed.executeEdits('smart-apply', [
+        {
+          range: fullRange,
+          text: code,
+          forceMoveMarkers: true,
+        },
+      ]);
+
+      const newEndLine = model.getLineCount();
+      smartApplyDecorationsRef.current = ed.deltaDecorations(
+        smartApplyDecorationsRef.current,
+        [
+          {
+            range: new monaco.Range(1, 1, newEndLine, model.getLineMaxColumn(newEndLine)),
+            options: {
+              isWholeLine: true,
+              className: 'smart-apply-diff-line',
+              marginClassName: 'smart-apply-diff-gutter',
+            },
+          },
+        ],
+      );
+
+      setSmartApplyDiff({
+        originalText: origText,
+        newText: code,
+        targetPath: curActive.path,
+        addedLinesCount,
+        removedLinesCount,
+      });
+
+      ed.focus();
+      onShowToast?.('✦ Smart Apply：代码修改已应用，请在编辑器顶部审查并选择采纳或撤销', '', 'info');
     };
 
     window.addEventListener('echoly:insertCodeToEditor', onInsertCode);
@@ -5619,6 +5732,72 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     title="跳转到下一处冲突"
                   >
                     下一处 ▾
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Smart Apply 交互式差异审核条 (Cursor 风格 Interactive Diff Review) */}
+            {smartApplyDiff && (
+              <div
+                style={{
+                  height: 30,
+                  padding: '0 10px',
+                  boxSizing: 'border-box',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: 'rgba(16, 185, 129, 0.14)',
+                  borderBottom: '1px solid rgba(16, 185, 129, 0.4)',
+                  zIndex: 20,
+                  flexShrink: 0,
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                  <span style={{ fontWeight: 700, color: '#10b981' }}>✦ Smart Apply</span>
+                  <span style={{ color: 'var(--text, #fff)' }}>AI 代码变更审查中</span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      padding: '1px 6px',
+                      borderRadius: 4,
+                      background: 'rgba(16, 185, 129, 0.25)',
+                      color: '#34d399',
+                      fontWeight: 600,
+                    }}
+                  >
+                    +{smartApplyDiff.addedLinesCount} / -{smartApplyDiff.removedLinesCount} 行变动
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    className="panel-action-btn"
+                    onClick={handleAcceptSmartApply}
+                    title="采纳所有修改并保存 (Accept)"
+                    style={{ color: '#10b981', fontWeight: 600 }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    <span style={{ fontSize: 11, marginLeft: 2 }}>采纳 (Accept)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="panel-action-btn"
+                    onClick={handleRejectSmartApply}
+                    title="拒绝所有修改并撤回原代码 (Reject)"
+                    style={{ color: '#ef4444' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                    <span style={{ fontSize: 11, marginLeft: 2 }}>拒绝 (Reject)</span>
                   </button>
                 </div>
               </div>
