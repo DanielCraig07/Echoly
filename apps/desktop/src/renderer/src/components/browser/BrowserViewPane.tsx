@@ -128,7 +128,12 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
       return `https://www.google.com/search?q=${encodeURIComponent(u)}`;
     }
 
-    // 8. 默认情况：作为相对路由直接挂载在当前开发站点上 (例如直接敲 "users", "login", "order/detail?id=1")
+    // 8. 若当前处在新标签页（无活动站点）且输入不具备路径或域名特征，判定为搜索意图
+    if ((!currentUrl || currentUrl === 'about:blank') && !u.includes('.') && !u.includes('/') && !u.includes(':')) {
+      return `https://www.google.com/search?q=${encodeURIComponent(u)}`;
+    }
+
+    // 9. 默认情况：作为相对路由直接挂载在当前开发站点上 (例如直接敲 "users", "login", "order/detail?id=1")
     return `${getBaseOrigin()}/${u}`;
   };
 
@@ -161,6 +166,17 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
   const [inspectActive, setInspectActive] = useState(false);
   const [isDevToolsOpen, setIsDevToolsOpen] = useState(false);
   const addressInputRef = useRef<HTMLInputElement | null>(null);
+  const centerInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 当处于新标签页时，自动聚焦居中快速搜索输入框
+  useEffect(() => {
+    if (!currentUrl || currentUrl === '' || currentUrl === 'about:blank') {
+      const timer = setTimeout(() => {
+        centerInputRef.current?.focus();
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [currentUrl]);
 
   const [consoleLogs, setConsoleLogs] = useState<ConsoleMessage[]>([]);
   const [loadError, setLoadError] = useState<{
@@ -225,7 +241,11 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
       } catch {}
     }
     setTimeout(() => {
-      addressInputRef.current?.focus();
+      if (centerInputRef.current) {
+        centerInputRef.current.focus();
+      } else {
+        addressInputRef.current?.focus();
+      }
     }, 50);
   }, []);
 
@@ -1160,7 +1180,8 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             width: '100%',
             height: isDevToolsOpen ? `calc(100% - ${devToolsHeight}px)` : '100%',
             display: 'flex',
-            pointerEvents: isDraggingDevTools ? 'none' : 'auto',
+            visibility: (!currentUrl || currentUrl === '' || currentUrl === 'about:blank') ? 'hidden' : 'visible',
+            pointerEvents: (!currentUrl || currentUrl === '' || currentUrl === 'about:blank' || isDraggingDevTools) ? 'none' : 'auto',
           }}
           allowpopups={true}
         />
@@ -1250,62 +1271,185 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             style={{
               position: 'absolute',
               inset: 0,
-              background: 'var(--bg-editor, #141414)',
+              background: 'radial-gradient(circle at 50% 30%, rgba(56, 189, 248, 0.05) 0%, rgba(20, 20, 20, 0.98) 70%), var(--bg-editor, #141414)',
               color: 'var(--text)',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: 32,
+              padding: '32px 24px',
               textAlign: 'center',
               zIndex: 10,
+              userSelect: 'none',
             }}
           >
+            {/* 浏览器 Logo 徽章 */}
             <div
               style={{
-                width: 56,
-                height: 56,
-                borderRadius: 16,
-                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(147, 51, 234, 0.2))',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                width: 60,
+                height: 60,
+                borderRadius: 18,
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(99, 102, 241, 0.2))',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: 16,
-                color: '#60a5fa',
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
+                color: '#38bdf8',
+                boxShadow: '0 8px 32px rgba(56, 189, 248, 0.12)',
               }}
             >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" />
                 <line x1="2" y1="12" x2="22" y2="12" />
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
               </svg>
             </div>
-            <h2 style={{ fontSize: 18, fontWeight: 600, margin: '0 0 8px', color: '#f8fafc' }}>
+
+            <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px', color: '#f3f4f6', letterSpacing: '-0.02em' }}>
               新标签页
             </h2>
-            <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 24px', maxWidth: 420 }}>
-              请在上方地址栏输入网址或页面路由，按回车即可立即访问
+            <p style={{ fontSize: 13, color: 'var(--muted, #9ca3af)', margin: '0 0 24px', maxWidth: 440 }}>
+              输入网址或页面路由，按回车即可立即访问
             </p>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-              <button
-                type="button"
-                className="btn secondary"
-                onClick={() => navigateTo('http://localhost:5173')}
-                style={{ fontSize: 12, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+            {/* 居中快速搜索与网址输入框 */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (urlInput.trim()) {
+                  navigateTo(urlInput);
+                }
+              }}
+              style={{
+                width: '100%',
+                maxWidth: 520,
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                marginBottom: 28,
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: 'var(--muted, #9ca3af)',
+                  pointerEvents: 'none',
+                }}
               >
-                <span>⚡ 打开本地服务 (localhost:5173)</span>
-              </button>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </div>
+              <input
+                ref={centerInputRef}
+                type="text"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder="搜索或输入网址 (如 localhost:5173、:3000、域名等)..."
+                style={{
+                  width: '100%',
+                  height: 44,
+                  padding: '0 44px 0 42px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-strong, rgba(255, 255, 255, 0.16))',
+                  borderRadius: 22,
+                  color: 'var(--text, #fff)',
+                  fontSize: 13,
+                  outline: 'none',
+                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+                  transition: 'all 0.2s ease',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--accent, #38bdf8)';
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(56, 189, 248, 0.2)';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-strong, rgba(255, 255, 255, 0.16))';
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                  e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3)';
+                }}
+              />
               <button
-                type="button"
-                className="btn secondary"
-                onClick={() => navigateTo('https://www.google.com')}
-                style={{ fontSize: 12, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+                type="submit"
+                style={{
+                  position: 'absolute',
+                  right: 7,
+                  width: 30,
+                  height: 30,
+                  borderRadius: 15,
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--accent, #38bdf8)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  opacity: urlInput.trim() ? 1 : 0.4,
+                }}
+                title="前往"
               >
-                <span>🔍 Google 搜索</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
               </button>
+            </form>
+
+            {/* 本地开发服务（5173、3000、8080）与常用入口磁贴 */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontSize: 11, color: 'var(--muted, #9ca3af)', letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 }}>
+                本地开发服务与常用磁贴
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 560 }}>
+                {[
+                  { label: '⚡ 本地服务 (5173)', url: 'http://localhost:5173', tip: 'Vite 开发服务' },
+                  { label: '⚛️ 本地服务 (3000)', url: 'http://localhost:3000', tip: 'Node / React 服务' },
+                  { label: '☕ 本地服务 (8080)', url: 'http://localhost:8080', tip: 'Spring / 后端 API 服务' },
+                  { label: '🔍 Google 搜索', url: 'https://www.google.com', tip: '搜索引擎' },
+                  { label: '🐙 GitHub', url: 'https://github.com', tip: '代码托管与开源平台' },
+                ].map((item) => (
+                  <button
+                    key={item.url}
+                    type="button"
+                    onClick={() => navigateTo(item.url)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 8,
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      color: 'var(--text-secondary, #d1d5db)',
+                      fontSize: 12,
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
+                      e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+                      e.currentTarget.style.color = '#38bdf8';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                      e.currentTarget.style.color = 'var(--text-secondary, #d1d5db)';
+                      e.currentTarget.style.transform = 'none';
+                    }}
+                    title={`点击立即前往 ${item.url} (${item.tip})`}
+                  >
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
