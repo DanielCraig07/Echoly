@@ -821,7 +821,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         flexDirection: 'column',
         width: '100%',
         height: '100%',
-        background: '#0d1117',
+        background: 'var(--bg-editor, #141414)',
         color: 'var(--text)',
         position: 'relative',
         overflow: 'hidden',
@@ -1138,7 +1138,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           width: '100%',
           minHeight: 0,
           position: 'relative',
-          background: '#0d1117',
+          background: 'var(--bg-editor, #141414)',
           overflow: 'hidden',
         }}
       >
@@ -1164,183 +1164,6 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           }}
           allowpopups={true}
         />
-
-        {/* 新标签页起始页：不加载任何地址时展示 */}
-        {(!currentUrl || currentUrl === '' || currentUrl === 'about:blank') && (
-          <div
-            className="browser-new-tab-view"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: isDevToolsOpen ? devToolsHeight : 0,
-              background: 'radial-gradient(ellipse at 50% 20%, rgba(56, 189, 248, 0.08) 0%, rgba(13, 17, 23, 0.98) 70%)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10,
-              padding: '24px 20px',
-              userSelect: 'none',
-            }}
-          >
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 20,
-                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(99, 102, 241, 0.2))',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 8px 32px rgba(56, 189, 248, 0.15)',
-                marginBottom: 16,
-              }}
-            >
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="2" y1="12" x2="22" y2="12" />
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-              </svg>
-            </div>
-
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#f3f4f6', margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>
-              新标签页
-            </h2>
-            <p style={{ fontSize: 13, color: '#9ca3af', margin: '0 0 24px 0' }}>
-              输入网址或搜索，快速访问网页与开发服务
-            </p>
-
-            {/* 居中搜索与网址输入框 */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (urlInput.trim()) {
-                  navigateTo(urlInput);
-                }
-              }}
-              style={{
-                width: '100%',
-                maxWidth: 480,
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                marginBottom: 28,
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 14,
-                  display: 'flex',
-                  alignItems: 'center',
-                  color: '#9ca3af',
-                  pointerEvents: 'none',
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-              </div>
-              <input
-                type="text"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="在 Google 中搜索或输入网址..."
-                style={{
-                  width: '100%',
-                  height: 44,
-                  padding: '0 44px 0 40px',
-                  background: 'rgba(255, 255, 255, 0.06)',
-                  border: '1px solid rgba(255, 255, 255, 0.14)',
-                  borderRadius: 22,
-                  color: '#fff',
-                  fontSize: 14,
-                  outline: 'none',
-                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)',
-                  transition: 'all 0.2s ease',
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.6)';
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.09)';
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(56, 189, 248, 0.2)';
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.14)';
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
-                  e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.25)';
-                }}
-              />
-              <button
-                type="submit"
-                style={{
-                  position: 'absolute',
-                  right: 8,
-                  width: 30,
-                  height: 30,
-                  borderRadius: 15,
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#38bdf8',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                }}
-                title="前往"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </button>
-            </form>
-
-            {/* 常用服务快捷入口磁贴 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-              {[
-                { label: '本地 5173', url: 'http://localhost:5173' },
-                { label: '本地 3000', url: 'http://localhost:3000' },
-                { label: '本地 8080', url: 'http://localhost:8080' },
-                { label: 'GitHub', url: 'https://github.com' },
-              ].map((item) => (
-                <button
-                  key={item.url}
-                  type="button"
-                  onClick={() => navigateTo(item.url)}
-                  style={{
-                    padding: '8px 14px',
-                    borderRadius: 8,
-                    background: 'rgba(255, 255, 255, 0.04)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    color: '#d1d5db',
-                    fontSize: 12,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)';
-                    e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.4)';
-                    e.currentTarget.style.color = '#38bdf8';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                    e.currentTarget.style.color = '#d1d5db';
-                  }}
-                  title={`访问 ${item.url}`}
-                >
-                  <span style={{ fontWeight: 600 }}>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* 拖动遮罩由面板顶层那一处统一承担（position: fixed 相对视口，重复渲染没有意义） */}
 
@@ -1421,13 +1244,13 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         )}
 
         {/* 空地址栏时呈现的新标签页起始界面 */}
-        {!currentUrl && (
+        {(!currentUrl || currentUrl === '' || currentUrl === 'about:blank') && (
           <div
             className="browser-newtab-welcome"
             style={{
               position: 'absolute',
               inset: 0,
-              background: '#0d1117',
+              background: 'var(--bg-editor, #141414)',
               color: 'var(--text)',
               display: 'flex',
               flexDirection: 'column',
@@ -1494,7 +1317,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             style={{
               position: 'absolute',
               inset: 0,
-              background: '#0d1117',
+              background: 'var(--bg-editor, #141414)',
               color: 'var(--text)',
               display: 'flex',
               flexDirection: 'column',
