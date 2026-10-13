@@ -611,7 +611,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
     };
 
     const syncCurrentUrl = (newUrl?: string) => {
-      let actual = (newUrl || (typeof wv.getURL === 'function' ? wv.getURL() : '') || '').trim();
+      const actual = (newUrl || (typeof wv.getURL === 'function' ? wv.getURL() : '') || '').trim();
       // 绝不同步空白页、Chromium 内部错误页及扩展地址，保持用户原本请求的目标地址
       if (
         !actual ||
@@ -1121,7 +1121,6 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         <webview
           ref={webviewRef}
           src={initialSrcRef.current || 'about:blank'}
-          // @ts-ignore
           partition="persist:echoly-browser"
           style={{
             position: 'absolute',
@@ -1133,8 +1132,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             display: 'flex',
             pointerEvents: isDraggingDevTools ? 'none' : 'auto',
           }}
-          // @ts-ignore
-          allowpopups="true"
+          allowpopups={true}
         />
 
         {/* 拖动遮罩由面板顶层那一处统一承担（position: fixed 相对视口，重复渲染没有意义） */}
