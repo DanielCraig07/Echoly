@@ -3,8 +3,8 @@ import type {
   AgentEvent,
   AppSettings,
   ChatSession,
+  DevToolsViewLayout,
   GitCloneRequest,
-  GitStashAction,
   IpcApi,
   AppMenuId,
   MenuCommand,
@@ -276,6 +276,25 @@ const api: IpcApi = {
   dbCreateDemoDb: (targetPath) => ipcRenderer.invoke('db:createDemoDb', targetPath),
   dbExecuteBatch: (connectionId, statements, schemaName) =>
     ipcRenderer.invoke('db:executeBatch', connectionId, statements, schemaName),
+  openDevToolsView: (targetWebContentsId: number, layout: DevToolsViewLayout) =>
+    ipcRenderer.invoke('browser:openDevToolsView', { targetWebContentsId, layout }),
+  updateDevToolsViewBounds: (targetWebContentsId: number, layout: DevToolsViewLayout) =>
+    ipcRenderer.invoke('browser:updateDevToolsViewBounds', { targetWebContentsId, layout }),
+  setDevToolsDragging: (targetWebContentsId: number, dragging: boolean) =>
+    ipcRenderer.invoke('browser:setDevToolsDragging', { targetWebContentsId, dragging }),
+  closeDevToolsView: (targetWebContentsId: number) =>
+    ipcRenderer.invoke('browser:closeDevToolsView', targetWebContentsId),
+  captureBrowserElement: (
+    targetWebContentsId: number,
+    rect: { x: number; y: number; width: number; height: number },
+  ): Promise<string | null> =>
+    ipcRenderer.invoke('browser:captureElement', { targetWebContentsId, rect }),
+  // 缩放因子变化订阅：原生 DevTools 视图需按新比例重新换算 Bounds
+  onZoomChanged: (cb: (zoom: number) => void) => {
+    const listener = (_e: unknown, zoom: number) => cb(zoom);
+    ipcRenderer.on('window:zoomChanged', listener);
+    return () => ipcRenderer.removeListener('window:zoomChanged', listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('ide', api);

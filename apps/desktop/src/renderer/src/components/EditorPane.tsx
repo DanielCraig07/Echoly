@@ -12,6 +12,7 @@ import type {
   DbConnectionView,
 } from '@deepseek-ide/shared';
 import {
+  isBrowserPath,
   isImagePath,
   isSameFileByPath,
   isUntitledPath,
@@ -19,6 +20,7 @@ import {
   languageFromPath,
   untitledTabLabel,
 } from '../utils';
+import { BrowserViewPane } from './browser/BrowserViewPane';
 import { RenderFileTreeIcon } from './FileTree';
 import { MarkdownMessage, extractMarkdownHeadings, type MarkdownHeadingItem } from './MarkdownMessage';
 import { WelcomeView } from './WelcomeView';
@@ -127,6 +129,10 @@ interface Props {
   ) => void;
   /** 关闭一个内置虚拟标签页（SQL 控制台在标签内换连接后，旧路径要收掉） */
   onCloseVirtualTab?: (path: string) => void;
+  /** 更新当前标签元信息（如浏览器标签更新标题或 URL） */
+  onUpdateTabMeta?: (path: string, patch: Partial<OpenTab>) => void;
+  /** 打开或新建浏览器标签页 */
+  onOpenBrowserTab?: (url?: string, title?: string, options?: { forceNew?: boolean }) => void;
   /**
    * 表结构标签改了表名（`db://structure/*`）。
    *
@@ -690,6 +696,8 @@ export function EditorPane({
   onToggleBreakpoint: controlledOnToggleBreakpoint,
   formatOnSave = false,
   onForceLoadLargeFile,
+  onUpdateTabMeta,
+  onOpenBrowserTab,
 }: Props) {
   const active = tabs.find((t) => t.path === activePath) ?? null;
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
@@ -4296,11 +4304,37 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   });
                 }}
               >
-                <RenderFileTreeIcon
-                  name={fileName}
-                  isDirectory={false}
-                  contentSnippet={tab.content ? tab.content.slice(0, 1000) : undefined}
-                />
+                {isBrowserPath(tab.path) || tab.language === 'browser' || tab.virtual?.browser ? (
+                  tab.virtual?.browser?.favicon ? (
+                    <img
+                      src={tab.virtual.browser.favicon}
+                      alt=""
+                      style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 2 }}
+                    />
+                  ) : (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ flexShrink: 0 }}
+                    >
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                    </svg>
+                  )
+                ) : (
+                  <RenderFileTreeIcon
+                    name={fileName}
+                    isDirectory={false}
+                    contentSnippet={tab.content ? tab.content.slice(0, 1000) : undefined}
+                  />
+                )}
                 <span className="tab-title" style={{ color: gitMeta?.color }}>
                   {fileName}
                 </span>
@@ -4360,8 +4394,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         </div>
       )}
 
-      {/* Breadcrumb Navigation Bar (Match User Screenshot 2) */}
-      {typeof activePath === 'string' && activePath.trim().length > 0 && (
+      {/* Breadcrumb Navigation Bar (隐藏浏览器标签的面包屑行) */}
+      {typeof activePath === 'string' &&
+        activePath.trim().length > 0 &&
+        !(isBrowserPath(activePath) || active?.language === 'browser' || active?.virtual?.browser) && (
         <div className="editor-breadcrumb">
           <div className="editor-breadcrumb-crumbs">
             {(isUntitledPath(activePath)
@@ -4646,7 +4682,16 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         </div>
       )}
 
-      <div className="editor-fill" ref={editorContainerRef} style={{ position: 'relative' }}>
+      <div
+        className="editor-fill"
+        ref={editorContainerRef}
+        style={{
+          position: 'relative',
+          ...(active && (isBrowserPath(active.path) || active.language === 'browser' || active.virtual?.browser)
+            ? { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+            : {}),
+        }}
+      >
         {/* Floating Add-to-Chat prompt when selection is present */}
         {selectedText.trim().length > 0 &&
           active?.path &&
@@ -5118,6 +5163,24 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             onChangeContent={(nextSql) => onChangeContent(active.path, nextSql, false)}
             onShowToast={onShowToast}
             onRetarget={(target, kind) => onRetargetConsole?.(active.path, target, kind)}
+          />
+        ) : active && (isBrowserPath(active.path) || active.language === 'browser' || active.virtual?.browser) ? (
+          <BrowserViewPane
+            key={active.path}
+            initialUrl={
+              active.virtual?.browser?.url ||
+              (active.path.startsWith('browser://') ? active.path.slice('browser://'.length) : undefined)
+            }
+            tabTitle={active.title}
+            onUpdateTab={(patch) => {
+              onUpdateTabMeta?.(active.path, patch);
+            }}
+            onOpenNewTab={(url) => {
+              onOpenBrowserTab?.(url, undefined, { forceNew: true });
+            }}
+            onShowToast={(msg, type) => {
+              onShowToast?.(msg, undefined, type);
+            }}
           />
         ) : active && isImage ? (
           <div className="image-preview-pane">

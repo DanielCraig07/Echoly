@@ -73,6 +73,7 @@ import {
   isUntitledPath,
   isVirtualPath,
   isDbPath,
+  isBrowserPath,
   requiresExactPathMatch,
   isSameFileByPath,
   languageFromPath,
@@ -1000,9 +1001,17 @@ export function App() {
       // 还原 SQL 控制台：脚本内容在读回来之前就是标签的内容（与保存时刻的最后一次编辑一致），
       // 结果集不还原 —— 它是那一刻数据库的快照，重新连上再跑一次才是可信的
       const consoleTabs: OpenTab[] = [];
+      const seenConsolePaths = new Set<string>();
+      const seenScriptPaths = new Set<string>();
+
       for (const v of saved.virtualTabs ?? []) {
         try {
           if (!v.scriptPath) continue;
+          const normTabPath = decodeURIComponent(v.path);
+          if (seenConsolePaths.has(normTabPath) || seenScriptPaths.has(v.scriptPath)) continue;
+          seenConsolePaths.add(normTabPath);
+          seenScriptPaths.add(v.scriptPath);
+
           // 脚本存在用户主目录的项目配置里，不是工作区文件：走配置通道读，
           // 否则 SSH 工作区会去远端找这个文件（远端根本没有）
           const content = await window.ide.readProjectConfigFile(v.scriptPath);
@@ -2621,8 +2630,15 @@ export function App() {
       },
     ) => {
       setTabs((prev) => {
-        const idx = prev.findIndex((t) => t.path === path);
+        const normTarget = decodeURIComponent(path);
+        const idx = prev.findIndex((t) => {
+          if (t.path === path) return true;
+          if (decodeURIComponent(t.path) === normTarget) return true;
+          if (meta?.scriptPath && t.virtual?.scriptPath && t.virtual.scriptPath === meta.scriptPath) return true;
+          return false;
+        });
         if (idx >= 0) {
+          const matchedPath = prev[idx].path;
           if (!replaceContent) {
             // 已存在：切前台即可（但路径里仍可能带旧标题 / 旧的会话参数，顺手对齐）
             const same = { ...prev[idx], title, virtual: meta ?? prev[idx].virtual };
@@ -2646,8 +2662,16 @@ export function App() {
           { path, content, language, dirty: false, title, readOnly, virtual: meta },
         ];
       });
-      setActivePath(path);
-      activePathRef.current = path;
+      const normTarget = decodeURIComponent(path);
+      const existing = tabsRef.current.find(
+        (t) =>
+          t.path === path ||
+          decodeURIComponent(t.path) === normTarget ||
+          (meta?.scriptPath && t.virtual?.scriptPath && t.virtual.scriptPath === meta.scriptPath),
+      );
+      const finalPath = existing ? existing.path : path;
+      setActivePath(finalPath);
+      activePathRef.current = finalPath;
     },
     [],
   );
@@ -2664,8 +2688,13 @@ export function App() {
   /** 点开项目里的一个脚本：已开着就切前台，否则读回来新建一个控制台标签 */
   const openProjectScript = useCallback(
     async (script: DbProjectScriptEntry) => {
+      const targetPath = consoleTabPath(script.connectionId, script.fileName);
+      const normTarget = decodeURIComponent(targetPath);
       const existing = tabsRef.current.find(
-        (t) => t.virtual?.scriptPath === script.scriptPath,
+        (t) =>
+          t.path === targetPath ||
+          decodeURIComponent(t.path) === normTarget ||
+          (t.virtual?.scriptPath && t.virtual.scriptPath === script.scriptPath),
       );
       if (existing) {
         setActivePath(existing.path);
@@ -2930,6 +2959,135 @@ export function App() {
   );
 
   /**
+   * 打开或激活内置浏览器虚拟标签
+   * 默认地址栏给空，让用户手动输入
+   */
+  const openBrowserTab = useCallback(
+    (rawUrl?: string, customTitle?: string, options?: { forceNew?: boolean }) => {
+      // 打开和新建标签页时地址栏都给空，让用户手动输入；若明确传入具体 url 则使用传入的 url
+      const targetUrl = (rawUrl ?? '').trim();
+      let normUrl = targetUrl.startsWith('browser://') ? targetUrl.slice('browser://'.length) : targetUrl;
+      // 智能纠正常见端口笔误 (573 -> 5173)
+      if (/^(https?:\/\/)?(localhost|127\.0\.0\.1):573(\/.*)?$/i.test(normUrl)) {
+        normUrl = normUrl.replace(':573', ':5173');
+      }
+      if (normUrl.startsWith('chrome-error://') || normUrl.startsWith('chrome://')) {
+        normUrl = '';
+      }
+
+      // 如果不是强制新建，且已有对应非空 url 的浏览器标签，则切到对应标签
+      if (!options?.forceNew && normUrl) {
+        const existing = tabsRef.current.find(
+          (t) =>
+            (isBrowserPath(t.path) || t.language === 'browser' || t.virtual?.browser) &&
+            (t.virtual?.browser?.url === normUrl ||
+              t.path === `browser://${normUrl}` ||
+              t.path.startsWith(`browser://${normUrl}#`)),
+        );
+        if (existing) {
+          setActivePath(existing.path);
+          activePathRef.current = existing.path;
+          return;
+        }
+      }
+
+      // 生成唯一 tabPath，保证多个浏览器标签页相互独立
+      const tabId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const tabPath = `browser://${normUrl}#tab=${tabId}`;
+
+      let title = customTitle;
+      if (!title) {
+        if (!normUrl) {
+          title = '新标签页';
+        } else {
+          try {
+            const u = new URL(normUrl.startsWith('http') ? normUrl : `http://${normUrl}`);
+            title = u.hostname || '内置浏览器';
+          } catch {
+            title = '内置浏览器';
+          }
+        }
+      }
+
+      const newTab: OpenTab = {
+        path: tabPath,
+        content: '',
+        language: 'browser',
+        dirty: false,
+        title,
+        virtual: {
+          browser: {
+            url: normUrl,
+            title,
+            tabId,
+          },
+        },
+      };
+
+      setTabs((prev) => [...prev, newTab]);
+      setActivePath(tabPath);
+      activePathRef.current = tabPath;
+    },
+    [],
+  );
+
+  /**
+   * 更新标签元数据（供内置浏览器更新标题或路径）
+   */
+  const handleUpdateTabMeta = useCallback((path: string, patch: Partial<OpenTab>) => {
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.path !== path) return t;
+        const next = { ...t, ...patch };
+        if (patch.path && activePathRef.current === path) {
+          activePathRef.current = patch.path;
+          setActivePath(patch.path);
+        }
+        return next;
+      }),
+    );
+  }, []);
+
+  // 监听浏览器打开与引用相关全局事件
+  useEffect(() => {
+    const handleOpenBrowserEvent = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as
+        | { url?: string; title?: string; forceNew?: boolean }
+        | undefined;
+      openBrowserTab(detail?.url, detail?.title, { forceNew: detail?.forceNew });
+    };
+    const handleEnsureChatOpen = () => {
+      if (layoutRef.current.chatPanelExpanded === false) {
+        const next = { ...layoutRef.current, chatPanelExpanded: true };
+        setLayout(next);
+        persistLayout(next);
+      }
+      setRightPanelTab('chat');
+    };
+
+    // 全局轻提示：供不便直接拿到 showToast 的深层组件（如聊天面板的引用去重提示）使用
+    const handleGlobalToast = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as
+        | { message?: string; type?: 'success' | 'error' | 'info' | 'warn' }
+        | undefined;
+      if (!detail?.message) return;
+      showToast(detail.message, undefined, detail.type || 'info');
+    };
+
+    window.addEventListener('echoly:openBrowser', handleOpenBrowserEvent);
+    window.addEventListener('echoly:addBrowserElementRefToChat', handleEnsureChatOpen);
+    window.addEventListener('echoly:addBrowserRefToChat', handleEnsureChatOpen);
+    window.addEventListener('echoly:toast', handleGlobalToast);
+
+    return () => {
+      window.removeEventListener('echoly:openBrowser', handleOpenBrowserEvent);
+      window.removeEventListener('echoly:addBrowserElementRefToChat', handleEnsureChatOpen);
+      window.removeEventListener('echoly:addBrowserRefToChat', handleEnsureChatOpen);
+      window.removeEventListener('echoly:toast', handleGlobalToast);
+    };
+  }, [openBrowserTab, persistLayout, showToast]);
+
+  /**
    * 左侧树下发给表数据视图的筛选 / 排序请求。
    *
    * 「按此列排序」是在**树**上点的，要生效得让**编辑区**里那个数据视图重新查询 ——
@@ -2944,7 +3102,7 @@ export function App() {
   const dbViewNonceRef = useRef(0);
 
   const savePath = useCallback(async (path: string, content: string): Promise<void> => {
-    if (isUntitledPath(path) || isDbPath(path)) return;
+    if (isVirtualPath(path)) return;
     await window.ide.writeFile(path, content);
     setTabs((prev) =>
       prev.map((t) => (t.path === path && t.content === content ? { ...t, dirty: false } : t)),
@@ -3414,6 +3572,12 @@ export function App() {
         ideActions.find((a) => a.id === 'cmd-toggle-sidebar')?.handler();
         return;
       }
+      // Cmd+Alt+B -> 打开内置浏览器
+      if (ctrl && e.altKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        ideActions.find((a) => a.id === 'cmd-open-browser')?.handler();
+        return;
+      }
       // Cmd+D -> 显示差异 (Show Diff)
       if (ctrl && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'd') {
         const targetP = activePath && !activePath.startsWith('untitled:') ? activePath : null;
@@ -3533,6 +3697,15 @@ export function App() {
       category: 'AI',
       shortcut: 'Cmd+L',
       handler: handleFocusAi,
+    },
+    {
+      id: 'cmd-open-browser',
+      title: '视图: 打开内置浏览器 (Browser Preview)',
+      category: '视图',
+      shortcut: isMac ? '⌘⌥B' : 'Ctrl+Alt+B',
+      handler: () => {
+        openBrowserTab('');
+      },
     },
     {
       id: 'cmd-toggle-terminal',
@@ -3879,6 +4052,29 @@ export function App() {
               </svg>
             </button>
           </div>
+
+          {/* 内置浏览器按钮 */}
+          <button
+            type="button"
+            className="layout-toggle-btn"
+            title={isMac ? '内置浏览器 (⌘⌥B)' : '内置浏览器 (Ctrl+Alt+B)'}
+            onClick={() => openBrowserTab()}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+          </button>
 
           {/* 设置按钮 */}
           <button
@@ -4512,6 +4708,7 @@ export function App() {
             onTableRenamed={handleTableRenamed}
             onRetargetConsole={retargetConsole}
             onOpenConsoleForTable={openSqlConsole}
+            onUpdateTabMeta={handleUpdateTabMeta}
             dbViewRequest={dbViewRequest}
             onChangeContent={onChangeContent}
             onSelectionChange={setEditorSelection}
@@ -4591,6 +4788,7 @@ export function App() {
             onToggleBreakpoint={handleToggleBreakpoint}
             formatOnSave={formatOnSave}
             onForceLoadLargeFile={handleForceLoadLargeFile}
+            onOpenBrowserTab={openBrowserTab}
           />
 
           {workspace && (
@@ -4901,7 +5099,8 @@ export function App() {
                         t.language !== 'image' &&
                         !t.previewUrl &&
                         !isUntitledPath(t.path) &&
-                        !isDbPath(t.path),
+                        !isDbPath(t.path) &&
+                        !isBrowserPath(t.path),
                     )
                     .map((t) => ({ path: t.path, content: t.content }))}
                   selection={editorSelection}

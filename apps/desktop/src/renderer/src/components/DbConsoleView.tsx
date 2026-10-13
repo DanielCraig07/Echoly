@@ -1,9 +1,16 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import Editor from '@monaco-editor/react';
+import * as monaco from 'monaco-editor';
 import type { DatabaseQueryResult, DbConnectionView } from '@deepseek-ide/shared';
 import { resolveExecutableSql, splitSqlStatements } from '../services/sqlStatements';
 import { formatCellValue } from '../services/dbCellDisplay';
 import { PanelSelect } from './PanelSelect';
+import {
+  provideSqlCompletions,
+  getOrFetchTables,
+  getOrFetchSchemas,
+  type SqlMetadataProvider,
+} from '../services/sqlCompletionService';
 
 export interface DbConsoleViewProps {
   connectionId: string;
@@ -157,6 +164,37 @@ export function DbConsoleView({
       cancelled = true;
     };
   }, [activeConnId]);
+
+  const activeConnIdRef = useRef(activeConnId);
+  activeConnIdRef.current = activeConnId;
+  const activeSchemaRef = useRef(activeSchema);
+  activeSchemaRef.current = activeSchema;
+
+  const metadataProviderRef = useRef<SqlMetadataProvider>({
+    getConnectionId: () => activeConnIdRef.current,
+    getSchemaName: () => activeSchemaRef.current,
+  });
+
+  // 当连接或库改变时，后台静默预热库表清单，使用户输入时 0ms 秒出提示
+  useEffect(() => {
+    if (activeConnId) {
+      void getOrFetchSchemas(activeConnId);
+      void getOrFetchTables(activeConnId, activeSchema);
+    }
+  }, [activeConnId, activeSchema]);
+
+  // 注册 Monaco SQL 智能补全器（库、表、字段、别名、关键字）
+  useEffect(() => {
+    const disposable = monaco.languages.registerCompletionItemProvider('sql', {
+      triggerCharacters: ['.', ' '],
+      provideCompletionItems(model, position) {
+        return provideSqlCompletions(model, position, metadataProviderRef.current);
+      },
+    });
+    return () => {
+      disposable.dispose();
+    };
+  }, []);
 
   const connOptions = useMemo(
     () =>
@@ -515,29 +553,26 @@ export function DbConsoleView({
           gap: 10,
         }}
       >
-        {/* 左：执行按钮 + 快捷键提示。
-            与右侧状态区同为 `flex: 1 1 0`，两侧各自吃掉一半空白，
-            正中间的「连接 / 库」才真正落在容器中线上，而不是被左侧按钮群挤偏 */}
+        {/* 左：执行按钮群 */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            flex: '1 1 0',
-            minWidth: 0,
-            overflow: 'hidden',
+            gap: 4,
+            flexShrink: 0,
           }}
         >
           <button
             type="button"
             onClick={() => void execute('auto')}
             disabled={executing}
-            title="有选中内容则只执行选中，否则执行光标所在语句 (Cmd+Enter)"
+            title="执行光标所在语句或选中内容 (Cmd+Enter)"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '4px 12px',
+              gap: 4,
+              height: 22,
+              padding: '0 8px',
               fontSize: 12,
               borderRadius: 4,
               background: '#10b981',
@@ -545,24 +580,28 @@ export function DbConsoleView({
               border: 'none',
               cursor: executing ? 'not-allowed' : 'pointer',
               fontWeight: 600,
+              whiteSpace: 'nowrap',
+              lineHeight: 1,
+              flexShrink: 0,
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
-            {executing ? '执行中...' : '运行 (Cmd+Enter)'}
+            <span>{executing ? '执行中' : '运行'}</span>
           </button>
 
           <button
             type="button"
             onClick={() => void execute('all')}
             disabled={executing}
-            title="按分号切分后顺序执行编辑器中的全部语句 (Cmd+Shift+Enter)"
+            title="按分号切分执行全部语句 (Cmd+Shift+Enter)"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '4px 10px',
+              gap: 4,
+              height: 22,
+              padding: '0 8px',
               fontSize: 12,
               borderRadius: 4,
               background: 'rgba(255, 255, 255, 0.08)',
@@ -570,13 +609,16 @@ export function DbConsoleView({
               border: '1px solid var(--border)',
               cursor: executing ? 'not-allowed' : 'pointer',
               fontWeight: 500,
+              whiteSpace: 'nowrap',
+              lineHeight: 1,
+              flexShrink: 0,
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="5 3 19 12 5 21 5 3" />
               <line x1="22" y1="5" x2="22" y2="19" />
             </svg>
-            运行全部
+            <span>全部</span>
           </button>
 
           <button
@@ -632,31 +674,10 @@ export function DbConsoleView({
               <polyline points="12 6 12 12 16 14" />
             </svg>
           </button>
-
-          {/* 快捷键提示随左区一起被挤掉，而不是把中间的目标选择器顶偏 */}
-          <span
-            style={{
-              fontSize: 11,
-              color: 'var(--text-muted)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              minWidth: 0,
-            }}
-          >
-            选中行执行 · <kbd style={{ padding: '1px 4px', background: 'rgba(255,255,255,0.08)', borderRadius: 3 }}>Cmd</kbd>
-            +<kbd style={{ padding: '1px 4px', background: 'rgba(255,255,255,0.08)', borderRadius: 3 }}>Enter</kbd>
-            ，全部执行 <kbd style={{ padding: '1px 4px', background: 'rgba(255,255,255,0.08)', borderRadius: 3 }}>Cmd</kbd>
-            +<kbd style={{ padding: '1px 4px', background: 'rgba(255,255,255,0.08)', borderRadius: 3 }}>Shift</kbd>
-            +<kbd style={{ padding: '1px 4px', background: 'rgba(255,255,255,0.08)', borderRadius: 3 }}>Enter</kbd>
-          </span>
         </div>
 
-        {/* 中：会话目标。连的是哪个连接、打在哪个库上，都在这里换 ——
-            不必回左侧树重新点开一个控制台。
-            放在正中间是刻意为之：它是本页最需要随时确认的信息（执行错库的代价很高），
-            钉在正中比跟着左侧按钮群随窗口宽度漂移更容易一眼看到。 */}
-        <div className="db-console-target">
+        {/* 中：会话目标（连接 / 库选择器），带最小宽度保障，永不挤压 */}
+        <div className="db-console-target" style={{ flexShrink: 0 }}>
           <PanelSelect<string>
             className="db-console-target-select"
             value={activeConnId}
@@ -685,10 +706,11 @@ export function DbConsoleView({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            flex: '1 1 0',
+            gap: 6,
+            flex: '1 1 auto',
             minWidth: 0,
             justifyContent: 'flex-end',
+            overflow: 'hidden',
           }}
         >
           {result && (
@@ -1107,6 +1129,17 @@ export function DbConsoleView({
             scrollBeyondLastLine: false,
             wordWrap: 'on',
             renderLineHighlight: 'all',
+            suggestOnTriggerCharacters: true,
+            acceptSuggestionOnEnter: 'on',
+            tabCompletion: 'on',
+            quickSuggestions: { other: true, comments: false, strings: false },
+            suggest: {
+              showClasses: true,
+              showFields: true,
+              showModules: true,
+              showKeywords: true,
+              insertMode: 'replace',
+            },
           }}
           onMount={(editor, monaco) => {
             editorRef.current = editor;

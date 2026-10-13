@@ -13,16 +13,21 @@ export function isUntitledPath(filePath: string): boolean {
 }
 
 /**
- * 内置虚拟标签页（草稿 untitled: / 数据库 db:// 数据视图、DDL、SQL 控制台）。
+ * 内置虚拟标签页（草稿 untitled: / 数据库 db:// 数据视图、DDL、SQL 控制台 / 内置浏览器 browser://）。
  * 这些路径不对应磁盘文件，既不能进「打开文件」持久化，也不能被文件系统变更回调当作已删除清理掉。
  */
 export function isVirtualPath(filePath: string): boolean {
-  return isUntitledPath(filePath) || isDbPath(filePath);
+  return isUntitledPath(filePath) || isDbPath(filePath) || isBrowserPath(filePath);
 }
 
 /** 数据库内置视图标签页（db://data|ddl|console/...），内容只存在于标签页状态里 */
 export function isDbPath(filePath: string): boolean {
   return filePath.startsWith('db://');
+}
+
+/** 内置浏览器虚拟标签页（browser://...） */
+export function isBrowserPath(filePath: string): boolean {
+  return filePath.startsWith('browser://');
 }
 
 /**

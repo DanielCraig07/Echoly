@@ -14,6 +14,7 @@ import type {
   PendingDiff,
   WorkspaceInfo,
   RecentWorkspaceItem,
+  BrowserElementRef,
 } from '@deepseek-ide/shared';
 import { PERMISSION_MODE_LABELS } from '@deepseek-ide/shared';
 import { buildSessionWorkspaceMeta, uid } from '../utils';
@@ -72,6 +73,7 @@ export type ChatPanelHandle = {
   clearAndNewSession: () => void;
   askQuestion: (prompt: string, autoSubmit?: boolean) => void;
   focusInput: () => void;
+  addBrowserElementRef?: (ref: BrowserElementRef) => void;
 };
 
 export interface SessionTab {
@@ -620,6 +622,114 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     [updateTab],
   );
 
+  /**
+   * 把浏览器元素引用追加到当前会话输入框与附件列表。
+   *
+   * 同一元素（同一页面 + 同一选择器）重复引用时不再重复追加附件：
+   * 反复点击页面上的同一节点只会往输入框里堆叠相同的 @Element 令牌与附件，
+   * 既挤占上下文，也让用户难以清理。此时改为提示已存在并跳过。
+   */
+  const appendBrowserElementRef = useCallback(
+    (tabId: string, elementRef: BrowserElementRef) => {
+      const label = `<${elementRef.tagName}${elementRef.id ? '#' + elementRef.id : ''}>`;
+      const token = `@Element[${label}]`;
+
+      let duplicated = false;
+      updateTab(tabId, (t) => {
+        const exists = (t.attachments || []).some(
+          (a) =>
+            a.type === 'browser-element' &&
+            a.browserElement?.selectorPath === elementRef.selectorPath &&
+            a.browserElement?.url === elementRef.url,
+        );
+        if (exists) {
+          duplicated = true;
+          return t;
+        }
+        const trimmed = t.input.trimEnd();
+        return {
+          ...t,
+          input: !trimmed ? `${token} ` : `${trimmed} ${token} `,
+          attachments: [
+            ...(t.attachments || []),
+            {
+              id: uid(),
+              name: label,
+              type: 'browser-element' as const,
+              content: elementRef.outerHtml,
+              browserElement: elementRef,
+            },
+          ],
+        };
+      });
+
+      if (duplicated) {
+        window.dispatchEvent(
+          new CustomEvent('echoly:toast', {
+            detail: { message: '该元素已在输入框中，无需重复引用', type: 'info' },
+          }),
+        );
+      }
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const len = (textareaRef.current.value ?? '').length;
+          textareaRef.current.setSelectionRange(len, len);
+        }
+      }, 50);
+    },
+    [updateTab],
+  );
+
+  /** 把整个浏览器页面引用追加到当前会话（同一页面地址不重复引用） */
+  const appendBrowserPageRef = useCallback(
+    (tabId: string, pageInfo: { url: string; title: string; errors?: string[] }) => {
+      const token = `@Browser[${pageInfo.title} - ${pageInfo.url}]`;
+      let duplicated = false;
+      updateTab(tabId, (t) => {
+        const exists = (t.attachments || []).some(
+          (a) => a.type === 'browser-page' && a.browserPage?.url === pageInfo.url,
+        );
+        if (exists) {
+          duplicated = true;
+          return t;
+        }
+        const trimmed = t.input.trimEnd();
+        return {
+          ...t,
+          input: !trimmed ? `${token} ` : `${trimmed} ${token} `,
+          attachments: [
+            ...(t.attachments || []),
+            {
+              id: uid(),
+              name: pageInfo.title || pageInfo.url,
+              type: 'browser-page' as const,
+              browserPage: pageInfo,
+            },
+          ],
+        };
+      });
+
+      if (duplicated) {
+        window.dispatchEvent(
+          new CustomEvent('echoly:toast', {
+            detail: { message: '该页面已在输入框中，无需重复引用', type: 'info' },
+          }),
+        );
+      }
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const len = (textareaRef.current.value ?? '').length;
+          textareaRef.current.setSelectionRange(len, len);
+        }
+      }, 50);
+    },
+    [updateTab],
+  );
+
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
       const items = e.clipboardData?.items;
@@ -1147,7 +1257,61 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         }
       }, 30);
     },
+
+    addBrowserElementRef(elementRef: BrowserElementRef) {
+      const currentTabId = activeTabIdRef.current;
+      if (!currentTabId) return;
+      appendBrowserElementRef(currentTabId, elementRef);
+    },
   }));
+
+  // 全局接收浏览器标签/元素引用
+  useEffect(() => {
+    const handleElementRef = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as BrowserElementRef | undefined;
+      if (!detail) return;
+      const currentTabId = activeTabIdRef.current;
+      if (!currentTabId) return;
+      appendBrowserElementRef(currentTabId, detail);
+    };
+
+    const handlePageRef = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as
+        | { url: string; title: string; errors?: string[] }
+        | undefined;
+      if (!detail) return;
+      const currentTabId = activeTabIdRef.current;
+      if (!currentTabId) return;
+      appendBrowserPageRef(currentTabId, detail);
+    };
+
+    const handleAskQuestion = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail as { prompt: string; autoSubmit?: boolean } | undefined;
+      if (!detail?.prompt) return;
+      const currentTabId = activeTabIdRef.current;
+      if (!currentTabId) return;
+      updateTab(currentTabId, (t) => ({ ...t, input: detail.prompt }));
+      setTimeout(() => {
+        if (detail.autoSubmit) {
+          void send();
+        } else if (textareaRef.current) {
+          textareaRef.current.focus();
+          const len = (textareaRef.current.value ?? '').length;
+          textareaRef.current.setSelectionRange(len, len);
+        }
+      }, 50);
+    };
+
+    window.addEventListener('echoly:addBrowserElementRefToChat', handleElementRef);
+    window.addEventListener('echoly:addBrowserRefToChat', handlePageRef);
+    window.addEventListener('echoly:askChatQuestion', handleAskQuestion);
+
+    return () => {
+      window.removeEventListener('echoly:addBrowserElementRefToChat', handleElementRef);
+      window.removeEventListener('echoly:addBrowserRefToChat', handlePageRef);
+      window.removeEventListener('echoly:askChatQuestion', handleAskQuestion);
+    };
+  }, [updateTab, appendBrowserElementRef, appendBrowserPageRef]);
 
   const prevWorkspaceRef = useRef<string | undefined>(workspace);
   const pendingLoadSessionRef = useRef<{ session: ChatSession; path: string } | null>(null);
@@ -2082,6 +2246,54 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                           <img src={att.dataUrl} alt={att.name} />
                           <span className="chat-msg-attachment-img-name">{att.name}</span>
                         </div>
+                      ) : att.type === 'browser-element' ? (
+                        <div
+                          key={att.id}
+                          className="chat-msg-attachment-file-pill"
+                          title={`网页元素: ${att.name}\n页面: ${att.browserElement?.url || ''}\n选择器: ${att.browserElement?.selectorPath || ''}\n\n点击复制 outerHTML`}
+                          onClick={() => {
+                            if (att.content) {
+                              navigator.clipboard?.writeText(att.content).catch(() => {});
+                            }
+                          }}
+                          style={{ borderColor: 'rgba(59, 130, 246, 0.4)', background: 'rgba(59, 130, 246, 0.08)', cursor: 'pointer' }}
+                        >
+                          {att.browserElement?.screenshotDataUrl ? (
+                            <img
+                              src={att.browserElement.screenshotDataUrl}
+                              alt={att.name}
+                              style={{
+                                width: 18,
+                                height: 18,
+                                objectFit: 'cover',
+                                borderRadius: 3,
+                                border: '1px solid rgba(59, 130, 246, 0.45)',
+                                flexShrink: 0,
+                              }}
+                            />
+                          ) : (
+                            <span className="file-pill-icon">🎯</span>
+                          )}
+                          <span className="file-pill-name" style={{ color: '#60a5fa', fontWeight: 600 }}>{att.name}</span>
+                          <span className="file-pill-size" style={{ color: '#93c5fd' }}>DOM 元素</span>
+                        </div>
+                      ) : att.type === 'browser-page' ? (
+                        <div
+                          key={att.id}
+                          className="chat-msg-attachment-file-pill"
+                          title={`网页页面: ${att.browserPage?.title || att.name}\n${att.browserPage?.url || ''}${
+                            att.browserPage?.errors?.length
+                              ? `\n\n引用时的控制台报错 (${att.browserPage.errors.length} 条):\n${att.browserPage.errors.join('\n')}`
+                              : ''
+                          }`}
+                          style={{ borderColor: 'rgba(147, 51, 234, 0.4)', background: 'rgba(147, 51, 234, 0.08)' }}
+                        >
+                          <span className="file-pill-icon">🌐</span>
+                          <span className="file-pill-name" style={{ color: '#c084fc', fontWeight: 600 }}>{att.name}</span>
+                          <span className="file-pill-size" style={{ color: '#d8b4fe' }}>
+                            {att.browserPage?.errors?.length ? `页面 · ${att.browserPage.errors.length} 报错` : '页面'}
+                          </span>
+                        </div>
                       ) : (
                         <div
                           key={att.id}
@@ -2606,14 +2818,45 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                       onClick={() => setPreviewImage(att.dataUrl || null)}
                       title="点击放大"
                     />
+                  ) : att.type === 'browser-element' ? (
+                    att.browserElement?.screenshotDataUrl ? (
+                      <img
+                        src={att.browserElement.screenshotDataUrl}
+                        alt={att.name}
+                        className="staged-img-thumb"
+                        onClick={() => setPreviewImage(att.browserElement?.screenshotDataUrl || null)}
+                        title="点击放大元素截图"
+                      />
+                    ) : (
+                      <span className="staged-file-icon" style={{ fontSize: 13 }}>🎯</span>
+                    )
+                  ) : att.type === 'browser-page' ? (
+                    <span className="staged-file-icon" style={{ fontSize: 13 }}>🌐</span>
                   ) : (
                     <span className="staged-file-icon">📄</span>
                   )}
                   <div className="staged-info">
-                    <span className="staged-name" title={att.name}>
+                    <span className="staged-name" title={att.browserElement?.selectorPath || att.browserPage?.url || att.name}>
                       {att.name}
                     </span>
-                    <span className="staged-size">{formatFileSize(att.size)}</span>
+                    <span
+                      className="staged-size"
+                      style={
+                        att.type === 'browser-element'
+                          ? { color: '#60a5fa' }
+                          : att.type === 'browser-page'
+                            ? { color: '#c084fc' }
+                            : undefined
+                      }
+                    >
+                      {att.type === 'browser-element'
+                        ? att.browserElement?.screenshotDataUrl
+                          ? 'DOM 元素 · 含截图'
+                          : 'DOM 元素'
+                        : att.type === 'browser-page'
+                          ? '网页页面'
+                          : formatFileSize(att.size)}
+                    </span>
                   </div>
                   <button
                     type="button"

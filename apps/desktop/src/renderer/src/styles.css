@@ -10753,13 +10753,14 @@ body.db-col-resizing .db-data-cell {
 .db-script-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 10px;
+  gap: 7px;
+  height: 25px;
+  padding: 0 10px 0 26px; /* 产生明确的子级层级缩进 */
   font-size: 12px;
   color: var(--text);
   cursor: pointer;
   white-space: nowrap;
+  transition: background 0.1s ease;
 }
 
 .db-script-row:hover {
@@ -11292,13 +11293,13 @@ body.db-col-resizing .db-data-cell {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
-  flex-shrink: 1;
+  flex-shrink: 0;
 }
 
 .db-console-target .db-console-target-select {
-  /* 长连接名 / 长库名到此为止，别把右侧的执行状态挤出可视区 */
-  max-width: 180px;
+  /* 保证下拉框最小宽度可见，不至于被挤压成只有一个小箭头 */
+  min-width: 85px;
+  max-width: 170px;
 }
 
 .db-console-target .panel-select-btn {
@@ -20640,5 +20641,23 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   outline: none !important;
   box-shadow: none !important;
   background: transparent !important;
+}
+
+/* ── 内置浏览器控制台抽屉拖拽手柄 ── */
+.browser-drawer-resizer {
+  transition: background 0.15s ease;
+}
+
+.browser-drawer-resizer:hover {
+  background: rgba(59, 130, 246, 0.3) !important;
+}
+
+.browser-drawer-resizer.is-dragging {
+  background: var(--accent, #3b82f6) !important;
+}
+
+.browser-drawer-resizer:hover .browser-drawer-resizer-handle,
+.browser-drawer-resizer.is-dragging .browser-drawer-resizer-handle {
+  background: #ffffff !important;
 }
 

@@ -561,6 +561,15 @@ export interface OpenTab {
      * 而虚拟标签的元数据本来就是干这个的。
      */
     dbStructure?: { connectionId: string; schemaName?: string; tableName: string };
+    /**
+     * 内置浏览器虚拟标签元数据
+     */
+    browser?: {
+      url: string;
+      title?: string;
+      favicon?: string;
+      tabId?: string;
+    };
   };
   /** Data URL for image preview tabs (png/jpg/…); content stays empty. */
   previewUrl?: string;
@@ -568,10 +577,43 @@ export interface OpenTab {
   isLargeFile?: boolean;
 }
 
+/** 浏览器开发者模式下选中的 DOM 元素引用信息 */
+export interface BrowserElementRef {
+  url: string;
+  pageTitle: string;
+  tagName: string;
+  id?: string;
+  className?: string;
+  selectorPath: string;
+  /** 该选择器在页面中命中的元素数量；>1 表示选择器不唯一，仅用于提示，不阻断引用 */
+  selectorMatchCount?: number;
+  outerHtml: string;
+  textContent: string;
+  /** 元素在视口中的位置（CSS 像素），供主进程裁剪该元素的渲染截图 */
+  rect?: { x: number; y: number; width: number; height: number };
+  /** 关键计算样式摘要（display/flex/尺寸/颜色等），帮助 AI 判断布局问题 */
+  computedStyles?: Record<string, string>;
+  /** 祖先元素链（由外到内），让 AI 了解元素所处的容器结构 */
+  ancestors?: Array<{ tagName: string; id?: string; className?: string }>;
+  /** 同级兄弟摘要：元素在其父节点中的位置 */
+  siblings?: { total: number; index: number; tags: string[] } | null;
+  /** 元素渲染截图（data:image/png;base64,…），由主进程 capturePage 裁剪生成 */
+  screenshotDataUrl?: string;
+  timestamp: number;
+}
+
+/** 浏览器开发者模式下引用的整个页面信息 */
+export interface BrowserPageRef {
+  url: string;
+  title: string;
+  /** 引用时页面上最近捕获的控制台报错（最多 5 条） */
+  errors?: string[];
+}
+
 export interface ChatAttachment {
   id: string;
   name: string;
-  type: 'image' | 'file';
+  type: 'image' | 'file' | 'browser-element' | 'browser-page';
   mimeType?: string;
   size?: number;
   /** For image: data URL (data:image/...;base64,...). */
@@ -579,6 +621,10 @@ export interface ChatAttachment {
   /** For text/code file: text content. */
   content?: string;
   path?: string;
+  /** For browser-element: detailed DOM element metadata */
+  browserElement?: BrowserElementRef;
+  /** For browser-page: 整个页面标签引用 */
+  browserPage?: BrowserPageRef;
 }
 
 export interface ChatSessionMessage {
@@ -1395,6 +1441,45 @@ export interface IpcApi {
   codebaseIndex: () => Promise<CodebaseIndexStatus>;
   codebaseSearch: (query: string, limit?: number) => Promise<CodebaseSymbolHit[]>;
   codebaseStatus: () => Promise<CodebaseIndexStatus>;
+
+  /** 挂载/更新内置浏览器 DevTools 原生视图（bounds 为渲染层 CSS 像素，主进程负责换算 DIP） */
+  openDevToolsView?: (targetWebContentsId: number, layout: DevToolsViewLayout) => Promise<boolean>;
+  updateDevToolsViewBounds?: (
+    targetWebContentsId: number,
+    layout: DevToolsViewLayout,
+  ) => Promise<boolean>;
+  /**
+   * 告知主进程是否正处于「上下拖动控制台高度」状态。
+   * 拖动态下原生 WebContentsView 保持原位可见（挪走或隐藏都会让用户看到黑屏），
+   * 只是暂缓按中途高度重排，拖动结束后再一次性落位。
+   */
+  setDevToolsDragging?: (targetWebContentsId: number, dragging: boolean) => Promise<boolean>;
+  closeDevToolsView?: (targetWebContentsId: number) => Promise<boolean>;
+  /**
+   * 截取内置浏览器中某个 DOM 元素的渲染截图。
+   * rect 为元素在页面视口中的 CSS 像素坐标（注入脚本 getBoundingClientRect 的结果），
+   * 主进程负责换算 DIP 与设备像素后调用 capturePage。失败返回 null（元素已滚出视口等）。
+   */
+  captureBrowserElement?: (
+    targetWebContentsId: number,
+    rect: { x: number; y: number; width: number; height: number },
+  ) => Promise<string | null>;
+  /**
+   * 订阅窗口缩放因子变化。
+   * 原生 DevTools 视图的 Bounds 由 CSS 像素换算 DIP 得到，缩放后比例改变，渲染层需重新上报坐标。
+   */
+  onZoomChanged?: (cb: (zoom: number) => void) => () => void;
+}
+
+/**
+ * 内置浏览器 DevTools 原生视图的布局描述。
+ * bounds：渲染层 CSS 像素坐标（getBoundingClientRect 的结果）。
+ * 主进程会按窗口缩放因子换算为 DIP 后再交给 WebContentsView.setBounds，
+ * 因此这里传 CSS 像素即可，无需渲染层自行缩放。
+ * 拖动期间是否需要暂缓落位，由 setDevToolsDragging 单独告知，避免视图被移走导致黑屏。
+ */
+export interface DevToolsViewLayout {
+  bounds: { x: number; y: number; width: number; height: number };
 }
 
 export interface CppToolItem {

@@ -1,12 +1,12 @@
-import { shell, BrowserWindow, type IpcMain, type Dialog, type WebContents } from 'electron';
+import { shell, BrowserWindow, webContents, WebContentsView, type IpcMain, type Dialog, type WebContents } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import type {
   AppMenuId,
   AppSettings,
   ChatSession,
+  DevToolsViewLayout,
   GitCloneRequest,
-  GitStashAction,
   SearchCodeRequest,
   SshConnectRequest,
   TerminalCreateOptions,
@@ -854,4 +854,291 @@ ${payload.suffix.slice(0, 1000)}
       return run(e, () => registry.current().db.executeBatch(connectionId, statements, schemaName));
     },
   );
+
+  // ── 内置浏览器 Google 开发者控制台 (Chrome DevTools) 原生嵌入与生命周期管理 ──
+  interface DevToolsViewBinding {
+    win: BrowserWindow;
+    view: WebContentsView;
+    targetWc: WebContents;
+    /** 最近一次渲染层下发的 CSS 像素矩形，缩放变化时据此重新换算 DIP */
+    cssBounds: { x: number; y: number; width: number; height: number };
+    cleanup: () => void;
+  }
+  const activeDevToolsViews = new Map<number, DevToolsViewBinding>();
+
+  /**
+   * 把渲染层传来的 CSS 像素矩形换算为主进程可用的 DIP 矩形。
+   * 二者仅在窗口缩放因子为 1 时相等；主进程是缩放因子的权威来源，
+   * 由这里统一换算可彻底避免渲染层估算误差导致的控制台上浮、右侧留黑边。
+   */
+  const toDipDevToolsBounds = (
+    win: BrowserWindow,
+    bounds: { x: number; y: number; width: number; height: number },
+  ) => {
+    let zoom = 1;
+    try {
+      const z = win.webContents.getZoomFactor();
+      zoom = z > 0 ? z : 1;
+    } catch {
+      zoom = 1;
+    }
+    return {
+      x: Math.max(0, Math.round(bounds.x * zoom)),
+      y: Math.max(0, Math.round(bounds.y * zoom)),
+      width: Math.max(0, Math.round(bounds.width * zoom)),
+      height: Math.max(0, Math.round(bounds.height * zoom)),
+    };
+  };
+
+  /**
+   * 把绑定的 CSS 矩形按当前缩放因子落到原生视图上。
+   * 拖动过程中每帧都会被调用，因此这里保持最轻的路径：
+   * 只做数值换算与一次 setBounds，绝不 setVisible / 挪出可视区
+   * （一旦隐藏或移出屏幕，用户看到的就是整块黑屏）。
+   */
+  const applyDevToolsBounds = (binding: DevToolsViewBinding) => {
+    if (binding.win.isDestroyed() || binding.view.webContents.isDestroyed()) return;
+    const dip = toDipDevToolsBounds(binding.win, binding.cssBounds);
+    const cur = binding.view.getBounds();
+    // 亚像素级抖动直接跳过，减少拖动全程的无谓重排
+    if (
+      cur.x === dip.x &&
+      cur.y === dip.y &&
+      cur.width === dip.width &&
+      cur.height === dip.height
+    ) {
+      return;
+    }
+    binding.view.setBounds(dip);
+  };
+
+  /** 原生 DevTools 视图是否已真正挂载（作为顶层子视图存在） */
+  const isDevToolsViewAttached = (win: BrowserWindow, view: WebContentsView) => {
+    try {
+      return win.contentView.children.includes(view);
+    } catch {
+      return false;
+    }
+  };
+
+  ipcMain.handle(
+    'browser:openDevToolsView',
+    async (
+      e,
+      {
+        targetWebContentsId,
+        layout,
+      }: {
+        targetWebContentsId: number;
+        layout: DevToolsViewLayout;
+      },
+    ) => {
+      try {
+        const targetWc = webContents.fromId(targetWebContentsId);
+        const win = BrowserWindow.fromWebContents(e.sender);
+        if (!targetWc || !win || targetWc.isDestroyed() || win.isDestroyed()) {
+          return false;
+        }
+
+        // 若此目标已有打开的 DevTools 视图，先完整关闭清理
+        const existing = activeDevToolsViews.get(targetWebContentsId);
+        if (existing) {
+          existing.cleanup();
+          activeDevToolsViews.delete(targetWebContentsId);
+        }
+
+        const bounds = layout?.bounds ?? { x: 0, y: 0, width: 0, height: 0 };
+        const normalizedBounds = toDipDevToolsBounds(win, bounds);
+
+        // 创建原生 WebContentsView 寄宿 Chrome DevTools
+        const devToolsView = new WebContentsView();
+        devToolsView.setBackgroundColor('#202124');
+        win.contentView.addChildView(devToolsView);
+        devToolsView.setBounds(normalizedBounds);
+
+        // 核心绑定：重定向目标 WebContents 的 DevTools 到原生 WebContentsView 中渲染
+        targetWc.setDevToolsWebContents(devToolsView.webContents);
+        targetWc.openDevTools({ mode: 'detach' });
+
+        const onTargetGone = () => {
+          activeDevToolsViews.get(targetWebContentsId)?.cleanup();
+          activeDevToolsViews.delete(targetWebContentsId);
+        };
+
+        const onWinClosed = () => {
+          activeDevToolsViews.get(targetWebContentsId)?.cleanup();
+          activeDevToolsViews.delete(targetWebContentsId);
+        };
+
+        targetWc.on('render-process-gone', onTargetGone);
+        win.on('closed', onWinClosed);
+
+        const cleanup = () => {
+          try {
+            if (!targetWc.isDestroyed()) {
+              targetWc.removeListener('render-process-gone', onTargetGone);
+              targetWc.closeDevTools();
+            }
+            if (!win.isDestroyed()) {
+              win.removeListener('closed', onWinClosed);
+              win.contentView.removeChildView(devToolsView);
+            }
+            if (!devToolsView.webContents.isDestroyed()) {
+              devToolsView.webContents.close();
+            }
+          } catch (err) {
+            console.warn('[IPC] Error cleaning up DevToolsView:', err);
+          }
+        };
+
+        activeDevToolsViews.set(targetWebContentsId, {
+          win,
+          view: devToolsView,
+          targetWc,
+          cssBounds: { ...bounds },
+          cleanup,
+        });
+        return true;
+      } catch (err) {
+        console.warn('[IPC] Failed to open devtools view for target webcontents:', err);
+        return false;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'browser:updateDevToolsViewBounds',
+    async (
+      _e,
+      {
+        targetWebContentsId,
+        layout,
+      }: {
+        targetWebContentsId: number;
+        layout: DevToolsViewLayout;
+      },
+    ) => {
+      try {
+        const binding = activeDevToolsViews.get(targetWebContentsId);
+        if (binding && !binding.win.isDestroyed() && !binding.view.webContents.isDestroyed()) {
+          // 记住渲染层下发的 CSS 矩形，缩放变化时据此重新换算，无需渲染层重复上报
+          binding.cssBounds = { ...(layout?.bounds ?? binding.cssBounds) };
+          applyDevToolsBounds(binding);
+          return true;
+        }
+      } catch (err) {
+        console.warn('[IPC] Failed to update devtools view bounds:', err);
+      }
+      return false;
+    },
+  );
+
+  ipcMain.handle(
+    'browser:setDevToolsDragging',
+    async (
+      _e,
+      { targetWebContentsId, dragging }: { targetWebContentsId: number; dragging: boolean },
+    ) => {
+      try {
+        const binding = activeDevToolsViews.get(targetWebContentsId);
+        if (!binding || binding.win.isDestroyed() || binding.view.webContents.isDestroyed()) {
+          return false;
+        }
+
+        // 拖动全程：把原生视图重新提到顶层子视图。
+        // WebContentsView 是兄弟视图按 z-order 叠加的，一旦它被压到宿主 webContents 视图之下，
+        // 用户看到的就只剩兜底背景色（整块黑屏）。每帧都确保置顶，可彻底杜绝这一现象。
+        if (dragging === true) {
+          binding.win.contentView.addChildView(binding.view);
+        } else if (!isDevToolsViewAttached(binding.win, binding.view)) {
+          // 拖动结束时若视图已不在视图树中（例如被别处误移除），补挂回去
+          binding.win.contentView.addChildView(binding.view);
+        }
+        applyDevToolsBounds(binding);
+        return true;
+      } catch (err) {
+        console.warn('[IPC] Failed to set devtools dragging state:', err);
+      }
+      return false;
+    },
+  );
+
+  // 截取内置浏览器中某个 DOM 元素的渲染截图。
+  // 元素坐标从页面注入脚本传来，是页面视口的 CSS 像素；capturePage 接收 DIP，
+  // 而 guest 的页面缩放未必等于宿主窗口缩放，因此这里统一按 targetWc.getZoomFactor() 换算。
+  ipcMain.handle(
+    'browser:captureElement',
+    async (
+      _e,
+      {
+        targetWebContentsId,
+        rect,
+      }: {
+        targetWebContentsId: number;
+        rect: { x: number; y: number; width: number; height: number };
+      },
+    ) => {
+      try {
+        const targetWc = webContents.fromId(targetWebContentsId);
+        if (!targetWc || targetWc.isDestroyed()) return null;
+        if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+
+        let zoom = 1;
+        try {
+          zoom = targetWc.getZoomFactor() || 1;
+        } catch {
+          zoom = 1;
+        }
+
+        // 先按 DIP 取整裁剪；capturePage 返回的是设备像素图，无需在此处理 DPR
+        const dipRect = {
+          x: Math.round(rect.x * zoom),
+          y: Math.round(rect.y * zoom),
+          width: Math.max(1, Math.round(rect.width * zoom)),
+          height: Math.max(1, Math.round(rect.height * zoom)),
+        };
+
+        const image = await targetWc.capturePage(dipRect);
+        if (!image || image.isEmpty()) return null;
+
+        // 截图会作为图片附件进入对话上下文，必须限制体积：
+        // 大元素在 2x DPR 下动辄数 MB 的 PNG base64，会迅速撑爆上下文窗口。
+        // 先按最长边压到 1200px，若仍然过大再改用 JPEG 重新编码。
+        let out = image;
+        const size = image.getSize();
+        const longest = Math.max(size.width, size.height);
+        if (longest > 1200) {
+          const scale = 1200 / longest;
+          out = image.resize({
+            width: Math.max(1, Math.round(size.width * scale)),
+            height: Math.max(1, Math.round(size.height * scale)),
+          });
+        }
+
+        const pngUrl = out.toDataURL();
+        if (pngUrl.length > 700_000) {
+          const jpegUrl = `data:image/jpeg;base64,${out.toJPEG(78).toString('base64')}`;
+          return jpegUrl.length < pngUrl.length ? jpegUrl : pngUrl;
+        }
+        return pngUrl;
+      } catch (err) {
+        console.warn('[IPC] Failed to capture browser element:', err);
+        return null;
+      }
+    },
+  );
+
+  ipcMain.handle('browser:closeDevToolsView', async (_e, targetWebContentsId: number) => {
+    try {
+      const binding = activeDevToolsViews.get(targetWebContentsId);
+      if (binding) {
+        binding.cleanup();
+        activeDevToolsViews.delete(targetWebContentsId);
+        return true;
+      }
+    } catch (err) {
+      console.warn('[IPC] Failed to close devtools view for target webcontents:', err);
+    }
+    return false;
+  });
 }

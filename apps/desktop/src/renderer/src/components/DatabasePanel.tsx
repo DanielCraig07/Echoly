@@ -432,8 +432,8 @@ function ProjectScriptsList({
                 {/* 已打开的脚本用实心圆点，未打开的用空心 —— 光靠文字颜色区分在亮色主题下太弱 */}
                 <span
                   style={{
-                    width: 6,
-                    height: 6,
+                    width: 5,
+                    height: 5,
                     borderRadius: '50%',
                     flexShrink: 0,
                     background: openSet.has(s.scriptPath) ? 'currentColor' : 'transparent',
@@ -441,6 +441,20 @@ function ProjectScriptsList({
                     opacity: openSet.has(s.scriptPath) ? 1 : 0.45,
                   }}
                 />
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ opacity: 0.65, flexShrink: 0 }}
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
                 <span className="db-script-name">{s.title}</span>
                 {s.connectionLabel && <span className="db-script-meta">{s.connectionLabel}</span>}
                 {onDelete && (

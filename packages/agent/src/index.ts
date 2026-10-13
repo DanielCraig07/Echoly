@@ -371,10 +371,12 @@ export async function runAgent(
   if (attachments && attachments.length > 0) {
     const fileBlocks: string[] = [];
     for (const att of attachments) {
+      const isBrowserRef = att.type === 'browser-element' || att.type === 'browser-page';
       const isImage =
-        att.type === 'image' ||
-        att.mimeType?.startsWith('image/') ||
-        /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(att.name);
+        !isBrowserRef &&
+        (att.type === 'image' ||
+          att.mimeType?.startsWith('image/') ||
+          /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(att.name));
       const isPdf = att.mimeType === 'application/pdf' || /\.pdf$/i.test(att.name);
 
       if (isImage && att.dataUrl) {
@@ -387,6 +389,66 @@ export async function runAgent(
         const match = att.dataUrl.match(/^data:([^;]+);base64,/);
         const mediaType = match ? match[1] : 'application/pdf';
         documents.push({ dataUrl: att.dataUrl, mediaType, name: att.name });
+      } else if (att.type === 'browser-element' || att.browserElement) {
+        const el = att.browserElement;
+        if (el) {
+          const styleLines = el.computedStyles
+            ? Object.entries(el.computedStyles)
+                .map(([k, v]) => `  ${k}: ${v}`)
+                .join('\n')
+            : '';
+          const ancestorChain = el.ancestors?.length
+            ? el.ancestors
+                .map((a) => `${a.tagName}${a.id ? '#' + a.id : ''}${a.className ? '.' + a.className.split(/\s+/)[0] : ''}`)
+                .join(' > ')
+            : '';
+          const siblingLine = el.siblings
+            ? `第 ${el.siblings.index + 1} / 共 ${el.siblings.total} 个子元素`
+            : '';
+
+          fileBlocks.push(`\n\n--- 引用的网页 DOM 元素 (${el.tagName}) ---
+- 页面地址: ${el.url}
+- 页面标题: ${el.pageTitle}
+- 标签名: ${el.tagName}
+- ID: ${el.id || '无'}
+- 类名: ${el.className || '无'}
+- CSS选择器路径: ${el.selectorPath || '无'}${el.selectorMatchCount && el.selectorMatchCount > 1 ? `（该选择器命中 ${el.selectorMatchCount} 个元素，定位时请结合上下文）` : ''}
+- 祖先链: ${ancestorChain || '无'}
+- 同级位置: ${siblingLine || '无'}
+- 关键计算样式:
+\`\`\`css
+${styleLines || '（未采集）'}
+\`\`\`
+- 元素文本预览: ${el.textContent?.trim() || '无'}
+- 元素 HTML 内容 (outerHTML):
+\`\`\`html
+${el.outerHtml || att.content || ''}
+\`\`\``);
+          // 元素渲染截图随附件图片通道一并交给多模态模型，便于直接判断视觉问题
+          if (el.screenshotDataUrl) {
+            const shotMatch = el.screenshotDataUrl.match(/^data:([^;]+);base64,/);
+            images.push({
+              dataUrl: el.screenshotDataUrl,
+              mediaType: shotMatch ? shotMatch[1] : 'image/png',
+            });
+            fileBlocks.push(`\n（已附带该元素在页面中的渲染截图，请结合截图判断视觉效果）`);
+          }
+        } else {
+          fileBlocks.push(
+            `\n\n--- 引用的网页元素: ${att.name} ---\n\`\`\`html\n${att.content}\n\`\`\``,
+          );
+        }
+      } else if (att.type === 'browser-page' || att.browserPage) {
+        const page = att.browserPage;
+        const errBlock =
+          page?.errors && page.errors.length
+            ? `\n- 页面控制台报错（最近 ${page.errors.length} 条）:\n\`\`\`text\n${page.errors.join('\n')}\n\`\`\``
+            : '';
+        fileBlocks.push(`\n\n--- 引用的浏览器页面 ---
+- 页面地址: ${page?.url || ''}
+- 页面标题: ${page?.title || att.name}${errBlock}
+
+请结合该页面的实际实现（可在工作区中检索对应路由与组件源码）分析问题。`);
       } else if (att.content) {
         fileBlocks.push(`\n\n--- 附件文件: ${att.name} ---\n\`\`\`\n${att.content}\n\`\`\``);
       } else if (att.dataUrl) {

@@ -18,14 +18,50 @@ import { initializeExtensionManager, disposeExtensionManager } from './extension
 import { initUpdater, quitAndInstallUpdate } from './updater';
 import type { AppMenuId, MenuCommand } from '@deepseek-ide/shared';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = electron;
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme } = electron;
 type MenuItemConstructorOptions = electron.MenuItemConstructorOptions;
 type ElectronBrowserWindow = electron.BrowserWindow;
 type ElectronMenu = electron.Menu;
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
+// 全局未捕获异常与 Promise Rejection 防护，避免第三方扩展或 webview 异常直接退出主进程
+process.on('uncaughtException', (err) => {
+  console.warn('[Main uncaughtException]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.warn('[Main unhandledRejection]', reason);
+});
+
 app.setName('Echoly');
+if (nativeTheme) {
+  nativeTheme.themeSource = 'dark';
+}
+
+// 监听所有 webContents 创建，内置 webview 不拦截任何弹窗与路由跳转
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() === 'webview') {
+    // 对新的路由和弹窗都不要拦截，完全放行
+    contents.setWindowOpenHandler(() => {
+      return { action: 'allow' };
+    });
+    // 静默吸收 guest view 导航中止及本地未启动端口的连接失败提示（由渲染层内置浏览器友好界面呈现）
+    contents.on('did-fail-load', (_ev, errorCode, errorDescription) => {
+      // 忽略主动中止(-3)及网络拒绝(-102)等常见调试未就绪状态
+      if (errorCode !== -3 && errorCode !== -102 && errorCode !== -2) {
+        console.warn(`[Webview did-fail-load] ${errorDescription} (${errorCode})`);
+      }
+    });
+    contents.on('render-process-gone', (_ev, details) => {
+      console.warn('[Webview render-process-gone]', details.reason);
+    });
+  } else if (contents.getURL().startsWith('devtools://')) {
+    // 隔离 Chrome DevTools 协议缺失报错与崩溃，避免主进程受牵连
+    contents.on('render-process-gone', (_ev, details) => {
+      console.warn('[DevTools render-process-gone]', details.reason);
+    });
+  }
+});
 
 // 初始化环境与日志（最早调用，确保子进程及终端可执行系统工具如 brew）
 ensureSystemEnv();
@@ -78,12 +114,28 @@ function adjustZoom(delta: number): void {
   if (!win || win.isDestroyed()) return;
   const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, win.webContents.getZoomFactor() + delta));
   win.webContents.setZoomFactor(Number(next.toFixed(2)));
+  broadcastZoomFactor(win);
 }
 
 function resetZoom(): void {
   const win = getActiveWindow();
   if (!win || win.isDestroyed()) return;
   win.webContents.setZoomFactor(1);
+  broadcastZoomFactor(win);
+}
+
+/**
+ * 广播窗口缩放因子变化。
+ * 渲染层用 getBoundingClientRect（CSS 像素）计算原生 WebContentsView Bounds，
+ * 而 setBounds 需要 DIP；缩放变化后必须让渲染层重新换算并同步，否则原生视图会错位、悬空。
+ */
+function broadcastZoomFactor(win: ElectronBrowserWindow): void {
+  if (win.isDestroyed()) return;
+  try {
+    win.webContents.send('window:zoomChanged', win.webContents.getZoomFactor());
+  } catch {
+    // 窗口正在销毁时忽略
+  }
 }
 
 /** Handle zoom in main process so Monaco/xterm cannot swallow Ctrl+/-/0. */
@@ -118,6 +170,9 @@ function registerZoomShortcuts(win: ElectronBrowserWindow): void {
       resetZoom();
     }
   });
+
+  // 缩放因子变化（含 webFrame 编程式修改）时广播，渲染层据此重算原生视图 Bounds
+  win.webContents.on('zoom-changed', () => broadcastZoomFactor(win));
 }
 
 function resolveAppIcon(): string | undefined {
