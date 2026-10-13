@@ -5168,8 +5168,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           <BrowserViewPane
             key={active.path}
             initialUrl={
-              active.virtual?.browser?.url ||
-              (active.path.startsWith('browser://') ? active.path.slice('browser://'.length) : undefined)
+              active.virtual?.browser?.url ??
+              (active.path.startsWith('browser://') ? active.path.slice('browser://'.length) : '')
             }
             tabTitle={active.title}
             onUpdateTab={(patch) => {
