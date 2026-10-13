@@ -116,11 +116,6 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           echo "Publishing release for tag: $TAG..."
-          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -n 1)
-          if [ -n "$RELEASE_ID" ]; then
-            gh api -X PATCH "repos/${{ github.repository }}/releases/$RELEASE_ID" -f draft=false
-            echo "✓ Release $TAG (ID: $RELEASE_ID) is live and published!"
-          else
-            gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false 2>/dev/null || true
-          fi
+          gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false --latest
+          echo "✓ Release $TAG is live, published, and explicitly marked as Latest!"
 
