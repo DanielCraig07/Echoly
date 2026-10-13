@@ -464,3 +464,178 @@ export const ROUTE_SYNC_SCRIPT = `
   });
 })();
 `;
+
+/**
+ * 监听表单输入与提交，用于密码自动捕获与提示保存
+ */
+export const PASSWORD_INTERCEPTOR_SCRIPT = `
+(function() {
+  if (window.__echoly_pw_injected) return;
+  window.__echoly_pw_injected = true;
+
+  function extractCreds(formOrEl) {
+    try {
+      var form = formOrEl ? (formOrEl.form || formOrEl.closest('form')) : null;
+      var pwInput = form ? form.querySelector('input[type="password"]') : document.querySelector('input[type="password"]');
+      if (!pwInput || !pwInput.value) return null;
+
+      var userInput = null;
+      if (form) {
+        var inputs = Array.from(form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])'));
+        var pwIdx = inputs.indexOf(pwInput);
+        if (pwIdx > 0) {
+          userInput = inputs[pwIdx - 1];
+        } else {
+          userInput = inputs.find(function(i) {
+            return i !== pwInput && /user|name|email|login|account|phone|mobile|id/i.test(i.name || i.id || i.type || i.placeholder || '');
+          });
+        }
+      } else {
+        var allInputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])'));
+        var pwIdx = allInputs.indexOf(pwInput);
+        if (pwIdx > 0) {
+          userInput = allInputs[pwIdx - 1];
+        }
+      }
+
+      var uVal = userInput ? (userInput.value || '').trim() : '';
+      return {
+        username: uVal,
+        password: pwInput.value
+      };
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function reportIfValid(el) {
+    var creds = extractCreds(el);
+    if (creds && creds.password) {
+      try {
+        console.log('__ECHOLY_PW_CAPTURED__:' + JSON.stringify({
+          origin: window.location.origin,
+          username: creds.username,
+          password: creds.password
+        }));
+      } catch(e) {}
+    }
+  }
+
+  // 新标签页打开请求防重上报（800ms 幂等去重）
+  var lastReportedOpenTab = { url: '', time: 0 };
+  function requestOpenNewTab(url) {
+    if (!url || typeof url !== 'string') return;
+    try {
+      var full = new URL(url, window.location.href).href;
+      if (!full || full.startsWith('javascript:') || full === 'about:blank') return;
+      var now = Date.now();
+      if (lastReportedOpenTab.url === full && (now - lastReportedOpenTab.time < 800)) {
+        return;
+      }
+      lastReportedOpenTab = { url: full, time: now };
+      console.log('__ECHOLY_OPEN_NEW_TAB__:' + full);
+    } catch(e) {}
+  }
+
+  document.addEventListener('submit', function(e) {
+    reportIfValid(e.target);
+  }, true);
+
+  document.addEventListener('click', function(e) {
+    try {
+      var el = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement ? e.target.parentElement : null);
+      var a = el && typeof el.closest === 'function' ? el.closest('a') : null;
+      if (a && a.href) {
+        var target = (a.target || a.getAttribute('target') || '').trim();
+        var isMiddle = e.button === 1;
+        var isMeta = e.metaKey || e.ctrlKey;
+        if (target === '_blank' || target === '_new' || isMiddle || isMeta) {
+          e.preventDefault();
+          e.stopPropagation();
+          requestOpenNewTab(a.href);
+          return;
+        }
+      }
+    } catch(err) {}
+
+    try {
+      var el2 = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement ? e.target.parentElement : null);
+      var btn = el2 && typeof el2.closest === 'function' ? el2.closest('button, input[type="submit"], [role="button"], a') : null;
+      if (btn) {
+        var txt = (btn.innerText || btn.value || '').trim();
+        if (/登录|登入|登陆|login|sign\\s*in|submit|进入/i.test(txt) || btn.type === 'submit') {
+          reportIfValid(btn);
+        }
+      }
+    } catch(err) {}
+  }, true);
+
+  document.addEventListener('auxclick', function(e) {
+    if (e.button === 1) {
+      try {
+        var el = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement ? e.target.parentElement : null);
+        var a = el && typeof el.closest === 'function' ? el.closest('a') : null;
+        if (a && a.href) {
+          e.preventDefault();
+          e.stopPropagation();
+          requestOpenNewTab(a.href);
+        }
+      } catch(err) {}
+    }
+  }, true);
+
+  try {
+    var origOpen = window.open;
+    window.open = function(url) {
+      if (url && typeof url === 'string') {
+        requestOpenNewTab(url);
+        return { closed: false, focus: function() {}, close: function() {} };
+      }
+      return origOpen ? origOpen.apply(this, arguments) : null;
+    };
+  } catch(e) {}
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      var pwInput = document.querySelector('input[type="password"]');
+      if (pwInput && (document.activeElement === pwInput || (pwInput.form && pwInput.form.contains(document.activeElement)))) {
+        reportIfValid(document.activeElement);
+      }
+    }
+  }, true);
+})();
+`;
+
+/**
+ * 构建用于自动回填指定账号密码的脚本
+ */
+export function buildAutofillScript(username: string, password: string): string {
+  return `
+(function() {
+  try {
+    var pwInput = document.querySelector('input[type="password"]');
+    if (!pwInput) return;
+    var form = pwInput.form || pwInput.closest('form');
+    var inputs = Array.from((form || document).querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"])'));
+    var pwIdx = inputs.indexOf(pwInput);
+    var userInput = pwIdx > 0 ? inputs[pwIdx - 1] : null;
+    if (!userInput) {
+      userInput = inputs.find(function(i) {
+        return i !== pwInput && /user|name|email|login|account|phone|mobile|id/i.test(i.name || i.id || i.type || i.placeholder || '');
+      });
+    }
+
+    function setVal(input, val) {
+      if (!input || !val) return;
+      input.value = val;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    setVal(userInput, ${JSON.stringify(username)});
+    setVal(pwInput, ${JSON.stringify(password)});
+  } catch(e) {}
+})();
+`;
+}
+

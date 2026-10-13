@@ -2958,6 +2958,38 @@ export function App() {
     [],
   );
 
+  const lastOpenedBrowserTabRef = useRef<{ canonicalUrl: string; time: number } | null>(null);
+
+  /**
+   * 规范化浏览器 URL（消除协议大小写、末尾斜杠、#tab= 差异，用于权威判重）
+   */
+  const canonicalizeBrowserUrl = useCallback((raw?: string): string => {
+    let u = (raw ?? '').trim();
+    if (u.startsWith('browser://')) {
+      u = u.slice('browser://'.length);
+    }
+    if (u.includes('#tab=')) {
+      u = u.split('#tab=')[0];
+    }
+    if (!u || u.startsWith('chrome-error://') || u.startsWith('chrome://') || u === 'about:blank') {
+      return '';
+    }
+    // 智能纠正常见端口笔误 (573 -> 5173)
+    if (/^(https?:\/\/)?(localhost|127\.0\.0\.1):573(\/.*)?$/i.test(u)) {
+      u = u.replace(':573', ':5173');
+    }
+    try {
+      const parsed = new URL(u.startsWith('http://') || u.startsWith('https://') ? u : `http://${u}`);
+      let path = parsed.pathname;
+      if (path.length > 1 && path.endsWith('/')) {
+        path = path.slice(0, -1);
+      }
+      return `${parsed.protocol}//${parsed.host}${path}${parsed.search}`.toLowerCase();
+    } catch {
+      return u.replace(/\/+$/, '').toLowerCase();
+    }
+  }, []);
+
   /**
    * 打开或激活内置浏览器虚拟标签
    * 默认地址栏给空，让用户手动输入
@@ -2971,9 +3003,31 @@ export function App() {
       if (/^(https?:\/\/)?(localhost|127\.0\.0\.1):573(\/.*)?$/i.test(normUrl)) {
         normUrl = normUrl.replace(':573', ':5173');
       }
-      if (normUrl.startsWith('chrome-error://') || normUrl.startsWith('chrome://')) {
+      if (normUrl.startsWith('chrome-error://') || normUrl.startsWith('chrome://') || normUrl === 'about:blank') {
         normUrl = '';
       }
+
+      // 无论来自主进程 IPC、webview DOM 事件还是全局事件，在 800ms 内对相同目标地址强去重，绝对杜绝双重打开
+      const now = Date.now();
+      const canonical = canonicalizeBrowserUrl(normUrl);
+      if (
+        canonical &&
+        lastOpenedBrowserTabRef.current &&
+        lastOpenedBrowserTabRef.current.canonicalUrl === canonical &&
+        now - lastOpenedBrowserTabRef.current.time < 800
+      ) {
+        return;
+      }
+      if (!canonical) {
+        if (
+          lastOpenedBrowserTabRef.current &&
+          !lastOpenedBrowserTabRef.current.canonicalUrl &&
+          now - lastOpenedBrowserTabRef.current.time < 350
+        ) {
+          return;
+        }
+      }
+      lastOpenedBrowserTabRef.current = { canonicalUrl: canonical, time: now };
 
       // 如果不是强制新建，且已有对应非空 url 的浏览器标签，则切到对应标签
       if (!options?.forceNew && normUrl) {
@@ -3078,12 +3132,16 @@ export function App() {
     window.addEventListener('echoly:addBrowserElementRefToChat', handleEnsureChatOpen);
     window.addEventListener('echoly:addBrowserRefToChat', handleEnsureChatOpen);
     window.addEventListener('echoly:toast', handleGlobalToast);
+    const offBrowserOpen = window.ide?.onBrowserOpenTab?.(({ url }) => {
+      openBrowserTab(url, undefined, { forceNew: true });
+    });
 
     return () => {
       window.removeEventListener('echoly:openBrowser', handleOpenBrowserEvent);
       window.removeEventListener('echoly:addBrowserElementRefToChat', handleEnsureChatOpen);
       window.removeEventListener('echoly:addBrowserRefToChat', handleEnsureChatOpen);
       window.removeEventListener('echoly:toast', handleGlobalToast);
+      offBrowserOpen?.();
     };
   }, [openBrowserTab, persistLayout, showToast]);
 

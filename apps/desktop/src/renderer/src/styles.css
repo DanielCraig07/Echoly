@@ -2686,6 +2686,14 @@ body.resizing.resizing-row {
   display: inline-block;
   white-space: nowrap;
   line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+  vertical-align: middle;
+}
+
+.tab.is-browser-tab .tab-title {
+  max-width: 180px;
 }
 
 .tab .tab-git-badge {

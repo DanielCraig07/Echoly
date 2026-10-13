@@ -1,10 +1,24 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { BrowserElementRef } from '@deepseek-ide/shared';
-import { INJECTED_INSPECT_SCRIPT, CANCEL_INSPECT_SCRIPT, ROUTE_SYNC_SCRIPT } from './browserInspectScript';
+import {
+  INJECTED_INSPECT_SCRIPT,
+  CANCEL_INSPECT_SCRIPT,
+  ROUTE_SYNC_SCRIPT,
+  PASSWORD_INTERCEPTOR_SCRIPT,
+  buildAutofillScript,
+} from './browserInspectScript';
+import {
+  extractOrigin,
+  getCredentialsForOrigin,
+  saveCredential,
+  deleteCredential,
+  type SavedCredential,
+} from '../../services/browserPasswordManager';
 
 export interface BrowserViewPaneProps {
   initialUrl?: string;
   tabTitle?: string;
+  isActive?: boolean;
   onUpdateTab?: (patch: { title?: string; path?: string; virtual?: any }) => void;
   onOpenNewTab?: (url?: string) => void;
   onAddElementToChat?: (ref: BrowserElementRef) => void;
@@ -49,9 +63,38 @@ export function IconInspectElement({ active }: { active?: boolean }) {
   );
 }
 
+/**
+ * Memoized 内置 webview 容器：
+ * 绝不由父级组件的状态（如 isDevToolsOpen、输入框文字等）重新渲染，
+ * 保证挂载时有权威的 initialSrc 触发 Electron guest 实例创建，
+ * 且后续 React reconciler 绝不触碰 webview 的 src 属性，彻底杜绝误重载。
+ */
+const WebviewInner = React.memo(
+  React.forwardRef<HTMLWebViewElement, { initialSrc: string }>(function WebviewInner(
+    { initialSrc },
+    ref,
+  ) {
+    return (
+      <webview
+        ref={ref as any}
+        src={initialSrc || 'about:blank'}
+        partition="persist:echoly-browser"
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          border: 'none',
+        }}
+        allowpopups={true}
+      />
+    );
+  }),
+);
+
 export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
   initialUrl = '',
   tabTitle,
+  isActive = true,
   onUpdateTab,
   onOpenNewTab,
   onAddElementToChat,
@@ -178,6 +221,59 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
     }
   }, [currentUrl]);
 
+  // 密码管理器状态与当前站点凭据同步
+  const [pendingPasswordPrompt, setPendingPasswordPrompt] = useState<{
+    origin: string;
+    username: string;
+    password: string;
+    isUpdate?: boolean;
+  } | null>(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showPlainPasswordId, setShowPlainPasswordId] = useState<string | null>(null);
+  const [siteCredentials, setSiteCredentials] = useState<SavedCredential[]>([]);
+  const passwordModalRef = useRef<HTMLDivElement | null>(null);
+  const passwordBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // 监听已保存密码弹窗的外部点击与 Esc 键取消
+  useEffect(() => {
+    if (!showPasswordModal && !pendingPasswordPrompt) return;
+
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (passwordModalRef.current?.contains(target)) return;
+      if (passwordBtnRef.current?.contains(target)) return;
+      setShowPasswordModal(false);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (showPasswordModal) setShowPasswordModal(false);
+        if (pendingPasswordPrompt) setPendingPasswordPrompt(null);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown, true);
+    window.addEventListener('touchstart', handlePointerDown, true);
+    window.addEventListener('keydown', handleKeyDown, true);
+
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown, true);
+      window.removeEventListener('touchstart', handlePointerDown, true);
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [showPasswordModal, pendingPasswordPrompt]);
+
+  useEffect(() => {
+    if (currentUrl && !currentUrl.startsWith('about:blank')) {
+      setSiteCredentials(getCredentialsForOrigin(currentUrl));
+    } else {
+      setSiteCredentials([]);
+    }
+  }, [currentUrl]);
+
   const [consoleLogs, setConsoleLogs] = useState<ConsoleMessage[]>([]);
   const [loadError, setLoadError] = useState<{
     code: number;
@@ -204,10 +300,17 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
   const onUpdateTabRef = useRef(onUpdateTab);
   onUpdateTabRef.current = onUpdateTab;
 
+  const onOpenNewTabRef = useRef(onOpenNewTab);
+  useEffect(() => {
+    onOpenNewTabRef.current = onOpenNewTab;
+  }, [onOpenNewTab]);
+
+  const lastNewWindowTimeRef = useRef<{ url: string; time: number } | null>(null);
+
   // 新建标签页：地址栏给空，让用户手动输入
   const handleCreateNewTab = useCallback(() => {
-    if (onOpenNewTab) {
-      onOpenNewTab('');
+    if (onOpenNewTabRef.current) {
+      onOpenNewTabRef.current('');
     } else {
       window.dispatchEvent(
         new CustomEvent('echoly:openBrowser', {
@@ -215,7 +318,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         }),
       );
     }
-  }, [onOpenNewTab]);
+  }, []);
 
   // 首页回到新标签页状态，不打开任何地址
   const handleGoHome = useCallback(() => {
@@ -357,15 +460,6 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             syncDevToolsBounds();
           }, 240);
 
-          // DevTools 成功接入！若当前页面已加载，轻量重新加载一次，
-          // 确保 Network 面板即刻完整捕获全量请求参数、请求标头与响应流
-          if (currentUrlRef.current && !currentUrlRef.current.startsWith('about:blank')) {
-            setTimeout(() => {
-              try {
-                wv.reload?.();
-              } catch {}
-            }, 120);
-          }
         }
       }
     };
@@ -380,6 +474,21 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
       }
     };
   }, [isDevToolsOpen, calcDevToolsBounds, syncDevToolsBounds, getSafeWebContentsId]);
+
+  // 当浏览器标签页切至后台（如切换至代码编辑器）时，暂时隐藏 DevTools 原生视图；切回时平滑恢复
+  useEffect(() => {
+    if (!isDevToolsOpen) return;
+    const targetId = targetWebContentsIdRef.current;
+    if (!targetId || !window.ide?.updateDevToolsViewBounds) return;
+
+    if (isActive === false) {
+      window.ide.updateDevToolsViewBounds(targetId, {
+        bounds: { x: 0, y: 0, width: 0, height: 0 },
+      });
+    } else {
+      syncDevToolsBounds();
+    }
+  }, [isActive, isDevToolsOpen, syncDevToolsBounds]);
 
   // 监听容器尺寸变化或面板拖拽，实时平滑同步 DevTools 原生视图 Bounds (100% 保持吸底)
   useEffect(() => {
@@ -625,7 +734,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
     onShowToast?.(`已将标签页 "${pageTitle}" 引用至 AI 对话`, 'success');
   }, [currentUrl, pageTitle, consoleLogs, onAddPageToChat, onShowToast]);
 
-  // 绑定 Webview 事件：只在组件挂载时绑定一次，生命周期完全稳定
+  // 绑定 Webview 事件：只在组件挂载时执行一次，生命周期完全稳定
   useEffect(() => {
     const wv = webviewRef.current;
     if (!wv) return;
@@ -699,6 +808,21 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
       setLoadError(null);
     };
 
+    const injectPasswordInterceptors = () => {
+      try {
+        wv.executeJavaScript(PASSWORD_INTERCEPTOR_SCRIPT);
+      } catch {}
+
+      const creds = getCredentialsForOrigin(currentUrlRef.current);
+      if (creds.length > 0) {
+        setTimeout(() => {
+          try {
+            wv.executeJavaScript(buildAutofillScript(creds[0].username, creds[0].password));
+          } catch {}
+        }, 200);
+      }
+    };
+
     const handleDidStopLoading = () => {
       setIsLoading(false);
       syncCurrentUrl(wv.getURL?.());
@@ -706,6 +830,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         setCanGoBack(wv.canGoBack());
         setCanGoForward(wv.canGoForward());
       } catch {}
+      injectPasswordInterceptors();
     };
 
     const handleDomReady = () => {
@@ -717,6 +842,8 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
       syncCurrentUrl(wv.getURL?.());
       // 文档已就绪：重新武装 SPA 路由订阅（上一份订阅随旧文档一起失效）
       armRouteWatch();
+      // 注入账号密码表单拦截器并尝试智能自动填充
+      injectPasswordInterceptors();
     };
 
     const handlePageTitleUpdated = (e: any) => {
@@ -737,11 +864,23 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
     };
 
     const handleNewWindow = (e: any) => {
-      const u = e?.url;
-      if (!u) return;
+      e?.preventDefault?.();
+      const u = (e?.url || '').trim();
+      if (!u || u === 'about:blank') return;
+
+      const now = Date.now();
+      if (
+        lastNewWindowTimeRef.current &&
+        lastNewWindowTimeRef.current.url === u &&
+        now - lastNewWindowTimeRef.current.time < 800
+      ) {
+        return;
+      }
+      lastNewWindowTimeRef.current = { url: u, time: now };
+
       // 对新的路由和弹窗都不要拦截：直接在内置浏览器的新标签页中打开，无缝浏览
-      if (onOpenNewTab) {
-        onOpenNewTab(u);
+      if (onOpenNewTabRef.current) {
+        onOpenNewTabRef.current(u);
       } else {
         window.dispatchEvent(
           new CustomEvent('echoly:openBrowser', {
@@ -764,6 +903,39 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
 
     const handleConsoleMessage = (e: any) => {
       const msg = e.message || '';
+
+      // 捕获页面提交的账号密码表单并提示保存
+      if (msg.startsWith('__ECHOLY_PW_CAPTURED__:')) {
+        try {
+          const payload = JSON.parse(msg.slice('__ECHOLY_PW_CAPTURED__:'.length));
+          if (payload?.origin && payload?.password) {
+            const userStr = (payload.username || '').trim();
+            const pwStr = payload.password || '';
+            const existing = getCredentialsForOrigin(payload.origin);
+            const identical = existing.some(
+              (c) => c.username.toLowerCase() === userStr.toLowerCase() && c.password === pwStr,
+            );
+            if (!identical) {
+              setPendingPasswordPrompt({
+                origin: payload.origin,
+                username: userStr,
+                password: pwStr,
+                isUpdate: existing.some((c) => c.username.toLowerCase() === userStr.toLowerCase()),
+              });
+            }
+          }
+        } catch {}
+        return;
+      }
+
+      // 捕获页面新标签页打开请求 (如 target="_blank" 或 window.open)
+      if (msg.startsWith('__ECHOLY_OPEN_NEW_TAB__:')) {
+        const targetUrl = msg.slice('__ECHOLY_OPEN_NEW_TAB__:'.length).trim();
+        if (targetUrl) {
+          handleNewWindow({ url: targetUrl });
+        }
+        return;
+      }
 
       // 正常记录控制台日志。
       // Electron 的 console-message level 语义为 0=verbose / 1=info / 2=warning / 3=error，
@@ -832,6 +1004,15 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
   }, []);
 
   const errorCount = consoleLogs.filter((l) => l.level === 'error').length;
+
+  const triggerAutofill = useCallback((cred: SavedCredential) => {
+    const wv = webviewRef.current;
+    if (wv) {
+      try {
+        wv.executeJavaScript(buildAutofillScript(cred.username, cred.password));
+      } catch {}
+    }
+  }, []);
 
   return (
     <div
@@ -1088,6 +1269,28 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           </button>
 
 
+          {/* 密码管理器与自动回填快捷入口 */}
+          <button
+            ref={passwordBtnRef}
+            type="button"
+            className={`panel-action-btn ${siteCredentials.length > 0 ? 'active' : ''}`}
+            title={
+              siteCredentials.length > 0
+                ? `密码管理器：此站点已保存 ${siteCredentials.length} 个账号密码 (点击查看/一键填入)`
+                : '密码管理器：查看与管理此站点保存的密码'
+            }
+            onClick={() => setShowPasswordModal((prev) => !prev)}
+            style={{
+              color: siteCredentials.length > 0 ? '#38bdf8' : undefined,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="7.5" cy="15.5" r="4.5" />
+              <path d="M21 2l-9.6 9.6" />
+              <path d="M15.5 7.5l3 3" />
+            </svg>
+          </button>
+
           {/* 外部默认浏览器打开 */}
           <button
             type="button"
@@ -1168,10 +1371,258 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           拖动时同样按新高度实时跟手（原生控制台视图保持原位可见，不参与重排，
           因此这里无需额外让出热区，也不会出现黑屏）。
         */}
-        <webview
-          ref={webviewRef}
-          src={initialSrcRef.current || 'about:blank'}
-          partition="persist:echoly-browser"
+        {/* 密码保存/更新询问浮窗 (Chrome 风格) */}
+        {pendingPasswordPrompt && (
+          <div
+            className="browser-password-save-prompt"
+            style={{
+              position: 'absolute',
+              top: 10,
+              right: 12,
+              width: 320,
+              background: '#1e1e1e',
+              border: '1px solid rgba(255, 255, 255, 0.16)',
+              borderRadius: 8,
+              boxShadow: '0 8px 30px rgba(0, 0, 0, 0.65)',
+              zIndex: 100,
+              padding: '14px 16px',
+              color: '#f3f4f6',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13 }}>
+                <span style={{ fontSize: 16 }}>🔑</span>
+                <span>{pendingPasswordPrompt.isUpdate ? '更新此网站的密码？' : '保存此网站的密码？'}</span>
+              </div>
+              <button
+                type="button"
+                className="panel-action-btn"
+                title="关闭"
+                onClick={() => setPendingPasswordPrompt(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ fontSize: 12, color: 'var(--muted, #9ca3af)', marginBottom: 10, wordBreak: 'break-all' }}>
+              站点：<strong style={{ color: '#e5e7eb' }}>{pendingPasswordPrompt.origin}</strong>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--muted, #9ca3af)', display: 'block', marginBottom: 3 }}>
+                  用户名 / 账号
+                </label>
+                <input
+                  type="text"
+                  value={pendingPasswordPrompt.username}
+                  onChange={(e) =>
+                    setPendingPasswordPrompt((prev) => (prev ? { ...prev, username: e.target.value } : null))
+                  }
+                  placeholder="未识别到用户名，可手动输入"
+                  style={{
+                    width: '100%',
+                    height: 28,
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: 4,
+                    padding: '0 8px',
+                    color: '#fff',
+                    fontSize: 12,
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--muted, #9ca3af)', display: 'block', marginBottom: 3 }}>
+                  密码
+                </label>
+                <input
+                  type="password"
+                  value={pendingPasswordPrompt.password}
+                  readOnly
+                  style={{
+                    width: '100%',
+                    height: 28,
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: 4,
+                    padding: '0 8px',
+                    color: '#9ca3af',
+                    fontSize: 12,
+                    boxSizing: 'border-box',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => setPendingPasswordPrompt(null)}
+                style={{ fontSize: 12, padding: '4px 12px' }}
+              >
+                暂不
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => {
+                  saveCredential(
+                    pendingPasswordPrompt.origin,
+                    pendingPasswordPrompt.username,
+                    pendingPasswordPrompt.password,
+                  );
+                  const updated = getCredentialsForOrigin(pendingPasswordPrompt.origin);
+                  setSiteCredentials(updated);
+                  onShowToast?.(
+                    pendingPasswordPrompt.isUpdate ? '已更新该站点的密码' : '已保存该站点的账号密码',
+                    'success',
+                  );
+                  setPendingPasswordPrompt(null);
+                }}
+                style={{ fontSize: 12, padding: '4px 14px' }}
+              >
+                {pendingPasswordPrompt.isUpdate ? '更新' : '保存'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 当前站点已保存密码管理弹层 */}
+        {showPasswordModal && (
+          <>
+            <div
+              className="browser-password-backdrop"
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 99,
+                background: 'transparent',
+              }}
+              onMouseDown={() => setShowPasswordModal(false)}
+            />
+            <div
+              ref={passwordModalRef}
+              className="browser-password-manager-dropdown"
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 12,
+                width: 340,
+                background: '#1e1e1e',
+                border: '1px solid rgba(255, 255, 255, 0.16)',
+                borderRadius: 8,
+                boxShadow: '0 8px 30px rgba(0, 0, 0, 0.65)',
+                zIndex: 100,
+                padding: '14px 16px',
+                color: '#f3f4f6',
+                boxSizing: 'border-box',
+              }}
+            >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13 }}>
+                <span>🔑</span>
+                <span>已保存的密码 ({siteCredentials.length})</span>
+              </div>
+              <button
+                type="button"
+                className="panel-action-btn"
+                title="关闭"
+                onClick={() => setShowPasswordModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ fontSize: 12, color: 'var(--muted, #9ca3af)', marginBottom: 12 }}>
+              当前站点：<span style={{ color: '#60a5fa' }}>{extractOrigin(currentUrl) || '无活动网页'}</span>
+            </div>
+
+            {siteCredentials.length === 0 ? (
+              <div style={{ padding: '16px 0', textAlign: 'center', fontSize: 12, color: 'var(--muted, #9ca3af)' }}>
+                当前站点尚未保存账号密码
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+                {siteCredentials.map((cred) => (
+                  <div
+                    key={cred.id}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: 6,
+                      padding: '8px 10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#f3f4f6' }}>
+                        {cred.username || '未命名账号'}
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          title="自动填入当前登录页"
+                          onClick={() => {
+                            triggerAutofill(cred);
+                            onShowToast?.(`已自动填入账号 ${cred.username}`, 'info');
+                            setShowPasswordModal(false);
+                          }}
+                          style={{ fontSize: 11, padding: '2px 8px' }}
+                        >
+                          填入
+                        </button>
+                        <button
+                          type="button"
+                          className="panel-action-btn"
+                          title="删除此凭据"
+                          onClick={() => {
+                            deleteCredential(cred.id);
+                            const updated = getCredentialsForOrigin(currentUrl);
+                            setSiteCredentials(updated);
+                            onShowToast?.('已删除该账号凭据', 'info');
+                          }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted, #9ca3af)' }}>
+                      <span>
+                        密码：{showPlainPasswordId === cred.id ? cred.password : '••••••••'}
+                      </span>
+                      <button
+                        type="button"
+                        style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', padding: 0, fontSize: 11 }}
+                        onClick={() =>
+                          setShowPlainPasswordId(showPlainPasswordId === cred.id ? null : cred.id)
+                        }
+                      >
+                        {showPlainPasswordId === cred.id ? '隐藏' : '显示'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          </>
+        )}
+
+        <div
           style={{
             position: 'absolute',
             top: 0,
@@ -1183,8 +1634,9 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             visibility: (!currentUrl || currentUrl === '' || currentUrl === 'about:blank') ? 'hidden' : 'visible',
             pointerEvents: (!currentUrl || currentUrl === '' || currentUrl === 'about:blank' || isDraggingDevTools) ? 'none' : 'auto',
           }}
-          allowpopups={true}
-        />
+        >
+          <WebviewInner ref={webviewRef} initialSrc={initialParsedUrl || 'about:blank'} />
+        </div>
 
         {/* 拖动遮罩由面板顶层那一处统一承担（position: fixed 相对视口，重复渲染没有意义） */}
 
@@ -1271,7 +1723,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             style={{
               position: 'absolute',
               inset: 0,
-              background: 'radial-gradient(circle at 50% 30%, rgba(56, 189, 248, 0.05) 0%, rgba(20, 20, 20, 0.98) 70%), var(--bg-editor, #141414)',
+              background: 'var(--bg-editor, #141414)',
               color: 'var(--text)',
               display: 'flex',
               flexDirection: 'column',
@@ -1289,14 +1741,13 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 width: 60,
                 height: 60,
                 borderRadius: 18,
-                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(99, 102, 241, 0.2))',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
+                background: 'rgba(56, 189, 248, 0.08)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: 16,
                 color: '#38bdf8',
-                boxShadow: '0 8px 32px rgba(56, 189, 248, 0.12)',
               }}
             >
               <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

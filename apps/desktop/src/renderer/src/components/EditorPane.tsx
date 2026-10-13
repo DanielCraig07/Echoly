@@ -700,6 +700,17 @@ export function EditorPane({
   onOpenBrowserTab,
 }: Props) {
   const active = tabs.find((t) => t.path === activePath) ?? null;
+  const browserTabs = useMemo(
+    () =>
+      tabs.filter(
+        (t) => isBrowserPath(t.path) || t.language === 'browser' || t.virtual?.browser,
+      ),
+    [tabs],
+  );
+  const isBrowserActive = !!(
+    active &&
+    (isBrowserPath(active.path) || active.language === 'browser' || active.virtual?.browser)
+  );
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const splitEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const formatOnSaveRef = useRef(formatOnSave);
@@ -4276,6 +4287,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           title={onNewUntitled ? '双击空白处新建文本文件' : undefined}
         >
           {tabs.map((tab) => {
+            const isBrowser = isBrowserPath(tab.path) || tab.language === 'browser' || tab.virtual?.browser;
             const fileName = tab.title || (isUntitledPath(tab.path)
               ? untitledTabLabel(tab.path)
               : tab.path.split('/').pop() || tab.path);
@@ -4285,7 +4297,12 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               <button
                 key={tab.path}
                 ref={isActive ? activeTabRef : null}
-                className={`tab ${isActive ? 'active' : ''} ${tab.dirty ? 'is-dirty' : ''}`}
+                className={`tab ${isActive ? 'active' : ''} ${tab.dirty ? 'is-dirty' : ''} ${isBrowser ? 'is-browser-tab' : ''}`}
+                title={
+                  isBrowser
+                    ? `${fileName}${tab.virtual?.browser?.url ? `\n${tab.virtual.browser.url}` : ''}`
+                    : (tab.path.startsWith('/') ? tab.path : fileName)
+                }
                 onClick={() => onSelectTab(tab.path)}
                 onAuxClick={(e) => {
                   if (e.button === 1) {
@@ -4304,7 +4321,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   });
                 }}
               >
-                {isBrowserPath(tab.path) || tab.language === 'browser' || tab.virtual?.browser ? (
+                {isBrowser ? (
                   tab.virtual?.browser?.favicon ? (
                     <img
                       src={tab.virtual.browser.favicon}
@@ -4335,7 +4352,19 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     contentSnippet={tab.content ? tab.content.slice(0, 1000) : undefined}
                   />
                 )}
-                <span className="tab-title" style={{ color: gitMeta?.color }}>
+                <span
+                  className="tab-title"
+                  style={{
+                    color: gitMeta?.color,
+                    maxWidth: isBrowser ? 180 : 220,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    display: 'inline-block',
+                    verticalAlign: 'middle',
+                  }}
+                  title={fileName}
+                >
                   {fileName}
                 </span>
                 {tab.readOnly && (
@@ -4687,11 +4716,48 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         ref={editorContainerRef}
         style={{
           position: 'relative',
-          ...(active && (isBrowserPath(active.path) || active.language === 'browser' || active.virtual?.browser)
+          ...(isBrowserActive
             ? { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
             : {}),
         }}
       >
+        {/* 常驻挂载所有已打开的内置浏览器标签页，保证切换代码/其他标签时 DOM 与会话不被销毁、绝不重载 */}
+        {browserTabs.map((bt) => {
+          const isThisTabActive = active?.path === bt.path;
+          return (
+            <div
+              key={bt.path}
+              style={{
+                display: isThisTabActive ? 'flex' : 'none',
+                flexDirection: 'column',
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: isThisTabActive ? 5 : -1,
+                pointerEvents: isThisTabActive ? 'auto' : 'none',
+              }}
+            >
+              <BrowserViewPane
+                isActive={isThisTabActive}
+                initialUrl={
+                  bt.virtual?.browser?.url ??
+                  (bt.path.startsWith('browser://') ? bt.path.slice('browser://'.length) : '')
+                }
+                tabTitle={bt.title}
+                onUpdateTab={(patch) => {
+                  onUpdateTabMeta?.(bt.path, patch);
+                }}
+                onOpenNewTab={(url) => {
+                  onOpenBrowserTab?.(url, undefined, { forceNew: true });
+                }}
+                onShowToast={(msg, type) => {
+                  onShowToast?.(msg, undefined, type);
+                }}
+              />
+            </div>
+          );
+        })}
         {/* Floating Add-to-Chat prompt when selection is present */}
         {selectedText.trim().length > 0 &&
           active?.path &&
@@ -5164,24 +5230,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             onShowToast={onShowToast}
             onRetarget={(target, kind) => onRetargetConsole?.(active.path, target, kind)}
           />
-        ) : active && (isBrowserPath(active.path) || active.language === 'browser' || active.virtual?.browser) ? (
-          <BrowserViewPane
-            key={active.path}
-            initialUrl={
-              active.virtual?.browser?.url ??
-              (active.path.startsWith('browser://') ? active.path.slice('browser://'.length) : '')
-            }
-            tabTitle={active.title}
-            onUpdateTab={(patch) => {
-              onUpdateTabMeta?.(active.path, patch);
-            }}
-            onOpenNewTab={(url) => {
-              onOpenBrowserTab?.(url, undefined, { forceNew: true });
-            }}
-            onShowToast={(msg, type) => {
-              onShowToast?.(msg, undefined, type);
-            }}
-          />
+        ) : isBrowserActive ? (
+          null
         ) : active && isImage ? (
           <div className="image-preview-pane">
             {active.previewUrl ? (

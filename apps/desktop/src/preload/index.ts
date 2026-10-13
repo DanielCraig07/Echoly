@@ -295,6 +295,12 @@ const api: IpcApi = {
     ipcRenderer.on('window:zoomChanged', listener);
     return () => ipcRenderer.removeListener('window:zoomChanged', listener);
   },
+  // 订阅内置浏览器打开新标签页请求（如链接 target="_blank" 或 window.open）
+  onBrowserOpenTab: (cb: (data: { url: string }) => void) => {
+    const listener = (_e: unknown, data: { url: string }) => cb(data);
+    ipcRenderer.on('browser:openTab', listener);
+    return () => ipcRenderer.removeListener('browser:openTab', listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('ide', api);

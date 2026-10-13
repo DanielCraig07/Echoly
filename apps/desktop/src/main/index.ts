@@ -41,9 +41,16 @@ if (nativeTheme) {
 // 监听所有 webContents 创建，内置 webview 不拦截任何弹窗与路由跳转
 app.on('web-contents-created', (_event, contents) => {
   if (contents.getType() === 'webview') {
-    // 对新的路由和弹窗都不要拦截，完全放行
-    contents.setWindowOpenHandler(() => {
-      return { action: 'allow' };
+    // 内置 webview 的新窗口请求（如 target="_blank" 或 window.open）拦截并转发给渲染层新开标签页
+    contents.setWindowOpenHandler(({ url }) => {
+      const hostWc =
+        (contents as any).hostWebContents ??
+        getActiveWindow()?.webContents ??
+        BrowserWindow.getAllWindows().find((w) => !w.isDestroyed())?.webContents;
+      if (hostWc && !hostWc.isDestroyed() && url && !url.startsWith('about:blank')) {
+        hostWc.send('browser:openTab', { url });
+      }
+      return { action: 'deny' };
     });
     // 静默吸收 guest view 导航中止及本地未启动端口的连接失败提示（由渲染层内置浏览器友好界面呈现）
     contents.on('did-fail-load', (_ev, errorCode, errorDescription) => {

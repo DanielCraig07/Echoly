@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.0.42';
+export const APP_VERSION = '0.0.43';
 export const DEFAULT_LLM_BASE_URL = 'http://192.168.10.241:8002';
 export const DEFAULT_LLM_MODEL = 'deepseek-v4-flash';
 
@@ -1469,6 +1469,10 @@ export interface IpcApi {
    * 原生 DevTools 视图的 Bounds 由 CSS 像素换算 DIP 得到，缩放后比例改变，渲染层需重新上报坐标。
    */
   onZoomChanged?: (cb: (zoom: number) => void) => () => void;
+  /**
+   * 订阅内置浏览器打开新标签页请求（如链接 target="_blank" 或 window.open）
+   */
+  onBrowserOpenTab?: (cb: (data: { url: string }) => void) => () => void;
 }
 
 /**
