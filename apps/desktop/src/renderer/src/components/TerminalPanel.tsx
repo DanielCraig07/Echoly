@@ -1743,11 +1743,11 @@ function TerminalSession({
             style={{ opacity: hasSelection ? 1 : 0.45, cursor: hasSelection ? 'pointer' : 'default' }}
           >
             <span>复制</span>
-            <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>{isMac ? '⌘C' : 'Ctrl+Shift+C'}</kbd>
+            <kbd className="shortcut-badge">{isMac ? '⌘C' : 'Ctrl+Shift+C'}</kbd>
           </button>
           <button type="button" className="ctx-item" onClick={() => void handlePaste()}>
             <span>粘贴</span>
-            <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>{isMac ? '⌘V' : 'Ctrl+Shift+V'}</kbd>
+            <kbd className="shortcut-badge">{isMac ? '⌘V' : 'Ctrl+Shift+V'}</kbd>
           </button>
           {hasSelection && (
             <>
@@ -1759,18 +1759,18 @@ function TerminalSession({
                 style={{ color: 'var(--accent, #6366f1)' }}
               >
                 <span>⚡️ 让 AI 诊断/修复选中内容</span>
-                <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>Ask AI</kbd>
+                <kbd className="shortcut-badge">Ask AI</kbd>
               </button>
             </>
           )}
           <div className="ctx-sep" />
           <button type="button" className="ctx-item" onClick={handleSelectAll}>
             <span>全选</span>
-            <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>{isMac ? '⌘A' : 'Ctrl+A'}</kbd>
+            <kbd className="shortcut-badge">{isMac ? '⌘A' : 'Ctrl+A'}</kbd>
           </button>
           <button type="button" className="ctx-item" onClick={handleClearFromMenu}>
             <span>清空屏幕 (Clear)</span>
-            <kbd className="shortcut-badge" style={{ fontSize: 11, opacity: 0.7 }}>{isMac ? '⌘K' : 'Ctrl+L'}</kbd>
+            <kbd className="shortcut-badge">{isMac ? '⌘K' : 'Ctrl+L'}</kbd>
           </button>
         </div>
       )}

@@ -189,6 +189,10 @@ const COMMON_FIND_OPTIONS: MonacoEditor.IEditorFindOptions = {
   seedSearchStringFromSelection: 'always',
 };
 
+const BASE_MONACO_OPTIONS: MonacoEditor.IStandaloneEditorConstructionOptions = {
+  useShadowDOM: false,
+};
+
 function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
   if (!path || typeof path !== 'string' || !entries || !Array.isArray(entries) || !entries.length)
     return null;
@@ -4237,6 +4241,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               }, 120);
             }}
             options={{
+              ...BASE_MONACO_OPTIONS,
               readOnly: true,
               find: COMMON_FIND_OPTIONS,
               renderSideBySide: true,
@@ -5435,6 +5440,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   executeRevealTarget(ed);
                 }}
                 options={{
+                  ...BASE_MONACO_OPTIONS,
                   fontSize: 13,
                   find: COMMON_FIND_OPTIONS,
                   fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
@@ -5606,6 +5612,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   updateSelectionAndCoords(ed);
                 }}
                 options={{
+                  ...BASE_MONACO_OPTIONS,
                   fontSize: 13,
                   find: COMMON_FIND_OPTIONS,
                   minimap: { enabled: minimap !== false },
@@ -5764,6 +5771,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       });
                     }}
                     options={{
+                      ...BASE_MONACO_OPTIONS,
                       fontSize: 13,
                       find: COMMON_FIND_OPTIONS,
                       minimap: { enabled: false },
@@ -6185,6 +6193,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 executeRevealTarget(ed);
               }}
               options={{
+                ...BASE_MONACO_OPTIONS,
                 readOnly: active.readOnly ?? false,
                 fontSize: 13,
                 find: COMMON_FIND_OPTIONS,

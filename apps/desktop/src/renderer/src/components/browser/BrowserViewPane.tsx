@@ -70,8 +70,8 @@ export function IconInspectElement({ active }: { active?: boolean }) {
  * 且后续 React reconciler 绝不触碰 webview 的 src 属性，彻底杜绝误重载。
  */
 const WebviewInner = React.memo(
-  React.forwardRef<HTMLWebViewElement, { initialSrc: string }>(function WebviewInner(
-    { initialSrc },
+  React.forwardRef<HTMLWebViewElement, { initialSrc: string; isNewTab?: boolean }>(function WebviewInner(
+    { initialSrc, isNewTab },
     ref,
   ) {
     return (
@@ -84,6 +84,8 @@ const WebviewInner = React.memo(
           height: '100%',
           display: 'flex',
           border: 'none',
+          backgroundColor: isNewTab ? 'transparent' : '#ffffff',
+          colorScheme: isNewTab ? 'dark' : 'normal',
         }}
         allowpopups={true}
       />
@@ -1014,6 +1016,8 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
     }
   }, []);
 
+  const isNewTabPage = !currentUrl || currentUrl === '' || currentUrl === 'about:blank';
+
   return (
     <div
       className="echoly-browser-pane"
@@ -1361,7 +1365,8 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           width: '100%',
           minHeight: 0,
           position: 'relative',
-          background: 'var(--bg-editor, #141414)',
+          background: isNewTabPage ? 'var(--bg-editor, #141414)' : '#ffffff',
+          colorScheme: isNewTabPage ? 'dark' : 'normal',
           overflow: 'hidden',
         }}
       >
@@ -1623,6 +1628,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         )}
 
         <div
+          className="browser-webview-viewport"
           style={{
             position: 'absolute',
             top: 0,
@@ -1631,11 +1637,17 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             width: '100%',
             height: isDevToolsOpen ? `calc(100% - ${devToolsHeight}px)` : '100%',
             display: 'flex',
-            visibility: (!currentUrl || currentUrl === '' || currentUrl === 'about:blank') ? 'hidden' : 'visible',
-            pointerEvents: (!currentUrl || currentUrl === '' || currentUrl === 'about:blank' || isDraggingDevTools) ? 'none' : 'auto',
+            background: isNewTabPage ? 'transparent' : '#ffffff',
+            colorScheme: isNewTabPage ? 'dark' : 'normal',
+            visibility: isNewTabPage ? 'hidden' : 'visible',
+            pointerEvents: (isNewTabPage || isDraggingDevTools) ? 'none' : 'auto',
           }}
         >
-          <WebviewInner ref={webviewRef} initialSrc={initialParsedUrl || 'about:blank'} />
+          <WebviewInner
+            ref={webviewRef}
+            initialSrc={initialParsedUrl || 'about:blank'}
+            isNewTab={isNewTabPage}
+          />
         </div>
 
         {/* 拖动遮罩由面板顶层那一处统一承担（position: fixed 相对视口，重复渲染没有意义） */}
@@ -1717,7 +1729,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         )}
 
         {/* 空地址栏时呈现的新标签页起始界面 */}
-        {(!currentUrl || currentUrl === '' || currentUrl === 'about:blank') && (
+        {isNewTabPage && (
           <div
             className="browser-newtab-welcome"
             style={{

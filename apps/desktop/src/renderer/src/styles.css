@@ -1931,15 +1931,45 @@ body.resizing.resizing-row {
 }
 
 .ctx-shortcut {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
-  font-family: inherit;
-  margin-left: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
+    sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  line-height: 1.35;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: all 0.12s ease;
+  white-space: nowrap;
+  margin-left: auto;
   flex-shrink: 0;
 }
 
-.ctx-item:hover .ctx-shortcut {
-  color: rgba(255, 255, 255, 0.88);
+.ctx-item:hover .ctx-shortcut,
+.ctx-item:hover .shortcut-badge {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+.ctx-submenu-arrow {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.45);
+  transition: color 0.12s ease;
+}
+
+.ctx-item:hover .ctx-submenu-arrow {
+  color: #ffffff;
 }
 
 .ctx-git-submenu {
@@ -1955,181 +1985,388 @@ body.resizing.resizing-row {
 :root {
   --vscode-menu-background: #141414;
   --vscode-menu-foreground: rgba(255, 255, 255, 0.9);
-  --vscode-menu-selectionBackground: #007acc;
+  --vscode-menu-selectionBackground: var(--accent, #007acc);
   --vscode-menu-selectionForeground: #ffffff;
   --vscode-menu-border: rgba(255, 255, 255, 0.1);
   --vscode-menu-separatorBackground: rgba(255, 255, 255, 0.08);
 }
 
-.context-view.monaco-component,
-.context-view .monaco-menu-container,
-.monaco-menu-container,
-.monaco-styled-menu {
-  border-radius: 8px !important;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.85), 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+.context-view.monaco-menu-container,
+.monaco-menu-container {
+  text-align: left !important;
+  width: auto !important;
+  min-width: 270px !important;
   background: #141414 !important;
   background-color: #141414 !important;
-  border: none !important;
-  outline: none !important;
-  backdrop-filter: blur(24px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
-  padding: 5px !important;
-  min-width: 236px !important;
-  overflow: hidden !important;
-  color: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+  box-shadow:
+    0 18px 42px -4px rgba(0, 0, 0, 0.8),
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
 }
 
-.context-view.monaco-menu-container,
-.monaco-menu-container .monaco-scrollable-element,
-.monaco-menu .monaco-scrollable-element {
-  outline: none !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-[data-theme='light'] .context-view .monaco-menu-container,
+[data-theme='light'] .context-view.monaco-menu-container,
 [data-theme='light'] .monaco-menu-container {
   background: #ffffff !important;
   background-color: #ffffff !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16) !important;
   color: #1f2937 !important;
 }
 
-.monaco-menu {
+/* 子菜单弹出层：确保 fixed 定位能相对于视口自由伸展，不被父菜单裁剪 */
+.monaco-submenu,
+div.monaco-submenu,
+.monaco-submenu.monaco-menu-container {
+  position: fixed !important;
+  z-index: 10000 !important;
+  overflow: visible !important;
+  min-width: 190px !important;
+  width: auto !important;
+  background: #141414 !important;
+  background-color: #141414 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+  box-shadow:
+    0 18px 42px -4px rgba(0, 0, 0, 0.8),
+    0 2px 8px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+  box-sizing: border-box !important;
+}
+
+/* 彻底消除子菜单销毁后残留的空外框伪影 */
+.monaco-submenu:empty,
+div.monaco-submenu:empty,
+.monaco-submenu.monaco-menu-container:empty {
+  display: none !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* 彻底消灭 Monaco 菜单常驻的右侧垂直滚动条滑块（红框中多出来的一截） */
+.monaco-menu-container .monaco-scrollable-element > .scrollbar,
+.monaco-menu-container .monaco-scrollable-element > .scrollbar.vertical,
+.monaco-menu-container .scrollbar,
+.monaco-menu-container .scrollbar.vertical,
+.monaco-menu .scrollbar,
+.monaco-menu .scrollbar.vertical,
+.context-view .scrollbar,
+.context-view .scrollbar.vertical {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.monaco-menu-container .monaco-scrollable-element > .scrollbar > .slider,
+.monaco-menu-container .scrollbar .slider,
+.context-view .scrollbar .slider {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* 彻底清除 scrollElement 与 monaco-menu 的二次边框、outline、阴影、背景及重复 padding */
+.monaco-menu-container .monaco-scrollable-element,
+.context-view .monaco-scrollable-element,
+.monaco-scrollable-element {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
   background: transparent !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+
+.monaco-menu,
+.monaco-menu-container .monaco-menu,
+.context-view .monaco-menu {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.monaco-menu .monaco-action-bar,
+.monaco-menu .monaco-action-bar.vertical {
+  text-align: left !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
   padding: 0 !important;
   border: none !important;
-  outline: none !important;
-}
-
-.monaco-menu .monaco-action-bar {
   background: transparent !important;
-  border: none !important;
-  outline: none !important;
+  overflow: visible !important;
+  box-sizing: border-box !important;
 }
 
-.monaco-menu .actions-container {
+.monaco-action-bar .actions-container,
+.monaco-menu .actions-container,
+.monaco-menu .monaco-action-bar.vertical .actions-container,
+.context-view .monaco-menu .actions-container {
   padding: 0 !important;
   margin: 0 !important;
   display: flex !important;
   flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
   gap: 2px !important;
   background: transparent !important;
   border: none !important;
   outline: none !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+  list-style: none !important;
+  overflow: visible !important;
 }
 
-.monaco-menu .action-item {
+.monaco-menu .monaco-action-bar.vertical .menu-item-check:not(.checked),
+.monaco-menu .menu-item-check:not(.checked) {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
   padding: 0 !important;
   margin: 0 !important;
-  border-radius: 5px !important;
-  transition: background 0.1s ease, color 0.1s ease !important;
+}
+
+.monaco-action-bar .action-item,
+.monaco-menu .action-item,
+.monaco-menu .monaco-action-bar.vertical .action-item,
+.context-view .monaco-menu .action-item {
+  display: flex !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+  cursor: pointer !important;
   background: transparent !important;
   border: none !important;
   outline: none !important;
+  list-style: none !important;
+  overflow: visible !important;
+  position: relative !important;
 }
 
-.monaco-menu .action-menu-item {
+.monaco-menu .action-menu-item,
+.monaco-menu .monaco-action-bar.vertical .action-menu-item {
   display: flex !important;
+  flex-direction: row !important;
   align-items: center !important;
   justify-content: space-between !important;
-  padding: 6px 12px !important;
-  height: 30px !important;
+  text-align: left !important;
+  padding: 5px 8px !important;
+  min-height: 26px !important;
+  height: 26px !important;
+  width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
   box-sizing: border-box !important;
-  border-radius: 5px !important;
+  border-radius: 6px !important;
   font-size: 12.5px !important;
   font-family: inherit !important;
   color: rgba(255, 255, 255, 0.9) !important;
-  transition: background 0.1s ease, color 0.1s ease !important;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease !important;
   cursor: pointer !important;
   text-decoration: none !important;
   background: transparent !important;
+  outline: none !important;
+  overflow: hidden !important;
 }
 
-.monaco-menu .action-label {
-  display: flex !important;
+.monaco-menu .action-label,
+.monaco-menu .action-label:not(.separator),
+.monaco-menu .monaco-action-bar.vertical .action-label,
+.monaco-menu .monaco-action-bar.vertical .action-label:not(.separator),
+.monaco-menu .monaco-action-bar.vertical .action-item .action-label:not(.separator),
+.context-view .monaco-menu .action-label:not(.separator) {
+  display: inline-flex !important;
   align-items: center !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
   gap: 8px !important;
   font-size: 12.5px !important;
+  line-height: 1.2 !important;
   color: inherit !important;
+  padding: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin: 0 !important;
+  margin-left: 0 !important;
+  flex: 0 1 auto !important;
+  width: auto !important;
+  max-width: none !important;
+  text-decoration: none !important;
 }
 
-[data-theme='light'] .monaco-menu .action-menu-item {
+.monaco-menu .submenu-indicator,
+.monaco-menu .monaco-action-bar.vertical .submenu-indicator {
+  margin-left: auto !important;
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+[data-theme='light'] .monaco-menu .action-menu-item,
+[data-theme='light'] .monaco-menu .action-item {
   color: #1f2937 !important;
 }
 
-/* Hover & Focus State */
-.monaco-menu .action-item.focused,
-.monaco-menu .action-item:hover,
-.monaco-menu .action-item:focus {
+/* Hover & Focus State - 严格对齐文件右键菜单高亮色（.ctx-item:hover），使用直接子代选择器防止污染子菜单 */
+.monaco-menu .action-item.focused > .action-menu-item,
+.monaco-menu .action-item:hover > .action-menu-item,
+.monaco-menu .action-menu-item.focused,
+.monaco-menu .action-menu-item:hover,
+.monaco-menu .action-menu-item:focus,
+.context-view .monaco-menu .action-item.focused > .action-menu-item,
+.context-view .monaco-menu .action-item:hover > .action-menu-item,
+.context-view .monaco-menu .action-menu-item.focused,
+.context-view .monaco-menu .action-menu-item:hover,
+.context-view .monaco-menu .action-menu-item:focus {
   background: var(--accent, #007acc) !important;
   background-color: var(--accent, #007acc) !important;
+  color: #ffffff !important;
+  width: 100% !important;
 }
 
-.monaco-menu .action-item.focused .action-menu-item,
-.monaco-menu .action-item:hover .action-menu-item,
-.monaco-menu .action-item.focused .action-label,
-.monaco-menu .action-item:hover .action-label {
+.monaco-menu .action-item.focused > .action-menu-item .action-label,
+.monaco-menu .action-item:hover > .action-menu-item .action-label,
+.monaco-menu .action-menu-item.focused .action-label,
+.monaco-menu .action-menu-item:hover .action-label,
+.context-view .monaco-menu .action-item.focused > .action-menu-item .action-label,
+.context-view .monaco-menu .action-item:hover > .action-menu-item .action-label {
   color: #ffffff !important;
 }
 
-.monaco-menu .action-item:active {
+.monaco-menu .action-item:active > .action-menu-item,
+.monaco-menu .action-menu-item:active,
+.context-view .monaco-menu .action-item:active > .action-menu-item,
+.context-view .monaco-menu .action-menu-item:active {
   background: #005a9e !important;
   background-color: #005a9e !important;
-}
-
-[data-theme='light'] .monaco-menu .action-item.focused .action-menu-item,
-[data-theme='light'] .monaco-menu .action-item:hover .action-menu-item {
   color: #ffffff !important;
 }
 
-/* Keybindings */
+[data-theme='light'] .monaco-menu .action-item:not(.separator).focused > .action-menu-item,
+[data-theme='light'] .monaco-menu .action-item:not(.separator):hover > .action-menu-item,
+[data-theme='light'] .monaco-menu .action-item:not(.separator):focus > .action-menu-item {
+  background: var(--accent, #007acc) !important;
+  background-color: var(--accent, #007acc) !important;
+  color: #ffffff !important;
+}
+
+/* Keybindings - 严格对齐图 3 标签页风格的胶囊徽章规范 */
 .monaco-menu .keybinding,
-.monaco-menu .action-menu-item .keybinding {
-  font-size: 11px !important;
-  color: rgba(255, 255, 255, 0.52) !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+.monaco-menu .action-item .keybinding,
+.monaco-menu .action-menu-item .keybinding,
+.context-view .monaco-menu .keybinding,
+.context-view .action-item .keybinding,
+.context-view .keybinding,
+.monaco-action-bar.vertical .keybinding,
+span.keybinding {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
+    sans-serif !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  letter-spacing: 1.5px !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  padding: 1.5px 6px !important;
   border-radius: 4px !important;
-  padding: 1px 6px !important;
-  margin-left: 20px !important;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace !important;
-  letter-spacing: 0.04em !important;
-  display: inline-block !important;
-  line-height: 1.4 !important;
+  line-height: 1.35 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.12s ease !important;
+  white-space: nowrap !important;
+  margin-left: auto !important;
+  flex: 0 0 auto !important;
+  text-align: center !important;
+  height: auto !important;
+  max-height: none !important;
+  opacity: 1 !important;
 }
 
-.monaco-menu .action-item.focused .keybinding,
-.monaco-menu .action-item:hover .keybinding {
+.monaco-menu .action-item.focused > .action-menu-item .keybinding,
+.monaco-menu .action-item:hover > .action-menu-item .keybinding,
+.monaco-menu .action-menu-item.focused .keybinding,
+.monaco-menu .action-menu-item:hover .keybinding,
+.context-view .action-item.focused > .action-menu-item .keybinding,
+.context-view .action-item:hover > .action-menu-item .keybinding,
+.context-view .action-menu-item.focused .keybinding,
+.context-view .action-menu-item:hover .keybinding {
   color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.22) !important;
-  border-color: rgba(255, 255, 255, 0.35) !important;
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
 }
 
-/* Separators */
+.monaco-menu .action-item.focused > .action-menu-item .submenu-indicator,
+.monaco-menu .action-item:hover > .action-menu-item .submenu-indicator,
+.context-view .action-item.focused > .action-menu-item .submenu-indicator,
+.context-view .action-item:hover > .action-menu-item .submenu-indicator {
+  color: #ffffff !important;
+}
+
+/* Separators - 严格消除间隙，保持 1px 超薄细腻风格 */
 .monaco-menu,
 .monaco-menu-container {
   --vscode-menu-separatorBackground: rgba(255, 255, 255, 0.08) !important;
 }
 
 .monaco-menu .action-item.separator,
+.monaco-menu .action-item:has(.separator),
 .monaco-menu .action-label.separator,
 .monaco-action-bar .separator,
 .monaco-menu .monaco-action-bar.vertical .action-label.separator {
   height: 1px !important;
-  min-height: 1px !important;
+  min-height: 0 !important;
   max-height: 1px !important;
   background: rgba(255, 255, 255, 0.08) !important;
   background-color: rgba(255, 255, 255, 0.08) !important;
-  margin: 4px 4px !important;
+  margin: 3px 6px !important;
   padding: 0 !important;
   border: none !important;
-  border-top: none !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-left: none !important;
-  border-right: none !important;
+  box-shadow: none !important;
   display: block !important;
   outline: none !important;
+  cursor: default !important;
+  overflow: hidden !important;
 }
 
 [data-theme='light'] .monaco-menu,
@@ -2667,7 +2904,8 @@ body.resizing.resizing-row {
   user-select: none;
   transition:
     background 0.1s ease,
-    color 0.1s ease;
+    color 0.1s ease,
+    border-top-color 0.15s ease;
 }
 
 .tab:hover {
@@ -2678,7 +2916,7 @@ body.resizing.resizing-row {
 .tab.active {
   background: var(--bg-editor, #181818);
   color: #ffffff;
-  border-top: 2px solid transparent;
+  border-top: 2px solid var(--accent-light, #38bdf8);
   border-bottom: 1px solid var(--bg-editor, #181818);
 }
 
@@ -5330,24 +5568,46 @@ body.resizing.resizing-row {
 }
 
 .chat-input-box {
-  background: var(--bg-card, #1e1e1e);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
     box-shadow 0.15s ease;
 }
 
-.chat-input-box,
+.chat-input-box:hover {
+  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
 .chat-input-box:focus-within {
-  border-color: var(--border) !important;
-  box-shadow: none !important;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.32) !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45) !important;
   outline: none !important;
+}
+
+[data-theme='light'] .chat-input-box {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.16);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme='light'] .chat-input-box:hover {
+  border-color: rgba(0, 0, 0, 0.26);
+}
+
+[data-theme='light'] .chat-input-box:focus-within {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.36) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
 }
 
 .chat-input textarea,
@@ -13167,6 +13427,8 @@ body.db-col-resizing .db-data-cell {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
   transition: all 0.12s ease;
   white-space: nowrap;
+  margin-left: auto;
+  flex: 0 0 auto;
 }
 
 .tab-context-menu .menu-item:hover .shortcut,
@@ -16262,19 +16524,30 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   min-height: 60px;
   max-height: 200px;
   padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-primary);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text);
   font-family: inherit;
   font-size: 14px;
   resize: vertical;
-  transition: border-color 0.2s;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.claude-chat-input:hover {
+  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .claude-chat-input:focus {
   outline: none;
-  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 
 .claude-chat-input:disabled {
@@ -16390,9 +16663,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .chat-input-box.drag-over {
-  border-color: var(--accent) !important;
-  background: rgba(99, 102, 241, 0.08) !important;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15) !important;
 }
 
 .chat-attach-btn {
@@ -17572,17 +17845,29 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .inline-ai-input {
   flex: 1;
-  background: #181818;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12.5px;
   color: var(--text);
   outline: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.inline-ai-input:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.28);
 }
 
 .inline-ai-input:focus {
-  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
 .inline-ai-submit-btn {

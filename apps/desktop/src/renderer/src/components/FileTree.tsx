@@ -233,7 +233,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
           </svg>
           <span style={{ fontWeight: 500 }}>Git</span>
         </span>
-        <span className="ctx-shortcut" style={{ fontSize: 13, fontWeight: 'bold' }}>›</span>
+        <span className="ctx-submenu-arrow">›</span>
       </div>,
     );
   }
@@ -323,7 +323,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
               </svg>
               <span>显示差异</span>
             </span>
-            <span className="ctx-shortcut">{diffShortcut}</span>
+            <kbd className="shortcut-badge">{diffShortcut}</kbd>
           </button>
 
           {/* 3. Compare with Revision... */}
@@ -398,7 +398,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
               </svg>
               <span>回滚修改...</span>
             </span>
-            <span className="ctx-shortcut">{rollbackShortcut}</span>
+            <kbd className="shortcut-badge">{rollbackShortcut}</kbd>
           </button>
         </div>
       )}

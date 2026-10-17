@@ -2786,12 +2786,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           className={`chat-input-box${isDragging ? ' drag-over' : ''}`}
           style={{
             position: 'relative',
-            background: 'var(--bg-lighter)',
-            borderRadius: 16,
-            border: isDragging ? '1px dashed var(--accent)' : '1px solid var(--border)',
-            display: 'flex',
-            flexDirection: 'column',
-            padding: '8px 12px',
+            ...(isDragging ? { border: '1px dashed rgba(255, 255, 255, 0.45)' } : {}),
           }}
           onDragOver={(e) => {
             e.preventDefault();
