@@ -467,7 +467,7 @@ ${payload.suffix.slice(0, 1000)}
     run(e, () => git.createTag(name, message)),
   );
   ipcMain.handle('git:output', (e, maxCount?: number) => run(e, () => git.output(maxCount)));
-  ipcMain.handle('git:history', (e, maxCount?: number) => run(e, () => git.history(maxCount)));
+  ipcMain.handle('git:history', (e, opts?: any) => run(e, () => git.history(opts)));
   ipcMain.handle('git:commitDetails', (e, hash: string) => run(e, () => git.commitDetails(hash)));
   ipcMain.handle('git:fileHistory', (e, path: string, maxCount?: number) =>
     run(e, () => git.fileHistory(path, maxCount)),

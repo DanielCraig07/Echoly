@@ -11,6 +11,7 @@ import type {
   GitCommitFileChange,
   GitCommitStats,
   GitDiffResult,
+  GitHistoryOptions,
   GitHistoryResult,
   GitBlameLineResult,
   GitBlameEntry,
@@ -1041,12 +1042,23 @@ export class GitService {
     return { ok: true, detail: res.stdout.trim() || res.stderr.trim() || 'push 完成' };
   }
 
-  async history(maxCount?: number): Promise<GitHistoryResult> {
+  async history(optionsOrMaxCount?: number | GitHistoryOptions): Promise<GitHistoryResult> {
     const gate = this.localRootOrError();
     if ('ok' in gate && gate.ok === false) {
       return { ok: false, detail: gate.detail, commits: [] };
     }
     const { root } = gate as { root: string };
+    const maxCount =
+      typeof optionsOrMaxCount === 'number'
+        ? optionsOrMaxCount
+        : optionsOrMaxCount?.maxCount;
+    const isAll =
+      typeof optionsOrMaxCount === 'object'
+        ? optionsOrMaxCount.all !== false && !optionsOrMaxCount.branch
+        : true;
+    const targetBranch =
+      typeof optionsOrMaxCount === 'object' ? optionsOrMaxCount.branch : undefined;
+
     const logArgs = [
       'log',
       '--topo-order',
@@ -1055,10 +1067,15 @@ export class GitService {
     if (typeof maxCount === 'number' && maxCount > 0) {
       logArgs.splice(1, 0, `-n${maxCount}`);
     }
+    if (isAll) {
+      logArgs.push('--all');
+    } else if (targetBranch) {
+      logArgs.push(targetBranch);
+    }
     let res = await this.runGit(logArgs, root);
 
-    // 如果当前分支尚无提交，或处于特殊检出状态，尝试获取全部分支的提交历史 (--all)
-    if (res.code !== 0) {
+    // 如果指定分支或默认执行失败且未开启全部分支，尝试回退全部分支 (--all)
+    if (res.code !== 0 && !isAll) {
       const allArgs = [
         'log',
         '--all',

@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.0.44';
+export const APP_VERSION = '0.0.45';
 export const DEFAULT_LLM_BASE_URL = 'http://192.168.10.241:8002';
 export const DEFAULT_LLM_MODEL = 'deepseek-v4-flash';
 
@@ -755,6 +755,12 @@ export interface GitCommitDetailResult {
   stats?: GitCommitStats;
 }
 
+export interface GitHistoryOptions {
+  maxCount?: number;
+  all?: boolean;
+  branch?: string;
+}
+
 export interface GitHistoryResult {
   ok: boolean;
   detail?: string;
@@ -1199,7 +1205,7 @@ export interface IpcApi {
   gitTags: () => Promise<GitTagsResult>;
   gitCreateTag: (name: string, message?: string) => Promise<GitOpResult>;
   gitOutput: (maxCount?: number) => Promise<GitOutputResult>;
-  gitHistory: (maxCount?: number) => Promise<GitHistoryResult>;
+  gitHistory: (options?: number | GitHistoryOptions) => Promise<GitHistoryResult>;
   gitCommitDetails: (hash: string) => Promise<GitCommitDetailResult>;
   gitFileHistory: (path: string, maxCount?: number) => Promise<GitHistoryResult>;
   gitBlameLine: (path: string, line: number) => Promise<GitBlameLineResult>;

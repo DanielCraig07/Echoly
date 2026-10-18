@@ -4721,8 +4721,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         ref={editorContainerRef}
         style={{
           position: 'relative',
+          overflow: 'hidden',
+          minWidth: 0,
           ...(isBrowserActive
-            ? { height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }
+            ? { height: '100%', display: 'flex', flexDirection: 'column' }
             : {}),
         }}
       >
@@ -5267,6 +5269,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               style={{
                 flex: `0 0 ${mdEditorRatio * 100}%`,
                 width: `${mdEditorRatio * 100}%`,
+                overflow: 'hidden',
+                minWidth: 0,
               }}
             >
               <Editor
@@ -5550,6 +5554,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 width: splitOrientation === 'vertical' ? '100%' : `${splitRatio * 100}%`,
                 height: splitOrientation === 'vertical' ? `${splitRatio * 100}%` : '100%',
                 position: 'relative',
+                overflow: 'hidden',
+                minWidth: 0,
               }}
             >
               <Editor
@@ -5796,7 +5802,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             </div>
           </div>
         ) : active ? (
-          <div style={{ display: 'flex', width: '100%', height: '100%', overflow: 'hidden' }}>
+          <div
+            style={{
+              display: 'flex',
+              width: '100%',
+              height: '100%',
+              overflow: 'hidden',
+              minWidth: 0,
+            }}
+          >
             {showBlameAnnotation && !active.isLargeFile && (
               <GitBlameAnnotationGutter
                 filePath={active.path}
@@ -5942,7 +5956,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               </div>
             )}
 
-            <div style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
+            <div
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: '100%',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
               {active.isLargeFile && !active.content ? (
                 <div className="large-file-placeholder">
                   <div className="large-file-icon">📄</div>

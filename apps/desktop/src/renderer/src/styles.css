@@ -1590,6 +1590,14 @@ select:focus {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+.middle-column:has(.context-view:not([style*="display: none"])),
+.middle-column:has(.monaco-menu-container:not([style*="display: none"])),
+.middle-column:has(.monaco-submenu),
+body.monaco-context-menu-active .middle-column {
+  z-index: 100 !important;
 }
 
 .right-chat-panel {
@@ -1996,6 +2004,7 @@ body.resizing.resizing-row {
   text-align: left !important;
   width: auto !important;
   min-width: 270px !important;
+  z-index: 100000 !important;
   background: #141414 !important;
   background-color: #141414 !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -2023,7 +2032,7 @@ body.resizing.resizing-row {
 div.monaco-submenu,
 .monaco-submenu.monaco-menu-container {
   position: fixed !important;
-  z-index: 10000 !important;
+  z-index: 100001 !important;
   overflow: visible !important;
   min-width: 190px !important;
   width: auto !important;
@@ -2088,8 +2097,7 @@ div.monaco-submenu:empty,
 
 /* 彻底清除 scrollElement 与 monaco-menu 的二次边框、outline、阴影、背景及重复 padding */
 .monaco-menu-container .monaco-scrollable-element,
-.context-view .monaco-scrollable-element,
-.monaco-scrollable-element {
+.context-view .monaco-scrollable-element {
   outline: none !important;
   border: none !important;
   box-shadow: none !important;
@@ -3049,7 +3057,15 @@ span.keybinding {
 
 .editor-fill {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
+}
+
+/* 确保 Monaco 行号列与断点字形边距具有不透明背景与合适层级，横向滚动时绝对不被滑动代码遮挡或覆盖 */
+.monaco-editor .margin {
+  background-color: var(--bg-editor, #141414) !important;
+  z-index: 10 !important;
 }
 
 .image-preview-pane {

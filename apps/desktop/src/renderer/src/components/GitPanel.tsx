@@ -1282,6 +1282,12 @@ export function GitPanel({
   const moreMenuBtnRef = useRef<HTMLButtonElement>(null);
   const commitDropdownRef = useRef<HTMLDivElement>(null);
   const commitDropdownBtnRef = useRef<HTMLButtonElement>(null);
+  const graphScrollRef = useRef<HTMLDivElement>(null);
+  const [focusedHeadHash, setFocusedHeadHash] = useState<string | null>(null);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(true);
+  const [focusCurrentBranch, setFocusCurrentBranch] = useState(false);
+  const focusCurrentBranchRef = useRef(focusCurrentBranch);
+  focusCurrentBranchRef.current = focusCurrentBranch;
 
   const graphAnalysis = useMemo(() => analyzeGitGraph(commits), [commits]);
 
@@ -1625,43 +1631,52 @@ export function GitPanel({
     }
   };
 
-  const refresh = useCallback(async () => {
-    if (!workspaceInfo?.root) {
-      setStatus(null);
-      setBranches([]);
-      setCommits([]);
-      return;
-    }
-    const [st, br, hist, stashRes] = await Promise.all([
-      window.ide.gitStatus(),
-      window.ide.gitBranches(),
-      window.ide.gitHistory(),
-      window.ide.gitStash('list').catch(() => ({ ok: false, stashes: [] })),
-    ]);
+  const refresh = useCallback(
+    async (opts?: { focusBranch?: boolean }) => {
+      if (!workspaceInfo?.root) {
+        setStatus(null);
+        setBranches([]);
+        setCommits([]);
+        return;
+      }
+      const isFocus =
+        opts?.focusBranch !== undefined ? opts.focusBranch : focusCurrentBranchRef.current;
+      const [st, br, stashRes] = await Promise.all([
+        window.ide.gitStatus(),
+        window.ide.gitBranches(),
+        window.ide.gitStash('list').catch(() => ({ ok: false, stashes: [] })),
+      ]);
 
-    setStatus(st);
-    if (br.ok) {
-      setAllBranches(br.branches);
-      setBranches(br.branches.filter((b) => !b.remote));
-    } else {
-      setAllBranches([]);
-      setBranches([]);
-    }
+      setStatus(st);
+      if (br.ok) {
+        setAllBranches(br.branches);
+        setBranches(br.branches.filter((b) => !b.remote));
+      } else {
+        setAllBranches([]);
+        setBranches([]);
+      }
 
-    setHistoryResult(hist);
-    if (hist.ok) setCommits(hist.commits);
-    else setCommits([]);
+      const curBranch = st?.branch || 'HEAD';
+      const hist = await window.ide.gitHistory(
+        isFocus ? { all: false, branch: curBranch } : { all: true },
+      );
 
-    if (stashRes?.ok && stashRes.stashes) {
-      setStashes(stashRes.stashes);
-    } else {
-      setStashes([]);
-    }
+      setHistoryResult(hist);
+      if (hist.ok) setCommits(hist.commits);
+      else setCommits([]);
 
-    if (!st.ok && st.detail) setError(st.detail);
-    else if (!hist.ok && hist.detail && !hist.emptyRepo) setError(hist.detail);
-    else setError(null);
-  }, [workspaceInfo]);
+      if (stashRes?.ok && stashRes.stashes) {
+        setStashes(stashRes.stashes);
+      } else {
+        setStashes([]);
+      }
+
+      if (!st.ok && st.detail) setError(st.detail);
+      else if (!hist.ok && hist.detail && !hist.emptyRepo) setError(hist.detail);
+      else setError(null);
+    },
+    [workspaceInfo],
+  );
 
   const handleStashPush = useCallback(async () => {
     const msg = window.prompt(
@@ -1789,15 +1804,18 @@ export function GitPanel({
 
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), 8000);
+    let timer: ReturnType<typeof setInterval> | null = null;
+    if (autoSyncEnabled) {
+      timer = setInterval(() => void refresh(), 8000);
+    }
     const unbind = window.ide.onGitBranchSwitched?.(() => {
       void refresh();
     });
     return () => {
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
       unbind?.();
     };
-  }, [refresh, refreshNonce]);
+  }, [refresh, refreshNonce, autoSyncEnabled]);
 
   const runOp = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -3075,19 +3093,34 @@ export function GitPanel({
             <PanelChevron expanded={!isGraphCollapsed} size={11} color="var(--muted)" />
             <span style={{ color: 'var(--text)', fontWeight: 600 }}>图形</span>
             <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
-              ({commits.length})
+              ({commits.length}{focusCurrentBranch ? ` · ${status?.branch || '当前分支'}` : ''})
             </span>
           </div>
           <div
             style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* 自动状态指示 */}
+            {/* 自动同步状态开关 */}
             <button
               type="button"
-              className="panel-action-btn active"
-              title="自动同步状态 (点击立即刷新)"
-              onClick={() => void refresh()}
+              className={`panel-action-btn ${autoSyncEnabled ? 'active' : ''}`}
+              title={
+                autoSyncEnabled
+                  ? '自动同步已开启 (点击暂停自动同步)'
+                  : '自动同步已暂停 (点击开启自动同步)'
+              }
+              onClick={() => {
+                setAutoSyncEnabled((prev) => {
+                  const next = !prev;
+                  onShowToast?.(
+                    next ? '开启自动同步' : '已暂停自动同步',
+                    next ? '已开启后台 Git 状态自动轮询 (每 8 秒)' : '已暂停后台 Git 状态自动轮询',
+                    'info',
+                  );
+                  if (next) void refresh();
+                  return next;
+                });
+              }}
             >
               <svg
                 width="14"
@@ -3102,14 +3135,28 @@ export function GitPanel({
               </svg>
             </button>
 
-            {/* 聚焦 HEAD 图标 */}
+            {/* 聚焦当前分支 (仅显示当前分支提交记录) */}
             <button
               type="button"
               onClick={() => {
-                onShowToast?.('聚焦当前分支', `当前分支: ${status?.branch || 'HEAD'}`, 'info');
+                const next = !focusCurrentBranch;
+                setFocusCurrentBranch(next);
+                setIsGraphCollapsed(false);
+                void refresh({ focusBranch: next });
+                onShowToast?.(
+                  next ? '聚焦当前分支' : '显示全部分支',
+                  next
+                    ? `已过滤提交历史，仅显示当前分支 [${status?.branch || 'HEAD'}]`
+                    : '已恢复显示全部分支提交记录',
+                  'info',
+                );
               }}
-              title="聚焦当前分支"
-              className="panel-action-btn"
+              title={
+                focusCurrentBranch
+                  ? `已聚焦当前分支 [${status?.branch || 'HEAD'}] (点击显示全部分支)`
+                  : '聚焦当前分支 (仅显示当前分支提交)'
+              }
+              className={`panel-action-btn ${focusCurrentBranch ? 'active' : ''}`}
             >
               <svg
                 width="14"
@@ -3212,6 +3259,7 @@ export function GitPanel({
 
         {!isGraphCollapsed && (
           <div
+            ref={graphScrollRef}
             onScroll={() => {
               if (hoveredCommitInfo) setHoveredCommitInfo(null);
             }}
@@ -3244,12 +3292,14 @@ export function GitPanel({
                         cursor: 'pointer',
                         background: isSelected
                           ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))'
-                          : isHovered
-                            ? 'rgba(255, 255, 255, 0.04)'
-                            : 'transparent',
+                          : focusedHeadHash === c.hash
+                            ? 'rgba(99, 102, 241, 0.28)'
+                            : isHovered
+                              ? 'rgba(255, 255, 255, 0.04)'
+                              : 'transparent',
                         userSelect: 'none',
                         paddingRight: 10,
-                        transition: 'background 0.1s ease',
+                        transition: 'background 0.15s ease',
                       }}
                       className="search-result-item"
                     >

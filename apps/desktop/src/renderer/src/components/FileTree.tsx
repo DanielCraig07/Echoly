@@ -1164,7 +1164,7 @@ export type FileTreeHandle = {
   createFolder: () => void;
   collapseAll: () => void;
   expandAll: () => void;
-  locateActiveFile: () => void;
+  locateActiveFile: (targetPath?: string) => void;
 };
 
 interface Props extends FileTreeHandlers {
@@ -1290,12 +1290,13 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     expandAll: () => {
       setExpandKey((k) => k + 1);
     },
-    locateActiveFile: () => {
-      if (!activePath || activePath === '.') return;
-      const rel = normalizePathToRel(activePath, workspace) || activePath;
+    locateActiveFile: (targetPath?: string) => {
+      const p = targetPath || activePath;
+      if (!p || p === '.') return;
+      const rel = normalizePathToRel(p, workspace) || p;
       setExpandPath(rel);
       setLocateKey((k) => k + 1);
-      onSelectNode?.({ path: activePath, isDirectory: false });
+      onSelectNode?.({ path: p, isDirectory: false });
     },
   }));
 

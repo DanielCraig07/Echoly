@@ -4574,7 +4574,10 @@ export function App() {
                   onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
                   onRevealInExplorer={(p) => {
                     setLeftPanel('explorer');
-                    setActivePath(p);
+                    void openFile(p);
+                    setTimeout(() => {
+                      fileTreeRef.current?.locateActiveFile(p);
+                    }, 60);
                   }}
                   onBranchSwitched={handleBranchSwitchSync}
                   onOpenCloneModal={() => setCloneOpen(true)}

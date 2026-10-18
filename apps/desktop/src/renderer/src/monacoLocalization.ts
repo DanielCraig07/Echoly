@@ -1,6 +1,8 @@
 // @ts-expect-error internal monaco private module
 import { ActionViewItem } from 'monaco-editor/esm/vs/base/browser/ui/actionbar/actionViewItems.js';
 // @ts-expect-error internal monaco private module
+import { ContextView } from 'monaco-editor/esm/vs/base/browser/ui/contextview/contextview.js';
+// @ts-expect-error internal monaco private module
 import { Menu } from 'monaco-editor/esm/vs/base/browser/ui/menu/menu.js';
 // @ts-expect-error internal monaco private module
 import { QuickInputTree } from 'monaco-editor/esm/vs/platform/quickinput/browser/quickInputTree.js';
@@ -180,6 +182,7 @@ export const MONACO_MENU_FIX_CSS = `
     text-align: left !important;
     width: auto !important;
     min-width: 270px !important;
+    z-index: 100000 !important;
     background: #141414 !important;
     background-color: #141414 !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -204,7 +207,7 @@ export const MONACO_MENU_FIX_CSS = `
   div.monaco-submenu,
   .monaco-submenu.monaco-menu-container {
     position: fixed !important;
-    z-index: 10000 !important;
+    z-index: 100001 !important;
     overflow: visible !important;
     min-width: 190px !important;
     width: auto !important;
@@ -215,6 +218,14 @@ export const MONACO_MENU_FIX_CSS = `
     padding: 4px !important;
     box-shadow: 0 18px 42px -4px rgba(0, 0, 0, 0.8), 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
     box-sizing: border-box !important;
+  }
+
+  /* 当 Monaco 菜单激活时，确保中间列层级高于右侧 AI 面板，绝不被遮挡 */
+  .middle-column:has(.context-view:not([style*="display: none"])),
+  .middle-column:has(.monaco-menu-container:not([style*="display: none"])),
+  .middle-column:has(.monaco-submenu),
+  body.monaco-context-menu-active .middle-column {
+    z-index: 100 !important;
   }
 
   /* 彻底消除子菜单销毁后残留的空外框伪影 */
@@ -830,6 +841,35 @@ export function setupMonacoChineseLocalization() {
       } catch (err) {}
     };
 
+    const origCalculateSubmenu = menuProto.calculateSubmenuMenuLayout;
+    if (origCalculateSubmenu) {
+      menuProto.calculateSubmenuMenuLayout = function (
+        windowDimensions: any,
+        submenu: any,
+        entry: any,
+        expandDirection: any
+      ) {
+        let effectiveWidth = windowDimensions.width;
+        try {
+          const editorEl =
+            this.menuElement?.closest?.('.monaco-editor') ||
+            document.querySelector('.middle-column');
+          if (editorEl) {
+            const rect = editorEl.getBoundingClientRect();
+            if (rect.right > 0 && rect.right < effectiveWidth) {
+              effectiveWidth = rect.right;
+            }
+          }
+        } catch (e) {}
+
+        const customWindowDimensions = {
+          ...windowDimensions,
+          width: effectiveWidth,
+        };
+        return origCalculateSubmenu.call(this, customWindowDimensions, submenu, entry, expandDirection);
+      };
+    }
+
     const origDoGetActionViewItem = menuProto.doGetActionViewItem;
     menuProto.doGetActionViewItem = function (action: any, options: any, parentData: any) {
       if (parentData) {
@@ -926,6 +966,23 @@ export function setupMonacoChineseLocalization() {
                   }, 220);
                 });
               }
+
+              // 校准子菜单水平位置：若子菜单超出编辑器右边界，向左展开
+              if (this.submenuContainer) {
+                const subRect = this.submenuContainer.getBoundingClientRect();
+                const parentRect = this.element?.getBoundingClientRect();
+                const editorEl = this.element?.closest?.('.monaco-editor') || document.querySelector('.middle-column');
+                const editorRect = editorEl?.getBoundingClientRect();
+                const maxRight = (editorRect && editorRect.right > 0 && editorRect.right < (typeof window !== 'undefined' ? window.innerWidth : 1920))
+                  ? editorRect.right
+                  : (typeof window !== 'undefined' ? window.innerWidth : 1920);
+                if (subRect.right > maxRight - 4 && parentRect) {
+                  const targetLeft = parentRect.left - subRect.width;
+                  const deltaX = targetLeft - subRect.left;
+                  const curLeft = parseFloat(this.submenuContainer.style.left) || 0;
+                  this.submenuContainer.style.left = `${curLeft + deltaX}px`;
+                }
+              }
             } catch (err) {}
           };
         }
@@ -968,10 +1025,120 @@ export function setupMonacoChineseLocalization() {
       return item;
     };
   } catch (e) {
-    console.warn('Failed to patch Menu.prototype.doGetActionViewItem:', e);
+    console.warn('Failed to patch Menu:', e);
   }
 
-  // 4. 全局拦截 Element.prototype.attachShadow：给任意 Monaco Shadow DOM 注入穿透样式
+  // 4. Monkey-patch ContextView 原型：智能边缘碰撞检测与翻转，绝对防止菜单被右侧 AI 对话面板遮挡
+  try {
+    const cvProto = ContextView.prototype as any;
+    const origShow = cvProto.show;
+    cvProto.show = function (delegate: any) {
+      if (typeof document !== 'undefined') {
+        document.body.classList.add('monaco-context-menu-active');
+      }
+      return origShow.call(this, delegate);
+    };
+
+    const origHide = cvProto.hide;
+    cvProto.hide = function (data: any) {
+      if (typeof document !== 'undefined') {
+        document.body.classList.remove('monaco-context-menu-active');
+      }
+      return origHide.call(this, data);
+    };
+
+    const origDoLayout = cvProto.doLayout;
+    cvProto.doLayout = function () {
+      origDoLayout.call(this);
+      if (!this.isVisible() || !this.view) {
+        return;
+      }
+      try {
+        const menuRect = this.view.getBoundingClientRect();
+        const menuWidth = menuRect.width || Math.max(270, this.view.offsetWidth || 0);
+        const menuHeight = menuRect.height || this.view.offsetHeight || 0;
+
+        // 查找包含此 ContextView 的编辑器或中间列边界
+        const container = this.container || this.view.parentElement;
+        const editorDom =
+          container?.closest?.('.monaco-editor') ||
+          container?.closest?.('.middle-column') ||
+          document.querySelector('.middle-column') ||
+          container;
+        const editorRect = editorDom?.getBoundingClientRect?.();
+
+        const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1920;
+        const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 1080;
+
+        // 右边界以编辑器可视右边界为主（若存在且小于窗口宽度，如右侧有 AI 对话面板），避免溢出被 AI 面板截断
+        const boundaryRight =
+          editorRect && editorRect.right > 0 && editorRect.right < windowWidth
+            ? editorRect.right
+            : windowWidth;
+        const boundaryLeft = editorRect && editorRect.left >= 0 ? editorRect.left : 0;
+
+        // 获取鼠标右键触发时的绝对锚点坐标
+        let anchorX = menuRect.left;
+        let anchorY = menuRect.top;
+        if (this.delegate && typeof this.delegate.getAnchor === 'function') {
+          const a = this.delegate.getAnchor();
+          if (a) {
+            if (typeof a.x === 'number') anchorX = a.x;
+            else if (typeof a.posx === 'number') anchorX = a.posx;
+            else if (a instanceof HTMLElement) {
+              const r = a.getBoundingClientRect();
+              anchorX = r.left;
+              anchorY = r.top;
+            }
+            if (typeof a.y === 'number') anchorY = a.y;
+            else if (typeof a.posy === 'number') anchorY = a.posy;
+          }
+        }
+
+        // 1. 水平位置校准：若菜单右边缘超越了编辑器右侧分界线（避免被右侧 AI 区域覆盖）
+        if (menuRect.right > boundaryRight - 4) {
+          let targetLeft: number;
+          const flippedLeft = anchorX - menuWidth;
+          if (flippedLeft >= boundaryLeft) {
+            // 翻转至光标左侧
+            targetLeft = flippedLeft;
+          } else {
+            // 若左侧空间也不足，紧贴右边界往左排
+            targetLeft = Math.max(boundaryLeft + 4, boundaryRight - menuWidth - 4);
+          }
+          const deltaX = targetLeft - menuRect.left;
+          const currentStyleLeft = parseFloat(this.view.style.left) || 0;
+          this.view.style.left = `${currentStyleLeft + deltaX}px`;
+        }
+
+        // 2. 垂直位置校准：若编辑器下方有终端面板且菜单底部溢出到底部面板
+        const boundaryBottom =
+          editorRect && editorRect.bottom > 0 && editorRect.bottom < windowHeight
+            ? editorRect.bottom
+            : windowHeight;
+        const currentMenuRectAfter = this.view.getBoundingClientRect();
+        if (currentMenuRectAfter.bottom > boundaryBottom - 4) {
+          const flippedTop = anchorY - menuHeight;
+          const boundaryTop = editorRect && editorRect.top >= 0 ? editorRect.top : 0;
+          let targetTop: number;
+          if (flippedTop >= boundaryTop) {
+            targetTop = flippedTop;
+          } else {
+            targetTop = Math.max(boundaryTop + 4, boundaryBottom - menuHeight - 4);
+          }
+          const deltaY = targetTop - currentMenuRectAfter.top;
+          const currentStyleTop = parseFloat(this.view.style.top) || 0;
+          this.view.style.top = `${currentStyleTop + deltaY}px`;
+        }
+      } catch (err) {
+        console.warn('ContextView doLayout boundary adjustment error:', err);
+      }
+    };
+  } catch (e) {
+    console.warn('Failed to patch ContextView:', e);
+  }
+
+  // 5. 全局拦截 Element.prototype.attachShadow：给任意 Monaco Shadow DOM 注入穿透样式
   if (typeof Element !== 'undefined' && Element.prototype.attachShadow) {
     try {
       const origAttachShadow = Element.prototype.attachShadow;
