@@ -162,14 +162,34 @@ function toRel(root: string, abs: string): string {
   return absN;
 }
 
+/**
+ * 带有严格时限的 Promise 包装器，避免底层网络抖动/挂起时 Promise 永久 pending 导致界面卡死
+ */
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, opName: string): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`[ssh-timeout] ${opName} 超时 (${timeoutMs}ms)`));
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 export class SftpBackend implements WorkspaceBackend {
   readonly kind = 'ssh' as const;
+  private dirCache = new Map<string, { entries: DirEntry[]; expireAt: number }>();
 
   constructor(
     public root: string,
     private readonly client: Client,
     private readonly sftp: SFTPWrapper,
   ) {}
+
+  clearDirCache(): void {
+    this.dirCache.clear();
+  }
 
   resolve(relPath = '.'): string {
     return posixJoin(this.root, relPath);
@@ -181,7 +201,12 @@ export class SftpBackend implements WorkspaceBackend {
 
   async listDir(relPath = '.'): Promise<DirEntry[]> {
     const abs = this.resolve(relPath);
-    return await new Promise((resolve, reject) => {
+    const cached = this.dirCache.get(abs);
+    if (cached && cached.expireAt > Date.now()) {
+      return cached.entries;
+    }
+
+    const op = new Promise<DirEntry[]>((resolve, reject) => {
       this.sftp.readdir(abs, async (err, list) => {
         if (err) {
           const isNotFound = (err as any).code === 2 || err.message?.includes('No such file');
@@ -217,54 +242,61 @@ export class SftpBackend implements WorkspaceBackend {
             };
           }),
         );
+        this.dirCache.set(abs, { entries, expireAt: Date.now() + 2000 });
         resolve(entries);
       });
     });
+
+    return await withTimeout(op, 8000, `listDir(${relPath})`);
   }
 
   async readFile(relPath: string): Promise<string> {
     const abs = this.resolve(relPath);
-    // 先检查文件大小
-    const stat = await new Promise<{ size: number }>((resolve, reject) => {
-      this.sftp.stat(abs, (err, stats) => {
-        if (err) {
-          const isNotFound = (err as any).code === 2 || err.message?.includes('No such file');
-          reject(new Error(isNotFound ? `文件不存在: ${relPath}` : `无法获取文件信息: ${err.message}`));
-        } else {
-          resolve(stats);
+    const op = (async () => {
+      // 先检查文件大小
+      const stat = await new Promise<{ size: number }>((resolve, reject) => {
+        this.sftp.stat(abs, (err, stats) => {
+          if (err) {
+            const isNotFound = (err as any).code === 2 || err.message?.includes('No such file');
+            reject(new Error(isNotFound ? `文件不存在: ${relPath}` : `无法获取文件信息: ${err.message}`));
+          } else {
+            resolve(stats);
+          }
+        });
+      });
+      const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+      if (stat.size > MAX_SIZE) {
+        throw new Error(
+          `SSH 文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB > 10MB): ${relPath}`,
+        );
+      }
+
+      return await new Promise<string>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        let totalSize = 0;
+        try {
+          const stream = this.sftp.createReadStream(abs);
+          stream.on('data', (d: Buffer) => {
+            totalSize += d.length;
+            if (totalSize > MAX_SIZE) {
+              stream.destroy();
+              reject(new Error(`读取中断：文件超过 10MB (${relPath})`));
+              return;
+            }
+            chunks.push(d);
+          });
+          stream.on('error', (err: any) => {
+            const errMsg = err?.message || err?.code || String(err) || '未知错误';
+            reject(new Error(`读取远程文件失败 (${relPath}): ${errMsg}`));
+          });
+          stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        } catch (err) {
+          reject(new Error(`读取远程文件异常: ${err instanceof Error ? err.message : String(err)}`));
         }
       });
-    });
-    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-    if (stat.size > MAX_SIZE) {
-      throw new Error(
-        `SSH 文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB > 10MB): ${relPath}`,
-      );
-    }
+    })();
 
-    return await new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      let totalSize = 0;
-      try {
-        const stream = this.sftp.createReadStream(abs);
-        stream.on('data', (d: Buffer) => {
-          totalSize += d.length;
-          if (totalSize > MAX_SIZE) {
-            stream.destroy();
-            reject(new Error(`读取中断：文件超过 10MB (${relPath})`));
-            return;
-          }
-          chunks.push(d);
-        });
-        stream.on('error', (err: any) => {
-          const errMsg = err?.message || err?.code || String(err) || '未知错误';
-          reject(new Error(`读取远程文件失败 (${relPath}): ${errMsg}`));
-        });
-        stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-      } catch (err) {
-        reject(new Error(`读取远程文件异常: ${err instanceof Error ? err.message : String(err)}`));
-      }
-    });
+    return await withTimeout(op, 15000, `readFile(${relPath})`);
   }
 
   async readFileLines(
@@ -287,83 +319,92 @@ export class SftpBackend implements WorkspaceBackend {
 
   async readFileBuffer(relPath: string): Promise<Buffer> {
     const abs = this.resolve(relPath);
-    // 检查文件大小
-    const stat = await new Promise<{ size: number }>((resolve, reject) => {
-      this.sftp.stat(abs, (err, stats) => {
-        if (err) reject(new Error(`无法获取文件信息: ${err.message}`));
-        else resolve(stats);
+    const op = (async () => {
+      // 检查文件大小
+      const stat = await new Promise<{ size: number }>((resolve, reject) => {
+        this.sftp.stat(abs, (err, stats) => {
+          if (err) reject(new Error(`无法获取文件信息: ${err.message}`));
+          else resolve(stats);
+        });
       });
-    });
-    const MAX_SIZE = 50 * 1024 * 1024; // 50MB
-    if (stat.size > MAX_SIZE) {
-      throw new Error(
-        `SSH 文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB): ${relPath}`,
-      );
-    }
-
-    return await new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      let totalSize = 0;
-      try {
-        const stream = this.sftp.createReadStream(abs);
-        stream.on('data', (d: Buffer) => {
-          totalSize += d.length;
-          if (totalSize > MAX_SIZE) {
-            stream.destroy();
-            reject(new Error(`读取中断：文件超过 50MB (${relPath})`));
-            return;
-          }
-          chunks.push(d);
-        });
-        stream.on('error', (err: any) => {
-          const errMsg = err?.message || err?.code || String(err) || '未知错误';
-          reject(new Error(`读取远程文件失败 (${relPath}): ${errMsg}`));
-        });
-        stream.on('end', () => resolve(Buffer.concat(chunks)));
-      } catch (err) {
-        reject(new Error(`读取远程文件异常: ${err instanceof Error ? err.message : String(err)}`));
+      const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+      if (stat.size > MAX_SIZE) {
+        throw new Error(
+          `SSH 文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB): ${relPath}`,
+        );
       }
-    });
+
+      return await new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        let totalSize = 0;
+        try {
+          const stream = this.sftp.createReadStream(abs);
+          stream.on('data', (d: Buffer) => {
+            totalSize += d.length;
+            if (totalSize > MAX_SIZE) {
+              stream.destroy();
+              reject(new Error(`读取中断：文件超过 50MB (${relPath})`));
+              return;
+            }
+            chunks.push(d);
+          });
+          stream.on('error', (err: any) => {
+            const errMsg = err?.message || err?.code || String(err) || '未知错误';
+            reject(new Error(`读取远程文件失败 (${relPath}): ${errMsg}`));
+          });
+          stream.on('end', () => resolve(Buffer.concat(chunks)));
+        } catch (err) {
+          reject(new Error(`读取远程文件异常: ${err instanceof Error ? err.message : String(err)}`));
+        }
+      });
+    })();
+
+    return await withTimeout(op, 20000, `readFileBuffer(${relPath})`);
   }
 
   async writeFile(relPath: string, content: string): Promise<void> {
+    this.dirCache.clear();
     const abs = this.resolve(relPath);
-    const dir = abs.includes('/') ? abs.slice(0, abs.lastIndexOf('/')) || '/' : '/';
-    await this.mkdirp(dir);
+    const op = (async () => {
+      const dir = abs.includes('/') ? abs.slice(0, abs.lastIndexOf('/')) || '/' : '/';
+      await this.mkdirp(dir);
 
-    // 1. 获取原文件权限位（若存在）
-    let origMode: number | undefined;
-    try {
-      const stats = await new Promise<any>((resolve, reject) => {
-        this.sftp.stat(abs, (err, st) => (err ? reject(err) : resolve(st)));
-      });
-      if (stats && typeof stats.mode === 'number') {
-        origMode = stats.mode & 0o7777;
-      }
-    } catch {
-      // 原文件不存在，保持 undefined
-    }
-
-    const targetMode = origMode !== undefined ? origMode : 0o644;
-
-    await new Promise<void>((resolve, reject) => {
-      // 显式指定 mode，避免 ssh2 默认使用 0o666 并执行 fchmod(handle, 0o666)
-      const stream = this.sftp.createWriteStream(abs, { mode: targetMode });
-      stream.on('error', reject);
-      stream.on('close', () => resolve());
-      stream.end(content, 'utf8');
-    });
-
-    // 某些 SFTP 服务端写入后可能受 umask 影响，显式 chmod 确保保留原有权限位
-    if (origMode !== undefined) {
+      // 1. 获取原文件权限位（若存在）
+      let origMode: number | undefined;
       try {
-        await new Promise<void>((resolve) => {
-          this.sftp.chmod(abs, origMode, () => resolve());
+        const stats = await new Promise<any>((resolve, reject) => {
+          this.sftp.stat(abs, (err, st) => (err ? reject(err) : resolve(st)));
         });
+        if (stats && typeof stats.mode === 'number') {
+          origMode = stats.mode & 0o7777;
+        }
       } catch {
-        // 忽略可能由于所有权导致的 chmod 报错
+        // 原文件不存在，保持 undefined
       }
-    }
+
+      const targetMode = origMode !== undefined ? origMode : 0o644;
+
+      await new Promise<void>((resolve, reject) => {
+        // 显式指定 mode，避免 ssh2 默认使用 0o666 并执行 fchmod(handle, 0o666)
+        const stream = this.sftp.createWriteStream(abs, { mode: targetMode });
+        stream.on('error', reject);
+        stream.on('close', () => resolve());
+        stream.end(content, 'utf8');
+      });
+
+      // 某些 SFTP 服务端写入后可能受 umask 影响，显式 chmod 确保保留原有权限位
+      if (origMode !== undefined) {
+        try {
+          await new Promise<void>((resolve) => {
+            this.sftp.chmod(abs, origMode, () => resolve());
+          });
+        } catch {
+          // 忽略可能由于所有权导致的 chmod 报错
+        }
+      }
+    })();
+
+    await withTimeout(op, 15000, `writeFile(${relPath})`);
   }
 
   resolveAbsolute(relPath = '.'): string {
@@ -371,46 +412,54 @@ export class SftpBackend implements WorkspaceBackend {
   }
 
   async mkdir(relPath: string): Promise<void> {
-    await this.mkdirp(this.resolve(relPath));
+    this.dirCache.clear();
+    await withTimeout(this.mkdirp(this.resolve(relPath)), 10000, `mkdir(${relPath})`);
   }
 
   async exists(relPath: string): Promise<boolean> {
     if (!this.sftp) return false;
     try {
       const abs = this.resolve(relPath);
-      return await new Promise((resolve) => {
+      const op = new Promise<boolean>((resolve) => {
         this.sftp.stat(abs, (err) => resolve(!err));
       });
+      return await withTimeout(op, 6000, `exists(${relPath})`);
     } catch {
       return false;
     }
   }
 
   async rename(fromRel: string, toRel: string): Promise<void> {
+    this.dirCache.clear();
     const from = this.resolve(fromRel);
     const to = this.resolve(toRel);
     const dir = to.includes('/') ? to.slice(0, to.lastIndexOf('/')) || '/' : '/';
     await this.mkdirp(dir);
-    await new Promise<void>((resolve, reject) => {
+    const op = new Promise<void>((resolve, reject) => {
       this.sftp.rename(from, to, (err) => (err ? reject(err) : resolve()));
     });
+    await withTimeout(op, 10000, `rename(${fromRel} -> ${toRel})`);
   }
 
   async remove(relPath: string): Promise<void> {
+    this.dirCache.clear();
     const abs = this.resolve(relPath);
-    const isDir = await new Promise<boolean>((resolve, reject) => {
-      this.sftp.stat(abs, (err, stats) => {
-        if (err) return reject(err);
-        resolve((stats.mode & 0o170000) === 0o040000);
+    const op = (async () => {
+      const isDir = await new Promise<boolean>((resolve, reject) => {
+        this.sftp.stat(abs, (err, stats) => {
+          if (err) return reject(err);
+          resolve((stats.mode & 0o170000) === 0o040000);
+        });
       });
-    });
-    if (isDir) {
-      await this.removeDirRecursive(abs);
-    } else {
-      await new Promise<void>((resolve, reject) => {
-        this.sftp.unlink(abs, (err) => (err ? reject(err) : resolve()));
-      });
-    }
+      if (isDir) {
+        await this.removeDirRecursive(abs);
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          this.sftp.unlink(abs, (err) => (err ? reject(err) : resolve()));
+        });
+      }
+    })();
+    await withTimeout(op, 15000, `remove(${relPath})`);
   }
 
   private async removeDirRecursive(abs: string): Promise<void> {
@@ -443,19 +492,23 @@ export class SftpBackend implements WorkspaceBackend {
   }
 
   async copy(fromRel: string, toRel: string): Promise<void> {
+    this.dirCache.clear();
     const from = this.resolve(fromRel);
     const to = this.resolve(toRel);
-    const isDir = await new Promise<boolean>((resolve, reject) => {
-      this.sftp.stat(from, (err, stats) => {
-        if (err) return reject(err);
-        resolve((stats.mode & 0o170000) === 0o040000);
+    const op = (async () => {
+      const isDir = await new Promise<boolean>((resolve, reject) => {
+        this.sftp.stat(from, (err, stats) => {
+          if (err) return reject(err);
+          resolve((stats.mode & 0o170000) === 0o040000);
+        });
       });
-    });
-    if (isDir) {
-      await this.copyDirRecursive(from, to);
-    } else {
-      await this.copyFile(from, to);
-    }
+      if (isDir) {
+        await this.copyDirRecursive(from, to);
+      } else {
+        await this.copyFile(from, to);
+      }
+    })();
+    await withTimeout(op, 30000, `copy(${fromRel} -> ${toRel})`);
   }
 
   private async copyFile(fromAbs: string, toAbs: string): Promise<void> {
@@ -541,7 +594,9 @@ export class SftpBackend implements WorkspaceBackend {
     for (const p of parts) {
       cur += `/${p}`;
       await new Promise<void>((resolve) => {
+        const t = setTimeout(() => resolve(), 5000);
         this.sftp.mkdir(cur, { mode: 0o755 }, (err) => {
+          clearTimeout(t);
           // ignore exists
           void err;
           resolve();
@@ -552,37 +607,68 @@ export class SftpBackend implements WorkspaceBackend {
 
   async runCommand(
     command: string,
-    timeoutMs = 60_000,
+    timeoutMs = 15_000,
     onChunk?: (chunk: string, stream: 'stdout' | 'stderr') => void,
   ): Promise<CommandResult> {
     return await new Promise((resolve) => {
-      const wrapped = `cd ${shellQuote(this.root)} && ${command}`;
-      this.client.exec(wrapped, (err, stream) => {
-        if (err) {
-          resolve({ stdout: '', stderr: err.message, code: 1 });
-          return;
+      let settled = false;
+      let timer: NodeJS.Timeout | null = null;
+      let childStream: any = null;
+
+      const finish = (res: CommandResult) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        if (childStream) {
+          try {
+            childStream.close();
+          } catch {}
         }
-        let stdout = '';
-        let stderr = '';
-        const timer = setTimeout(() => {
-          stream.close();
-          resolve({ stdout, stderr: stderr || `timed out after ${timeoutMs}ms`, code: 124 });
-        }, timeoutMs);
-        stream.on('data', (d: Buffer) => {
-          const chunk = d.toString('utf8');
-          stdout += chunk;
-          onChunk?.(chunk, 'stdout');
+        resolve(res);
+      };
+
+      // 外层熔断守护，防止 channel open 握手丢包挂起
+      timer = setTimeout(() => {
+        finish({
+          stdout: '',
+          stderr: `[ssh-timeout] 命令执行超时 (${timeoutMs}ms): ${command.slice(0, 40)}`,
+          code: 124,
         });
-        stream.stderr.on('data', (d: Buffer) => {
-          const chunk = d.toString('utf8');
-          stderr += chunk;
-          onChunk?.(chunk, 'stderr');
+      }, timeoutMs);
+
+      const wrapped = `cd ${shellQuote(this.root)} && ${command}`;
+      try {
+        this.client.exec(wrapped, (err, stream) => {
+          if (err) {
+            finish({ stdout: '', stderr: err.message, code: 1 });
+            return;
+          }
+          if (settled) {
+            try {
+              stream.close();
+            } catch {}
+            return;
+          }
+          childStream = stream;
+          let stdout = '';
+          let stderr = '';
+          stream.on('data', (d: Buffer) => {
+            const chunk = d.toString('utf8');
+            stdout += chunk;
+            onChunk?.(chunk, 'stdout');
+          });
+          stream.stderr.on('data', (d: Buffer) => {
+            const chunk = d.toString('utf8');
+            stderr += chunk;
+            onChunk?.(chunk, 'stderr');
+          });
+          stream.on('close', (code: number | null) => {
+            finish({ stdout, stderr, code: code ?? 0 });
+          });
         });
-        stream.on('close', (code: number | null) => {
-          clearTimeout(timer);
-          resolve({ stdout, stderr, code: code ?? 0 });
-        });
-      });
+      } catch (err: any) {
+        finish({ stdout: '', stderr: err?.message || String(err), code: 1 });
+      }
     });
   }
 }
@@ -1186,9 +1272,9 @@ export class SshSessionManager {
       privateKey,
       passphrase: req.passphrase,
       agent: agentSocket,
-      readyTimeout: 20000,
-      keepaliveInterval: 5000,
-      keepaliveCountMax: 3,
+      readyTimeout: 15000,
+      keepaliveInterval: 3000,
+      keepaliveCountMax: 2,
     };
 
     electronLog.info(
@@ -1203,6 +1289,11 @@ export class SshSessionManager {
           client
             .on('ready', () => resolve())
             .on('error', reject)
+            .on('connect', () => {
+              try {
+                (client as any)._sock?.setNoDelay(true);
+              } catch {}
+            })
             .connect(baseConnectConfig);
         });
       } catch (firstErr) {
@@ -1480,7 +1571,7 @@ export class SshSessionManager {
 
   async runCommand(
     command: string,
-    timeoutMs = 60_000,
+    timeoutMs = 15_000,
     onChunk?: (chunk: string, stream: 'stdout' | 'stderr') => void,
   ): Promise<CommandResult> {
     const live = this.liveForCurrent();
@@ -1489,41 +1580,72 @@ export class SshSessionManager {
     }
     const root = live.workspace.getRoot() || '.';
     return await new Promise((resolve) => {
-      const wrapped = `cd ${shellQuote(root)} && ${command}`;
-      live.client.exec(wrapped, (err, stream) => {
-        if (err) {
-          if (
-            err.message.includes('not open') ||
-            err.message.includes('closed') ||
-            err.message.includes('ended')
-          ) {
-            const wId = live.webContentsId;
-            if (wId >= 0) this.live.delete(wId);
-          }
-          resolve({ stdout: '', stderr: err.message, code: 1 });
-          return;
+      let settled = false;
+      let timer: NodeJS.Timeout | null = null;
+      let childStream: any = null;
+
+      const finish = (res: CommandResult) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        if (childStream) {
+          try {
+            childStream.close();
+          } catch {}
         }
-        let stdout = '';
-        let stderr = '';
-        const timer = setTimeout(() => {
-          stream.close();
-          resolve({ stdout, stderr: stderr || `timed out after ${timeoutMs}ms`, code: 124 });
-        }, timeoutMs);
-        stream.on('data', (d: Buffer) => {
-          const chunk = d.toString('utf8');
-          stdout += chunk;
-          onChunk?.(chunk, 'stdout');
+        resolve(res);
+      };
+
+      // 外层熔断守护，防止 channel open 握手因丢包挂起导致无回调
+      timer = setTimeout(() => {
+        finish({
+          stdout: '',
+          stderr: `[ssh-timeout] 命令执行超时 (${timeoutMs}ms): ${command.slice(0, 40)}`,
+          code: 124,
         });
-        stream.stderr.on('data', (d: Buffer) => {
-          const chunk = d.toString('utf8');
-          stderr += chunk;
-          onChunk?.(chunk, 'stderr');
+      }, timeoutMs);
+
+      const wrapped = `cd ${shellQuote(root)} && ${command}`;
+      try {
+        live.client.exec(wrapped, (err, stream) => {
+          if (err) {
+            if (
+              err.message.includes('not open') ||
+              err.message.includes('closed') ||
+              err.message.includes('ended')
+            ) {
+              const wId = live.webContentsId;
+              if (wId >= 0) this.live.delete(wId);
+            }
+            finish({ stdout: '', stderr: err.message, code: 1 });
+            return;
+          }
+          if (settled) {
+            try {
+              stream.close();
+            } catch {}
+            return;
+          }
+          childStream = stream;
+          let stdout = '';
+          let stderr = '';
+          stream.on('data', (d: Buffer) => {
+            const chunk = d.toString('utf8');
+            stdout += chunk;
+            onChunk?.(chunk, 'stdout');
+          });
+          stream.stderr.on('data', (d: Buffer) => {
+            const chunk = d.toString('utf8');
+            stderr += chunk;
+            onChunk?.(chunk, 'stderr');
+          });
+          stream.on('close', (code: number | null) => {
+            finish({ stdout, stderr, code: code ?? 0 });
+          });
         });
-        stream.on('close', (code: number | null) => {
-          clearTimeout(timer);
-          resolve({ stdout, stderr, code: code ?? 0 });
-        });
-      });
+      } catch (err: any) {
+        finish({ stdout: '', stderr: err?.message || String(err), code: 1 });
+      }
     });
   }
 
