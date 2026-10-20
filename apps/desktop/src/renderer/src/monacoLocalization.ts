@@ -176,6 +176,12 @@ export function applyBadgeStyle(kbEl: HTMLElement, isHovered = false) {
  * Monaco 右键菜单绝对左对齐与对齐图 2（.ctx-item）现代化纯净样式的核心 CSS 规则
  */
 export const MONACO_MENU_FIX_CSS = `
+  /* 确保 ContextView 外层容器始终具有全局最高层级且允许内容溢出 */
+  .context-view {
+    z-index: 100000 !important;
+    overflow: visible !important;
+  }
+
   /* 强制外层容器撑满且对齐文件右键菜单面板卡片样式（唯一边框与外阴影），加宽整体宽度 */
   .context-view.monaco-menu-container,
   .monaco-menu-container {
@@ -1028,13 +1034,27 @@ export function setupMonacoChineseLocalization() {
     console.warn('Failed to patch Menu:', e);
   }
 
-  // 4. Monkey-patch ContextView 原型：智能边缘碰撞检测与翻转，绝对防止菜单被右侧 AI 对话面板遮挡
+  // 4. Monkey-patch ContextView 原型：智能边缘碰撞检测与翻转，挂载至 document.body 彻底防止被终端面板遮挡与裁剪
   try {
     const cvProto = ContextView.prototype as any;
+
+    const origSetContainer = cvProto.setContainer;
+    cvProto.setContainer = function (container: any, domPosition: any) {
+      // 始终将 ContextView 挂载在 document.body，彻底逃脱 .editor-area/.editor-fill 等祖先容器的 overflow: hidden 裁剪，
+      // 并以全局最高 z-index 浮动在所有面板之上，绝不被底部的终端面板、调试控制台等遮挡
+      const targetContainer = container && typeof document !== 'undefined' ? document.body : container;
+      return origSetContainer.call(this, targetContainer, domPosition);
+    };
+
     const origShow = cvProto.show;
     cvProto.show = function (delegate: any) {
       if (typeof document !== 'undefined') {
         document.body.classList.add('monaco-context-menu-active');
+        if (this.container !== document.body) {
+          try {
+            this.setContainer(document.body, 1);
+          } catch (e) {}
+        }
       }
       return origShow.call(this, delegate);
     };
@@ -1058,24 +1078,15 @@ export function setupMonacoChineseLocalization() {
         const menuWidth = menuRect.width || Math.max(270, this.view.offsetWidth || 0);
         const menuHeight = menuRect.height || this.view.offsetHeight || 0;
 
-        // 查找包含此 ContextView 的编辑器或中间列边界
-        const container = this.container || this.view.parentElement;
+        // 获取编辑器内容区域及边界（精确使用 .editor-fill 或 .editor-area，绝不包含下方的终端面板）
         const editorDom =
-          container?.closest?.('.monaco-editor') ||
-          container?.closest?.('.middle-column') ||
-          document.querySelector('.middle-column') ||
-          container;
+          document.querySelector('.monaco-editor.focused') ||
+          document.querySelector('.editor-fill') ||
+          document.querySelector('.editor-area');
         const editorRect = editorDom?.getBoundingClientRect?.();
 
         const windowWidth = typeof window !== 'undefined' ? window.innerWidth : 1920;
         const windowHeight = typeof window !== 'undefined' ? window.innerHeight : 1080;
-
-        // 右边界以编辑器可视右边界为主（若存在且小于窗口宽度，如右侧有 AI 对话面板），避免溢出被 AI 面板截断
-        const boundaryRight =
-          editorRect && editorRect.right > 0 && editorRect.right < windowWidth
-            ? editorRect.right
-            : windowWidth;
-        const boundaryLeft = editorRect && editorRect.left >= 0 ? editorRect.left : 0;
 
         // 获取鼠标右键触发时的绝对锚点坐标
         let anchorX = menuRect.left;
@@ -1096,37 +1107,50 @@ export function setupMonacoChineseLocalization() {
         }
 
         // 1. 水平位置校准：若菜单右边缘超越了编辑器右侧分界线（避免被右侧 AI 区域覆盖）
-        if (menuRect.right > boundaryRight - 4) {
+        const boundaryRight =
+          editorRect && editorRect.right > 0 && editorRect.right < windowWidth
+            ? editorRect.right
+            : windowWidth;
+        const boundaryLeft = editorRect && editorRect.left >= 0 ? editorRect.left : 0;
+
+        const currentMenuRect = this.view.getBoundingClientRect();
+        if (currentMenuRect.right > boundaryRight - 4) {
           let targetLeft: number;
           const flippedLeft = anchorX - menuWidth;
           if (flippedLeft >= boundaryLeft) {
-            // 翻转至光标左侧
             targetLeft = flippedLeft;
           } else {
-            // 若左侧空间也不足，紧贴右边界往左排
             targetLeft = Math.max(boundaryLeft + 4, boundaryRight - menuWidth - 4);
           }
-          const deltaX = targetLeft - menuRect.left;
+          const deltaX = targetLeft - currentMenuRect.left;
           const currentStyleLeft = parseFloat(this.view.style.left) || 0;
           this.view.style.left = `${currentStyleLeft + deltaX}px`;
         }
 
-        // 2. 垂直位置校准：若编辑器下方有终端面板且菜单底部溢出到底部面板
+        // 2. 垂直位置校准：若编辑器下方有终端面板且菜单底部溢出到底部面板或视口底边
         const boundaryBottom =
           editorRect && editorRect.bottom > 0 && editorRect.bottom < windowHeight
             ? editorRect.bottom
             : windowHeight;
-        const currentMenuRectAfter = this.view.getBoundingClientRect();
-        if (currentMenuRectAfter.bottom > boundaryBottom - 4) {
-          const flippedTop = anchorY - menuHeight;
-          const boundaryTop = editorRect && editorRect.top >= 0 ? editorRect.top : 0;
+        const boundaryTop = editorRect && editorRect.top >= 0 ? editorRect.top : 0;
+
+        const currentMenuRectV = this.view.getBoundingClientRect();
+        if (currentMenuRectV.bottom > boundaryBottom - 4 || currentMenuRectV.bottom > windowHeight - 4) {
+          const spaceAbove = anchorY - boundaryTop;
+          const spaceBelow = boundaryBottom - anchorY;
           let targetTop: number;
-          if (flippedTop >= boundaryTop) {
-            targetTop = flippedTop;
+
+          // 若上方空间足够容纳整个菜单，或者上方空间显著比下方大（且上方能放下较多内容）
+          if (spaceAbove >= menuHeight + 8 || (spaceAbove > spaceBelow && spaceAbove >= 180)) {
+            // 智能向上翻转至光标上方
+            const flippedTop = anchorY - menuHeight;
+            targetTop = Math.max(boundaryTop + 4, flippedTop);
           } else {
-            targetTop = Math.max(boundaryTop + 4, boundaryBottom - menuHeight - 4);
+            // 若上方极局促，则贴紧视口底部往上推，且由于挂载在 document.body 上，依然完整浮在终端上方
+            targetTop = Math.max(boundaryTop + 4, Math.min(anchorY, windowHeight - menuHeight - 8));
           }
-          const deltaY = targetTop - currentMenuRectAfter.top;
+
+          const deltaY = targetTop - currentMenuRectV.top;
           const currentStyleTop = parseFloat(this.view.style.top) || 0;
           this.view.style.top = `${currentStyleTop + deltaY}px`;
         }

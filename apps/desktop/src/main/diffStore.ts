@@ -54,14 +54,38 @@ export class DiffStore {
   }
 }
 
-export function appendRunTrace(userDataPath: string, runId: string, line: string): void {
+const ensuredTraceDirs = new Set<string>();
+const traceBuffers = new Map<string, string[]>();
+let flushTraceTimer: NodeJS.Timeout | null = null;
+
+function flushTraceBuffers(userDataPath: string): void {
+  flushTraceTimer = null;
   const dir = path.join(userDataPath, 'traces');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(
-    path.join(dir, `${runId}.log`),
-    `${new Date().toISOString()} ${line}\n`,
-    'utf8',
-  );
+  if (!ensuredTraceDirs.has(dir)) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      ensuredTraceDirs.add(dir);
+    } catch {}
+  }
+  for (const [runId, lines] of traceBuffers.entries()) {
+    if (lines.length === 0) continue;
+    const content = lines.join('');
+    lines.length = 0;
+    const targetFile = path.join(dir, `${runId}.log`);
+    fs.appendFile(targetFile, content, 'utf8', () => {});
+  }
+}
+
+export function appendRunTrace(userDataPath: string, runId: string, line: string): void {
+  let list = traceBuffers.get(runId);
+  if (!list) {
+    list = [];
+    traceBuffers.set(runId, list);
+  }
+  list.push(`${new Date().toISOString()} ${line}\n`);
+  if (!flushTraceTimer) {
+    flushTraceTimer = setTimeout(() => flushTraceBuffers(userDataPath), 200);
+  }
 }
 
 export type WindowGetter = () => BrowserWindow | null;

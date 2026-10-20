@@ -1999,6 +1999,11 @@ body.resizing.resizing-row {
   --vscode-menu-separatorBackground: rgba(255, 255, 255, 0.08);
 }
 
+.context-view {
+  z-index: 100000 !important;
+  overflow: visible !important;
+}
+
 .context-view.monaco-menu-container,
 .monaco-menu-container {
   text-align: left !important;

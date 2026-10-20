@@ -1,6 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
 import mermaid from 'mermaid';
 import {
   parseAiContentCodeRefs,
@@ -727,7 +727,7 @@ export function createMarkdownComponents(
 
 export const markdownComponents = createMarkdownComponents();
 
-export function MarkdownMessage({
+export const MarkdownMessage = memo(function MarkdownMessage({
   content,
   streaming,
   onOpenFile,
@@ -777,4 +777,4 @@ export function MarkdownMessage({
       )}
     </div>
   );
-}
+});

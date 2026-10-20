@@ -44,7 +44,9 @@ export function ClaudeChatPanel({
     console.log('[ClaudeChatPanel] Setting up agent event listener');
 
     const cleanup = window.ide.onAgentEvent((event: AgentEvent) => {
-      console.log('[ClaudeChatPanel] Agent event received:', event.type, event);
+      if (event.type !== 'token' && event.type !== 'thinking_token' && event.type !== 'text') {
+        console.log('[ClaudeChatPanel] Agent event received:', event.type, event);
+      }
 
       if (event.type === 'text') {
         // 流式文本输出

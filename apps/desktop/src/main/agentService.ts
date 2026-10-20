@@ -62,7 +62,9 @@ export class AgentService {
   }
 
   private emit(runId: string, event: AgentEvent): void {
-    appendRunTrace(app.getPath('userData'), runId, JSON.stringify(event));
+    if (event.type !== 'token' && event.type !== 'thinking_token') {
+      appendRunTrace(app.getPath('userData'), runId, JSON.stringify(event));
+    }
     const win = this.windowForRun(runId);
     if (win && !win.isDestroyed()) {
       win.webContents.send('agent:event', { runId, ...event });

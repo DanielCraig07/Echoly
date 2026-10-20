@@ -1375,12 +1375,71 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     prevWorkspaceRef.current = workspace;
   }, [workspace, workspaceInfo?.root, workspaceInfo?.label, sessionToTab]);
 
+  // 流式输出节流缓冲池：避免高频单 token 触发过密 React 重渲染与长文 Markdown AST 全量反复解析
+  const streamingBufferRef = useRef<Map<string, { streaming: string; thinking: string }>>(new Map());
+  const streamingRafRef = useRef<number | null>(null);
+
+  const flushStreamingBuffer = useCallback(() => {
+    if (streamingRafRef.current !== null) {
+      cancelAnimationFrame(streamingRafRef.current);
+      streamingRafRef.current = null;
+    }
+    const buffer = streamingBufferRef.current;
+    if (buffer.size === 0) return;
+
+    const snapshot = new Map(buffer);
+    buffer.clear();
+
+    setTabs((prevTabs) =>
+      prevTabs.map((t) => {
+        const item = snapshot.get(t.id);
+        if (!item || (!item.streaming && !item.thinking)) return t;
+        return {
+          ...t,
+          streaming: item.streaming ? (t.streaming || '') + item.streaming : t.streaming,
+          thinkingStreaming: item.thinking
+            ? (t.thinkingStreaming || '') + item.thinking
+            : t.thinkingStreaming,
+        };
+      }),
+    );
+  }, []);
+
   // Global Agent Event Listener (Routes events to matching runId session)
   useEffect(() => {
-    return window.ide.onAgentEvent((event) => {
+    const unsub = window.ide.onAgentEvent((event) => {
       // Find matching session tab for this runId
       const targetTab = tabsRef.current.find((t) => t.runId === event.runId);
       if (!targetTab) return;
+
+      if (event.type === 'token') {
+        let b = streamingBufferRef.current.get(targetTab.id);
+        if (!b) {
+          b = { streaming: '', thinking: '' };
+          streamingBufferRef.current.set(targetTab.id, b);
+        }
+        b.streaming += event.text;
+        if (streamingRafRef.current === null) {
+          streamingRafRef.current = requestAnimationFrame(flushStreamingBuffer);
+        }
+        return;
+      }
+
+      if (event.type === 'thinking_token') {
+        let b = streamingBufferRef.current.get(targetTab.id);
+        if (!b) {
+          b = { streaming: '', thinking: '' };
+          streamingBufferRef.current.set(targetTab.id, b);
+        }
+        b.thinking += event.text;
+        if (streamingRafRef.current === null) {
+          streamingRafRef.current = requestAnimationFrame(flushStreamingBuffer);
+        }
+        return;
+      }
+
+      // 非流式微块事件到达时，立即先刷出当前累积的文本缓冲区
+      flushStreamingBuffer();
 
       updateTab(targetTab.id, (t) => {
         const next = { ...t };
@@ -1398,12 +1457,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               next.continueInfo = null;
               next.stepInfo = null;
             }
-            break;
-          case 'token':
-            next.streaming += event.text;
-            break;
-          case 'thinking_token':
-            next.thinkingStreaming = (next.thinkingStreaming || '') + event.text;
             break;
           case 'pending_diff':
             onPendingDiffRef.current(event);
@@ -1656,7 +1709,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         return next;
       });
     });
-  }, [updateTab]);
+    return () => {
+      unsub();
+      flushStreamingBuffer();
+    };
+  }, [updateTab, flushStreamingBuffer]);
 
   async function send(
     overridePrompt?: string,
