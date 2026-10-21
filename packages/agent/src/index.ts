@@ -551,7 +551,7 @@ ${el.outerHtml || att.content || ''}
             estimated = estimateTokensFromMessages(messages);
           }
 
-          // Stage 3: If still over budget, slide the middle window keeping system (0), initial user turn (1), and recent messages
+          // Stage 3: If still over budget, slide the middle window keeping system (0), current task user turn, and recent messages
           const stage3Threshold = isLocalNode ? 10 : 18;
           const stage3RecentCount = isLocalNode ? 8 : 14;
           if (estimated > maxPromptBudget && messages.length > stage3Threshold) {
@@ -561,13 +561,22 @@ ${el.outerHtml || att.content || ''}
               firstCleanIdx++;
             }
             const cleanRecent = recentMessages.slice(firstCleanIdx);
+            const compactionNotice = [
+              `[系统说明：当前执行步数较多，早期的中间调用细节已归档压缩。]`,
+              `【当前任务的原始诉求】:`,
+              `"""`,
+              prompt.trim(),
+              `"""`,
+              `请直接基于上述原始诉求、当前工作区最新状态及最近的工具调用结果，继续完成任务并直接向用户给出最终结论。`,
+              `【特别注意】：若当前改动已完整且测试已通过，请直接总结任务成果并回复用户，切勿因中间历史被压缩而向用户询问重复确认原始诉求。`,
+            ].join('\n');
+
             messages = [
               messages[0],
-              messages[1],
+              userMessage,
               {
                 role: 'system',
-                content:
-                  '[系统说明：当前执行步数较多，早期的中间调用细节已归档压缩，请基于当前工作区状态与最近的执行步骤继续完成。]',
+                content: compactionNotice,
               },
               ...cleanRecent,
             ];
@@ -634,13 +643,21 @@ ${el.outerHtml || att.content || ''}
                   }
                   if (m.thinking) m.thinking = undefined;
                 }
+                const emergencyNotice = [
+                  `[系统自愈提示：上一轮推理响应超时（>60s），已执行紧急深度上下文压缩。]`,
+                  `【当前任务的原始诉求】:`,
+                  `"""`,
+                  prompt.trim(),
+                  `"""`,
+                  `请直接基于上述原始诉求与当前改动结果给出最终结论。若任务已完成，请直接输出最终总结，严禁因压缩而反问用户原始诉求。`,
+                ].join('\n');
+
                 messages = [
                   messages[0],
-                  messages[1],
+                  userMessage,
                   {
                     role: 'system',
-                    content:
-                      '[系统自愈提示：上一轮推理响应超时（>60s），已执行紧急深度上下文压缩。请直接基于当前步骤和最近工具调用结果给出下一步操作。]',
+                    content: emergencyNotice,
                   },
                   ...cleanRecent,
                 ];

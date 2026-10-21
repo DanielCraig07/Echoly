@@ -201,5 +201,72 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
     expect(retriedWithCompactedContext).toBe(true);
     expect(result.finalText).toContain('Recovered from timeout and completed task.');
   });
+
+  it('preserves current prompt and anchors original intent when compaction occurs with multi-turn history', async () => {
+    let callCount = 0;
+    let lastSentMessages: any[] = [];
+
+    const mockClient = {
+      chatStreamCollect: async (params: any) => {
+        callCount++;
+        lastSentMessages = params.messages;
+        if (callCount <= 12) {
+          return {
+            message: {
+              role: 'assistant',
+              content: `Step ${callCount}`,
+              tool_calls: [
+                {
+                  id: `tc_${callCount}`,
+                  type: 'function',
+                  function: { name: 'list_dir', arguments: '{"path":"."}' },
+                },
+              ],
+            },
+          };
+        }
+        return {
+          message: {
+            role: 'assistant',
+            content: 'Task completed successfully based on user prompt.',
+          },
+        };
+      },
+    };
+
+    const currentPrompt = 'Fix critical bug: editor context menu clipped by bottom panel';
+
+    await runAgent({
+      prompt: currentPrompt,
+      history: [
+        { role: 'user', content: 'Ancient message 1: Hello from 10 turns ago' },
+        { role: 'assistant', content: 'Ancient reply 1' },
+      ],
+      workspaceRoot: os.tmpdir(),
+      backend: new LocalFsBackend(os.tmpdir()),
+      settings: {
+        contextWindowTokens: 500, // Trigger compaction quickly
+      } as any,
+      mode: 'agent',
+      client: mockClient as any,
+      applyImmediately: true,
+      onEvent: () => {},
+    });
+
+    expect(callCount).toBe(13);
+    // Verify that current user prompt is strictly preserved and anchored, NOT the ancient history
+    const userMsg = lastSentMessages.find((m: any) => m.role === 'user');
+    expect(userMsg).toBeDefined();
+    expect(userMsg.content).toContain(currentPrompt);
+    expect(userMsg.content).not.toContain('Ancient message 1');
+
+    // Verify structured goal anchor in system notice
+    const systemNotice = lastSentMessages.find(
+      (m: any) => m.role === 'system' && m.content?.includes('【当前任务的原始诉求】'),
+    );
+    expect(systemNotice).toBeDefined();
+    expect(systemNotice.content).toContain(currentPrompt);
+    expect(systemNotice.content).toContain('切勿因中间历史被压缩而向用户询问重复确认原始诉求');
+  });
 });
 

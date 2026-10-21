@@ -933,26 +933,11 @@ export function RollbackFileModal({
   onConfirm,
 }: RollbackFileModalProps) {
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape' && !submitting) {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleGlobalKeyDown, true);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
-  }, [open, onClose, submitting]);
-
-  if (!open || typeof document === 'undefined' || !filePath) return null;
-
-  const fileName = filePath.split(/[/\\]/).pop() || filePath;
-  const safeOverlay = createSafeOverlayHandlers(submitting ? undefined : onClose);
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
+  const cancelBtnRef = useRef<HTMLButtonElement>(null);
 
   const handleRollback = async () => {
+    if (!filePath) return;
     setSubmitting(true);
     try {
       await onConfirm(filePath);
@@ -961,6 +946,40 @@ export function RollbackFileModal({
       setSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      confirmBtnRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape' && !submitting) {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (e.key === 'Enter' && !submitting) {
+        if (e.isComposing) return;
+        if (document.activeElement === cancelBtnRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        void handleRollback();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [open, onClose, submitting, filePath]);
+
+  if (!open || typeof document === 'undefined' || !filePath) return null;
+
+  const fileName = filePath.split(/[/\\]/).pop() || filePath;
+  const safeOverlay = createSafeOverlayHandlers(submitting ? undefined : onClose);
 
   return createPortal(
     <div className="git-modal-overlay" {...safeOverlay}>
@@ -1029,14 +1048,23 @@ export function RollbackFileModal({
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" className="git-modal-btn secondary" onClick={onClose} disabled={submitting}>
+          <button
+            ref={cancelBtnRef}
+            type="button"
+            className="git-modal-btn secondary"
+            onClick={onClose}
+            disabled={submitting}
+            title="取消 (Esc)"
+          >
             取消
           </button>
           <button
+            ref={confirmBtnRef}
             type="button"
             className="git-modal-btn"
             onClick={handleRollback}
             disabled={submitting}
+            title="确认回滚 (Enter)"
             style={{
               background: '#ef4444',
               color: '#ffffff',

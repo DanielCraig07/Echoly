@@ -68,6 +68,8 @@ export function DbConfirmModal({
   onCancel,
 }: DbConfirmModalProps) {
   const [typed, setTyped] = useState('');
+  const confirmBtnRef = React.useRef<HTMLButtonElement>(null);
+  const cancelBtnRef = React.useRef<HTMLButtonElement>(null);
 
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly:db_confirm_modal_size',
@@ -80,20 +82,18 @@ export function DbConfirmModal({
 
   // 每次打开都重置输入：上一条语句的名称绝不能替用户凑出「确认」
   useEffect(() => {
-    if (isOpen) setTyped(input?.defaultValue ?? '');
+    if (isOpen) {
+      setTyped(input?.defaultValue ?? '');
+      // 若无需输入文本（纯确认弹窗），打开后自动聚焦确认按钮，方便用户直接按 Enter 确认
+      if (!input && requireTyping === undefined) {
+        const timer = setTimeout(() => {
+          confirmBtnRef.current?.focus();
+        }, 50);
+        return () => clearTimeout(timer);
+      }
+    }
     // defaultValue 只在「打开」这一刻有意义；后续外部改动不该覆盖用户正在敲的内容
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onCancel]);
-
-  if (!isOpen || typeof document === 'undefined') return null;
+  }, [isOpen, input, requireTyping]);
 
   const inputError = input?.validate ? input.validate(typed) : null;
   const typingOk = requireTyping === undefined || isTypingConfirmed(requireTyping, typed);
@@ -104,6 +104,37 @@ export function DbConfirmModal({
     if (!canConfirm) return;
     onConfirm(typed);
   };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onCancel();
+        return;
+      }
+      if (e.key === 'Enter') {
+        if (e.isComposing) return;
+        // 如果焦点在取消按钮上，交给原生点击处理，不强行拦截为确认
+        if (document.activeElement === cancelBtnRef.current) {
+          return;
+        }
+        if (document.activeElement?.tagName === 'TEXTAREA') {
+          return;
+        }
+        if (canConfirm) {
+          e.preventDefault();
+          e.stopPropagation();
+          submit();
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onCancel, canConfirm, submit]);
+
+  if (!isOpen || typeof document === 'undefined') return null;
 
   return createPortal(
     <div
@@ -209,6 +240,7 @@ export function DbConfirmModal({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
+                  e.stopPropagation();
                   submit();
                 }
               }}
@@ -230,15 +262,22 @@ export function DbConfirmModal({
             background: 'rgba(255, 255, 255, 0.015)',
           }}
         >
-          <button type="button" className="panel-action-btn db-confirm-btn" onClick={onCancel}>
+          <button
+            ref={cancelBtnRef}
+            type="button"
+            className="panel-action-btn db-confirm-btn"
+            onClick={onCancel}
+            title={`${cancelLabel} (Esc)`}
+          >
             {cancelLabel}
           </button>
           <button
+            ref={confirmBtnRef}
             type="button"
             className={`panel-action-btn db-confirm-btn primary${danger ? ' danger' : ''}`}
             onClick={submit}
             disabled={!canConfirm}
-            title={!canConfirm ? '请先完成上方输入' : confirmLabel}
+            title={!canConfirm ? '请先完成上方输入' : `${confirmLabel} (Enter)`}
           >
             {confirmLabel}
           </button>
