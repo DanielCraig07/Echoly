@@ -1,10 +1,34 @@
 export const APP_VERSION = '0.0.48';
 export const DEFAULT_LLM_BASE_URL = 'http://192.168.10.241:8002';
-export const DEFAULT_LLM_MODEL = 'deepseek-v4-flash';
+/**
+ * 内网 vLLM 实际 serve 出来的模型名。
+ * 曾经写的是 `deepseek-v4-flash`，但那个 id 在 241 上根本不存在 ——
+ * 8002 报 `The model ... does not exist`，1333 网关报 `No available channel`，
+ * 只有 `deepseek-v4.1-flash` 两边都认。
+ */
+export const DEFAULT_LLM_MODEL = 'deepseek-v4.1-flash';
 
 /** AI Provider types */
 export type AiProvider = 'openai' | 'anthropic' | 'deepseek' | 'custom';
 export type ModelProviderType = AiProvider;
+
+/**
+ * OpenAI 兼容端点上的思考深度档位。
+ *
+ * 内网 DeepSeek-V4.1（vLLM 定制分支）支持的档位**不是** OpenAI 全集：
+ * 实测 `minimal` / `medium` 会被服务端直接 400 拒绝，原话是
+ * 「must be low, high, xhigh, max, or an integer within [1, 100] in chat_template_kwargs」。
+ * 因此这里只收录实测可用的档位 —— 与其靠 400 兜底降级，不如根本不给选。
+ */
+export type ReasoningEffort = 'none' | 'low' | 'high' | 'xhigh' | 'max';
+
+export const REASONING_EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  none: '关闭思考',
+  low: '低',
+  high: '高',
+  xhigh: '极高',
+  max: '最大',
+};
 
 export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
   deepseek: 'DeepSeek',
@@ -21,8 +45,27 @@ export interface ModelProfile {
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** For Anthropic: support extended thinking */
   enableThinking?: boolean;
+  /** For Anthropic: thinking tokens budget */
   thinkingTokens?: number;
+  /**
+   * For OpenAI-compatible reasoning models: thinking depth.
+   * Sent as top-level `reasoning_effort`. Unset = use the server default.
+   */
+  reasoningEffort?: ReasoningEffort;
+  /**
+   * Fine-grained depth (integer 1–100), sent as
+   * `chat_template_kwargs.reasoning_effort`. Takes precedence over `reasoningEffort`
+   * when set — it is the same knob at finer granularity, not a second one.
+   */
+  reasoningEffortFine?: number;
+  /**
+   * Hard cap on reasoning tokens (`thinking_token_budget`). Unlike the two fields
+   * above this does not scale effort, it truncates: setting 256 yields ~256 tokens.
+   * 0 / unset = do not send. Useful as a runaway-thinking safety valve.
+   */
+  thinkingTokenBudget?: number;
   isDefault?: boolean;
   lastProbeOk?: boolean;
 }
@@ -30,11 +73,12 @@ export interface ModelProfile {
 export const DEFAULT_MODELS: ModelProfile[] = [
   {
     id: 'deepseek-local',
-    name: 'DeepSeek (内网部署)',
+    name: 'DeepSeek V4.1 (内网网关)',
     provider: 'deepseek',
-    baseUrl: 'http://192.168.10.241:8002',
-    model: 'deepseek-v4-flash',
+    baseUrl: 'http://192.168.10.241:1333',
+    model: 'deepseek-v4.1-flash',
     apiKey: '',
+    reasoningEffort: 'low',
     isDefault: true,
   },
   {
@@ -75,13 +119,25 @@ export interface ProviderConfig {
   enableThinking?: boolean;
   /** For Anthropic: thinking tokens budget */
   thinkingTokens?: number;
+  /** For OpenAI-compatible reasoning models: thinking depth (`reasoning_effort`). */
+  reasoningEffort?: ReasoningEffort;
+  /** Fine-grained thinking depth (1–100) via `chat_template_kwargs.reasoning_effort`. */
+  reasoningEffortFine?: number;
+  /** Hard cap on reasoning tokens (`thinking_token_budget`). 0 = 不发送。 */
+  thinkingTokenBudget?: number;
+  /**
+   * 服务端侧的原生重复检测（vLLM `repetition_detection`）。
+   * 开启后由推理引擎在生成过程中自行掐断复读，比客户端熔断更早、更省算力。
+   */
+  serverRepetitionDetection?: boolean;
 }
 
 export const DEFAULT_PROVIDERS: Record<AiProvider, Omit<ProviderConfig, 'apiKey'>> = {
   deepseek: {
     provider: 'deepseek',
     baseUrl: 'http://192.168.10.241:8002',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-v4.1-flash',
+    reasoningEffort: 'low',
   },
   openai: {
     provider: 'openai',
@@ -142,6 +198,34 @@ export interface AppSettings {
 
   temperature: number;
   maxAgentSteps: number;
+  /**
+   * 单次生成的输出 token 上限（含推理模型的思考 token）。
+   * 作为复读退化的兜底上界：周期检测是主要防线，这里是「万一漏网」的硬闸。
+   * 写得过大等于没有上界，过小会截断合法的长文件写入，默认 32768。
+   * 设为 0 表示不发送该字段（供不认识的网关使用）。
+   */
+  maxOutputTokens?: number;
+  /**
+   * 频率惩罚（0~2）：按 token 出现频次施加惩罚，用于抑制逐字复读。
+   * 默认 0.3；设为 0 表示不发送该字段。
+   */
+  frequencyPenalty?: number;
+  /**
+   * 存在惩罚（0~2）：按 token 是否已出现施加惩罚，用于抑制复述已有内容。
+   * 默认 0.3；设为 0 表示不发送该字段。
+   */
+  presencePenalty?: number;
+  /**
+   * 是否启用周期性重复熔断。默认 true。
+   * 关闭后仅保留 maxOutputTokens 这一层上界。
+   */
+  repetitionGuard?: boolean;
+  /**
+   * 是否请求服务端原生重复检测（vLLM `repetition_detection`）。
+   * 默认 true。由推理引擎在生成中掐断复读，比客户端熔断更早、更省算力；
+   * 不支持的网关会因未知字段被自动降级摘除，不影响请求本身。
+   */
+  serverRepetitionDetection?: boolean;
   /** @deprecated Prefer permissionMode; kept for migration. */
   autoApproveReadonlyTerminal: boolean;
   /** @deprecated Prefer permissionMode; kept for migration. */
@@ -212,6 +296,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
   temperature: 0.2,
   maxAgentSteps: 50,
+  maxOutputTokens: 32768,
+  frequencyPenalty: 0.3,
+  presencePenalty: 0.3,
+  repetitionGuard: true,
+  serverRepetitionDetection: true,
   autoApproveReadonlyTerminal: true,
   requireConfirmForWrites: false,
   permissionMode: 'ask',
@@ -268,7 +357,7 @@ export function migrateToProviderSettings(raw: Partial<AppSettings>): AppSetting
         provider: 'deepseek',
         baseUrl: base.providers.deepseek.baseUrl || 'http://192.168.10.241:8002',
         apiKey: base.providers.deepseek.apiKey || '',
-        model: base.providers.deepseek.model || 'deepseek-v4-flash',
+        model: base.providers.deepseek.model || DEFAULT_LLM_MODEL,
         isDefault: base.currentProvider === 'deepseek',
       });
     }
@@ -425,6 +514,37 @@ export interface ChatCompletionRequest {
   stream?: boolean;
   tools?: ToolDefinition[];
   tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
+  /** 单次生成的最大 token 数，作为复读退化的兜底上界。 */
+  max_tokens?: number;
+  /** 频率惩罚，抑制逐字复读。 */
+  frequency_penalty?: number;
+  /** 存在惩罚，抑制复述已有内容。 */
+  presence_penalty?: number;
+  /**
+   * 思考深度档位。注意内网 DeepSeek-V4.1 只认 none/low/high/xhigh/max，
+   * 传 minimal 或 medium 会被服务端 400 拒绝，且顶层不接受整数。
+   */
+  reasoning_effort?: ReasoningEffort;
+  /** 传给 chat template 的额外参数（整数档位、关闭思考等走这里）。 */
+  chat_template_kwargs?: {
+    /** 整数档位 1–100，与推理引擎的细粒度深度对应。 */
+    reasoning_effort?: number;
+    /** 是否启用思考（DeepSeek-V4.1 的 chat template 开关）。 */
+    thinking?: boolean;
+    [key: string]: unknown;
+  };
+  /** 思考 token 硬上限。与 reasoning_effort 不同，它是截断而非缩放。 */
+  thinking_token_budget?: number;
+  /**
+   * 服务端原生重复检测（vLLM）。命中时 finish_reason 会变成 `repetition`，
+   * 生成在推理引擎内部就被终止，比客户端熔断更早。
+   */
+  repetition_detection?: {
+    /** 同一 pattern 至少重复多少次才判定为复读。 */
+    min_count?: number;
+    min_pattern_size?: number;
+    max_pattern_size?: number;
+  };
 }
 
 export interface ChatCompletionChoice {

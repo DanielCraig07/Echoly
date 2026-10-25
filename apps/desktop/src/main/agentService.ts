@@ -10,6 +10,7 @@ import type {
   PermissionMode,
   PlanContext,
 } from '@deepseek-ide/shared';
+import { DEFAULT_LLM_MODEL } from '@deepseek-ide/shared';
 import { runAgent } from '@deepseek-ide/agent';
 import { probeLlm } from '@deepseek-ide/llm';
 import { discoverSkills, formatSkillsForPrompt, selectSkillsForPrompt } from '@deepseek-ide/skills';
@@ -122,7 +123,7 @@ export class AgentService {
           provider: currentProvider,
           baseUrl: s.baseUrl || 'http://192.168.10.241:8002',
           apiKey: s.apiKey || '',
-          model: s.model || 'deepseek-v4-flash',
+          model: s.model || DEFAULT_LLM_MODEL,
         };
         baseUrl = providerConfig.baseUrl;
         apiKey = providerConfig.apiKey;
@@ -134,7 +135,7 @@ export class AgentService {
     return probeLlm({
       baseUrl: baseUrl || 'http://192.168.10.241:8002',
       apiKey: apiKey || '',
-      model: model || 'deepseek-v4-flash',
+      model: model || DEFAULT_LLM_MODEL,
       provider: provider || 'deepseek',
     });
   }

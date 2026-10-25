@@ -7,21 +7,48 @@ import type {
   ToolDefinition,
   AiProvider,
   ProviderConfig,
+  ReasoningEffort,
 } from '@deepseek-ide/shared';
 import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from '@deepseek-ide/shared';
 import { AnthropicClient, formatLlmErrorMessage } from './anthropic';
+import {
+  CONTENT_GUARD_OPTIONS,
+  REASONING_GUARD_OPTIONS,
+  SERVER_TRIM_OPTIONS,
+  RepetitionGuard,
+  detectTrailingRepeat,
+  repetitionChannelLabel,
+  trimTrailingRepeats,
+  type RepetitionFuseInfo,
+  type RepetitionHit,
+} from './repetitionGuard';
 
-export type LlmTimeoutCode = 'FIRST_TOKEN_TIMEOUT' | 'STREAM_STALL_TIMEOUT' | 'REQUEST_TIMEOUT';
+export type LlmTimeoutCode =
+  | 'FIRST_TOKEN_TIMEOUT'
+  | 'STREAM_STALL_TIMEOUT'
+  | 'REQUEST_TIMEOUT'
+  /** 检测到周期性重复输出（复读机退化），已主动熔断 */
+  | 'REPETITION_LOOP';
 
 export class LlmTimeoutError extends Error {
   readonly code: LlmTimeoutCode;
   readonly timeoutMs: number;
+  /** 熔断（REPETITION_LOOP）时已生成的部分内容，供上层优雅收尾而非重试。 */
+  readonly partialMessage?: ChatMessage;
+  readonly partialUsage?: TokenUsage;
 
-  constructor(message: string, code: LlmTimeoutCode, timeoutMs: number) {
+  constructor(
+    message: string,
+    code: LlmTimeoutCode,
+    timeoutMs: number,
+    partial?: { message: ChatMessage; usage?: TokenUsage },
+  ) {
     super(message);
     this.name = 'LlmTimeoutError';
     this.code = code;
     this.timeoutMs = timeoutMs;
+    this.partialMessage = partial?.message;
+    this.partialUsage = partial?.usage;
   }
 }
 
@@ -30,7 +57,21 @@ export function isLlmTimeoutError(err: unknown): err is LlmTimeoutError {
     err instanceof LlmTimeoutError ||
     (err instanceof Error &&
       (err.name === 'LlmTimeoutError' ||
-        /FIRST_TOKEN_TIMEOUT|STREAM_STALL_TIMEOUT|REQUEST_TIMEOUT/i.test(err.message)))
+        /FIRST_TOKEN_TIMEOUT|STREAM_STALL_TIMEOUT|REQUEST_TIMEOUT|REPETITION_LOOP/i.test(
+          err.message,
+        )))
+  );
+}
+
+/**
+ * 是否为「重复输出熔断」。
+ * 与超时不同，此时模型已产出可用内容，上层应直接收尾，**不能**重试 ——
+ * 退化文本留在上下文里会立刻二次诱发复读。
+ */
+export function isRepetitionLoopError(err: unknown): boolean {
+  return (
+    (err instanceof LlmTimeoutError && err.code === 'REPETITION_LOOP') ||
+    (err instanceof Error && /REPETITION_LOOP|重复输出|复读/i.test(err.message))
   );
 }
 
@@ -42,6 +83,22 @@ export interface LlmClientOptions {
   fetchImpl?: typeof fetch;
   firstTokenTimeoutMs?: number;
   streamStallTimeoutMs?: number;
+  /** 单次生成的最大 token 数，作为复读退化的兜底上界。0 表示不发送该字段。 */
+  maxTokens?: number;
+  /** 频率惩罚，抑制逐字复读。 */
+  frequencyPenalty?: number;
+  /** 存在惩罚，抑制复述已有内容。 */
+  presencePenalty?: number;
+  /** 是否启用周期性重复检测熔断。默认 true。 */
+  repetitionGuard?: boolean;
+  /** 思考深度档位（`reasoning_effort`）。未设置表示沿用服务端默认档。 */
+  reasoningEffort?: ReasoningEffort;
+  /** 细粒度思考深度（1–100），走 `chat_template_kwargs.reasoning_effort`。 */
+  reasoningEffortFine?: number;
+  /** 思考 token 硬上限（`thinking_token_budget`）。0 表示不发送。 */
+  thinkingTokenBudget?: number;
+  /** 是否请求服务端原生重复检测（vLLM `repetition_detection`）。默认 false。 */
+  serverRepetitionDetection?: boolean;
 }
 
 export interface ChatParams {
@@ -52,11 +109,51 @@ export interface ChatParams {
   signal?: AbortSignal;
   firstTokenTimeoutMs?: number;
   streamStallTimeoutMs?: number;
+  maxTokens?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  reasoningEffort?: ReasoningEffort;
+  reasoningEffortFine?: number;
+  thinkingTokenBudget?: number;
 }
+
+/**
+ * 服务端原生重复检测参数。
+ *
+ * 比客户端的周期熔断更早生效 —— 生成在推理引擎内部就被终止，退化 token 根本
+ * 不会发出来，因此省掉的是真实的算力而不只是网络传输。阈值取的是实测下来
+ * 既不误杀合法长输出（列表 / 代码 / 表格 / 文档四种都验过）、又能掐住复读的档位。
+ */
+export const SERVER_REPETITION_DETECTION = {
+  min_count: 8,
+  min_pattern_size: 16,
+  max_pattern_size: 256,
+} as const;
+
+/**
+ * 复读退化的兜底参数。
+ *
+ * max_tokens 只是「最后一道闸」：真正止住复读的是下面的周期检测（秒级命中），
+ * 这里给一个足够宽松的上界，既能终结失控生成，又不会截断正常的超长文件写入。
+ * reasoning 模型的思考 token 也计入该上限，所以不能按「正文长度」来估。
+ * 与 shared 的 DEFAULT_SETTINGS.maxOutputTokens 保持一致。
+ */
+export const DEFAULT_MAX_TOKENS = 32768;
+export const DEFAULT_FREQUENCY_PENALTY = 0.3;
+export const DEFAULT_PRESENCE_PENALTY = 0.3;
 
 export interface ChatStreamResult {
   message: ChatMessage;
   usage?: TokenUsage;
+  /**
+   * 服务端给出的停止原因（`finish_reason`）。
+   *
+   * 之所以要留出来：`stop`（正常说完了）、`length`（撞到 max_tokens 被截断）、
+   * `repetition`（推理引擎自己判定复读并掐断，见 `repetition_detection`）三者对上层
+   * 意味着完全不同的收尾策略 —— 前两者可以照常使用内容，后者要和客户端熔断走同一条路。
+   * 旧实现直接把它丢掉了，导致服务端那层防护即使生效也无从感知。
+   */
+  finishReason?: string;
 }
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -101,6 +198,21 @@ export function estimateTokensFromMessages(messages: ChatMessage[]): number {
     if (m.tool_call_id) chars += m.tool_call_id.length;
   }
   return Math.max(1, Math.ceil(chars / 4));
+}
+
+/**
+ * 统一思考字段名。
+ *
+ * vLLM 的 DeepSeek-V4.1 分支在响应里用的是 `reasoning`，而 DeepSeek 官方 API 与
+ * 多数网关沿用 `reasoning_content`。流式路径两处都做了兜底，非流式这边原先只读
+ * 后者，导致 probe / 代码补全 / 一次性问答完全拿不到思考内容（复读检测在思考链
+ * 上等于失效）。这里把两者归一，后续逻辑只认 `reasoning_content`。
+ */
+export function normalizeReasoningField(message: ChatMessage): ChatMessage {
+  if (message.reasoning_content) return message;
+  const alt = (message as ChatMessage & { reasoning?: string | null }).reasoning;
+  if (typeof alt !== 'string' || !alt) return message;
+  return { ...message, reasoning_content: alt };
 }
 
 export function formatOpenAIMessages(messages: ChatMessage[]): any[] {
@@ -148,6 +260,14 @@ export class LlmClient {
   readonly temperature: number;
   readonly firstTokenTimeoutMs: number;
   readonly streamStallTimeoutMs: number;
+  readonly maxTokens: number;
+  readonly frequencyPenalty: number;
+  readonly presencePenalty: number;
+  readonly repetitionGuard: boolean;
+  readonly reasoningEffort?: ReasoningEffort;
+  readonly reasoningEffortFine?: number;
+  readonly thinkingTokenBudget: number;
+  readonly serverRepetitionDetection: boolean;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: LlmClientOptions = {}) {
@@ -157,6 +277,14 @@ export class LlmClient {
     this.temperature = options.temperature ?? 0.2;
     this.firstTokenTimeoutMs = options.firstTokenTimeoutMs ?? 60_000;
     this.streamStallTimeoutMs = options.streamStallTimeoutMs ?? 90_000;
+    this.maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
+    this.frequencyPenalty = options.frequencyPenalty ?? DEFAULT_FREQUENCY_PENALTY;
+    this.presencePenalty = options.presencePenalty ?? DEFAULT_PRESENCE_PENALTY;
+    this.repetitionGuard = options.repetitionGuard ?? true;
+    this.reasoningEffort = options.reasoningEffort;
+    this.reasoningEffortFine = options.reasoningEffortFine;
+    this.thinkingTokenBudget = options.thinkingTokenBudget ?? 0;
+    this.serverRepetitionDetection = options.serverRepetitionDetection ?? false;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -168,8 +296,146 @@ export class LlmClient {
       temperature: partial.temperature ?? this.temperature,
       firstTokenTimeoutMs: partial.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs,
       streamStallTimeoutMs: partial.streamStallTimeoutMs ?? this.streamStallTimeoutMs,
+      maxTokens: partial.maxTokens ?? this.maxTokens,
+      frequencyPenalty: partial.frequencyPenalty ?? this.frequencyPenalty,
+      presencePenalty: partial.presencePenalty ?? this.presencePenalty,
+      repetitionGuard: partial.repetitionGuard ?? this.repetitionGuard,
+      reasoningEffort: partial.reasoningEffort ?? this.reasoningEffort,
+      reasoningEffortFine: partial.reasoningEffortFine ?? this.reasoningEffortFine,
+      thinkingTokenBudget: partial.thinkingTokenBudget ?? this.thinkingTokenBudget,
+      serverRepetitionDetection:
+        partial.serverRepetitionDetection ?? this.serverRepetitionDetection,
       fetchImpl: partial.fetchImpl ?? this.fetchImpl,
     });
+  }
+
+  /**
+   * 组装请求体。
+   * max_tokens / 惩罚项是复读退化的第一道防线：即使检测层漏网，生成也总有确定终点。
+   * 自定义网关可能只认其中一部分字段，因此各项可单独关闭（设为 0 / undefined）。
+   */
+  private buildBody(
+    params: ChatParams,
+    stream: boolean,
+    includeSamplingGuards = true,
+    includeReasoning = true,
+  ): ChatCompletionRequest {
+    const body: ChatCompletionRequest & Record<string, unknown> = {
+      model: params.model ?? this.model,
+      messages: formatOpenAIMessages(params.messages),
+      temperature: params.temperature ?? this.temperature,
+      stream,
+      tools: params.tools,
+      tool_choice: params.tools?.length ? 'auto' : undefined,
+    };
+
+    if (includeReasoning) this.applyReasoningControls(body, params);
+    if (includeSamplingGuards) this.applySamplingGuards(body, params);
+    return body as ChatCompletionRequest;
+  }
+
+  /**
+   * 思考深度控制。
+   *
+   * 三个字段的分工（内网 DeepSeek-V4.1 = vLLM 定制版，实测结论）：
+   * - `reasoning_effort`（顶层）只认 none/low/high/xhigh/max；传 minimal 或 medium 会被 400。
+   * - `chat_template_kwargs.reasoning_effort`（整数 1–100）是同一个旋钮的细粒度版本，
+   *   因此它存在时不再发顶层字段，避免两个值互相打架。
+   * - `thinking_token_budget` 是硬截断而非缩放，且是唯一能与上面两者共存的（实测预算优先生效）。
+   *
+   * 返回是否真的写入了字段，供 400 降级时决定要不要摘掉这一层。
+   */
+  private applyReasoningControls(body: ChatCompletionRequest, params: ChatParams): boolean {
+    const fine = params.reasoningEffortFine ?? this.reasoningEffortFine;
+    const effort = params.reasoningEffort ?? this.reasoningEffort;
+    const budget = params.thinkingTokenBudget ?? this.thinkingTokenBudget;
+
+    let touched = false;
+    const kwargs: NonNullable<ChatCompletionRequest['chat_template_kwargs']> = {};
+
+    if (fine != null && fine > 0) {
+      kwargs.reasoning_effort = Math.min(100, Math.round(fine));
+      touched = true;
+      // 细粒度档位优先：关闭思考由顶层 none 表达更明确，此处不再下发整数
+    } else if (effort) {
+      body.reasoning_effort = effort;
+      touched = true;
+    }
+
+    if (Object.keys(kwargs).length > 0) {
+      body.chat_template_kwargs = kwargs;
+    }
+    if (budget > 0) {
+      body.thinking_token_budget = budget;
+      touched = true;
+    }
+    return touched;
+  }
+
+  /** 采样侧的复读防护：上界与两个惩罚项。返回是否写入了字段。 */
+  private applySamplingGuards(body: ChatCompletionRequest, params: ChatParams): boolean {
+    const maxTokens = params.maxTokens ?? this.maxTokens;
+    const frequencyPenalty = params.frequencyPenalty ?? this.frequencyPenalty;
+    const presencePenalty = params.presencePenalty ?? this.presencePenalty;
+
+    let touched = false;
+    if (maxTokens > 0) {
+      body.max_tokens = maxTokens;
+      touched = true;
+    }
+    if (frequencyPenalty > 0) {
+      body.frequency_penalty = frequencyPenalty;
+      touched = true;
+    }
+    if (presencePenalty > 0) {
+      body.presence_penalty = presencePenalty;
+      touched = true;
+    }
+    if (this.serverRepetitionDetection) {
+      body.repetition_detection = { ...SERVER_REPETITION_DETECTION };
+      touched = true;
+    }
+    return touched;
+  }
+
+  /**
+   * 发送请求；若网关因不认识某个字段而报 400，则按「哪一层被点名就摘掉哪一层」重发。
+   *
+   * 分两轮降级是有意的：思考深度字段（reasoning_effort / chat_template_kwargs）比采样加固
+   * 更容易被其他推理后端拒绝，一次全摘掉会连带放弃复读防护。只在报错确实指向这些字段时
+   * 才降级，无关的 400 照常抛出，免得把真正的参数错误掩盖成「字段不兼容」。
+   */
+  private async postChat(
+    params: ChatParams,
+    stream: boolean,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    const send = (guards: boolean, reasoning: boolean) =>
+      this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: buildHeaders(this.apiKey),
+        body: JSON.stringify(this.buildBody(params, stream, guards, reasoning)),
+        signal,
+      });
+
+    const res = await send(true, true);
+    if (res.ok || res.status !== 400) return res;
+
+    const text = await res.text();
+    const genericUnknownField =
+      /unknown|unrecognized|unexpected|not permitted|extra fields?|unsupported/i.test(text) &&
+      /parameter|field|argument|keyword/i.test(text);
+    const blamesReasoning =
+      /reasoning_effort|chat_template_kwargs|thinking_token_budget|reasoning|thinking/i.test(text);
+    const blamesSampling =
+      /max_tokens|frequency_penalty|presence_penalty|repetition_detection/i.test(text);
+
+    if (blamesReasoning && !blamesSampling) return send(true, false);
+    if (blamesSampling && !blamesReasoning) return send(false, true);
+    if (blamesReasoning || blamesSampling || genericUnknownField) return send(false, false);
+
+    // body 已被消费，重新包一个等价响应交回调用方去报错
+    return new Response(text, { status: res.status, statusText: res.statusText });
   }
 
   async listModels(signal?: AbortSignal): Promise<string[]> {
@@ -187,15 +453,6 @@ export class LlmClient {
   }
 
   async chat(params: ChatParams): Promise<ChatMessage> {
-    const body: ChatCompletionRequest = {
-      model: params.model ?? this.model,
-      messages: formatOpenAIMessages(params.messages),
-      temperature: params.temperature ?? this.temperature,
-      stream: false,
-      tools: params.tools,
-      tool_choice: params.tools?.length ? 'auto' : undefined,
-    };
-
     const firstTokenTimeout = params.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs;
     const abortController = new AbortController();
     let timedOutError: LlmTimeoutError | null = null;
@@ -220,12 +477,7 @@ export class LlmClient {
 
     let res: Response;
     try {
-      res = await this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: buildHeaders(this.apiKey),
-        body: JSON.stringify(body),
-        signal: abortController.signal,
-      });
+      res = await this.postChat(params, false, abortController.signal);
     } catch (fetchErr) {
       if (timedOutError) throw timedOutError;
       throw fetchErr;
@@ -244,19 +496,45 @@ export class LlmClient {
     if (!message) {
       throw new Error('chat response missing message');
     }
-    return message;
+    return this.trimRepeatsFromMessage(normalizeReasoningField(message));
+  }
+
+  /**
+   * 非流式响应的复读清理。
+   *
+   * 一次性拿到的完整消息不存在「卡住不结束」的问题（请求已经返回了），所以这里只裁掉
+   * 尾部重复的副本，不抛错 —— 抛错会连累 probe / 代码补全这类调用方，而它们要的只是
+   * 一份干净的结果。真正需要中断流的地方在 `chatStream`。
+   */
+  private trimRepeatsFromMessage(message: ChatMessage): ChatMessage {
+    if (!this.repetitionGuard) return message;
+
+    const content = message.content;
+    const contentHit =
+      typeof content === 'string' && content
+        ? detectTrailingRepeat(content, CONTENT_GUARD_OPTIONS)
+        : null;
+
+    const reasoning = message.reasoning_content;
+    const reasoningHit = reasoning
+      ? detectTrailingRepeat(reasoning, REASONING_GUARD_OPTIONS)
+      : null;
+
+    if (!contentHit && !reasoningHit) return message;
+    return {
+      ...message,
+      content:
+        contentHit && typeof content === 'string'
+          ? trimTrailingRepeats(content, contentHit)
+          : content,
+      reasoning_content:
+        reasoningHit && reasoning
+          ? trimTrailingRepeats(reasoning, reasoningHit)
+          : message.reasoning_content,
+    };
   }
 
   async *chatStream(params: ChatParams): AsyncGenerator<StreamChunk, ChatStreamResult, void> {
-    const body: ChatCompletionRequest = {
-      model: params.model ?? this.model,
-      messages: formatOpenAIMessages(params.messages),
-      temperature: params.temperature ?? this.temperature,
-      stream: true,
-      tools: params.tools,
-      tool_choice: params.tools?.length ? 'auto' : undefined,
-    };
-
     const firstTokenTimeout = params.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs;
     const streamStallTimeout = params.streamStallTimeoutMs ?? this.streamStallTimeoutMs;
 
@@ -287,12 +565,7 @@ export class LlmClient {
 
     let res: Response;
     try {
-      res = await this.fetchImpl(`${this.baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: buildHeaders(this.apiKey),
-        body: JSON.stringify(body),
-        signal: abortController.signal,
-      });
+      res = await this.postChat(params, true, abortController.signal);
     } catch (fetchErr) {
       if (timeoutTimer) clearTimeout(timeoutTimer);
       if (params.signal) params.signal.removeEventListener('abort', onAbort);
@@ -320,7 +593,40 @@ export class LlmClient {
     const toolCalls: NonNullable<ChatMessage['tool_calls']> = [];
     let role: ChatMessage['role'] = 'assistant';
     let usage: TokenUsage | undefined;
+    let finishReason: string | undefined;
     let receivedFirstChunk = false;
+
+    // ── 防复读保护 ──────────────────────────────────────────────────────────────
+    // 流式 delta 只有几个字符，逐个比对 delta 相等（旧实现）无法命中「重复一整句话」的退化。
+    // 这里改为在累积文本上做后缀周期检测，reasoning 与 content 两条通道分别监控。
+    //
+    // tool_calls 的 arguments 不做这项检测，虽然它同样会退化。理由：写文件类工具的
+    // 参数**合法地**就经常是高度重复的内容（重复的 fixture、日志样本、表格行、mock 数据），
+    // 实测中这类载荷与真退化的 (周期, 重复次数) 分布完全重叠，无法用阈值分开。
+    // 误熔断会让一次合法的文件写入被静默截断，比「让退化参数跑到 max_tokens、
+    // JSON 解析失败后重试一次」严重得多。参数膨胀本身有 max_tokens 兜底。
+    const guardEnabled = this.repetitionGuard;
+    const reasoningGuard = new RepetitionGuard(REASONING_GUARD_OPTIONS);
+    const contentGuard = new RepetitionGuard(CONTENT_GUARD_OPTIONS);
+    // reasoning 通道的兜底硬上限（约 4 万 token），周期检测漏网时的最后一道闸
+    const reasoningCharLimit = 160_000;
+    // 命中后熔断：记录原因并中止请求，while 循环随后退出。
+    // 存成对象并经函数读取，避免 TS 把闭包内被赋值的变量收窄成 never。
+    const fusion: { info: RepetitionFuseInfo | null } = { info: null };
+    const fuseInfo = (): RepetitionFuseInfo | null => fusion.info;
+    const fuse = (
+      channel: RepetitionFuseInfo['channel'],
+      hit: RepetitionHit | null,
+      source: RepetitionFuseInfo['source'] = 'client',
+    ) => {
+      if (fusion.info) return;
+      // 服务端来源时没有周期信息，用 0 占位
+      fusion.info = hit
+        ? { channel, period: hit.period, repeats: hit.repeats, source }
+        : { channel, period: 0, repeats: 0, source };
+      abortController.abort();
+    };
+    // ─────────────────────────────────────────────────────────────────────────
 
     try {
       while (true) {
@@ -328,6 +634,8 @@ export class LlmClient {
         try {
           readResult = await reader.read();
         } catch (readErr) {
+          // 熔断是主动决策，优先级高于可能同时触发的看门狗超时
+          if (fuseInfo()) break;
           if (timedOutError) throw timedOutError;
           throw readErr;
         }
@@ -349,6 +657,7 @@ export class LlmClient {
         buffer = lines.pop() ?? '';
 
         for (const rawLine of lines) {
+          if (fuseInfo()) break;
           const line = rawLine.trim();
           if (!line || !line.startsWith('data:')) continue;
           const payload = line.slice(5).trim();
@@ -363,14 +672,48 @@ export class LlmClient {
           }
           const parsedUsage = usageFromApi(chunk.usage);
           if (parsedUsage) usage = parsedUsage;
-          yield chunk;
+
+          // 服务端给出的停止原因。`repetition` 表示推理引擎自己判定复读并掐断了生成
+          // （`repetition_detection`），此时周期未知，交给下面的收尾分支回裁尾部。
+          const chunkFinish = chunk.choices?.[0]?.finish_reason;
+          if (chunkFinish) finishReason = chunkFinish;
 
           const delta = chunk.choices?.[0]?.delta;
+          // 熔断时不再把退化 token 转发给 UI，避免渲染层继续堆积复读内容
+          if (!fuseInfo()) yield chunk;
+
+          // 服务端的复读判定优先级最高：它比本地检测更早知道，也不需要再看后续 delta。
+          if (finishReason === 'repetition' && !fuseInfo()) {
+            fuse('content', null, 'server');
+            break;
+          }
+
           if (!delta) continue;
           if (delta.role) role = delta.role;
-          if (typeof delta.content === 'string') content += delta.content;
+
+          if (typeof delta.content === 'string' && delta.content) {
+            content += delta.content;
+            if (guardEnabled && contentGuard.feed(delta.content)) {
+              fuse('content', contentGuard.hit);
+            }
+          }
+
           const reasoningDelta = delta.reasoning_content ?? (delta as any).reasoning;
-          if (typeof reasoningDelta === 'string') reasoningContent += reasoningDelta;
+          if (typeof reasoningDelta === 'string' && reasoningDelta) {
+            reasoningContent += reasoningDelta;
+            if (reasoningContent.length > reasoningCharLimit) {
+              timedOutError = new LlmTimeoutError(
+                `Reasoning 内容超出最大限制（${reasoningCharLimit} 字符），已强制中止以防止无限循环`,
+                'STREAM_STALL_TIMEOUT',
+                streamStallTimeout,
+              );
+              abortController.abort();
+              break;
+            }
+            if (guardEnabled && reasoningGuard.feed(reasoningDelta)) {
+              fuse('reasoning', reasoningGuard.hit);
+            }
+          }
           if (delta.tool_calls) {
             for (const tc of delta.tool_calls) {
               const idx = tc.index ?? 0;
@@ -393,6 +736,7 @@ export class LlmClient {
             }
           }
         }
+        if (fuseInfo()) break;
       }
     } finally {
       if (timeoutTimer) clearTimeout(timeoutTimer);
@@ -404,13 +748,49 @@ export class LlmClient {
       }
     }
 
+    const fuseHit = fuseInfo();
+    if (fuseHit) {
+      // 复读退化：只保留第一份重复片段，把已产出的内容作为 partialMessage 交给上层优雅收尾。
+      // 抛 REPETITION_LOOP（而非超时码）是为了让上层区分「可以重试」与「必须直接收尾」——
+      // 退化文本若被回灌上下文会立刻二次诱发复读。
+      // 故意不带 tool_calls：生成是被中途掐断的，参数 JSON 极可能只序列化了一半，
+      // 交出去只会换来一次必然失败的调用。
+      const serverSide = fuseHit.source === 'server';
+      // 服务端判定时没有流式命中信息，得在整段已收文本上补一次检测才能回裁；
+      // 它触发时尾部往往已经堆了几万字符，所以用放宽到极致的 SERVER_TRIM_OPTIONS。
+      // 客户端命中时只认各自的流式命中结果，不要拿放宽参数重扫 ——
+      // 那会把「复读之外的巧合重复」也一并裁掉。
+      const contentHit = serverSide
+        ? (contentGuard.hit ?? detectTrailingRepeat(content, SERVER_TRIM_OPTIONS))
+        : contentGuard.hit;
+      const reasoningHit = serverSide
+        ? (reasoningGuard.hit ?? detectTrailingRepeat(reasoningContent, SERVER_TRIM_OPTIONS))
+        : reasoningGuard.hit;
+      const trimmedContent = contentHit ? trimTrailingRepeats(content, contentHit) : content;
+      const trimmedReasoning = reasoningHit
+        ? trimTrailingRepeats(reasoningContent, reasoningHit)
+        : reasoningContent;
+      const partialMessage: ChatMessage = {
+        role,
+        content: trimmedContent || null,
+        reasoning_content: trimmedReasoning || undefined,
+      };
+      const message = serverSide
+        ? `服务端判定模型输出复读（finish_reason: repetition），已熔断以终止无限复读`
+        : `检测到${repetitionChannelLabel(fuseHit.channel)}周期性重复（${fuseHit.period} 字符的片段连续重复 ${fuseHit.repeats} 次），已熔断以终止无限复读`;
+      throw new LlmTimeoutError(message, 'REPETITION_LOOP', 0, {
+        message: partialMessage,
+        usage,
+      });
+    }
+
     const message: ChatMessage = {
       role,
       content: content || null,
       reasoning_content: reasoningContent || undefined,
       tool_calls: toolCalls.length ? toolCalls : undefined,
     };
-    return { message, usage };
+    return { message, usage, finishReason };
   }
 
   /**
@@ -468,6 +848,37 @@ export class LlmClient {
   }
 }
 
+/** 复读防护的客户端级配置，来自用户设置。 */
+export interface LlmGuardSettings {
+  maxTokens?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  repetitionGuard?: boolean;
+  /** 是否请求服务端原生重复检测（vLLM `repetition_detection`）。 */
+  serverRepetitionDetection?: boolean;
+}
+
+/**
+ * 从应用设置里取出复读防护配置。
+ * 三处构造 client 的地方（agent 主循环、ipc 快捷调用、探测）都走这里，
+ * 避免默认值在多个调用点各写一份而彼此漂移。
+ */
+export function guardSettingsFromAppSettings(settings: {
+  maxOutputTokens?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+  repetitionGuard?: boolean;
+  serverRepetitionDetection?: boolean;
+}): LlmGuardSettings {
+  return {
+    maxTokens: settings.maxOutputTokens ?? DEFAULT_MAX_TOKENS,
+    frequencyPenalty: settings.frequencyPenalty ?? DEFAULT_FREQUENCY_PENALTY,
+    presencePenalty: settings.presencePenalty ?? DEFAULT_PRESENCE_PENALTY,
+    repetitionGuard: settings.repetitionGuard !== false,
+    serverRepetitionDetection: settings.serverRepetitionDetection !== false,
+  };
+}
+
 /**
  * Unified LLM adapter that works with different providers
  */
@@ -477,7 +888,7 @@ export class UnifiedLlmClient {
   readonly provider: AiProvider;
   readonly config: ProviderConfig;
 
-  constructor(config: ProviderConfig) {
+  constructor(config: ProviderConfig, guard: LlmGuardSettings = {}) {
     this.provider = config.provider;
     this.config = config;
 
@@ -488,6 +899,8 @@ export class UnifiedLlmClient {
         model: config.model,
         enableThinking: config.enableThinking,
         thinkingTokens: config.thinkingTokens,
+        // Anthropic 的 max_tokens 是必填且必须为正，0（表示「不发送」）在此退化为「用默认值」
+        maxTokens: guard.maxTokens || undefined,
       });
     } else {
       // OpenAI, Deepseek, Custom all use OpenAI-compatible API
@@ -495,6 +908,16 @@ export class UnifiedLlmClient {
         baseUrl: config.baseUrl,
         apiKey: config.apiKey,
         model: config.model,
+        maxTokens: guard.maxTokens,
+        frequencyPenalty: guard.frequencyPenalty,
+        presencePenalty: guard.presencePenalty,
+        repetitionGuard: guard.repetitionGuard,
+        serverRepetitionDetection: guard.serverRepetitionDetection,
+        // 思考深度是「按模型」的：网关上的 glm / qwen 与 DeepSeek-V4.1 未必认同一组档位，
+        // 所以跟随模型配置而不是全局设置。
+        reasoningEffort: config.reasoningEffort,
+        reasoningEffortFine: config.reasoningEffortFine,
+        thinkingTokenBudget: config.thinkingTokenBudget,
       });
     }
   }
@@ -538,6 +961,19 @@ export class UnifiedLlmClient {
 }
 
 export { AnthropicClient };
+
+export {
+  RepetitionGuard,
+  detectTrailingRepeat,
+  repetitionChannelLabel,
+  trimTrailingRepeats,
+  REASONING_GUARD_OPTIONS,
+  CONTENT_GUARD_OPTIONS,
+  SERVER_TRIM_OPTIONS,
+  type RepetitionGuardOptions,
+  type RepetitionHit,
+  type RepetitionFuseInfo,
+} from './repetitionGuard';
 
 export interface ProbeLlmOptions extends LlmClientOptions {
   provider?: AiProvider | string;

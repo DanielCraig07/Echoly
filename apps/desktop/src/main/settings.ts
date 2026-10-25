@@ -133,6 +133,13 @@ function normalize(raw: Partial<AppSettings>): AppSettings {
     requireConfirmForWrites: booleans.requireConfirmForWrites,
     maxAgentSteps: Number(raw.maxAgentSteps) || DEFAULT_SETTINGS.maxAgentSteps,
     contextWindowTokens: Number(raw.contextWindowTokens) || DEFAULT_SETTINGS.contextWindowTokens,
+    // 0 是有意义的取值（表示不发送该字段），所以用 ?? 而非 ||，
+    // 否则用户把 maxOutputTokens 设为 0 会被当成「未设置」而回落到默认值。
+    maxOutputTokens: Number(raw.maxOutputTokens ?? DEFAULT_SETTINGS.maxOutputTokens),
+    frequencyPenalty: Number(raw.frequencyPenalty ?? DEFAULT_SETTINGS.frequencyPenalty),
+    presencePenalty: Number(raw.presencePenalty ?? DEFAULT_SETTINGS.presencePenalty),
+    repetitionGuard: raw.repetitionGuard !== false,
+    serverRepetitionDetection: raw.serverRepetitionDetection !== false,
     layout: normalizeLayout(raw.layout),
     theme,
     autoSave: raw.autoSave === true,

@@ -7,9 +7,17 @@ import type {
   AiProvider,
   ModelProfile,
   ModelProviderType,
+  ReasoningEffort,
   UpdateFeedConfig,
 } from '@deepseek-ide/shared';
-import { PERMISSION_MODE_LABELS, AI_PROVIDER_LABELS, DEFAULT_PROVIDERS, DEFAULT_MODELS, APP_VERSION } from '@deepseek-ide/shared';
+import {
+  PERMISSION_MODE_LABELS,
+  AI_PROVIDER_LABELS,
+  DEFAULT_PROVIDERS,
+  DEFAULT_MODELS,
+  REASONING_EFFORT_LABELS,
+  APP_VERSION,
+} from '@deepseek-ide/shared';
 import { useI18n } from '../i18n';
 import { EnvironmentSettingsSection } from './EnvironmentSettingsSection';
 import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
@@ -38,7 +46,14 @@ const PERMISSION_HINTS: Record<PermissionMode, string> = {
   deny_all: '拦截全部工具调用，仅可查看不可修改。',
 };
 
-export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab, workspace }: Props) {
+export function SettingsModal({
+  open,
+  onClose,
+  onSaved,
+  onShowToast,
+  initialTab,
+  workspace,
+}: Props) {
   const { locale, t, setLocale } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_settings_modal_size',
@@ -95,13 +110,25 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
     model: string;
     enableThinking?: boolean;
     thinkingTokens?: number;
+    reasoningEffort?: ReasoningEffort;
+    reasoningEffortFine?: number;
+    thinkingTokenBudget?: number;
   }> = [
     {
-      label: 'DeepSeek (内网部署)',
+      label: 'DeepSeek V4.1 (内网 vLLM 直连)',
       provider: 'deepseek',
-      name: 'DeepSeek (内网)',
+      name: 'DeepSeek V4.1 (内网)',
       baseUrl: 'http://192.168.10.241:8002',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4.1-flash',
+      reasoningEffort: 'low',
+    },
+    {
+      label: 'DeepSeek V4.1 (内网网关 1333)',
+      provider: 'deepseek',
+      name: 'DeepSeek V4.1 (网关)',
+      baseUrl: 'http://192.168.10.241:1333',
+      model: 'deepseek-v4.1-flash',
+      reasoningEffort: 'low',
     },
     {
       label: 'DeepSeek (官方 API)',
@@ -167,8 +194,17 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
 
   // Tab state — 持久化到 localStorage，下次打开时恢复上次停留位置
   const SETTINGS_TAB_KEY = 'echoly_settings_last_tab';
-  type SettingsTab = 'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'update' | 'about';
-  const ALL_TABS: SettingsTab[] = ['models', 'runtime', 'environment', 'general', 'skills', 'update', 'about'];
+  type SettingsTab =
+    'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'update' | 'about';
+  const ALL_TABS: SettingsTab[] = [
+    'models',
+    'runtime',
+    'environment',
+    'general',
+    'skills',
+    'update',
+    'about',
+  ];
 
   function readPersistedTab(): SettingsTab {
     try {
@@ -508,7 +544,14 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
             onClick={onClose}
             title={t('common.close') || '关闭 (Esc)'}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -625,8 +668,8 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                         id: `model_${Date.now()}`,
                         name: '新模型',
                         provider: 'deepseek',
-                        baseUrl: 'http://192.168.10.241:8002',
-                        model: 'deepseek-v4-flash',
+                        baseUrl: 'http://192.168.10.241:1333',
+                        model: 'deepseek-v4.1-flash',
                         apiKey: '',
                       });
                       setIsCreatingNew(true);
@@ -648,8 +691,9 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                             <strong>
                               {isNew ? '配置新 AI 模型' : `编辑模型: ${editingModel.name}`}
                             </strong>
-                            {((modelProbeResults[editingModel.id]?.ok) ||
-                              (!modelProbeResults[editingModel.id] && editingModel.lastProbeOk)) && (
+                            {(modelProbeResults[editingModel.id]?.ok ||
+                              (!modelProbeResults[editingModel.id] &&
+                                editingModel.lastProbeOk)) && (
                               <span className="connected-pill" title="端点连通性测试正常">
                                 <span className="status-dot" /> 连通正常
                               </span>
@@ -660,7 +704,9 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                             <select
                               className="preset-select"
                               onChange={(e) => {
-                                const preset = MODEL_PRESETS.find((p) => p.label === e.target.value);
+                                const preset = MODEL_PRESETS.find(
+                                  (p) => p.label === e.target.value,
+                                );
                                 if (preset) {
                                   setEditingModel({
                                     ...editingModel,
@@ -670,6 +716,9 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                                     model: preset.model,
                                     enableThinking: preset.enableThinking,
                                     thinkingTokens: preset.thinkingTokens,
+                                    reasoningEffort: preset.reasoningEffort,
+                                    reasoningEffortFine: preset.reasoningEffortFine,
+                                    thinkingTokenBudget: preset.thinkingTokenBudget,
                                   });
                                 }
                               }}
@@ -687,130 +736,239 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                           </div>
                         </div>
 
-                        <div className="settings-grid-2">
-                          <div className="settings-row">
-                            <label>协议类型 (Provider)</label>
-                            <select
-                              className="modern-select"
-                              value={editingModel.provider}
-                              onChange={(e) => {
-                                const p = e.target.value as ModelProviderType;
-                                setEditingModel({ ...editingModel, provider: p });
-                              }}
-                            >
-                              {(Object.keys(AI_PROVIDER_LABELS) as ModelProviderType[]).map((k) => (
-                                <option key={k} value={k}>
-                                  {AI_PROVIDER_LABELS[k]}
-                                </option>
-                              ))}
-                            </select>
+                        {/* ── 基础信息 ───────────────────────────────────────── */}
+                        <div className="edit-section">
+                          <div className="edit-section-title">
+                            <span className="edit-section-bar" />
+                            基础信息
                           </div>
-                          <div className="settings-row">
-                            <label>显示别名 (Display Name)</label>
-                            <input
-                              className="modern-input"
-                              value={editingModel.name}
-                              placeholder="例如：DeepSeek (内网) 或 GPT-4o"
-                              onChange={(e) =>
-                                setEditingModel({ ...editingModel, name: e.target.value })
-                              }
-                            />
-                          </div>
-                        </div>
-
-                        <div className="settings-row">
-                          <label>API 接口地址 (Base URL)</label>
-                          <input
-                            className="modern-input mono-font"
-                            value={editingModel.baseUrl}
-                            placeholder="例如：https://api.deepseek.com 或 http://192.168.10.241:8002"
-                            onChange={(e) =>
-                              setEditingModel({ ...editingModel, baseUrl: e.target.value })
-                            }
-                          />
-                        </div>
-
-                        <div className="settings-grid-2">
-                          <div className="settings-row">
-                            <label>模型标识 (Model ID)</label>
-                            <input
-                              className="modern-input mono-font"
-                              value={editingModel.model}
-                              placeholder="如 deepseek-v4-flash, gpt-4o, claude-3-7-sonnet"
-                              onChange={(e) =>
-                                setEditingModel({ ...editingModel, model: e.target.value })
-                              }
-                            />
-                          </div>
-                          <div className="settings-row">
-                            <div
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                              }}
-                            >
-                              <label>API Key</label>
-                              <button
-                                type="button"
-                                className="toggle-eye-btn"
-                                onClick={() => setShowApiKey(!showApiKey)}
-                              >
-                                {showApiKey ? '隐藏 Key' : '显示 Key'}
-                              </button>
-                            </div>
-                            <input
-                              type={showApiKey ? 'text' : 'password'}
-                              className="modern-input mono-font"
-                              value={editingModel.apiKey || ''}
-                              placeholder={
-                                editingModel.provider === 'deepseek'
-                                  ? '内网可留空，官方 API 必填'
-                                  : '填入对应的 API Key（留空即免鉴权）'
-                              }
-                              onChange={(e) =>
-                                setEditingModel({ ...editingModel, apiKey: e.target.value })
-                              }
-                            />
-                          </div>
-                        </div>
-
-                        <div className="settings-grid-2 thinking-config-row">
-                          <div className="settings-row">
-                            <label>深度思考模式 (Extended Thinking)</label>
-                            <label className="modern-checkbox-label" style={{ marginTop: 4 }}>
-                              <input
-                                type="checkbox"
-                                checked={editingModel.enableThinking ?? false}
-                                onChange={(e) =>
-                                  setEditingModel({
-                                    ...editingModel,
-                                    enableThinking: e.target.checked,
-                                    thinkingTokens: editingModel.thinkingTokens || 8000,
-                                  })
-                                }
-                              />
-                              <span>启用推理思考过程输出</span>
-                            </label>
-                          </div>
-                          {editingModel.enableThinking && (
+                          <div className="settings-grid-2">
                             <div className="settings-row">
-                              <label>Thinking Tokens 上限</label>
+                              <label>协议类型 (Provider)</label>
+                              <select
+                                className="modern-select"
+                                value={editingModel.provider}
+                                onChange={(e) => {
+                                  const p = e.target.value as ModelProviderType;
+                                  setEditingModel({ ...editingModel, provider: p });
+                                }}
+                              >
+                                {(Object.keys(AI_PROVIDER_LABELS) as ModelProviderType[]).map(
+                                  (k) => (
+                                    <option key={k} value={k}>
+                                      {AI_PROVIDER_LABELS[k]}
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </div>
+                            <div className="settings-row">
+                              <label>显示别名 (Display Name)</label>
                               <input
-                                type="number"
-                                className="modern-input mono-font"
-                                min="1000"
-                                max="64000"
-                                step="1000"
-                                value={editingModel.thinkingTokens || 8000}
+                                className="modern-input"
+                                value={editingModel.name}
+                                placeholder="例如：DeepSeek (内网) 或 GPT-4o"
                                 onChange={(e) =>
-                                  setEditingModel({
-                                    ...editingModel,
-                                    thinkingTokens: Number(e.target.value) || 8000,
-                                  })
+                                  setEditingModel({ ...editingModel, name: e.target.value })
                                 }
                               />
                             </div>
+                          </div>
+                        </div>
+
+                        {/* ── 端点与鉴权 ─────────────────────────────────────── */}
+                        <div className="edit-section">
+                          <div className="edit-section-title">
+                            <span className="edit-section-bar" />
+                            端点与鉴权
+                          </div>
+                          <div className="settings-row">
+                            <label>API 接口地址 (Base URL)</label>
+                            <input
+                              className="modern-input mono-font"
+                              value={editingModel.baseUrl}
+                              placeholder="例如：https://api.deepseek.com 或 http://192.168.10.241:8002"
+                              onChange={(e) =>
+                                setEditingModel({ ...editingModel, baseUrl: e.target.value })
+                              }
+                            />
+                          </div>
+                          <div className="settings-grid-2">
+                            <div className="settings-row">
+                              <label>模型标识 (Model ID)</label>
+                              <input
+                                className="modern-input mono-font"
+                                value={editingModel.model}
+                                placeholder="如 deepseek-v4.1-flash, gpt-4o"
+                                onChange={(e) =>
+                                  setEditingModel({ ...editingModel, model: e.target.value })
+                                }
+                              />
+                            </div>
+                            <div className="settings-row">
+                              <div className="label-with-action">
+                                <label>API Key</label>
+                                <button
+                                  type="button"
+                                  className="toggle-eye-btn"
+                                  onClick={() => setShowApiKey(!showApiKey)}
+                                >
+                                  {showApiKey ? '隐藏 Key' : '显示 Key'}
+                                </button>
+                              </div>
+                              <input
+                                type={showApiKey ? 'text' : 'password'}
+                                className="modern-input mono-font"
+                                value={editingModel.apiKey || ''}
+                                placeholder={
+                                  editingModel.provider === 'deepseek'
+                                    ? '内网可留空，官方 API 必填'
+                                    : '填入对应的 API Key（留空即免鉴权）'
+                                }
+                                onChange={(e) =>
+                                  setEditingModel({ ...editingModel, apiKey: e.target.value })
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ── 思考深度 ───────────────────────────────────────── */}
+                        <div className="edit-section">
+                          <div className="edit-section-title">
+                            <span className="edit-section-bar" />
+                            思考深度
+                          </div>
+
+                          {editingModel.provider === 'anthropic' ? (
+                            /* Anthropic 走自己的 extended thinking 预算，与 OpenAI 兼容端点的
+                               档位字段不是一回事，因此两套控件互斥出现，不再并排误导。 */
+                            <div className="settings-grid-2">
+                              <div className="settings-row">
+                                <label>深度思考模式 (Extended Thinking)</label>
+                                <label className="modern-checkbox-label" style={{ marginTop: 4 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={editingModel.enableThinking ?? false}
+                                    onChange={(e) =>
+                                      setEditingModel({
+                                        ...editingModel,
+                                        enableThinking: e.target.checked,
+                                        thinkingTokens: editingModel.thinkingTokens || 8000,
+                                      })
+                                    }
+                                  />
+                                  <span>启用推理思考过程输出</span>
+                                </label>
+                              </div>
+                              {editingModel.enableThinking && (
+                                <div className="settings-row">
+                                  <label>Thinking Tokens 预算</label>
+                                  <input
+                                    type="number"
+                                    className="modern-input mono-font"
+                                    min="1000"
+                                    max="64000"
+                                    step="1000"
+                                    value={editingModel.thinkingTokens || 8000}
+                                    onChange={(e) =>
+                                      setEditingModel({
+                                        ...editingModel,
+                                        thinkingTokens: Number(e.target.value) || 8000,
+                                      })
+                                    }
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="settings-grid-2">
+                                <div className="settings-row">
+                                  <label>思考档位 (Reasoning Effort)</label>
+                                  <select
+                                    className="modern-select"
+                                    value={editingModel.reasoningEffort ?? ''}
+                                    onChange={(e) =>
+                                      setEditingModel({
+                                        ...editingModel,
+                                        reasoningEffort:
+                                          (e.target.value as ReasoningEffort) || undefined,
+                                      })
+                                    }
+                                  >
+                                    <option value="">默认（不发送，沿用服务端档位）</option>
+                                    {(
+                                      Object.keys(REASONING_EFFORT_LABELS) as ReasoningEffort[]
+                                    ).map((k) => (
+                                      <option key={k} value={k}>
+                                        {REASONING_EFFORT_LABELS[k]}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="settings-row">
+                                  <label>
+                                    细粒度档位
+                                    <span className="label-hint">1–100，留空则不启用</span>
+                                  </label>
+                                  <input
+                                    type="number"
+                                    className="modern-input mono-font"
+                                    min="1"
+                                    max="100"
+                                    step="1"
+                                    placeholder="留空"
+                                    value={editingModel.reasoningEffortFine ?? ''}
+                                    onChange={(e) => {
+                                      const v = e.target.value.trim();
+                                      setEditingModel({
+                                        ...editingModel,
+                                        reasoningEffortFine:
+                                          v === ''
+                                            ? undefined
+                                            : Math.min(100, Math.max(1, Number(v))),
+                                      });
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="settings-grid-2">
+                                <div className="settings-row">
+                                  <label>
+                                    思考 Token 硬上限
+                                    <span className="label-hint">截断而非缩放，0 = 不限制</span>
+                                  </label>
+                                  <input
+                                    type="number"
+                                    className="modern-input mono-font"
+                                    min="0"
+                                    step="256"
+                                    placeholder="0"
+                                    value={editingModel.thinkingTokenBudget ?? 0}
+                                    onChange={(e) =>
+                                      setEditingModel({
+                                        ...editingModel,
+                                        thinkingTokenBudget: Math.max(
+                                          0,
+                                          Number(e.target.value) || 0,
+                                        ),
+                                      })
+                                    }
+                                  />
+                                </div>
+                                <div className="settings-row">
+                                  <label>档位说明</label>
+                                  <div className="edit-inline-note">
+                                    内网 DeepSeek-V4.1 只认 none / low / high / xhigh / max
+                                  </div>
+                                </div>
+                              </div>
+                              <p className="edit-section-hint">
+                                细粒度档位与上面的档位是同一个旋钮，填了就优先用它（走
+                                chat_template_kwargs）；硬上限则是独立的截断阀门，可与两者共存。
+                              </p>
+                            </>
                           )}
                         </div>
 
@@ -822,7 +980,8 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                             className={`probe-result-bubble ${
                               modelProbingId === editingModel.id
                                 ? 'probe-testing'
-                                : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
+                                : (modelProbeResults[editingModel.id]?.ok ??
+                                    editingModel.lastProbeOk)
                                   ? 'probe-success'
                                   : 'probe-error'
                             }`}
@@ -841,14 +1000,16 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                             <span className="probe-icon">
                               {modelProbingId === editingModel.id
                                 ? '⟳'
-                                : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
+                                : (modelProbeResults[editingModel.id]?.ok ??
+                                    editingModel.lastProbeOk)
                                   ? '✓'
                                   : '✕'}
                             </span>
                             <span className="probe-text" style={{ wordBreak: 'break-all' }}>
                               {modelProbingId === editingModel.id
                                 ? '正在进行端点连通性探测，请稍候…'
-                                : (modelProbeResults[editingModel.id]?.ok ?? editingModel.lastProbeOk)
+                                : (modelProbeResults[editingModel.id]?.ok ??
+                                    editingModel.lastProbeOk)
                                   ? `连通性正常: ${modelProbeResults[editingModel.id]?.detail || '端点连接畅通'}`
                                   : `连通性异常: ${modelProbeResults[editingModel.id]?.detail || '连接失败'}`}
                             </span>
@@ -876,7 +1037,9 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                               disabled={modelProbingId === editingModel.id}
                               onClick={() => void probeSingleModel(editingModel)}
                             >
-                              {modelProbingId === editingModel.id ? '正在连接测试…' : '⚡ 连通性测试'}
+                              {modelProbingId === editingModel.id
+                                ? '正在连接测试…'
+                                : '⚡ 连通性测试'}
                             </button>
                             <button
                               type="button"
@@ -921,130 +1084,152 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                               key={m.id}
                               className={`modern-model-card ${isActive ? 'is-active' : ''} prov-${m.provider || 'custom'}`}
                             >
-                        <div className="model-card-left">
-                          <div className={`model-provider-badge prov-${m.provider}`}>
-                            {m.provider === 'anthropic'
-                              ? 'Claude'
-                              : m.provider === 'deepseek'
-                                ? 'DeepSeek'
-                                : m.provider === 'openai'
-                                  ? 'OpenAI'
-                                  : 'Ollama / 自定义'}
-                          </div>
-                          <div className="model-info-block">
-                            <div className="model-name-line">
-                              <span className="model-display-name" title={m.name}>{m.name}</span>
-                              {isActive && <span className="active-glow-pill">★ 默认选中</span>}
-                              {((probeRes && probeRes.ok) || (!probeRes && m.lastProbeOk)) && (
-                                <span className="connected-pill" title="端点连通性测试正常">
-                                  <span className="status-dot" /> 连通正常
-                                </span>
-                              )}
-                              {probeRes && !probeRes.ok && (
-                                <span className="probe-fail-pill" title={`探测异常: ${probeRes.detail || '端点连接失败'}`}>
-                                  ✕ 连通异常
-                                </span>
-                              )}
-                              {m.enableThinking && (
-                                <span className="thinking-pill">⚡ 深度思考</span>
-                              )}
+                              <div className="model-card-left">
+                                <div className={`model-provider-badge prov-${m.provider}`}>
+                                  {m.provider === 'anthropic'
+                                    ? 'Claude'
+                                    : m.provider === 'deepseek'
+                                      ? 'DeepSeek'
+                                      : m.provider === 'openai'
+                                        ? 'OpenAI'
+                                        : 'Ollama / 自定义'}
+                                </div>
+                                <div className="model-info-block">
+                                  <div className="model-name-line">
+                                    <span className="model-display-name" title={m.name}>
+                                      {m.name}
+                                    </span>
+                                    {isActive && (
+                                      <span className="active-glow-pill">★ 默认选中</span>
+                                    )}
+                                    {((probeRes && probeRes.ok) ||
+                                      (!probeRes && m.lastProbeOk)) && (
+                                      <span className="connected-pill" title="端点连通性测试正常">
+                                        <span className="status-dot" /> 连通正常
+                                      </span>
+                                    )}
+                                    {probeRes && !probeRes.ok && (
+                                      <span
+                                        className="probe-fail-pill"
+                                        title={`探测异常: ${probeRes.detail || '端点连接失败'}`}
+                                      >
+                                        ✕ 连通异常
+                                      </span>
+                                    )}
+                                    {m.enableThinking && (
+                                      <span className="thinking-pill">⚡ 深度思考</span>
+                                    )}
+                                    {m.provider !== 'anthropic' &&
+                                      (m.reasoningEffortFine != null || m.reasoningEffort) && (
+                                        <span
+                                          className="thinking-pill"
+                                          title="思考深度档位（reasoning_effort）"
+                                        >
+                                          🧠{' '}
+                                          {m.reasoningEffortFine != null
+                                            ? `细粒度 ${m.reasoningEffortFine}`
+                                            : REASONING_EFFORT_LABELS[m.reasoningEffort!]}
+                                        </span>
+                                      )}
+                                  </div>
+                                  <div className="model-meta-line">
+                                    <code className="model-id-code">{m.model}</code>
+                                    <span className="meta-sep">•</span>
+                                    <span className="model-endpoint-text" title={m.baseUrl}>
+                                      {m.baseUrl}
+                                    </span>
+                                    <span className="meta-sep">•</span>
+                                    {m.apiKey ? (
+                                      <span className="key-state has-key">已配置密钥</span>
+                                    ) : (
+                                      <span className="key-state no-key">免密钥/未配置</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="model-card-right-column">
+                                {/* 右上角默认模型开关 */}
+                                <div className="model-card-top-right">
+                                  <label
+                                    className={`model-default-switch ${isActive ? 'is-active' : ''}`}
+                                    title={isActive ? '当前默认优先模型' : '点击设为默认模型'}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (!isActive) handleSetDefaultModel(m.id);
+                                    }}
+                                  >
+                                    <span className="switch-text">
+                                      {isActive ? '默认模型' : '设为默认'}
+                                    </span>
+                                    <span className={`switch-pill ${isActive ? 'checked' : ''}`}>
+                                      <span className="switch-thumb" />
+                                    </span>
+                                  </label>
+                                </div>
+
+                                {/* 操作按钮组 */}
+                                <div className="model-card-right-actions">
+                                  <button
+                                    type="button"
+                                    className="card-action-btn move-btn"
+                                    title="上移排序"
+                                    disabled={mIdx === 0}
+                                    onClick={() => handleMoveModel(m.id, 'up')}
+                                  >
+                                    ↑
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="card-action-btn move-btn"
+                                    title="下移排序"
+                                    disabled={mIdx === (settings.models?.length || 0) - 1}
+                                    onClick={() => handleMoveModel(m.id, 'down')}
+                                  >
+                                    ↓
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className="card-action-btn probe-btn"
+                                    title="连通性探测"
+                                    disabled={isProbing}
+                                    onClick={() => void probeSingleModel(m)}
+                                  >
+                                    {isProbing ? '探测中…' : '⚡ 探测'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="card-action-btn edit-btn"
+                                    title="编辑此模型参数"
+                                    onClick={() => {
+                                      setEditingModel({ ...m });
+                                      setIsCreatingNew(false);
+                                    }}
+                                  >
+                                    ✎ 编辑
+                                  </button>
+                                  {(settings.models?.length || 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      className="card-action-btn delete-btn"
+                                      title="删除此模型"
+                                      onClick={() => setDeletingModel(m)}
+                                    >
+                                      🗑
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="model-meta-line">
-                              <code className="model-id-code">{m.model}</code>
-                              <span className="meta-sep">•</span>
-                              <span className="model-endpoint-text" title={m.baseUrl}>
-                                {m.baseUrl}
-                              </span>
-                              <span className="meta-sep">•</span>
-                              {m.apiKey ? (
-                                <span className="key-state has-key">已配置密钥</span>
-                              ) : (
-                                <span className="key-state no-key">免密钥/未配置</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="model-card-right-column">
-                          {/* 右上角默认模型开关 */}
-                          <div className="model-card-top-right">
-                            <label
-                              className={`model-default-switch ${isActive ? 'is-active' : ''}`}
-                              title={isActive ? '当前默认优先模型' : '点击设为默认模型'}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!isActive) handleSetDefaultModel(m.id);
-                              }}
-                            >
-                              <span className="switch-text">{isActive ? '默认模型' : '设为默认'}</span>
-                              <span className={`switch-pill ${isActive ? 'checked' : ''}`}>
-                                <span className="switch-thumb" />
-                              </span>
-                            </label>
-                          </div>
-
-                          {/* 操作按钮组 */}
-                          <div className="model-card-right-actions">
-                            <button
-                              type="button"
-                              className="card-action-btn move-btn"
-                              title="上移排序"
-                              disabled={mIdx === 0}
-                              onClick={() => handleMoveModel(m.id, 'up')}
-                            >
-                              ↑
-                            </button>
-                            <button
-                              type="button"
-                              className="card-action-btn move-btn"
-                              title="下移排序"
-                              disabled={mIdx === (settings.models?.length || 0) - 1}
-                              onClick={() => handleMoveModel(m.id, 'down')}
-                            >
-                              ↓
-                            </button>
-
-                            <button
-                              type="button"
-                              className="card-action-btn probe-btn"
-                              title="连通性探测"
-                              disabled={isProbing}
-                              onClick={() => void probeSingleModel(m)}
-                            >
-                              {isProbing ? '探测中…' : '⚡ 探测'}
-                            </button>
-                            <button
-                              type="button"
-                              className="card-action-btn edit-btn"
-                              title="编辑此模型参数"
-                              onClick={() => {
-                                setEditingModel({ ...m });
-                                setIsCreatingNew(false);
-                              }}
-                            >
-                              ✎ 编辑
-                            </button>
-                            {(settings.models?.length || 0) > 1 && (
-                              <button
-                                type="button"
-                                className="card-action-btn delete-btn"
-                                title="删除此模型"
-                                onClick={() => setDeletingModel(m)}
-                              >
-                                🗑
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
 
             {/* 2. 运行与推理参数 Tab */}
             {activeTab === 'runtime' && (
@@ -1124,6 +1309,138 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                       }
                     />
                   </div>
+
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>输出长度上限 (Max Output Tokens)</strong>
+                      <span className="card-current-val">
+                        {(settings.maxOutputTokens ?? 32768).toLocaleString()} tokens
+                      </span>
+                    </div>
+                    <p className="setting-card-desc">
+                      单次生成的 token 上界，含推理模型的思考 token。当模型陷入「重复同一句话」时，
+                      这是最终兜底；主要防线是下面的重复熔断。填入 0
+                      表示不发送该字段（部分网关不识别）。
+                    </p>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1024"
+                      className="modern-input"
+                      value={settings.maxOutputTokens ?? 32768}
+                      onChange={(e) =>
+                        setSettings({ ...settings, maxOutputTokens: Number(e.target.value) || 0 })
+                      }
+                    />
+                  </div>
+
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>重复熔断保护 (Repetition Guard)</strong>
+                      <span className="card-current-val">
+                        {settings.repetitionGuard === false ? '已关闭' : '已开启'}
+                      </span>
+                    </div>
+                    <p className="setting-card-desc">
+                      实时监测思考与正文是否出现周期性重复（同一句话或同几句话反复输出）。
+                      一旦命中立即中止该次生成并保留已产出的内容，避免无限复读卡死。 周期上限 1200
+                      字符，重复 5–6 遍即判定；这是网关吞掉服务端检测时唯一生效的一层。
+                    </p>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.repetitionGuard !== false}
+                        onChange={(e) =>
+                          setSettings({ ...settings, repetitionGuard: e.target.checked })
+                        }
+                      />
+                      <span>{settings.repetitionGuard === false ? '关闭中' : '开启中'}</span>
+                    </label>
+                  </div>
+
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>服务端原生重复检测 (Server-side Repetition Detection)</strong>
+                      <span className="card-current-val">
+                        {settings.serverRepetitionDetection === false ? '已关闭' : '已开启'}
+                      </span>
+                    </div>
+                    <p className="setting-card-desc">
+                      请求推理引擎（vLLM）在生成过程中自行掐断重复片段，命中时 finish_reason 变为
+                      repetition。它比客户端熔断更早生效 —— 退化 token
+                      根本不会产生，省下的是真实算力。
+                      <br />
+                      <strong>注意：</strong>该字段只有直连 vLLM（如 8002）时才有效。经 New API
+                      一类网关转发（如 1333）时字段会被网关按白名单丢掉，开了也不生效 ——
+                      不会报错，只是静默无效。此时防护仍由下面的客户端熔断承担。
+                    </p>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.serverRepetitionDetection !== false}
+                        onChange={(e) =>
+                          setSettings({ ...settings, serverRepetitionDetection: e.target.checked })
+                        }
+                      />
+                      <span>
+                        {settings.serverRepetitionDetection === false ? '关闭中' : '开启中'}
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>频率惩罚 (Frequency Penalty)</strong>
+                      <span className="card-current-val">
+                        {(settings.frequencyPenalty ?? 0.3).toFixed(2)}
+                      </span>
+                    </div>
+                    <p className="setting-card-desc">
+                      按 token 出现频次施加惩罚，从采样层面降低逐字复读概率。建议 0.2 - 0.5； 设为 0
+                      表示不发送该字段。
+                    </p>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="0.05"
+                      className="modern-range"
+                      value={settings.frequencyPenalty ?? 0.3}
+                      onChange={(e) =>
+                        setSettings({ ...settings, frequencyPenalty: Number(e.target.value) || 0 })
+                      }
+                    />
+                  </div>
+
+                  <div className="setting-card">
+                    <div className="setting-card-title">
+                      <strong>存在惩罚 (Presence Penalty)</strong>
+                      <span className="card-current-val">
+                        {(settings.presencePenalty ?? 0.3).toFixed(2)}
+                      </span>
+                    </div>
+                    <p className="setting-card-desc">
+                      按 token 是否已经出现过施加惩罚，抑制反复复述同一段内容。建议 0.2 - 0.5； 设为
+                      0 表示不发送该字段。
+                    </p>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="0.05"
+                      className="modern-range"
+                      value={settings.presencePenalty ?? 0.3}
+                      onChange={(e) =>
+                        setSettings({ ...settings, presencePenalty: Number(e.target.value) || 0 })
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -1188,7 +1505,8 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                       <strong>快捷键操作习惯 (Keymap Preset)</strong>
                     </div>
                     <p className="setting-card-desc">
-                      选择您习惯的 IDE 键位方案。支持 VS Code 模式与 IntelliJ IDEA 模式（双击 Shift 全局搜索、Cmd/Ctrl+Alt+L 代码格式化、Alt+F12 切换终端等）。
+                      选择您习惯的 IDE 键位方案。支持 VS Code 模式与 IntelliJ IDEA 模式（双击 Shift
+                      全局搜索、Cmd/Ctrl+Alt+L 代码格式化、Alt+F12 切换终端等）。
                     </p>
                     <select
                       className="modern-select"
@@ -1200,8 +1518,12 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                         })
                       }
                     >
-                      <option value="vscode">VS Code 风格 (默认 - ⌘P 快速文件，⌘⇧P 命令面板)</option>
-                      <option value="intellij">IntelliJ IDEA 风格 (双击 Shift 全局搜索，⌘⌥L 格式化)</option>
+                      <option value="vscode">
+                        VS Code 风格 (默认 - ⌘P 快速文件，⌘⇧P 命令面板)
+                      </option>
+                      <option value="intellij">
+                        IntelliJ IDEA 风格 (双击 Shift 全局搜索，⌘⌥L 格式化)
+                      </option>
                     </select>
                   </div>
 
@@ -1253,9 +1575,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                     <div className="setting-card-title">
                       <strong>{t('settings.hoverDelay')}</strong>
                     </div>
-                    <p className="setting-card-desc">
-                      {t('settings.hoverDelayDesc')}
-                    </p>
+                    <p className="setting-card-desc">{t('settings.hoverDelayDesc')}</p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
                       <input
                         type="number"
@@ -1295,7 +1615,9 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                       <input
                         type="checkbox"
                         checked={settings.selectionAiFloat !== false}
-                        onChange={(e) => setSettings({ ...settings, selectionAiFloat: e.target.checked })}
+                        onChange={(e) =>
+                          setSettings({ ...settings, selectionAiFloat: e.target.checked })
+                        }
                       />
                       <span>{t('settings.selectionAiFloat')}</span>
                     </label>
@@ -1306,9 +1628,18 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                       <strong>终端缓存条数上限 (Scrollback Lines)</strong>
                     </div>
                     <p className="setting-card-desc">
-                      控制每个终端窗口在内存中保留的历史运行日志行数上限。增加上限可回滚查看更多历史日志，默认 10,000 行。
+                      控制每个终端窗口在内存中保留的历史运行日志行数上限。增加上限可回滚查看更多历史日志，默认
+                      10,000 行。
                     </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        marginTop: 8,
+                        flexWrap: 'wrap',
+                      }}
+                    >
                       <input
                         type="number"
                         min={1000}
@@ -1318,7 +1649,10 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                         style={{ width: 140 }}
                         value={settings.terminalScrollback ?? 10000}
                         onChange={(e) => {
-                          const val = Math.min(100000, Math.max(1000, Number(e.target.value) || 10000));
+                          const val = Math.min(
+                            100000,
+                            Math.max(1000, Number(e.target.value) || 10000),
+                          );
                           setSettings({ ...settings, terminalScrollback: val });
                         }}
                       />
@@ -1335,13 +1669,16 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                                 padding: '3px 9px',
                                 fontSize: 12,
                                 borderRadius: 4,
-                                border: '1px solid ' + (selected ? 'var(--accent)' : 'var(--border)'),
+                                border:
+                                  '1px solid ' + (selected ? 'var(--accent)' : 'var(--border)'),
                                 background: selected ? 'var(--accent)' : 'transparent',
                                 color: selected ? '#fff' : 'var(--fg)',
                                 cursor: 'pointer',
                                 transition: 'all 0.15s ease',
                               }}
-                              onClick={() => setSettings({ ...settings, terminalScrollback: preset })}
+                              onClick={() =>
+                                setSettings({ ...settings, terminalScrollback: preset })
+                              }
                             >
                               {preset.toLocaleString()} 行
                             </button>
@@ -1381,7 +1718,10 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
 
             {/* 开发与构建环境 Tab */}
             {activeTab === 'environment' && (
-              <EnvironmentSettingsSection workspace={workspace || undefined} onShowToast={onShowToast} />
+              <EnvironmentSettingsSection
+                workspace={workspace || undefined}
+                onShowToast={onShowToast}
+              />
             )}
 
             {/* 4. Skills 扩展库 Tab */}
@@ -1716,15 +2056,21 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                     </div>
                     <div className="about-info-row">
                       <span className="about-info-k">Runtime Stack</span>
-                      <span className="about-info-v font-mono">Electron 35.7.5 · React 18 · TypeScript</span>
+                      <span className="about-info-v font-mono">
+                        Electron 35.7.5 · React 18 · TypeScript
+                      </span>
                     </div>
                     <div className="about-info-row">
                       <span className="about-info-k">{t('settings.about.license')}</span>
-                      <span className="about-info-v font-mono">{t('settings.about.licenseVal')}</span>
+                      <span className="about-info-v font-mono">
+                        {t('settings.about.licenseVal')}
+                      </span>
                     </div>
                     <div className="about-info-row">
                       <span className="about-info-k">{t('settings.about.copyright')}</span>
-                      <span className="about-info-v font-mono">{t('settings.about.copyrightVal')}</span>
+                      <span className="about-info-v font-mono">
+                        {t('settings.about.copyrightVal')}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1768,10 +2114,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
               if (!downloading) setPendingUpdate(null);
             }}
           >
-            <div
-              className="confirm-update-dialog"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <div className="confirm-update-dialog" onClick={(e) => e.stopPropagation()}>
               <div className="confirm-update-header">
                 <div className="confirm-update-icon-wrap">
                   <svg
@@ -1804,13 +2147,9 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
               <div className="confirm-update-body">
                 <div className="confirm-update-notes-title">更新说明 (Release Notes)</div>
                 {pendingUpdate.notes ? (
-                  <div className="confirm-update-notes-box">
-                    {pendingUpdate.notes}
-                  </div>
+                  <div className="confirm-update-notes-box">{pendingUpdate.notes}</div>
                 ) : (
-                  <div className="confirm-update-notes-empty">
-                    {t('settings.update.noNotes')}
-                  </div>
+                  <div className="confirm-update-notes-empty">{t('settings.update.noNotes')}</div>
                 )}
               </div>
 
@@ -1844,14 +2183,8 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
 
         {/* 删除模型确认弹窗 */}
         {deletingModel && (
-          <div
-            className="confirm-delete-overlay"
-            onClick={() => setDeletingModel(null)}
-          >
-            <div
-              className="confirm-delete-dialog"
-              onClick={(e) => e.stopPropagation()}
-            >
+          <div className="confirm-delete-overlay" onClick={() => setDeletingModel(null)}>
+            <div className="confirm-delete-dialog" onClick={(e) => e.stopPropagation()}>
               <div className="confirm-delete-header">
                 <div className="confirm-delete-icon">
                   <svg
@@ -1884,9 +2217,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
                   <strong>{deletingModel.name}</strong>
                   <code className="model-id-code">{deletingModel.model}</code>
                 </div>
-                <div className="confirm-delete-endpoint">
-                  {deletingModel.baseUrl}
-                </div>
+                <div className="confirm-delete-endpoint">{deletingModel.baseUrl}</div>
                 {(deletingModel.id === settings?.activeModelId || deletingModel.isDefault) && (
                   <div className="confirm-delete-warning">
                     ⚠️ 当前模型为默认优先模型，删除后将自动将其他模型设为默认。
@@ -1895,11 +2226,7 @@ export function SettingsModal({ open, onClose, onSaved, onShowToast, initialTab,
               </div>
 
               <div className="confirm-delete-actions">
-                <button
-                  type="button"
-                  className="cancel-btn"
-                  onClick={() => setDeletingModel(null)}
-                >
+                <button type="button" className="cancel-btn" onClick={() => setDeletingModel(null)}>
                   取消
                 </button>
                 <button

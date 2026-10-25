@@ -268,5 +268,71 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
     expect(systemNotice.content).toContain(currentPrompt);
     expect(systemNotice.content).toContain('切勿因中间历史被压缩而向用户询问重复确认原始诉求');
   });
-});
 
+  it('收尾而非重试：遇到复读熔断时直接把已有内容作为最终答复', async () => {
+    const { LlmTimeoutError } = await import('@deepseek-ide/llm');
+    let callCount = 0;
+
+    const mockClient = {
+      chatStreamCollect: async () => {
+        callCount++;
+        // 熔断时流式层会把已产出的（裁掉重复副本的）内容挂在 partialMessage 上
+        throw new LlmTimeoutError(
+          '检测到思考过程周期性重复（19 字符的片段连续重复 40 次），已熔断以终止无限复读',
+          'REPETITION_LOOP',
+          0,
+          { message: { role: 'assistant', content: '这是熔断前已产出的阶段性结论。' } },
+        );
+      },
+    };
+
+    const events: any[] = [];
+    const result = await runAgent({
+      prompt: 'Test repetition fuse',
+      workspaceRoot: os.tmpdir(),
+      backend: new LocalFsBackend(os.tmpdir()),
+      settings: { contextWindowTokens: 128000 } as any,
+      mode: 'agent',
+      client: mockClient as any,
+      applyImmediately: true,
+      onEvent: (e) => events.push(e),
+    });
+
+    // 关键：只调用一次。重试会把退化文本回灌上下文，立刻二次复读。
+    expect(callCount).toBe(1);
+    expect(result.finalText).toContain('这是熔断前已产出的阶段性结论。');
+    expect(result.finalText).toContain('周期性重复');
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('思考阶段熔断且正文为空时，给出可操作的提示而不是空答复', async () => {
+    const { LlmTimeoutError } = await import('@deepseek-ide/llm');
+    const mockClient = {
+      chatStreamCollect: async () => {
+        throw new LlmTimeoutError(
+          '检测到思考过程周期性重复（19 字符的片段连续重复 40 次），已熔断以终止无限复读',
+          'REPETITION_LOOP',
+          0,
+          { message: { role: 'assistant', content: null } },
+        );
+      },
+    };
+
+    const events: any[] = [];
+    const result = await runAgent({
+      prompt: 'Test repetition fuse with empty content',
+      workspaceRoot: os.tmpdir(),
+      backend: new LocalFsBackend(os.tmpdir()),
+      settings: { contextWindowTokens: 128000 } as any,
+      mode: 'agent',
+      client: mockClient as any,
+      applyImmediately: true,
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(result.finalText).toContain('陷入重复循环');
+    expect(result.finalText).toContain('周期性重复');
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+  });
+});

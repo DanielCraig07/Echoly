@@ -22,8 +22,8 @@ import type { WindowRegistry } from './windowRegistry';
 import { detectMavenEnvironment, initMavenWrapper, initMavenSettings } from './mavenService';
 import { detectInstalledJdks, getAvailableOnlineJdks, installOnlineJdk } from './javaService';
 import { detectCppToolchain, detectMultiLangToolchain } from './cppToolchainService';
-import { UnifiedLlmClient } from '@deepseek-ide/llm';
-import { PROJECT_TEMPLATES, type ChatMessage, type ProviderConfig } from '@deepseek-ide/shared';
+import { UnifiedLlmClient, guardSettingsFromAppSettings } from '@deepseek-ide/llm';
+import { PROJECT_TEMPLATES, DEFAULT_LLM_MODEL, type ChatMessage, type ProviderConfig } from '@deepseek-ide/shared';
 import { RulesService } from './rulesService';
 import { detectWorkspaceTechFromDisk } from './workspaceDetector';
 
@@ -39,6 +39,9 @@ function getActiveLlmClient(settings: SettingsStore): UnifiedLlmClient {
       model: activeModel.model,
       enableThinking: activeModel.enableThinking,
       thinkingTokens: activeModel.thinkingTokens,
+      reasoningEffort: activeModel.reasoningEffort,
+      reasoningEffortFine: activeModel.reasoningEffortFine,
+      thinkingTokenBudget: activeModel.thinkingTokenBudget,
     };
   } else {
     const currentProvider = currentSettings.currentProvider || 'deepseek';
@@ -46,10 +49,10 @@ function getActiveLlmClient(settings: SettingsStore): UnifiedLlmClient {
       provider: currentProvider,
       baseUrl: currentSettings.baseUrl || 'http://192.168.10.241:8002',
       apiKey: currentSettings.apiKey || '',
-      model: currentSettings.model || 'deepseek-v4-flash',
+      model: currentSettings.model || DEFAULT_LLM_MODEL,
     };
   }
-  return new UnifiedLlmClient(providerConfig);
+  return new UnifiedLlmClient(providerConfig, guardSettingsFromAppSettings(currentSettings));
 }
 
 export function registerIpc(deps: {

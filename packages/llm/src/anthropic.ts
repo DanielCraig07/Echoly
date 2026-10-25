@@ -1,10 +1,14 @@
-import type {
-  ChatMessage,
-  TokenUsage,
-  ToolDefinition,
-  ThinkingBlock,
-} from '@deepseek-ide/shared';
+import type { ChatMessage, TokenUsage, ToolDefinition, ThinkingBlock } from '@deepseek-ide/shared';
 import { LlmTimeoutError, type LlmTimeoutCode } from './index';
+import {
+  CONTENT_GUARD_OPTIONS,
+  REASONING_GUARD_OPTIONS,
+  RepetitionGuard,
+  repetitionChannelLabel,
+  trimTrailingRepeats,
+  type RepetitionFuseInfo,
+  type RepetitionHit,
+} from './repetitionGuard';
 
 export interface AnthropicClientOptions {
   baseUrl?: string;
@@ -16,6 +20,8 @@ export interface AnthropicClientOptions {
   fetchImpl?: typeof fetch;
   firstTokenTimeoutMs?: number;
   streamStallTimeoutMs?: number;
+  /** 单次生成的最大 token 数，作为复读退化的兜底上界。 */
+  maxTokens?: number;
 }
 
 export interface AnthropicChatParams {
@@ -26,11 +32,14 @@ export interface AnthropicChatParams {
   signal?: AbortSignal;
   firstTokenTimeoutMs?: number;
   streamStallTimeoutMs?: number;
+  maxTokens?: number;
 }
 
 export interface AnthropicChatResult {
   message: ChatMessage;
   usage?: TokenUsage;
+  /** 服务端停止原因（Anthropic 的 `stop_reason`），供上层区分正常结束与被截断。 */
+  finishReason?: string;
 }
 
 interface AnthropicMessage {
@@ -266,6 +275,7 @@ export class AnthropicClient {
   readonly thinkingTokens: number;
   readonly firstTokenTimeoutMs: number;
   readonly streamStallTimeoutMs: number;
+  readonly maxTokens: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: AnthropicClientOptions) {
@@ -280,7 +290,18 @@ export class AnthropicClient {
     this.thinkingTokens = options.thinkingTokens ?? 10000;
     this.firstTokenTimeoutMs = options.firstTokenTimeoutMs ?? 60_000;
     this.streamStallTimeoutMs = options.streamStallTimeoutMs ?? 90_000;
+    this.maxTokens = options.maxTokens ?? 8192;
     this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  /**
+   * Anthropic 要求 max_tokens 必须大于 thinking.budget_tokens，
+   * 否则整个请求会被拒。开启 thinking 时按「预算 + 输出余量」给足上限。
+   */
+  private resolveMaxTokens(params: AnthropicChatParams): number {
+    const requested = params.maxTokens ?? this.maxTokens;
+    if (!this.enableThinking) return requested;
+    return Math.max(requested, this.thinkingTokens + 8192);
   }
 
   async chat(params: AnthropicChatParams): Promise<ChatMessage> {
@@ -291,7 +312,7 @@ export class AnthropicClient {
     const body: any = {
       model: params.model || this.model,
       messages,
-      max_tokens: 8192,
+      max_tokens: this.resolveMaxTokens(params),
       temperature: params.temperature ?? this.temperature,
     };
 
@@ -361,7 +382,7 @@ export class AnthropicClient {
     const body: any = {
       model: params.model || this.model,
       messages,
-      max_tokens: 8192,
+      max_tokens: this.resolveMaxTokens(params),
       temperature: params.temperature ?? this.temperature,
       stream: true,
     };
@@ -441,7 +462,23 @@ export class AnthropicClient {
     const toolCalls: NonNullable<ChatMessage['tool_calls']> = [];
     const toolCallByIndex = new Map<number, NonNullable<ChatMessage['tool_calls']>[number]>();
     let usage: TokenUsage | undefined;
+    let finishReason: string | undefined;
     let receivedFirstChunk = false;
+
+    // ── 防复读保护 ──────────────────────────────────────────────────────────────
+    // 与 OpenAI 分支同一套逻辑：在累积文本上做后缀周期检测，thinking / text 两条通道分别监控。
+    // thinking 通道的硬上限 = budget_tokens × 4（每 token 约 4 字节），最少 40000 字符。
+    const thinkingCharLimit = Math.max(this.thinkingTokens * 4, 40_000);
+    const thinkingGuard = new RepetitionGuard(REASONING_GUARD_OPTIONS);
+    const textGuard = new RepetitionGuard(CONTENT_GUARD_OPTIONS);
+    const fusion: { info: RepetitionFuseInfo | null } = { info: null };
+    const fuseInfo = (): RepetitionFuseInfo | null => fusion.info;
+    const fuse = (channel: RepetitionFuseInfo['channel'], hit: RepetitionHit | null) => {
+      if (fusion.info || !hit) return;
+      fusion.info = { channel, period: hit.period, repeats: hit.repeats, source: 'client' };
+      abortController.abort();
+    };
+    // ────────────────────────────────────────────────────────────────────────────
 
     try {
       while (true) {
@@ -449,6 +486,8 @@ export class AnthropicClient {
         try {
           readResult = await reader.read();
         } catch (readErr) {
+          // 熔断是主动决策，优先级高于可能同时触发的看门狗超时
+          if (fuseInfo()) break;
           if (timedOutError) throw timedOutError;
           throw readErr;
         }
@@ -467,94 +506,156 @@ export class AnthropicClient {
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() ?? '';
+        buffer = lines.pop() ?? '';
 
-      for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line.startsWith('data:')) continue;
+        for (const rawLine of lines) {
+          if (fuseInfo()) break;
+          const line = rawLine.trim();
+          if (!line.startsWith('data:')) continue;
 
-        const payload = line.slice(5).trim();
-        if (!payload) continue;
+          const payload = line.slice(5).trim();
+          if (!payload) continue;
 
-        let event: any;
-        try {
-          event = JSON.parse(payload);
-        } catch {
-          continue;
-        }
-
-        yield event; // Forward raw event for UI
-
-        if (event.type === 'content_block_delta') {
-          const delta = event.delta;
-          if (delta.type === 'text_delta') {
-            textParts.push(delta.text);
-          } else if (delta.type === 'thinking_delta') {
-            const lastThinking = thinking[thinking.length - 1];
-            if (lastThinking) {
-              lastThinking.thinking += delta.thinking;
-            }
-          } else if (delta.type === 'input_json_delta') {
-            const tc =
-              typeof event.index === 'number'
-                ? toolCallByIndex.get(event.index)
-                : toolCalls[toolCalls.length - 1];
-            if (tc && delta.partial_json) {
-              tc.function.arguments += delta.partial_json;
-            }
+          let event: any;
+          try {
+            event = JSON.parse(payload);
+          } catch {
+            continue;
           }
-        } else if (event.type === 'content_block_start') {
-          const block = event.content_block;
-          if (block.type === 'thinking') {
-            thinking.push({ type: 'thinking', thinking: '' });
-          } else if (block.type === 'tool_use') {
-            const initialArgs =
-              block.input && typeof block.input === 'object' && Object.keys(block.input).length > 0
-                ? JSON.stringify(block.input)
-                : '';
-            const tc: NonNullable<ChatMessage['tool_calls']>[number] = {
-              id: block.id,
-              type: 'function',
-              function: { name: block.name, arguments: initialArgs },
+
+          // 熔断时不再把退化 token 转发给 UI，避免渲染层继续堆积复读内容
+          if (!fuseInfo()) yield event; // Forward raw event for UI
+
+          if (event.type === 'content_block_delta') {
+            const delta = event.delta;
+            if (delta.type === 'text_delta') {
+              const textDelta: string = delta.text ?? '';
+              textParts.push(textDelta);
+              if (textGuard.feed(textDelta)) {
+                fuse('content', textGuard.hit);
+              }
+            } else if (delta.type === 'thinking_delta') {
+              const deltaText: string = delta.thinking ?? '';
+              if (!deltaText) continue;
+
+              // ── 防护层1：thinking 总字符上限 ──────────────────────────────────
+              if (thinkingGuard.chars > thinkingCharLimit) {
+                timedOutError = new LlmTimeoutError(
+                  `Thinking 内容超出最大限制（${thinkingCharLimit} 字符），已强制中止以防止无限循环`,
+                  'STREAM_STALL_TIMEOUT',
+                  streamStallTimeout,
+                );
+                abortController.abort();
+                break;
+              }
+
+              // ── 防护层2：周期性重复检测 ──────────────────────────────────────
+              if (thinkingGuard.feed(deltaText)) {
+                fuse('reasoning', thinkingGuard.hit);
+              }
+
+              const lastThinking = thinking[thinking.length - 1];
+              if (lastThinking) {
+                lastThinking.thinking += deltaText;
+              }
+            } else if (delta.type === 'input_json_delta') {
+              const tc =
+                typeof event.index === 'number'
+                  ? toolCallByIndex.get(event.index)
+                  : toolCalls[toolCalls.length - 1];
+              if (tc && delta.partial_json) {
+                tc.function.arguments += delta.partial_json;
+              }
+            }
+          } else if (event.type === 'content_block_start') {
+            const block = event.content_block;
+            if (block.type === 'thinking') {
+              thinking.push({ type: 'thinking', thinking: '' });
+            } else if (block.type === 'tool_use') {
+              const initialArgs =
+                block.input &&
+                typeof block.input === 'object' &&
+                Object.keys(block.input).length > 0
+                  ? JSON.stringify(block.input)
+                  : '';
+              const tc: NonNullable<ChatMessage['tool_calls']>[number] = {
+                id: block.id,
+                type: 'function',
+                function: { name: block.name, arguments: initialArgs },
+              };
+              toolCalls.push(tc);
+              if (typeof event.index === 'number') {
+                toolCallByIndex.set(event.index, tc);
+              }
+            }
+          } else if (event.type === 'message_start' && event.message?.usage) {
+            usage = {
+              promptTokens: event.message.usage.input_tokens,
+              completionTokens: event.message.usage.output_tokens,
+              totalTokens:
+                (event.message.usage.input_tokens || 0) + (event.message.usage.output_tokens || 0),
             };
-            toolCalls.push(tc);
-            if (typeof event.index === 'number') {
-              toolCallByIndex.set(event.index, tc);
+          } else if (event.type === 'message_delta') {
+            // stop_reason 与 usage 一起到（Anthropic 的 message_delta 两者都可能带）。
+            // 记下来是为了让上层能区分 end_turn / max_tokens / refusal，
+            // 而不是只能看到「流结束了」。
+            if (event.delta?.stop_reason) finishReason = event.delta.stop_reason;
+            if (event.usage) {
+              const promptTokens = usage?.promptTokens ?? 0;
+              const completionTokens = event.usage.output_tokens ?? usage?.completionTokens ?? 0;
+              usage = {
+                promptTokens,
+                completionTokens,
+                totalTokens: promptTokens + completionTokens,
+              };
             }
           }
-        } else if (event.type === 'message_start' && event.message?.usage) {
-          usage = {
-            promptTokens: event.message.usage.input_tokens,
-            completionTokens: event.message.usage.output_tokens,
-            totalTokens:
-              (event.message.usage.input_tokens || 0) + (event.message.usage.output_tokens || 0),
-          };
-        } else if (event.type === 'message_delta' && event.usage) {
-          const promptTokens = usage?.promptTokens ?? 0;
-          const completionTokens = event.usage.output_tokens ?? usage?.completionTokens ?? 0;
-          usage = {
-            promptTokens,
-            completionTokens,
-            totalTokens: promptTokens + completionTokens,
-          };
         }
+        if (fuseInfo()) break;
+      }
+    } finally {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (params.signal) params.signal.removeEventListener('abort', onAbort);
+      try {
+        reader.releaseLock();
+      } catch {
+        // ignore
       }
     }
-  } finally {
-    if (timeoutTimer) clearTimeout(timeoutTimer);
-    if (params.signal) params.signal.removeEventListener('abort', onAbort);
-    try {
-      reader.releaseLock();
-    } catch {
-      // ignore
-    }
-  }
 
     // Default any empty tool arguments to "{}" to prevent downstream JSON parse issues
     for (const tc of toolCalls) {
       if (!tc.function.arguments || !tc.function.arguments.trim()) {
         tc.function.arguments = '{}';
       }
+    }
+
+    const fuseHit = fuseInfo();
+    if (fuseHit) {
+      // 复读退化：裁掉重复副本后把已有内容交给上层优雅收尾。
+      // 抛 REPETITION_LOOP 而非超时码，让 agent 层直接结束而不重试（退化文本回灌会二次诱发复读）。
+      const partial: ChatMessage = {
+        role: 'assistant',
+        content: textGuard.hit
+          ? trimTrailingRepeats(textParts.join(''), textGuard.hit)
+          : textParts.join('') || null,
+      };
+      if (thinking.length) {
+        const lastIdx = thinking.length - 1;
+        partial.thinking = thinking.map((b, i) =>
+          i === lastIdx && thinkingGuard.hit
+            ? { ...b, thinking: trimTrailingRepeats(b.thinking, thinkingGuard.hit) }
+            : b,
+        );
+      }
+      // 故意不带上 toolCalls：生成是被中途掐断的，参数 JSON 极可能只序列化了一半。
+      const channelLabel = repetitionChannelLabel(fuseHit.channel);
+      throw new LlmTimeoutError(
+        `检测到${channelLabel}周期性重复（${fuseHit.period} 字符的片段连续重复 ${fuseHit.repeats} 次），已熔断以终止无限复读`,
+        'REPETITION_LOOP',
+        0,
+        { message: partial, usage },
+      );
     }
 
     const message: ChatMessage = {
@@ -564,7 +665,7 @@ export class AnthropicClient {
     if (thinking.length) message.thinking = thinking;
     if (toolCalls.length) message.tool_calls = toolCalls;
 
-    return { message, usage };
+    return { message, usage, finishReason };
   }
 
   async chatStreamCollect(

@@ -12,8 +12,14 @@ import type {
   PlanTodo,
   ProviderConfig,
 } from '@deepseek-ide/shared';
-import { syncPermissionBooleans } from '@deepseek-ide/shared';
-import { UnifiedLlmClient, estimateTokensFromMessages, isLlmTimeoutError } from '@deepseek-ide/llm';
+import { syncPermissionBooleans, DEFAULT_LLM_MODEL } from '@deepseek-ide/shared';
+import {
+  UnifiedLlmClient,
+  estimateTokensFromMessages,
+  guardSettingsFromAppSettings,
+  isLlmTimeoutError,
+  isRepetitionLoopError,
+} from '@deepseek-ide/llm';
 import {
   executeTool,
   toolsForMode,
@@ -160,17 +166,25 @@ function buildSystemPrompt(options: {
 - For destructive or ambiguous actions, use ask_user (or wait for confirmation flows).
 - Be concise in final answers; cite paths when referring to code. During long work, give short progress notes.
 - Do not invent file contents you have not read.
-- When you have sufficient information to answer the user's request, STOP calling tools immediately and output your final response.`;
+- When you have sufficient information to answer the user's request, STOP calling tools immediately and output your final response.
+- Never repeat yourself: once a step of reasoning has been stated, do not restate it. Keep the reasoning chain tight and move forward — do not loop back over conclusions you have already reached.`;
+
+  const reasoningRules = `- Keep the reasoning channel concise. Do NOT restate or paraphrase earlier reasoning steps, and never repeat a sentence or paragraph you have already produced.
+- When you reach a conclusion, stop thinking and act on it (call a tool or write the final answer). Do not re-verify the same conclusion over and over.`;
 
   const modeBlock =
     mode === 'ask'
       ? `You are in ASK mode — a read-only coding assistant in an IDE connected to an intranet Deepseek model.
 Answer questions about the codebase. Use readonly tools only. Do NOT modify files or run write/mutating commands.
-${sharedRules}`
+${sharedRules}
+## Reasoning discipline
+${reasoningRules}`
       : mode === 'plan'
         ? `You are in PLAN mode — explore the codebase with readonly tools, then produce an actionable implementation plan.
 Do NOT modify files or run mutating commands.
 ${sharedRules}
+## Reasoning discipline
+${reasoningRules}
 At the end of your final message you MUST include a fenced plan block exactly like:
 \`\`\`plan
 {"title":"...","summary":"...","todos":[{"id":"t1","content":"...","status":"pending"}]}
@@ -179,7 +193,9 @@ Todos should be concrete, ordered steps.`
         : `You are a coding agent inside an IDE connected to an intranet Deepseek model.
 You can explore and modify the workspace with tools.
 Use apply_patch for surgical edits; write_file for new files or full rewrites.
-${sharedRules}`;
+${sharedRules}
+## Reasoning discipline
+${reasoningRules}`;
 
   const planExecBlock =
     mode === 'agent' && planContext
@@ -292,6 +308,9 @@ export async function runAgent(
       model: options.modelProfile.model,
       enableThinking: options.modelProfile.enableThinking,
       thinkingTokens: options.modelProfile.thinkingTokens,
+      reasoningEffort: options.modelProfile.reasoningEffort,
+      reasoningEffortFine: options.modelProfile.reasoningEffortFine,
+      thinkingTokenBudget: options.modelProfile.thinkingTokenBudget,
     };
   } else {
     const activeModel = settings.models?.find((m) => m.id === settings.activeModelId);
@@ -303,6 +322,9 @@ export async function runAgent(
         model: activeModel.model,
         enableThinking: activeModel.enableThinking,
         thinkingTokens: activeModel.thinkingTokens,
+        reasoningEffort: activeModel.reasoningEffort,
+        reasoningEffortFine: activeModel.reasoningEffortFine,
+        thinkingTokenBudget: activeModel.thinkingTokenBudget,
       };
     } else {
       const currentProvider = settings.currentProvider || 'deepseek';
@@ -310,12 +332,13 @@ export async function runAgent(
         provider: currentProvider,
         baseUrl: settings.baseUrl || 'http://192.168.10.241:8002',
         apiKey: settings.apiKey || '',
-        model: settings.model || 'deepseek-v4-flash',
+        model: settings.model || DEFAULT_LLM_MODEL,
       };
     }
   }
 
-  const client = options.client ?? new UnifiedLlmClient(providerConfig);
+  const client =
+    options.client ?? new UnifiedLlmClient(providerConfig, guardSettingsFromAppSettings(settings));
 
   const getPermissionMode = (): AppSettings['permissionMode'] =>
     options.getPermissionMode?.() ?? settings.permissionMode ?? 'ask';
@@ -399,7 +422,10 @@ export async function runAgent(
             : '';
           const ancestorChain = el.ancestors?.length
             ? el.ancestors
-                .map((a) => `${a.tagName}${a.id ? '#' + a.id : ''}${a.className ? '.' + a.className.split(/\s+/)[0] : ''}`)
+                .map(
+                  (a) =>
+                    `${a.tagName}${a.id ? '#' + a.id : ''}${a.className ? '.' + a.className.split(/\s+/)[0] : ''}`,
+                )
                 .join(' > ')
             : '';
           const siblingLine = el.siblings
@@ -524,8 +550,14 @@ ${el.outerHtml || att.content || ''}
         const defaultLocalBudget = 22000;
         const defaultCloudBudget = 60000;
         const maxPromptBudget = isLocalNode
-          ? Math.min(windowTokens ? Math.floor(windowTokens * 0.5) : defaultLocalBudget, defaultLocalBudget)
-          : Math.min(windowTokens ? Math.floor(windowTokens * 0.75) : defaultCloudBudget, defaultCloudBudget);
+          ? Math.min(
+              windowTokens ? Math.floor(windowTokens * 0.5) : defaultLocalBudget,
+              defaultLocalBudget,
+            )
+          : Math.min(
+              windowTokens ? Math.floor(windowTokens * 0.75) : defaultCloudBudget,
+              defaultCloudBudget,
+            );
 
         if (estimated > maxPromptBudget && messages.length > 8) {
           // Stage 1: Compress older tool outputs
@@ -541,7 +573,11 @@ ${el.outerHtml || att.content || ''}
           if (estimated > maxPromptBudget) {
             for (let i = 1; i < messages.length - (isLocalNode ? 4 : 8); i++) {
               const m = messages[i];
-              if (m.role === 'assistant' && typeof m.content === 'string' && m.content.length > 200) {
+              if (
+                m.role === 'assistant' &&
+                typeof m.content === 'string' &&
+                m.content.length > 200
+              ) {
                 m.content = `${m.content.slice(0, 150)}...[前序思考已简述]`;
               }
               if (m.thinking?.length) {
@@ -557,7 +593,10 @@ ${el.outerHtml || att.content || ''}
           if (estimated > maxPromptBudget && messages.length > stage3Threshold) {
             const recentMessages = messages.slice(-stage3RecentCount);
             let firstCleanIdx = 0;
-            while (firstCleanIdx < recentMessages.length && recentMessages[firstCleanIdx].role === 'tool') {
+            while (
+              firstCleanIdx < recentMessages.length &&
+              recentMessages[firstCleanIdx].role === 'tool'
+            ) {
               firstCleanIdx++;
             }
             const cleanRecent = recentMessages.slice(firstCleanIdx);
@@ -591,6 +630,8 @@ ${el.outerHtml || att.content || ''}
         const effectiveTools = consecutiveStuckSteps >= 2 ? undefined : tools;
 
         let assistant: ChatMessage;
+        /** 本轮服务端停止原因，用于区分正常结束与被 max_tokens 截断。 */
+        let finishReason: string | undefined;
         let callAttempts = 0;
         const maxTimeoutRetries = 1;
 
@@ -606,6 +647,7 @@ ${el.outerHtml || att.content || ''}
               (thinking: string) => onEvent({ type: 'thinking_token', text: thinking }),
             );
             assistant = result.message;
+            finishReason = result.finishReason;
             if (result.usage?.totalTokens != null) {
               emitContextUsage(result.usage.totalTokens, 'api');
             } else if (result.usage?.promptTokens != null) {
@@ -625,6 +667,23 @@ ${el.outerHtml || att.content || ''}
               throw new Error('cancelled');
             }
 
+            // 复读退化熔断：模型陷入「重复同一句话」的死循环，已由流式层掐断。
+            // 这里必须直接收尾而不是重试 —— 重试会把退化文本连同原上下文一起回灌，
+            // 几乎必然立刻再次复读，表现就是用户看到的「卡在那里一直重复」。
+            if (isRepetitionLoopError(err)) {
+              const partial = (err as { partialMessage?: ChatMessage }).partialMessage;
+              const recovered = (partial?.content ?? '').trim();
+              const loopNotice =
+                '[系统提示] 检测到模型输出陷入周期性重复，已自动熔断该次生成以避免无限复读。';
+              finalText = recovered
+                ? `${recovered}\n\n> ${loopNotice}`
+                : `模型在思考阶段陷入重复循环，未能产出有效内容。请重试，或换用更简明的提问方式。\n\n> ${loopNotice}`;
+              onEvent({ type: 'assistant_message', content: finalText });
+              onEvent({ type: 'status', status: 'done' });
+              onEvent({ type: 'done', finalText });
+              return { finalText, diffs };
+            }
+
             // Watchdog Timeout Protection & Auto-healing Retry:
             // If local model server stalled (>60s TTFT), drastically prune messages and retry automatically
             if (isLlmTimeoutError(err) && callAttempts < maxTimeoutRetries) {
@@ -638,7 +697,11 @@ ${el.outerHtml || att.content || ''}
                 }
                 const cleanRecent = recent.slice(firstClean);
                 for (const m of cleanRecent) {
-                  if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 200) {
+                  if (
+                    m.role === 'tool' &&
+                    typeof m.content === 'string' &&
+                    m.content.length > 200
+                  ) {
                     m.content = `${m.content.slice(0, 150)}...[因节点显存超时已紧急精简]`;
                   }
                   if (m.thinking) m.thinking = undefined;
@@ -681,6 +744,7 @@ ${el.outerHtml || att.content || ''}
                 (thinking: string) => onEvent({ type: 'thinking_token', text: thinking }),
               );
               assistant = result.message;
+              finishReason = result.finishReason;
               if (result.usage?.totalTokens != null) {
                 emitContextUsage(result.usage.totalTokens, 'api');
               }
@@ -698,7 +762,8 @@ ${el.outerHtml || att.content || ''}
           assistant.tool_calls?.map((tc) => ({
             id: tc.id,
             name: tc.function.name,
-            args: tc.function.arguments && tc.function.arguments.trim() ? tc.function.arguments : '{}',
+            args:
+              tc.function.arguments && tc.function.arguments.trim() ? tc.function.arguments : '{}',
           })) ?? [];
 
         if (!toolCalls.length && assistant.content && consecutiveStuckSteps < 2) {
@@ -716,6 +781,12 @@ ${el.outerHtml || att.content || ''}
             .trim();
           if (!finalText && step > 1) {
             finalText = `已完成计划中的修改与执行（共执行了 ${step - 1} 步工具操作）。详细执行过程可展开上方「Worked for」时间线查看。`;
+          }
+          // 撞到 max_tokens 被截断：内容本身可用，但要如实告诉用户它不完整，
+          // 否则「回答说到一半突然停住」看起来像是模型出错了。
+          if (finishReason === 'length' && finalText) {
+            finalText +=
+              '\n\n> [系统提示] 本次回答达到输出长度上限被截断，内容可能不完整。可要求继续，或缩小问题范围后重试。';
           }
           onEvent({ type: 'assistant_message', content: finalText });
           if (mode === 'plan') {
@@ -737,7 +808,8 @@ ${el.outerHtml || att.content || ''}
         // Strip bare --- separator lines which the model uses in reasoning but render as <hr> in Markdown.
         const thoughtToDisplay = (
           assistant.reasoning_content ||
-          (assistant.thinking?.map((t) => t.thinking).join('\n') || '') ||
+          assistant.thinking?.map((t) => t.thinking).join('\n') ||
+          '' ||
           assistant.content ||
           ''
         ).trim();
@@ -791,10 +863,13 @@ ${el.outerHtml || att.content || ''}
               normalizedArgKey = JSON.stringify(
                 Object.keys(parsedArgs as Record<string, unknown>)
                   .sort()
-                  .reduce((acc, k) => {
-                    acc[k] = (parsedArgs as Record<string, unknown>)[k];
-                    return acc;
-                  }, {} as Record<string, unknown>),
+                  .reduce(
+                    (acc, k) => {
+                      acc[k] = (parsedArgs as Record<string, unknown>)[k];
+                      return acc;
+                    },
+                    {} as Record<string, unknown>,
+                  ),
               );
             }
           } catch {
@@ -853,8 +928,7 @@ ${el.outerHtml || att.content || ''}
 
           // If this is the 2nd identical call in recent history, append a gentle warning to nip the loop in the bud
           if (repeatCount === 1) {
-            toolResultContent +=
-              `\n\n[系统提示]: 你刚刚已读取过完全相同的内容。严禁再次以相同参数调用 ${call.name} 工具。请直接根据已获得的数据进行思考与总结。`;
+            toolResultContent += `\n\n[系统提示]: 你刚刚已读取过完全相同的内容。严禁再次以相同参数调用 ${call.name} 工具。请直接根据已获得的数据进行思考与总结。`;
           }
 
           onEvent({
