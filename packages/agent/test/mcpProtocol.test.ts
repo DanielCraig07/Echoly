@@ -99,7 +99,12 @@ describe('JSON-RPC message discrimination', () => {
 
 describe('flattenMcpContent', () => {
   it('joins text blocks', () => {
-    const out = flattenMcpContent({ content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] });
+    const out = flattenMcpContent({
+      content: [
+        { type: 'text', text: 'a' },
+        { type: 'text', text: 'b' },
+      ],
+    });
     expect(out).toBe('a\nb');
   });
 

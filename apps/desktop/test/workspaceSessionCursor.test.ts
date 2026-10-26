@@ -24,10 +24,7 @@ describe('Workspace Session Open Files & Cursor Persistence', () => {
 
   it('persists and restores open files with exact cursor line and column numbers', () => {
     const root = '/Users/test/my-project';
-    const paths = [
-      '/Users/test/my-project/src/index.ts',
-      '/Users/test/my-project/src/utils.ts',
-    ];
+    const paths = ['/Users/test/my-project/src/index.ts', '/Users/test/my-project/src/utils.ts'];
     const activePath = '/Users/test/my-project/src/index.ts';
     const cursorPositions = {
       '/Users/test/my-project/src/index.ts': { line: 42, col: 10, scrollTop: 650, scrollLeft: 0 },
@@ -44,8 +41,18 @@ describe('Workspace Session Open Files & Cursor Persistence', () => {
     expect(restored?.activeCol).toBe(10);
     expect(restored?.activeScrollTop).toBe(650);
     expect(restored?.activeScrollLeft).toBe(0);
-    expect(restored?.cursorPositions?.[activePath]).toEqual({ line: 42, col: 10, scrollTop: 650, scrollLeft: 0 });
-    expect(restored?.cursorPositions?.['/Users/test/my-project/src/utils.ts']).toEqual({ line: 128, col: 5, scrollTop: 1820, scrollLeft: 20 });
+    expect(restored?.cursorPositions?.[activePath]).toEqual({
+      line: 42,
+      col: 10,
+      scrollTop: 650,
+      scrollLeft: 0,
+    });
+    expect(restored?.cursorPositions?.['/Users/test/my-project/src/utils.ts']).toEqual({
+      line: 128,
+      col: 5,
+      scrollTop: 1820,
+      scrollLeft: 20,
+    });
   });
 
   it('clears saved session correctly', () => {

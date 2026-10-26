@@ -68,7 +68,13 @@ describe('Anthropic Streaming Tool Call Accumulation & Multimodal', () => {
         role: 'user',
         content: 'Please examine this diagram and report',
         images: [{ dataUrl: 'data:image/png;base64,iVBORw0KGgo...', mediaType: 'image/png' }],
-        documents: [{ dataUrl: 'data:application/pdf;base64,JVBERi0xLj...', mediaType: 'application/pdf', name: 'report.pdf' }],
+        documents: [
+          {
+            dataUrl: 'data:application/pdf;base64,JVBERi0xLj...',
+            mediaType: 'application/pdf',
+            name: 'report.pdf',
+          },
+        ],
       },
     ];
 
@@ -76,10 +82,20 @@ describe('Anthropic Streaming Tool Call Accumulation & Multimodal', () => {
     expect(formatted.length).toBe(1);
     expect(Array.isArray(formatted[0].content)).toBe(true);
 
-    const parts = formatted[0].content as Array<{ type: string; text?: string; image_url?: { url: string } }>;
+    const parts = formatted[0].content as Array<{
+      type: string;
+      text?: string;
+      image_url?: { url: string };
+    }>;
     expect(parts[0]).toEqual({ type: 'text', text: 'Please examine this diagram and report' });
-    expect(parts[1]).toEqual({ type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo...' } });
-    expect(parts[2]).toEqual({ type: 'image_url', image_url: { url: 'data:application/pdf;base64,JVBERi0xLj...' } });
+    expect(parts[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'data:image/png;base64,iVBORw0KGgo...' },
+    });
+    expect(parts[2]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'data:application/pdf;base64,JVBERi0xLj...' },
+    });
   });
 
   it('converts Anthropic messages with native image and document blocks', async () => {
@@ -108,7 +124,13 @@ describe('Anthropic Streaming Tool Call Accumulation & Multimodal', () => {
           role: 'user',
           content: 'Analyze',
           images: [{ dataUrl: 'data:image/png;base64,AAABBB', mediaType: 'image/png' }],
-          documents: [{ dataUrl: 'data:application/pdf;base64,CCCDDD', mediaType: 'application/pdf', name: 'test.pdf' }],
+          documents: [
+            {
+              dataUrl: 'data:application/pdf;base64,CCCDDD',
+              mediaType: 'application/pdf',
+              name: 'test.pdf',
+            },
+          ],
         },
       ],
     });

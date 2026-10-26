@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LlmClient } from '../src/index';
-import { Semaphore, isRetryableNetworkError, retryDelayMs, withRetry } from '../src/requestControl';
+import {
+  Semaphore,
+  isRetryableNetworkError,
+  retryAfterMs,
+  retryDelayMs,
+  withRetry,
+} from '../src/requestControl';
 
 /** 造一个 SSE 响应，用于让 chatStream 走完正常路径。 */
 function sseResponse(chunks: string[]): Response {
@@ -134,9 +140,9 @@ describe('retry predicates', () => {
   });
 
   it('treats econnrefused as retryable', () => {
-    expect(isRetryableNetworkError(new Error('fetch failed: connect ECONNREFUSED 127.0.0.1:80'))).toBe(
-      true,
-    );
+    expect(
+      isRetryableNetworkError(new Error('fetch failed: connect ECONNREFUSED 127.0.0.1:80')),
+    ).toBe(true);
   });
 
   it('backs off with jitter that never exceeds the cap', () => {
@@ -157,7 +163,12 @@ describe('LlmClient retry integration', () => {
       return sseResponse(DONE_CHUNKS);
     }) as unknown as typeof fetch;
 
-    const client = new LlmClient({ baseUrl: 'http://x', fetchImpl, maxRetries: 1, maxConcurrency: 4 });
+    const client = new LlmClient({
+      baseUrl: 'http://x',
+      fetchImpl,
+      maxRetries: 1,
+      maxConcurrency: 4,
+    });
     const result = await client.chatStreamCollect({ messages: [{ role: 'user', content: 'hi' }] });
     expect(calls).toBe(2);
     expect(result.message.content).toBe('hi');
@@ -170,7 +181,12 @@ describe('LlmClient retry integration', () => {
       return new Response('bad request: model not found', { status: 400 });
     }) as unknown as typeof fetch;
 
-    const client = new LlmClient({ baseUrl: 'http://x', fetchImpl, maxRetries: 2, maxConcurrency: 4 });
+    const client = new LlmClient({
+      baseUrl: 'http://x',
+      fetchImpl,
+      maxRetries: 2,
+      maxConcurrency: 4,
+    });
     await expect(
       // 400 且报错文本不指向任何可降级字段 -> 不重试、不降级，直接抛出
       client.chat({ messages: [{ role: 'user', content: 'hi' }] }),
@@ -180,7 +196,8 @@ describe('LlmClient retry integration', () => {
 
   it('releases the concurrency slot even when the request fails', async () => {
     const gate = new Semaphore(1);
-    const fetchImpl = (async () => new Response('nope', { status: 500 })) as unknown as typeof fetch;
+    const fetchImpl = (async () =>
+      new Response('nope', { status: 500 })) as unknown as typeof fetch;
     const client = new LlmClient({
       baseUrl: 'http://x',
       fetchImpl,
@@ -224,7 +241,107 @@ describe('LlmClient retry integration', () => {
     await gen.return(undefined as never);
 
     vi.useRealTimers();
-    const result = await client.chatStreamCollect({ messages: [{ role: 'user', content: 'again' }] });
+    const result = await client.chatStreamCollect({
+      messages: [{ role: 'user', content: 'again' }],
+    });
     expect(result.message.content).toBe('hi');
+  });
+});
+
+describe('Retry-After 与响应体释放', () => {
+  it('秒数形式被转成毫秒', () => {
+    const res = new Response(null, { status: 429, headers: { 'retry-after': '3' } });
+    expect(retryAfterMs(res)).toBe(3000);
+  });
+
+  it('HTTP 日期形式按剩余时间折算', () => {
+    const when = new Date(Date.now() + 5000).toUTCString();
+    const res = new Response(null, { status: 503, headers: { 'retry-after': when } });
+    const ms = retryAfterMs(res);
+    expect(ms).toBeGreaterThan(3000);
+    expect(ms).toBeLessThanOrEqual(5000);
+  });
+
+  it('大数值按毫秒理解（有网关直接给毫秒）', () => {
+    // 把 60000 读成 60 秒能接受，把「60000 毫秒」读成「60000 秒」就不能 ——
+    // 前者是等待，后者是界面看起来死了。
+    const res = new Response(null, { status: 429, headers: { 'retry-after': '60000' } });
+    expect(retryAfterMs(res)).toBeLessThanOrEqual(30_000);
+  });
+
+  it('荒谬的大值被截到上限', () => {
+    const res = new Response(null, { status: 429, headers: { 'retry-after': '999999' } });
+    expect(retryAfterMs(res)).toBe(30_000);
+  });
+
+  it('没有该响应头时返回 null，交给指数退避', () => {
+    expect(retryAfterMs(new Response(null, { status: 503 }))).toBeNull();
+    expect(retryAfterMs(undefined)).toBeNull();
+  });
+
+  it('已经过期的 HTTP 日期返回 null', () => {
+    const past = new Date(Date.now() - 60_000).toUTCString();
+    const res = new Response(null, { status: 429, headers: { 'retry-after': past } });
+    expect(retryAfterMs(res)).toBeNull();
+  });
+
+  it('withRetry 在重试前调用 dispose 释放被丢弃的结果', async () => {
+    // 不释放 = undici 一直占着那条连接，重试几次之后后续请求「没发出就超时」。
+    const disposed: number[] = [];
+    let calls = 0;
+    const out = await withRetry(
+      async () => {
+        calls++;
+        return new Response('x', { status: calls < 3 ? 503 : 200 });
+      },
+      (r) => !!r && r.status === 503,
+      {
+        maxAttempts: 3,
+        dispose: async (r) => {
+          disposed.push(r.status);
+        },
+      },
+    );
+    expect(out.ok).toBe(true);
+    expect(calls).toBe(3);
+    // 前两次的结果被丢弃并释放，最后一次交回调用方、不释放
+    expect(disposed).toEqual([503, 503]);
+  });
+
+  it('被取消时不 dispose —— 那个结果还要交回调用方', async () => {
+    const disposed: number[] = [];
+    const controller = new AbortController();
+    const out = await withRetry(
+      async () => new Response('x', { status: 503 }),
+      (r) => !!r && r.status === 503,
+      {
+        maxAttempts: 3,
+        signal: controller.signal,
+        dispose: (r) => {
+          disposed.push(r.status);
+        },
+        onRetry: () => controller.abort(),
+      },
+    );
+    expect(out.ok).toBe(true);
+    expect(disposed).toEqual([]);
+  });
+
+  it('delayHintMs 覆盖指数退避', async () => {
+    const delays: number[] = [];
+    let calls = 0;
+    await withRetry(
+      async () => {
+        calls++;
+        return new Response('x', { status: calls < 2 ? 429 : 200 });
+      },
+      (r) => !!r && r.status === 429,
+      {
+        maxAttempts: 1,
+        delayHintMs: () => 1, // 只等 1ms，测试不该真的睡 500ms
+        onRetry: (info) => delays.push(info.delayMs),
+      },
+    );
+    expect(delays).toEqual([1]);
   });
 });

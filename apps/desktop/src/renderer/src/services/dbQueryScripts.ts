@@ -139,7 +139,10 @@ export function consoleTabPath(connectionId: string, fileName: string): string {
  * `taken` 要传**同一连接下所有已知脚本名**（已落盘的 + 已打开标签的）：
  * 标签路径不含库，同名文件在不同库里虽然落盘不冲突，却会让两个标签撞成同一个路径。
  */
-export function nextScriptFileName(taken: readonly string[], base: string = DEFAULT_BASE_NAME): string {
+export function nextScriptFileName(
+  taken: readonly string[],
+  base: string = DEFAULT_BASE_NAME,
+): string {
   const used = new Set(taken);
   for (let i = 1; i <= 9999; i += 1) {
     const candidate = `${base} ${i}${SCRIPT_EXT}`;

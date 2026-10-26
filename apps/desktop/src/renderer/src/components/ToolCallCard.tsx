@@ -359,9 +359,7 @@ export function TerminalExecutionView({
 
         {status !== 'running' && exitCode !== null && (
           <div className={`terminal-exit-banner ${exitCode === 0 ? 'success' : 'error'}`}>
-            <span>
-              {exitCode === 0 ? t('chat.exitOk') : t('chat.exitBad', { code: exitCode })}
-            </span>
+            <span>{exitCode === 0 ? t('chat.exitOk') : t('chat.exitBad', { code: exitCode })}</span>
           </div>
         )}
       </div>
@@ -374,7 +372,9 @@ export function TerminalExecutionView({
             className="terminal-expand-bottom-btn"
             onClick={() => setExpanded(!expanded)}
           >
-            {expanded ? t('chat.collapseOutputProcess') : t('chat.expandOutputProcess', { n: totalLines })}
+            {expanded
+              ? t('chat.collapseOutputProcess')
+              : t('chat.expandOutputProcess', { n: totalLines })}
           </button>
         </div>
       )}

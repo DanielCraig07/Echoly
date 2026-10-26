@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import type {
   MavenEnvironmentInfo,
   InstalledJdkInfo,
@@ -184,8 +188,8 @@ export function EnvironmentConfigModal({
   const activeJavaDisplay = draftConfig.selectedJavaHome
     ? draftConfig.selectedJavaLabel || draftConfig.selectedJavaHome
     : mavenEnv?.hasJava
-    ? t('env.systemDefaultJava')
-    : t('env.noJavaEnv');
+      ? t('env.systemDefaultJava')
+      : t('env.noJavaEnv');
 
   if (!isOpen || typeof document === 'undefined') return null;
 
@@ -241,7 +245,9 @@ export function EnvironmentConfigModal({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 18 }}>⚙️</span>
-              <span style={{ fontSize: 16, fontWeight: 600, color: '#ffffff', letterSpacing: '0.01em' }}>
+              <span
+                style={{ fontSize: 16, fontWeight: 600, color: '#ffffff', letterSpacing: '0.01em' }}
+              >
                 {t('env.title')}
               </span>
               <span
@@ -269,7 +275,14 @@ export function EnvironmentConfigModal({
             onClick={onClose}
             title={t('env.closeEsc')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -364,11 +377,25 @@ export function EnvironmentConfigModal({
                           width: 8,
                           height: 8,
                           borderRadius: '50%',
-                          background: draftConfig.selectedJavaHome || mavenEnv?.hasJava ? '#10b981' : '#f43f5e',
-                          boxShadow: draftConfig.selectedJavaHome || mavenEnv?.hasJava ? '0 0 8px #10b981' : 'none',
+                          background:
+                            draftConfig.selectedJavaHome || mavenEnv?.hasJava
+                              ? '#10b981'
+                              : '#f43f5e',
+                          boxShadow:
+                            draftConfig.selectedJavaHome || mavenEnv?.hasJava
+                              ? '0 0 8px #10b981'
+                              : 'none',
                         }}
                       />
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: '#93c5fd',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
                         {t('env.currentJava')}
                       </span>
                     </div>
@@ -405,7 +432,13 @@ export function EnvironmentConfigModal({
                   {draftConfig.selectedJavaHome && (
                     <button
                       type="button"
-                      onClick={() => setDraftConfig((prev) => ({ ...prev, selectedJavaHome: '', selectedJavaLabel: '' }))}
+                      onClick={() =>
+                        setDraftConfig((prev) => ({
+                          ...prev,
+                          selectedJavaHome: '',
+                          selectedJavaLabel: '',
+                        }))
+                      }
                       style={{
                         background: 'rgba(255, 255, 255, 0.06)',
                         border: '1px solid rgba(255, 255, 255, 0.15)',
@@ -425,13 +458,31 @@ export function EnvironmentConfigModal({
 
                 {/* Online JDK Installation Section */}
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: 12,
+                    }}
+                  >
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
                         <span>🌐</span>
                         <span>{t('env.onlineInstallTitle')}</span>
                       </div>
-                      <div style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2 }}>
+                      <div
+                        style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2 }}
+                      >
                         {t('env.onlineInstallDesc')}
                       </div>
                     </div>
@@ -468,7 +519,14 @@ export function EnvironmentConfigModal({
                           }}
                         >
                           <div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                marginBottom: 6,
+                              }}
+                            >
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <span style={{ fontWeight: 600, fontSize: 13.5, color: '#ffffff' }}>
                                   {jdk.name}
@@ -499,7 +557,14 @@ export function EnvironmentConfigModal({
                               )}
                             </div>
 
-                            <div style={{ fontSize: 11.5, color: 'rgba(255, 255, 255, 0.55)', lineHeight: 1.4, marginBottom: 10 }}>
+                            <div
+                              style={{
+                                fontSize: 11.5,
+                                color: 'rgba(255, 255, 255, 0.55)',
+                                lineHeight: 1.4,
+                                marginBottom: 10,
+                              }}
+                            >
                               {jdk.description}
                             </div>
                           </div>
@@ -531,7 +596,9 @@ export function EnvironmentConfigModal({
                             </div>
                           )}
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                          <div
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}
+                          >
                             {jdk.isInstalled ? (
                               isCurrentlySelected ? (
                                 <span
@@ -576,7 +643,9 @@ export function EnvironmentConfigModal({
                                 style={{
                                   padding: '5px 14px',
                                   borderRadius: 6,
-                                  background: isInstallingThis ? 'rgba(59, 130, 246, 0.4)' : '#2563eb',
+                                  background: isInstallingThis
+                                    ? 'rgba(59, 130, 246, 0.4)'
+                                    : '#2563eb',
                                   color: '#ffffff',
                                   border: 'none',
                                   fontSize: 11.5,
@@ -599,8 +668,24 @@ export function EnvironmentConfigModal({
 
                 {/* Local Detected JDKs */}
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: 8,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13.5,
+                        fontWeight: 600,
+                        color: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
                       <span>💻</span>
                       <span>{t('env.detectedJdks', { n: installedJdks.length })}</span>
                     </div>
@@ -631,7 +716,14 @@ export function EnvironmentConfigModal({
                     }}
                   >
                     {installedJdks.length === 0 ? (
-                      <div style={{ padding: '16px', textAlign: 'center', color: 'rgba(255, 255, 255, 0.4)', fontSize: 12 }}>
+                      <div
+                        style={{
+                          padding: '16px',
+                          textAlign: 'center',
+                          color: 'rgba(255, 255, 255, 0.4)',
+                          fontSize: 12,
+                        }}
+                      >
                         {t('env.noOtherJdks')}
                       </div>
                     ) : (
@@ -654,9 +746,7 @@ export function EnvironmentConfigModal({
                                 <span style={{ fontWeight: 600, fontSize: 12.5, color: '#ffffff' }}>
                                   Java {jdk.majorVersion || jdk.version}
                                 </span>
-                                <span style={{ fontSize: 11, color: '#a1a1aa' }}>
-                                  {jdk.vendor}
-                                </span>
+                                <span style={{ fontSize: 11, color: '#a1a1aa' }}>{jdk.vendor}</span>
                                 {jdk.arch && (
                                   <span
                                     style={{
@@ -719,8 +809,19 @@ export function EnvironmentConfigModal({
 
                 {/* Custom JAVA_HOME Directory Picker */}
                 <div>
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 500, color: '#cbd5e1', marginBottom: 6 }}>
-                    {t('env.customJavaHome')} <span style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.4)' }}>{t('env.customJavaHomeHint')}</span>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      color: '#cbd5e1',
+                      marginBottom: 6,
+                    }}
+                  >
+                    {t('env.customJavaHome')}{' '}
+                    <span style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.4)' }}>
+                      {t('env.customJavaHomeHint')}
+                    </span>
                   </label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input
@@ -730,7 +831,9 @@ export function EnvironmentConfigModal({
                         setDraftConfig((prev) => ({
                           ...prev,
                           selectedJavaHome: e.target.value,
-                          selectedJavaLabel: e.target.value ? t('env.customPrefix', { path: e.target.value }) : '',
+                          selectedJavaLabel: e.target.value
+                            ? t('env.customPrefix', { path: e.target.value })
+                            : '',
                         }))
                       }
                       placeholder="/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home"
@@ -793,7 +896,15 @@ export function EnvironmentConfigModal({
                           boxShadow: '0 0 8px #10b981',
                         }}
                       />
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#34d399', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: '#34d399',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
                         {t('env.currentMavenMode')}
                       </span>
                     </div>
@@ -801,10 +912,10 @@ export function EnvironmentConfigModal({
                       {draftConfig.customMvnPath
                         ? t('env.modeCustom', { path: draftConfig.customMvnPath })
                         : hasMvnw || mavenEnv?.type === 'wrapper'
-                        ? t('env.modeWrapper')
-                        : mavenEnv?.available
-                        ? t('env.modeSystem', { path: mavenEnv.executablePath || 'mvn' })
-                        : t('env.modeNotFound')}
+                          ? t('env.modeWrapper')
+                          : mavenEnv?.available
+                            ? t('env.modeSystem', { path: mavenEnv.executablePath || 'mvn' })
+                            : t('env.modeNotFound')}
                     </div>
                   </div>
 
@@ -841,18 +952,52 @@ export function EnvironmentConfigModal({
                       {t('env.wrapperTitle')}
                     </span>
                     {hasMvnw ? (
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 600 }}>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          padding: '2px 8px',
+                          borderRadius: 10,
+                          background: 'rgba(16, 185, 129, 0.2)',
+                          color: '#34d399',
+                          fontWeight: 600,
+                        }}
+                      >
                         {t('env.wrapperPresent')}
                       </span>
                     ) : (
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(234, 179, 8, 0.2)', color: '#fbbf24', fontWeight: 600 }}>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          padding: '2px 8px',
+                          borderRadius: 10,
+                          background: 'rgba(234, 179, 8, 0.2)',
+                          color: '#fbbf24',
+                          fontWeight: 600,
+                        }}
+                      >
                         {t('env.wrapperAbsent')}
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.6)', lineHeight: 1.6, marginBottom: 12 }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: 'rgba(255, 255, 255, 0.6)',
+                      lineHeight: 1.6,
+                      marginBottom: 12,
+                    }}
+                  >
                     {t('env.wrapperBefore')}
-                    <code style={{ background: 'rgba(0,0,0,0.3)', padding: '1px 5px', borderRadius: 4, fontFamily: 'monospace' }}>mvnw</code>
+                    <code
+                      style={{
+                        background: 'rgba(0,0,0,0.3)',
+                        padding: '1px 5px',
+                        borderRadius: 4,
+                        fontFamily: 'monospace',
+                      }}
+                    >
+                      mvnw
+                    </code>
                     {t('env.wrapperAfter')}
                   </div>
 
@@ -875,7 +1020,11 @@ export function EnvironmentConfigModal({
                         gap: 6,
                       }}
                     >
-                      {generatingWrapper ? t('env.generatingWrapper') : hasMvnw ? t('env.regenerateWrapper') : t('env.generateWrapper')}
+                      {generatingWrapper
+                        ? t('env.generatingWrapper')
+                        : hasMvnw
+                          ? t('env.regenerateWrapper')
+                          : t('env.generateWrapper')}
                     </button>
                     <span style={{ fontSize: 11.5, color: 'rgba(255, 255, 255, 0.4)' }}>
                       {t('env.wrapperLocation')}
@@ -885,14 +1034,27 @@ export function EnvironmentConfigModal({
 
                 {/* Custom mvn Path */}
                 <div>
-                  <label style={{ display: 'block', fontSize: 12.5, fontWeight: 500, color: '#cbd5e1', marginBottom: 6 }}>
-                    {t('env.customMvnPath')} <span style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.4)' }}>{t('env.customMvnPathHint')}</span>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      color: '#cbd5e1',
+                      marginBottom: 6,
+                    }}
+                  >
+                    {t('env.customMvnPath')}{' '}
+                    <span style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.4)' }}>
+                      {t('env.customMvnPathHint')}
+                    </span>
                   </label>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input
                       type="text"
                       value={draftConfig.customMvnPath}
-                      onChange={(e) => setDraftConfig((prev) => ({ ...prev, customMvnPath: e.target.value }))}
+                      onChange={(e) =>
+                        setDraftConfig((prev) => ({ ...prev, customMvnPath: e.target.value }))
+                      }
                       placeholder={t('env.mvnPathPlaceholder')}
                       style={{
                         flex: 1,
@@ -936,18 +1098,27 @@ export function EnvironmentConfigModal({
                     lineHeight: 1.7,
                   }}
                 >
-                  <div style={{ fontWeight: 600, color: '#ffffff', marginBottom: 4 }}>{t('env.detectDetails')}</div>
+                  <div style={{ fontWeight: 600, color: '#ffffff', marginBottom: 4 }}>
+                    {t('env.detectDetails')}
+                  </div>
                   <div style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                    {t('env.executablePath')}<span style={{ color: '#93c5fd', fontFamily: 'monospace' }}>{mavenEnv?.executablePath || t('env.notDetected')}</span>
+                    {t('env.executablePath')}
+                    <span style={{ color: '#93c5fd', fontFamily: 'monospace' }}>
+                      {mavenEnv?.executablePath || t('env.notDetected')}
+                    </span>
                   </div>
                   {mavenEnv?.mavenVersion && (
                     <div style={{ color: 'rgba(255, 255, 255, 0.6)' }}>
-                      {t('env.mavenVersion')}<span style={{ color: '#ffffff' }}>{mavenEnv.mavenVersion}</span>
+                      {t('env.mavenVersion')}
+                      <span style={{ color: '#ffffff' }}>{mavenEnv.mavenVersion}</span>
                     </div>
                   )}
                   {mavenEnv?.detail && (
-                    <div style={{ color: 'rgba(255, 255, 255, 0.45)', fontSize: 11.5, marginTop: 4 }}>
-                      {t('env.detailLabel')}{mavenEnv.detail}
+                    <div
+                      style={{ color: 'rgba(255, 255, 255, 0.45)', fontSize: 11.5, marginTop: 4 }}
+                    >
+                      {t('env.detailLabel')}
+                      {mavenEnv.detail}
                     </div>
                   )}
                 </div>

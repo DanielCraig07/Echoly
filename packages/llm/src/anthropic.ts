@@ -1,6 +1,15 @@
 import type { ChatMessage, TokenUsage, ToolDefinition, ThinkingBlock } from '@deepseek-ide/shared';
 import { LlmTimeoutError, type LlmTimeoutCode } from './index';
 import {
+  Semaphore,
+  defaultRequestGate,
+  discardResponse,
+  isRetryableNetworkError,
+  isRetryableStatus,
+  retryAfterMs,
+  withRetry,
+} from './requestControl';
+import {
   CONTENT_GUARD_OPTIONS,
   REASONING_GUARD_OPTIONS,
   RepetitionGuard,
@@ -22,6 +31,10 @@ export interface AnthropicClientOptions {
   streamStallTimeoutMs?: number;
   /** 单次生成的最大 token 数，作为复读退化的兜底上界。 */
   maxTokens?: number;
+  /** 可重试失败的重试次数上限（不含首次请求）。默认 2，与 OpenAI 通道一致。 */
+  maxRetries?: number;
+  /** 并发闸门上限；未指定时共用全局闸门。 */
+  maxConcurrency?: number;
 }
 
 export interface AnthropicChatParams {
@@ -46,7 +59,7 @@ interface AnthropicMessage {
   role: 'user' | 'assistant';
   content: Array<
     | { type: 'text'; text: string }
-    | { type: 'thinking'; thinking: string }
+    | { type: 'thinking'; thinking: string; signature?: string }
     | {
         type: 'tool_use';
         id: string;
@@ -138,7 +151,19 @@ function convertToAnthropicMessages(messages: ChatMessage[]): AnthropicMessage[]
 
       // Handle thinking blocks
       if (m.thinking?.length) {
-        content.push(...m.thinking);
+        for (const block of m.thinking) {
+          // 带签名的思考块原样回传，模型才能看到自己上一轮的推理。
+          // 没有签名的（例如来自别的 provider、或服务端没下发）只能丢掉：
+          // 接口要求带 thinking 的 assistant 消息必须附签名，不附会 400，
+          // 而一次 400 会让整个回合失败 —— 丢一段推理总好过整轮报错。
+          if (block.signature) {
+            content.push({
+              type: 'thinking',
+              thinking: block.thinking,
+              signature: block.signature,
+            });
+          }
+        }
       }
 
       // Handle tool calls (from assistant)
@@ -198,7 +223,14 @@ function convertFromAnthropicMessage(response: any): ChatMessage {
     if (block.type === 'text') {
       textParts.push(block.text);
     } else if (block.type === 'thinking') {
-      thinking.push({ type: 'thinking', thinking: block.thinking });
+      thinking.push({
+        type: 'thinking',
+        thinking: block.thinking,
+        // 签名必须在非流式路径上也带上，否则拿 chat() 生成的助手消息无法再回传。
+        ...(typeof block.signature === 'string' && block.signature
+          ? { signature: block.signature }
+          : {}),
+      });
     } else if (block.type === 'tool_use') {
       toolCalls.push({
         id: block.id,
@@ -261,9 +293,25 @@ function buildHeaders(apiKey: string): Record<string, string> {
   return headers;
 }
 
+/**
+ * 把消息里所有 `system` 抽出来，拼接成顶层的 `system`。
+ *
+ * 不能用「取第一条」：上下文压缩产生的摘要、v0.0.50 的防复读提示词、以及
+ * 压缩锚点之后插入的指令，**全部**是 `role: 'system'` 的数组中间元素。
+ * 原先这里既 `filter` 掉它们、又只取第一条，结果是这些指令对模型完全不存在 ——
+ * 表现出来就是「换到 Anthropic 通道之后，长会话的压缩摘要像没生效一样」，
+ * 而日志里一切正常。
+ *
+ * 顺序必须保持：靠后的 system 通常是对更早内容的修正，拼接时放在后面才符合语义。
+ */
 function extractSystemPrompt(messages: ChatMessage[]): string {
-  const systemMsg = messages.find((m) => m.role === 'system');
-  return systemMsg?.content || '';
+  const parts: string[] = [];
+  for (const m of messages) {
+    if (m.role !== 'system') continue;
+    const text = typeof m.content === 'string' ? m.content.trim() : '';
+    if (text) parts.push(text);
+  }
+  return parts.join('\n\n');
 }
 
 export class AnthropicClient {
@@ -276,6 +324,9 @@ export class AnthropicClient {
   readonly firstTokenTimeoutMs: number;
   readonly streamStallTimeoutMs: number;
   readonly maxTokens: number;
+  readonly maxRetries: number;
+  /** 与 OpenAI 通道共用同一个闸门实例，两个 provider 才不会被分别限流成两倍并发。 */
+  readonly requestGate: Semaphore;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: AnthropicClientOptions) {
@@ -291,7 +342,44 @@ export class AnthropicClient {
     this.firstTokenTimeoutMs = options.firstTokenTimeoutMs ?? 60_000;
     this.streamStallTimeoutMs = options.streamStallTimeoutMs ?? 90_000;
     this.maxTokens = options.maxTokens ?? 8192;
+    this.maxRetries = options.maxRetries ?? 2;
+    this.requestGate =
+      options.maxConcurrency != null && options.maxConcurrency > 0
+        ? new Semaphore(options.maxConcurrency)
+        : defaultRequestGate;
     this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  /**
+   * 发请求，并对「还没开始读 body」的失败重试。
+   *
+   * 与 OpenAI 通道同一套判断：只重试可重试状态码与网络层异常，400/401 这类
+   * 参数或认证错误一次就抛。丢掉不读的响应必须 cancel body —— 否则连接被占住，
+   * 重试反而让后续请求更容易超时。
+   */
+  private async postMessages(body: unknown, signal: AbortSignal): Promise<Response> {
+    const outcome = await withRetry(
+      () =>
+        this.fetchImpl(`${this.baseUrl}/v1/messages`, {
+          method: 'POST',
+          headers: buildHeaders(this.apiKey),
+          body: JSON.stringify(body),
+          signal,
+        }),
+      (res, err) => {
+        if (err) return isRetryableNetworkError(err);
+        if (!res) return false;
+        return isRetryableStatus(res.status);
+      },
+      {
+        maxAttempts: this.maxRetries,
+        signal,
+        delayHintMs: (res) => retryAfterMs(res),
+        dispose: (res) => discardResponse(res),
+      },
+    );
+    if (outcome.ok) return outcome.value;
+    throw outcome.lastError;
   }
 
   /**
@@ -351,12 +439,7 @@ export class AnthropicClient {
 
     let res: Response;
     try {
-      res = await this.fetchImpl(`${this.baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: buildHeaders(this.apiKey),
-        body: JSON.stringify(body),
-        signal: abortController.signal,
-      });
+      res = await this.postMessages(body, abortController.signal);
     } catch (fetchErr) {
       if (timedOutError) throw timedOutError;
       throw fetchErr;
@@ -374,7 +457,25 @@ export class AnthropicClient {
     return convertFromAnthropicMessage(data);
   }
 
+  /**
+   * 流式请求。并发闸门包住整个生成过程 —— SSE 响应头立刻返回，真正占着推理节点的
+   * 是后面读 body 的那几十秒；只圈住「拿到响应头」等于没有闸门。
+   *
+   * 用包装生成器而不是在内部 acquire：`for await` 提前 break 时 JS 会对生成器
+   * 调用 `return()`，`finally` 因而会执行，名额不会泄漏。
+   */
   async *chatStream(params: AnthropicChatParams): AsyncGenerator<any, AnthropicChatResult, void> {
+    const release = await this.requestGate.acquire();
+    try {
+      return yield* this.chatStreamInner(params);
+    } finally {
+      release();
+    }
+  }
+
+  private async *chatStreamInner(
+    params: AnthropicChatParams,
+  ): AsyncGenerator<any, AnthropicChatResult, void> {
     const system = extractSystemPrompt(params.messages);
     const messages = convertToAnthropicMessages(params.messages);
     const tools = convertToAnthropicTools(params.tools);
@@ -427,12 +528,7 @@ export class AnthropicClient {
 
     let res: Response;
     try {
-      res = await this.fetchImpl(`${this.baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: buildHeaders(this.apiKey),
-        body: JSON.stringify(body),
-        signal: abortController.signal,
-      });
+      res = await this.postMessages(body, abortController.signal);
     } catch (fetchErr) {
       if (timeoutTimer) clearTimeout(timeoutTimer);
       if (params.signal) params.signal.removeEventListener('abort', onAbort);
@@ -461,6 +557,9 @@ export class AnthropicClient {
     const textParts: string[] = [];
     const toolCalls: NonNullable<ChatMessage['tool_calls']> = [];
     const toolCallByIndex = new Map<number, NonNullable<ChatMessage['tool_calls']>[number]>();
+    // 思考块也要按 content_block 的 index 定位：`signature_delta` 只带 index，
+    // 而同一轮里可能有多个思考块（交错思考），按「最后一个」取会串台。
+    const thinkingIndexByEventIndex = new Map<number, number>();
     let usage: TokenUsage | undefined;
     let finishReason: string | undefined;
     let receivedFirstChunk = false;
@@ -493,7 +592,44 @@ export class AnthropicClient {
         }
 
         const { done, value } = readResult;
-        if (done) break;
+        if (done) {
+          // 与 OpenAI 通道同理：最后一行往往没有换行符收尾，不 flush 就会丢掉
+          // 末尾的 `message_delta`（stop_reason 与 usage 都在它里面）。
+          buffer += decoder.decode();
+          const tailLines = buffer.split(/\r?\n/);
+          buffer = '';
+          for (const rawLine of tailLines) {
+            const line = rawLine.trim();
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (!payload) continue;
+            try {
+              const event = JSON.parse(payload);
+              if (event.type === 'message_delta') {
+                if (event.delta?.stop_reason) finishReason = event.delta.stop_reason;
+                if (event.usage) {
+                  const promptTokens = usage?.promptTokens ?? 0;
+                  const completionTokens =
+                    event.usage.output_tokens ?? usage?.completionTokens ?? 0;
+                  usage = {
+                    promptTokens,
+                    completionTokens,
+                    totalTokens: promptTokens + completionTokens,
+                  };
+                }
+              } else if (event.type === 'error') {
+                // Anthropic 用 `error` 事件报告流内错误，并且**不会**断开连接。
+                // 不认它的话这次调用会被当成「模型没说话」正常返回。
+                throw new Error(
+                  `流式响应中返回了错误: ${event.error?.message ?? JSON.stringify(event).slice(0, 300)}`,
+                );
+              }
+            } catch (err) {
+              if (err instanceof Error && err.message.startsWith('流式响应中返回了错误')) throw err;
+            }
+          }
+          break;
+        }
 
         if (!receivedFirstChunk) {
           receivedFirstChunk = true;
@@ -554,10 +690,25 @@ export class AnthropicClient {
                 fuse('reasoning', thinkingGuard.hit);
               }
 
-              const lastThinking = thinking[thinking.length - 1];
+              const targetIdx =
+                typeof event.index === 'number'
+                  ? (thinkingIndexByEventIndex.get(event.index) ?? thinking.length - 1)
+                  : thinking.length - 1;
+              const lastThinking = thinking[targetIdx];
               if (lastThinking) {
                 lastThinking.thinking += deltaText;
               }
+            } else if (delta.type === 'signature_delta') {
+              // 签名单独一个 delta 下发，且**紧跟在**该思考块的所有 thinking_delta 之后。
+              // 不接住它，这一轮生成的思考就无法回传（缺签名回传会 400），
+              // 于是「开启思考」在带工具的多轮对话里等于每轮都从零开始推理。
+              const sig: string = delta.signature ?? '';
+              const targetIdx =
+                typeof event.index === 'number'
+                  ? (thinkingIndexByEventIndex.get(event.index) ?? thinking.length - 1)
+                  : thinking.length - 1;
+              const target = thinking[targetIdx];
+              if (target && sig) target.signature = sig;
             } else if (delta.type === 'input_json_delta') {
               const tc =
                 typeof event.index === 'number'
@@ -570,6 +721,9 @@ export class AnthropicClient {
           } else if (event.type === 'content_block_start') {
             const block = event.content_block;
             if (block.type === 'thinking') {
+              if (typeof event.index === 'number') {
+                thinkingIndexByEventIndex.set(event.index, thinking.length);
+              }
               thinking.push({ type: 'thinking', thinking: '' });
             } else if (block.type === 'tool_use') {
               const initialArgs =
@@ -609,6 +763,11 @@ export class AnthropicClient {
                 totalTokens: promptTokens + completionTokens,
               };
             }
+          } else if (event.type === 'error') {
+            // 流内错误**不会**断开连接：不认它，这次调用会被当成「模型没说话」正常返回。
+            throw new Error(
+              `流式响应中返回了错误: ${event.error?.message ?? JSON.stringify(event).slice(0, 300)}`,
+            );
           }
         }
         if (fuseInfo()) break;

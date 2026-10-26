@@ -9,7 +9,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm run dev           # Start Electron dev server (electron-vite + React)
 npm run build         # Build for production
-npm run typecheck     # TypeScript check across all workspaces
+npm run typecheck     # TypeScript check across all workspaces（含 test/ 目录）
+npm test              # vitest run（5 个 project：tools / llm / agent / skills / desktop）
+npm run test:coverage # 同上 + v8 覆盖率报告（coverage/）
+npm run lint          # ESLint
+npm run format        # prettier --write .（format:check 是 CI 门禁）
 npm run probe-llm     # Test connectivity to the LLM backend at 192.168.10.241:8002
 npm run pack          # Package for Windows (dir target, unsigned)
 npm run pack:mac      # Package macOS DMGs (arm64 + x64)
@@ -17,7 +21,10 @@ npm run pack:mac:arm64  # Package macOS DMG (Apple Silicon only)
 npm run pack:mac:x64    # Package macOS DMG (Intel only)
 ```
 
-`typecheck` runs per-package — each workspace has its own `tsconfig.json` and `npm run typecheck`. The root script runs `--workspaces --if-present`.
+`typecheck` runs per-package — each workspace has its own `tsconfig.json` and `npm run typecheck`. The root script runs `--workspaces --if-present`. 有测试的包还有第二份 `tsconfig.test.json`，把 `test/` 一起纳入检查：**测试里的类型错误也是错误**，只在运行时才暴露的话，一次改名就会留下一批悄悄跑歪的断言。
+
+`npm run probe-llm` 支持用环境变量覆盖默认后端：`LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_KEY`
+（见 `packages/llm/src/probe.ts`）。用于临时指向另一台推理服务排查连通性，无需改代码。
 
 ## Project overview
 
@@ -49,12 +56,12 @@ apps/desktop/         Electron app (electron-vite)
     ssh/               - SSH connection management (SshSessionManager)
   src/preload/
     index.ts           - contextBridge exposing typed `window.ide` IPC API
-  src/renderer/        - React 18 UI
+  src/renderer/        - React 19 UI
     App.tsx            - Root layout: resizable panels (explorer/editor/bottom), toolbar, modals
     utils.ts           - UI helpers (time formatting, theme, path display)
     i18n.ts            - zh/en 主字典 + `translate` / `translateWith` / `translateSegments`
     i18nParts/         - 按领域拆分的字典分片（git / editor / db / runtime / misc）
-    services/          - specialMentions.ts (@Git/@Terminal/@Problems)、slashTrigger.ts（@ 与 / 触发解析）
+    services/          - 纯逻辑：specialMentions / slashTrigger / gitGraph / textDiff / diffStats / dbDdl 等（见「关键渲染组件」）
 
 packages/
   shared/              - Type definitions (AppSettings, PermissionMode, PendingDiff, SlashCommandInfo, etc.), IPC API contract, `renderCommand`
@@ -134,7 +141,7 @@ After editing, the agent is instructed to call `get_diagnostics` and fix reporte
 
 ### Undoing a whole turn (`checkpointStore.ts` + `tools/src/checkpoint.ts`)
 
-Every write/delete/move the agent performs is recorded *before* it happens via
+Every write/delete/move the agent performs is recorded _before_ it happens via
 `ToolContext.onFileMutation`, grouped by `runId` in a per-window `CheckpointStore`
 (an `unrecordable` entry — binary file or oversized tree — marks the whole run
 un-revertable, so the UI refuses rather than half-restoring). The chat shows a
@@ -145,20 +152,57 @@ path: `accept`/`reject` would write to disk and clobber the fresh revert.
 
 ## Key renderer components
 
-| Component                                | Purpose                                                                                       |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `App.tsx`                                | Root layout: resizable panels (explorer/editor/chat/bottom panel with terminal+diff), toolbar |
-| `ChatPanel.tsx`                          | Chat message list, input, mode selector (Ask/Plan/Agent), permission display, session list, `@`-mentions, per-turn revert button, mid-run message queue |
-| `EditorPane.tsx`                         | Monaco editor multi-tab, top search file jumping with line highlight                          |
-| `FileTree.tsx`                           | Sidebar file tree w/ ignore rules context menu                                                |
-| `GitPanel.tsx`                           | Source Control: status, stage/unstage, commit, branch switch/create, pull/push, discard, diff |
-| `TerminalPanel.tsx`                      | Local (GBK) / SSH (UTF-8) terminal via xterm.js                                               |
-| `TopSearchBar.tsx`                       | Cursor-style Ctrl+P (files) + Ctrl+Shift+F (code search)                                      |
-| `StatusBar.tsx`                          | Bottom bar: workspace type, mode, permission level, context tokens, agent steps               |
-| `SessionDrawer.tsx` / `SessionModal.tsx` | Session history & management                                                                  |
-| `PlanPanel.tsx`                          | Structured plan/todo display for Plan mode                                                    |
-| `ToolCallCard.tsx`                       | Agent tool call display with animated step indicators                                         |
-| `ReasoningStep.tsx`                      | Expandable reasoning chain display                                                            |
+| Component                                | Purpose                                                                                                                                                     |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `App.tsx`                                | Root layout: resizable panels (explorer/editor/chat/bottom panel with terminal+diff), toolbar                                                               |
+| `ChatPanel.tsx`                          | Chat message list, input, mode selector (Ask/Plan/Agent), permission display, session list, `@`-mentions, per-turn revert button, mid-run message queue     |
+| `EditorPane.tsx`                         | Monaco editor multi-tab, top search file jumping with line highlight                                                                                        |
+| `FileTree.tsx`                           | Sidebar file tree w/ ignore rules context menu                                                                                                              |
+| `GitPanel.tsx`                           | Source Control: status, stage/unstage, commit, branch switch/create, pull/push, discard, diff                                                               |
+| `TerminalPanel.tsx`                      | Local (GBK) / SSH (UTF-8) terminal via xterm.js                                                                                                             |
+| `TopSearchBar.tsx`                       | Cursor-style Ctrl+P (files) + Ctrl+Shift+F (code search)                                                                                                    |
+| `StatusBar.tsx`                          | Bottom bar: workspace type, mode, permission level, context tokens, agent steps                                                                             |
+| `SessionDrawer.tsx` / `SessionModal.tsx` | Session history & management                                                                                                                                |
+| `PlanPanel.tsx`                          | Structured plan/todo display for Plan mode                                                                                                                  |
+| `ToolCallCard.tsx`                       | Agent tool call display. 卡片本体目前无人渲染，但 `commandFromArgs` / `parseTerminalResult` / `stripAnsi` 被 `chat/WorkedForGroup.tsx` 复用 —— 别顺手删文件 |
+| `chat/WorkedForGroup.tsx`                | 折叠的「思考 + 工具执行过程」分组，实际渲染工具调用与实时输出                                                                                               |
+| `ErrorBoundary.tsx`                      | 面板级渲染错误兜底（`App.tsx` 给 7 个面板各包了一层），文案走字典                                                                                           |
+
+### 从巨型组件里拆出来的纯逻辑（`renderer/src/services/`）
+
+组件文件普遍在三千到七千行。拆的标准只有一条：**这段代码碰不碰 React / Monaco / DOM**。
+碰，就留在组件里；不碰，就搬到 `services/` 并直接单测。已经拆出来的：
+
+| 模块                         | 来源             | 说明                                                                                                                         |
+| ---------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `services/gitGraph.ts`       | `GitPanel.tsx`   | 提交图轨道分配（`analyzeGitGraph`）、状态树（`buildGitTree`）、状态字母。**不返回文案**                                      |
+| `components/GitGraphRow.tsx` | `GitPanel.tsx`   | 提交图的两段 SVG，只依赖 `GraphAnalysis`，不读面板状态                                                                       |
+| `services/textDiff.ts`       | `EditorPane.tsx` | 行级 diff、hunk 切分、行内词级 diff。注意 `splitLines('') === []`（空文件切成零行），否则「清空文件」会被报成「改了第 1 行」 |
+| `services/diffStats.ts`      | `ChatPanel.tsx`  | 气泡上的 `+N -M`。故意用 indexOf 配对而非 DP：这是渲染路径上的同步调用                                                       |
+
+`FileTree` 的 Git 状态从「每个节点自己线性扫 `entries`」改成了顶层 `useMemo` 建一次
+索引（`buildGitStatusIndex`）+ O(1) 查表 —— 可见节点数千、改动数千时，前者是每次
+刷新都重算整棵树。
+
+### Hook 不能写在提前 `return` 之后（`react-hooks/rules-of-hooks`）
+
+`eslint.config.mjs` 里只开了 react-hooks 的这一条，且是 **error**（`exhaustive-deps`
+故意没开：它会给现有依赖数组灌一屏 warning，把真正致命的那条淹掉）。
+
+起因是设置页整页崩成错误页：`SettingsModal` 里一个 `useEffect` 写在
+`if (!open || !settings) return null` **之后**，而这些弹窗都是**常驻挂载**的
+（`App.tsx` 只改 `open` 属性，不卸载组件）。于是「关闭 → 打开」这一次渲染里，
+早退分支比正常分支少跑了几个 hook，React 抛
+`Rendered more hooks than during the previous render`。
+
+这类 bug 的阴险之处在于**它一个门禁都过不去**：typecheck 绿、测试绿、构建绿，
+只在用户点开那个弹窗的瞬间炸掉。同批修掉的还有 `GitPanel.GitTreeItemView`
+（`node.isDirectory` 分支早退）、`FileTree.TreeNode`（目录分支早退）、
+`TableStructureModal`（`!isOpen` 早退）。
+
+写新组件时的判据很简单：**只要函数体里出现了 `return null`，它上面的所有 hook
+调用必须一个不漏地在它之前**。需要「关闭时跳过工作」就写进 effect 体内
+（`if (!open) return;`），而不是靠早退让这次渲染不发生。
 
 ## Electron-vite config
 
@@ -224,13 +268,13 @@ Top-scoring skills (matched against user prompt) are injected into the agent sys
 
 `renderer/src/i18n.ts` 是零依赖的极简实现，导出：
 
-| 导出 | 用途 |
-| --- | --- |
-| `useI18n()` | 组件里取 `{ t, locale, setLocale }`；`t(key, params?)` |
-| `Translate` | `(key, params?) => string`，给拿不到 hook 的模块级 helper 当形参类型 |
-| `translate(key, locale)` / `translateWith(key, locale, params)` | 非组件环境使用 |
-| `translateSegments(key, locale, params)` | 句子中间要嵌 `<code>` 等元素时用 |
-| `DICT` / `CORE_DICT` / `DICT_PARTS` | 完整字典 / 主表 / 各分片，导出**只为测试** |
+| 导出                                                            | 用途                                                                 |
+| --------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `useI18n()`                                                     | 组件里取 `{ t, locale, setLocale }`；`t(key, params?)`               |
+| `Translate`                                                     | `(key, params?) => string`，给拿不到 hook 的模块级 helper 当形参类型 |
+| `translate(key, locale)` / `translateWith(key, locale, params)` | 非组件环境使用                                                       |
+| `translateSegments(key, locale, params)`                        | 句子中间要嵌 `<code>` 等元素时用                                     |
+| `DICT` / `CORE_DICT` / `DICT_PARTS`                             | 完整字典 / 主表 / 各分片，导出**只为测试**                           |
 
 - 整句进字典，**不做片段拼接**：中英文语序不同（「在 3 个文件中找到了 12 个结果」↔
   "Found 12 results in 3 files"，数字顺序相反），拼接写法只能二选一地出错。
@@ -245,12 +289,12 @@ Top-scoring skills (matched against user prompt) are injected into the agent sys
 
 铺开时逐条判过，下面几类保持中文是**结论**，不是漏掉的：
 
-| 类别 | 例子 | 为什么不翻 |
-| --- | --- | --- |
-| 送给模型的 prompt | `specialMentions.ts` 的附件正文、`ProblemsPanel.handleDiagnose*`、`TerminalAiKBar` 的上下文提示、EditorPane 快捷标签预填的指令 | 翻它等于换一套提示词，产出会跟着变 —— 那是另一个**行为**，不是另一种语言 |
-| 落盘的标识 / 文件名 | `dbQueryScripts.DEFAULT_BASE_NAME`（`查询`）、`NEW_CONSOLE_SQL` 的正文、`techStack.TECH_STYLES` 的键 | 翻完老数据与新数据对不上号，且**不出任何错**，只是名字变得莫名其妙 |
-| 数据库原生写法 | SQL 关键字、`NULL`、类型名、驱动 id、表 / 列名 | 翻了会写坏 SQL |
-| 已算过一遍的量 | `FILTER_OPERATOR_ICONS` 的 `⊃` / `∅̸`、`(PK)` 角标 | 符号不是语言 |
+| 类别                | 例子                                                                                                                           | 为什么不翻                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| 送给模型的 prompt   | `specialMentions.ts` 的附件正文、`ProblemsPanel.handleDiagnose*`、`TerminalAiKBar` 的上下文提示、EditorPane 快捷标签预填的指令 | 翻它等于换一套提示词，产出会跟着变 —— 那是另一个**行为**，不是另一种语言 |
+| 落盘的标识 / 文件名 | `dbQueryScripts.DEFAULT_BASE_NAME`（`查询`）、`NEW_CONSOLE_SQL` 的正文、`techStack.TECH_STYLES` 的键                           | 翻完老数据与新数据对不上号，且**不出任何错**，只是名字变得莫名其妙       |
+| 数据库原生写法      | SQL 关键字、`NULL`、类型名、驱动 id、表 / 列名                                                                                 | 翻了会写坏 SQL                                                           |
+| 已算过一遍的量      | `FILTER_OPERATOR_ICONS` 的 `⊃` / `∅̸`、`(PK)` 角标                                                                              | 符号不是语言                                                             |
 
 反过来，**凡是会进入用户视野的**就一定要进字典，包括容易被漏掉的那几处：
 Monaco CodeLens 标题（`editor.conflictTake*`）、补全列表右侧的 `detail`/`documentation`
@@ -311,14 +355,14 @@ db / runtime / settings / misc），在 `DICT` 里展开合并。分片是为了
 `x.includes('中文')` / `x === '中文'` 的判定在英文环境下**必然**为假 ——
 不崩、不报错、不打日志，只是那个分支永远走不到。铺开过程中已清掉这几处：
 
-| 位置 | 原写法 | 改成 |
-| --- | --- | --- |
-| `SshSessionManager` → `SshConnectModal` | `error.includes('本地网络')` | `SshConnectResult.needsLocalNetwork` 标志位 |
-| `GitPanel.runGitAction` | `title.includes('分支'/'Pull'/'Fetch')` | 显式参数 `affectsBranch` |
-| `App.tsx` 终端快捷键判定 | `textContent.includes('终端')` | tab 按钮加 `data-tab`，读属性 |
-| `EditorPane` 差异徽章 | `desc.includes('↔')` 再 `includes('远程'/'提交'/'版本')` | 整段删除（该分支已不可达） |
-| `GitPanel.runGitAction` | `res.detail === '取消输入' / '取消放弃修改'` | 删除（全仓无生产者，是 v0.0.28 旧 App.tsx 的残留） |
-| `chatHistory` 熔断消息回灌 | `m.content.includes('模型在思考阶段陷入重复循环…')` | `ChatSessionMessage.circuitBroken` / `done` 事件带同名标志 |
+| 位置                                    | 原写法                                                   | 改成                                                       |
+| --------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------- |
+| `SshSessionManager` → `SshConnectModal` | `error.includes('本地网络')`                             | `SshConnectResult.needsLocalNetwork` 标志位                |
+| `GitPanel.runGitAction`                 | `title.includes('分支'/'Pull'/'Fetch')`                  | 显式参数 `affectsBranch`                                   |
+| `App.tsx` 终端快捷键判定                | `textContent.includes('终端')`                           | tab 按钮加 `data-tab`，读属性                              |
+| `EditorPane` 差异徽章                   | `desc.includes('↔')` 再 `includes('远程'/'提交'/'版本')` | 整段删除（该分支已不可达）                                 |
+| `GitPanel.runGitAction`                 | `res.detail === '取消输入' / '取消放弃修改'`             | 删除（全仓无生产者，是 v0.0.28 旧 App.tsx 的残留）         |
+| `chatHistory` 熔断消息回灌              | `m.content.includes('模型在思考阶段陷入重复循环…')`      | `ChatSessionMessage.circuitBroken` / `done` 事件带同名标志 |
 
 判定原则：**判据要来自数据，不要来自文案**。确实需要跨进程传递「失败属于哪一类」时，
 在 `packages/shared` 的结构体上加显式字段，别让渲染层去错误文本里找关键词。
@@ -326,11 +370,11 @@ db / runtime / settings / misc），在 `DICT` 里展开合并。分片是为了
 纯逻辑模块（无 React、被 vitest 直接单测的那些）更进一步：**它们连文案都不返回，
 只返回原因码**，由渲染层查表翻译。已有的三张码表：
 
-| 模块 | 码表 | 说明 |
-| --- | --- | --- |
-| `services/dbDdl.ts` | `DB_DDL_ERROR_KEY` / `DB_ALTER_SKIP_KEY` | 建表/改列校验；`DbAlterSkip { code, name }` 而不是拼好的句子 |
-| `services/dbConnectionForm.ts` | `DB_FORM_ERROR_KEY` | 新建连接表单校验 |
-| `services/dbMutations.ts` | `DB_COMMIT_ERROR_KEY` + `DbInsertProblem` | 提交前必填校验与语句汇总 |
+| 模块                           | 码表                                      | 说明                                                         |
+| ------------------------------ | ----------------------------------------- | ------------------------------------------------------------ |
+| `services/dbDdl.ts`            | `DB_DDL_ERROR_KEY` / `DB_ALTER_SKIP_KEY`  | 建表/改列校验；`DbAlterSkip { code, name }` 而不是拼好的句子 |
+| `services/dbConnectionForm.ts` | `DB_FORM_ERROR_KEY`                       | 新建连接表单校验                                             |
+| `services/dbMutations.ts`      | `DB_COMMIT_ERROR_KEY` + `DbInsertProblem` | 提交前必填校验与语句汇总                                     |
 
 两条容易踩的细节：
 
@@ -367,17 +411,19 @@ Settings stored in Electron `userData/settings.json`.
 
 `ChatPanel` inserts `@<path>` for files, plus three **special** mentions that expand at **submit time** (not at insert time — they describe current state):
 
-| Mention       | Expansion                                                              |
-| ------------- | ---------------------------------------------------------------------- |
-| `@Git`        | branch/ahead-behind, changed-file list, and diffs of up to 8 files     |
-| `@Terminal`   | last ~120 lines of the focused terminal's xterm buffer (ANSI stripped) |
-| `@Problems`   | Error/Warning markers across the workspace (read straight from Monaco) |
+| Mention     | Expansion                                                              |
+| ----------- | ---------------------------------------------------------------------- |
+| `@Git`      | branch/ahead-behind, changed-file list, and diffs of up to 8 files     |
+| `@Terminal` | last ~120 lines of the focused terminal's xterm buffer (ANSI stripped) |
+| `@Problems` | Error/Warning markers across the workspace (read straight from Monaco) |
 
 Expansion lives in `renderer/src/services/specialMentions.ts` and produces `ChatAttachment`s, so the snapshot also shows up in the message history and survives multi-turn context building. Terminal buffers are reached via a module-level reader registry (`registerTerminalLogReader`) because the xterm instance and the chat input have no parent/child relationship.
 
 ## Known constraints
 
-- **Terminal**: no PTY (child_process spawn / SSH shell channel). No node-pty yet.
+- **Terminal**: 两端都有 PTY。本地走 `node-pty`（`main/terminal.ts`），SSH 走 `ssh2` 的
+  `client.shell({ term: 'xterm-256color', cols, rows })`（`SshSessionManager`），
+  TUI 程序（vim / htop）在本地与远端都能正常使用。
 - **Diff**: generated by tool output, reviewed inline in the chat diff summary (`ChatPanel.tsx`) with accept/reject all; per-file hunks are previewed in `EditorPane`.
 - **Packaging**: unsigned, `dir` target on Windows (avoids winCodeSign symlink issues); `identity: null` on macOS.
 - **Windows 图标**: 打包时由 `resources/icon.png` 自动生成多分辨率 `.ico` 并通过 rcedit 写入 `Echoly.exe`。**切勿在 `build.win` 里设 `signAndEditExecutable: false`** —— 那会跳过 rcedit，导致 exe 与桌面快捷方式仍显示 Electron 默认图标。Windows 打包在 `windows-latest` runner 上执行，rcedit 可原生运行。
@@ -389,10 +435,19 @@ Expansion lives in `renderer/src/services/specialMentions.ts` and produces `Chat
 
 ## UI 规范与按钮交互（对齐 Maven 标准，永久强制）
 
-所有二级面板工具栏（Maven、Git、Explorer、Search 等）必须严格对齐 Maven 标准：
-- **容器**：`height: 30`, `padding: '0 10px'`, `display: 'flex'`, `alignItems: 'center'`, `justifyContent: 'space-between'`, `borderBottom: '1px solid var(--border)'`。
+**完整规范只维护在 [`.agents/rules/ui-guidelines.md`](.agents/rules/ui-guidelines.md)，
+要改规范请改那一份。** `AGENTS.md` / `GEMINI.md` / 本文件都只是摘要 —— 同一条规则
+抄四份的结局是改的时候只改到手里这一份，另外三份继续写着旧尺寸且不会报任何错。
+
+摘要（开工前扫一眼用）：
+
+- **容器**：`height: 30`, `padding: '0 10px'`, `boxSizing: 'border-box'`, `display: 'flex'`, `alignItems: 'center'`, `justifyContent: 'space-between'`, `borderBottom: '1px solid var(--border)'`, `flexShrink: 0`。
 - **按钮**：统一使用 `<button type="button" className="panel-action-btn" title="...">`。
-- **严禁内联尺寸覆盖**：绝对禁止在按钮上添加 `style={{ width: 22, height: 22 }}` 等内联尺寸硬编码，尺寸与微动效（26x26px，hover 1.05，active 0.95）由 `.panel-action-btn` 统一管理。
+- **严禁内联尺寸覆盖**：绝对禁止在按钮上添加 `style={{ width: 22, height: 22 }}` 等内联尺寸硬编码，尺寸与微动效（26x26px，hover 1.05，active 0.95）由 `.panel-action-btn` 统一管理；紧凑变体是 `panel-action-btn--compact`。
 - **图标**：标准高对比度 SVG 矢量（14x14 或 16x16，`strokeWidth="2"`，`stroke="currentColor"`）。
+- **字号基线**：`html` / `body` / `#root` 上**没有** `font-size`，真正的根值是浏览器默认的 16px。新增面板容器必须显式写 `font-size: var(--ui-font-size, 12px)`，别指望继承（设置页 MCP 页整整一屏字号偏大就是这么来的）。
+
+下面两条不属于 UI 规范，但同样强制：
+
 - **终端环境**：本地终端与子进程自动集成系统与 Homebrew 路径（`/opt/homebrew/bin`），Shell 默认使用登录 Shell（`-l` 参数）。
 - **Git 分支切换**：分支切换时自动保留未提交修改并在切回时自动恢复，切换后立即同步刷新打开文件、文件树与全局 Git 状态。

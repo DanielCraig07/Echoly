@@ -11,10 +11,7 @@ import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { colorizeTerminalLogs } from '../utils/terminalLogColorizer';
 import { measureContentColumns } from '../utils/terminalWidth';
-import {
-  registerTerminalLogReader,
-  setFocusedTerminalId,
-} from '../services/specialMentions';
+import { registerTerminalLogReader, setFocusedTerminalId } from '../services/specialMentions';
 import { useI18n, type Translate } from '../i18n';
 export { colorizeTerminalLogs };
 
@@ -99,7 +96,9 @@ function makeTab(
  * （中文数字前不加空格），拼接写法必然有一边多出一个空格。
  */
 function tabLabel(kind: 'local' | 'ssh', index: number, t: Translate): string {
-  return kind === 'ssh' ? t('terminal.tabLabelSsh', { n: index }) : t('terminal.tabLabelLocal', { n: index });
+  return kind === 'ssh'
+    ? t('terminal.tabLabelSsh', { n: index })
+    : t('terminal.tabLabelLocal', { n: index });
 }
 
 function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh', t: Translate) {
@@ -109,7 +108,16 @@ function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh', t: Translate
   if (type === 'mvn' || title.includes('mvn') || title.includes('maven')) {
     return (
       <span className="terminal-tab-icon maven" title={t('terminal.iconMaven')}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#ef4444"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
           <line x1="16" y1="8" x2="2" y2="22" />
           <line x1="17.5" y1="15" x2="9" y2="15" />
@@ -120,7 +128,16 @@ function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh', t: Translate
   if (type === 'java' || title.includes('java')) {
     return (
       <span className="terminal-tab-icon java" title={t('terminal.iconJava')}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#f59e0b"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
           <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
           <line x1="6" y1="1" x2="6" y2="4" />
@@ -132,7 +149,16 @@ function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh', t: Translate
   if (terminalKind === 'ssh' || type === 'ssh') {
     return (
       <span className="terminal-tab-icon ssh" title={t('terminal.iconSsh')}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <rect x="2" y="3" width="20" height="7" rx="2" />
           <rect x="2" y="14" width="20" height="7" rx="2" />
           <line x1="6" y1="6.5" x2="6.01" y2="6.5" />
@@ -143,7 +169,16 @@ function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh', t: Translate
   }
   return (
     <span className="terminal-tab-icon shell" title={t('terminal.iconShell')}>
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <svg
+        width="11"
+        height="11"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         <polyline points="4 17 10 11 4 5" />
         <line x1="12" y1="19" x2="20" y2="19" />
       </svg>
@@ -318,7 +353,6 @@ function IconSplit({ size = 16 }: { size?: number }) {
   );
 }
 
-
 interface TerminalSearchBarProps {
   query: string;
   onQueryChange: (q: string) => void;
@@ -403,7 +437,9 @@ function TerminalSearchBar({
           onKeyDown={handleKeyDown}
           placeholder={t('terminal.findPh')}
         />
-        <div style={{ position: 'absolute', right: 4, display: 'flex', gap: 2, alignItems: 'center' }}>
+        <div
+          style={{ position: 'absolute', right: 4, display: 'flex', gap: 2, alignItems: 'center' }}
+        >
           <button
             type="button"
             className={`input-toggle-btn${caseSensitive ? ' active' : ''}`}
@@ -656,7 +692,6 @@ interface SessionProps {
   onOpenFile?: (path: string, line?: number, column?: number) => void;
 }
 
-
 function TerminalSession({
   clientId,
   active,
@@ -766,47 +801,57 @@ function TerminalSession({
     viewport.scrollTop = ratio * (viewport.scrollHeight - viewport.clientHeight);
   }, []);
 
-  const handleVScrollThumbMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const viewport = getXtermViewport();
-    if (!viewport) return;
-    isDraggingVScroll.current = true;
-    vScrollDragStartY.current = e.clientY;
-    vScrollDragStartScrollTop.current = viewport.scrollTop;
+  const handleVScrollThumbMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const viewport = getXtermViewport();
+      if (!viewport) return;
+      isDraggingVScroll.current = true;
+      vScrollDragStartY.current = e.clientY;
+      vScrollDragStartScrollTop.current = viewport.scrollTop;
 
-    const onMouseMove = (me: MouseEvent) => {
-      if (!isDraggingVScroll.current) return;
-      const vp = getXtermViewport();
-      const scrollbar = vScrollBarRef.current;
-      const thumb = vScrollThumbRef.current;
-      if (!vp || !scrollbar || !thumb) return;
-      const deltaY = me.clientY - vScrollDragStartY.current;
-      const maxThumbTop = scrollbar.clientHeight - thumb.clientHeight;
-      if (maxThumbTop <= 0) return;
-      const scrollRange = vp.scrollHeight - vp.clientHeight;
-      vp.scrollTop = Math.max(0, Math.min(scrollRange,
-        vScrollDragStartScrollTop.current + (deltaY / maxThumbTop) * scrollRange,
-      ));
+      const onMouseMove = (me: MouseEvent) => {
+        if (!isDraggingVScroll.current) return;
+        const vp = getXtermViewport();
+        const scrollbar = vScrollBarRef.current;
+        const thumb = vScrollThumbRef.current;
+        if (!vp || !scrollbar || !thumb) return;
+        const deltaY = me.clientY - vScrollDragStartY.current;
+        const maxThumbTop = scrollbar.clientHeight - thumb.clientHeight;
+        if (maxThumbTop <= 0) return;
+        const scrollRange = vp.scrollHeight - vp.clientHeight;
+        vp.scrollTop = Math.max(
+          0,
+          Math.min(
+            scrollRange,
+            vScrollDragStartScrollTop.current + (deltaY / maxThumbTop) * scrollRange,
+          ),
+        );
+        updateVScrollThumb();
+      };
+
+      const onMouseUp = () => {
+        isDraggingVScroll.current = false;
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    },
+    [updateVScrollThumb],
+  );
+
+  const handleVScrollOverlayWheel = useCallback(
+    (e: React.WheelEvent) => {
+      const viewport = getXtermViewport();
+      if (!viewport) return;
+      viewport.scrollTop += e.deltaY * 0.6;
       updateVScrollThumb();
-    };
-
-    const onMouseUp = () => {
-      isDraggingVScroll.current = false;
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  }, [updateVScrollThumb]);
-
-  const handleVScrollOverlayWheel = useCallback((e: React.WheelEvent) => {
-    const viewport = getXtermViewport();
-    if (!viewport) return;
-    viewport.scrollTop += e.deltaY * 0.6;
-    updateVScrollThumb();
-  }, [updateVScrollThumb]);
+    },
+    [updateVScrollThumb],
+  );
 
   /** 统一将终端视口滚动到底部并保证光标所在行处于可视区（全屏备用缓冲区模式下跳过） */
   const scrollToBottomAndCursor = useCallback(() => {
@@ -826,8 +871,6 @@ function TerminalSession({
       // ignore
     }
   }, [updateVScrollThumb]);
-
-
 
   /**
    * 扫描 xterm buffer，返回内容真实占用的最大列数（按单元格宽度计，CJK/emoji 记 2 列）。
@@ -1006,10 +1049,12 @@ function TerminalSession({
     term.loadAddon(searchAddon);
     searchAddonRef.current = searchAddon;
 
-    const searchChangeDisposable = searchAddon.onDidChangeResults((e: { resultIndex: number; resultCount: number }) => {
-      setSearchResultIndex(e.resultIndex);
-      setSearchResultCount(e.resultCount);
-    });
+    const searchChangeDisposable = searchAddon.onDidChangeResults(
+      (e: { resultIndex: number; resultCount: number }) => {
+        setSearchResultIndex(e.resultIndex);
+        setSearchResultCount(e.resultCount);
+      },
+    );
 
     const linkDisposable = term.registerLinkProvider({
       provideLinks(bufferLineNumber: number, callback: (links: ILink[] | undefined) => void) {
@@ -1023,7 +1068,12 @@ function TerminalSession({
           callback(undefined);
           return;
         }
-        const detected = findLinksInLine(lineText, bufferLineNumber, cwdRef.current, onOpenFileRef.current);
+        const detected = findLinksInLine(
+          lineText,
+          bufferLineNumber,
+          cwdRef.current,
+          onOpenFileRef.current,
+        );
         callback(detected.length > 0 ? detected : undefined);
       },
     });
@@ -1244,103 +1294,105 @@ function TerminalSession({
     const startCols = initDims?.cols && initDims.cols >= 20 ? initDims.cols : initialCols;
     const startRows = initDims?.rows && initDims.rows >= 3 ? initDims.rows : 24;
 
-    void window.ide.createTerminal({ kind: terminalKind, cwd, cols: startCols, rows: startRows }).then((res) => {
-      if (disposed) return;
-      const { id } = res;
-      if (!id) {
-        term.write('\r\n\x1b[31mFailed to launch terminal process.\x1b[0m\r\n');
-        return;
-      }
-      sessionId = id;
-      idRef.current = id;
-
-      const sendCmd = (cmd: string) => {
-        if (idRef.current) {
-          void window.ide.writeTerminal(idRef.current, wrapCommand(cmd) + '\r\n');
+    void window.ide
+      .createTerminal({ kind: terminalKind, cwd, cols: startCols, rows: startRows })
+      .then((res) => {
+        if (disposed) return;
+        const { id } = res;
+        if (!id) {
+          term.write('\r\n\x1b[31mFailed to launch terminal process.\x1b[0m\r\n');
+          return;
         }
-      };
-      unreg = onRegisterSession?.(clientId, sendCmd);
+        sessionId = id;
+        idRef.current = id;
 
-      const sendRaw = (raw: string) => {
-        if (idRef.current) {
-          void window.ide.writeTerminal(idRef.current, raw);
-        }
-      };
-      unregRaw = onRegisterRawSession?.(clientId, sendRaw);
-
-      const getRecentLines = (lines = 50): string => {
-        const term = termRef.current;
-        if (!term) return '';
-        const sel = term.getSelection();
-        if (sel && sel.trim().length > 0) return sel;
-        const buffer = term.buffer.active;
-        const total = buffer.length;
-        const start = Math.max(0, total - lines);
-        const result: string[] = [];
-        for (let i = start; i < total; i++) {
-          const line = buffer.getLine(i);
-          if (line) {
-            result.push(line.translateToString(true));
+        const sendCmd = (cmd: string) => {
+          if (idRef.current) {
+            void window.ide.writeTerminal(idRef.current, wrapCommand(cmd) + '\r\n');
           }
+        };
+        unreg = onRegisterSession?.(clientId, sendCmd);
+
+        const sendRaw = (raw: string) => {
+          if (idRef.current) {
+            void window.ide.writeTerminal(idRef.current, raw);
+          }
+        };
+        unregRaw = onRegisterRawSession?.(clientId, sendRaw);
+
+        const getRecentLines = (lines = 50): string => {
+          const term = termRef.current;
+          if (!term) return '';
+          const sel = term.getSelection();
+          if (sel && sel.trim().length > 0) return sel;
+          const buffer = term.buffer.active;
+          const total = buffer.length;
+          const start = Math.max(0, total - lines);
+          const result: string[] = [];
+          for (let i = start; i < total; i++) {
+            const line = buffer.getLine(i);
+            if (line) {
+              result.push(line.translateToString(true));
+            }
+          }
+          return result.join('\n').trim();
+        };
+        unregExtract = onRegisterExtractLog?.(clientId, getRecentLines);
+        // 同一份读取函数也注册进模块级注册表，供聊天框的 `@Terminal` 引用取当前聚焦终端的输出
+        unregMentionLog = registerTerminalLogReader(clientId, getRecentLines);
+
+        const focusTerm = () => {
+          termRef.current?.focus();
+        };
+        unregFocus = onRegisterFocus?.(clientId, focusTerm);
+
+        // 设置兜底定时器（1500ms）：若 Shell 极端静默未触发输出数据，确保命令仍正常发出
+        if (initialCommand?.trim() && !initialCmdSent && !initialCmdTimer) {
+          initialCmdTimer = setTimeout(() => {
+            dispatchInitialCommand();
+          }, 1500);
         }
-        return result.join('\n').trim();
-      };
-      unregExtract = onRegisterExtractLog?.(clientId, getRecentLines);
-      // 同一份读取函数也注册进模块级注册表，供聊天框的 `@Terminal` 引用取当前聚焦终端的输出
-      unregMentionLog = registerTerminalLogReader(clientId, getRecentLines);
 
-      const focusTerm = () => {
-        termRef.current?.focus();
-      };
-      unregFocus = onRegisterFocus?.(clientId, focusTerm);
+        term.onData((data) => {
+          // 使用 node-pty 后，shell 会自行回显输入（PTY 原生 echo）并处理退格/光标
+          void window.ide.writeTerminal(id, data);
+        });
 
-      // 设置兜底定时器（1500ms）：若 Shell 极端静默未触发输出数据，确保命令仍正常发出
-      if (initialCommand?.trim() && !initialCmdSent && !initialCmdTimer) {
-        initialCmdTimer = setTimeout(() => {
-          dispatchInitialCommand();
-        }, 1500);
-      }
+        const resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
+          if (activeRef.current && visibleRef.current && idRef.current) {
+            applyTerminalSize(idRef.current);
+            scrollToBottomAndCursor();
+            requestAnimationFrame(() => scrollToBottomAndCursor());
+            setTimeout(() => scrollToBottomAndCursor(), 40);
+            setTimeout(() => scrollToBottomAndCursor(), 120);
+          }
+        });
+        if (hostRef.current) {
+          resizeObserver.observe(hostRef.current);
+        }
 
-      term.onData((data) => {
-        // 使用 node-pty 后，shell 会自行回显输入（PTY 原生 echo）并处理退格/光标
-        void window.ide.writeTerminal(id, data);
-      });
-
-      const resizeObserver: ResizeObserver | null = new ResizeObserver(() => {
-        if (activeRef.current && visibleRef.current && idRef.current) {
-          applyTerminalSize(idRef.current);
+        // Perform multiple staged fit retries to ensure initial layout settlement
+        applyTerminalSize(id);
+        scrollToBottomAndCursor();
+        requestAnimationFrame(() => {
+          applyTerminalSize(id);
           scrollToBottomAndCursor();
-          requestAnimationFrame(() => scrollToBottomAndCursor());
-          setTimeout(() => scrollToBottomAndCursor(), 40);
-          setTimeout(() => scrollToBottomAndCursor(), 120);
-        }
-      });
-      if (hostRef.current) {
-        resizeObserver.observe(hostRef.current);
-      }
+        });
+        const t1 = setTimeout(() => {
+          applyTerminalSize(id);
+          scrollToBottomAndCursor();
+        }, 50);
+        const t2 = setTimeout(() => {
+          applyTerminalSize(id);
+          scrollToBottomAndCursor();
+        }, 150);
+        const t3 = setTimeout(() => {
+          applyTerminalSize(id);
+          scrollToBottomAndCursor();
+        }, 400);
 
-      // Perform multiple staged fit retries to ensure initial layout settlement
-      applyTerminalSize(id);
-      scrollToBottomAndCursor();
-      requestAnimationFrame(() => {
-        applyTerminalSize(id);
-        scrollToBottomAndCursor();
+        observerRef.current = resizeObserver;
       });
-      const t1 = setTimeout(() => {
-        applyTerminalSize(id);
-        scrollToBottomAndCursor();
-      }, 50);
-      const t2 = setTimeout(() => {
-        applyTerminalSize(id);
-        scrollToBottomAndCursor();
-      }, 150);
-      const t3 = setTimeout(() => {
-        applyTerminalSize(id);
-        scrollToBottomAndCursor();
-      }, 400);
-
-      observerRef.current = resizeObserver;
-    });
 
     return () => {
       disposed = true;
@@ -1732,7 +1784,8 @@ function TerminalSession({
   };
 
   const hasSelection = Boolean(termRef.current?.hasSelection());
-  const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
+  const isMac =
+    typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
 
   return (
     <div
@@ -1755,14 +1808,23 @@ function TerminalSession({
           className="ctx-menu"
           ref={ctxMenuRef}
           role="menu"
-          style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 10000, minWidth: 170 }}
+          style={{
+            position: 'fixed',
+            top: ctxMenu.y,
+            left: ctxMenu.x,
+            zIndex: 10000,
+            minWidth: 170,
+          }}
         >
           <button
             type="button"
             className="ctx-item"
             onClick={handleCopy}
             disabled={!hasSelection}
-            style={{ opacity: hasSelection ? 1 : 0.45, cursor: hasSelection ? 'pointer' : 'default' }}
+            style={{
+              opacity: hasSelection ? 1 : 0.45,
+              cursor: hasSelection ? 'pointer' : 'default',
+            }}
           >
             <span>{t('terminal.copy')}</span>
             <kbd className="shortcut-badge">{isMac ? '⌘C' : 'Ctrl+Shift+C'}</kbd>
@@ -1955,15 +2017,12 @@ export function TerminalPanel({
   const [showAiK, setShowAiK] = useState(false);
   const sessionFocusRef = useRef<Map<string, () => void>>(new Map());
 
-  const handleRegisterFocus = useCallback(
-    (clientId: string, focusFn: () => void) => {
-      sessionFocusRef.current.set(clientId, focusFn);
-      return () => {
-        sessionFocusRef.current.delete(clientId);
-      };
-    },
-    [],
-  );
+  const handleRegisterFocus = useCallback((clientId: string, focusFn: () => void) => {
+    sessionFocusRef.current.set(clientId, focusFn);
+    return () => {
+      sessionFocusRef.current.delete(clientId);
+    };
+  }, []);
 
   const focusActiveTerminal = useCallback(() => {
     // 延迟一帧，确保 AI 浮条关闭后焦点准确转移到 xterm 实例并唤醒光标
@@ -1973,27 +2032,33 @@ export function TerminalPanel({
     });
   }, [focusedTabId]);
 
-  const handleAiKExecute = useCallback((command: string) => {
-    if (!focusedTabId) return;
-    const sendCmd = sessionSendCmdRef.current.get(focusedTabId);
-    if (sendCmd) {
-      sendCmd(command);
-    } else {
-      void window.ide.writeTerminal(focusedTabId, command + '\r\n');
-    }
-    focusActiveTerminal();
-  }, [focusedTabId, focusActiveTerminal]);
+  const handleAiKExecute = useCallback(
+    (command: string) => {
+      if (!focusedTabId) return;
+      const sendCmd = sessionSendCmdRef.current.get(focusedTabId);
+      if (sendCmd) {
+        sendCmd(command);
+      } else {
+        void window.ide.writeTerminal(focusedTabId, command + '\r\n');
+      }
+      focusActiveTerminal();
+    },
+    [focusedTabId, focusActiveTerminal],
+  );
 
-  const handleAiKInsert = useCallback((command: string) => {
-    if (!focusedTabId) return;
-    const sendRaw = sessionSendRawRef.current.get(focusedTabId);
-    if (sendRaw) {
-      sendRaw(command);
-    } else {
-      void window.ide.writeTerminal(focusedTabId, command);
-    }
-    focusActiveTerminal();
-  }, [focusedTabId, focusActiveTerminal]);
+  const handleAiKInsert = useCallback(
+    (command: string) => {
+      if (!focusedTabId) return;
+      const sendRaw = sessionSendRawRef.current.get(focusedTabId);
+      if (sendRaw) {
+        sendRaw(command);
+      } else {
+        void window.ide.writeTerminal(focusedTabId, command);
+      }
+      focusActiveTerminal();
+    },
+    [focusedTabId, focusActiveTerminal],
+  );
 
   const toggleWordWrap = useCallback(() => {
     setWordWrap((prev) => {
@@ -2007,15 +2072,12 @@ export function TerminalPanel({
     });
   }, []);
 
-  const handleRegisterSession = useCallback(
-    (clientId: string, sendCmd: (cmd: string) => void) => {
-      sessionSendCmdRef.current.set(clientId, sendCmd);
-      return () => {
-        sessionSendCmdRef.current.delete(clientId);
-      };
-    },
-    [],
-  );
+  const handleRegisterSession = useCallback((clientId: string, sendCmd: (cmd: string) => void) => {
+    sessionSendCmdRef.current.set(clientId, sendCmd);
+    return () => {
+      sessionSendCmdRef.current.delete(clientId);
+    };
+  }, []);
 
   const handleRegisterRawSession = useCallback(
     (clientId: string, sendRaw: (raw: string) => void) => {
@@ -2039,7 +2101,9 @@ export function TerminalPanel({
   );
 
   // 跟踪各终端标签的最新错误状态 (exitCode !== 0)
-  const [tabErrors, setTabErrors] = useState<Record<string, { exitCode: number; time: number }>>({});
+  const [tabErrors, setTabErrors] = useState<Record<string, { exitCode: number; time: number }>>(
+    {},
+  );
 
   useEffect(() => {
     const handleRunFinished = (e: Event) => {
@@ -2086,7 +2150,9 @@ export function TerminalPanel({
     const extractFn = sessionExtractLogRef.current.get(focusedTabId);
     const rawLog = extractFn?.(40) || '';
     const cleanLog = rawLog.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '').trim();
-    const hasError = /error|exception|failed|fatal|cannot find|not found|syntaxerror/i.test(cleanLog);
+    const hasError = /error|exception|failed|fatal|cannot find|not found|syntaxerror/i.test(
+      cleanLog,
+    );
     const prompt = cleanLog
       ? hasError
         ? `终端最新运行输出中包含报错信息，请帮我分析原因并给出具体的修复方案与命令：\n\`\`\`log\n${cleanLog}\n\`\`\``
@@ -2242,7 +2308,8 @@ export function TerminalPanel({
       cwd,
       initialCommand,
       terminalType,
-      terminalTitle || (terminalType === 'mvn' ? 'Maven' : terminalType === 'java' ? 'Java' : undefined),
+      terminalTitle ||
+        (terminalType === 'mvn' ? 'Maven' : terminalType === 'java' ? 'Java' : undefined),
     );
     setTabs((prev) => [...prev, tab]);
     switchOrFocusTab(tab.clientId);
@@ -2329,7 +2396,10 @@ export function TerminalPanel({
               statements: [],
             }),
             details: [
-              { label: t('terminal.labelTab'), value: tab.customTitle || tabLabel(terminalKind, tab.index, t) },
+              {
+                label: t('terminal.labelTab'),
+                value: tab.customTitle || tabLabel(terminalKind, tab.index, t),
+              },
               {
                 label: t('terminal.labelKind'),
                 value: terminalKind === 'ssh' ? t('terminal.kindSsh') : t('terminal.kindLocal'),
@@ -2560,7 +2630,14 @@ export function TerminalPanel({
               title={t('terminal.errorBanner', { code: activeTabError.exitCode ?? '' })}
               onClick={handleDiagnoseActiveError}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+              >
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
               <span>{t('terminal.askAiDiagnoseErr')}</span>
@@ -2572,7 +2649,14 @@ export function TerminalPanel({
             title={t('terminal.askAiTitle')}
             onClick={handleAskAiGeneral}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
             </svg>
           </button>
@@ -2582,7 +2666,16 @@ export function TerminalPanel({
             title={t('terminal.genCommandTitle')}
             onClick={() => setShowAiK((v) => !v)}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
             </svg>
           </button>
@@ -2598,16 +2691,36 @@ export function TerminalPanel({
             <button
               type="button"
               className="panel-action-btn"
-              title={splitDirection === 'horizontal' ? t('terminal.splitToHorizontal') : t('terminal.splitToVertical')}
-              onClick={() => setSplitDirection((d) => (d === 'horizontal' ? 'vertical' : 'horizontal'))}
+              title={
+                splitDirection === 'horizontal'
+                  ? t('terminal.splitToHorizontal')
+                  : t('terminal.splitToVertical')
+              }
+              onClick={() =>
+                setSplitDirection((d) => (d === 'horizontal' ? 'vertical' : 'horizontal'))
+              }
             >
               {splitDirection === 'horizontal' ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <line x1="3" y1="12" x2="21" y2="12" />
                 </svg>
               ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <line x1="12" y1="3" x2="12" y2="21" />
                 </svg>
@@ -2625,11 +2738,7 @@ export function TerminalPanel({
           <button
             type="button"
             className={`panel-action-btn${wordWrap ? ' active' : ''}`}
-            title={
-              wordWrap
-                ? t('terminal.wrapOn')
-                : t('terminal.wrapOff')
-            }
+            title={wordWrap ? t('terminal.wrapOn') : t('terminal.wrapOff')}
             onClick={toggleWordWrap}
           >
             <IconWordWrap size={16} />
@@ -2748,7 +2857,7 @@ export function TerminalPanel({
         {tabs.map((tab) => {
           const isLeft = tab.clientId === leftTabId;
           const isRight = splitActiveId !== null && tab.clientId === splitActiveId;
-          const isVisible = splitActiveId ? (isLeft || isRight) : isLeft;
+          const isVisible = splitActiveId ? isLeft || isRight : isLeft;
 
           // 计算各窗格在分屏下的样式
           let paneStyle: React.CSSProperties | undefined;
@@ -2830,4 +2939,3 @@ export function TerminalPanel({
     </div>
   );
 }
-

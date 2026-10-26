@@ -56,7 +56,8 @@ export class CheckpointStore {
       runId: id,
       mutations: entry.mutations.length,
       incomplete: Boolean(bad),
-      incompleteReason: bad && bad.kind === 'unrecordable' ? `${bad.path}: ${bad.reason}` : undefined,
+      incompleteReason:
+        bad && bad.kind === 'unrecordable' ? `${bad.path}: ${bad.reason}` : undefined,
       createdAt: entry.createdAt,
     };
   }

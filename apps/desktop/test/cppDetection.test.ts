@@ -100,7 +100,7 @@ add_test(NAME unit_test COMMAND server --test)
     };
 
     const scripts = await detectProjectScripts('/workspace', zhT);
-    
+
     // Check CMake: Configure
     const configure = scripts.find((s) => s.id === 'cmake:configure');
     expect(configure).toBeDefined();

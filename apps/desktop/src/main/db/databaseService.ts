@@ -118,7 +118,7 @@ function normalizeSaved(raw: any): DbSavedConnection | null {
       typeof raw.id === 'string' && raw.id
         ? raw.id
         : makeSavedId({ type, host, port, database, path: path0 }),
-    name: typeof raw.name === 'string' && raw.name ? raw.name : (database || path0 || type),
+    name: typeof raw.name === 'string' && raw.name ? raw.name : database || path0 || type,
     type,
     path: path0,
     host,
@@ -141,7 +141,9 @@ function quoteIdent(type: DbType, name: string): string {
 
 /** 形如 `db`.`table` / "schema"."table" 的全限定名 */
 function qualify(type: DbType, schema: string | undefined, table: string): string {
-  return schema ? `${quoteIdent(type, schema)}.${quoteIdent(type, table)}` : quoteIdent(type, table);
+  return schema
+    ? `${quoteIdent(type, schema)}.${quoteIdent(type, table)}`
+    : quoteIdent(type, table);
 }
 
 /** 给 SELECT 语句补分页（已有 LIMIT 时不动） */
@@ -207,7 +209,6 @@ export class DatabaseService {
     }
     return this.pruneIfDead(found);
   }
-
 
   /**
    * 读取当前工作区保存的连接配置。
@@ -883,7 +884,10 @@ export class DatabaseService {
         name: r.name,
         kind: 'database' as const,
       }));
-      return { ok: true, schemas: schemas.length > 0 ? schemas : [{ name: 'main', kind: 'database' }] };
+      return {
+        ok: true,
+        schemas: schemas.length > 0 ? schemas : [{ name: 'main', kind: 'database' }],
+      };
     } catch (err: any) {
       return { ok: false, schemas: [], error: err.message || String(err) };
     }
@@ -1218,9 +1222,7 @@ export class DatabaseService {
           }));
           return { ok: true, columns };
         } catch {
-          const [rows] = await active.db.query(
-            `DESCRIBE ${qualify('mysql', schema, tableName)}`,
-          );
+          const [rows] = await active.db.query(`DESCRIBE ${qualify('mysql', schema, tableName)}`);
           const columns: DatabaseColumnMeta[] = (rows as any[]).map((r, idx) => ({
             cid: idx,
             name: r.Field,
@@ -1327,8 +1329,7 @@ export class DatabaseService {
           `SHOW CREATE TABLE ${qualify('mysql', schema, tableName)}`,
         );
         if (Array.isArray(rows) && rows[0]) {
-          const createSql =
-            (rows[0] as any)['Create Table'] || (rows[0] as any)['Create View'];
+          const createSql = (rows[0] as any)['Create Table'] || (rows[0] as any)['Create View'];
           if (createSql) {
             return { ok: true, ddl: `${createSql};\n` };
           }
@@ -1537,9 +1538,7 @@ export class DatabaseService {
   /**
    * 一键创建示例 SQLite 数据库
    */
-  async createDemoDb(
-    targetPath?: string,
-  ): Promise<{
+  async createDemoDb(targetPath?: string): Promise<{
     ok: boolean;
     path: string;
     connection: DatabaseConnectionInfo;
@@ -1556,8 +1555,7 @@ export class DatabaseService {
 
     try {
       const savePath =
-        targetPath ||
-        path.join(process.cwd(), `echoly_demo_${Date.now().toString(36)}.db`);
+        targetPath || path.join(process.cwd(), `echoly_demo_${Date.now().toString(36)}.db`);
 
       const db = new SqliteDatabaseSync(savePath);
 

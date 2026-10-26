@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DatabaseColumnMeta, DbConnectionView } from '@deepseek-ide/shared';
 import { DbDdlView } from './DbDdlView';
 import { DbColumnsView } from './DbColumnsView';
-import { loadStructureViewMode, saveStructureViewMode, type StructureViewMode } from '../services/structureViewMode';
+import {
+  loadStructureViewMode,
+  saveStructureViewMode,
+  type StructureViewMode,
+} from '../services/structureViewMode';
 import { useI18n } from '../i18n';
 import type { DbDriverType } from '../services/dbIdentifiers';
 
@@ -20,12 +24,22 @@ export interface DbStructureViewProps {
    * （`App.handleTableRenamed`）。这一层只负责把名字原样递上去。
    */
   onRenamed?: (newTableName: string) => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 /** 驱动兜底：连接列表还没拉回来时按标签里的库名猜，与 `DbTableDataView` 同一口径 */
-function resolveDriver(connId: string, schemaName: string | undefined, connections: DbConnectionView[]): DbDriverType {
-  return connections.find((c) => c.id === connId)?.type ?? (schemaName === 'main' ? 'sqlite' : 'mysql');
+function resolveDriver(
+  connId: string,
+  schemaName: string | undefined,
+  connections: DbConnectionView[],
+): DbDriverType {
+  return (
+    connections.find((c) => c.id === connId)?.type ?? (schemaName === 'main' ? 'sqlite' : 'mysql')
+  );
 }
 
 /**
@@ -86,7 +100,9 @@ export function DbStructureView({
         : undefined;
       setTableComment(entry?.comment ?? null);
       // DDL 拿不到不算致命（权限受限的库很常见）：列视图照常可用，只在 DDL 视图里说明
-      const errs = [schemaRes.ok ? null : schemaRes.error, ddlRes.ok ? null : ddlRes.error].filter(Boolean);
+      const errs = [schemaRes.ok ? null : schemaRes.error, ddlRes.ok ? null : ddlRes.error].filter(
+        Boolean,
+      );
       if (errs.length > 0) setError(errs.join(t('db.errorSeparator')));
       setNonce((n) => n + 1);
     } catch (err: any) {
@@ -118,7 +134,10 @@ export function DbStructureView({
       {/* 工具条：对齐 Maven 二级栏规范（height 30 / padding 0 10px / 下边框） */}
       <div className="db-structure-toolbar">
         <div className="db-structure-toolbar-left">
-          <span className="db-structure-title" title={`${schemaName ? `${schemaName}.` : ''}${tableName}`}>
+          <span
+            className="db-structure-title"
+            title={`${schemaName ? `${schemaName}.` : ''}${tableName}`}
+          >
             {tableName}
           </span>
           {/* 分段切换：DDL 原文 / 可编辑列清单 */}
@@ -151,7 +170,16 @@ export function DbStructureView({
           disabled={loading}
           onClick={() => void load()}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <polyline points="23 4 23 10 17 10" />
             <polyline points="1 20 1 14 7 14" />
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />

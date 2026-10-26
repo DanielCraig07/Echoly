@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { registerIpc } from './ipc';
 import { initLogging } from './logging';
-import { ensureSystemEnv } from './shellEnv';
+import { ensureSystemEnv, primeSystemEnv } from './shellEnv';
 import { SettingsStore } from './settings';
 import { SessionStore } from './sessions';
 import { AgentService } from './agentService';
@@ -503,16 +503,30 @@ function createWindow(
 app.whenReady().then(async () => {
   const settings = new SettingsStore(app.getPath('userData'));
 
+  // 静默预热用户登录 Shell 的环境变量（brew/nvm/cargo 等）。刻意**不 await**：
+  // 旧实现是在这里同步跑一次登录 Shell，最多要等 2.5 秒才建窗口。现在交给
+  // 后台进行，等它跑完时界面早已可用，而需要它的子进程（git / 终端 / mvn）
+  // 都是用户点出来的，不会早于它。详见 shellEnv.ts 的注释。
+  void primeSystemEnv();
+
   // macOS 15 Sequoia 局域网权限预热：发送静默探测包使系统及早绑定本地网络授权，避免后续 SSH 握手前被操作系统拦截
   if (process.platform === 'darwin') {
     try {
       const dgram = require('node:dgram');
       const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
       sock.on('error', () => {
-        try { sock.close(); } catch { /* ignore */ }
+        try {
+          sock.close();
+        } catch {
+          /* ignore */
+        }
       });
       sock.send(Buffer.from([0]), 5353, '224.0.0.251', () => {
-        try { sock.close(); } catch { /* ignore */ }
+        try {
+          sock.close();
+        } catch {
+          /* ignore */
+        }
       });
     } catch {
       // ignore

@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
-import {
-  buildColumnTooltip,
-  formatColumnType,
-} from '../src/renderer/src/services/dbColumnTooltip';
+import { buildColumnTooltip, formatColumnType } from '../src/renderer/src/services/dbColumnTooltip';
 
-function col(name: string, type: string, extra: Partial<DatabaseColumnMeta> = {}): DatabaseColumnMeta {
+function col(
+  name: string,
+  type: string,
+  extra: Partial<DatabaseColumnMeta> = {},
+): DatabaseColumnMeta {
   return { cid: 0, name, type, notnull: false, dflt_value: null, pk: false, ...extra };
 }
 

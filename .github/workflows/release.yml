@@ -50,6 +50,7 @@ jobs:
         run: |
           npm run typecheck
           npm run lint
+          npm test
 
       - name: Build and Package macOS arm64 DMG
         run: |
@@ -70,7 +71,9 @@ jobs:
     needs: init-release
     runs-on: windows-latest
     timeout-minutes: 30
-    continue-on-error: true
+    # 之前这里是 continue-on-error: true —— Windows 打包失败会被**静默吞掉**：
+    # job 标绿、release 照样 publish，产物里却没有 .exe，要等用户下载时才发现。
+    # 现在让它如实失败：宁可发布卡住，也不要发一个「看起来成功」的半成品。
     defaults:
       run:
         shell: bash
@@ -87,6 +90,11 @@ jobs:
 
       - name: Sync version from git tag
         run: node scripts/sync-version.js ${{ github.ref_name }}
+
+      - name: Quality gate
+        run: |
+          npm run typecheck
+          npm run lint
 
       - name: Build and Package Windows x64 NSIS
         run: |
@@ -118,4 +126,3 @@ jobs:
           echo "Publishing release for tag: $TAG..."
           gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false --latest
           echo "✓ Release $TAG is live, published, and explicitly marked as Latest!"
-

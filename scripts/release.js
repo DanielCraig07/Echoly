@@ -46,8 +46,15 @@ if (['patch', 'minor', 'major'].includes(targetVersion)) {
     process.exit(1);
   }
   if (targetVersion === 'patch') parts[2]++;
-  if (targetVersion === 'minor') { parts[1]++; parts[2] = 0; }
-  if (targetVersion === 'major') { parts[0]++; parts[1] = 0; parts[2] = 0; }
+  if (targetVersion === 'minor') {
+    parts[1]++;
+    parts[2] = 0;
+  }
+  if (targetVersion === 'major') {
+    parts[0]++;
+    parts[1] = 0;
+    parts[2] = 0;
+  }
   targetVersion = parts.join('.');
 }
 
@@ -66,7 +73,16 @@ try {
 }
 
 // 3. Git 提交与打 Tag
-const filesToAdd = ['package.json', 'apps/desktop/package.json', 'package-lock.json'];
+//
+// `packages/shared/src/index.ts` 必须一起暂存：sync-version.js 会把 APP_VERSION 写进这个文件，
+// 漏掉它会让「版本号已同步」只发生在工作区里 —— tag 指向的提交仍是旧版本号，
+// 打出来的包自报 0.0.49 而 release 叫 v0.0.50，且看不出任何报错。
+const filesToAdd = [
+  'package.json',
+  'apps/desktop/package.json',
+  'package-lock.json',
+  'packages/shared/src/index.ts',
+];
 const existingFiles = filesToAdd.filter((f) => fs.existsSync(path.resolve(__dirname, '..', f)));
 
 console.log(`\n📌 正在暂存并创建 Git Commit: chore: release ${tag}`);

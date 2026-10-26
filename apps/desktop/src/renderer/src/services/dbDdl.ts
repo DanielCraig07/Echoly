@@ -66,16 +66,7 @@ export const COLUMN_TYPES: Record<DbDriverType, string[]> = {
     'BYTEA',
     'UUID',
   ],
-  sqlite: [
-    'INTEGER',
-    'REAL',
-    'TEXT',
-    'BLOB',
-    'NUMERIC',
-    'BOOLEAN',
-    'DATE',
-    'DATETIME',
-  ],
+  sqlite: ['INTEGER', 'REAL', 'TEXT', 'BLOB', 'NUMERIC', 'BOOLEAN', 'DATE', 'DATETIME'],
 };
 
 /** 需要（可选）指定长度的类型 —— UI 据此决定长度输入框是否可用 */
@@ -107,11 +98,7 @@ export interface DbColumnSpec {
  * 扫「源码里的中文字符串」那类检查也未必扫得到。
  */
 export type DbDdlErrorCode =
-  | 'name-empty'
-  | 'name-too-long'
-  | 'name-invalid-chars'
-  | 'length-invalid'
-  | 'rename-same';
+  'name-empty' | 'name-too-long' | 'name-invalid-chars' | 'length-invalid' | 'rename-same';
 
 /** 该驱动不支持的列改动，逐条说明原因 */
 export type DbAlterSkipCode =
@@ -166,9 +153,18 @@ export function validateLength(length: string): DbDdlErrorCode | null {
   return null;
 }
 
+/**
+ * 列定义渲染能接受的形状：`type` 可缺省。
+ *
+ * CREATE TABLE 传的是 `DbColumnSpec`（类型必填），ALTER 的改名/非空/默认值分支传的是
+ * `DbColumnChange`（类型可能没给，此时退回该驱动的默认类型）。两者都归到这里，
+ * 免得为了让类型对上而在调用点塞假值。
+ */
+type DbColumnSpecLike = Omit<DbColumnSpec, 'type'> & { type?: string };
+
 /** 生成单列的定义片段（不含列名，供 CREATE TABLE 与 ALTER ADD COLUMN 共用） */
-function columnDefinition(driver: DbDriverType, col: DbColumnSpec): string {
-  let type = col.type.trim() || COLUMN_TYPES[driver][0];
+function columnDefinition(driver: DbDriverType, col: DbColumnSpecLike): string {
+  let type = col.type?.trim() || COLUMN_TYPES[driver][0];
   if (col.length?.trim() && typeAcceptsLength(type)) {
     type = `${type}(${col.length.trim().replace(/\s+/g, '')})`;
   }
@@ -193,7 +189,7 @@ function columnDefinition(driver: DbDriverType, col: DbColumnSpec): string {
  * `CURRENT_TIMESTAMP` / `NULL` 这类是**关键字**，加引号就变成字面量字符串（列会存进
  * 字符串 "CURRENT_TIMESTAMP"），必须原样输出；其余值按字面量转义。
  */
-function formatDefault(driver: DbDriverType, col: DbColumnSpec): string {
+function formatDefault(driver: DbDriverType, col: DbColumnSpecLike): string {
   const raw = String(col.defaultValue ?? '').trim();
   if (/^(NULL|CURRENT_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|TRUE|FALSE)$/i.test(raw)) {
     return raw.toUpperCase();
@@ -231,7 +227,9 @@ export function buildCreateTableSql(
     });
 
   if (compositePk) {
-    defs.push(`PRIMARY KEY (${pkCols.map((c) => quoteIdent(driver, safeColumnName(c.name))).join(', ')})`);
+    defs.push(
+      `PRIMARY KEY (${pkCols.map((c) => quoteIdent(driver, safeColumnName(c.name))).join(', ')})`,
+    );
   }
 
   const target = qualifyIdent(driver, schema, table);
@@ -295,7 +293,16 @@ export function buildTruncateTableSql(
 // ── ALTER TABLE ─────────────────────────────────────────────────────────────
 
 /** 一列的改动意图：`originalName` 为空表示新增列，`drop` 为真表示删除该列 */
-export interface DbColumnChange extends DbColumnSpec {
+export interface DbColumnChange extends Omit<DbColumnSpec, 'type'> {
+  /**
+   * 目标类型。
+   *
+   * 对「新增列 / 改类型」是必需的，但**删列、改名、只改非空或默认值时并不需要** ——
+   * 生成 `DROP COLUMN` 时要求调用方编一个类型出来毫无意义，只会让调用点要么塞个假值
+   * （假值一旦被误用到别处就是错的 SQL），要么写 `as any` 把类型检查绕过去。
+   * 所以这里放宽为可选，真正的必填校验放在用到它的分支里（新增列缺类型则跳过）。
+   */
+  type?: string;
   /** 原列名；为空 = 新增列 */
   originalName?: string;
   /** 改名后的新名字；与 `originalName` 不同则生成改名动作 */
@@ -343,7 +350,7 @@ export function buildAlterTableStatements(
       if (!name || !change.type?.trim()) continue;
       if (driver === 'sqlite') {
         // SQLite 的 ADD COLUMN 不允许 NOT NULL 且无默认值（既有行没有值可填）
-        const spec: DbColumnSpec = { ...change };
+        const spec: DbColumnSpecLike = { ...change };
         if (spec.notnull && !spec.defaultValue?.trim()) {
           skipped.push({ code: 'sqlite-add-notnull-no-default', name });
           continue;
@@ -360,9 +367,7 @@ export function buildAlterTableStatements(
         statements.push(
           `ALTER TABLE ${target} ADD COLUMN ${columnDefinition(driver, { ...change, pk: false })};`,
         );
-        statements.push(
-          `ALTER TABLE ${target} ADD PRIMARY KEY (${quoteIdent(driver, name)});`,
-        );
+        statements.push(`ALTER TABLE ${target} ADD PRIMARY KEY (${quoteIdent(driver, name)});`);
         continue;
       }
       statements.push(`ALTER TABLE ${target} ADD COLUMN ${columnDefinition(driver, change)};`);

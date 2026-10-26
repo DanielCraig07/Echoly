@@ -1,7 +1,11 @@
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CppToolchainStatus, CppToolItem, MultiLangToolchainStatus } from '@deepseek-ide/shared';
+import type {
+  CppToolchainStatus,
+  CppToolItem,
+  MultiLangToolchainStatus,
+} from '@deepseek-ide/shared';
 
 function findBinaryInPath(name: string): string | null {
   const isWin = process.platform === 'win32';
@@ -79,7 +83,7 @@ export function detectCppToolchain(): CppToolchainStatus {
 
   // 1. C/C++ 编译器 (clang++ / g++)
   const compiler = checkTool(
-    isMac ? 'Apple Clang++' : (isWin ? 'MinGW G++' : 'GCC G++'),
+    isMac ? 'Apple Clang++' : isWin ? 'MinGW G++' : 'GCC G++',
     isMac ? 'clang++' : 'g++',
     [
       '/usr/bin/clang++',
@@ -89,7 +93,11 @@ export function detectCppToolchain(): CppToolchainStatus {
       '/usr/local/bin/g++',
     ],
     '--version',
-    isMac ? 'xcode-select --install' : (isWin ? 'winget install LLVM.LLVM 或 w64devkit' : 'sudo apt install build-essential'),
+    isMac
+      ? 'xcode-select --install'
+      : isWin
+        ? 'winget install LLVM.LLVM 或 w64devkit'
+        : 'sudo apt install build-essential',
   );
 
   // 2. Clangd 语言服务
@@ -156,14 +164,13 @@ export function detectMultiLangToolchain(): MultiLangToolchainStatus {
   const pyInterpreter = checkTool(
     'Python 解释器',
     isWin ? 'python' : 'python3',
-    [
-      '/usr/bin/python3',
-      '/usr/local/bin/python3',
-      '/opt/homebrew/bin/python3',
-      '/usr/bin/python',
-    ],
+    ['/usr/bin/python3', '/usr/local/bin/python3', '/opt/homebrew/bin/python3', '/usr/bin/python'],
     '--version',
-    isMac ? 'brew install python' : (isWin ? 'winget install Python.Python.3' : 'sudo apt install python3 python3-pip'),
+    isMac
+      ? 'brew install python'
+      : isWin
+        ? 'winget install Python.Python.3'
+        : 'sudo apt install python3 python3-pip',
   );
 
   const pyDebugpy = checkTool(
@@ -184,12 +191,7 @@ export function detectMultiLangToolchain(): MultiLangToolchainStatus {
   const pyPip = checkTool(
     'Pip 包管理器',
     'pip3',
-    [
-      '/usr/bin/pip3',
-      '/usr/local/bin/pip3',
-      '/opt/homebrew/bin/pip3',
-      '/usr/bin/pip',
-    ],
+    ['/usr/bin/pip3', '/usr/local/bin/pip3', '/opt/homebrew/bin/pip3', '/usr/bin/pip'],
     '--version',
     'python3 -m ensurepip --upgrade',
   );
@@ -198,12 +200,7 @@ export function detectMultiLangToolchain(): MultiLangToolchainStatus {
   const goCompiler = checkTool(
     'Go 编译器',
     'go',
-    [
-      '/usr/local/go/bin/go',
-      '/opt/homebrew/bin/go',
-      '/usr/local/bin/go',
-      '/usr/bin/go',
-    ],
+    ['/usr/local/go/bin/go', '/opt/homebrew/bin/go', '/usr/local/bin/go', '/usr/bin/go'],
     'version',
     isMac ? 'brew install go' : 'sudo apt install golang-go',
   );
@@ -236,11 +233,7 @@ export function detectMultiLangToolchain(): MultiLangToolchainStatus {
   const nodeRuntime = checkTool(
     'Node.js 运行时',
     'node',
-    [
-      '/usr/local/bin/node',
-      '/opt/homebrew/bin/node',
-      '/usr/bin/node',
-    ],
+    ['/usr/local/bin/node', '/opt/homebrew/bin/node', '/usr/bin/node'],
     '--version',
     isMac ? 'brew install node' : 'sudo apt install nodejs npm',
   );
@@ -248,11 +241,7 @@ export function detectMultiLangToolchain(): MultiLangToolchainStatus {
   const nodeNpm = checkTool(
     'NPM 包管理器',
     'npm',
-    [
-      '/usr/local/bin/npm',
-      '/opt/homebrew/bin/npm',
-      '/usr/bin/npm',
-    ],
+    ['/usr/local/bin/npm', '/opt/homebrew/bin/npm', '/usr/bin/npm'],
     '--version',
     'npm install -g npm',
   );
@@ -260,11 +249,7 @@ export function detectMultiLangToolchain(): MultiLangToolchainStatus {
   const nodeTs = checkTool(
     'TypeScript 编译器 (tsc)',
     'tsc',
-    [
-      '/usr/local/bin/tsc',
-      '/opt/homebrew/bin/tsc',
-      path.join(homeDir, '.npm-global/bin/tsc'),
-    ],
+    ['/usr/local/bin/tsc', '/opt/homebrew/bin/tsc', path.join(homeDir, '.npm-global/bin/tsc')],
     '--version',
     'npm install -g typescript tsx',
   );

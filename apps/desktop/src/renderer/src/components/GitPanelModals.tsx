@@ -1,7 +1,11 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { GitBranchInfo, GitStatusResult } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n, translateSegments } from '../i18n';
 
 // ── 1. 新建分支弹窗 (GitCreateBranchModal) ──
@@ -113,7 +117,14 @@ export function GitCreateBranchModal({
       >
         <div className="git-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="6" y1="3" x2="6" y2="15" />
               <circle cx="18" cy="6" r="3" />
               <circle cx="6" cy="18" r="3" />
@@ -121,27 +132,52 @@ export function GitCreateBranchModal({
             </svg>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{t('git.createBranchTitle')}</span>
           </div>
-          <button type="button" className="panel-action-btn" title={t('common.close')} onClick={onClose} disabled={submitting}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('common.close')}
+            onClick={onClose}
+            disabled={submitting}
+          >
             ✕
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14,
+          }}
+        >
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            {translateSegments('git.createBranchDesc', locale, { branch: currentBranch || 'HEAD' }).map(
-              (seg, i) =>
-                seg.emphasis ? (
-                  <strong key={i} style={{ color: 'var(--text)' }}>
-                    {seg.text}
-                  </strong>
-                ) : (
-                  <React.Fragment key={i}>{seg.text}</React.Fragment>
-                ),
+            {translateSegments('git.createBranchDesc', locale, {
+              branch: currentBranch || 'HEAD',
+            }).map((seg, i) =>
+              seg.emphasis ? (
+                <strong key={i} style={{ color: 'var(--text)' }}>
+                  {seg.text}
+                </strong>
+              ) : (
+                <React.Fragment key={i}>{seg.text}</React.Fragment>
+              ),
             )}
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 6, color: 'var(--text)' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 500,
+                marginBottom: 6,
+                color: 'var(--text)',
+              }}
+            >
               {t('git.branchNameLabel')}
             </label>
             <input
@@ -159,7 +195,16 @@ export function GitCreateBranchModal({
             {error && <div style={{ color: '#f87171', fontSize: 11.5, marginTop: 5 }}>{error}</div>}
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer', userSelect: 'none' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 12,
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
             <input
               type="checkbox"
               checked={checkout}
@@ -169,8 +214,21 @@ export function GitCreateBranchModal({
             <span>{t('git.checkoutAfterCreate')}</span>
           </label>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 'auto', paddingTop: 8 }}>
-            <button type="button" className="git-modal-btn secondary" onClick={onClose} disabled={submitting}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 8,
+              marginTop: 'auto',
+              paddingTop: 8,
+            }}
+          >
+            <button
+              type="button"
+              className="git-modal-btn secondary"
+              onClick={onClose}
+              disabled={submitting}
+            >
               {t('common.cancel')}
             </button>
             <button
@@ -178,7 +236,11 @@ export function GitCreateBranchModal({
               className="git-modal-btn primary"
               disabled={!trimmed || alreadyExists || hasInvalidChars || submitting}
             >
-              {submitting ? t('git.creating') : checkout ? t('git.createAndSwitch') : t('git.createOnly')}
+              {submitting
+                ? t('git.creating')
+                : checkout
+                  ? t('git.createAndSwitch')
+                  : t('git.createOnly')}
             </button>
           </div>
         </form>
@@ -301,10 +363,7 @@ export function GitCheckoutModal({
     setSwitching(target);
     setError('');
     try {
-      const stashRes = await window.ide.gitStash(
-        'push',
-        t('git.autoStashMessage', { target }),
-      );
+      const stashRes = await window.ide.gitStash('push', t('git.autoStashMessage', { target }));
       if (!stashRes.ok) {
         setError(stashRes.detail || t('git.autoStashFailed'));
         setSwitching(null);
@@ -335,7 +394,14 @@ export function GitCheckoutModal({
       >
         <div className="git-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M16 3h5v5" />
               <path d="M4 20L21 3" />
               <path d="M21 16v5h-5" />
@@ -344,7 +410,13 @@ export function GitCheckoutModal({
             </svg>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{t('git.checkoutTitle')}</span>
           </div>
-          <button type="button" className="panel-action-btn" title={t('git.closeEsc')} onClick={onClose} disabled={!!switching}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('git.closeEsc')}
+            onClick={onClose}
+            disabled={!!switching}
+          >
             ✕
           </button>
         </div>
@@ -362,9 +434,25 @@ export function GitCheckoutModal({
 
         {error && <div style={{ color: '#f87171', fontSize: 12, marginBottom: 8 }}>{error}</div>}
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
           {filtered.length === 0 ? (
-            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+            <div
+              style={{
+                padding: '24px 0',
+                textAlign: 'center',
+                color: 'var(--muted)',
+                fontSize: 12,
+              }}
+            >
               {t('git.noMatchingBranches')}
             </div>
           ) : (
@@ -384,11 +472,22 @@ export function GitCheckoutModal({
                     borderRadius: 6,
                     cursor: isCurrent ? 'default' : 'pointer',
                     background: isCurrent ? '#242424' : 'transparent',
-                    border: isCurrent ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid transparent',
+                    border: isCurrent
+                      ? '1px solid rgba(255, 255, 255, 0.2)'
+                      : '1px solid transparent',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                    }}
+                  >
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}
+                    >
                       <svg
                         width="14"
                         height="14"
@@ -418,17 +517,36 @@ export function GitCheckoutModal({
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {isCurrent && (
-                        <span style={{ fontSize: 10.5, color: '#ffffff', fontWeight: 600, background: 'rgba(255, 255, 255, 0.15)', padding: '1px 6px', borderRadius: 4 }}>
+                        <span
+                          style={{
+                            fontSize: 10.5,
+                            color: '#ffffff',
+                            fontWeight: 600,
+                            background: 'rgba(255, 255, 255, 0.15)',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                          }}
+                        >
                           {t('git.currentTag')}
                         </span>
                       )}
                       {b.remote && (
-                        <span style={{ fontSize: 10.5, color: 'var(--muted)', background: 'rgba(255, 255, 255, 0.08)', padding: '1px 6px', borderRadius: 4 }}>
+                        <span
+                          style={{
+                            fontSize: 10.5,
+                            color: 'var(--muted)',
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                          }}
+                        >
                           {t('git.remoteTag')}
                         </span>
                       )}
                       {isTarget && (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('git.switchingTo')}</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          {t('git.switchingTo')}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -450,7 +568,8 @@ export function GitCheckoutModal({
                     >
                       <span
                         style={{
-                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                          fontFamily:
+                            'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
                           background: 'rgba(255, 255, 255, 0.08)',
                           color: 'var(--accent-light, #3794ff)',
                           padding: '1px 4px',
@@ -462,7 +581,12 @@ export function GitCheckoutModal({
                         {b.lastCommit.hash}
                       </span>
                       <span
-                        style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1,
+                        }}
                         title={b.lastCommit.message}
                       >
                         {b.lastCommit.message || t('git.noCommitMessage')}
@@ -480,11 +604,25 @@ export function GitCheckoutModal({
           )}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginTop: 12,
+            borderTop: '1px solid var(--border)',
+            paddingTop: 10,
+          }}
+        >
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             {t('git.branchCountHint', { n: branches.length })}
           </span>
-          <button type="button" className="git-modal-btn secondary" onClick={onClose} disabled={!!switching}>
+          <button
+            type="button"
+            className="git-modal-btn secondary"
+            onClick={onClose}
+            disabled={!!switching}
+          >
             {t('common.close')}
           </button>
         </div>
@@ -526,16 +664,22 @@ export function GitCheckoutModal({
               </div>
 
               <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text, #ddd)' }}>
-                {translateSegments('git.unsavedWarningLead', locale, { changed: unsavedWarning.changedCount }).map((seg, i) =>
+                {translateSegments('git.unsavedWarningLead', locale, {
+                  changed: unsavedWarning.changedCount,
+                }).map((seg, i) =>
                   seg.emphasis ? (
                     <b key={i}>{seg.text}</b>
                   ) : (
                     <React.Fragment key={i}>{seg.text}</React.Fragment>
                   ),
                 )}
-                {unsavedWarning.stagedCount > 0 && t('git.unsavedWarningStaged', { n: unsavedWarning.stagedCount })}
-                {unsavedWarning.unstagedCount > 0 && t('git.unsavedWarningUnstaged', { n: unsavedWarning.unstagedCount })}
-                {translateSegments('git.unsavedWarningTail', locale, { target: unsavedWarning.target }).map((seg, i) =>
+                {unsavedWarning.stagedCount > 0 &&
+                  t('git.unsavedWarningStaged', { n: unsavedWarning.stagedCount })}
+                {unsavedWarning.unstagedCount > 0 &&
+                  t('git.unsavedWarningUnstaged', { n: unsavedWarning.unstagedCount })}
+                {translateSegments('git.unsavedWarningTail', locale, {
+                  target: unsavedWarning.target,
+                }).map((seg, i) =>
                   seg.emphasis ? (
                     <b key={i}>{seg.text}</b>
                   ) : (
@@ -701,24 +845,56 @@ export function GitRemotesModal({
       >
         <div className="git-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <circle cx="12" cy="12" r="10" />
               <line x1="2" y1="12" x2="22" y2="12" />
               <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z" />
             </svg>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{t('git.remotesTitle')}</span>
           </div>
-          <button type="button" className="panel-action-btn" title={t('common.close')} onClick={onClose}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('common.close')}
+            onClick={onClose}
+          >
             ✕
           </button>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
           {loading ? (
-            <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)' }}>{t('git.loadingRemotes')}</div>
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)' }}>
+              {t('git.loadingRemotes')}
+            </div>
           ) : remotes.length === 0 ? (
-            <div style={{ padding: '24px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: 8, textAlign: 'center' }}>
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{t('git.noRemotes')}</div>
+            <div
+              style={{
+                padding: '24px 16px',
+                background: 'rgba(255,255,255,0.02)',
+                borderRadius: 8,
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>
+                {t('git.noRemotes')}
+              </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>
                 {t('git.noRemotesHint')}
               </div>
@@ -740,8 +916,18 @@ export function GitRemotesModal({
               >
                 <div style={{ overflow: 'hidden' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{r.name}</span>
-                    <span style={{ fontSize: 10, color: '#38bdf8', background: 'rgba(56,189,248,0.12)', padding: '1px 5px', borderRadius: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                      {r.name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: '#38bdf8',
+                        background: 'rgba(56,189,248,0.12)',
+                        padding: '1px 5px',
+                        borderRadius: 4,
+                      }}
+                    >
                       fetch / push
                     </span>
                   </div>
@@ -775,14 +961,30 @@ export function GitRemotesModal({
             ))
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: 'auto',
+              paddingTop: 10,
+              borderTop: '1px solid var(--border)',
+            }}
+          >
             <button
               type="button"
               className="git-modal-btn secondary"
               style={{ display: 'flex', alignItems: 'center', gap: 6 }}
               onClick={handleFetch}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polyline points="23 4 23 10 17 10" />
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
               </svg>
@@ -898,22 +1100,49 @@ export function GitCreateTagModal({
       >
         <div className="git-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
               <line x1="7" y1="7" x2="7.01" y2="7" />
             </svg>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{t('git.createTagTitle')}</span>
           </div>
-          <button type="button" className="panel-action-btn" title={t('common.close')} onClick={onClose} disabled={submitting}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('common.close')}
+            onClick={onClose}
+            disabled={submitting}
+          >
             ✕
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            {translateSegments('git.createTagDesc', locale, { branch: currentBranch || 'HEAD' }).map((seg, i) =>
+            {translateSegments('git.createTagDesc', locale, {
+              branch: currentBranch || 'HEAD',
+            }).map((seg, i) =>
               seg.emphasis ? (
-                <strong key={i} style={{ color: 'var(--text)' }}>{seg.text}</strong>
+                <strong key={i} style={{ color: 'var(--text)' }}>
+                  {seg.text}
+                </strong>
               ) : (
                 <React.Fragment key={i}>{seg.text}</React.Fragment>
               ),
@@ -921,7 +1150,15 @@ export function GitCreateTagModal({
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 5, color: 'var(--text)' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 500,
+                marginBottom: 5,
+                color: 'var(--text)',
+              }}
+            >
               {t('git.tagNameLabel')}
             </label>
             <input
@@ -939,7 +1176,15 @@ export function GitCreateTagModal({
           </div>
 
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, marginBottom: 5, color: 'var(--text)' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 500,
+                marginBottom: 5,
+                color: 'var(--text)',
+              }}
+            >
               {t('git.tagMessageLabel')}
             </label>
             <input
@@ -954,11 +1199,28 @@ export function GitCreateTagModal({
 
           {error && <div style={{ color: '#f87171', fontSize: 12 }}>{error}</div>}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 'auto', paddingTop: 6 }}>
-            <button type="button" className="git-modal-btn secondary" onClick={onClose} disabled={submitting}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 8,
+              marginTop: 'auto',
+              paddingTop: 6,
+            }}
+          >
+            <button
+              type="button"
+              className="git-modal-btn secondary"
+              onClick={onClose}
+              disabled={submitting}
+            >
               {t('common.cancel')}
             </button>
-            <button type="submit" className="git-modal-btn primary" disabled={!tagName.trim() || submitting}>
+            <button
+              type="submit"
+              className="git-modal-btn primary"
+              disabled={!tagName.trim() || submitting}
+            >
               {submitting ? t('git.creating') : t('git.createTagBtn')}
             </button>
           </div>
@@ -979,12 +1241,7 @@ interface StatusModalProps {
   onRefresh: () => Promise<void>;
 }
 
-export function GitStatusModal({
-  open,
-  status,
-  onClose,
-  onRefresh,
-}: StatusModalProps) {
+export function GitStatusModal({ open, status, onClose, onRefresh }: StatusModalProps) {
   const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_git_status_modal_size',
@@ -1043,40 +1300,112 @@ export function GitStatusModal({
       >
         <div className="git-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{t('git.statusTitle')}</span>
           </div>
-          <button type="button" className="panel-action-btn" title={t('common.close')} onClick={onClose}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('common.close')}
+            onClick={onClose}
+          >
             ✕
           </button>
         </div>
 
         {/* 顶部概览卡片 */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 12 }}>
-          <div style={{ padding: '8px 10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)', borderRadius: 6 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: 8,
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{
+              padding: '8px 10px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+            }}
+          >
             <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t('git.statusBranch')}</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#38bdf8', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#38bdf8',
+                marginTop: 2,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {status?.branch || 'main'}
             </div>
           </div>
-          <div style={{ padding: '8px 10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)', borderRadius: 6 }}>
+          <div
+            style={{
+              padding: '8px 10px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+            }}
+          >
             <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t('git.statusStaged')}</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#22c55e', marginTop: 2 }}>{t('git.filesCount', { n: stagedCount })}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#22c55e', marginTop: 2 }}>
+              {t('git.filesCount', { n: stagedCount })}
+            </div>
           </div>
-          <div style={{ padding: '8px 10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)', borderRadius: 6 }}>
+          <div
+            style={{
+              padding: '8px 10px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+            }}
+          >
             <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t('git.statusUnstaged')}</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#facc15', marginTop: 2 }}>{t('git.filesCount', { n: unstagedCount })}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#facc15', marginTop: 2 }}>
+              {t('git.filesCount', { n: unstagedCount })}
+            </div>
           </div>
-          <div style={{ padding: '8px 10px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border)', borderRadius: 6 }}>
+          <div
+            style={{
+              padding: '8px 10px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+            }}
+          >
             <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t('git.statusUntracked')}</div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#a855f7', marginTop: 2 }}>{t('git.filesCount', { n: untrackedCount })}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#a855f7', marginTop: 2 }}>
+              {t('git.filesCount', { n: untrackedCount })}
+            </div>
           </div>
         </div>
 
         {/* 变动文件列表 */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6, background: 'rgba(0,0,0,0.2)' }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            background: 'rgba(0,0,0,0.2)',
+          }}
+        >
           {entries.length === 0 ? (
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
               {t('git.statusClean')}
@@ -1094,7 +1423,15 @@ export function GitStatusModal({
                   fontSize: 12,
                 }}
               >
-                <span style={{ fontFamily: 'monospace', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span
+                  style={{
+                    fontFamily: 'monospace',
+                    color: 'var(--text)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {e.path}
                 </span>
                 <span
@@ -1103,18 +1440,33 @@ export function GitStatusModal({
                     fontWeight: 700,
                     padding: '1px 5px',
                     borderRadius: 3,
-                    background: e.untracked ? 'rgba(168, 85, 247, 0.15)' : e.staged ? 'rgba(34, 197, 94, 0.15)' : 'rgba(250, 204, 21, 0.15)',
+                    background: e.untracked
+                      ? 'rgba(168, 85, 247, 0.15)'
+                      : e.staged
+                        ? 'rgba(34, 197, 94, 0.15)'
+                        : 'rgba(250, 204, 21, 0.15)',
                     color: e.untracked ? '#c084fc' : e.staged ? '#4ade80' : '#fde047',
                   }}
                 >
-                  {e.untracked ? t('git.badgeUntracked') : e.staged ? t('git.badgeStaged') : t('git.badgeModified')}
+                  {e.untracked
+                    ? t('git.badgeUntracked')
+                    : e.staged
+                      ? t('git.badgeStaged')
+                      : t('git.badgeModified')}
                 </span>
               </div>
             ))
           )}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginTop: 12,
+          }}
+        >
           <button
             type="button"
             className="git-modal-btn secondary"
@@ -1122,7 +1474,14 @@ export function GitStatusModal({
             disabled={refreshing}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="23 4 23 10 17 10" />
               <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>
@@ -1223,13 +1582,25 @@ export function GitOutputModal({ open, onClose }: OutputModalProps) {
       >
         <div className="git-modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="4 17 10 11 4 5" />
               <line x1="12" y1="19" x2="20" y2="19" />
             </svg>
             <span style={{ fontWeight: 600, fontSize: 14 }}>{t('git.outputTitle')}</span>
           </div>
-          <button type="button" className="panel-action-btn" title={t('common.close')} onClick={onClose}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('common.close')}
+            onClick={onClose}
+          >
             ✕
           </button>
         </div>
@@ -1269,12 +1640,29 @@ export function GitOutputModal({ open, onClose }: OutputModalProps) {
           <div ref={endRef} />
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginTop: 12,
+          }}
+        >
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="git-modal-btn secondary" onClick={loadOutput} disabled={loading}>
+            <button
+              type="button"
+              className="git-modal-btn secondary"
+              onClick={loadOutput}
+              disabled={loading}
+            >
               {t('git.refreshLog')}
             </button>
-            <button type="button" className="git-modal-btn secondary" onClick={handleCopy} disabled={lines.length === 0}>
+            <button
+              type="button"
+              className="git-modal-btn secondary"
+              onClick={handleCopy}
+              disabled={lines.length === 0}
+            >
               {copied ? t('git.copyAll') : t('git.copyLog')}
             </button>
           </div>

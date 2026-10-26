@@ -148,7 +148,9 @@ export function flattenMcpContent(result: unknown): string {
     if (b.type === 'text' && typeof b.text === 'string') {
       parts.push(b.text);
     } else if (b.type === 'image') {
-      parts.push(`[图片内容：${String(b.mimeType ?? '未知类型')}，当前工具结果通道不支持图片，未传入]`);
+      parts.push(
+        `[图片内容：${String(b.mimeType ?? '未知类型')}，当前工具结果通道不支持图片，未传入]`,
+      );
     } else if (b.type === 'resource') {
       const res = b.resource as Record<string, unknown> | undefined;
       if (res && typeof res.text === 'string') parts.push(res.text);

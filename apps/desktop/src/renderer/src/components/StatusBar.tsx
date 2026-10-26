@@ -23,7 +23,11 @@ interface Props {
   onSelectEncoding?: (encoding: string) => void;
   onToggleEol?: (eol: 'LF' | 'CRLF') => void;
   onOpenAbout?: () => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 const COMMON_LANGUAGES = [
@@ -103,7 +107,11 @@ export function StatusBar({
     try {
       const res = await window.ide?.checkUpdate?.();
       if (res?.hasUpdate && res?.version) {
-        onShowToast?.(`${t('status.newVersion')}${res.version}`, t('status.newVersionHint'), 'info');
+        onShowToast?.(
+          `${t('status.newVersion')}${res.version}`,
+          t('status.newVersionHint'),
+          'info',
+        );
       } else {
         onShowToast?.(`${t('status.upToDate')}v${APP_VERSION})`, undefined, 'success');
       }
@@ -199,7 +207,13 @@ export function StatusBar({
           title={t('status.remote')}
           onClick={onOpenRemote}
         >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'inline-block' }}>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            style={{ display: 'inline-block' }}
+          >
             <path d="M4.5 12.5l-4-4.5 4-4.5.75.67L1.83 8l3.42 3.83-.75.67zm7 0l4-4.5-4-4.5-.75.67L14.17 8l-3.42 3.83.75.67z" />
           </svg>
         </button>
@@ -221,12 +235,18 @@ export function StatusBar({
             <span style={{ fontWeight: 500 }}>{branch}</span>
             {hasChanges && <span className="status-git-dirty-dot" title={t('status.dirty')} />}
             {Boolean(gitStatus?.ahead) && (
-              <span className="status-sync-pill ahead" title={t('status.ahead', { n: gitStatus?.ahead ?? 0 })}>
+              <span
+                className="status-sync-pill ahead"
+                title={t('status.ahead', { n: gitStatus?.ahead ?? 0 })}
+              >
                 ↑{gitStatus?.ahead}
               </span>
             )}
             {Boolean(gitStatus?.behind) && (
-              <span className="status-sync-pill behind" title={t('status.behind', { n: gitStatus?.behind ?? 0 })}>
+              <span
+                className="status-sync-pill behind"
+                title={t('status.behind', { n: gitStatus?.behind ?? 0 })}
+              >
                 ↓{gitStatus?.behind}
               </span>
             )}
@@ -292,7 +312,10 @@ export function StatusBar({
       <div className="status-bar-right">
         {/* 最新提交信息 */}
         {latestCommit && (
-          <span className="status-item" title={`${t('status.lastCommit')} ${latestCommit.message} (${latestCommit.date})`}>
+          <span
+            className="status-item"
+            title={`${t('status.lastCommit')} ${latestCommit.message} (${latestCommit.date})`}
+          >
             {latestCommit.author} ({latestCommit.relativeDate || latestCommit.date})
           </span>
         )}
@@ -311,7 +334,10 @@ export function StatusBar({
             <div className="status-popover">
               <div className="status-popover-header">
                 <span>{t('status.goto')}</span>
-                <span className="status-popover-desc">{t('status.gotoRange')}{Math.max(1, docStats?.lineCount ?? 1)}</span>
+                <span className="status-popover-desc">
+                  {t('status.gotoRange')}
+                  {Math.max(1, docStats?.lineCount ?? 1)}
+                </span>
               </div>
               <div className="status-goto-box">
                 <input
@@ -336,11 +362,7 @@ export function StatusBar({
                   >
                     {t('common.cancel')}
                   </button>
-                  <button
-                    type="button"
-                    className="status-goto-btn"
-                    onClick={handleGoToLineSubmit}
-                  >
+                  <button type="button" className="status-goto-btn" onClick={handleGoToLineSubmit}>
                     {t('status.jump')}
                   </button>
                 </div>
@@ -376,7 +398,11 @@ export function StatusBar({
                     setCurrentTabSize(item.size);
                     onSelectTabSize?.(item.size);
                     setActivePopover(null);
-                    onShowToast?.(`${t('status.indentChanged')} ${item.size}${t('status.spaces')}`, undefined, 'info');
+                    onShowToast?.(
+                      `${t('status.indentChanged')} ${item.size}${t('status.spaces')}`,
+                      undefined,
+                      'info',
+                    );
                   }}
                 >
                   <span>{item.label}</span>
@@ -497,7 +523,8 @@ export function StatusBar({
             title={t('status.stats')}
             onClick={() => setActivePopover((v) => (v === 'stats' ? null : 'stats'))}
           >
-            {t('status.statsLines')} {docStats?.lineCount ?? 0} {t('status.statsChars')} {docStats?.charCount ?? 0}
+            {t('status.statsLines')} {docStats?.lineCount ?? 0} {t('status.statsChars')}{' '}
+            {docStats?.charCount ?? 0}
           </button>
           {activePopover === 'stats' && (
             <div className="status-popover" style={{ minWidth: 220 }}>
@@ -506,12 +533,22 @@ export function StatusBar({
               </div>
               <div className="status-stats-grid">
                 <span className="status-stats-label">{t('status.statsTotalLines')}</span>
-                <span className="status-stats-val">{docStats?.lineCount ?? 0}{t('status.statsLine')}</span>
+                <span className="status-stats-val">
+                  {docStats?.lineCount ?? 0}
+                  {t('status.statsLine')}
+                </span>
                 <span className="status-stats-label">{t('status.statsTotalChars')}</span>
-                <span className="status-stats-val">{docStats?.charCount ?? 0}{t('status.statsChar')}</span>
+                <span className="status-stats-val">
+                  {docStats?.charCount ?? 0}
+                  {t('status.statsChar')}
+                </span>
                 <span className="status-stats-label">{t('status.statsCursor')}</span>
                 <span className="status-stats-val">
-                  {t('status.statsAtLine')}{cursorPos?.line ?? 1}{t('status.statsAtCol')}{cursorPos?.col ?? 1}{t('status.statsAtColEnd')}
+                  {t('status.statsAtLine')}
+                  {cursorPos?.line ?? 1}
+                  {t('status.statsAtCol')}
+                  {cursorPos?.col ?? 1}
+                  {t('status.statsAtColEnd')}
                 </span>
                 <span className="status-stats-label">{t('status.statsPath')}</span>
                 <span
@@ -565,7 +602,11 @@ export function StatusBar({
             opacity: copilotEnabled ? 1 : 0.6,
           }}
         >
-          <span style={{ color: copilotActive ? '#38bdf8' : copilotEnabled ? '#10b981' : 'var(--text-muted)' }}>
+          <span
+            style={{
+              color: copilotActive ? '#38bdf8' : copilotEnabled ? '#10b981' : 'var(--text-muted)',
+            }}
+          >
             ✨
           </span>
           <span>Copilot</span>

@@ -120,8 +120,7 @@ function loadColumnPrefs(key: string): ColumnLayoutPrefs {
       widths,
       hidden: parsed && Array.isArray(parsed.hidden) ? parsed.hidden.map(String) : [],
       // 老记录没有 tableWidth：那时只存宽度、一律铺满容器，读回来按「没拖过」处理即可
-      tableWidth:
-        typeof parsed?.tableWidth === 'number' ? parsed.tableWidth : undefined,
+      tableWidth: typeof parsed?.tableWidth === 'number' ? parsed.tableWidth : undefined,
     };
   } catch {
     return EMPTY_COLUMN_PREFS;
@@ -241,9 +240,12 @@ export function DbTableDataView({
   }, []);
 
   // 卸载时清掉待弹的定时器，避免切表后卡片凭空冒在别的表上
-  useEffect(() => () => {
-    if (columnCardTimerRef.current) clearTimeout(columnCardTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (columnCardTimerRef.current) clearTimeout(columnCardTimerRef.current);
+    },
+    [],
+  );
 
   // ── 列宽与「显示哪些字段」──
   //
@@ -254,9 +256,11 @@ export function DbTableDataView({
   const columnPrefsRef = useRef<ColumnLayoutPrefs>(columnPrefs);
   columnPrefsRef.current = columnPrefs;
   /** 正在拖动的列与起点信息；null 表示没在拖 */
-  const [resizing, setResizing] = useState<{ column: string; startX: number; startWidth: number } | null>(
-    null,
-  );
+  const [resizing, setResizing] = useState<{
+    column: string;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
   /**
    * 拖动过程中这一列真正跟到哪了。
    *
@@ -434,8 +438,7 @@ export function DbTableDataView({
         // 不会重新摊一次平，画面纹丝不动（这就是「拖完表格跳一下」的根治点）
         const frameWidths = { ...dragBaseWidthsRef.current, [column]: dragWidthRef.current };
         const frameTableWidth =
-          INDEX_COLUMN_WIDTH +
-          Object.values(frameWidths).reduce((acc, w) => acc + w, 0);
+          INDEX_COLUMN_WIDTH + Object.values(frameWidths).reduce((acc, w) => acc + w, 0);
         setColumnPrefs((prev) => commitColumnFrame(prev, frameWidths, frameTableWidth));
       }
       // 收尾清掉选中区。拖动过程中禁用了选中，但指针**滑出窗口**再松开时，
@@ -445,9 +448,7 @@ export function DbTableDataView({
       const active = document.activeElement as HTMLElement | null;
       const typing =
         !!active &&
-        (active.tagName === 'INPUT' ||
-          active.tagName === 'TEXTAREA' ||
-          active.isContentEditable);
+        (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
       if (active && !typing) active.blur();
       window.getSelection()?.removeAllRanges();
       document.body.classList.remove('db-col-resizing');
@@ -634,7 +635,11 @@ export function DbTableDataView({
     a.download = `${tableName}_export.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    onShowToast?.(t('db.dataExportedCsv', { name: `${tableName}_export.csv` }), undefined, 'success');
+    onShowToast?.(
+      t('db.dataExportedCsv', { name: `${tableName}_export.csv` }),
+      undefined,
+      'success',
+    );
   };
 
   const handleExportJson = () => {
@@ -650,7 +655,11 @@ export function DbTableDataView({
     a.download = `${tableName}_export.json`;
     a.click();
     URL.revokeObjectURL(url);
-    onShowToast?.(t('db.dataExportedJson', { name: `${tableName}_export.json` }), undefined, 'success');
+    onShowToast?.(
+      t('db.dataExportedJson', { name: `${tableName}_export.json` }),
+      undefined,
+      'success',
+    );
   };
 
   const handleExportExcel = () => {
@@ -661,10 +670,7 @@ export function DbTableDataView({
     const cols = queryResult.columns;
     const headerRow = `<tr>${cols.map((c) => `<th style="background:#f3f4f6;font-weight:bold;">${c}</th>`).join('')}</tr>`;
     const bodyRows = queryResult.rows
-      .map(
-        (r) =>
-          `<tr>${cols.map((c) => `<td>${formatCellValue(r[c])}</td>`).join('')}</tr>`,
-      )
+      .map((r) => `<tr>${cols.map((c) => `<td>${formatCellValue(r[c])}</td>`).join('')}</tr>`)
       .join('');
     const excelHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>${tableName}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head><body><table border="1">${headerRow}${bodyRows}</table></body></html>`;
 
@@ -675,7 +681,11 @@ export function DbTableDataView({
     a.download = `${tableName}_export.xls`;
     a.click();
     URL.revokeObjectURL(url);
-    onShowToast?.(t('db.dataExportedExcel', { name: `${tableName}_export.xls` }), undefined, 'success');
+    onShowToast?.(
+      t('db.dataExportedExcel', { name: `${tableName}_export.xls` }),
+      undefined,
+      'success',
+    );
   };
 
   // ── 单元格编辑 ────────────────────────────────────────────────────────────
@@ -762,7 +772,8 @@ export function DbTableDataView({
    * 原因码和插值参数，翻译在这里做。列名列表的连接符也要在这里拼：中文用顿号、
    * 英文用逗号加空格，由 `db.listSeparator` 决定。
    */
-  const currentStatements = useCallback((): { ok: true; statements: string[] } | { ok: false; error: string } => {
+  const currentStatements = useCallback(():
+    { ok: true; statements: string[] } | { ok: false; error: string } => {
     const problems = validateStagedInserts(columns, staged.inserts);
     if (problems.length > 0) {
       const detail = problems
@@ -816,11 +827,7 @@ export function DbTableDataView({
         const detail = bad ? `${bad.sql}\n\n${bad.error}` : res.error;
         onShowToast?.(t('db.dataCommitFailedRolledBack'), detail, 'error');
         if (res.rolledBack === false) {
-          onShowToast?.(
-            t('db.dataRollbackFailed'),
-            t('db.dataRollbackFailedDetail'),
-            'error',
-          );
+          onShowToast?.(t('db.dataRollbackFailed'), t('db.dataRollbackFailedDetail'), 'error');
         }
       }
     } catch (err: any) {
@@ -839,8 +846,10 @@ export function DbTableDataView({
       const rect = el.getBoundingClientRect();
       let x = rowMenu.x;
       let y = rowMenu.y;
-      if (x + rect.width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - rect.width - 8);
-      if (y + rect.height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - rect.height - 8);
+      if (x + rect.width > window.innerWidth - 8)
+        x = Math.max(8, window.innerWidth - rect.width - 8);
+      if (y + rect.height > window.innerHeight - 8)
+        y = Math.max(8, window.innerHeight - rect.height - 8);
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;
     }
@@ -920,8 +929,7 @@ export function DbTableDataView({
    * 主进程那条规则与 `buildFullTableSql` 必须保持一致，否则展示的就不是真正执行的语句。
    */
   const currentSql = useMemo(
-    () =>
-      buildFullTableSql(driver, querySchema, tableName, columns, view, page, pageSize),
+    () => buildFullTableSql(driver, querySchema, tableName, columns, view, page, pageSize),
     [driver, querySchema, tableName, columns, view, page, pageSize],
   );
 
@@ -977,7 +985,9 @@ export function DbTableDataView({
                 e.preventDefault();
                 // Esc 是「放弃这次编辑」：先把值还原成进入编辑器时的文本，
                 // 否则紧接着的 blur 会把改到一半的内容照样提交进暂存
-                setEditing((prev) => (prev ? { ...prev, value: displayValue(prev.original) } : prev));
+                setEditing((prev) =>
+                  prev ? { ...prev, value: displayValue(prev.original) } : prev,
+                );
                 cancelEdit();
               }
             }}
@@ -1022,11 +1032,17 @@ export function DbTableDataView({
           fontStyle: isNull ? 'italic' : 'normal',
           cursor: readOnly ? 'default' : 'text',
           background:
-            copiedCell === key ? 'rgba(16, 185, 129, 0.15)' : edited ? 'rgba(245, 158, 11, 0.1)' : undefined,
+            copiedCell === key
+              ? 'rgba(16, 185, 129, 0.15)'
+              : edited
+                ? 'rgba(245, 158, 11, 0.1)'
+                : undefined,
         }}
       >
         {defaultHint ? (
-          <span className="db-cell-default-hint">{t('db.dataDefaultHint', { value: defaultHint })}</span>
+          <span className="db-cell-default-hint">
+            {t('db.dataDefaultHint', { value: defaultHint })}
+          </span>
         ) : (
           displayStr
         )}
@@ -1129,7 +1145,15 @@ export function DbTableDataView({
             onClick={handleAddRow}
             disabled={loading}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
@@ -1142,7 +1166,16 @@ export function DbTableDataView({
             onClick={handleDeleteSelected}
             disabled={!selectedRowKey || !hasPk}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M3 6h18" />
               <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
               <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
@@ -1158,7 +1191,16 @@ export function DbTableDataView({
               title={t('db.dataRevertAllTitle')}
               onClick={handleRevertAll}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M3 7v6h6" />
                 <path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7" />
               </svg>
@@ -1237,7 +1279,16 @@ export function DbTableDataView({
                 onOpenConsole(`${buildSelectSql(driver, schemaName, tableName)} LIMIT 100;`)
               }
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
             </button>
@@ -1249,7 +1300,16 @@ export function DbTableDataView({
             title={t('db.dataExportCsvTitle')}
             onClick={handleExportCsv}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
@@ -1262,7 +1322,16 @@ export function DbTableDataView({
             title={t('db.dataExportJsonTitle')}
             onClick={handleExportJson}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
               <line x1="16" y1="13" x2="8" y2="13" />
@@ -1277,7 +1346,16 @@ export function DbTableDataView({
             title={t('db.dataExportExcelTitle')}
             onClick={handleExportExcel}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <rect x="3" y="3" width="18" height="18" rx="2" />
               <line x1="9" y1="3" x2="9" y2="21" />
               <line x1="3" y1="9" x2="21" y2="9" />
@@ -1304,7 +1382,16 @@ export function DbTableDataView({
               );
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
@@ -1318,7 +1405,16 @@ export function DbTableDataView({
               disabled={!hasPrev || loading}
               onClick={() => void loadData(page - 1, pageSize)}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <polyline points="15 18 9 12 15 6" />
               </svg>
             </button>
@@ -1329,7 +1425,16 @@ export function DbTableDataView({
               disabled={!hasNext || loading}
               onClick={() => void loadData(page + 1, pageSize)}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
@@ -1428,9 +1533,7 @@ export function DbTableDataView({
                         {/* 类型角标（123 / A-Z / 🕐）：放在列名**左边**，扫一眼就知道这列能不能比大小。
                             三个字符的宽度是固定的，所以列名该截断还是照旧截断 */}
                         {meta && (
-                          <span className="db-col-type">
-                            {columnCategoryBadge(meta, driver)}
-                          </span>
+                          <span className="db-col-type">{columnCategoryBadge(meta, driver)}</span>
                         )}
                         {/* 字段名是纯标签，不可点：原来整块列宽都是下拉热区，
                             点列名想选中/拖宽时会误开菜单。热区收窄到右侧那个箭头。
@@ -1449,7 +1552,9 @@ export function DbTableDataView({
                         >
                           {colName}
                         </span>
-                        {meta?.pk && <span className="db-col-pk-dot" title={t('db.dataPkDotTitle')} />}
+                        {meta?.pk && (
+                          <span className="db-col-pk-dot" title={t('db.dataPkDotTitle')} />
+                        )}
                         {dir && (
                           <span className="db-col-dir">
                             {dir === 'asc' ? '▲' : '▼'}
@@ -1457,7 +1562,9 @@ export function DbTableDataView({
                             {view.sorts.length > 1 ? sortIndex + 1 : ''}
                           </span>
                         )}
-                        {filterIndex >= 0 && <span className="db-col-filter-dot" title={t('db.dataFilterDotTitle')} />}
+                        {filterIndex >= 0 && (
+                          <span className="db-col-filter-dot" title={t('db.dataFilterDotTitle')} />
+                        )}
                         {/* 排序 / 筛选菜单只从这一个箭头打开（点列名不再触发） */}
                         <button
                           type="button"
@@ -1572,7 +1679,13 @@ export function DbTableDataView({
                       {globalIdx}
                     </td>
                     {visibleColumns.map((col) =>
-                      renderCell(col, row[col], `${rowIdx}-${col}`, { rowKey }, { struck: isDeleted }),
+                      renderCell(
+                        col,
+                        row[col],
+                        `${rowIdx}-${col}`,
+                        { rowKey },
+                        { struck: isDeleted },
+                      ),
                     )}
                   </tr>
                 );
@@ -1626,9 +1739,7 @@ export function DbTableDataView({
       >
         <div style={{ display: 'flex', gap: 12 }}>
           {/* 总数仍是主进程的 rows.length 语义（控制台也在用），因此这里如实说「本页 M 行」而不是「共 X 页」 */}
-          <span>
-            {t('db.dataPageStatus', { page, n: queryResult?.rows?.length ?? 0 })}
-          </span>
+          <span>{t('db.dataPageStatus', { page, n: queryResult?.rows?.length ?? 0 })}</span>
           {filterText && <span>{t('db.dataSearchHits', { n: displayRows.length })}</span>}
           {stagedCount > 0 && (
             <span style={{ color: '#f59e0b' }}>
@@ -1698,9 +1809,7 @@ export function DbTableDataView({
             setColumnPrefs((prev) => setColumnHidden(prev, column, hidden))
           }
           onSetAll={(hidden) =>
-            setColumnPrefs((prev) =>
-              setAllColumnsHidden(prev, queryResult.columns, hidden),
-            )
+            setColumnPrefs((prev) => setAllColumnsHidden(prev, queryResult.columns, hidden))
           }
           onResetWidths={() => setColumnPrefs((prev) => ({ ...prev, widths: {} }))}
           onClose={() => {
@@ -1765,7 +1874,11 @@ export function DbTableDataView({
             onClick={() => {
               const row = originalRowsRef.current[rowMenu.rowKey];
               setRowMenu(null);
-              if (row) void copy(buildInsertSql(driver, querySchema, tableName, columns, row), t('db.dataCopiedInsert'));
+              if (row)
+                void copy(
+                  buildInsertSql(driver, querySchema, tableName, columns, row),
+                  t('db.dataCopiedInsert'),
+                );
             }}
           >
             <div className="menu-item-left">

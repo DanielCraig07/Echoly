@@ -1,7 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { WorkspaceInfo } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n, type Translate } from '../i18n';
 
 const isMac =
@@ -181,7 +185,14 @@ export function OpenWorkspaceModal({
                 flexShrink: 0,
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
               </svg>
             </div>
@@ -200,14 +211,24 @@ export function OpenWorkspaceModal({
             onClick={onClose}
             title={t('common.closeEsc')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </header>
 
-        <div className="ide-modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div
+          className="ide-modal-body"
+          style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}
+        >
           {/* 四个卡片式入口网格（完全对齐欢迎页规范与文案） */}
           <div className="welcome-view-choices" role="list">
             <button
@@ -328,16 +349,17 @@ export function OpenWorkspaceModal({
               </span>
               <span className="welcome-choice-body">
                 <span className="welcome-choice-title">{t('welcome.wizardTitle')}</span>
-                <span className="welcome-choice-desc">
-                  {t('welcome.wizardDesc')}
-                </span>
+                <span className="welcome-choice-desc">{t('welcome.wizardDesc')}</span>
               </span>
               <span className="welcome-choice-hint">{t('workspace.hintWizard')}</span>
             </button>
           </div>
 
           {/* 最近打开历史区域 */}
-          <section className="open-ws-recent" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <section
+            className="open-ws-recent"
+            style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+          >
             <div className="open-ws-recent-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span>{t('workspace.recentTitle')}</span>
@@ -400,7 +422,10 @@ export function OpenWorkspaceModal({
                   const relativeTime = formatRelativeTime(item.lastOpenedAt, t);
 
                   return (
-                    <li key={item.path} className={`open-ws-item-wrap ${isCurrent ? 'is-current' : ''}`}>
+                    <li
+                      key={item.path}
+                      className={`open-ws-item-wrap ${isCurrent ? 'is-current' : ''}`}
+                    >
                       <button
                         type="button"
                         className="open-ws-recent-row"
@@ -436,7 +461,10 @@ export function OpenWorkspaceModal({
                           <span className="open-ws-recent-name-wrap">
                             <span className="welcome-recent-name">{item.name}</span>
                             {isCurrent && (
-                              <span className="open-ws-current-badge" title={t('workspace.currentBadgeTitle')}>
+                              <span
+                                className="open-ws-current-badge"
+                                title={t('workspace.currentBadgeTitle')}
+                              >
                                 <span className="open-ws-current-dot" />
                                 {t('workspace.currentBadge')}
                               </span>
@@ -484,7 +512,11 @@ export function OpenWorkspaceModal({
                         <button
                           type="button"
                           className="open-ws-action-icon-btn"
-                          title={copiedPath === item.path ? t('workspace.copyPathOk') : t('workspace.copyPath')}
+                          title={
+                            copiedPath === item.path
+                              ? t('workspace.copyPathOk')
+                              : t('workspace.copyPath')
+                          }
                           onClick={(e) => handleCopy(item.path, e)}
                         >
                           {copiedPath === item.path ? (
@@ -554,10 +586,13 @@ export function OpenWorkspaceModal({
         </div>
 
         <footer className="ide-modal-footer">
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            {t('workspace.footerHint')}
-          </span>
-          <button type="button" className="panel-standard-btn" onClick={onClose} style={{ fontSize: 12, padding: '5px 14px' }}>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('workspace.footerHint')}</span>
+          <button
+            type="button"
+            className="panel-standard-btn"
+            onClick={onClose}
+            style={{ fontSize: 12, padding: '5px 14px' }}
+          >
             {t('session.close')}
           </button>
         </footer>

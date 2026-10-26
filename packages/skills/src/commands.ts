@@ -46,11 +46,7 @@ function parseFrontmatter(raw: string): { meta: Record<string, string>; body: st
  * 允许空格会让 `/code review` 这种带参数的形式与命令名混淆，所以一律换成 `-`。
  */
 export function normalizeCommandName(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/^\/+/, '')
-    .replace(/\s+/g, '-');
+  return raw.trim().toLowerCase().replace(/^\/+/, '').replace(/\s+/g, '-');
 }
 
 async function loadCommandsFromDir(

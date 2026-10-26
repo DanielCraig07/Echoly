@@ -79,17 +79,14 @@ describe('db:// 虚拟标签路径', () => {
     const b = dataTabPath('conn-1', 'cvm', 'users');
     expect(a).toBe(b);
     // 但不同库的同名表必须是两个独立标签
-    expect(dataTabPath('conn-1', 'cvm', 'users')).not.toBe(
-      dataTabPath('conn-1', 'other', 'users'),
-    );
+    expect(dataTabPath('conn-1', 'cvm', 'users')).not.toBe(dataTabPath('conn-1', 'other', 'users'));
   });
 
   it('虚拟路径绝不与磁盘路径互为前后缀（宽松匹配不再串味）', () => {
     const vtab = dataTabPath('conn-1', 'cvm', 'users');
     const fileTab = 'src/renderer/src/components/users.tsx';
     // 旧实现用 `tp.endsWith('/' + normPath)` 双向追赶；只要任一侧命中就会写错标签页
-    const loose = (a: string, b: string) =>
-      a === b || a.endsWith('/' + b) || b.endsWith('/' + a);
+    const loose = (a: string, b: string) => a === b || a.endsWith('/' + b) || b.endsWith('/' + a);
     // db:// 带协议头、且被 encodeURIComponent 编码过，天然不可能命中磁盘相对路径
     expect(loose(vtab, fileTab)).toBe(false);
     expect(loose(fileTab, vtab)).toBe(false);

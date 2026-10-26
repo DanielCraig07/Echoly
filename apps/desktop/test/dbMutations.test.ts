@@ -24,7 +24,11 @@ import {
 import type { DbDriverType } from '../src/renderer/src/services/dbIdentifiers';
 
 /** 造列元数据：只填测试关心的字段 */
-function col(name: string, type: string, extra: Partial<DatabaseColumnMeta> = {}): DatabaseColumnMeta {
+function col(
+  name: string,
+  type: string,
+  extra: Partial<DatabaseColumnMeta> = {},
+): DatabaseColumnMeta {
   return { cid: 0, name, type, notnull: false, dflt_value: null, pk: false, ...extra };
 }
 
@@ -162,7 +166,8 @@ describe('buildInsertSql', () => {
       username: 'carol',
     });
     expect(sql).toBe("INSERT INTO `shop`.`users` (`username`) VALUES ('carol');");
-  });  it('一行全用默认值时按驱动给合法形态', () => {
+  });
+  it('一行全用默认值时按驱动给合法形态', () => {
     expect(buildInsertSql('mysql', undefined, 't', usersColumns, {})).toBe(
       'INSERT INTO `t` () VALUES ();',
     );
@@ -191,7 +196,9 @@ describe('buildUpdateSql', () => {
       usersColumns,
       usersRow,
     );
-    expect(sql).toBe('UPDATE "main"."users" SET "username" = \'alice2\', "age" = 31 WHERE "id" = 7;');
+    expect(sql).toBe(
+      'UPDATE "main"."users" SET "username" = \'alice2\', "age" = 31 WHERE "id" = 7;',
+    );
   });
 
   it('只有主键改动时返回 null（主键列不可改，等于没有可提交的内容）', () => {
@@ -280,7 +287,10 @@ describe('validateStagedInserts · 提交前的必填校验', () => {
   });
 
   it('自增主键未填不算缺项', () => {
-    const autoPk = [col('id', 'INTEGER', { pk: true, notnull: true }), col('name', 'TEXT', { notnull: true })];
+    const autoPk = [
+      col('id', 'INTEGER', { pk: true, notnull: true }),
+      col('name', 'TEXT', { notnull: true }),
+    ];
     expect(validateStagedInserts(autoPk, [{ tempId: 't1', cells: { name: 'x' } }])).toHaveLength(0);
   });
 
@@ -335,7 +345,14 @@ describe('buildCommitStatements · 批次汇总', () => {
 
   it('找不到原始行时拒绝提交（提示刷新后重试），不生成半截语句', () => {
     const changes = { ...emptyStagedChanges(), deletes: ['pk:999'] };
-    const res = buildCommitStatements(changes, 'sqlite', undefined, 'users', usersColumns, originalRows);
+    const res = buildCommitStatements(
+      changes,
+      'sqlite',
+      undefined,
+      'users',
+      usersColumns,
+      originalRows,
+    );
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.errorCode).toBe('delete-row-missing');
@@ -372,7 +389,10 @@ describe('normalizeColumnDefault / defaultDisplayHint · 默认值判定', () =>
 
   it('MySQL 剥掉 DEFAULT_GENERATED 后缀（那是元数据标记，不是默认值的一部分）', () => {
     expect(
-      normalizeColumnDefault(col('ts', 'timestamp', { dflt_value: 'CURRENT_TIMESTAMP DEFAULT_GENERATED' }), 'mysql'),
+      normalizeColumnDefault(
+        col('ts', 'timestamp', { dflt_value: 'CURRENT_TIMESTAMP DEFAULT_GENERATED' }),
+        'mysql',
+      ),
     ).toBe('CURRENT_TIMESTAMP');
     expect(
       normalizeColumnDefault(col('a', 'int', { dflt_value: '1 DEFAULT_GENERATED' }), 'mysql'),

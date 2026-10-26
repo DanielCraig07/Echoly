@@ -7,9 +7,7 @@ import { formatQueuedMessageBlock, runAgent } from '../src/index';
 /**
  * 一个「第 N 次被调用时改口」的假客户端：用来观察队列消息到底在第几次调用前进入了上下文。
  */
-function recordingClient(
-  script: Array<(messages: ChatMessage[]) => Partial<ChatMessage>>,
-) {
+function recordingClient(script: Array<(messages: ChatMessage[]) => Partial<ChatMessage>>) {
   const seen: ChatMessage[][] = [];
   let i = 0;
   return {
@@ -66,6 +64,8 @@ describe('runAgent queued messages', () => {
       mode: 'agent',
       client: client as never,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: () => {},
       drainQueuedMessages: queue.drain,
       onQueuedMessagesConsumed: queue.onConsumed,
@@ -102,13 +102,13 @@ describe('runAgent queued messages', () => {
       mode: 'agent',
       client: client as never,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: () => {},
       drainQueuedMessages: queue.drain,
     });
 
-    const hits = client.seen
-      .flat()
-      .filter((m) => (m.content ?? '').includes('唯一的补充'));
+    const hits = client.seen.flat().filter((m) => (m.content ?? '').includes('唯一的补充'));
     expect(hits).toHaveLength(1);
   });
 
@@ -135,6 +135,8 @@ describe('runAgent queued messages', () => {
       mode: 'agent',
       client: client as never,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: () => {},
       drainQueuedMessages: queue.drain,
     });
@@ -162,6 +164,8 @@ describe('runAgent queued messages', () => {
       mode: 'agent',
       client: client as never,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: () => {},
       drainQueuedMessages: queue.drain,
       onQueuedMessagesConsumed: queue.onConsumed,

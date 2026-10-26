@@ -36,7 +36,16 @@ export interface AgentTaskPanelProps {
 
 function IconCheckCircle() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#10b981"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
       <polyline points="22 4 12 14.01 9 11.01" />
     </svg>
@@ -45,18 +54,39 @@ function IconCheckCircle() {
 
 function IconSpinner() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
-      <line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" />
-      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" /><line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
-      <line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" />
-      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#3b82f6"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ animation: 'spin 1s linear infinite' }}
+    >
+      <line x1="12" y1="2" x2="12" y2="6" />
+      <line x1="12" y1="18" x2="12" y2="22" />
+      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" />
+      <line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
+      <line x1="2" y1="12" x2="6" y2="12" />
+      <line x1="18" y1="12" x2="22" y2="12" />
+      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
+      <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
     </svg>
   );
 }
 
 function IconCircle() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="rgba(255,255,255,0.3)"
+      strokeWidth="2"
+    >
       <circle cx="12" cy="12" r="10" />
     </svg>
   );
@@ -64,25 +94,54 @@ function IconCircle() {
 
 function IconAlertCircle() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#ef4444"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
     </svg>
   );
 }
 
 function IconPlus() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
   );
 }
 
 function IconReload({ spinning }: { spinning?: boolean }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      style={{ animation: spinning ? 'spin 1s linear infinite' : undefined, display: 'block' }}>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ animation: spinning ? 'spin 1s linear infinite' : undefined, display: 'block' }}
+    >
       <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
     </svg>
   );
@@ -90,15 +149,35 @@ function IconReload({ spinning }: { spinning?: boolean }) {
 
 function IconTrash() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
     </svg>
   );
 }
 
 function IconChevronRight() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polyline points="9 18 15 12 9 6" />
     </svg>
   );
@@ -106,7 +185,16 @@ function IconChevronRight() {
 
 function IconChevronDown() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polyline points="6 9 12 15 18 9" />
     </svg>
   );
@@ -114,24 +202,55 @@ function IconChevronDown() {
 
 function IconFile() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
     </svg>
   );
 }
 
 function IconBot() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="11" width="18" height="10" rx="2" /><circle cx="12" cy="5" r="2" /><path d="M12 7v4" />
-      <line x1="8" y1="16" x2="8" y2="16" /><line x1="16" y1="16" x2="16" y2="16" />
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="11" width="18" height="10" rx="2" />
+      <circle cx="12" cy="5" r="2" />
+      <path d="M12 7v4" />
+      <line x1="8" y1="16" x2="8" y2="16" />
+      <line x1="16" y1="16" x2="16" y2="16" />
     </svg>
   );
 }
 
 function IconEdit() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
     </svg>
@@ -140,7 +259,16 @@ function IconEdit() {
 
 function IconCheckAll() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M18 6L7 17l-5-5" />
       <path d="m22 10-7.5 7.5L13 16" />
     </svg>
@@ -149,14 +277,20 @@ function IconCheckAll() {
 
 // ── 格式化工具调用名称 ────────────────────────────────────────────────────────
 
-function formatToolStepTitle(t: Translate, toolName: string, args?: any): { title: string; file?: string } {
+function formatToolStepTitle(
+  t: Translate,
+  toolName: string,
+  args?: any,
+): { title: string; file?: string } {
   let file: string | undefined;
   if (args) {
     if (typeof args === 'object') {
       file = args.path || args.filePath || args.targetFile || args.TargetFile || args.AbsolutePath;
       if (!file && typeof args.CommandLine === 'string') {
         const cmd = args.CommandLine.trim();
-        return { title: t('task.runCommand', { cmd: cmd.length > 32 ? cmd.slice(0, 32) + '…' : cmd }) };
+        return {
+          title: t('task.runCommand', { cmd: cmd.length > 32 ? cmd.slice(0, 32) + '…' : cmd }),
+        };
       }
       if (!file && typeof args.query === 'string') {
         return { title: t('task.searchCode', { query: args.query }) };
@@ -169,12 +303,21 @@ function formatToolStepTitle(t: Translate, toolName: string, args?: any): { titl
   switch (toolName) {
     case 'read_file':
     case 'view_file':
-      return { title: baseName ? t('task.readCode', { name: baseName }) : t('task.readProjectFile'), file };
+      return {
+        title: baseName ? t('task.readCode', { name: baseName }) : t('task.readProjectFile'),
+        file,
+      };
     case 'write_to_file':
-      return { title: baseName ? t('task.writeFile', { name: baseName }) : t('task.writeProjectFile'), file };
+      return {
+        title: baseName ? t('task.writeFile', { name: baseName }) : t('task.writeProjectFile'),
+        file,
+      };
     case 'replace_file_content':
     case 'multi_replace_file_content':
-      return { title: baseName ? t('task.editCode', { name: baseName }) : t('task.editFileContent'), file };
+      return {
+        title: baseName ? t('task.editCode', { name: baseName }) : t('task.editFileContent'),
+        file,
+      };
     case 'run_command':
     case 'run_terminal':
       return { title: t('task.runTerminal') };
@@ -245,44 +388,98 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-            background: activeTask?.status === 'completed' ? '#10b981' : activeTask?.status === 'running' ? '#3b82f6' : 'rgba(255,255,255,0.3)',
-            boxShadow: activeTask?.status === 'running' ? '0 0 6px rgba(59,130,246,0.6)' : undefined,
-          }} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500 }}>
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: '50%',
+              flexShrink: 0,
+              background:
+                activeTask?.status === 'completed'
+                  ? '#10b981'
+                  : activeTask?.status === 'running'
+                    ? '#3b82f6'
+                    : 'rgba(255,255,255,0.3)',
+              boxShadow:
+                activeTask?.status === 'running' ? '0 0 6px rgba(59,130,246,0.6)' : undefined,
+            }}
+          />
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+              fontWeight: 500,
+            }}
+          >
             {activeTask?.goal || t('task.selectGoal')}
           </span>
           {activeTask && (
-            <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>
+            <span
+              style={{
+                fontSize: 10,
+                color: 'var(--text-muted)',
+                background: 'rgba(255,255,255,0.06)',
+                padding: '1px 5px',
+                borderRadius: 4,
+                flexShrink: 0,
+              }}
+            >
               {t('task.steps', { n: activeTask.steps.length })}
             </span>
           )}
         </div>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
-          style={{ flexShrink: 0, opacity: 0.7, transition: 'transform 0.15s ease', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          style={{
+            flexShrink: 0,
+            opacity: 0.7,
+            transition: 'transform 0.15s ease',
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+          }}
+        >
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
 
       {open && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(100% + 4px)',
-          left: 0,
-          right: 0,
-          background: 'var(--bg-elevated, #1c2128)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          boxShadow: '0 12px 32px rgba(0,0,0,0.55)',
-          zIndex: 99999,
-          overflow: 'hidden',
-          animation: 'tabMenuPop 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-          maxHeight: 280,
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
-          <div style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            right: 0,
+            background: 'var(--bg-elevated, #1c2128)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            boxShadow: '0 12px 32px rgba(0,0,0,0.55)',
+            zIndex: 99999,
+            overflow: 'hidden',
+            animation: 'tabMenuPop 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+            maxHeight: 280,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div
+            style={{
+              padding: '6px 10px',
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--text-muted)',
+              borderBottom: '1px solid var(--border)',
+              background: 'rgba(255,255,255,0.02)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
             <span>{t('task.history', { n: tasks.length })}</span>
             <span style={{ fontSize: 10, opacity: 0.7 }}>{t('task.clickToSwitch')}</span>
           </div>
@@ -295,7 +492,10 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
               return (
                 <div
                   key={task.id}
-                  onClick={() => { onChange(task.id); setOpen(false); }}
+                  onClick={() => {
+                    onChange(task.id);
+                    setOpen(false);
+                  }}
                   style={{
                     padding: '7px 8px',
                     borderRadius: 6,
@@ -308,20 +508,46 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
                     fontSize: 12,
                     transition: 'background 0.1s ease',
                   }}
-                  onMouseEnter={(e) => { if (!isSelected) (e.currentTarget.style.background = 'rgba(255,255,255,0.05)'); }}
-                  onMouseLeave={(e) => { if (!isSelected) (e.currentTarget.style.background = 'transparent'); }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) e.currentTarget.style.background = 'transparent';
+                  }}
                 >
                   <div style={{ flexShrink: 0 }}>
                     {isDone ? <IconCheckCircle /> : isRun ? <IconSpinner /> : <IconCircle />}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isSelected ? 600 : 400 }}>
+                    <div
+                      style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontWeight: isSelected ? 600 : 400,
+                      }}
+                    >
                       {task.goal}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.7, marginTop: 1, display: 'flex', gap: 6 }}>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--text-muted)',
+                        opacity: 0.7,
+                        marginTop: 1,
+                        display: 'flex',
+                        gap: 6,
+                      }}
+                    >
                       <span>{t('task.stepsCount', { n: task.steps.length })}</span>
                       <span>•</span>
-                      <span>{isDone ? taskStatus(t, 'completed') : isRun ? taskStatus(t, 'running') : taskStatus(t, 'planning')}</span>
+                      <span>
+                        {isDone
+                          ? taskStatus(t, 'completed')
+                          : isRun
+                            ? taskStatus(t, 'running')
+                            : taskStatus(t, 'planning')}
+                      </span>
                       {task.updatedAt && (
                         <>
                           <span>•</span>
@@ -335,10 +561,19 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
             })}
           </div>
 
-          <div style={{ padding: '6px 8px', borderTop: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
+          <div
+            style={{
+              padding: '6px 8px',
+              borderTop: '1px solid var(--border)',
+              background: 'rgba(255,255,255,0.02)',
+            }}
+          >
             <button
               type="button"
-              onClick={() => { setOpen(false); onNewTaskClick(); }}
+              onClick={() => {
+                setOpen(false);
+                onNewTaskClick();
+              }}
               style={{
                 width: '100%',
                 background: 'rgba(59,130,246,0.08)',
@@ -425,7 +660,9 @@ export function AgentTaskPanel({
           return;
         }
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     // 若当前工程未曾创建过任务，则置空，由用户开启专属规划
     setTasks([]);
     tasksRef.current = [];
@@ -438,7 +675,9 @@ export function AgentTaskPanel({
       tasksRef.current = updated;
       try {
         localStorage.setItem(storageKey, JSON.stringify(updated));
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
     [storageKey],
   );
@@ -529,12 +768,14 @@ export function AgentTaskPanel({
 
     // 3. 工具执行完成
     const handleStepDone = (e: Event) => {
-      const detail = (e as CustomEvent<{
-        toolName?: string;
-        status?: AgentTaskStep['status'];
-        result?: any;
-        id?: string;
-      }>).detail;
+      const detail = (
+        e as CustomEvent<{
+          toolName?: string;
+          status?: AgentTaskStep['status'];
+          result?: any;
+          id?: string;
+        }>
+      ).detail;
       const cur = tasksRef.current;
       if (cur.length === 0) return;
 
@@ -590,7 +831,8 @@ export function AgentTaskPanel({
           {
             id: `step_done_${Date.now()}`,
             title: t('task.stepCompleted'),
-            description: detail.summary.length > 80 ? detail.summary.slice(0, 80) + '…' : detail.summary,
+            description:
+              detail.summary.length > 80 ? detail.summary.slice(0, 80) + '…' : detail.summary,
             status: 'completed' as const,
             timestamp: new Date().toLocaleTimeString(),
           },
@@ -953,7 +1195,14 @@ export function AgentTaskPanel({
             flexShrink: 0,
           }}
         >
-          <div style={{ color: 'var(--accent, #60a5fa)', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          <div
+            style={{
+              color: 'var(--accent, #60a5fa)',
+              display: 'flex',
+              alignItems: 'center',
+              flexShrink: 0,
+            }}
+          >
             <IconBot />
           </div>
           <StyledSelect
@@ -1123,7 +1372,9 @@ export function AgentTaskPanel({
                     : taskStatus(t, 'planning')}
               </span>
               <span>{t('task.subSteps', { n: activeTask.steps.length })}</span>
-              {activeTask.totalFilesChanged ? <span>{t('task.filesChanged', { n: activeTask.totalFilesChanged })}</span> : null}
+              {activeTask.totalFilesChanged ? (
+                <span>{t('task.filesChanged', { n: activeTask.totalFilesChanged })}</span>
+              ) : null}
               <span style={{ marginLeft: 'auto', opacity: 0.6, fontSize: 10 }}>
                 {t('task.updatedAt', { time: activeTask.updatedAt })}
               </span>
@@ -1281,7 +1532,14 @@ export function AgentTaskPanel({
                         {step.status === 'failed' && <IconAlertCircle />}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 500, color: titleColor, lineHeight: 1.3 }}>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 500,
+                            color: titleColor,
+                            lineHeight: 1.3,
+                          }}
+                        >
                           {idx + 1}. {step.title}
                         </div>
                         {step.description && !isExpanded && (
@@ -1299,7 +1557,14 @@ export function AgentTaskPanel({
                           </div>
                         )}
                         {step.timestamp && (
-                          <div style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.5, marginTop: 1 }}>
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: 'var(--text-muted)',
+                              opacity: 0.5,
+                              marginTop: 1,
+                            }}
+                          >
                             {step.timestamp}
                           </div>
                         )}
@@ -1351,7 +1616,9 @@ export function AgentTaskPanel({
                         )}
                         {step.affectedFiles && step.affectedFiles.length > 0 && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>
+                            <div
+                              style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}
+                            >
                               {t('task.affectedFiles')}
                             </div>
                             {step.affectedFiles.map((f) => (

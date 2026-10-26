@@ -271,7 +271,9 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
               <span style={{ color: 'var(--muted, #888888)' }}>,</span>
             )}
             {stats.deletions > 0 && (
-              <span style={{ color: '#f44336', fontWeight: 500 }}>{t('git.deletions', { n: stats.deletions })}</span>
+              <span style={{ color: '#f44336', fontWeight: 500 }}>
+                {t('git.deletions', { n: stats.deletions })}
+              </span>
             )}
             {stats.insertions === 0 && stats.deletions === 0 && stats.filesChanged === 0 && (
               <span style={{ color: 'var(--muted, #888888)' }}>{t('git.noLineChanges')}</span>
@@ -279,7 +281,9 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
           </>
         ) : (
           <span style={{ color: 'var(--muted, #888888)', fontSize: 11.5 }}>
-            {commit.parents && commit.parents.length > 1 ? t('git.mergeCommit') : t('git.singleCommit')}
+            {commit.parents && commit.parents.length > 1
+              ? t('git.mergeCommit')
+              : t('git.singleCommit')}
           </span>
         )}
       </div>

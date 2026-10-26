@@ -5,7 +5,10 @@ import {
   parseAiContentCodeRefs,
   isCodeFile,
 } from '../src/renderer/src/components/chat/CodeRefPill';
-import { splitInputValue, buildValue } from '../src/renderer/src/components/chat/InputCodeRefOverlay';
+import {
+  splitInputValue,
+  buildValue,
+} from '../src/renderer/src/components/chat/InputCodeRefOverlay';
 
 describe('Code Reference Parsing and Input Splitting', () => {
   it('parses multiple code references with various dash types (hyphen, en-dash, em-dash, tilde)', () => {
@@ -90,14 +93,22 @@ describe('Code Reference Parsing and Input Splitting', () => {
     };
 
     // Exact matches
-    expect(isStale('src/main/java/com/tsingtec/technicalTactics/utils/DataSourceParseUtils.java')).toBe(true);
-    expect(isStale('src/main/java/com/tsingtec/technicalTactics/TechnologyTacticsJob.java')).toBe(true);
+    expect(
+      isStale('src/main/java/com/tsingtec/technicalTactics/utils/DataSourceParseUtils.java'),
+    ).toBe(true);
+    expect(isStale('src/main/java/com/tsingtec/technicalTactics/TechnologyTacticsJob.java')).toBe(
+      true,
+    );
 
     // Leading slash normalization
-    expect(isStale('/src/main/java/com/tsingtec/technicalTactics/utils/DataSourceParseUtils.java')).toBe(true);
+    expect(
+      isStale('/src/main/java/com/tsingtec/technicalTactics/utils/DataSourceParseUtils.java'),
+    ).toBe(true);
 
     // Windows backslash normalization
-    expect(isStale('src\\main\\java\\com\\tsingtec\\technicalTactics\\TechnologyTacticsJob.java')).toBe(true);
+    expect(
+      isStale('src\\main\\java\\com\\tsingtec\\technicalTactics\\TechnologyTacticsJob.java'),
+    ).toBe(true);
 
     // Valid existing file is not marked stale
     expect(isStale('src/main/java/com/tsingtec/technicalTactics/ValidFile.java')).toBe(false);
@@ -105,7 +116,9 @@ describe('Code Reference Parsing and Input Splitting', () => {
 
   describe('AI Message Code Reference Resolution (parseAnyCodeRef & parseAiContentCodeRefs)', () => {
     it('accurately parses file:// URI with line ranges and URI encoding', () => {
-      const ref = parseAnyCodeRef('file:///Users/developer/Echoly/apps/desktop/src/components/GitPanel.tsx#L2184-L2239');
+      const ref = parseAnyCodeRef(
+        'file:///Users/developer/Echoly/apps/desktop/src/components/GitPanel.tsx#L2184-L2239',
+      );
       expect(ref).not.toBeNull();
       expect(ref?.fileName).toBe('GitPanel.tsx');
       expect(ref?.path).toBe('/Users/developer/Echoly/apps/desktop/src/components/GitPanel.tsx');
@@ -142,7 +155,9 @@ describe('Code Reference Parsing and Input Splitting', () => {
     });
 
     it('rejects external http/https web URLs to avoid interfering with external links', () => {
-      expect(parseAnyCodeRef('https://github.com/DanielCraig07/Echoly/blob/main/GitPanel.tsx')).toBeNull();
+      expect(
+        parseAnyCodeRef('https://github.com/DanielCraig07/Echoly/blob/main/GitPanel.tsx'),
+      ).toBeNull();
       expect(parseAnyCodeRef('http://localhost:3000/index.html')).toBeNull();
     });
 
@@ -176,7 +191,9 @@ describe('Code Reference Parsing and Input Splitting', () => {
       expect(refs).toHaveLength(1);
       expect(refs[0].ref?.fileName).toBe('GitPanel.tsx');
       expect(refs[0].ref?.startLine).toBe(2364);
-      expect(refs[0].ref?.path).toBe('/Users/developer/Echoly/apps/desktop/src/components/GitPanel.tsx');
+      expect(refs[0].ref?.path).toBe(
+        '/Users/developer/Echoly/apps/desktop/src/components/GitPanel.tsx',
+      );
     });
   });
 });

@@ -34,7 +34,8 @@ interface Props {
     detail?: string,
     type?: 'success' | 'error' | 'info' | 'warn',
   ) => void;
-  initialTab?: 'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'mcp' | 'update' | 'about';
+  initialTab?:
+    'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'mcp' | 'update' | 'about';
   workspace?: string | null;
 }
 
@@ -461,6 +462,20 @@ export function SettingsModal({
     return () => window.removeEventListener('keydown', onKey, true);
   }, [open, onClose, deletingModel, pendingMcpDelete, pendingUpdate, downloading]);
 
+  /**
+   * 进入 MCP 页时刷新一次状态。
+   *
+   * **必须留在下面那个 `if (!open || !settings) return null` 之前**：组件是在
+   * `App.tsx` 里无条件挂载的（开关只改 `open` 属性），所以「关闭 → 打开」这一次
+   * 渲染里，早退分支比正常分支少跑若干个 hook，React 会直接抛
+   * `Rendered more hooks than during the previous render` 把整个设置页打成错误页。
+   * 判断当前是否该拉取放在 effect 体内（`open && activeTab === 'mcp'`），
+   * 而不是靠早退把这次渲染挡掉。
+   */
+  useEffect(() => {
+    if (open && activeTab === 'mcp') void refreshMcpStatus();
+  }, [open, activeTab]);
+
   if (!open || !settings) return null;
 
   async function save(): Promise<void> {
@@ -505,10 +520,7 @@ export function SettingsModal({
   }
 
   /** 保存配置并让主进程按新配置重连。 */
-  async function saveMcpServers(
-    servers: McpServerConfig[],
-    nextTab?: SettingsTab,
-  ): Promise<void> {
+  async function saveMcpServers(servers: McpServerConfig[], nextTab?: SettingsTab): Promise<void> {
     if (!settings) return;
     await persistSettings({ ...settings, mcpServers: servers });
     setMcpReloading(true);
@@ -552,9 +564,7 @@ export function SettingsModal({
    */
   function patchMcpServer(id: string, patch: Partial<McpServerConfig>): void {
     if (!settings) return;
-    const servers = (settings.mcpServers ?? []).map((s) =>
-      s.id === id ? { ...s, ...patch } : s,
-    );
+    const servers = (settings.mcpServers ?? []).map((s) => (s.id === id ? { ...s, ...patch } : s));
     setSettings({ ...settings, mcpServers: servers });
   }
 
@@ -571,11 +581,6 @@ export function SettingsModal({
     cfg,
     status: mcpStatuses.find((s) => s.id === cfg.id),
   }));
-
-  // 进入 MCP 页时刷新一次状态
-  useEffect(() => {
-    if (open && activeTab === 'mcp') void refreshMcpStatus();
-  }, [open, activeTab]);
 
   async function checkUpdateNow(): Promise<void> {
     if (!settings || checking) return;
@@ -1049,7 +1054,9 @@ export function SettingsModal({
                                       })
                                     }
                                   >
-                                    <option value="">{t('settings.models.reasoningDefault')}</option>
+                                    <option value="">
+                                      {t('settings.models.reasoningDefault')}
+                                    </option>
                                     {(
                                       Object.keys(REASONING_EFFORT_LABELS) as ReasoningEffort[]
                                     ).map((k) => (
@@ -1604,9 +1611,7 @@ export function SettingsModal({
                         {(settings.presencePenalty ?? 0.3).toFixed(2)}
                       </span>
                     </div>
-                    <p className="setting-card-desc">
-                      {t('settings.runtime.presencePenaltyDesc')}
-                    </p>
+                    <p className="setting-card-desc">{t('settings.runtime.presencePenaltyDesc')}</p>
                     <input
                       type="range"
                       min="0"
@@ -1925,7 +1930,11 @@ export function SettingsModal({
                         cursorPath: '.cursor/skills/*/SKILL.md',
                         deepseekPath: '.deepseek/skills/*/SKILL.md',
                       }).map((seg, i) =>
-                        seg.emphasis ? <code key={i}>{seg.text}</code> : <span key={i}>{seg.text}</span>,
+                        seg.emphasis ? (
+                          <code key={i}>{seg.text}</code>
+                        ) : (
+                          <span key={i}>{seg.text}</span>
+                        ),
                       )}
                     </span>
                   </div>
@@ -2018,7 +2027,9 @@ export function SettingsModal({
                                   {t('settings.mcp.truncatedMore', { n: status.truncated })}
                                 </span>
                               )}
-                              <span className={`mcp-pill ${cfg.access === 'readonly' ? 'ok' : 'warn'}`}>
+                              <span
+                                className={`mcp-pill ${cfg.access === 'readonly' ? 'ok' : 'warn'}`}
+                              >
                                 {cfg.access === 'readonly'
                                   ? t('settings.mcp.readonly')
                                   : t('settings.mcp.writable')}
@@ -2054,7 +2065,9 @@ export function SettingsModal({
 
                           {status?.state === 'error' && (
                             <div className="mcp-error-box">
-                              <div className="mcp-error-title">{t('settings.mcp.connectFailed')}</div>
+                              <div className="mcp-error-title">
+                                {t('settings.mcp.connectFailed')}
+                              </div>
                               <div className="mcp-error-msg">{status.error}</div>
                               {status.stderr && <pre className="mcp-stderr">{status.stderr}</pre>}
                             </div>
@@ -2156,7 +2169,9 @@ export function SettingsModal({
                                   }
                                 >
                                   <option value="write">{t('settings.mcp.accessWrite')}</option>
-                                  <option value="readonly">{t('settings.mcp.accessReadonly')}</option>
+                                  <option value="readonly">
+                                    {t('settings.mcp.accessReadonly')}
+                                  </option>
                                 </select>
                                 <em>{t('settings.mcp.fieldAccessHint')}</em>
                               </label>
@@ -2338,7 +2353,9 @@ export function SettingsModal({
                       <div className="about-hero-title-row">
                         <h2 className="about-app-name">Echoly</h2>
                         <span className="about-version-tag">v{APP_VERSION}</span>
-                        <span className="about-badge-status">{t('settings.about.releaseBadge')}</span>
+                        <span className="about-badge-status">
+                          {t('settings.about.releaseBadge')}
+                        </span>
                       </div>
                       <p className="about-tagline">{t('settings.about.desc')}</p>
                     </div>
@@ -2456,27 +2473,27 @@ export function SettingsModal({
                   <div className="about-info-table">
                     <div className="about-info-row">
                       <span className="about-info-k">{t('settings.about.runtimeVersion')}</span>
-                      <span className="about-info-v font-mono">v{APP_VERSION} (Production)</span>
+                      <span className="about-info-v mono-font">v{APP_VERSION} (Production)</span>
                     </div>
                     <div className="about-info-row">
                       <span className="about-info-k">{t('settings.about.runtimeArch')}</span>
-                      <span className="about-info-v font-mono">Darwin arm64 (Apple Silicon)</span>
+                      <span className="about-info-v mono-font">Darwin arm64 (Apple Silicon)</span>
                     </div>
                     <div className="about-info-row">
                       <span className="about-info-k">{t('settings.about.runtimeStack')}</span>
-                      <span className="about-info-v font-mono">
+                      <span className="about-info-v mono-font">
                         Electron 35.7.5 · React 18 · TypeScript
                       </span>
                     </div>
                     <div className="about-info-row">
                       <span className="about-info-k">{t('settings.about.license')}</span>
-                      <span className="about-info-v font-mono">
+                      <span className="about-info-v mono-font">
                         {t('settings.about.licenseVal')}
                       </span>
                     </div>
                     <div className="about-info-row">
                       <span className="about-info-k">{t('settings.about.copyright')}</span>
-                      <span className="about-info-v font-mono">
+                      <span className="about-info-v mono-font">
                         {t('settings.about.copyrightVal')}
                       </span>
                     </div>
@@ -2553,9 +2570,7 @@ export function SettingsModal({
               </div>
 
               <div className="confirm-update-body">
-                <div className="confirm-update-notes-title">
-                  {t('settings.update.notesTitle')}
-                </div>
+                <div className="confirm-update-notes-title">{t('settings.update.notesTitle')}</div>
                 {pendingUpdate.notes ? (
                   <div className="confirm-update-notes-box">{pendingUpdate.notes}</div>
                 ) : (
@@ -2618,9 +2633,7 @@ export function SettingsModal({
                   <h3 className="confirm-delete-title">
                     {t('settings.models.confirmDeleteTitle')}
                   </h3>
-                  <p className="confirm-delete-desc">
-                    {t('settings.models.confirmDeleteDesc')}
-                  </p>
+                  <p className="confirm-delete-desc">{t('settings.models.confirmDeleteDesc')}</p>
                 </div>
               </div>
 
@@ -2676,12 +2689,8 @@ export function SettingsModal({
                   </svg>
                 </div>
                 <div className="confirm-delete-title-wrap">
-                  <h3 className="confirm-delete-title">
-                    {t('settings.mcp.confirmDeleteTitle')}
-                  </h3>
-                  <p className="confirm-delete-desc">
-                    {t('settings.mcp.confirmDeleteDesc')}
-                  </p>
+                  <h3 className="confirm-delete-title">{t('settings.mcp.confirmDeleteTitle')}</h3>
+                  <p className="confirm-delete-desc">{t('settings.mcp.confirmDeleteDesc')}</p>
                 </div>
               </div>
 
@@ -2698,7 +2707,11 @@ export function SettingsModal({
               </div>
 
               <div className="confirm-delete-actions">
-                <button type="button" className="cancel-btn" onClick={() => setPendingMcpDelete(null)}>
+                <button
+                  type="button"
+                  className="cancel-btn"
+                  onClick={() => setPendingMcpDelete(null)}
+                >
                   {t('common.cancel')}
                 </button>
                 <button

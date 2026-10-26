@@ -52,7 +52,10 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
 
   // ── 提交框 ──
   // 占位符 {key} 是平台快捷键（⌘Enter / Ctrl+Enter），{branch} 是当前分支
-  'git.commitPlaceholder': { zh: '消息({key} 在“{branch}”提交)', en: 'Message ({key} to commit on "{branch}")' },
+  'git.commitPlaceholder': {
+    zh: '消息({key} 在“{branch}”提交)',
+    en: 'Message ({key} to commit on "{branch}")',
+  },
   'git.generateCommitTip': {
     zh: '根据当前代码改动（Diff）AI 智能生成实际可用的提交说明',
     en: 'Let AI generate a usable commit message from the current diff',
@@ -64,35 +67,85 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.commitAndPush': { zh: '提交和推送', en: 'Commit & Push' },
   'git.commitAndSync': { zh: '提交和同步', en: 'Commit & Sync' },
   'git.moreCommitOptions': { zh: '更多提交选项', en: 'More commit options' },
-  'git.needCommitMessage': { zh: '请先在上方输入提交信息', en: 'Enter a commit message above first' },
+  'git.needCommitMessage': {
+    zh: '请先在上方输入提交信息',
+    en: 'Enter a commit message above first',
+  },
   'git.noWorkspaceChanges': { zh: '当前没有检测到工作区改动', en: 'No workspace changes detected' },
-  'git.workspaceCleanDetail': { zh: '工作区非常干净，无需生成提交信息', en: 'The workspace is clean, nothing to summarize' },
-  'git.commitMessageGenerated': { zh: '✓ 已根据实际代码改动生成提交说明', en: '✓ Commit message generated from the actual changes' },
-  'git.generateCommitFailed': { zh: '智能生成提交说明失败', en: 'Failed to generate a commit message' },
-  'git.generateCommitError': { zh: '生成提交说明发生异常', en: 'Generating the commit message failed' },
+  'git.workspaceCleanDetail': {
+    zh: '工作区非常干净，无需生成提交信息',
+    en: 'The workspace is clean, nothing to summarize',
+  },
+  'git.commitMessageGenerated': {
+    zh: '✓ 已根据实际代码改动生成提交说明',
+    en: '✓ Commit message generated from the actual changes',
+  },
+  'git.generateCommitFailed': {
+    zh: '智能生成提交说明失败',
+    en: 'Failed to generate a commit message',
+  },
+  'git.generateCommitError': {
+    zh: '生成提交说明发生异常',
+    en: 'Generating the commit message failed',
+  },
   'git.nothingToCommit': { zh: '没有需要提交的修改', en: 'Nothing to commit' },
   'git.workspaceClean': { zh: '工作区非常干净', en: 'The workspace is clean' },
   'git.committing': { zh: '正在处理 Git 提交...', en: 'Committing…' },
-  'git.commitPrompt': { zh: '请输入提交信息 (Commit Message):', en: 'Enter a commit message:' },
+  'git.commitPrompt': { zh: '填写提交信息', en: 'Write a commit message' },
+  'git.commitIntro': {
+    zh: '提交信息会写进 Git 历史，之后很难改。描述清楚**改了什么、为什么改**，比一句“update”有用得多。',
+    en: 'The commit message goes into Git history and is hard to change later. Say **what changed and why** — that beats “update”.',
+  },
+  'git.commitNote': {
+    zh: '留空则无法提交：Git 允许空信息提交，但历史里会出现一条无标题的记录。',
+    en: 'Leaving it empty blocks the commit: Git allows an empty message, but history then contains a title-less entry.',
+  },
+  'git.commitMessageLabel': { zh: '提交信息', en: 'Commit message' },
+  // 与上面 git.commitPlaceholder（提交框里的「消息(⌘Enter 在“main”提交)」）不同：
+  // 这条是弹窗输入框的示例文案，两者只是恰好都叫 placeholder，别合并。
+  'git.commitInputPlaceholder': {
+    zh: '例如：修复会话列表重复删除的问题',
+    en: 'e.g. Fix duplicate deletion in the session list',
+  },
+  'git.commitConfirm': { zh: '提交', en: 'Commit' },
+  'git.commitNeedMessage': { zh: '提交信息不能为空', en: 'The commit message cannot be empty' },
   'git.commitFailed': { zh: '✕ 提交失败', en: '✕ Commit failed' },
   'git.commitErrorDetail': { zh: 'Git commit 发生错误', en: 'Git commit failed' },
-  'git.commitSyncing': { zh: '✓ 提交成功，正在同步 (Pull & Push)...', en: '✓ Committed, syncing (pull & push)…' },
+  'git.commitSyncing': {
+    zh: '✓ 提交成功，正在同步 (Pull & Push)...',
+    en: '✓ Committed, syncing (pull & push)…',
+  },
   'git.pullFailed': { zh: '⚠️ 拉取最新代码失败', en: '⚠️ Failed to pull the latest code' },
   'git.commitSyncDone': { zh: '✓ 提交和同步完成', en: '✓ Committed and synced' },
-  'git.commitSyncDoneDetail': { zh: '代码已与远程仓库同步', en: 'The code is in sync with the remote' },
+  'git.commitSyncDoneDetail': {
+    zh: '代码已与远程仓库同步',
+    en: 'The code is in sync with the remote',
+  },
   'git.syncPushFailed': { zh: '✕ 同步推送失败', en: '✕ Sync push failed' },
   'git.commitPushing': { zh: '✓ 提交成功，正在推送...', en: '✓ Committed, pushing…' },
   'git.commitPushDone': { zh: '✓ 提交和推送完成', en: '✓ Committed and pushed' },
-  'git.commitPushDoneDetail': { zh: '代码已成功推送至远程仓库', en: 'The code was pushed to the remote' },
+  'git.commitPushDoneDetail': {
+    zh: '代码已成功推送至远程仓库',
+    en: 'The code was pushed to the remote',
+  },
   'git.pushFailed': { zh: '✕ 推送失败', en: '✕ Push failed' },
   'git.commitDone': { zh: '✓ 提交成功', en: '✓ Committed' },
   'git.branchLabel': { zh: '分支: {branch}', en: 'Branch: {branch}' },
   'git.commitException': { zh: '✕ 提交异常', en: '✕ Commit error' },
 
   // ── 文件/文件夹行内按钮与右键菜单 ──
-  'git.discardFolderAllChanges': { zh: '放弃文件夹下所有更改', en: 'Discard all changes in this folder' },
-  'git.stageFolderAllChanges': { zh: '暂存文件夹下所有更改', en: 'Stage all changes in this folder' },
-  'git.unstageFolderAllChanges': { zh: '取消暂存文件夹下所有更改', en: 'Unstage all changes in this folder' },
+  'git.discardFolderAllChanges': {
+    zh: '放弃文件夹下所有更改',
+    en: 'Discard all changes in this folder',
+  },
+  'git.stageFolderAllChanges': {
+    zh: '暂存文件夹下所有更改',
+    en: 'Stage all changes in this folder',
+  },
+  'git.unstageFolderAllChanges': {
+    zh: '取消暂存文件夹下所有更改',
+    en: 'Unstage all changes in this folder',
+  },
   'git.openFile': { zh: '打开文件', en: 'Open File' },
   'git.discardChanges': { zh: '放弃更改', en: 'Discard Changes' },
   'git.stageChanges': { zh: '暂存更改', en: 'Stage Changes' },
@@ -134,13 +187,26 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   // ── Stash ──
   'git.stashSection': { zh: '暂存区 (Stash)', en: 'Stash' },
   'git.stashPushTip': { zh: '暂存当前修改 (Stash Push)', en: 'Stash current changes' },
-  'git.stashPopTip': { zh: '恢复最新暂存并删除 (Stash Pop)', en: 'Restore and drop the latest stash' },
+  'git.stashPopTip': {
+    zh: '恢复最新暂存并删除 (Stash Pop)',
+    en: 'Restore and drop the latest stash',
+  },
   'git.refreshStash': { zh: '刷新暂存列表', en: 'Refresh the stash list' },
   'git.noStashes': { zh: '暂无暂存记录', en: 'No stash entries' },
   'git.stashPopOne': { zh: '恢复并从暂存区移除 (Pop)', en: 'Restore and drop (Pop)' },
   'git.stashApplyOne': { zh: '应用暂存但保留记录 (Apply)', en: 'Apply and keep the entry' },
   'git.stashDropOne': { zh: '删除该暂存记录 (Drop)', en: 'Drop this stash entry' },
-  'git.stashPrompt': { zh: '请输入暂存说明 (可选):', en: 'Enter a stash message (optional):' },
+  'git.stashPrompt': { zh: '暂存当前修改', en: 'Stash current changes' },
+  'git.stashPushIntro': {
+    zh: '把当前工作区的未提交修改收进一条新的 stash 记录，工作区会回到干净状态。',
+    en: 'Move the current uncommitted changes into a new stash entry and leave the working tree clean.',
+  },
+  'git.stashPushNote': {
+    zh: '之后可以用 `git stash pop` 或面板上的「恢复暂存」把改动取回来。',
+    en: 'You can bring them back later with `git stash pop` or the panel’s restore action.',
+  },
+  'git.stashMessageLabel': { zh: '暂存说明（可选）', en: 'Stash message (optional)' },
+  'git.stashPushConfirm': { zh: '暂存', en: 'Stash' },
   'git.stashDefaultMessage': { zh: '暂存修改 - {time}', en: 'Stash - {time}' },
   'git.stashPushOk': { zh: '✓ 暂存成功', en: '✓ Stashed' },
   'git.stashPushOkDetail': { zh: '已将当前修改存入 Stash', en: 'The current changes were stashed' },
@@ -154,9 +220,15 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
     zh: '若工作区已有冲突改动，git 可能只应用一部分就删掉记录 —— 建议先提交或暂存当前改动。',
     en: 'If the working tree already has conflicting changes, git may apply only part of it and drop the entry — commit or stash first.',
   },
-  'git.stashPopNote2': { zh: '只想保留记录，请改用「应用 (Apply) 不删除」。', en: 'To keep the entry, use Apply instead.' },
+  'git.stashPopNote2': {
+    zh: '只想保留记录，请改用「应用 (Apply) 不删除」。',
+    en: 'To keep the entry, use Apply instead.',
+  },
   'git.stashPopOk': { zh: '✓ 恢复暂存成功', en: '✓ Stash restored' },
-  'git.stashPopOkDetail': { zh: '已恢复修改并移出 Stash', en: 'Changes restored and the entry removed from the stash' },
+  'git.stashPopOkDetail': {
+    zh: '已恢复修改并移出 Stash',
+    en: 'Changes restored and the entry removed from the stash',
+  },
   'git.stashPopFailed': { zh: '恢复暂存失败', en: 'Failed to restore the stash' },
   'git.stashApplyOk': { zh: '✓ 应用暂存成功', en: '✓ Stash applied' },
   'git.stashApplyOkDetail': {
@@ -169,12 +241,21 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
     zh: '这条 stash 记录会从栈里移除，且**无法撤销**（Drop 不会把改动还原回工作区）。',
     en: 'This stash entry is removed from the stack and this **cannot be undone** (Drop does not restore the changes).',
   },
-  'git.stashDropNote': { zh: '只想恢复改动、不想丢记录，请改用「弹出 / 应用 (Pop)」。', en: 'To restore the changes without losing the entry, use Pop instead.' },
+  'git.stashDropNote': {
+    zh: '只想恢复改动、不想丢记录，请改用「弹出 / 应用 (Pop)」。',
+    en: 'To restore the changes without losing the entry, use Pop instead.',
+  },
   'git.stashDropOk': { zh: '✓ 删除暂存成功', en: '✓ Stash entry dropped' },
   'git.stashDropOkDetail': { zh: '已删除 {ref}', en: 'Dropped {ref}' },
   'git.stashDropFailed': { zh: '删除暂存失败', en: 'Failed to drop the stash entry' },
-  'git.stashNothingToDo': { zh: '工作区干净，没有需要暂存的修改', en: 'The workspace is clean, nothing to stash' },
-  'git.stashSavedCount': { zh: '已存入暂存区 ({n} 个暂存项)', en: 'Saved to the stash ({n} entries)' },
+  'git.stashNothingToDo': {
+    zh: '工作区干净，没有需要暂存的修改',
+    en: 'The workspace is clean, nothing to stash',
+  },
+  'git.stashSavedCount': {
+    zh: '已存入暂存区 ({n} 个暂存项)',
+    en: 'Saved to the stash ({n} entries)',
+  },
   'git.discardedAllLocal': { zh: '已放弃所有本地修改', en: 'All local changes discarded' },
   'git.labelRef': { zh: '记录', en: 'Entry' },
   'git.labelMessage': { zh: '说明', en: 'Message' },
@@ -182,8 +263,14 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.confirmDrop': { zh: '确认删除', en: 'Drop' },
 
   // ── 非 Git 仓库空状态 ──
-  'git.openWorkspaceHint': { zh: '打开工作区以使用 Source Control', en: 'Open a workspace to use Source Control' },
-  'git.repoErrorTitle': { zh: 'Git 访问或仓库检测异常', en: 'Git access or repository detection failed' },
+  'git.openWorkspaceHint': {
+    zh: '打开工作区以使用 Source Control',
+    en: 'Open a workspace to use Source Control',
+  },
+  'git.repoErrorTitle': {
+    zh: 'Git 访问或仓库检测异常',
+    en: 'Git access or repository detection failed',
+  },
   'git.notRepoTitle': { zh: '尚未启用 Git 版本控制', en: 'Git is not enabled yet' },
   'git.notRepoDesc': {
     zh: '当前工作区不是 Git 仓库。初始化仓库后即可享受版本回滚、差异比对、分支管理等全部功能。',
@@ -197,18 +284,42 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   // ── 提交图谱 ──
   'git.graph': { zh: '图形', en: 'Graph' },
   'git.currentBranch': { zh: '当前分支', en: 'Current branch' },
-  'git.autoSyncOnTip': { zh: '自动同步已开启 (点击暂停自动同步)', en: 'Auto-sync is on (click to pause)' },
-  'git.autoSyncOffTip': { zh: '自动同步已暂停 (点击开启自动同步)', en: 'Auto-sync is paused (click to resume)' },
+  'git.autoSyncOnTip': {
+    zh: '自动同步已开启 (点击暂停自动同步)',
+    en: 'Auto-sync is on (click to pause)',
+  },
+  'git.autoSyncOffTip': {
+    zh: '自动同步已暂停 (点击开启自动同步)',
+    en: 'Auto-sync is paused (click to resume)',
+  },
   'git.autoSyncOn': { zh: '开启自动同步', en: 'Auto-sync enabled' },
   'git.autoSyncOff': { zh: '已暂停自动同步', en: 'Auto-sync paused' },
-  'git.autoSyncOnDetail': { zh: '已开启后台 Git 状态自动轮询 (每 8 秒)', en: 'Background Git status polling is on (every 8s)' },
-  'git.autoSyncOffDetail': { zh: '已暂停后台 Git 状态自动轮询', en: 'Background Git status polling is paused' },
+  'git.autoSyncOnDetail': {
+    zh: '已开启后台 Git 状态自动轮询 (每 8 秒)',
+    en: 'Background Git status polling is on (every 8s)',
+  },
+  'git.autoSyncOffDetail': {
+    zh: '已暂停后台 Git 状态自动轮询',
+    en: 'Background Git status polling is paused',
+  },
   'git.focusBranchOn': { zh: '聚焦当前分支', en: 'Focus current branch' },
   'git.focusBranchOff': { zh: '显示全部分支', en: 'Show all branches' },
-  'git.focusBranchOnDetail': { zh: '已过滤提交历史，仅显示当前分支 [{branch}]', en: 'Commit history filtered to the current branch [{branch}]' },
-  'git.focusBranchOffDetail': { zh: '已恢复显示全部分支提交记录', en: 'Commit history for all branches restored' },
-  'git.focusBranchOnTip': { zh: '已聚焦当前分支 [{branch}] (点击显示全部分支)', en: 'Focused on the current branch [{branch}] (click to show all)' },
-  'git.focusBranchOffTip': { zh: '聚焦当前分支 (仅显示当前分支提交)', en: 'Focus the current branch (only its commits)' },
+  'git.focusBranchOnDetail': {
+    zh: '已过滤提交历史，仅显示当前分支 [{branch}]',
+    en: 'Commit history filtered to the current branch [{branch}]',
+  },
+  'git.focusBranchOffDetail': {
+    zh: '已恢复显示全部分支提交记录',
+    en: 'Commit history for all branches restored',
+  },
+  'git.focusBranchOnTip': {
+    zh: '已聚焦当前分支 [{branch}] (点击显示全部分支)',
+    en: 'Focused on the current branch [{branch}] (click to show all)',
+  },
+  'git.focusBranchOffTip': {
+    zh: '聚焦当前分支 (仅显示当前分支提交)',
+    en: 'Focus the current branch (only its commits)',
+  },
   'git.createBranch': { zh: '新建分支', en: 'New Branch' },
   'git.pullSyncTip': { zh: '拉取与同步 (Pull)', en: 'Pull & sync' },
   'git.refreshGraph': { zh: '刷新提交图谱', en: 'Refresh the commit graph' },
@@ -217,7 +328,10 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.loadingFileDetails': { zh: '加载文件明细中...', en: 'Loading file details…' },
   'git.noFileChanges': { zh: '暂无文件变更', en: 'No file changes' },
   'git.clickToDiff': { zh: '点击查看对比 Diff', en: 'Click to view the diff' },
-  'git.emptyRepoTitle': { zh: '仓库已初始化，暂无提交记录', en: 'Repository initialized, no commits yet' },
+  'git.emptyRepoTitle': {
+    zh: '仓库已初始化，暂无提交记录',
+    en: 'Repository initialized, no commits yet',
+  },
   'git.emptyRepoDesc': {
     zh: '当前分支尚未创建任何 commit。完成首次提交后，此处将自动展示完整的 Git 提交历史与分支图谱。',
     en: 'This branch has no commits yet. After the first commit, the full history and branch graph will appear here.',
@@ -236,12 +350,27 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.descStaged': { zh: '已暂存 — {path}', en: 'Staged — {path}' },
   'git.descWorking': { zh: '工作区 — {path}', en: 'Working — {path}' },
   'git.descHead': { zh: '{path} (HEAD)', en: '{path} (HEAD)' },
-  'git.headReadFailed': { zh: '无法读取 HEAD 版本: {msg}', en: 'Cannot read the HEAD revision: {msg}' },
-  'git.headReadError': { zh: '读取 HEAD 版本失败: {msg}', en: 'Reading the HEAD revision failed: {msg}' },
-  'git.gitignoreExists': { zh: '{path} 已存在于 .gitignore 中', en: '{path} is already in .gitignore' },
+  'git.headReadFailed': {
+    zh: '无法读取 HEAD 版本: {msg}',
+    en: 'Cannot read the HEAD revision: {msg}',
+  },
+  'git.headReadError': {
+    zh: '读取 HEAD 版本失败: {msg}',
+    en: 'Reading the HEAD revision failed: {msg}',
+  },
+  'git.gitignoreExists': {
+    zh: '{path} 已存在于 .gitignore 中',
+    en: '{path} is already in .gitignore',
+  },
   'git.gitignoreAdded': { zh: '已将 {path} 添加到 .gitignore', en: 'Added {path} to .gitignore' },
-  'git.gitignoreFailed': { zh: '添加 .gitignore 失败: {msg}', en: 'Failed to update .gitignore: {msg}' },
-  'git.revealFailed': { zh: '在资源管理器中显示失败: {msg}', en: 'Failed to reveal in the file manager: {msg}' },
+  'git.gitignoreFailed': {
+    zh: '添加 .gitignore 失败: {msg}',
+    en: 'Failed to update .gitignore: {msg}',
+  },
+  'git.revealFailed': {
+    zh: '在资源管理器中显示失败: {msg}',
+    en: 'Failed to reveal in the file manager: {msg}',
+  },
   'git.branchCreatedOk': { zh: '✓ 新建分支成功', en: '✓ Branch created' },
   'git.branchCreatedDetail': { zh: '已创建分支 {name}', en: 'Created branch {name}' },
   'git.branchSwitchedOk': { zh: '✓ 切换分支成功', en: '✓ Branch switched' },
@@ -251,7 +380,10 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
 
   // ── 新建分支弹窗 ──
   'git.createBranchTitle': { zh: '新建分支', en: 'New Branch' },
-  'git.createBranchDesc': { zh: '基于当前分支 {branch} 创建新分支', en: 'Create a new branch from {branch}' },
+  'git.createBranchDesc': {
+    zh: '基于当前分支 {branch} 创建新分支',
+    en: 'Create a new branch from {branch}',
+  },
   'git.branchNameLabel': { zh: '分支名称', en: 'Branch name' },
   'git.branchNamePlaceholder': {
     zh: '例如: feature/awesome-feature 或 fix/bug-1',
@@ -262,10 +394,16 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
     zh: '分支名不能包含空格或 ~ ^ : ? * [ 等非法字符',
     en: 'A branch name cannot contain spaces or characters like ~ ^ : ? * [',
   },
-  'git.branchNameExists': { zh: '分支 "{name}" 已存在，请使用其他名称', en: 'Branch "{name}" already exists, pick another name' },
+  'git.branchNameExists': {
+    zh: '分支 "{name}" 已存在，请使用其他名称',
+    en: 'Branch "{name}" already exists, pick another name',
+  },
   'git.createBranchFailed': { zh: '创建分支失败', en: 'Failed to create the branch' },
   'git.createBranchError': { zh: '创建分支异常', en: 'Creating the branch failed' },
-  'git.checkoutAfterCreate': { zh: '创建后立即签出 (切换) 到该分支', en: 'Check out the new branch right away' },
+  'git.checkoutAfterCreate': {
+    zh: '创建后立即签出 (切换) 到该分支',
+    en: 'Check out the new branch right away',
+  },
   'git.creating': { zh: '创建中...', en: 'Creating…' },
   'git.createAndSwitch': { zh: '创建并切换', en: 'Create & Switch' },
   'git.createOnly': { zh: '仅创建', en: 'Create Only' },
@@ -282,23 +420,44 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.remoteTag': { zh: '远程', en: 'Remote' },
   'git.switchingTo': { zh: '切换中...', en: 'Switching…' },
   'git.noCommitMessage': { zh: '无提交信息', en: 'No commit message' },
-  'git.branchCountHint': { zh: '共 {n} 个分支 (点击即可一键切换)', en: '{n} branches — click one to switch' },
-  'git.switchBranchFailed': { zh: '切换分支到 {name} 失败', en: 'Failed to switch to branch {name}' },
+  'git.branchCountHint': {
+    zh: '共 {n} 个分支 (点击即可一键切换)',
+    en: '{n} branches — click one to switch',
+  },
+  'git.switchBranchFailed': {
+    zh: '切换分支到 {name} 失败',
+    en: 'Failed to switch to branch {name}',
+  },
   'git.switchBranchError': { zh: '切换分支遇到异常', en: 'Switching branches failed' },
-  'git.autoStashFailed': { zh: '自动暂存修改失败', en: 'Failed to stash the changes automatically' },
-  'git.autoStashMessage': { zh: 'Echoly 切换至 {target} 前自动暂存修改', en: 'Echoly auto-stash before switching to {target}' },
+  'git.autoStashFailed': {
+    zh: '自动暂存修改失败',
+    en: 'Failed to stash the changes automatically',
+  },
+  'git.autoStashMessage': {
+    zh: 'Echoly 切换至 {target} 前自动暂存修改',
+    en: 'Echoly auto-stash before switching to {target}',
+  },
   'git.autoStashError': { zh: '自动暂存遇到异常', en: 'Auto-stashing failed' },
 
   // ── 未提交修改警告（整句进字典，占位符处需要加粗，用 translateSegments 渲染）──
-  'git.unsavedWarningTitle': { zh: '检测到本地存在未暂存/未提交修改', en: 'Unstaged or uncommitted changes detected' },
-  'git.unsavedWarningLead': { zh: '当前工作区检测到 {changed} 个文件有变动', en: '{changed} files with changes detected in the workspace' },
+  'git.unsavedWarningTitle': {
+    zh: '检测到本地存在未暂存/未提交修改',
+    en: 'Unstaged or uncommitted changes detected',
+  },
+  'git.unsavedWarningLead': {
+    zh: '当前工作区检测到 {changed} 个文件有变动',
+    en: '{changed} files with changes detected in the workspace',
+  },
   'git.unsavedWarningStaged': { zh: '（已暂存 {n} 项）', en: ' ({n} staged)' },
   'git.unsavedWarningUnstaged': { zh: '（未暂存 {n} 项）', en: ' ({n} unstaged)' },
   'git.unsavedWarningTail': {
     zh: '。直接签出到目标分支 "{target}" 可能会导致本地修改发生冲突或被覆盖。',
     en: '. Checking out to "{target}" directly may cause local changes to conflict or be overwritten.',
   },
-  'git.directCheckoutTip': { zh: '直接执行切换（若冲突 git 会拦截）', en: 'Switch directly (git blocks it if it conflicts)' },
+  'git.directCheckoutTip': {
+    zh: '直接执行切换（若冲突 git 会拦截）',
+    en: 'Switch directly (git blocks it if it conflicts)',
+  },
   'git.directCheckout': { zh: '直接签出', en: 'Checkout Directly' },
   'git.autoStashCheckoutTip': {
     zh: '自动将当前修改存入 Git 暂存区后切换分支',
@@ -309,7 +468,10 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   // ── 远程仓库弹窗 ──
   'git.remotesTitle': { zh: '远程仓库配置 (Git Remotes)', en: 'Git Remotes' },
   'git.loadingRemotes': { zh: '加载远程信息中...', en: 'Loading remotes…' },
-  'git.noRemotes': { zh: '当前项目尚未关联远程仓库', en: 'No remote is configured for this project' },
+  'git.noRemotes': {
+    zh: '当前项目尚未关联远程仓库',
+    en: 'No remote is configured for this project',
+  },
   'git.noRemotesHint': {
     zh: '您可以通过下方添加远程仓库地址，或者使用终端关联 GitHub / GitLab 仓库。',
     en: 'Add a remote below, or attach a GitHub / GitLab repository from the terminal.',
@@ -327,11 +489,20 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
 
   // ── 创建标签弹窗 ──
   'git.createTagTitle': { zh: '创建 Git 标签 (Tag)', en: 'Create Git Tag' },
-  'git.createTagDesc': { zh: '在当前分支 {branch} 最新提交上打标签', en: 'Tag the latest commit on {branch}' },
+  'git.createTagDesc': {
+    zh: '在当前分支 {branch} 最新提交上打标签',
+    en: 'Tag the latest commit on {branch}',
+  },
   'git.tagNameLabel': { zh: '标签名称 (Tag Name) *', en: 'Tag name *' },
-  'git.tagNamePlaceholder': { zh: '例如: v1.0.0 或 release-202609', en: 'e.g. v1.0.0 or release-202609' },
+  'git.tagNamePlaceholder': {
+    zh: '例如: v1.0.0 或 release-202609',
+    en: 'e.g. v1.0.0 or release-202609',
+  },
   'git.tagMessageLabel': { zh: '标签说明 (Message, 可选)', en: 'Tag message (optional)' },
-  'git.tagMessagePlaceholder': { zh: '输入简短版本说明（可选）', en: 'Short release note (optional)' },
+  'git.tagMessagePlaceholder': {
+    zh: '输入简短版本说明（可选）',
+    en: 'Short release note (optional)',
+  },
   'git.tagNameRequired': { zh: '请输入标签名称', en: 'Enter a tag name' },
   'git.createTagFailed': { zh: '创建标签失败', en: 'Failed to create the tag' },
   'git.createTagError': { zh: '创建标签异常', en: 'Creating the tag failed' },
@@ -363,37 +534,64 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.copyLog': { zh: '复制日志', en: 'Copy Log' },
 
   // ── 与历史版本对比弹窗 ──
-  'git.noFileHistory': { zh: '该文件暂无已提交的 Git 历史版本', en: 'This file has no committed history yet' },
+  'git.noFileHistory': {
+    zh: '该文件暂无已提交的 Git 历史版本',
+    en: 'This file has no committed history yet',
+  },
   'git.loadHistoryFailed': { zh: '获取提交历史失败', en: 'Failed to load the commit history' },
-  'git.descRevision': { zh: '提交 {hash} ({author}) ↔ 本地当前版本', en: 'Commit {hash} ({author}) ↔ local working version' },
+  'git.descRevision': {
+    zh: '提交 {hash} ({author}) ↔ 本地当前版本',
+    en: 'Commit {hash} ({author}) ↔ local working version',
+  },
   'git.revisionOriginalTitle': { zh: '历史提交: {hash}', en: 'Revision: {hash}' },
   'git.workingVersionTitle': { zh: '当前工作区 (本地版本)', en: 'Working tree (local version)' },
-  'git.compareRevisionTitle': { zh: '与历史版本对比 (Compare with Revision)', en: 'Compare with Revision' },
+  'git.compareRevisionTitle': {
+    zh: '与历史版本对比 (Compare with Revision)',
+    en: 'Compare with Revision',
+  },
   'git.searchCommitsPlaceholder': {
     zh: '搜索提交信息、作者或 Commit Hash...',
     en: 'Search message, author or commit hash...',
   },
   'git.loadingHistory': { zh: '正在加载提交历史...', en: 'Loading the commit history…' },
   'git.noMatchingCommits': { zh: '无匹配的历史提交', en: 'No matching commits' },
-  'git.comparingRevision': { zh: '对比: 提交 {hash} ↔ 本地工作区版本', en: 'Comparing: commit {hash} ↔ local working tree' },
+  'git.comparingRevision': {
+    zh: '对比: 提交 {hash} ↔ 本地工作区版本',
+    en: 'Comparing: commit {hash} ↔ local working tree',
+  },
   'git.compareInEditor': { zh: '在主编辑器中对比 (Enter)', en: 'Compare in Editor (Enter)' },
   'git.generatingDiff': { zh: '正在生成差异对比...', en: 'Generating the diff…' },
   'git.revisionIdentical': {
     zh: '✓ 当前本地文件与选中的历史版本内容完全一致，无差异。',
     en: '✓ The local file is identical to the selected revision — no differences.',
   },
-  'git.leftRevision': { zh: '左侧: 提交 {hash} 历史代码 ({n} 行)', en: 'Left: revision {hash} ({n} lines)' },
-  'git.rightWorking': { zh: '右侧: 当前工作区本地代码 ({n} 行)', en: 'Right: current working tree ({n} lines)' },
-  'git.moreInEditor': { zh: '... (更多内容可在主编辑器查看)', en: '... (see the editor for the rest)' },
+  'git.leftRevision': {
+    zh: '左侧: 提交 {hash} 历史代码 ({n} 行)',
+    en: 'Left: revision {hash} ({n} lines)',
+  },
+  'git.rightWorking': {
+    zh: '右侧: 当前工作区本地代码 ({n} 行)',
+    en: 'Right: current working tree ({n} lines)',
+  },
+  'git.moreInEditor': {
+    zh: '... (更多内容可在主编辑器查看)',
+    en: '... (see the editor for the rest)',
+  },
   'git.diffLoadFailed': { zh: '未能加载差异对比', en: 'Failed to load the diff' },
-  'git.selectCommitHint': { zh: '请在左侧选择一个历史提交以查看对比', en: 'Select a commit on the left to compare' },
+  'git.selectCommitHint': {
+    zh: '请在左侧选择一个历史提交以查看对比',
+    en: 'Select a commit on the left to compare',
+  },
   'git.compareFooterHint': {
     zh: '按 ↑ ↓ 切换选中提交，双击或回车即可在主编辑器中全屏对比',
     en: 'Use ↑ ↓ to change the commit; double-click or press Enter to compare full-screen in the editor',
   },
 
   // ── 与分支或标签对比弹窗 ──
-  'git.compareBranchTitle': { zh: '与分支或标签对比 (Compare with Branch or Tag)', en: 'Compare with Branch or Tag' },
+  'git.compareBranchTitle': {
+    zh: '与分支或标签对比 (Compare with Branch or Tag)',
+    en: 'Compare with Branch or Tag',
+  },
   'git.tabBranches': { zh: '分支 ({n})', en: 'Branches ({n})' },
   'git.tabTags': { zh: '标签 ({n})', en: 'Tags ({n})' },
   'git.searchBranchNamesPlaceholder': {
@@ -408,10 +606,16 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.noMatchingBranch': { zh: '无匹配的分支', en: 'No matching branches' },
   'git.noMatchingTag': { zh: '无匹配的标签', en: 'No matching tags' },
   'git.currentHead': { zh: '当前 HEAD', en: 'Current HEAD' },
-  'git.descRef': { zh: '「{ref}」↔ 本地当前版本 ({path})', en: '"{ref}" ↔ local working version ({path})' },
+  'git.descRef': {
+    zh: '「{ref}」↔ 本地当前版本 ({path})',
+    en: '"{ref}" ↔ local working version ({path})',
+  },
   'git.refOriginalRemote': { zh: '远程: {ref}', en: 'Remote: {ref}' },
   'git.refOriginalBranch': { zh: '分支: {ref}', en: 'Branch: {ref}' },
-  'git.refDiffFailed': { zh: '在「{ref}」中无法获取该文件差异', en: 'Cannot diff this file against "{ref}"' },
+  'git.refDiffFailed': {
+    zh: '在「{ref}」中无法获取该文件差异',
+    en: 'Cannot diff this file against "{ref}"',
+  },
   'git.compareFailed': { zh: '对比失败', en: 'Comparison failed' },
   'git.selectedRef': { zh: '已选中: {ref}', en: 'Selected: {ref}' },
   'git.selectBranchOrTag': { zh: '请选择分支或标签', en: 'Select a branch or tag' },
@@ -419,7 +623,10 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
 
   // ── 回滚文件弹窗 ──
   'git.rollbackTitle': { zh: '回滚文件修改 (Rollback Changes)', en: 'Rollback Changes' },
-  'git.rollbackDesc': { zh: '放弃本地工作区改动并恢复至 Git 最新提交 (HEAD)', en: 'Discard local changes and restore the file to HEAD' },
+  'git.rollbackDesc': {
+    zh: '放弃本地工作区改动并恢复至 Git 最新提交 (HEAD)',
+    en: 'Discard local changes and restore the file to HEAD',
+  },
   'git.targetFile': { zh: '目标文件:', en: 'Target file:' },
   'git.rollbackWarning': {
     zh: '⚠️ 警告：此操作将丢弃该文件所有未暂存和未提交的修改，文件内容将不可逆地恢复至版本库状态。',
@@ -454,12 +661,21 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.clear': { zh: '清空', en: 'Clear' },
   'git.tabSwitchHint': { zh: 'Tab 切换', en: 'Tab to switch' },
   'git.loadingRefs': { zh: '正在获取分支及标签列表…', en: 'Loading branches and tags…' },
-  'git.noLocalMatch': { zh: '未找到与 "{query}" 匹配的本地分支', en: 'No local branch matches "{query}"' },
-  'git.noRemoteMatch': { zh: '未找到与 "{query}" 匹配的远程分支', en: 'No remote branch matches "{query}"' },
+  'git.noLocalMatch': {
+    zh: '未找到与 "{query}" 匹配的本地分支',
+    en: 'No local branch matches "{query}"',
+  },
+  'git.noRemoteMatch': {
+    zh: '未找到与 "{query}" 匹配的远程分支',
+    en: 'No remote branch matches "{query}"',
+  },
   'git.noBranchMatch': { zh: '未找到与 "{query}" 匹配的分支', en: 'No branch matches "{query}"' },
   'git.noTagMatch': { zh: '未找到与 "{query}" 匹配的 Tag 标签', en: 'No tag matches "{query}"' },
   'git.noLocalBranches': { zh: '暂无本地分支', en: 'No local branches' },
-  'git.noRemoteBranches': { zh: '暂无远程分支（可通过 git remote 关联远端）', en: 'No remote branches (add one with git remote)' },
+  'git.noRemoteBranches': {
+    zh: '暂无远程分支（可通过 git remote 关联远端）',
+    en: 'No remote branches (add one with git remote)',
+  },
   'git.noBranches': { zh: '暂无可用分支', en: 'No branches available' },
   'git.noTags': { zh: '暂无 Tag 标签', en: 'No tags' },
   'git.currentBranchTip': { zh: '当前所在分支', en: 'The branch you are on' },
@@ -486,13 +702,19 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.changedFilesLabel': { zh: '变动文件: {n}', en: 'Changed files: {n}' },
   'git.changedFilesCount': { zh: '变更文件 ({n})', en: 'Changed Files ({n})' },
   'git.calculatingDiff': { zh: '正在计算分支差异...', en: 'Computing the branch diff…' },
-  'git.noBranchChanges': { zh: '两分支代码完全一致，无文件变更', en: 'The branches are identical — no changed files' },
+  'git.noBranchChanges': {
+    zh: '两分支代码完全一致，无文件变更',
+    en: 'The branches are identical — no changed files',
+  },
   'git.compareBranchesFailed': { zh: '获取分支对比失败', en: 'Failed to compare the branches' },
   'git.compareFileLabel': { zh: '对比文件:', en: 'Comparing:' },
   'git.leftLabel': { zh: '左:', en: 'Left:' },
   'git.rightLabel': { zh: '右:', en: 'Right:' },
   'git.loadingDiff': { zh: '正在载入代码对比...', en: 'Loading the diff…' },
-  'git.selectFileHint': { zh: '选择左侧文件查看代码差异', en: 'Select a file on the left to see the diff' },
+  'git.selectFileHint': {
+    zh: '选择左侧文件查看代码差异',
+    en: 'Select a file on the left to see the diff',
+  },
 
   // ── 提交悬浮预览卡片 ──
   'git.justNow': { zh: '不久前', en: 'Just now' },
@@ -510,7 +732,10 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
 
   // ── Git 追溯（Blame）标注栏 ──
   'git.noBlame': { zh: '暂无 Git 追溯信息', en: 'No Git blame information' },
-  'git.descBlame': { zh: '提交 {hash} ({author}) - {path}', en: 'Commit {hash} ({author}) - {path}' },
+  'git.descBlame': {
+    zh: '提交 {hash} ({author}) - {path}',
+    en: 'Commit {hash} ({author}) - {path}',
+  },
   'git.blameTitle': { zh: 'Git 追溯 (Blame)', en: 'Git Blame' },
   'git.closeBlame': { zh: '关闭追溯标注', en: 'Close blame annotations' },
   'git.analyzingHistory': { zh: '正在分析提交历史...', en: 'Analyzing the commit history…' },
@@ -518,8 +743,14 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
     zh: '第 {line} 行:\n提交: {hash} ({author})\n日期: {date}\n信息: {message}\n{hint}',
     en: 'Line {line}:\nCommit: {hash} ({author})\nDate: {date}\nMessage: {message}\n{hint}',
   },
-  'git.blameLineTipUncommitted': { zh: '第 {line} 行: 未提交修改', en: 'Line {line}: uncommitted change' },
-  'git.compareHint': { zh: '点击在主编辑器中对比此提交差异', en: 'Click to compare this commit in the editor' },
+  'git.blameLineTipUncommitted': {
+    zh: '第 {line} 行: 未提交修改',
+    en: 'Line {line}: uncommitted change',
+  },
+  'git.compareHint': {
+    zh: '点击在主编辑器中对比此提交差异',
+    en: 'Click to compare this commit in the editor',
+  },
   'git.uncommitted': { zh: '未提交', en: 'Uncommitted' },
   'git.you': { zh: '你', en: 'You' },
   'git.viewCommitDiff': { zh: '查看此提交差异 ({hash})', en: 'View this commit’s diff ({hash})' },

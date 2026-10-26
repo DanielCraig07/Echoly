@@ -139,7 +139,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.columnCount': { zh: '{n} 列', en: '{n} columns' },
   'db.reloadStructure': { zh: '重新读取表结构', en: 'Reload table structure' },
   'db.loadingStructure': { zh: '正在读取表结构…', en: 'Loading table structure…' },
-  'db.ddlReadFailed': { zh: '无法读取建表语句：{error}', en: 'Could not read the CREATE statement: {error}' },
+  'db.ddlReadFailed': {
+    zh: '无法读取建表语句：{error}',
+    en: 'Could not read the CREATE statement: {error}',
+  },
   'db.noDdlToShow': {
     zh: '这张表没有可展示的建表语句。',
     en: 'This table has no CREATE statement to show.',
@@ -169,7 +172,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
     zh: 'SQLite 不支持表注释',
     en: 'SQLite does not support table comments',
   },
-  'db.tableWillBeRenamed': { zh: '表将重命名为「{name}」', en: 'The table will be renamed to "{name}"' },
+  'db.tableWillBeRenamed': {
+    zh: '表将重命名为「{name}」',
+    en: 'The table will be renamed to "{name}"',
+  },
   'db.invalidTableName': { zh: '表名不合法：{error}', en: 'Invalid table name: {error}' },
   'db.pendingTableOptions': {
     zh: '表选项有 {n} 项改动待应用',
@@ -221,7 +227,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
     en: 'Confirm structure change · {table}',
   },
   'db.columnNameProblem': { zh: '列名「{name}」：{error}', en: 'Column "{name}": {error}' },
-  'db.columnLengthProblem': { zh: '列「{name}」长度：{error}', en: 'Column "{name}" length: {error}' },
+  'db.columnLengthProblem': {
+    zh: '列「{name}」长度：{error}',
+    en: 'Column "{name}" length: {error}',
+  },
   'db.unnamed': { zh: '未命名', en: 'unnamed' },
   // 二次确认弹窗的正文（Markdown）
   'db.confirmRenameIntro': {
@@ -266,7 +275,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   // `services/dbDdl` 的校验与「被跳过的改动」返回的是**原因码**（DB_DDL_ERROR_KEY /
   // DB_ALTER_SKIP_KEY），不是文案 —— 那是纯逻辑模块，拿不到 i18n 上下文。
   'db.ddlErrNameEmpty': { zh: '名称不能为空', en: 'The name cannot be empty' },
-  'db.ddlErrNameTooLong': { zh: '名称过长（最多 64 个字符）', en: 'The name is too long (64 characters max)' },
+  'db.ddlErrNameTooLong': {
+    zh: '名称过长（最多 64 个字符）',
+    en: 'The name is too long (64 characters max)',
+  },
   'db.ddlErrNameChars': {
     zh: '只能包含字母、数字、下划线、$ 与中文，且不能以数字开头',
     en: 'Only letters, digits, underscore, $ and Chinese characters are allowed, and it cannot start with a digit',
@@ -275,7 +287,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
     zh: '长度 / 精度必须是数字，或形如 10,2',
     en: 'Length / precision must be a number, or in the form 10,2',
   },
-  'db.ddlErrRenameSame': { zh: '新表名与原表名相同', en: 'The new table name is the same as the old one' },
+  'db.ddlErrRenameSame': {
+    zh: '新表名与原表名相同',
+    en: 'The new table name is the same as the old one',
+  },
   // SQLite 不支持这些 ALTER，逐条说明为什么跳过（{name} 是列名或类型名）
   'db.ddlSkipAddNotnull': {
     zh: 'SQLite 无法新增 NOT NULL 且无默认值的列「{name}」，已跳过（既有行无值可填）',
@@ -339,7 +354,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   },
   'db.unknownReason': { zh: '未知原因', en: 'unknown reason' },
   // 重命名库脚本里的注释行（脚本会被直接倒进 SQL 控制台，注释是它唯一的说明书）
-  'db.renameScriptHeader': { zh: '重命名数据库 {from} → {to}', en: 'Rename database {from} → {to}' },
+  'db.renameScriptHeader': {
+    zh: '重命名数据库 {from} → {to}',
+    en: 'Rename database {from} → {to}',
+  },
   'db.renameScriptWhyMysql': {
     zh: 'MySQL 没有 RENAME DATABASE，以下是「建新库 → 逐表迁移 → 删旧库」的等价脚本。',
     en: 'MySQL has no RENAME DATABASE, so this is the equivalent script: create the new database, migrate each table, drop the old database.',
@@ -585,7 +603,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.confirmDeleteLabel': { zh: '确认删除', en: 'Delete' },
   'db.confirmExecuteLabel': { zh: '确认执行', en: 'Run' },
   // buildSqlConfirmMarkdown 拼的弹窗正文
-  'db.confirmDangerBanner': { zh: '⚠️ **危险操作**：{intro}', en: '⚠️ **Dangerous operation**: {intro}' },
+  'db.confirmDangerBanner': {
+    zh: '⚠️ **危险操作**：{intro}',
+    en: '⚠️ **Dangerous operation**: {intro}',
+  },
   'db.confirmMultiStatements': {
     zh: '共 **{n}** 条语句，将按顺序执行：',
     en: '**{n}** statements will run in order:',
@@ -653,7 +674,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
     en: ' (the first {n} statements already took effect; DDL cannot be rolled back)',
   },
   'db.stepFailed': { zh: '执行失败', en: 'Execution failed' },
-  'db.loadConnectionsFailed': { zh: '加载数据库连接失败', en: 'Failed to load database connections' },
+  'db.loadConnectionsFailed': {
+    zh: '加载数据库连接失败',
+    en: 'Failed to load database connections',
+  },
   'db.disconnectedOk': { zh: '已断开数据库连接', en: 'Database disconnected' },
   'db.disconnectFailed': { zh: '断开失败', en: 'Disconnect failed' },
   'db.cannotConnectDirectly': { zh: '无法直接连接', en: 'Cannot connect directly' },
@@ -667,7 +691,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
     zh: '它可能已从当前项目中被删除',
     en: 'It may have been deleted from the current project',
   },
-  'db.connCannotReconnect': { zh: '该连接无法直接重连', en: 'This connection cannot reconnect directly' },
+  'db.connCannotReconnect': {
+    zh: '该连接无法直接重连',
+    en: 'This connection cannot reconnect directly',
+  },
   'db.connCannotReconnectDetail': {
     zh: '请点击「编辑连接…」确认参数后再连接',
     en: 'Check the settings in “Edit connection…” and try again',
@@ -675,7 +702,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.connectedTo': { zh: '已连接「{name}」', en: 'Connected to “{name}”' },
   'db.connectFailedTo': { zh: '连接「{name}」失败', en: 'Failed to connect to “{name}”' },
   'db.connectFailed': { zh: '连接失败', en: 'Connection failed' },
-  'db.connDeletedOk': { zh: '已从项目中删除该连接配置', en: 'Connection settings deleted from the project' },
+  'db.connDeletedOk': {
+    zh: '已从项目中删除该连接配置',
+    en: 'Connection settings deleted from the project',
+  },
   'db.deleteConnectionFailed': { zh: '删除连接失败', en: 'Failed to delete the connection' },
   'db.expandDatabaseFirst': { zh: '请先展开一个数据库', en: 'Expand a database first' },
   'db.expandDatabaseFirstDetail': {
@@ -740,7 +770,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.connDatabasePlaceholder': { zh: '例如: tsingtec 或 test', en: 'e.g. tsingtec or test' },
   'db.connUsernameLabel': { zh: '用户名 (Username)', en: 'Username' },
   'db.connPasswordLabel': { zh: '密码 (Password)', en: 'Password' },
-  'db.connPasswordSavedPlaceholder': { zh: '已保存，留空则保持不变', en: 'Saved — leave empty to keep it' },
+  'db.connPasswordSavedPlaceholder': {
+    zh: '已保存，留空则保持不变',
+    en: 'Saved — leave empty to keep it',
+  },
   /**
    * 保存位置提示。整段话被 `<code>` 路径与 `<strong>` 强调切开，所以拆成三段、
    * 强调片段各自成 key —— 中英文里路径与强调出现的位置/数量可能不同，
@@ -761,18 +794,30 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   },
   'db.connSelectFileFailed': { zh: '选择文件失败', en: 'Failed to select the file' },
   'db.connDemoReady': { zh: 'Demo 数据库已就绪', en: 'Demo database is ready' },
-  'db.connDemoCreateFailed': { zh: '创建 Demo 数据库失败', en: 'Failed to create the demo database' },
+  'db.connDemoCreateFailed': {
+    zh: '创建 Demo 数据库失败',
+    en: 'Failed to create the demo database',
+  },
   'db.connOperationFailed': { zh: '操作异常', en: 'Unexpected error' },
   'db.connFormInvalid': { zh: '表单校验未通过', en: 'The form did not pass validation' },
   // `validateDbConnection` 返回的是**原因码**（见 services/dbConnectionForm 的 DB_FORM_ERROR_KEY
   // 与 DB_FORM_ERROR_KEY 表），不是文案 —— 那是个纯逻辑模块，拿不到 i18n 上下文。
-  'db.formErrSqlitePath': { zh: '请指定 SQLite 数据库文件路径', en: 'Please specify the SQLite database file path' },
-  'db.formErrHost': { zh: '请填写 {driver} 主机地址', en: 'Please enter the {driver} host address' },
+  'db.formErrSqlitePath': {
+    zh: '请指定 SQLite 数据库文件路径',
+    en: 'Please specify the SQLite database file path',
+  },
+  'db.formErrHost': {
+    zh: '请填写 {driver} 主机地址',
+    en: 'Please enter the {driver} host address',
+  },
   'db.formErrPortNumber': {
     zh: '端口必须是数字（留空则使用默认端口）',
     en: 'The port must be a number (leave it empty to use the default port)',
   },
-  'db.formErrPortRange': { zh: '端口取值范围为 1 - 65535', en: 'The port must be between 1 and 65535' },
+  'db.formErrPortRange': {
+    zh: '端口取值范围为 1 - 65535',
+    en: 'The port must be between 1 and 65535',
+  },
   'db.formErrUsername': { zh: '请填写用户名', en: 'Please enter a username' },
   'db.formErrDatabase': {
     zh: 'PostgreSQL 必须指定数据库名（Database）',
@@ -807,8 +852,17 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
     en: 'Done: {ok} succeeded / {fail} failed',
   },
   'db.sqlExecException': { zh: '执行异常', en: 'Execution error' },
-  'db.sqlEmptyCannotFavorite': { zh: '当前编辑器为空，无法收藏', en: 'The editor is empty — nothing to save' },
-  'db.sqlFavoritePrompt': { zh: '请输入收藏名称：', en: 'Name this favorite:' },
+  'db.sqlEmptyCannotFavorite': {
+    zh: '当前编辑器为空，无法收藏',
+    en: 'The editor is empty — nothing to save',
+  },
+  'db.sqlFavoritePrompt': { zh: '收藏这条 SQL', en: 'Save this SQL' },
+  'db.sqlFavoriteIntro': {
+    zh: '把下面这条语句存进常用收藏夹，之后可一键填回编辑器。',
+    en: 'Save the statement below to your favorites — you can drop it back into the editor anytime.',
+  },
+  'db.sqlFavoriteNameLabel': { zh: '收藏名称', en: 'Favorite name' },
+  'db.sqlFavoriteSave': { zh: '收藏', en: 'Save' },
   'db.sqlFavorited': { zh: '已加入常用 SQL 收藏夹', en: 'Added to the SQL favorites' },
   'db.sqlHistoryCleared': { zh: '已清空 SQL 执行历史', en: 'SQL run history cleared' },
   'db.sqlFilledEditor': { zh: '已填入 SQL 编辑器', en: 'Inserted into the SQL editor' },
@@ -862,8 +916,14 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.sqlRunLog': { zh: '语句执行日志 ({n})：', en: 'Statement log ({n}):' },
   'db.sqlRunLogOk': { zh: '成功 · {ms}ms', en: 'Succeeded · {ms}ms' },
   'db.sqlRunLogFail': { zh: '失败 · {error}', en: 'Failed · {error}' },
-  'db.sqlOkNoRows': { zh: '语句执行成功，本页无数据行', en: 'Statement succeeded; this page has no data rows' },
-  'db.sqlOkNoResultSet': { zh: '语句执行成功，无返回行数据集', en: 'Statement succeeded; no row set was returned' },
+  'db.sqlOkNoRows': {
+    zh: '语句执行成功，本页无数据行',
+    en: 'Statement succeeded; this page has no data rows',
+  },
+  'db.sqlOkNoResultSet': {
+    zh: '语句执行成功，无返回行数据集',
+    en: 'Statement succeeded; no row set was returned',
+  },
   'db.sqlExecError': { zh: '执行错误: {error}', en: 'Execution error: {error}' },
   'db.sqlWriteAndRun': {
     zh: '编写 SQL 并点击「运行」或按下 Cmd+Enter 执行查询',
@@ -910,7 +970,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.listSeparator': { zh: '、', en: ', ' },
   'db.dataCommitted': { zh: '已提交 {n} 项改动', en: 'Committed {n} changes' },
   'db.dataCommitAffected': { zh: '影响 {n} 条语句', en: '{n} statements affected' },
-  'db.dataCommitFailedRolledBack': { zh: '提交失败，已整体回滚', en: 'Commit failed; everything was rolled back' },
+  'db.dataCommitFailedRolledBack': {
+    zh: '提交失败，已整体回滚',
+    en: 'Commit failed; everything was rolled back',
+  },
   'db.dataRollbackFailed': { zh: '回滚未成功', en: 'Rollback did not succeed' },
   'db.dataRollbackFailedDetail': {
     zh: '数据可能处于半改状态，请刷新后核对数据再重试。',
@@ -932,17 +995,26 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.dataDefaultHint': { zh: '默认 {value}', en: 'Default {value}' },
   'db.dataColumnCount': { zh: '{n} 列', en: '{n} columns' },
   'db.dataNoPkBadge': { zh: '无主键', en: 'No PK' },
-  'db.dataNoPkBadgeTitle': { zh: '没有主键就无法唯一定位一行', en: 'Without a primary key a single row cannot be identified' },
+  'db.dataNoPkBadgeTitle': {
+    zh: '没有主键就无法唯一定位一行',
+    en: 'Without a primary key a single row cannot be identified',
+  },
   'db.dataInPageSearchPlaceholder': {
     zh: '页内搜索（仅过滤本页已加载的行）',
     en: 'Search this page (filters only the rows already loaded here)',
   },
-  'db.dataAddRowTitle': { zh: '新增一行（暂存，提交后写库）', en: 'Add a row (staged; written on commit)' },
+  'db.dataAddRowTitle': {
+    zh: '新增一行（暂存，提交后写库）',
+    en: 'Add a row (staged; written on commit)',
+  },
   'db.dataAddRowNoPkTitle': {
     zh: '新增一行（该表无主键，仅支持新增）',
     en: 'Add a row (this table has no primary key, so adding is all that is supported)',
   },
-  'db.dataDeleteRowTitle': { zh: '删除选中的行（先点行号选中）', en: 'Delete the selected row (click a row number first)' },
+  'db.dataDeleteRowTitle': {
+    zh: '删除选中的行（先点行号选中）',
+    en: 'Delete the selected row (click a row number first)',
+  },
   'db.dataDeleteRowNoPkTitle': {
     zh: '该表无主键，不支持删除',
     en: 'This table has no primary key, so deleting is not supported',
@@ -973,7 +1045,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.dataOpenInConsoleTitle': { zh: '在 SQL 查询控制台中打开', en: 'Open in the SQL console' },
   'db.dataExportCsvTitle': { zh: '导出当前结果为 CSV', en: 'Export the current result as CSV' },
   'db.dataExportJsonTitle': { zh: '导出当前结果为 JSON', en: 'Export the current result as JSON' },
-  'db.dataExportExcelTitle': { zh: '导出当前结果为 Excel (.xls)', en: 'Export the current result as Excel (.xls)' },
+  'db.dataExportExcelTitle': {
+    zh: '导出当前结果为 Excel (.xls)',
+    en: 'Export the current result as Excel (.xls)',
+  },
   'db.dataPickColumnsTitle': { zh: '选择要显示哪些字段', en: 'Choose which columns to show' },
   'db.dataPrevPage': { zh: '上一页', en: 'Previous page' },
   'db.dataNextPage': { zh: '下一页', en: 'Next page' },
@@ -985,9 +1060,15 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.dataPkDotTitle': { zh: '主键', en: 'Primary key' },
   'db.dataFilterDotTitle': { zh: '已设置筛选条件', en: 'A filter is set' },
   'db.dataColMenuTitle': { zh: '排序或筛选本字段', en: 'Sort or filter this column' },
-  'db.dataResizerTitle': { zh: '拖动调整列宽 · 双击恢复默认', en: 'Drag to resize · double-click to reset' },
+  'db.dataResizerTitle': {
+    zh: '拖动调整列宽 · 双击恢复默认',
+    en: 'Drag to resize · double-click to reset',
+  },
   'db.dataUndoInsertRowTitle': { zh: '撤销这一新增行', en: 'Undo this new row' },
-  'db.dataSelectRowTitle': { zh: '点击选中该行 · 右键更多操作', en: 'Click to select this row · right-click for more actions' },
+  'db.dataSelectRowTitle': {
+    zh: '点击选中该行 · 右键更多操作',
+    en: 'Click to select this row · right-click for more actions',
+  },
   'db.dataEmptyTable': { zh: '当前表中无数据记录', en: 'This table has no rows' },
   'db.dataNoSearchHit': {
     zh: '本页没有符合页内搜索的行（页内搜索只作用于已加载的这一页）',
@@ -1011,7 +1092,10 @@ export const dbDict: Record<string, { zh: string; en: string }> = {
   'db.dataRowCopyWhere': { zh: '复制主键 WHERE', en: 'Copy primary-key WHERE' },
   'db.dataRowCopyDelete': { zh: '复制为 DELETE', en: 'Copy as DELETE' },
   'db.dataCannotBuildUpdate': { zh: '无法生成 UPDATE', en: 'Could not build the UPDATE' },
-  'db.dataCannotBuildUpdateDetail': { zh: '该表没有主键，无法定位行', en: 'This table has no primary key, so the row cannot be located' },
+  'db.dataCannotBuildUpdateDetail': {
+    zh: '该表没有主键，无法定位行',
+    en: 'This table has no primary key, so the row cannot be located',
+  },
   'db.dataCannotBuildWhere': { zh: '无法生成 WHERE', en: 'Could not build the WHERE' },
   'db.dataCannotBuildWhereDetail': { zh: '该表没有主键', en: 'This table has no primary key' },
   'db.dataCopiedInsert': { zh: 'INSERT 语句', en: 'INSERT statement' },

@@ -19,12 +19,18 @@ export const chatDict: Record<string, { zh: string; en: string }> = {
   'chat.tabRunning': { zh: '运行中…', en: 'Running…' },
   'chat.tabClose': { zh: '关闭 Tab', en: 'Close tab' },
   'chat.exported': { zh: '已导出 Markdown', en: 'Markdown exported' },
-  'chat.exportTip': { zh: '导出当前会话为 Markdown 文件', en: 'Export this session as a Markdown file' },
+  'chat.exportTip': {
+    zh: '导出当前会话为 Markdown 文件',
+    en: 'Export this session as a Markdown file',
+  },
   'chat.clearChat': { zh: '清空当前对话记录', en: 'Clear current chat' },
   'chat.newChat': { zh: '新建对话', en: 'New chat' },
   // 代码引用 pill / chip 的悬停提示。{path} 后面可能还跟着 `:12-18` 这样的行号标签，
   // 拼接规则在组件里，所以整句进字典、行号当参数传进来。
-  'chat.openRefFile': { zh: '点击打开文件并定位高亮: {path}', en: 'Click to open the file and highlight it: {path}' },
+  'chat.openRefFile': {
+    zh: '点击打开文件并定位高亮: {path}',
+    en: 'Click to open the file and highlight it: {path}',
+  },
   'chat.openRef': { zh: '点击打开：{path}', en: 'Click to open: {path}' },
   'chat.history': { zh: '历史会话', en: 'Session history' },
 
@@ -138,12 +144,18 @@ export const chatDict: Record<string, { zh: string; en: string }> = {
     zh: '⚠️ 暂无连通正常的模型，请点击右上角【管理模型】测试连通性。',
     en: '⚠️ No model is currently connected. Click “Manage models” at the top right to test connectivity.',
   },
-  'chat.untestedDivider': { zh: '未通过连通测试 (不可选)', en: 'Failed connectivity test (unavailable)' },
+  'chat.untestedDivider': {
+    zh: '未通过连通测试 (不可选)',
+    en: 'Failed connectivity test (unavailable)',
+  },
   'chat.modelUntestedTip': {
     zh: '该模型未通过连通测试，不可选择。请前往【管理模型】测试通过后再使用。',
     en: 'This model failed the connectivity test and cannot be selected. Test it in “Manage models” first.',
   },
-  'chat.modelHealthyTip': { zh: '连通测试正常，可选用', en: 'Connectivity test passed; available for use' },
+  'chat.modelHealthyTip': {
+    zh: '连通测试正常，可选用',
+    en: 'Connectivity test passed; available for use',
+  },
   'chat.thinkingMode': { zh: '· 思考模式', en: '· Thinking mode' },
   'chat.modelHealthyBadge': { zh: '● 正常', en: '● OK' },
   'chat.modelUntestedBadge': { zh: '未连通·不可选', en: 'Disconnected · unavailable' },
@@ -243,6 +255,18 @@ export const chatDict: Record<string, { zh: string; en: string }> = {
     zh: '本轮有操作无法完整留底（{reason}），已放弃自动撤销。\n请使用 Git 还原工作区。',
     en: 'Some operations in this turn could not be fully recorded ({reason}); automatic undo was skipped.\nPlease restore the workspace with Git.',
   },
+  /**
+   * 撤销结果的提示标题。
+   *
+   * 撤销结果是「一段可以很长、需要逐条核对」的文本（哪些还原了、哪些跳过了、为什么），
+   * 弹窗式的 `alert` 只能整个吞下去。改成 toast 之后：标题给出结论，明细作为 detail，
+   * 点击 toast 会展开成可滚动的明细弹窗 —— 用户不需要在「一眼看完」和「看全」之间二选一。
+   */
+  'chat.revertNotPossible': {
+    zh: '本轮改动无法自动撤销',
+    en: 'These changes can’t be undone automatically',
+  },
+  'chat.revertFailed': { zh: '撤销失败', en: 'Undo failed' },
   'chat.revertTitle': { zh: '撤销本轮 AI 改动', en: 'Undo this turn’s AI changes' },
   'chat.revertIntro': {
     zh: '这一轮里 AI 写过的文件会被还原到它动手之前的内容，**新建的文件会被删除**，且**无法通过「重做」恢复**。',
@@ -288,6 +312,16 @@ export const chatDict: Record<string, { zh: string; en: string }> = {
     en: '> Exported at: {date} | Mode: {mode}',
   },
   'chat.exportThinking': { zh: '💭 思考过程 (Thinking)', en: '💭 Thinking' },
+
+  // ---- Plan 模式的结构化计划面板（PlanPanel） ----
+  'plan.title': { zh: '计划', en: 'Plan' },
+  'plan.execute': { zh: '开始执行', en: 'Start executing' },
+  'plan.dismiss': { zh: '关闭', en: 'Dismiss' },
+  'plan.titlePlaceholder': { zh: '计划标题', en: 'Plan title' },
+  'plan.summaryPlaceholder': { zh: '计划摘要', en: 'Plan summary' },
+  'plan.todoPlaceholder': { zh: '待办步骤', en: 'Todo step' },
+  'plan.removeTodo': { zh: '删除', en: 'Remove' },
+  'plan.addTodo': { zh: '+ 添加步骤', en: '+ Add step' },
 
   // ---- 清空当前对话的确认框 ----
   'chat.clearTitle': { zh: '清空当前对话记录', en: 'Clear current chat' },

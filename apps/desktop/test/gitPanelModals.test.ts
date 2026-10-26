@@ -155,8 +155,12 @@ describe('Git Panel Modals & Operations', () => {
     // Tab: all
     const getVisible = (tab: 'all' | 'local' | 'remote', query = '') => {
       const q = query.trim().toLowerCase();
-      const filteredLocal = q ? localBranches.filter((b) => b.name.toLowerCase().includes(q)) : localBranches;
-      const filteredRemote = q ? remoteBranches.filter((b) => b.name.toLowerCase().includes(q)) : remoteBranches;
+      const filteredLocal = q
+        ? localBranches.filter((b) => b.name.toLowerCase().includes(q))
+        : localBranches;
+      const filteredRemote = q
+        ? remoteBranches.filter((b) => b.name.toLowerCase().includes(q))
+        : remoteBranches;
       if (tab === 'local') return filteredLocal;
       if (tab === 'remote') return filteredRemote;
       return [...filteredLocal, ...filteredRemote];
@@ -174,4 +178,3 @@ describe('Git Panel Modals & Operations', () => {
     expect(getVisible('remote', 'streaming')[0].name).toBe('origin/streaming-compute');
   });
 });
-

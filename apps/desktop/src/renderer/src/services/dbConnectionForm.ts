@@ -138,9 +138,10 @@ export interface DbPreflightView {
  * `connect()` 在文件缺失时已经会返回「数据库文件不存在: <路径>」这句中文，重复一层预检
  * 反而会在 SSH 工作区里用错文件系统、误报「文件不存在」。
  */
-export function checkConnectionPreflight(
-  view: DbPreflightView | undefined,
-): { action: DbPreflightAction; reason?: string } {
+export function checkConnectionPreflight(view: DbPreflightView | undefined): {
+  action: DbPreflightAction;
+  reason?: string;
+} {
   if (!view) return { action: 'unknown' };
   if ((view.type || '') === 'sqlite') return { action: 'reconnect' };
   if (view.passwordSaved) return { action: 'reconnect' };

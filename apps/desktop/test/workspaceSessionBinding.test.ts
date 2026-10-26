@@ -21,6 +21,7 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
   const currentLocalWs: WorkspaceInfo = {
     root: '/Users/danielcraig/Documents/Claude-demo/Echoly',
     kind: 'local',
+    label: '/Users/danielcraig/Documents/Claude-demo/Echoly',
   };
 
   const currentSshWs: WorkspaceInfo = {
@@ -136,9 +137,17 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
     ];
 
     const mockRecents = [
-      { path: '/Users/danielcraig/Documents/Claude-demo/Echoly', name: 'Echoly', lastOpened: 1 },
-      { path: '/Users/danielcraig/Documents/Claude-demo/ZeroSessionProject', name: 'ZeroSessionProject', lastOpened: 2 },
-      { path: '/Users/danielcraig/Documents/Claude-demo/AnotherEmptyProject', name: 'AnotherEmptyProject', lastOpened: 3 },
+      { path: '/Users/danielcraig/Documents/Claude-demo/Echoly', name: 'Echoly', lastOpenedAt: 1 },
+      {
+        path: '/Users/danielcraig/Documents/Claude-demo/ZeroSessionProject',
+        name: 'ZeroSessionProject',
+        lastOpenedAt: 2,
+      },
+      {
+        path: '/Users/danielcraig/Documents/Claude-demo/AnotherEmptyProject',
+        name: 'AnotherEmptyProject',
+        lastOpenedAt: 3,
+      },
     ];
 
     const projects = collectAvailableProjects(currentLocalWs, mockRecents, mockSessions, t);
@@ -151,11 +160,11 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
     // Zero-session projects must be included
     const zeroProj = projects.find((p: any) => p.name === 'ZeroSessionProject');
     expect(zeroProj).toBeDefined();
-    expect(zeroProj.count).toBe(0);
+    expect(zeroProj!.count).toBe(0);
 
     const emptyProj = projects.find((p: any) => p.name === 'AnotherEmptyProject');
     expect(emptyProj).toBeDefined();
-    expect(emptyProj.count).toBe(0);
+    expect(emptyProj!.count).toBe(0);
 
     // Matching project works correctly
     expect(isSessionMatchingProject(mockSessions[0], { name: 'Echoly' })).toBe(true);
@@ -166,15 +175,28 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
     const mockRemoteWs: WorkspaceInfo = {
       root: '/root/vision-search-system',
       label: '192.168.10.208: /root/vision-search-system',
-      isRemote: true,
+      // 远程性由 kind 表达；这个 fixture 只用到 root / label，kind 取 ssh 更贴近真实
+      kind: 'ssh',
     };
 
     const mockRecents = [
       // 包含 ssh: 前缀与不带前缀的同名工作区
-      { path: 'ssh://192.168.10.208/root/vision-search-system', name: 'vision-search-system', lastOpened: 1 },
-      { path: 'ssh://192.168.10.208/root/security-vision-system', name: 'security-vision-system', lastOpened: 2 },
-      { path: '/Users/daniel/tsingtec_data_platform', name: 'tsingtec_data_platform', lastOpened: 3 },
-      { path: '/Users/daniel/tsingtec', name: 'tsingtec', lastOpened: 4 },
+      {
+        path: 'ssh://192.168.10.208/root/vision-search-system',
+        name: 'vision-search-system',
+        lastOpenedAt: 1,
+      },
+      {
+        path: 'ssh://192.168.10.208/root/security-vision-system',
+        name: 'security-vision-system',
+        lastOpenedAt: 2,
+      },
+      {
+        path: '/Users/daniel/tsingtec_data_platform',
+        name: 'tsingtec_data_platform',
+        lastOpenedAt: 3,
+      },
+      { path: '/Users/daniel/tsingtec', name: 'tsingtec', lastOpenedAt: 4 },
     ];
 
     const mockSessions: ChatSession[] = [
@@ -311,4 +333,3 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
     });
   });
 });
-

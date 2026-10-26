@@ -130,10 +130,49 @@ const MAX_FILE_SIZE = 500 * 1024;
 
 /** 停用词过滤 */
 const STOP_WORDS = new Set([
-  'the', 'is', 'at', 'which', 'on', 'a', 'an', 'and', 'or', 'in', 'of', 'for', 'to',
-  'if', 'else', 'var', 'let', 'const', 'return', 'import', 'from', 'export', 'default',
-  'public', 'private', 'protected', 'void', 'string', 'number', 'boolean', 'any',
-  '的', '了', '和', '是', '就', '都', '而', '及', '与', '一个', '这', '那',
+  'the',
+  'is',
+  'at',
+  'which',
+  'on',
+  'a',
+  'an',
+  'and',
+  'or',
+  'in',
+  'of',
+  'for',
+  'to',
+  'if',
+  'else',
+  'var',
+  'let',
+  'const',
+  'return',
+  'import',
+  'from',
+  'export',
+  'default',
+  'public',
+  'private',
+  'protected',
+  'void',
+  'string',
+  'number',
+  'boolean',
+  'any',
+  '的',
+  '了',
+  '和',
+  '是',
+  '就',
+  '都',
+  '而',
+  '及',
+  '与',
+  '一个',
+  '这',
+  '那',
 ]);
 
 /**
@@ -422,7 +461,11 @@ export class CodebaseService {
         const stat = await this.statOf(backend, relPath);
         const prev = this.fileStats.get(relPath);
         const unchanged =
-          !force && stat !== null && prev !== undefined && prev.size === stat.size && prev.mtimeMs === stat.mtimeMs;
+          !force &&
+          stat !== null &&
+          prev !== undefined &&
+          prev.size === stat.size &&
+          prev.mtimeMs === stat.mtimeMs;
 
         if (unchanged) {
           // 复用：把上一轮属于这个文件的块原样搬过来（块的 filePath 字段指向的就是它）
@@ -432,7 +475,12 @@ export class CodebaseService {
           nextStats.set(relPath, stat);
           reused++;
           if (processed % 50 === 0) {
-            this.emitProgress({ phase: 'read', scanned: processed, total: filePaths.length, reused });
+            this.emitProgress({
+              phase: 'read',
+              scanned: processed,
+              total: filePaths.length,
+              reused,
+            });
           }
           continue;
         }
@@ -537,7 +585,9 @@ export class CodebaseService {
     const chunks: IndexedChunk[] = [];
     const pathTokens = tokenizeText(filePath);
 
-    const push = (chunk: Omit<IndexedChunk, 'tf' | 'length' | 'nameTokens' | 'pathTokens' | 'docTokens'>) => {
+    const push = (
+      chunk: Omit<IndexedChunk, 'tf' | 'length' | 'nameTokens' | 'pathTokens' | 'docTokens'>,
+    ) => {
       const nameTokens = tokenizeText(chunk.name);
       const docTokens = tokenizeText(chunk.doc ?? '');
       const contentTokens = tokenizeText(chunk.content);
@@ -573,7 +623,8 @@ export class CodebaseService {
       },
       {
         kind: 'function',
-        regex: /(?:export\s+)?const\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?\([^)]*\)\s*(?::\s*[^=>]+)?\s*=>/g,
+        regex:
+          /(?:export\s+)?const\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?\([^)]*\)\s*(?::\s*[^=>]+)?\s*=>/g,
       },
       {
         kind: 'function',
@@ -610,7 +661,12 @@ export class CodebaseService {
           let lookBack = i - 1;
           while (lookBack >= 0 && i - lookBack <= 5) {
             const prev = lines[lookBack].trim();
-            if (prev.startsWith('//') || prev.startsWith('*') || prev.startsWith('/*') || prev.startsWith('#')) {
+            if (
+              prev.startsWith('//') ||
+              prev.startsWith('*') ||
+              prev.startsWith('/*') ||
+              prev.startsWith('#')
+            ) {
               docSnippet = prev + '\n' + docSnippet;
               lookBack--;
             } else {

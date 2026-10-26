@@ -221,7 +221,8 @@ export function parseTableReferences(sqlText: string): {
   const aliasMap = new Map<string, { schema?: string; tableName: string }>();
 
   // 匹配形如: FROM [schema.]table [[AS] alias], JOIN [schema.]table [[AS] alias], INTO [schema.]table, UPDATE [schema.]table
-  const regex = /(?:FROM|JOIN|INTO|UPDATE)\s+((?:([a-zA-Z0-9_\u4e00-\u9fa5]+)\.)?([a-zA-Z0-9_\u4e00-\u9fa5]+))(?:\s+(?:AS\s+)?([a-zA-Z0-9_\u4e00-\u9fa5]+))?/gi;
+  const regex =
+    /(?:FROM|JOIN|INTO|UPDATE)\s+((?:([a-zA-Z0-9_\u4e00-\u9fa5]+)\.)?([a-zA-Z0-9_\u4e00-\u9fa5]+))(?:\s+(?:AS\s+)?([a-zA-Z0-9_\u4e00-\u9fa5]+))?/gi;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(sqlText)) !== null) {
     const raw = match[1];
@@ -232,7 +233,10 @@ export function parseTableReferences(sqlText: string): {
       const ref: TableReference = { raw, schema, tableName, alias };
       tableRefs.push(ref);
       aliasMap.set(tableName.toLowerCase(), { schema, tableName });
-      if (alias && !/^(WHERE|ON|LEFT|RIGHT|INNER|JOIN|GROUP|ORDER|LIMIT|SET|HAVING|AND|OR)$/i.test(alias)) {
+      if (
+        alias &&
+        !/^(WHERE|ON|LEFT|RIGHT|INNER|JOIN|GROUP|ORDER|LIMIT|SET|HAVING|AND|OR)$/i.test(alias)
+      ) {
         aliasMap.set(alias.toLowerCase(), { schema, tableName });
       }
     }
@@ -255,7 +259,9 @@ export function detectSqlContext(fullSqlBeforeCursor: string): 'table' | 'column
 
   // 匹配光标前方最后一个 SQL 核心子句关键字
   const matches = Array.from(
-    cleanSql.matchAll(/\b(SELECT|FROM|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|ON|SET|INTO|UPDATE|TABLE)\b/gi),
+    cleanSql.matchAll(
+      /\b(SELECT|FROM|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|ON|SET|INTO|UPDATE|TABLE)\b/gi,
+    ),
   );
   if (matches.length > 0) {
     const lastKw = matches[matches.length - 1][1].toUpperCase().replace(/\s+/g, ' ');
@@ -350,11 +356,7 @@ function tableDoc(
 }
 
 /** 表补全项的 detail：有注释就用注释，否则退到 `[表 · 库名]` / `[表]` */
-function tableDetail(
-  t: Translate,
-  table: { comment?: string },
-  schema?: string,
-): string {
+function tableDetail(t: Translate, table: { comment?: string }, schema?: string): string {
   if (table.comment) return `${t('db.compTable')} ${table.comment}`;
   return schema ? t('db.compTableIn', { schema }) : t('db.compTablePlain');
 }
@@ -393,9 +395,10 @@ export async function provideSqlCompletions(
   const suggestions: monaco.languages.CompletionItem[] = [];
 
   // 1. 判断是否处于点号「.」之后（支持单点 `cvm.` 或多段点 `cvm.cvm_location.`）
-  const dotMatch = /(?:([a-zA-Z0-9_\u4e00-\u9fa5]+)\.)?([a-zA-Z0-9_\u4e00-\u9fa5]+)\.([a-zA-Z0-9_\u4e00-\u9fa5]*)$/.exec(
-    lineUntilCursor,
-  );
+  const dotMatch =
+    /(?:([a-zA-Z0-9_\u4e00-\u9fa5]+)\.)?([a-zA-Z0-9_\u4e00-\u9fa5]+)\.([a-zA-Z0-9_\u4e00-\u9fa5]*)$/.exec(
+      lineUntilCursor,
+    );
 
   if (dotMatch) {
     const schemaPrefix = dotMatch[1]?.trim();
@@ -494,7 +497,8 @@ export async function provideSqlCompletions(
 
   // 2. 常规输入模式（无点号）：根据语法上下文智能决定表与字段的优先推荐
   const fullText = model.getValue();
-  const offset = typeof model.getOffsetAt === 'function' ? model.getOffsetAt(position) : fullText.length;
+  const offset =
+    typeof model.getOffsetAt === 'function' ? model.getOffsetAt(position) : fullText.length;
   const fullSqlBeforeCursor = fullText.slice(0, offset);
   const context = detectSqlContext(fullSqlBeforeCursor);
 
@@ -534,7 +538,8 @@ export async function provideSqlCompletions(
       insertText: t.name,
       range,
       // 在表上下文（FROM/JOIN/INTO/UPDATE）中置于最高优先级 0_
-      sortText: context === 'table' ? `0_${t.name}` : context === 'column' ? `3_${t.name}` : `1_${t.name}`,
+      sortText:
+        context === 'table' ? `0_${t.name}` : context === 'column' ? `3_${t.name}` : `1_${t.name}`,
     });
   }
 

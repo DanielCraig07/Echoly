@@ -1,7 +1,9 @@
 import type { SearchCodeHit, SearchCodeRequest, SearchFileHit } from '@deepseek-ide/shared';
 import {
+  buildRemoteFindByNameCommand,
   collectFilePaths,
   filterAndScoreFiles,
+  findLocalByName,
   searchCodeRemote,
   searchViaBackend,
   searchWithRg,
@@ -54,10 +56,7 @@ export class SearchService {
     if (this.pathCache && this.pathCache.root === backend.root) {
       const matched = this.pathCache.files.find(
         (f) =>
-          f === target ||
-          f.endsWith('/' + target) ||
-          f.endsWith('/' + fileName) ||
-          f === fileName,
+          f === target || f.endsWith('/' + target) || f.endsWith('/' + fileName) || f === fileName,
       );
       if (matched) return matched;
     }
@@ -73,7 +72,11 @@ export class SearchService {
             .map((s) => s.trim().replace(/^\.\//, '').replace(/\\/g, '/'))
             .filter(Boolean);
           const hit = lines.find(
-            (l) => l === target || l.endsWith('/' + target) || l.endsWith('/' + fileName) || l === fileName,
+            (l) =>
+              l === target ||
+              l.endsWith('/' + target) ||
+              l.endsWith('/' + fileName) ||
+              l === fileName,
           );
           if (hit) return hit;
           if (lines[0]) return lines[0];
@@ -83,15 +86,20 @@ export class SearchService {
       // 3.2 尝试 Unix find 定向探测（~20ms）
       if (process.platform !== 'win32') {
         try {
-          const findCmd = `find . -name "${fileName}" -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/build/*" -print | head -n 5`;
-          const out = await runLocalCommand('sh', ['-c', findCmd], backend.root, 1500);
+          // 走 argv 数组而不是 `sh -c` 拼串：这里的 fileName 来自用户输入，
+          // 拼进 shell 字符串就是一个命令注入点。
+          const out = await findLocalByName(backend.root, fileName, 1500);
           if (out && out.trim()) {
             const lines = out
               .split(/\r?\n/)
               .map((s) => s.trim().replace(/^\.\//, '').replace(/\\/g, '/'))
               .filter(Boolean);
             const hit = lines.find(
-              (l) => l === target || l.endsWith('/' + target) || l.endsWith('/' + fileName) || l === fileName,
+              (l) =>
+                l === target ||
+                l.endsWith('/' + target) ||
+                l.endsWith('/' + fileName) ||
+                l === fileName,
             );
             if (hit) return hit;
             if (lines[0]) return lines[0];
@@ -99,9 +107,9 @@ export class SearchService {
         } catch {}
       }
     } else if (backend.kind === 'ssh' && typeof backend.runCommand === 'function') {
-      // 远程 SSH 定向快速查找
+      // 远程 SSH 定向快速查找（远端只能传命令串，所以显式做 shell 转义）
       try {
-        const findCmd = `find . -name "${fileName}" -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/build/*" -print | head -n 5`;
+        const findCmd = buildRemoteFindByNameCommand(fileName);
         const res = await backend.runCommand(findCmd, 2000);
         if (res.code === 0 && res.stdout.trim()) {
           const lines = res.stdout
@@ -109,7 +117,11 @@ export class SearchService {
             .map((s) => s.trim().replace(/^\.\//, '').replace(/\\/g, '/'))
             .filter(Boolean);
           const hit = lines.find(
-            (l) => l === target || l.endsWith('/' + target) || l.endsWith('/' + fileName) || l === fileName,
+            (l) =>
+              l === target ||
+              l.endsWith('/' + target) ||
+              l.endsWith('/' + fileName) ||
+              l === fileName,
           );
           if (hit) return hit;
           if (lines[0]) return lines[0];

@@ -6,7 +6,11 @@ import {
   prettyPrintSql,
 } from '../src/renderer/src/services/dbSqlPreview';
 
-function col(name: string, type: string, extra: Partial<DatabaseColumnMeta> = {}): DatabaseColumnMeta {
+function col(
+  name: string,
+  type: string,
+  extra: Partial<DatabaseColumnMeta> = {},
+): DatabaseColumnMeta {
   return { cid: 0, name, type, notnull: false, dflt_value: null, pk: false, ...extra };
 }
 
@@ -40,10 +44,12 @@ describe('buildFullTableSql · 完整语句还原', () => {
   });
 
   it('只给页码或只给页大小时不补分页（与 applyPagination「没传就不分页」一致）', () => {
-    expect(buildFullTableSql('sqlite', undefined, 'users', columns, undefined, 3)).not.toContain('LIMIT');
-    expect(buildFullTableSql('sqlite', undefined, 'users', columns, undefined, undefined, 50)).not.toContain(
+    expect(buildFullTableSql('sqlite', undefined, 'users', columns, undefined, 3)).not.toContain(
       'LIMIT',
     );
+    expect(
+      buildFullTableSql('sqlite', undefined, 'users', columns, undefined, undefined, 50),
+    ).not.toContain('LIMIT');
   });
 
   it('MySQL 带库名限定', () => {
@@ -76,12 +82,7 @@ describe('prettyPrintSql · 多行格式化', () => {
 
   it('GROUP BY 不被拆成 GROUP 与 BY 两行', () => {
     const out = prettyPrintSql('SELECT count(*) FROM t GROUP BY a LIMIT 10;');
-    expect(out.split('\n')).toEqual([
-      'SELECT count(*)',
-      '  FROM t',
-      '  GROUP BY a',
-      '  LIMIT 10;',
-    ]);
+    expect(out.split('\n')).toEqual(['SELECT count(*)', '  FROM t', '  GROUP BY a', '  LIMIT 10;']);
   });
 
   it('空串返回空串，不产出只有缩进的行', () => {
@@ -107,7 +108,9 @@ describe('parseTableOptions · MySQL 建表选项', () => {
   });
 
   it('认得 `CHARACTER SET=` 这种写法', () => {
-    const opts = parseTableOptions('CREATE TABLE t (id int) ENGINE=InnoDB DEFAULT CHARACTER SET=latin1');
+    const opts = parseTableOptions(
+      'CREATE TABLE t (id int) ENGINE=InnoDB DEFAULT CHARACTER SET=latin1',
+    );
     expect(opts?.charset).toBe('latin1');
   });
 

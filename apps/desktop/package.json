@@ -16,7 +16,7 @@
     "pack:mac": "npm run build && node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --config.electronVersion=35.7.5 --publish never && rm -rf release/mac release/mac-arm64 release/mac-x64",
     "pack:mac:arm64": "npm run build && node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --arm64 --config.electronVersion=35.7.5 --publish never && rm -rf release/mac release/mac-arm64 release/mac-x64",
     "pack:mac:x64": "npm run build && node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg --x64 --config.electronVersion=35.7.5 --publish never && rm -rf release/mac release/mac-arm64 release/mac-x64",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@deepseek-ide/agent": "*",
@@ -25,8 +25,6 @@
     "@deepseek-ide/skills": "*",
     "@deepseek-ide/tools": "*",
     "@monaco-editor/react": "^4.7.0",
-    "@types/katex": "^0.16.8",
-    "@types/prismjs": "^1.26.6",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/xterm": "^5.5.0",
@@ -58,7 +56,9 @@
     "electron-builder": "^25.1.8",
     "electron-vite": "^3.0.0",
     "typescript": "^5.8.2",
-    "vite": "^6.2.1"
+    "vite": "^6.2.1",
+    "@types/katex": "^0.16.8",
+    "@types/prismjs": "^1.26.6"
   },
   "build": {
     "appId": "com.echoly.ide",

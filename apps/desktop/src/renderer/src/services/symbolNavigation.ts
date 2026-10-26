@@ -121,23 +121,136 @@ export const SUPPORTED_LANGUAGES = [
  */
 export const COMMON_KEYWORDS = new Set([
   // JavaScript / TypeScript
-  'abstract', 'any', 'as', 'asserts', 'async', 'await', 'boolean', 'break', 'case', 'catch',
-  'class', 'const', 'constructor', 'continue', 'debugger', 'declare', 'default', 'delete',
-  'do', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'for', 'from', 'function',
-  'get', 'if', 'implements', 'import', 'in', 'infer', 'instanceof', 'interface', 'is', 'keyof',
-  'let', 'module', 'namespace', 'never', 'new', 'null', 'number', 'object', 'of', 'package',
-  'private', 'protected', 'public', 'readonly', 'require', 'return', 'set', 'static', 'string',
-  'super', 'switch', 'symbol', 'this', 'throw', 'true', 'try', 'type', 'typeof', 'undefined',
-  'unique', 'unknown', 'var', 'void', 'while', 'with', 'yield',
+  'abstract',
+  'any',
+  'as',
+  'asserts',
+  'async',
+  'await',
+  'boolean',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'constructor',
+  'continue',
+  'debugger',
+  'declare',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'from',
+  'function',
+  'get',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'infer',
+  'instanceof',
+  'interface',
+  'is',
+  'keyof',
+  'let',
+  'module',
+  'namespace',
+  'never',
+  'new',
+  'null',
+  'number',
+  'object',
+  'of',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'readonly',
+  'require',
+  'return',
+  'set',
+  'static',
+  'string',
+  'super',
+  'switch',
+  'symbol',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'type',
+  'typeof',
+  'undefined',
+  'unique',
+  'unknown',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
   // Python
-  'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del',
-  'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in',
-  'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while',
-  'with', 'yield', 'self', 'cls',
+  'and',
+  'as',
+  'assert',
+  'async',
+  'await',
+  'break',
+  'class',
+  'continue',
+  'def',
+  'del',
+  'elif',
+  'else',
+  'except',
+  'finally',
+  'for',
+  'from',
+  'global',
+  'if',
+  'import',
+  'in',
+  'is',
+  'lambda',
+  'nonlocal',
+  'not',
+  'or',
+  'pass',
+  'raise',
+  'return',
+  'try',
+  'while',
+  'with',
+  'yield',
+  'self',
+  'cls',
   // Go
-  'func', 'nil', 'select', 'chan', 'defer', 'go', 'fallthrough', 'range',
+  'func',
+  'nil',
+  'select',
+  'chan',
+  'defer',
+  'go',
+  'fallthrough',
+  'range',
   // Rust
-  'fn', 'pub', 'struct', 'impl', 'trait', 'mut', 'ref', 'unsafe', 'where', 'loop', 'mod',
+  'fn',
+  'pub',
+  'struct',
+  'impl',
+  'trait',
+  'mut',
+  'ref',
+  'unsafe',
+  'where',
+  'loop',
+  'mod',
   // Java
   ...JAVA_KEYWORDS,
 ]);
@@ -161,7 +274,7 @@ export const UNIVERSAL_LANGUAGE_SELECTOR: monaco.languages.LanguageSelector = [
  */
 export function isPositionInCommentOrString(
   model: monaco.editor.ITextModel,
-  position: monaco.IPosition
+  position: monaco.IPosition,
 ): boolean {
   const lineContent = model.getLineContent(position.lineNumber);
   const trimmed = lineContent.trimStart();
@@ -170,12 +283,12 @@ export function isPositionInCommentOrString(
   if (
     trimmed.startsWith('//') ||
     trimmed.startsWith('/*') ||
-    trimmed.startsWith('*') ||     // inside /* … */ block
-    trimmed.startsWith('#') ||     // Python / Shell / YAML / TOML
-    trimmed.startsWith('--') ||    // SQL / Lua
-    trimmed.startsWith('<!--') ||  // HTML / XML
-    trimmed.startsWith(';;') ||    // Lisp
-    trimmed.startsWith('%')        // LaTeX / Erlang
+    trimmed.startsWith('*') || // inside /* … */ block
+    trimmed.startsWith('#') || // Python / Shell / YAML / TOML
+    trimmed.startsWith('--') || // SQL / Lua
+    trimmed.startsWith('<!--') || // HTML / XML
+    trimmed.startsWith(';;') || // Lisp
+    trimmed.startsWith('%') // LaTeX / Erlang
   ) {
     return true;
   }
@@ -204,24 +317,13 @@ export function isPositionInCommentOrString(
       inDouble = !inDouble;
     } else if (ch === '`' && !inSingle && !inDouble) {
       inBacktick = !inBacktick;
-    } else if (
-      ch === '/' &&
-      lineContent[i + 1] === '/' &&
-      !inSingle && !inDouble && !inBacktick
-    ) {
+    } else if (ch === '/' && lineContent[i + 1] === '/' && !inSingle && !inDouble && !inBacktick) {
       // Inline // comment started before cursor – cursor is in comment
       return true;
-    } else if (
-      ch === '/' &&
-      lineContent[i + 1] === '*' &&
-      !inSingle && !inDouble && !inBacktick
-    ) {
+    } else if (ch === '/' && lineContent[i + 1] === '*' && !inSingle && !inDouble && !inBacktick) {
       // /* block comment opened before cursor – cursor is in comment
       return true;
-    } else if (
-      ch === '#' &&
-      !inSingle && !inDouble && !inBacktick
-    ) {
+    } else if (ch === '#' && !inSingle && !inDouble && !inBacktick) {
       // Python / Shell inline comment
       return true;
     }
@@ -247,7 +349,7 @@ export function isPositionInCommentOrString(
       }
     }
     if (depth > 0) return true; // inside unclosed block comment
-    if (depth < 0) break;        // comment was closed before this line
+    if (depth < 0) break; // comment was closed before this line
   }
 
   // 4. Python multi-line triple-quote docstrings (""" or ''')
@@ -296,8 +398,9 @@ export function buildDefinitionQuery(languageId: string, symbol: string): string
       // start of a (possibly indented) line and requires the keyword to come
       // IMMEDIATELY before the symbol name.
       const mods = '(export\\s+)?(default\\s+)?';
-      const accessMods = '(public|private|protected|static|readonly|abstract|override|async|declare)'
-        + '(\\s+(public|private|protected|static|readonly|abstract|override|async|declare))*\\s+';
+      const accessMods =
+        '(public|private|protected|static|readonly|abstract|override|async|declare)' +
+        '(\\s+(public|private|protected|static|readonly|abstract|override|async|declare))*\\s+';
       return [
         // function / async function / generator
         `^[ \\t]*${mods}(async\\s+)?function\\s*\\*?\\s+${s}\\b`,
@@ -375,14 +478,19 @@ export function buildDefinitionQuery(languageId: string, symbol: string): string
  * Detects if a line in a Python file is an import statement that brings `symbol` into scope.
  * Returns the module path (e.g. "app.runtime.secondary.capacity") or null.
  */
-export function parsePythonImport(lineContent: string, symbol: string): { modulePath: string } | null {
+export function parsePythonImport(
+  lineContent: string,
+  symbol: string,
+): { modulePath: string } | null {
   // from x.y.z import a, b, symbol as s
   const fromMatch = lineContent.match(/^\s*from\s+([.\w]+)\s+import\b/);
   if (fromMatch && new RegExp(`\\b${symbol}\\b`).test(lineContent)) {
     return { modulePath: fromMatch[1] };
   }
   // import x.y.z as symbol
-  const importAsMatch = lineContent.match(new RegExp(`^\\s*import\\s+([.\\w]+)\\s+as\\s+${symbol}\\b`));
+  const importAsMatch = lineContent.match(
+    new RegExp(`^\\s*import\\s+([.\\w]+)\\s+as\\s+${symbol}\\b`),
+  );
   if (importAsMatch) {
     return { modulePath: importAsMatch[1] };
   }
@@ -437,7 +545,7 @@ export function resolvePythonModuleToPaths(currentFilePath: string, modulePath: 
  */
 export function hasLocalDefinitionOrImport(
   model: monaco.editor.ITextModel,
-  symbol: string
+  symbol: string,
 ): boolean {
   if (COMMON_KEYWORDS.has(symbol.toLowerCase()) || symbol.length < 2 || /^\d+$/.test(symbol)) {
     return false;
@@ -448,7 +556,10 @@ export function hasLocalDefinitionOrImport(
 
   if (lang === 'python') {
     const s = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const defRegex = new RegExp(`^[ \\t]*(async[ \\t]+)?(def|class)[ \\t]+${s}([^a-zA-Z0-9_]|$)`, 'i');
+    const defRegex = new RegExp(
+      `^[ \\t]*(async[ \\t]+)?(def|class)[ \\t]+${s}([^a-zA-Z0-9_]|$)`,
+      'i',
+    );
     const assignRegex = new RegExp(`^[ \\t]*${s}[ \\t]*=`, 'i');
 
     for (let i = 1; i <= lineCount; i++) {
@@ -468,11 +579,11 @@ export function hasLocalDefinitionOrImport(
     const s = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const javaCheckRegex = new RegExp(
       `(\\b(class|interface|enum|record)\\s+${s}\\b)|` +
-      `(\\b${s}\\s*\\([^;{]*\\)\\s*(\\{|throws|;))|` +
-      `(\\b(public|protected|private|static|final|volatile|transient)\\s+.*\\b${s}\\s*[=;])|` +
-      `(\\b([A-Z][a-zA-Z0-9_<>]*)\\s+${s}\\s*[=;,)])|` +
-      `(import\\s+(static\\s+)?[a-zA-Z0-9_.]*\\b${s}\\b)`,
-      'i'
+        `(\\b${s}\\s*\\([^;{]*\\)\\s*(\\{|throws|;))|` +
+        `(\\b(public|protected|private|static|final|volatile|transient)\\s+.*\\b${s}\\s*[=;])|` +
+        `(\\b([A-Z][a-zA-Z0-9_<>]*)\\s+${s}\\s*[=;,)])|` +
+        `(import\\s+(static\\s+)?[a-zA-Z0-9_.]*\\b${s}\\b)`,
+      'i',
     );
     for (let i = 1; i <= lineCount; i++) {
       const line = model.getLineContent(i);
@@ -503,7 +614,10 @@ export function hasLocalDefinitionOrImport(
 /**
  * Resolves a relative import path from a source file path.
  */
-export function resolveRelativeImport(currentFilePath: string, moduleSpecifier: string): string | null {
+export function resolveRelativeImport(
+  currentFilePath: string,
+  moduleSpecifier: string,
+): string | null {
   if (!moduleSpecifier.startsWith('.')) return null;
 
   const normCurrent = currentFilePath.replace(/\\/g, '/');
@@ -576,7 +690,7 @@ const preloadingUris = new Set<string>();
  */
 export async function preloadModelsForLocations(
   locations: monaco.languages.Location[],
-  root?: string | null
+  root?: string | null,
 ): Promise<void> {
   if (!window.ide?.readFile || locations.length === 0) return;
 
@@ -612,7 +726,7 @@ export async function preloadModelsForLocations(
       } finally {
         preloadingUris.delete(key);
       }
-    })
+    }),
   );
 }
 
@@ -627,7 +741,7 @@ export async function preloadModelsForLocations(
 export async function findDefinitionLocations(
   model: monaco.editor.ITextModel,
   position: monaco.IPosition,
-  opts?: { getWorkspaceRoot?: () => string | null | undefined }
+  opts?: { getWorkspaceRoot?: () => string | null | undefined },
 ): Promise<monaco.languages.Location[]> {
   // Reject if position is in comment or string
   if (isPositionInCommentOrString(model, position)) {
@@ -661,15 +775,17 @@ export async function findDefinitionLocations(
         lang === 'python'
           ? 'python'
           : lang === 'go' || currentPath.endsWith('.go')
-          ? 'go'
-          : (lang === 'c' || currentPath.endsWith('.c') ? 'c' : 'cpp');
+            ? 'go'
+            : lang === 'c' || currentPath.endsWith('.c')
+              ? 'c'
+              : 'cpp';
       if (window.ide.lspNotifyDocument) {
         void window.ide.lspNotifyDocument(currentPath, model.getValue(), lspLangId);
       }
       const lspHits = await window.ide.lspGetDefinition(
         currentPath,
         position.lineNumber,
-        position.column
+        position.column,
       );
 
       if (Array.isArray(lspHits) && lspHits.length > 0) {
@@ -687,7 +803,7 @@ export async function findDefinitionLocations(
               h.line,
               h.column,
               h.endLine ?? h.line,
-              h.endColumn ?? (h.column + symbol.length)
+              h.endColumn ?? h.column + symbol.length,
             ),
           });
         }
@@ -788,7 +904,10 @@ export async function findDefinitionLocations(
           if (content) {
             const candLines = content.split('\n');
             const sEsc = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const defReg = new RegExp(`^[ \\t]*(async[ \\t]+)?(def|class)[ \\t]+${sEsc}([^a-zA-Z0-9_]|$)`, 'i');
+            const defReg = new RegExp(
+              `^[ \\t]*(async[ \\t]+)?(def|class)[ \\t]+${sEsc}([^a-zA-Z0-9_]|$)`,
+              'i',
+            );
             const assignReg = new RegExp(`^[ \\t]*${sEsc}[ \\t]*=`, 'i');
             let foundLine = 1;
             let foundCol = 1;
@@ -802,7 +921,8 @@ export async function findDefinitionLocations(
               }
             }
 
-            const fullCandPath = root && !cand.startsWith('/') ? `${root.replace(/[/\\]+$/, '')}/${cand}` : cand;
+            const fullCandPath =
+              root && !cand.startsWith('/') ? `${root.replace(/[/\\]+$/, '')}/${cand}` : cand;
             const candUri = monaco.Uri.file(fullCandPath);
 
             if (!monaco.editor.getModel(candUri)) {
@@ -838,7 +958,7 @@ export async function findDefinitionLocations(
             localImportHits[0].line,
             localImportHits[0].col,
             localImportHits[0].line,
-            localImportHits[0].col + symbol.length
+            localImportHits[0].col + symbol.length,
           ),
         },
       ];
@@ -935,7 +1055,7 @@ export async function findDefinitionLocations(
             localImportHits[0].line,
             localImportHits[0].col,
             localImportHits[0].line,
-            localImportHits[0].col + symbol.length
+            localImportHits[0].col + symbol.length,
           ),
         },
       ];
@@ -961,7 +1081,7 @@ export async function findDefinitionLocations(
 export async function findReferenceLocations(
   model: monaco.editor.ITextModel,
   position: monaco.IPosition,
-  opts?: { getWorkspaceRoot?: () => string | null | undefined }
+  opts?: { getWorkspaceRoot?: () => string | null | undefined },
 ): Promise<monaco.languages.Location[]> {
   const word = model.getWordAtPosition(position);
   if (!word || !word.word) return [];
@@ -1023,7 +1143,7 @@ export async function findReferenceLocations(
 function locationsToPeekResults(
   locations: monaco.languages.Location[],
   symbol: string,
-  root?: string | null
+  root?: string | null,
 ): PeekResult[] {
   return locations.map((loc) => {
     let filePath = loc.uri.fsPath || loc.uri.path || '';
@@ -1088,7 +1208,7 @@ const TS_LANGS = new Set(['typescript', 'javascript', 'typescriptreact', 'javasc
 export async function jumpToDefinition(
   editor: monaco.editor.IStandaloneCodeEditor,
   position: monaco.IPosition,
-  opts: SymbolNavigationOptions
+  opts: SymbolNavigationOptions,
 ): Promise<boolean> {
   const model = editor.getModel();
   if (!model) return false;
@@ -1143,7 +1263,7 @@ export async function jumpToDefinition(
       !(
         loc.uri.toString() === model.uri.toString() &&
         loc.range.startLineNumber === position.lineNumber
-      )
+      ),
   );
 
   // 1. 用户点击定义行本身时，意图为查看该符号在项目中的引用：
@@ -1199,14 +1319,13 @@ export async function jumpToDefinition(
   return false;
 }
 
-
 /**
  * Navigate back: pops the last navigation entry and opens it.
  * If target is within the same open editor, moves cursor & reveals immediately.
  */
 export function navigateBack(
   opts: SymbolNavigationOptions,
-  editor?: monaco.editor.IStandaloneCodeEditor | null
+  editor?: monaco.editor.IStandaloneCodeEditor | null,
 ): boolean {
   let entry = navigationStack.pop();
   if (!entry) {
@@ -1289,7 +1408,7 @@ function textOf(opts: SymbolTextOptions): Translate {
  */
 export function setupCmdClickGesture(
   editor: monaco.editor.IStandaloneCodeEditor,
-  opts: SymbolTextOptions
+  opts: SymbolTextOptions,
 ): { dispose: () => void } {
   const linkDecorations = editor.createDecorationsCollection();
   let currentHoveredWord: string | null = null;
@@ -1620,9 +1739,7 @@ export function setupSymbolNavigation(opts: SymbolNavigationOptions): { dispose:
       if (!event || !event.path) return;
       const models = monaco.editor.getModels();
       const targetModel = models.find(
-        (m) =>
-          (m.uri.fsPath || m.uri.path) === event.path ||
-          m.uri.toString() === event.uri,
+        (m) => (m.uri.fsPath || m.uri.path) === event.path || m.uri.toString() === event.uri,
       );
       if (!targetModel) return;
 
@@ -1680,4 +1797,3 @@ export async function switchSourceHeader(
   }
   return false;
 }
-

@@ -7,7 +7,9 @@ describe('CloneRepoModal utility functions', () => {
     expect(extractRepoName('https://github.com/vuejs/core')).toBe('core');
     expect(extractRepoName('git@github.com:facebook/react.git')).toBe('react');
     expect(extractRepoName('https://gitee.com/antigravity/echoly.git')).toBe('echoly');
-    expect(extractRepoName('https://gitlab.example.com/team/subgroup/my-service.git/')).toBe('my-service');
+    expect(extractRepoName('https://gitlab.example.com/team/subgroup/my-service.git/')).toBe(
+      'my-service',
+    );
     expect(extractRepoName('git://github.com/torvalds/linux.git')).toBe('linux');
     expect(extractRepoName('')).toBe('');
   });

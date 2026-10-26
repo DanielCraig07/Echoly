@@ -110,7 +110,7 @@ public class AppTest {
     ],
   },
 
-  'python': {
+  python: {
     id: 'python',
     name: 'Python (Standard / FastAPI)',
     badge: 'Python',
@@ -230,7 +230,7 @@ testpaths = ["tests"]
     ],
   },
 
-  'go': {
+  go: {
     id: 'go',
     name: 'Go (Module)',
     badge: 'Go',

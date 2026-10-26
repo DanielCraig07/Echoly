@@ -12,6 +12,7 @@ import {
   type LayoutSettings,
   type ProviderConfig,
 } from '@deepseek-ide/shared';
+import { writeFileAtomic } from './atomicWrite';
 
 /**
  * API Key 加密（at-rest）
@@ -148,7 +149,9 @@ function normalize(raw: Partial<AppSettings>): AppSettings {
     minimap: raw.minimap !== false,
     formatOnSave: raw.formatOnSave === true,
     largeFileThresholdBytes:
-      Number(raw.largeFileThresholdBytes) || DEFAULT_SETTINGS.largeFileThresholdBytes || 2 * 1024 * 1024,
+      Number(raw.largeFileThresholdBytes) ||
+      DEFAULT_SETTINGS.largeFileThresholdBytes ||
+      2 * 1024 * 1024,
   };
 }
 
@@ -188,11 +191,7 @@ export class SettingsStore {
     };
     this.cache = normalize(merged);
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    fs.writeFileSync(
-      this.filePath,
-      JSON.stringify(encryptAppSettings(this.cache), null, 2),
-      'utf8',
-    );
+    writeFileAtomic(this.filePath, JSON.stringify(encryptAppSettings(this.cache), null, 2));
     return this.get();
   }
 }

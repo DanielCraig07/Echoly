@@ -81,12 +81,9 @@ async function ghAsset(
     'User-Agent': 'Echoly-Updater',
   };
   if (token) headers.Authorization = `bearer ${token}`;
-  const res = await fetch(
-    `${API_BASE}/repos/${owner}/${repo}/releases/assets/${assetId}`,
-    {
-      headers,
-    },
-  );
+  const res = await fetch(`${API_BASE}/repos/${owner}/${repo}/releases/assets/${assetId}`, {
+    headers,
+  });
   if (!res.ok) throw new Error(`GitHub asset download ${res.status}`);
 
   // 无 content-length 或未传回调时，直接整体读取
@@ -98,7 +95,7 @@ async function ghAsset(
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let loaded = 0;
-  for (; ;) {
+  for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     if (value) {

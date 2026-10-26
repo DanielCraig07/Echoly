@@ -43,13 +43,11 @@ const api: IpcApi = {
   downloadFile: (relPath) => ipcRenderer.invoke('workspace:downloadFile', relPath),
   saveFileDialog: (defaultPath) => ipcRenderer.invoke('dialog:saveFile', defaultPath),
   pickDirectory: () => ipcRenderer.invoke('dialog:pickDirectory'),
-  createProjectFromTemplate: (params) =>
-    ipcRenderer.invoke('project:createFromTemplate', params),
+  createProjectFromTemplate: (params) => ipcRenderer.invoke('project:createFromTemplate', params),
   pickFile: (filters) => ipcRenderer.invoke('dialog:pickFile', filters),
   startAgent: (payload) => ipcRenderer.invoke('agent:start', payload),
   cancelAgent: (runId) => ipcRenderer.invoke('agent:cancel', runId),
-  queueAgentMessage: (runId, message) =>
-    ipcRenderer.invoke('agent:queueMessage', runId, message),
+  queueAgentMessage: (runId, message) => ipcRenderer.invoke('agent:queueMessage', runId, message),
   respondConfirm: (requestId, approved, answer) =>
     ipcRenderer.invoke('agent:respondConfirm', requestId, approved, answer),
   continueAgent: (runId) => ipcRenderer.invoke('agent:continue', runId),
@@ -96,7 +94,8 @@ const api: IpcApi = {
   gitBlameLine: (path: string, line: number) => ipcRenderer.invoke('git:blameLine', path, line),
   gitBlameFile: (path: string) => ipcRenderer.invoke('git:blameFile', path),
   gitShowCommitDiff: (hash, path) => ipcRenderer.invoke('git:showCommitDiff', hash, path),
-  gitShowFileAtRef: (ref: string, path: string) => ipcRenderer.invoke('git:showFileAtRef', ref, path),
+  gitShowFileAtRef: (ref: string, path: string) =>
+    ipcRenderer.invoke('git:showFileAtRef', ref, path),
   gitDiffWithRef: (ref: string, path: string) => ipcRenderer.invoke('git:diffWithRef', ref, path),
   gitCompareBranches: (baseRef: string, targetRef: string) =>
     ipcRenderer.invoke('git:compareBranches', baseRef, targetRef),
@@ -121,8 +120,7 @@ const api: IpcApi = {
   listRemoteDir: (remotePath?: string) => ipcRenderer.invoke('ssh:listRemoteDir', remotePath),
   startSshPortForward: (remotePort: number, localPort?: number) =>
     ipcRenderer.invoke('ssh:startPortForward', remotePort, localPort),
-  stopSshPortForward: (remotePort: number) =>
-    ipcRenderer.invoke('ssh:stopPortForward', remotePort),
+  stopSshPortForward: (remotePort: number) => ipcRenderer.invoke('ssh:stopPortForward', remotePort),
   listSshPortForwards: () => ipcRenderer.invoke('ssh:listPortForwards'),
   createTerminal: (options?: TerminalCreateOptions) =>
     ipcRenderer.invoke('terminal:create', options),
@@ -159,7 +157,8 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('workspace:changed', listener);
   },
   onFsChanged: (cb) => {
-    const listener = (_: Electron.IpcRendererEvent, data: { type: string; path?: string }) => cb(data);
+    const listener = (_: Electron.IpcRendererEvent, data: { type: string; path?: string }) =>
+      cb(data);
     ipcRenderer.on('workspace:fsChanged', listener);
     return () => ipcRenderer.removeListener('workspace:fsChanged', listener);
   },
@@ -237,8 +236,10 @@ const api: IpcApi = {
   dapGetThreads: () => ipcRenderer.invoke('dap:getThreads'),
   dapGetStackTrace: (threadId?: number) => ipcRenderer.invoke('dap:getStackTrace', threadId),
   dapGetScopes: (frameId: number) => ipcRenderer.invoke('dap:getScopes', frameId),
-  dapGetVariables: (variablesReference: number) => ipcRenderer.invoke('dap:getVariables', variablesReference),
-  dapEvaluate: (expression: string, frameId?: number) => ipcRenderer.invoke('dap:evaluate', expression, frameId),
+  dapGetVariables: (variablesReference: number) =>
+    ipcRenderer.invoke('dap:getVariables', variablesReference),
+  dapEvaluate: (expression: string, frameId?: number) =>
+    ipcRenderer.invoke('dap:evaluate', expression, frameId),
   onDapEvent: (cb) => {
     const listener = (_: any, ev: any) => cb(ev);
     ipcRenderer.on('dap:event', listener);
@@ -256,18 +257,30 @@ const api: IpcApi = {
   onJavaInstallProgress: (cb) => {
     const listener = (
       _: Electron.IpcRendererEvent,
-      progress: { id: string; status: 'downloading' | 'extracting' | 'done' | 'error'; percent: number; downloadedBytes?: number; totalBytes?: number; message?: string },
+      progress: {
+        id: string;
+        status: 'downloading' | 'extracting' | 'done' | 'error';
+        percent: number;
+        downloadedBytes?: number;
+        totalBytes?: number;
+        message?: string;
+      },
     ) => cb(progress);
     ipcRenderer.on('java:installProgress', listener);
     return () => ipcRenderer.removeListener('java:installProgress', listener);
   },
   openSystemSettings: (type?: string) => ipcRenderer.invoke('system:openPrivacySettings', type),
-  quickPrompt: (payload: { userPrompt: string; systemPrompt?: string; temperature?: number; maxTokens?: number }) =>
-    ipcRenderer.invoke('ai:quickPrompt', payload),
+  quickPrompt: (payload: {
+    userPrompt: string;
+    systemPrompt?: string;
+    temperature?: number;
+    maxTokens?: number;
+  }) => ipcRenderer.invoke('ai:quickPrompt', payload),
   completeCode: (payload: { prefix: string; suffix: string; language?: string }) =>
     ipcRenderer.invoke('ai:completeCode', payload),
   rulesGet: (workspaceRoot?: string) => ipcRenderer.invoke('rules:get', workspaceRoot),
-  rulesSave: (content: string, workspaceRoot?: string) => ipcRenderer.invoke('rules:save', content, workspaceRoot),
+  rulesSave: (content: string, workspaceRoot?: string) =>
+    ipcRenderer.invoke('rules:save', content, workspaceRoot),
   openExternal: (url: string) => ipcRenderer.invoke('system:openExternal', url),
 
   dbConnect: (options) => ipcRenderer.invoke('db:connect', options),

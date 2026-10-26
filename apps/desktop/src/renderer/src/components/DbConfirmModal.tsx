@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { MarkdownMessage } from './MarkdownMessage';
 import { isTypingConfirmed, type DbConfirmTone } from '../services/dbConfirmContent';
 import { useI18n } from '../i18n';
@@ -11,6 +15,15 @@ export interface DbConfirmInput {
   label?: string;
   defaultValue?: string;
   placeholder?: string;
+  /**
+   * 允许留空提交。
+   *
+   * 默认是**不允许**：绝大多数收集输入的场景（新建库名、重命名、收藏命名）
+   * 用空值确认出来的是一个没法用、又看不出哪里错的空名字。但有一类场景空字符串
+   * 恰好是合法取值 —— 条件断点的「留空转为普通断点」就是典型。
+   * 所以做成显式开关，而不是把默认放宽。
+   */
+  allowEmpty?: boolean;
   /** 返回中文错误信息则禁止确认；返回 null 表示合法 */
   validate?: (value: string) => string | null;
 }
@@ -102,7 +115,8 @@ export function DbConfirmModal({
 
   const inputError = input?.validate ? input.validate(typed) : null;
   const typingOk = requireTyping === undefined || isTypingConfirmed(requireTyping, typed);
-  const canConfirm = typingOk && !inputError && (!input || typed.trim().length > 0);
+  const canConfirm =
+    typingOk && !inputError && (!input || input.allowEmpty === true || typed.trim().length > 0);
   const danger = tone === 'danger';
 
   const submit = () => {
@@ -203,7 +217,16 @@ export function DbConfirmModal({
             onClick={onCancel}
             title={t('db.closeEsc')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -231,8 +254,7 @@ export function DbConfirmModal({
         {(input || requireTyping !== undefined) && (
           <div className="db-confirm-typing">
             <div className="db-confirm-typing-hint">
-              {input?.label ??
-                t('db.typeToConfirm', { name: requireTyping ?? '' })}
+              {input?.label ?? t('db.typeToConfirm', { name: requireTyping ?? '' })}
             </div>
             <input
               type="text"
@@ -283,9 +305,7 @@ export function DbConfirmModal({
             onClick={submit}
             disabled={!canConfirm}
             title={
-              !canConfirm
-                ? t('db.completeInputAbove')
-                : t('db.labelEnter', { label: confirmText })
+              !canConfirm ? t('db.completeInputAbove') : t('db.labelEnter', { label: confirmText })
             }
           >
             {confirmText}

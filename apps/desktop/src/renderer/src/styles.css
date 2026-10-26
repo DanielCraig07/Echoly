@@ -468,7 +468,9 @@ select:focus {
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   border-radius: 6px;
   padding: 4px 0;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.75),
+    0 2px 8px rgba(0, 0, 0, 0.4);
   min-width: 240px;
   z-index: 9999;
   backdrop-filter: blur(16px);
@@ -1593,8 +1595,8 @@ select:focus {
   position: relative;
 }
 
-.middle-column:has(.context-view:not([style*="display: none"])),
-.middle-column:has(.monaco-menu-container:not([style*="display: none"])),
+.middle-column:has(.context-view:not([style*='display: none'])),
+.middle-column:has(.monaco-menu-container:not([style*='display: none'])),
 .middle-column:has(.monaco-submenu),
 body.monaco-context-menu-active .middle-column {
   z-index: 100 !important;
@@ -1808,8 +1810,6 @@ body.resizing.resizing-row {
   flex-shrink: 0;
 }
 
-
-
 /* ── Gitignored Files & Folders: Muted / Dimmed appearance ── */
 .file-node.is-git-ignored {
   opacity: 0.52;
@@ -1987,7 +1987,6 @@ body.resizing.resizing-row {
     0 4px 14px rgba(0, 0, 0, 0.6),
     0 0 0 1px rgba(255, 255, 255, 0.1) !important;
 }
-
 
 /* ── Monaco Editor Native Context Menu Refinement ─────────────────── */
 :root {
@@ -2419,7 +2418,9 @@ span.keybinding {
 /* ── Monaco Editor Native Quick Input / Command Palette Refinement ─── */
 .quick-input-widget {
   border-radius: 8px !important;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  box-shadow:
+    0 20px 48px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(255, 255, 255, 0.1) !important;
   background: #141414 !important;
   background-color: #141414 !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -2434,7 +2435,9 @@ span.keybinding {
 [data-theme='light'] .quick-input-widget {
   background: #ffffff !important;
   background-color: #ffffff !important;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, 0.16),
+    0 0 0 1px rgba(0, 0, 0, 0.1) !important;
   color: #1f2937 !important;
 }
 
@@ -2462,7 +2465,9 @@ span.keybinding {
 
 .quick-input-widget .quick-input-list .monaco-list-row {
   border-radius: 5px !important;
-  transition: background 0.08s ease, color 0.08s ease !important;
+  transition:
+    background 0.08s ease,
+    color 0.08s ease !important;
   margin: 1px 4px !important;
   padding: 0 6px !important;
   cursor: pointer !important;
@@ -3037,7 +3042,10 @@ span.keybinding {
   display: block;
   flex-shrink: 0;
   animation: dirtyDotAppear 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  transition: transform 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .tab .tab-close-btn:hover .dirty-dot {
@@ -3642,7 +3650,9 @@ span.keybinding {
   background: var(--bg-surface, #1e1e24);
   border: 1px solid var(--border, #33333e);
   border-radius: 12px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.4),
+    0 2px 8px rgba(0, 0, 0, 0.25);
   padding: 14px 16px;
   backdrop-filter: blur(16px);
   color: var(--text-main, #e2e8f0);
@@ -4749,146 +4759,6 @@ span.keybinding {
 [data-theme='light'] .md-toc-item:hover .md-toc-bullet {
   background: #0284c7;
   box-shadow: 0 0 6px rgba(2, 132, 199, 0.5);
-}
-
-/* ── Reasoning step (intermediate assistant message before tool call) ── */
-/* Cursor-style: subtle pill toggle, animated state dot, smooth expand */
-.reasoning-step {
-  font-size: 12px;
-  margin: 2px 0;
-}
-
-.reasoning-step-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.reasoning-step-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11.5px;
-  cursor: pointer;
-  border-radius: 6px;
-  max-width: 100%;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.reasoning-step-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.reasoning-step.open .reasoning-step-toggle {
-  background: var(--bg-hover);
-}
-
-.reasoning-step-dot {
-  flex-shrink: 0;
-  font-size: 8px;
-  color: var(--accent);
-  opacity: 0.7;
-}
-
-.reasoning-step-label {
-  font-size: 11.5px;
-  font-weight: 500;
-  opacity: 0.85;
-  white-space: nowrap;
-}
-
-.reasoning-step-preview {
-  margin-left: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  opacity: 0.55;
-  max-width: 220px;
-}
-
-.reasoning-step-chevron {
-  flex-shrink: 0;
-  font-size: 8px;
-  opacity: 0.45;
-  transition: transform 0.15s ease;
-}
-
-.reasoning-step-ellipsis {
-  display: inline-flex;
-  gap: 2px;
-  align-items: center;
-  margin-left: 2px;
-}
-
-.ellipsis-dot {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: 0.4;
-  animation: reasoningPulse 1.4s infinite;
-}
-
-.ellipsis-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-.ellipsis-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes reasoningPulse {
-  0%,
-  80%,
-  100% {
-    opacity: 0.2;
-    transform: scale(0.8);
-  }
-  40% {
-    opacity: 0.7;
-    transform: scale(1);
-  }
-}
-
-.reasoning-step-body {
-  margin: 2px 0 2px 9px;
-  padding: 6px 12px;
-  border-left: 2px solid var(--border);
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 260px;
-  overflow-y: auto;
-  animation: reasoningBodyIn 0.15s ease-out;
-}
-
-.reasoning-step-body pre {
-  margin: 0;
-  font-family: inherit;
-  font-size: inherit;
-  color: inherit;
-  white-space: pre-wrap;
-}
-
-@keyframes reasoningBodyIn {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* ── Tool call card (esp. run_terminal) ── */
@@ -6003,7 +5873,10 @@ span.keybinding {
   padding: 2px 4px 2px 7px;
   cursor: pointer;
   user-select: none;
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    box-shadow 0.12s;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
   max-width: 280px;
 }
@@ -6056,7 +5929,9 @@ span.keybinding {
   padding: 0;
   margin-left: 1px;
   flex-shrink: 0;
-  transition: background 0.1s, color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s;
 }
 
 .chat-ref-chip-remove:hover {
@@ -6088,7 +5963,10 @@ span.keybinding {
   -webkit-user-drag: none;
   line-height: 1.4;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.1s;
 }
 
 .chat-code-ref-pill:hover {
@@ -6321,7 +6199,9 @@ span.keybinding {
   padding: 4px 8px;
   min-height: 36px;
   box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .remote-dir-path-box:focus-within {
@@ -6632,7 +6512,9 @@ span.keybinding {
   border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
   user-select: none;
 }
 
@@ -6825,7 +6707,10 @@ span.keybinding {
   justify-content: center;
   color: var(--muted);
   opacity: 0.45;
-  transition: opacity 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
   user-select: none;
   z-index: 30;
   touch-action: none;
@@ -7103,11 +6988,9 @@ span.keybinding {
   overflow: hidden !important;
 }
 
-
-
 .terminal-host.no-wrap {
   overflow-x: auto !important;
-  overflow-y: hidden !important;  /* xterm-viewport 内部负责纵向滚动，host 不产生额外纵向滚动条 */
+  overflow-y: hidden !important; /* xterm-viewport 内部负责纵向滚动，host 不产生额外纵向滚动条 */
 }
 
 .terminal-host.no-wrap .xterm {
@@ -7185,8 +7068,8 @@ span.keybinding {
 
 /* 不换行模式：横向滚动条（只有水平方向，纵向由 xterm-viewport 负责） */
 .terminal-host.no-wrap::-webkit-scrollbar {
-  height: 8px !important;   /* 横向滚动条高度 */
-  width: 0 !important;      /* 禁止 host 产生纵向滚动条，避免与 xterm-viewport 的滚动条重叠 */
+  height: 8px !important; /* 横向滚动条高度 */
+  width: 0 !important; /* 禁止 host 产生纵向滚动条，避免与 xterm-viewport 的滚动条重叠 */
 }
 
 .terminal-host.no-wrap::-webkit-scrollbar-track {
@@ -8002,7 +7885,7 @@ span.keybinding {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.72);
   font-size: 11.5px;
-  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   user-select: none;
   padding: 0 8px 0 0;
   flex-shrink: 0;
@@ -8095,7 +7978,9 @@ span.keybinding {
 
 .status-sync-btn svg {
   transform-origin: center center;
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease;
+  transition:
+    transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    color 0.15s ease;
 }
 
 .status-sync-btn:hover svg {
@@ -8244,8 +8129,8 @@ span.keybinding {
 }
 
 .terminal-host .xterm-viewport::-webkit-scrollbar {
-  width: 10px !important;   /* 纵向滚动条宽度，与编辑区滚动条接近 */
-  height: 0 !important;     /* xterm-viewport 不产生横向滚动条 */
+  width: 10px !important; /* 纵向滚动条宽度，与编辑区滚动条接近 */
+  height: 0 !important; /* xterm-viewport 不产生横向滚动条 */
 }
 
 .terminal-host .xterm-viewport::-webkit-scrollbar-track {
@@ -8255,7 +8140,7 @@ span.keybinding {
 .terminal-host .xterm-viewport::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.22) !important;
   border-radius: 4px !important;
-  border: 2px solid transparent !important;  /* 视觉收窄，轨道空间更宽 */
+  border: 2px solid transparent !important; /* 视觉收窄，轨道空间更宽 */
   background-clip: content-box !important;
 }
 
@@ -8370,7 +8255,6 @@ span.keybinding {
   animation: gitModalFadeIn 0.15s ease-out;
   user-select: none;
 }
-
 
 .settings-modal.modern-settings {
   width: min(920px, 94vw);
@@ -8532,6 +8416,17 @@ span.keybinding {
   min-height: 0;
   overflow-y: auto;
   padding: 20px 24px 72px;
+  /* 整个应用的字号基线是 `--ui-font-size`（12px），但 `html/body/#root` 上并没有声明
+     font-size —— 于是任何不自带 font-size 的规则都会退回浏览器默认的 16px。
+     设置页这条继承链（.settings-modal → .settings-layout → .settings-content →
+     .settings-panel-section → .panel-title-bar）过去一级都没写，正文就比周围界面大一号；
+     而 `.settings-modal button` 又单独把按钮压回 12px，同一屏里两种字号并存，
+     看起来就像布局坏了（MCP 页最明显）。
+     基线放在这里而不是 `.settings-modal` 上：`SwitchWorkspaceModal` /
+     `UnsavedChangesModal` 共用 `settings-modal` 类但不用 `settings-content`，
+     写在外层会连带改掉那两个弹窗的字号。 */
+  font-size: var(--ui-font-size, 12px);
+  line-height: 1.5;
 }
 
 /* 软件更新页：让「立即检查更新」按钮与结果提示区域有足够底部间距，
@@ -9468,6 +9363,355 @@ span.keybinding {
   line-height: 1.4;
 }
 
+/* ── MCP 服务器页（设置 → MCP）─────────────────────────────────────────────
+   JSX 里 19 个 `mcp-*` 类此前**一条规则都没有**（`git log --all -S` 查过，从没写过）。
+   最直接的症状：`.mcp-field` 是个 `<label>`，而 `<label>` 默认 `display: inline`，
+   于是「标识 (id)」这类字段名和它下面的 `<input>` 排在同一行上互相压着 ——
+   不是字号问题，是根本没有布局。下面按现有卡片（`.setting-card` / `.edit-section`）
+   的语汇补齐。 */
+
+.mcp-security-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+}
+
+.mcp-security-note strong {
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 600;
+}
+
+.mcp-security-note b {
+  /* 句中强调（「父进程权限」「不写入磁盘」这类）—— 用前景色提亮，
+     不用 <b> 的默认加粗：11.5px 下中文加粗会糊成一团 */
+  color: var(--warn);
+  font-weight: 500;
+}
+
+.mcp-server-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mcp-server-card {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mcp-server-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  min-height: 38px;
+  box-sizing: border-box;
+}
+
+/* 下面三条按钮规则一律带 `.settings-modal ` 前缀：`.settings-modal button`
+   （0,1,1）比单个类名（0,1,0）权重大，不加前缀的话 `padding: 5px 10px` 会把这里的
+   padding 覆盖掉 —— 展开箭头的点击区、删除按钮的紧凑尺寸都会变形。 */
+.settings-modal .mcp-server-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: inherit;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.settings-modal .mcp-server-toggle:hover {
+  background: none;
+  color: #fff;
+}
+
+.mcp-server-toggle strong {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 连接状态点：颜色是唯一区分，所以四个态都走变量而不是写死色值，
+   浅色主题下才能跟着 --ok / --warn 一起变深 */
+.mcp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+
+.mcp-dot.connecting {
+  background: var(--warn);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.mcp-dot.ready {
+  background: var(--ok);
+}
+
+.mcp-dot.error {
+  background: var(--danger);
+}
+
+.mcp-pill {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mcp-pill.ok {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.mcp-pill.warn {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+.mcp-caret {
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.mcp-server-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.mcp-enable-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mcp-enable-label input[type='checkbox'] {
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  accent-color: var(--accent, #007acc);
+  cursor: pointer;
+}
+
+.settings-modal .mcp-danger-btn {
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  background: var(--bg-danger-btn);
+  border: 1px solid var(--border-danger-btn);
+  color: var(--danger-text);
+}
+
+.settings-modal .mcp-danger-btn:hover {
+  border-color: var(--danger);
+}
+
+.mcp-error-box {
+  margin: 0 12px 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.mcp-error-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--danger);
+  margin-bottom: 4px;
+}
+
+.mcp-error-msg {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--danger-text);
+  word-break: break-word;
+}
+
+.mcp-stderr {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  max-height: 140px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+}
+
+.mcp-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* 关键的一条：`<label>` 默认是 inline，不改成列向 flex 的话字段名会和
+   输入框叠在同一行上（截图里的错位就是这么来的） */
+.mcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mcp-field > span {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.mcp-field input,
+.mcp-field select,
+.mcp-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12px;
+}
+
+.mcp-field textarea {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.mcp-field > em {
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.mcp-field > em code {
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.mcp-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 2px;
+}
+
+.settings-modal .mcp-save-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 5px;
+  color: #fff;
+  background: var(--accent, #007acc);
+  border: none;
+}
+
+.settings-modal .mcp-save-btn:hover {
+  background: #008be5;
+}
+
+[data-theme='light'] .mcp-security-note {
+  color: rgba(60, 40, 70, 0.65);
+  background: rgba(130, 49, 142, 0.05);
+  border-color: rgba(130, 49, 142, 0.18);
+}
+
+[data-theme='light'] .mcp-security-note strong {
+  color: rgba(40, 30, 50, 0.85);
+}
+
+[data-theme='light'] .mcp-server-card {
+  background: rgba(130, 49, 142, 0.035);
+  border-color: rgba(130, 49, 142, 0.14);
+}
+
+[data-theme='light'] .mcp-caret,
+[data-theme='light'] .mcp-enable-label,
+[data-theme='light'] .mcp-field > span,
+[data-theme='light'] .mcp-field > em {
+  color: rgba(60, 40, 70, 0.6);
+}
+
+[data-theme='light'] .mcp-stderr {
+  color: rgba(40, 30, 50, 0.7);
+  background: rgba(130, 49, 142, 0.06);
+}
+
+[data-theme='light'] .mcp-editor {
+  background: rgba(130, 49, 142, 0.03);
+  border-top-color: rgba(130, 49, 142, 0.12);
+}
+
+[data-theme='light'] .mcp-editor-footer {
+  border-top-color: rgba(130, 49, 142, 0.12);
+}
+
+/* 空状态里的示例命令行（技能页 / MCP 页共用）。
+   刻意用 `display: block` + `text-align: center` 而不是 flex+gap：正文是
+   `translateSegments` 按占位符切成的一串 `<span>`/`<code>` 片段，flex 的 gap
+   会在**每个**片段之间塞 6px，连标点前后也塞，读起来是断开的。
+   让文字自然流动，只给 `<code>` 自己留内边距。 */
+.empty-sub {
+  display: block;
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.empty-sub code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.65);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme='light'] .empty-sub {
+  color: rgba(60, 40, 70, 0.6);
+}
+
+[data-theme='light'] .empty-sub code {
+  color: rgba(40, 30, 50, 0.8);
+  background: rgba(130, 49, 142, 0.08);
+}
+
 /* 底部统一保存 Footer */
 .settings-footer-bar {
   display: flex;
@@ -9659,14 +9903,24 @@ span.keybinding {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.8), rgba(99, 102, 241, 0.8), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(168, 85, 247, 0.8),
+    rgba(99, 102, 241, 0.8),
+    transparent
+  );
   background-size: 200% 100%;
   animation: thinkingShimmer 3s ease-in-out infinite;
 }
 
 @keyframes thinkingShimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 .thinking-header {
@@ -10622,6 +10876,20 @@ button.welcome-recent-remove:hover {
   user-select: none;
 }
 
+/**
+ * 紧凑变体：用在提交列表这种「一行里还要塞图标按钮」的密集场景。
+ *
+ * 尺寸走 CSS 而不是内联 style —— 内联尺寸会盖过 .panel-action-btn 的统一规格
+ * （26x26 + hover 1.05 / active 0.95），同一个按钮在面板工具栏与列表里长得不一样，
+ * 而且以后调规格时要满仓库找 inline。见 CLAUDE.md「UI 规范与按钮交互」。
+ */
+.panel-action-btn--compact {
+  margin: 0 4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 2px;
+}
+
 .panel-action-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
@@ -10637,7 +10905,9 @@ button.welcome-recent-remove:hover {
 /* ── Panel Header Chevron & Title Styles ────────────────────────── */
 .panel-chevron-icon {
   color: rgba(255, 255, 255, 0.65);
-  transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1), color 0.15s ease;
+  transition:
+    transform 0.15s cubic-bezier(0.2, 0, 0, 1),
+    color 0.15s ease;
   user-select: none;
 }
 
@@ -10796,7 +11066,6 @@ button.welcome-recent-remove:hover {
   border-color: rgba(37, 99, 235, 0.5);
 }
 
-
 /* ── Maven Toolbar Action Buttons (Matching Git Header Standard) ── */
 .maven-toolbar-btn {
   display: inline-flex;
@@ -10857,7 +11126,9 @@ button.welcome-recent-remove:hover {
   background: transparent;
   color: var(--text);
   font-size: 12.5px;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
   margin: 1px 0;
 }
 
@@ -10883,7 +11154,9 @@ button.welcome-recent-remove:hover {
   cursor: pointer;
   font-size: 12px;
   border: 1px solid transparent;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .maven-tree-leaf:hover {
@@ -10904,7 +11177,9 @@ button.welcome-recent-remove:hover {
   box-sizing: border-box;
   color: var(--text);
   font-size: 12.5px;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
   margin: 1px 0;
 }
 
@@ -10915,7 +11190,10 @@ button.welcome-recent-remove:hover {
 /* 动作按钮默认隐藏，hover 或键盘聚焦时才出现，避免树行过于嘈杂 */
 .db-tree-row .panel-action-btn {
   opacity: 0;
-  transition: opacity 0.12s ease, background 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.12s ease,
+    background 0.15s ease,
+    transform 0.15s ease;
 }
 
 .db-tree-row:hover .panel-action-btn,
@@ -10990,7 +11268,9 @@ button.welcome-recent-remove:hover {
   color: var(--text);
   font: inherit;
   cursor: pointer;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
 /* 表头只显示字段名：类型太长会把列名挤成省略号，它已移到 title 里。
@@ -11585,7 +11865,9 @@ body.db-col-resizing .db-data-cell {
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    background 0.12s ease;
 }
 
 .panel-select-btn:hover:not(:disabled) {
@@ -12013,7 +12295,10 @@ body.db-col-resizing .db-data-cell {
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
 }
 
 .db-btn-undo {
@@ -12317,7 +12602,9 @@ body.db-col-resizing .db-data-cell {
   color: var(--muted);
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 
 .db-segmented-btn:hover {
@@ -12528,7 +12815,6 @@ body.db-col-resizing .db-data-cell {
   color: #4ade80;
 }
 
-
 /* ── Panel Header Text Action Button (如 "暂存全部", "取消暂存全部") ── */
 .panel-text-btn {
   display: inline-flex;
@@ -12601,7 +12887,9 @@ body.db-col-resizing .db-data-cell {
   font-size: 12px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
   user-select: none;
   box-sizing: border-box;
   outline: none;
@@ -12737,7 +13025,10 @@ body.db-col-resizing .db-data-cell {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   border-radius: 6px;
   box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
 }
 
 .search-input-wrapper:hover {
@@ -12779,7 +13070,10 @@ body.db-col-resizing .db-data-cell {
   font-size: 12px;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
 }
 
 .search-filter-input:hover {
@@ -12860,7 +13154,10 @@ body.db-col-resizing .db-data-cell {
   border-radius: 7px;
   padding-right: 86px;
   box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
 }
 
 .terminal-search-input-container:hover {
@@ -12928,7 +13225,6 @@ body.db-col-resizing .db-data-cell {
   align-items: center;
   gap: 3px;
 }
-
 
 .mode-switch {
   display: flex;
@@ -13062,7 +13358,9 @@ body.db-col-resizing .db-data-cell {
   background: var(--bg-elevated, #1c1d22);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 16px 36px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
   z-index: 1050;
   padding: 6px;
   backdrop-filter: blur(16px);
@@ -13110,7 +13408,9 @@ body.db-col-resizing .db-data-cell {
   justify-content: space-between;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
   user-select: none;
   gap: 8px;
   color: var(--fg, #e6edf3);
@@ -13193,7 +13493,6 @@ body.db-col-resizing .db-data-cell {
   background: var(--border);
   margin: 4px 6px;
 }
-
 
 .primary-btn-sm {
   background: var(--accent);
@@ -14359,7 +14658,9 @@ body.db-col-resizing .db-data-cell {
   position: absolute !important;
   background-color: transparent !important;
   border-left: 2px solid transparent !important;
-  transition: border-color 0.15s ease, background-color 0.15s ease !important;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease !important;
   --vscode-sash-hover-size: 0px !important;
   --vscode-sash-hoverBorder: transparent !important;
 }
@@ -14800,7 +15101,6 @@ body.db-col-resizing .db-data-cell {
   border-color: rgba(255, 255, 255, 0.28) !important;
   color: #ffffff !important;
 }
-
 
 .monaco-editor .find-widget .button.disabled,
 .monaco-editor .find-widget .disabled,
@@ -15964,7 +16264,6 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   gap: 2px;
 }
 
-
 .open-ws-recent-name-wrap {
   display: flex;
   align-items: center;
@@ -16533,7 +16832,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: linear-gradient(135deg, rgba(217, 119, 6, 0.1) 0%, rgba(245, 158, 11, 0.04) 100%);
   border: 1px solid rgba(245, 158, 11, 0.25);
   border-radius: 12px;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .ext-hero-card:hover {
@@ -16787,7 +17088,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
 }
 
 .ext-logs-toggle-btn:hover {
@@ -18662,7 +18965,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(0, 0, 0, 0.25);
   z-index: 9999;
   overflow: hidden;
   animation: fadeIn 0.12s ease;
@@ -18699,7 +19004,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   font-size: 11.5px;
   color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
 }
 
 .status-popover-item:hover {
@@ -18728,7 +19035,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   color: #ffffff;
   outline: none;
   margin-bottom: 8px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .status-goto-input:focus {
@@ -18766,7 +19075,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   padding: 4px 10px;
   font-size: 11.5px;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .status-goto-cancel-btn:hover {
@@ -18804,7 +19115,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(0, 0, 0, 0.25);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(0, 0, 0, 0.25);
   z-index: 9999;
   overflow: hidden;
   animation: fadeIn 0.12s ease;
@@ -18891,8 +19204,12 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Monaco Inline Git Blame (IDEA / GitLens 质感)
@@ -18923,7 +19240,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 /* 当正在展示 Monaco 幽灵代码补全建议 (ghost-text) 时，隐藏 Git Blame 杜绝重叠干扰 */
 body.has-active-ghost-text .monaco-inline-git-blame,
 .monaco-editor:has(.ghost-text) .monaco-inline-git-blame,
-.monaco-editor:has([class*="ghost-text"]) .monaco-inline-git-blame,
+.monaco-editor:has([class*='ghost-text']) .monaco-inline-git-blame,
 .monaco-editor:has(.inline-completions-view) .monaco-inline-git-blame,
 .monaco-editor.has-ghost-text .monaco-inline-git-blame {
   opacity: 0 !important;
@@ -20750,7 +21067,9 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .debug-breakpoint-glyph.debug-breakpoint-conditional {
   background: radial-gradient(circle, #f59e0b 35%, #ef4444 80%) !important;
-  box-shadow: 0 0 6px #f59e0b, 0 0 10px rgba(245, 158, 11, 0.4) !important;
+  box-shadow:
+    0 0 6px #f59e0b,
+    0 0 10px rgba(245, 158, 11, 0.4) !important;
 }
 
 /* Monaco 编辑器停顿行黄色高亮与箭头标记 */
@@ -20787,7 +21106,9 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.3);
   animation: debugToolbarSlideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -20997,7 +21318,9 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   color: var(--text);
   outline: none;
   width: 130px;
-  transition: width 0.15s ease, border-color 0.15s ease;
+  transition:
+    width 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .problems-search-input:focus {
@@ -21052,7 +21375,9 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   background: var(--bg-modal, #141414);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
-  box-shadow: 0 24px 64px -8px rgba(0, 0, 0, 0.8), 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 24px 64px -8px rgba(0, 0, 0, 0.8),
+    0 4px 16px rgba(0, 0, 0, 0.4);
   padding: 16px 20px;
   box-sizing: border-box;
   display: flex;
@@ -21151,7 +21476,10 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   border-radius: 6px;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
   user-select: none;
   box-sizing: border-box;
 }
@@ -21334,16 +21662,30 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 /* 激活选中状态高亮 (优雅 AI 渐变光环) */
 .action-widget .monaco-list .monaco-list-row.action.focused:not(.option-disabled),
 .action-widget .monaco-list .monaco-list-row.action.selected:not(.option-disabled) {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.28) 0%, rgba(147, 51, 234, 0.28) 100%) !important;
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.28) 0%,
+    rgba(147, 51, 234, 0.28) 100%
+  ) !important;
   border: 1px solid rgba(96, 165, 250, 0.45) !important;
   color: #ffffff !important;
   box-shadow: 0 2px 10px rgba(59, 130, 246, 0.2) !important;
   outline: none !important;
 }
 
-[data-theme='light'] .action-widget .monaco-list .monaco-list-row.action.focused:not(.option-disabled),
-[data-theme='light'] .action-widget .monaco-list .monaco-list-row.action.selected:not(.option-disabled) {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.16) 0%, rgba(147, 51, 234, 0.16) 100%) !important;
+[data-theme='light']
+  .action-widget
+  .monaco-list
+  .monaco-list-row.action.focused:not(.option-disabled),
+[data-theme='light']
+  .action-widget
+  .monaco-list
+  .monaco-list-row.action.selected:not(.option-disabled) {
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.16) 0%,
+    rgba(147, 51, 234, 0.16) 100%
+  ) !important;
   border: 1px solid rgba(59, 130, 246, 0.4) !important;
   color: #1e3a8a !important;
 }
@@ -21386,7 +21728,9 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 /* 编辑区代码行侧边栏与小灯泡微动效 */
 .monaco-editor .lightBulbWidget {
   filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.55)) !important;
-  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), filter 0.15s ease !important;
+  transition:
+    transform 0.15s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.15s ease !important;
 }
 
 .monaco-editor .lightBulbWidget:hover {
@@ -21440,7 +21784,10 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .toast-drawer-item {
   animation: toastDrawerSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 /* ── New Project Wizard Modal ── */
@@ -21490,7 +21837,9 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   font-size: 12.5px;
   font-family: var(--font-mono, monospace);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .wizard-form-input:hover {
@@ -21547,4 +21896,3 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 .browser-drawer-resizer.is-dragging .browser-drawer-resizer-handle {
   background: #ffffff !important;
 }
-

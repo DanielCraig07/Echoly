@@ -71,27 +71,26 @@ export function IconInspectElement({ active }: { active?: boolean }) {
  * 且后续 React reconciler 绝不触碰 webview 的 src 属性，彻底杜绝误重载。
  */
 const WebviewInner = React.memo(
-  React.forwardRef<HTMLWebViewElement, { initialSrc: string; isNewTab?: boolean }>(function WebviewInner(
-    { initialSrc, isNewTab },
-    ref,
-  ) {
-    return (
-      <webview
-        ref={ref as any}
-        src={initialSrc || 'about:blank'}
-        partition="persist:echoly-browser"
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          border: 'none',
-          backgroundColor: isNewTab ? 'transparent' : '#ffffff',
-          colorScheme: isNewTab ? 'dark' : 'normal',
-        }}
-        allowpopups={true}
-      />
-    );
-  }),
+  React.forwardRef<HTMLWebViewElement, { initialSrc: string; isNewTab?: boolean }>(
+    function WebviewInner({ initialSrc, isNewTab }, ref) {
+      return (
+        <webview
+          ref={ref as any}
+          src={initialSrc || 'about:blank'}
+          partition="persist:echoly-browser"
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            border: 'none',
+            backgroundColor: isNewTab ? 'transparent' : '#ffffff',
+            colorScheme: isNewTab ? 'dark' : 'normal',
+          }}
+          allowpopups={true}
+        />
+      );
+    },
+  ),
 );
 
 export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
@@ -180,7 +179,12 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
     }
 
     // 8. 若当前处在新标签页（无活动站点）且输入不具备路径或域名特征，判定为搜索意图
-    if ((!currentUrl || currentUrl === 'about:blank') && !u.includes('.') && !u.includes('/') && !u.includes(':')) {
+    if (
+      (!currentUrl || currentUrl === 'about:blank') &&
+      !u.includes('.') &&
+      !u.includes('/') &&
+      !u.includes(':')
+    ) {
       return `https://www.google.com/search?q=${encodeURIComponent(u)}`;
     }
 
@@ -469,7 +473,6 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           setTimeout(() => {
             syncDevToolsBounds();
           }, 240);
-
         }
       }
     };
@@ -998,7 +1001,12 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
     const spaRouteCheckTimer = setInterval(() => {
       try {
         const u = wv.getURL?.();
-        if (u && !u.startsWith('about:blank') && !u.startsWith('chrome-error://') && !u.startsWith('devtools://')) {
+        if (
+          u &&
+          !u.startsWith('about:blank') &&
+          !u.startsWith('chrome-error://') &&
+          !u.startsWith('devtools://')
+        ) {
           syncCurrentUrl(u);
         }
       } catch {}
@@ -1089,7 +1097,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             onClick={() => webviewRef.current?.goBack?.()}
             style={{ opacity: canGoBack ? 1 : 0.4 }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="15 18 9 12 15 6" />
             </svg>
           </button>
@@ -1101,7 +1116,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             onClick={() => webviewRef.current?.goForward?.()}
             style={{ opacity: canGoForward ? 1 : 0.4 }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="9 18 15 12 9 6" />
             </svg>
           </button>
@@ -1115,12 +1137,26 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             }}
           >
             {isLoading ? (
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             ) : (
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M23 4v6h-6" />
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
               </svg>
@@ -1132,7 +1168,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             title={t('browser.home')}
             onClick={handleGoHome}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
@@ -1144,7 +1187,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             title={t('browser.newTabTitle')}
             onClick={handleCreateNewTab}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
@@ -1173,12 +1223,26 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             }}
           >
             {currentUrl.startsWith('https://') ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
             ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <circle cx="12" cy="12" r="10" />
                 <line x1="2" y1="12" x2="22" y2="12" />
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
@@ -1255,7 +1319,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             title={t('browser.quotePageTitle')}
             onClick={handleQuotePageToChat}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               <line x1="9" y1="10" x2="15" y2="10" />
               <line x1="12" y1="7" x2="12" y2="13" />
@@ -1266,11 +1337,21 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className={`panel-action-btn ${isDevToolsOpen ? 'active' : ''}`}
-            title={isDevToolsOpen ? t('browser.devtoolsCloseTitle') : t('browser.devtoolsOpenTitle')}
+            title={
+              isDevToolsOpen ? t('browser.devtoolsCloseTitle') : t('browser.devtoolsOpenTitle')
+            }
             onClick={toggleGoogleDevTools}
             style={{ position: 'relative' }}
           >
-            <svg style={{ pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              style={{ pointerEvents: 'none' }}
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="4 17 10 11 4 5" />
               <line x1="12" y1="19" x2="20" y2="19" />
             </svg>
@@ -1290,7 +1371,6 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             )}
           </button>
 
-
           {/* 密码管理器与自动回填快捷入口 */}
           <button
             ref={passwordBtnRef}
@@ -1306,7 +1386,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               color: siteCredentials.length > 0 ? '#38bdf8' : undefined,
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <circle cx="7.5" cy="15.5" r="4.5" />
               <path d="M21 2l-9.6 9.6" />
               <path d="M15.5 7.5l3 3" />
@@ -1326,7 +1413,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               }
             }}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
               <polyline points="15 3 21 3 21 9" />
               <line x1="10" y1="14" x2="21" y2="3" />
@@ -1413,8 +1507,23 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               boxSizing: 'border-box',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 12,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontWeight: 600,
+                  fontSize: 13,
+                }}
+              >
                 <span style={{ fontSize: 16 }}>🔑</span>
                 <span>
                   {pendingPasswordPrompt.isUpdate
@@ -1432,20 +1541,37 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               </button>
             </div>
 
-            <div style={{ fontSize: 12, color: 'var(--muted, #9ca3af)', marginBottom: 10, wordBreak: 'break-all' }}>
-              {t('browser.siteLabel')}<strong style={{ color: '#e5e7eb' }}>{pendingPasswordPrompt.origin}</strong>
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--muted, #9ca3af)',
+                marginBottom: 10,
+                wordBreak: 'break-all',
+              }}
+            >
+              {t('browser.siteLabel')}
+              <strong style={{ color: '#e5e7eb' }}>{pendingPasswordPrompt.origin}</strong>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
               <div>
-                <label style={{ fontSize: 11, color: 'var(--muted, #9ca3af)', display: 'block', marginBottom: 3 }}>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--muted, #9ca3af)',
+                    display: 'block',
+                    marginBottom: 3,
+                  }}
+                >
                   {t('browser.accountLabel')}
                 </label>
                 <input
                   type="text"
                   value={pendingPasswordPrompt.username}
                   onChange={(e) =>
-                    setPendingPasswordPrompt((prev) => (prev ? { ...prev, username: e.target.value } : null))
+                    setPendingPasswordPrompt((prev) =>
+                      prev ? { ...prev, username: e.target.value } : null,
+                    )
                   }
                   placeholder={t('browser.accountPh')}
                   style={{
@@ -1464,7 +1590,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               </div>
 
               <div>
-                <label style={{ fontSize: 11, color: 'var(--muted, #9ca3af)', display: 'block', marginBottom: 3 }}>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--muted, #9ca3af)',
+                    display: 'block',
+                    marginBottom: 3,
+                  }}
+                >
                   {t('browser.passwordLabel')}
                 </label>
                 <input
@@ -1487,7 +1620,9 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+            <div
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}
+            >
               <button
                 type="button"
                 className="btn secondary"
@@ -1554,104 +1689,165 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 boxSizing: 'border-box',
               }}
             >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13 }}>
-                <span>🔑</span>
-                <span>{t('browser.savedPasswords', { n: siteCredentials.length })}</span>
-              </div>
-              <button
-                type="button"
-                className="panel-action-btn"
-                title={t('browser.closeTitle')}
-                onClick={() => setShowPasswordModal(false)}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 10,
+                }}
               >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ fontSize: 12, color: 'var(--muted, #9ca3af)', marginBottom: 12 }}>
-              {t('browser.currentSite')}<span style={{ color: '#60a5fa' }}>{extractOrigin(currentUrl) || t('browser.noActivePage')}</span>
-            </div>
-
-            {siteCredentials.length === 0 ? (
-              <div style={{ padding: '16px 0', textAlign: 'center', fontSize: 12, color: 'var(--muted, #9ca3af)' }}>
-                {t('browser.noSavedCredentials')}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  <span>🔑</span>
+                  <span>{t('browser.savedPasswords', { n: siteCredentials.length })}</span>
+                </div>
+                <button
+                  type="button"
+                  className="panel-action-btn"
+                  title={t('browser.closeTitle')}
+                  onClick={() => setShowPasswordModal(false)}
+                >
+                  ✕
+                </button>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
-                {siteCredentials.map((cred) => (
-                  <div
-                    key={cred.id}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.04)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: 6,
-                      padding: '8px 10px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 4,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#f3f4f6' }}>
-                        {cred.username || t('browser.unnamedAccount')}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+
+              <div style={{ fontSize: 12, color: 'var(--muted, #9ca3af)', marginBottom: 12 }}>
+                {t('browser.currentSite')}
+                <span style={{ color: '#60a5fa' }}>
+                  {extractOrigin(currentUrl) || t('browser.noActivePage')}
+                </span>
+              </div>
+
+              {siteCredentials.length === 0 ? (
+                <div
+                  style={{
+                    padding: '16px 0',
+                    textAlign: 'center',
+                    fontSize: 12,
+                    color: 'var(--muted, #9ca3af)',
+                  }}
+                >
+                  {t('browser.noSavedCredentials')}
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                    maxHeight: 220,
+                    overflowY: 'auto',
+                  }}
+                >
+                  {siteCredentials.map((cred) => (
+                    <div
+                      key={cred.id}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: 6,
+                        padding: '8px 10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#f3f4f6' }}>
+                          {cred.username || t('browser.unnamedAccount')}
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <button
+                            type="button"
+                            className="btn secondary"
+                            title={t('browser.autofillTitle')}
+                            onClick={() => {
+                              triggerAutofill(cred);
+                              onShowToast?.(
+                                t('browser.autofilled', { name: cred.username }),
+                                'info',
+                              );
+                              setShowPasswordModal(false);
+                            }}
+                            style={{ fontSize: 11, padding: '2px 8px' }}
+                          >
+                            {t('browser.fill')}
+                          </button>
+                          <button
+                            type="button"
+                            className="panel-action-btn"
+                            title={t('browser.deleteCredentialTitle')}
+                            onClick={() => {
+                              deleteCredential(cred.id);
+                              const updated = getCredentialsForOrigin(currentUrl);
+                              setSiteCredentials(updated);
+                              onShowToast?.(t('browser.credentialDeleted'), 'info');
+                            }}
+                          >
+                            <svg
+                              width="12"
+                              height="12"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          fontSize: 11,
+                          color: 'var(--muted, #9ca3af)',
+                        }}
+                      >
+                        <span>
+                          {t('browser.passwordPrefix')}
+                          {showPlainPasswordId === cred.id ? cred.password : '••••••••'}
+                        </span>
                         <button
                           type="button"
-                          className="btn secondary"
-                          title={t('browser.autofillTitle')}
-                          onClick={() => {
-                            triggerAutofill(cred);
-                            onShowToast?.(
-                              t('browser.autofilled', { name: cred.username }),
-                              'info',
-                            );
-                            setShowPasswordModal(false);
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#60a5fa',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: 11,
                           }}
-                          style={{ fontSize: 11, padding: '2px 8px' }}
+                          onClick={() =>
+                            setShowPlainPasswordId(showPlainPasswordId === cred.id ? null : cred.id)
+                          }
                         >
-                          {t('browser.fill')}
-                        </button>
-                        <button
-                          type="button"
-                          className="panel-action-btn"
-                          title={t('browser.deleteCredentialTitle')}
-                          onClick={() => {
-                            deleteCredential(cred.id);
-                            const updated = getCredentialsForOrigin(currentUrl);
-                            setSiteCredentials(updated);
-                            onShowToast?.(t('browser.credentialDeleted'), 'info');
-                          }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          </svg>
+                          {showPlainPasswordId === cred.id ? t('browser.hide') : t('browser.show')}
                         </button>
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted, #9ca3af)' }}>
-                      <span>
-                        {t('browser.passwordPrefix')}
-                        {showPlainPasswordId === cred.id ? cred.password : '••••••••'}
-                      </span>
-                      <button
-                        type="button"
-                        style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', padding: 0, fontSize: 11 }}
-                        onClick={() =>
-                          setShowPlainPasswordId(showPlainPasswordId === cred.id ? null : cred.id)
-                        }
-                      >
-                        {showPlainPasswordId === cred.id ? t('browser.hide') : t('browser.show')}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </>
         )}
 
@@ -1668,7 +1864,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             background: isNewTabPage ? 'transparent' : '#ffffff',
             colorScheme: isNewTabPage ? 'dark' : 'normal',
             visibility: isNewTabPage ? 'hidden' : 'visible',
-            pointerEvents: (isNewTabPage || isDraggingDevTools) ? 'none' : 'auto',
+            pointerEvents: isNewTabPage || isDraggingDevTools ? 'none' : 'auto',
           }}
         >
           <WebviewInner
@@ -1709,7 +1905,9 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               style={{
                 height: 12,
                 cursor: 'row-resize',
-                background: isDraggingDevTools ? 'rgba(59, 130, 246, 0.4)' : 'rgba(255, 255, 255, 0.06)',
+                background: isDraggingDevTools
+                  ? 'rgba(59, 130, 246, 0.4)'
+                  : 'rgba(255, 255, 255, 0.06)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1790,17 +1988,41 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 color: '#38bdf8',
               }}
             >
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="30"
+                height="30"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <circle cx="12" cy="12" r="10" />
                 <line x1="2" y1="12" x2="22" y2="12" />
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
               </svg>
             </div>
 
-            <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px', color: '#f3f4f6', letterSpacing: '-0.02em' }}>
+            <h2
+              style={{
+                fontSize: 20,
+                fontWeight: 700,
+                margin: '0 0 8px',
+                color: '#f3f4f6',
+                letterSpacing: '-0.02em',
+              }}
+            >
               {t('app.newTab')}
             </h2>
-            <p style={{ fontSize: 13, color: 'var(--muted, #9ca3af)', margin: '0 0 24px', maxWidth: 440 }}>
+            <p
+              style={{
+                fontSize: 13,
+                color: 'var(--muted, #9ca3af)',
+                margin: '0 0 24px',
+                maxWidth: 440,
+              }}
+            >
               {t('browser.newTabSubtitle')}
             </p>
 
@@ -1831,7 +2053,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   pointerEvents: 'none',
                 }}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <circle cx="11" cy="11" r="8" />
                   <line x1="21" y1="21" x2="16.65" y2="16.65" />
                 </svg>
@@ -1862,7 +2091,8 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   e.currentTarget.style.boxShadow = '0 0 0 3px rgba(56, 189, 248, 0.2)';
                 }}
                 onBlur={(e) => {
-                  e.currentTarget.style.borderColor = 'var(--border-strong, rgba(255, 255, 255, 0.16))';
+                  e.currentTarget.style.borderColor =
+                    'var(--border-strong, rgba(255, 255, 255, 0.16))';
                   e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
                   e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.3)';
                 }}
@@ -1886,24 +2116,70 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 }}
                 title={t('browser.go')}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               </button>
             </form>
 
             {/* 本地开发服务（5173、3000、8080）与常用入口磁贴 */}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-              <div style={{ fontSize: 11, color: 'var(--muted, #9ca3af)', letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 }}>
+            <div
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--muted, #9ca3af)',
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  fontWeight: 600,
+                }}
+              >
                 {t('browser.tilesHeader')}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 560 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  flexWrap: 'wrap',
+                  justifyContent: 'center',
+                  maxWidth: 560,
+                }}
+              >
                 {[
-                  { label: t('browser.tileViteLabel'), url: 'http://localhost:5173', tip: t('browser.tileViteTip') },
-                  { label: t('browser.tileNodeLabel'), url: 'http://localhost:3000', tip: t('browser.tileNodeTip') },
-                  { label: t('browser.tileSpringLabel'), url: 'http://localhost:8080', tip: t('browser.tileSpringTip') },
-                  { label: t('browser.tileGoogleLabel'), url: 'https://www.google.com', tip: t('browser.tileGoogleTip') },
-                  { label: t('browser.tileGithubLabel'), url: 'https://github.com', tip: t('browser.tileGithubTip') },
+                  {
+                    label: t('browser.tileViteLabel'),
+                    url: 'http://localhost:5173',
+                    tip: t('browser.tileViteTip'),
+                  },
+                  {
+                    label: t('browser.tileNodeLabel'),
+                    url: 'http://localhost:3000',
+                    tip: t('browser.tileNodeTip'),
+                  },
+                  {
+                    label: t('browser.tileSpringLabel'),
+                    url: 'http://localhost:8080',
+                    tip: t('browser.tileSpringTip'),
+                  },
+                  {
+                    label: t('browser.tileGoogleLabel'),
+                    url: 'https://www.google.com',
+                    tip: t('browser.tileGoogleTip'),
+                  },
+                  {
+                    label: t('browser.tileGithubLabel'),
+                    url: 'https://github.com',
+                    tip: t('browser.tileGithubTip'),
+                  },
                 ].map((item) => (
                   <button
                     key={item.url}
@@ -1976,7 +2252,14 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 color: '#ef4444',
               }}
             >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <circle cx="12" cy="12" r="10" />
                 <line x1="12" y1="8" x2="12" y2="12" />
                 <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -1991,7 +2274,12 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   seg.emphasis ? (
                     <code
                       key={i}
-                      style={{ color: '#60a5fa', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}
+                      style={{
+                        color: '#60a5fa',
+                        background: 'rgba(255,255,255,0.06)',
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                      }}
                     >
                       {seg.text}
                     </code>
@@ -2000,7 +2288,15 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   ),
               )}
             </p>
-            <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 18px', maxWidth: 440, lineHeight: 1.6 }}>
+            <p
+              style={{
+                fontSize: 12,
+                color: 'var(--muted)',
+                margin: '0 0 18px',
+                maxWidth: 440,
+                lineHeight: 1.6,
+              }}
+            >
               {loadError.url.includes(':573') ? (
                 <span style={{ color: '#f59e0b' }}>
                   {t('browser.portTypoHint', { port: 5173 })}
@@ -2010,7 +2306,15 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               )}
             </p>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                flexWrap: 'wrap',
+                justifyContent: 'center',
+              }}
+            >
               <button
                 type="button"
                 className="btn primary"

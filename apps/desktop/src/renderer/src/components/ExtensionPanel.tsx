@@ -5,7 +5,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n } from '../i18n';
 
 export interface ExtensionPanelProps {
@@ -64,13 +68,15 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
   useEffect(() => {
     void loadExtensions();
 
-    const cleanup1 = window.extensions?.onMessage?.((message) => {
-      setMessages((prev) => [...prev.slice(-19), message]);
-    }) || (() => {});
+    const cleanup1 =
+      window.extensions?.onMessage?.((message) => {
+        setMessages((prev) => [...prev.slice(-19), message]);
+      }) || (() => {});
 
-    const cleanup2 = window.extensions?.onCommand?.((data) => {
-      console.log('Extension command:', data);
-    }) || (() => {});
+    const cleanup2 =
+      window.extensions?.onCommand?.((data) => {
+        console.log('Extension command:', data);
+      }) || (() => {});
 
     const cleanup3 =
       window.ide?.onDownloadProgress?.((progress) => {
@@ -111,7 +117,9 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     setSuccessMsg(null);
 
     try {
-      const filePath = await window.ide.pickFile([{ name: t('ext.vsixFilterName'), extensions: ['vsix'] }]);
+      const filePath = await window.ide.pickFile([
+        { name: t('ext.vsixFilterName'), extensions: ['vsix'] },
+      ]);
       if (!filePath) {
         setLoading(false);
         return;
@@ -138,24 +146,42 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       {/* 提示横幅 */}
       {error && (
         <div className="ext-alert ext-alert-error">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
           <span>{error}</span>
-          <button type="button" className="ext-alert-close" onClick={() => setError(null)}>✕</button>
+          <button type="button" className="ext-alert-close" onClick={() => setError(null)}>
+            ✕
+          </button>
         </div>
       )}
 
       {successMsg && (
         <div className="ext-alert ext-alert-success">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
             <polyline points="22 4 12 14.01 9 11.01" />
           </svg>
           <span>{successMsg}</span>
-          <button type="button" className="ext-alert-close" onClick={() => setSuccessMsg(null)}>✕</button>
+          <button type="button" className="ext-alert-close" onClick={() => setSuccessMsg(null)}>
+            ✕
+          </button>
         </div>
       )}
 
@@ -169,11 +195,11 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
             <div className="ext-hero-title-row">
               <span className="ext-hero-title">Claude Code for VS Code</span>
               <span className="ext-pill ext-pill-official">{t('ext.official')}</span>
-              {isClaudeInstalled && <span className="ext-pill ext-pill-active">{t('ext.installed')}</span>}
+              {isClaudeInstalled && (
+                <span className="ext-pill ext-pill-active">{t('ext.installed')}</span>
+              )}
             </div>
-            <p className="ext-hero-desc">
-              {t('ext.heroDesc')}
-            </p>
+            <p className="ext-hero-desc">{t('ext.heroDesc')}</p>
           </div>
         </div>
 
@@ -258,7 +284,9 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
                 <div className="ext-item-info">
                   <div className="ext-item-icon">🧩</div>
                   <div style={{ minWidth: 0 }}>
-                    <div className="ext-item-name" title={ext}>{ext}</div>
+                    <div className="ext-item-name" title={ext}>
+                      {ext}
+                    </div>
                     <div className="ext-item-meta">
                       <span className="ext-status-dot" />
                       <span>{t('ext.enabled')}</span>
@@ -371,7 +399,14 @@ export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModa
             onClick={onClose}
             title={t('ext.closeEsc')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>

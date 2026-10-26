@@ -63,9 +63,19 @@ export class McpService {
     return this.inner;
   }
 
-  /** 供 Agent 循环调用。错误在这里被转成 ToolResult，不让它抛穿整个工具链。 */
-  async call(name: string, args: Record<string, unknown>): Promise<ToolResult> {
-    const result = await this.inner.callTool(name, args);
+  /**
+   * 供 Agent 循环调用。错误在这里被转成 ToolResult，不让它抛穿整个工具链。
+   *
+   * `signal` 从本轮 Agent 的 AbortController 一路传下来：MCP 调用没有别的中断手段，
+   * 缺了它，用户按「停止」后要一直等到 requestTimeoutMs（默认 30 秒，慢工具可能更久）
+   * 才看到界面恢复。
+   */
+  async call(
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<ToolResult> {
+    const result = await this.inner.callTool(name, args, signal);
     return { content: result.content, isError: result.isError };
   }
 }

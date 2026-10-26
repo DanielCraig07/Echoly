@@ -95,7 +95,9 @@ export class McpManager {
    * 会让正在跑的任务里的工具调用全部中断，而用户可能只是改了个别的设置项。
    */
   async apply(configs: McpServerConfig[]): Promise<McpServerStatus[]> {
-    const wanted = new Map(configs.filter((c) => c.enabled && c.command.trim()).map((c) => [c.id, c]));
+    const wanted = new Map(
+      configs.filter((c) => c.enabled && c.command.trim()).map((c) => [c.id, c]),
+    );
 
     for (const [id, runtime] of [...this.servers]) {
       const next = wanted.get(id);
@@ -245,7 +247,9 @@ export class McpManager {
 
   /** 只读工具的暴露名集合，供 Ask/Plan 模式筛选。 */
   readonlyToolNames(): string[] {
-    return this.listTools().filter((t) => t.readonly).map((t) => t.exposedName);
+    return this.listTools()
+      .filter((t) => t.readonly)
+      .map((t) => t.exposedName);
   }
 
   /**
@@ -275,7 +279,11 @@ export class McpManager {
    * 传进来的 `name` 必须是暴露名（模型看到的就是它）。参数原样透传 —— 校验是 server 的
    * 职责，我们这边只做一次「是不是对象」的保险，防止把字符串塞进要求 object 的字段。
    */
-  async callTool(name: string, args: unknown): Promise<{ content: string; isError: boolean }> {
+  async callTool(
+    name: string,
+    args: unknown,
+    signal?: AbortSignal,
+  ): Promise<{ content: string; isError: boolean }> {
     const info = this.toolIndex.get(name);
     if (!info) {
       return { content: `未知的 MCP 工具：${name}`, isError: true };
@@ -291,10 +299,15 @@ export class McpManager {
     }
 
     try {
-      const result = await runtime.transport.request<ToolCallResult>('tools/call', {
-        name: info.originalName,
-        arguments: args && typeof args === 'object' ? args : {},
-      });
+      const result = await runtime.transport.request<ToolCallResult>(
+        'tools/call',
+        {
+          name: info.originalName,
+          arguments: args && typeof args === 'object' ? args : {},
+        },
+        undefined,
+        signal,
+      );
       const text = flattenMcpContent(result);
       // MCP 用 result.isError 表达「工具执行了但失败」，与 JSON-RPC 错误是两回事。
       // 必须转成我们自己的 isError，否则模型会把失败当成功继续往下走。

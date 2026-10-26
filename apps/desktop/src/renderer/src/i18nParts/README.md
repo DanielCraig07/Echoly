@@ -27,5 +27,5 @@
   （「在 3 个文件中找到了 12 个结果」↔ "Found 12 results in 3 files"）。
   句子中间要嵌 `<code>` 之类的元素时用 `translateSegments`。
 - **动态拼出来的 key**（`t(\`tree.moveReject.${code}\`)`）静态扫不到，
-  去 `apps/desktop/test/i18nKeys.test.ts` 的 `DYNAMIC_KEY_PREFIXES` 里补上前缀，
+去 `apps/desktop/test/i18nKeys.test.ts`的`DYNAMIC_KEY_PREFIXES` 里补上前缀，
   否则「分片里的 key 都有引用」那条会开始误报。

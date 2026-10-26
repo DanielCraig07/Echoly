@@ -22,7 +22,9 @@ describe('resolveDebugConfig', () => {
     expect(res.language).toBe('java');
     expect(res.port).toBe(5005);
     expect(res.terminalType).toBe('java');
-    expect(res.command).toContain('-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005');
+    expect(res.command).toContain(
+      '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005',
+    );
   });
 
   it('correctly configures Maven test debug session', () => {
@@ -50,7 +52,9 @@ describe('resolveDebugConfig', () => {
     expect(res.type).toBe('terminal');
     expect(res.language).toBe('python');
     expect(res.port).toBe(5678);
-    expect(res.command).toBe('python3 -m debugpy --listen 127.0.0.1:5678 --wait-for-client "main.py"');
+    expect(res.command).toBe(
+      'python3 -m debugpy --listen 127.0.0.1:5678 --wait-for-client "main.py"',
+    );
   });
 
   it('correctly configures Node.js and TypeScript inspect debug session', () => {

@@ -66,7 +66,10 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
   'settings.models.editTitle': { zh: '编辑模型: {name}', en: 'Edit model: {name}' },
   'settings.models.newModelName': { zh: '新模型', en: 'New Model' },
   'settings.models.connected': { zh: '连通正常', en: 'Connected' },
-  'settings.models.probeOkTitle': { zh: '端点连通性测试正常', en: 'Endpoint connectivity test passed' },
+  'settings.models.probeOkTitle': {
+    zh: '端点连通性测试正常',
+    en: 'Endpoint connectivity test passed',
+  },
   'settings.models.quickPreset': { zh: '快速套用预设:', en: 'Quick presets:' },
   'settings.models.presetPlaceholder': { zh: '选择预设模板填充…', en: 'Pick a preset to fill in…' },
   'settings.models.basicInfo': { zh: '基础信息', en: 'Basics' },
@@ -193,7 +196,10 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
     zh: 'DeepSeek V4.1 (内网 vLLM 直连)',
     en: 'DeepSeek V4.1 (Intranet vLLM direct)',
   },
-  'settings.preset.deepseekVllmName': { zh: 'DeepSeek V4.1 (内网)', en: 'DeepSeek V4.1 (Intranet)' },
+  'settings.preset.deepseekVllmName': {
+    zh: 'DeepSeek V4.1 (内网)',
+    en: 'DeepSeek V4.1 (Intranet)',
+  },
   'settings.preset.deepseekGateway': {
     zh: 'DeepSeek V4.1 (内网网关 1333)',
     en: 'DeepSeek V4.1 (Intranet gateway 1333)',
@@ -203,14 +209,29 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
     en: 'DeepSeek V4.1 (Gateway)',
   },
   'settings.preset.deepseekOfficial': { zh: 'DeepSeek (官方 API)', en: 'DeepSeek (Official API)' },
-  'settings.preset.deepseekOfficialName': { zh: 'DeepSeek Chat (官方)', en: 'DeepSeek Chat (Official)' },
-  'settings.preset.deepseekReasoner': { zh: 'DeepSeek Reasoner (R1 推理)', en: 'DeepSeek Reasoner (R1)' },
-  'settings.preset.deepseekReasonerName': { zh: 'DeepSeek R1 (推理)', en: 'DeepSeek R1 (Reasoning)' },
+  'settings.preset.deepseekOfficialName': {
+    zh: 'DeepSeek Chat (官方)',
+    en: 'DeepSeek Chat (Official)',
+  },
+  'settings.preset.deepseekReasoner': {
+    zh: 'DeepSeek Reasoner (R1 推理)',
+    en: 'DeepSeek Reasoner (R1)',
+  },
+  'settings.preset.deepseekReasonerName': {
+    zh: 'DeepSeek R1 (推理)',
+    en: 'DeepSeek R1 (Reasoning)',
+  },
   'settings.preset.openaiGpt4o': { zh: 'OpenAI (GPT-4o)', en: 'OpenAI (GPT-4o)' },
   'settings.preset.openaiGpt4oName': { zh: 'GPT-4o', en: 'GPT-4o' },
-  'settings.preset.openaiGpt4oMini': { zh: 'OpenAI (GPT-4o-mini 极速)', en: 'OpenAI (GPT-4o-mini Fast)' },
+  'settings.preset.openaiGpt4oMini': {
+    zh: 'OpenAI (GPT-4o-mini 极速)',
+    en: 'OpenAI (GPT-4o-mini Fast)',
+  },
   'settings.preset.openaiGpt4oMiniName': { zh: 'GPT-4o-mini', en: 'GPT-4o-mini' },
-  'settings.preset.claude37Sonnet': { zh: 'Claude 3.7 Sonnet (Anthropic)', en: 'Claude 3.7 Sonnet (Anthropic)' },
+  'settings.preset.claude37Sonnet': {
+    zh: 'Claude 3.7 Sonnet (Anthropic)',
+    en: 'Claude 3.7 Sonnet (Anthropic)',
+  },
   'settings.preset.claude37SonnetName': { zh: 'Claude 3.7 Sonnet', en: 'Claude 3.7 Sonnet' },
   'settings.preset.claude35Haiku': { zh: 'Claude 3.5 Haiku', en: 'Claude 3.5 Haiku' },
   'settings.preset.claude35HaikuName': { zh: 'Claude 3.5 Haiku', en: 'Claude 3.5 Haiku' },
@@ -218,7 +239,10 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
     zh: 'AgentRouter (Claude 协议代理 / glm-5.3)',
     en: 'AgentRouter (Claude protocol proxy / glm-5.3)',
   },
-  'settings.preset.agentRouterName': { zh: 'Claude 3.7 (AgentRouter)', en: 'Claude 3.7 (AgentRouter)' },
+  'settings.preset.agentRouterName': {
+    zh: 'Claude 3.7 (AgentRouter)',
+    en: 'Claude 3.7 (AgentRouter)',
+  },
   'settings.preset.customOllama': {
     zh: '自定义 (OpenAI 兼容接口 / 本地 Ollama)',
     en: 'Custom (OpenAI-compatible / local Ollama)',
@@ -432,7 +456,10 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
   'settings.mcp.confirmDeleteBtn': { zh: '确认删除', en: 'Delete' },
 
   // ── 软件更新 Tab（主表 settings.update.* 之外的补充） ──
-  'settings.update.providerGeneric': { zh: '自建服务器 (Generic)', en: 'Self-hosted server (Generic)' },
+  'settings.update.providerGeneric': {
+    zh: '自建服务器 (Generic)',
+    en: 'Self-hosted server (Generic)',
+  },
   'settings.update.notesTitle': { zh: '更新说明 (Release Notes)', en: 'Release Notes' },
   'settings.update.downloadFailed': { zh: '下载失败', en: 'Download failed' },
 

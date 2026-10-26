@@ -1,7 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { ensureParentDir, resolveInWorkspace, toPosixRel } from './pathJail.js';
+import {
+  assertRealPathInside,
+  ensureParentDir,
+  resolveInWorkspace,
+  toPosixRel,
+} from './pathJail.js';
 
 export interface DirEntry {
   name: string;
@@ -52,6 +57,8 @@ export interface WorkspaceBackend {
     command: string,
     timeoutMs?: number,
     onChunk?: (chunk: string, stream: 'stdout' | 'stderr') => void,
+    /** 外部取消信号：用户按「停止」时子进程应当立刻结束，而不是等满超时。 */
+    signal?: AbortSignal,
   ): Promise<CommandResult>;
   /** Absolute or rooted path for display / jail; relative paths are preferred for tools. */
   resolve(relPath?: string): string;
@@ -95,6 +102,19 @@ export class LocalFsBackend implements WorkspaceBackend {
     return resolveInWorkspace(this.root, relPath);
   }
 
+  /**
+   * 词法校验 + 符号链接校验。
+   *
+   * 所有真正落到文件系统的操作都走这里：`resolveInWorkspace` 只挡 `..` 与绝对路径，
+   * 挡不住工作区内一个指向 `/etc` 的软链（`link/hosts` 词法上完全合法）。
+   * `assertRealPathInside` 会把已存在的祖先 realpath 后重新比对。
+   */
+  async resolveSafe(relPath = '.'): Promise<string> {
+    const abs = this.resolve(relPath);
+    await assertRealPathInside(this.root, abs);
+    return abs;
+  }
+
   resolveAbsolute(relPath = '.'): string {
     return this.resolve(relPath);
   }
@@ -104,13 +124,13 @@ export class LocalFsBackend implements WorkspaceBackend {
   }
 
   async listDir(relPath = '.'): Promise<DirEntry[]> {
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     const entries = await fs.readdir(abs, { withFileTypes: true });
     return entries.map((e) => ({ name: e.name, isDirectory: e.isDirectory() }));
   }
 
   async readFile(relPath: string): Promise<string> {
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     // 大文件保护：检查文件大小
     const stat = await fs.stat(abs);
     const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -129,7 +149,7 @@ export class LocalFsBackend implements WorkspaceBackend {
    */
   async stat(relPath: string): Promise<FileStat | null> {
     try {
-      const s = await fs.stat(this.resolve(relPath));
+      const s = await fs.stat(await this.resolveSafe(relPath));
       return { size: s.size, mtimeMs: s.mtimeMs };
     } catch {
       return null;
@@ -141,7 +161,7 @@ export class LocalFsBackend implements WorkspaceBackend {
     offset?: number,
     limit?: number,
   ): Promise<{ lines: string[]; total: number; offset: number; truncated: boolean }> {
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     const stat = await fs.stat(abs);
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB for line-range reads
     if (stat.size > MAX_FILE_SIZE) {
@@ -164,7 +184,7 @@ export class LocalFsBackend implements WorkspaceBackend {
   }
 
   async readFileBuffer(relPath: string): Promise<Buffer> {
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     // 大文件保护
     const stat = await fs.stat(abs);
     const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB（Buffer 允许更大）
@@ -177,7 +197,7 @@ export class LocalFsBackend implements WorkspaceBackend {
   }
 
   async writeFile(relPath: string, content: string): Promise<void> {
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     await ensureParentDir(abs);
     let origMode: number | undefined;
     try {
@@ -196,23 +216,23 @@ export class LocalFsBackend implements WorkspaceBackend {
   }
 
   async mkdir(relPath: string): Promise<void> {
-    await fs.mkdir(this.resolve(relPath), { recursive: true, mode: 0o755 });
+    await fs.mkdir(await this.resolveSafe(relPath), { recursive: true, mode: 0o755 });
   }
 
   async rename(fromRel: string, toRel: string): Promise<void> {
-    const from = this.resolve(fromRel);
-    const to = this.resolve(toRel);
+    const from = await this.resolveSafe(fromRel);
+    const to = await this.resolveSafe(toRel);
     await ensureParentDir(to);
     await fs.rename(from, to);
   }
 
   async remove(relPath: string): Promise<void> {
-    await fs.rm(this.resolve(relPath), { recursive: true, force: true });
+    await fs.rm(await this.resolveSafe(relPath), { recursive: true, force: true });
   }
 
   async copy(fromRel: string, toRel: string): Promise<void> {
-    const from = this.resolve(fromRel);
-    const to = this.resolve(toRel);
+    const from = await this.resolveSafe(fromRel);
+    const to = await this.resolveSafe(toRel);
     await ensureParentDir(to);
     const stat = await fs.stat(from);
     if (stat.isDirectory()) {
@@ -227,13 +247,17 @@ export class LocalFsBackend implements WorkspaceBackend {
     }
   }
 
+  /**
+   * 存在性探测同样要过 jail。
+   *
+   * 之前这里对绝对路径直接用 `fs.access` 放行，等于给渲染层留了一个
+   * 「任意路径探针」：`exists('/etc/passwd')` 在 `resolveInWorkspace` 之外悄悄返回 true。
+   * 路径不存在时 `resolveSafe` 也拿不到 realpath 基准，但那是**探测失败**而不是**探测成功**，
+   * 返回 false 正好符合语义。
+   */
   async exists(relPath: string): Promise<boolean> {
     try {
-      if (path.isAbsolute(relPath)) {
-        await fs.access(relPath);
-        return true;
-      }
-      await fs.access(this.resolve(relPath));
+      await fs.access(await this.resolveSafe(relPath));
       return true;
     } catch {
       return false;
@@ -244,6 +268,7 @@ export class LocalFsBackend implements WorkspaceBackend {
     command: string,
     timeoutMs = 60_000,
     onChunk?: (chunk: string, stream: 'stdout' | 'stderr') => void,
+    signal?: AbortSignal,
   ): Promise<CommandResult> {
     const isWin = process.platform === 'win32';
     const shell = isWin ? process.env.ComSpec || 'cmd.exe' : '/bin/bash';
@@ -254,13 +279,49 @@ export class LocalFsBackend implements WorkspaceBackend {
         cwd: this.root,
         env: process.env,
         windowsHide: true,
+        // 独立进程组：超时/取消时要杀掉的是**整棵进程树**，
+        // 否则 `npm run build` 留下的子进程会继续占着端口与 CPU，
+        // 而用户看到的是「停止没反应」。
+        detached: !isWin,
       });
       let stdout = '';
       let stderr = '';
+      let settled = false;
+
+      const killTree = () => {
+        try {
+          if (!isWin && child.pid) process.kill(-child.pid, 'SIGKILL');
+          else child.kill('SIGKILL');
+        } catch {
+          try {
+            child.kill('SIGKILL');
+          } catch {
+            // 已经退出了
+          }
+        }
+      };
+
+      const finish = (result: CommandResult) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        resolve(result);
+      };
+
       const timer = setTimeout(() => {
-        child.kill();
-        resolve({ stdout, stderr: stderr || `timed out after ${timeoutMs}ms`, code: 124 });
+        killTree();
+        finish({ stdout, stderr: stderr || `timed out after ${timeoutMs}ms`, code: 124 });
       }, timeoutMs);
+
+      const onAbort = () => {
+        killTree();
+        finish({ stdout, stderr: stderr || 'cancelled', code: 130 });
+      };
+      if (signal) {
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+      }
 
       child.stdout.on('data', (d) => {
         const chunk = String(d);
@@ -273,12 +334,10 @@ export class LocalFsBackend implements WorkspaceBackend {
         onChunk?.(chunk, 'stderr');
       });
       child.on('close', (code) => {
-        clearTimeout(timer);
-        resolve({ stdout, stderr, code: code ?? 1 });
+        finish({ stdout, stderr, code: code ?? 1 });
       });
       child.on('error', (err) => {
-        clearTimeout(timer);
-        resolve({ stdout, stderr: err.message, code: 1 });
+        finish({ stdout, stderr: err.message, code: 1 });
       });
     });
   }

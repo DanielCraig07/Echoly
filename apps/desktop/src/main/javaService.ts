@@ -1,7 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { execSync, spawn } from 'child_process';
+import { execFileSync, execSync, spawn, spawnSync } from 'child_process';
+import { pipeline } from 'stream/promises';
+import { Readable, Transform } from 'stream';
 import type { InstalledJdkInfo, OnlineJdkInfo, JdkInstallProgress } from '@deepseek-ide/shared';
 
 const isWin = process.platform === 'win32';
@@ -36,13 +38,19 @@ export async function detectInstalledJdks(): Promise<InstalledJdkInfo[]> {
       const lines = output.split('\n');
       for (const line of lines) {
         const trimmed = line.trim();
-        const match = trimmed.match(/^(\d+(?:\.\d+)*[_.\d]*)\s+\(([^)]+)\)\s+"([^"]+)"\s+-\s+"([^"]+)"\s+(.+)$/);
+        const match = trimmed.match(
+          /^(\d+(?:\.\d+)*[_.\d]*)\s+\(([^)]+)\)\s+"([^"]+)"\s+-\s+"([^"]+)"\s+(.+)$/,
+        );
         if (match) {
           const [, version, arch, vendor, , homePath] = match;
           const cleanPath = homePath.trim();
           if (fs.existsSync(cleanPath) && !visitedPaths.has(cleanPath)) {
             visitedPaths.add(cleanPath);
-            const major = parseInt(version.startsWith('1.') ? version.split('.')[1] : version.split('.')[0], 10) || undefined;
+            const major =
+              parseInt(
+                version.startsWith('1.') ? version.split('.')[1] : version.split('.')[0],
+                10,
+              ) || undefined;
             result.push({
               id: `system-${cleanPath}`,
               version,
@@ -65,6 +73,9 @@ export async function detectInstalledJdks(): Promise<InstalledJdkInfo[]> {
     if (fs.existsSync(echolyDir)) {
       const entries = fs.readdirSync(echolyDir, { withFileTypes: true });
       for (const entry of entries) {
+        // 解压暂存目录（见 installJdk）不是已安装的 JDK：一次崩溃会把它留在原地，
+        // 而它的名字里带着 `.staging-`，扫进来的话会变成一个永远装不完的"坏 JDK"。
+        if (entry.name.includes('.staging-')) continue;
         if (entry.isDirectory()) {
           const fullEntryPath = path.join(echolyDir, entry.name);
           const javaHome = resolveJavaHome(fullEntryPath);
@@ -106,8 +117,11 @@ export async function detectInstalledJdks(): Promise<InstalledJdkInfo[]> {
 
   // 4. 检查 PATH 中的 java
   try {
-    const whichCmd = isWin ? 'where java' : 'which java';
-    const javaBin = execSync(whichCmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).split('\n')[0]?.trim();
+    // `where`/`which` 的输出是**路径**，而路径里完全可能有中文（用户名目录）。
+    // Windows 上 `where` 走 GBK 代码页，按 utf8 读会得到乱码路径，
+    // 后面的 `fs.existsSync` 必然失败 —— 结果是"装了 JDK 但检测不到"。
+    const out = probeVersionText(isWin ? 'where' : 'which', ['java']);
+    const javaBin = out?.split(/\r?\n/)[0]?.trim();
     if (javaBin && fs.existsSync(javaBin)) {
       // 常见为 /usr/bin/java -> 符号链接
       try {
@@ -202,29 +216,84 @@ export function resolveJavaHome(candidateDir: string): string | null {
   return null;
 }
 
-function getJdkVersionFromHome(javaHome: string): { version?: string; major?: number; arch?: string; vendor?: string } {
+/**
+ * 解码一个外部命令的输出。
+ *
+ * 为什么要单独做：Windows 上 `java -version`、`javac -version` 的输出走的是系统
+ * 代码页（简中环境是 GBK），用 `encoding: 'utf8'` 直接读会得到满屏替换字符。
+ * 版本号本身是 ASCII，多数时候侥幸能匹配上，但 `vendor` 的判定靠的是
+ * "Temurin"/"Corretto" 这类**厂商名**——厂商名一旦被编码打散就全部落空，
+ * 结果是所有 JDK 都被标成 OpenJDK。
+ *
+ * 判据放在数据上：优先试 UTF-8 严格解码，失败再退回 latin1（单字节透传，
+ * 至少不会把已有的 ASCII 内容破坏掉），最后按 Windows 的 GBK 再试一次。
+ */
+function decodeToolOutput(buf: Buffer): string {
   try {
-    const javaExec = isWin ? path.join(javaHome, 'bin', 'java.exe') : path.join(javaHome, 'bin', 'java');
-    if (fs.existsSync(javaExec)) {
-      const out = execSync(`"${javaExec}" -version 2>&1`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
-      // openjdk version "21.0.2" ... 或 java version "1.8.0_351"
-      const vMatch = out.match(/(?:java|openjdk) version "([^"]+)"/i);
-      const version = vMatch ? vMatch[1] : undefined;
-      let major: number | undefined = undefined;
-      if (version) {
-        major = parseInt(version.startsWith('1.') ? version.split('.')[1] : version.split('.')[0], 10) || undefined;
-      }
-      let vendor = 'OpenJDK';
-      if (/Temurin|Adoptium/i.test(out)) vendor = 'Eclipse Temurin';
-      else if (/Microsoft/i.test(out)) vendor = 'Microsoft OpenJDK';
-      else if (/Zulu/i.test(out)) vendor = 'Azul Zulu';
-      else if (/Oracle/i.test(out)) vendor = 'Oracle Java';
-      else if (/Corretto/i.test(out)) vendor = 'Amazon Corretto';
-
-      return { version, major, arch: process.arch, vendor };
-    }
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf);
   } catch {}
-  return {};
+  if (process.platform === 'win32') {
+    for (const enc of ['gbk', 'gb18030'] as const) {
+      try {
+        return new TextDecoder(enc).decode(buf);
+      } catch {}
+    }
+  }
+  return buf.toString('latin1');
+}
+
+/**
+ * 跑一个版本探测命令并拿到 stdout+stderr 的合并文本。
+ *
+ * 用 `spawnSync` + argv 而不是 `execSync` + 拼字符串：`javaExec` 是从
+ * JAVA_HOME 拼出来的路径，而 JAVA_HOME 可能来自用户配置或环境变量 ——
+ * 路径里的引号/反引号在 shell 里就是命令注入。argv 调用下它只是一个参数。
+ * java/javac 把版本写到 **stderr**，所以两路都收。
+ */
+function probeVersionText(execPath: string, args: string[]): string | null {
+  try {
+    const res = spawnSync(execPath, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000 });
+    if (res.error) return null;
+    const out = Buffer.concat([
+      res.stdout ? Buffer.from(res.stdout) : Buffer.alloc(0),
+      res.stderr ? Buffer.from(res.stderr) : Buffer.alloc(0),
+    ]);
+    if (out.length === 0) return null;
+    return decodeToolOutput(out);
+  } catch {
+    return null;
+  }
+}
+
+function getJdkVersionFromHome(javaHome: string): {
+  version?: string;
+  major?: number;
+  arch?: string;
+  vendor?: string;
+} {
+  const javaExec = isWin
+    ? path.join(javaHome, 'bin', 'java.exe')
+    : path.join(javaHome, 'bin', 'java');
+  if (!fs.existsSync(javaExec)) return {};
+  const out = probeVersionText(javaExec, ['-version']);
+  if (!out) return {};
+  // openjdk version "21.0.2" ... 或 java version "1.8.0_351"
+  const vMatch = out.match(/(?:java|openjdk) version "([^"]+)"/i);
+  const version = vMatch ? vMatch[1] : undefined;
+  let major: number | undefined = undefined;
+  if (version) {
+    major =
+      parseInt(version.startsWith('1.') ? version.split('.')[1] : version.split('.')[0], 10) ||
+      undefined;
+  }
+  let vendor = 'OpenJDK';
+  if (/Temurin|Adoptium/i.test(out)) vendor = 'Eclipse Temurin';
+  else if (/Microsoft/i.test(out)) vendor = 'Microsoft OpenJDK';
+  else if (/Zulu/i.test(out)) vendor = 'Azul Zulu';
+  else if (/Oracle/i.test(out)) vendor = 'Oracle Java';
+  else if (/Corretto/i.test(out)) vendor = 'Amazon Corretto';
+
+  return { version, major, arch: process.arch, vendor };
 }
 
 /**
@@ -254,12 +323,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://api.adoptium.net/v3/binary/latest/21/ga/mac/aarch64/jdk/hotspot/normal/eclipse'
         : isMacX64
-        ? 'https://api.adoptium.net/v3/binary/latest/21/ga/mac/x64/jdk/hotspot/normal/eclipse'
-        : isWinX64
-        ? 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse'
-        : isLinuxArm
-        ? 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
-        : 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse',
+          ? 'https://api.adoptium.net/v3/binary/latest/21/ga/mac/x64/jdk/hotspot/normal/eclipse'
+          : isWinX64
+            ? 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse'
+            : isLinuxArm
+              ? 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
+              : 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse',
     },
     {
       id: 'temurin-17',
@@ -272,12 +341,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://api.adoptium.net/v3/binary/latest/17/ga/mac/aarch64/jdk/hotspot/normal/eclipse'
         : isMacX64
-        ? 'https://api.adoptium.net/v3/binary/latest/17/ga/mac/x64/jdk/hotspot/normal/eclipse'
-        : isWinX64
-        ? 'https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse'
-        : isLinuxArm
-        ? 'https://api.adoptium.net/v3/binary/latest/17/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
-        : 'https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse',
+          ? 'https://api.adoptium.net/v3/binary/latest/17/ga/mac/x64/jdk/hotspot/normal/eclipse'
+          : isWinX64
+            ? 'https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse'
+            : isLinuxArm
+              ? 'https://api.adoptium.net/v3/binary/latest/17/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
+              : 'https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse',
     },
     {
       id: 'temurin-11',
@@ -290,12 +359,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://api.adoptium.net/v3/binary/latest/11/ga/mac/aarch64/jdk/hotspot/normal/eclipse'
         : isMacX64
-        ? 'https://api.adoptium.net/v3/binary/latest/11/ga/mac/x64/jdk/hotspot/normal/eclipse'
-        : isWinX64
-        ? 'https://api.adoptium.net/v3/binary/latest/11/ga/windows/x64/jdk/hotspot/normal/eclipse'
-        : isLinuxArm
-        ? 'https://api.adoptium.net/v3/binary/latest/11/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
-        : 'https://api.adoptium.net/v3/binary/latest/11/ga/linux/x64/jdk/hotspot/normal/eclipse',
+          ? 'https://api.adoptium.net/v3/binary/latest/11/ga/mac/x64/jdk/hotspot/normal/eclipse'
+          : isWinX64
+            ? 'https://api.adoptium.net/v3/binary/latest/11/ga/windows/x64/jdk/hotspot/normal/eclipse'
+            : isLinuxArm
+              ? 'https://api.adoptium.net/v3/binary/latest/11/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
+              : 'https://api.adoptium.net/v3/binary/latest/11/ga/linux/x64/jdk/hotspot/normal/eclipse',
     },
     {
       id: 'jdk-8',
@@ -308,12 +377,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://cdn.azul.com/zulu/bin/zulu8.96.0.205-ca-fx-jdk8.0.504-macosx_aarch64.tar.gz'
         : isMacX64
-        ? 'https://api.adoptium.net/v3/binary/latest/8/ga/mac/x64/jdk/hotspot/normal/eclipse'
-        : isWinX64
-        ? 'https://api.adoptium.net/v3/binary/latest/8/ga/windows/x64/jdk/hotspot/normal/eclipse'
-        : isLinuxArm
-        ? 'https://api.adoptium.net/v3/binary/latest/8/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
-        : 'https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jdk/hotspot/normal/eclipse',
+          ? 'https://api.adoptium.net/v3/binary/latest/8/ga/mac/x64/jdk/hotspot/normal/eclipse'
+          : isWinX64
+            ? 'https://api.adoptium.net/v3/binary/latest/8/ga/windows/x64/jdk/hotspot/normal/eclipse'
+            : isLinuxArm
+              ? 'https://api.adoptium.net/v3/binary/latest/8/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
+              : 'https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jdk/hotspot/normal/eclipse',
     },
     {
       id: 'temurin-22',
@@ -326,12 +395,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://api.adoptium.net/v3/binary/latest/22/ga/mac/aarch64/jdk/hotspot/normal/eclipse'
         : isMacX64
-        ? 'https://api.adoptium.net/v3/binary/latest/22/ga/mac/x64/jdk/hotspot/normal/eclipse'
-        : isWinX64
-        ? 'https://api.adoptium.net/v3/binary/latest/22/ga/windows/x64/jdk/hotspot/normal/eclipse'
-        : isLinuxArm
-        ? 'https://api.adoptium.net/v3/binary/latest/22/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
-        : 'https://api.adoptium.net/v3/binary/latest/22/ga/linux/x64/jdk/hotspot/normal/eclipse',
+          ? 'https://api.adoptium.net/v3/binary/latest/22/ga/mac/x64/jdk/hotspot/normal/eclipse'
+          : isWinX64
+            ? 'https://api.adoptium.net/v3/binary/latest/22/ga/windows/x64/jdk/hotspot/normal/eclipse'
+            : isLinuxArm
+              ? 'https://api.adoptium.net/v3/binary/latest/22/ga/linux/aarch64/jdk/hotspot/normal/eclipse'
+              : 'https://api.adoptium.net/v3/binary/latest/22/ga/linux/x64/jdk/hotspot/normal/eclipse',
     },
     {
       id: 'corretto-21',
@@ -344,12 +413,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://corretto.aws/downloads/latest/amazon-corretto-21-aarch64-macos-jdk.tar.gz'
         : isMacX64
-        ? 'https://corretto.aws/downloads/latest/amazon-corretto-21-x64-macos-jdk.tar.gz'
-        : isWinX64
-        ? 'https://corretto.aws/downloads/latest/amazon-corretto-21-x64-windows-jdk.zip'
-        : isLinuxArm
-        ? 'https://corretto.aws/downloads/latest/amazon-corretto-21-aarch64-linux-jdk.tar.gz'
-        : 'https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz',
+          ? 'https://corretto.aws/downloads/latest/amazon-corretto-21-x64-macos-jdk.tar.gz'
+          : isWinX64
+            ? 'https://corretto.aws/downloads/latest/amazon-corretto-21-x64-windows-jdk.zip'
+            : isLinuxArm
+              ? 'https://corretto.aws/downloads/latest/amazon-corretto-21-aarch64-linux-jdk.tar.gz'
+              : 'https://corretto.aws/downloads/latest/amazon-corretto-21-x64-linux-jdk.tar.gz',
     },
     {
       id: 'corretto-17',
@@ -362,12 +431,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://corretto.aws/downloads/latest/amazon-corretto-17-aarch64-macos-jdk.tar.gz'
         : isMacX64
-        ? 'https://corretto.aws/downloads/latest/amazon-corretto-17-x64-macos-jdk.tar.gz'
-        : isWinX64
-        ? 'https://corretto.aws/downloads/latest/amazon-corretto-17-x64-windows-jdk.zip'
-        : isLinuxArm
-        ? 'https://corretto.aws/downloads/latest/amazon-corretto-17-aarch64-linux-jdk.tar.gz'
-        : 'https://corretto.aws/downloads/latest/amazon-corretto-17-x64-linux-jdk.tar.gz',
+          ? 'https://corretto.aws/downloads/latest/amazon-corretto-17-x64-macos-jdk.tar.gz'
+          : isWinX64
+            ? 'https://corretto.aws/downloads/latest/amazon-corretto-17-x64-windows-jdk.zip'
+            : isLinuxArm
+              ? 'https://corretto.aws/downloads/latest/amazon-corretto-17-aarch64-linux-jdk.tar.gz'
+              : 'https://corretto.aws/downloads/latest/amazon-corretto-17-x64-linux-jdk.tar.gz',
     },
     {
       id: 'corretto-11',
@@ -380,12 +449,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://corretto.aws/downloads/latest/amazon-corretto-11-aarch64-macos-jdk.tar.gz'
         : isMacX64
-        ? 'https://corretto.aws/downloads/latest/amazon-corretto-11-x64-macos-jdk.tar.gz'
-        : isWinX64
-        ? 'https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip'
-        : isLinuxArm
-        ? 'https://corretto.aws/downloads/latest/amazon-corretto-11-aarch64-linux-jdk.tar.gz'
-        : 'https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz',
+          ? 'https://corretto.aws/downloads/latest/amazon-corretto-11-x64-macos-jdk.tar.gz'
+          : isWinX64
+            ? 'https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip'
+            : isLinuxArm
+              ? 'https://corretto.aws/downloads/latest/amazon-corretto-11-aarch64-linux-jdk.tar.gz'
+              : 'https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz',
     },
     {
       id: 'zulu-21',
@@ -398,12 +467,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://cdn.azul.com/zulu/bin/zulu21.38.21-ca-jdk21.0.5-macosx_aarch64.tar.gz'
         : isMacX64
-        ? 'https://cdn.azul.com/zulu/bin/zulu21.38.21-ca-jdk21.0.5-macosx_x64.tar.gz'
-        : isWinX64
-        ? 'https://cdn.azul.com/zulu/bin/zulu21.38.21-ca-jdk21.0.5-win_x64.zip'
-        : isLinuxArm
-        ? 'https://cdn.azul.com/zulu/bin/zulu21.38.21-ca-jdk21.0.5-linux_aarch64.tar.gz'
-        : 'https://cdn.azul.com/zulu/bin/zulu21.38.21-ca-jdk21.0.5-linux_x64.tar.gz',
+          ? 'https://cdn.azul.com/zulu/bin/zulu21.38.21-ca-jdk21.0.5-macosx_x64.tar.gz'
+          : isWinX64
+            ? 'https://cdn.azul.com/zulu/bin/zulu21.38.21-ca-jdk21.0.5-win_x64.zip'
+            : isLinuxArm
+              ? 'https://cdn.azul.com/zulu/bin/zulu21.38.21-ca-jdk21.0.5-linux_aarch64.tar.gz'
+              : 'https://cdn.azul.com/zulu/bin/zulu21.38.21-ca-jdk21.0.5-linux_x64.tar.gz',
     },
     {
       id: 'graalvm-21',
@@ -416,12 +485,12 @@ export async function getAvailableOnlineJdks(): Promise<OnlineJdkInfo[]> {
       downloadUrl: isMacArm
         ? 'https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.2/graalvm-community-jdk-21.0.2_macos-aarch64_bin.tar.gz'
         : isMacX64
-        ? 'https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.2/graalvm-community-jdk-21.0.2_macos-x64_bin.tar.gz'
-        : isWinX64
-        ? 'https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.2/graalvm-community-jdk-21.0.2_windows-x64_bin.zip'
-        : isLinuxArm
-        ? 'https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.2/graalvm-community-jdk-21.0.2_linux-aarch64_bin.tar.gz'
-        : 'https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.2/graalvm-community-jdk-21.0.2_linux-x64_bin.tar.gz',
+          ? 'https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.2/graalvm-community-jdk-21.0.2_macos-x64_bin.tar.gz'
+          : isWinX64
+            ? 'https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.2/graalvm-community-jdk-21.0.2_windows-x64_bin.zip'
+            : isLinuxArm
+              ? 'https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.2/graalvm-community-jdk-21.0.2_linux-aarch64_bin.tar.gz'
+              : 'https://github.com/graalvm/graalvm-ce-builds/releases/download/jdk-21.0.2/graalvm-community-jdk-21.0.2_linux-x64_bin.tar.gz',
     },
   ];
 
@@ -471,7 +540,18 @@ export async function installOnlineJdk(
 
   const echolyDir = getEcholyJdksDir();
   const installTargetDir = path.join(echolyDir, jdkId);
-  const tempArchive = path.join(echolyDir, `${jdkId}-download.tmp`);
+  /**
+   * 临时压缩包路径必须**唯一**。
+   *
+   * 旧实现是 `${jdkId}-download.tmp`：同一台机器上两个窗口（或用户连点两次安装）
+   * 并发装同一个 JDK 时，两个写入流会同时写同一个文件，交错的字节拼出来的
+   * 压缩包在解压阶段才报错，而那时已经删掉了目标目录 —— 用户看到的是
+   * 「安装失败」加上一个被清空的旧 JDK。pid + 随机后缀让两个下载互不干扰。
+   */
+  const tempArchive = path.join(
+    echolyDir,
+    `${jdkId}-${process.pid}-${Math.random().toString(36).slice(2, 8)}.download.tmp`,
+  );
 
   try {
     broadcastProgress({
@@ -494,22 +574,29 @@ export async function installOnlineJdk(
     }
 
     const contentLengthHeader = response.headers.get('content-length');
-    const totalBytes = contentLengthHeader ? parseInt(contentLengthHeader, 10) : (target.sizeMb || 180) * 1024 * 1024;
+    const totalBytes = contentLengthHeader
+      ? parseInt(contentLengthHeader, 10)
+      : (target.sizeMb || 180) * 1024 * 1024;
     let downloadedBytes = 0;
 
-    const fileStream = fs.createWriteStream(tempArchive);
     if (!response.body) {
       throw new Error('响应数据流为空');
     }
 
-    // Node 18+ web stream to node stream
-    const reader = response.body.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        fileStream.write(Buffer.from(value));
-        downloadedBytes += value.byteLength;
+    /**
+     * 边下边报进度，同时交给 `pipeline` 落盘。
+     *
+     * 旧实现是 `reader.read()` 手工循环 + `fileStream.write(...)`：
+     * 1. **没有背压**。磁盘慢（机械盘、网络盘、同时还在跑构建）时 `write()`
+     *    返回 false，但循环不看返回值，于是整包 180MB 全堆在内存里 —— 一次下载
+     *    就能把主进程吃到几百兆。`pipeline` 会正确地暂停读取端。
+     * 2. **不检查写入错误**。`fileStream` 上的 'error'（磁盘满、权限不足）没人监听，
+     *    会变成未捕获异常直接打崩主进程；而且那时 `reader` 还在拉数据。
+     *    pipeline 会把错误传出来，交给下面的 catch 统一收尾。
+     */
+    const progressStream = new Transform({
+      transform(chunk, _enc, callback) {
+        downloadedBytes += chunk.length;
         const percent = Math.min(99, Math.round((downloadedBytes / totalBytes) * 100));
         broadcastProgress({
           id: jdkId,
@@ -519,13 +606,23 @@ export async function installOnlineJdk(
           totalBytes,
           message: `正在下载 ${target.name} (${Math.round(downloadedBytes / 1024 / 1024)}MB / ${Math.round(totalBytes / 1024 / 1024)}MB)...`,
         });
-      }
-    }
-    fileStream.end();
-
-    await new Promise<void>((resolve) => {
-      fileStream.on('finish', () => resolve());
+        callback(null, chunk);
+      },
     });
+
+    await pipeline(
+      Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]),
+      progressStream,
+      fs.createWriteStream(tempArchive),
+    );
+
+    // 内容长度可核对时核对一下：中途断流会在 pipeline 里正常结束
+    // （服务端直接关连接时 body 就 EOF 了），得到一个静默截断的压缩包。
+    if (contentLengthHeader && downloadedBytes !== totalBytes) {
+      throw new Error(
+        `下载不完整：收到 ${downloadedBytes} 字节，应为 ${totalBytes} 字节（连接可能已中断）`,
+      );
+    }
 
     // 2. 解压阶段
     broadcastProgress({
@@ -538,24 +635,72 @@ export async function installOnlineJdk(
     if (fs.existsSync(installTargetDir)) {
       fs.rmSync(installTargetDir, { recursive: true, force: true });
     }
-    fs.mkdirSync(installTargetDir, { recursive: true });
+    // 解压到**同级的临时目录**，成功了才 rename 过去。
+    //
+    // 旧实现是先 `rmSync(installTargetDir)` 再原地解压：解压失败（磁盘满、
+    // 压缩包损坏、tar 中途被杀）会把目标目录留成半截 —— 而目录名就叫 `java-21`，
+    // 下次启动时 `detectInstalledJdks` 照样把它列成"已安装"，用户点进去才发现
+    // 是个没有 bin/java 的空壳。rename 是同目录内的原子操作，要么是旧的完整副本，
+    // 要么是新的完整副本。
+    const stagingDir = `${installTargetDir}.staging-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+    fs.rmSync(stagingDir, { recursive: true, force: true });
+    fs.mkdirSync(stagingDir, { recursive: true });
 
-    // 使用系统内置 tar 解压
-    const tarCmd = isWin
-      ? `tar -xf "${tempArchive}" -C "${installTargetDir}"`
-      : `tar -xzf "${tempArchive}" -C "${installTargetDir}"`;
-    execSync(tarCmd, { stdio: 'ignore' });
+    /**
+     * 用参数数组调 tar，不拼 shell 字符串。
+     *
+     * 旧写法是 `tar -xzf "${tempArchive}" -C "${installTargetDir}"` 交给 `execSync`
+     * （等价于 `sh -c`）。`tempArchive` 由 jdkId 拼出来，而 jdkId 会一路走到 IPC，
+     * 里面的引号/反引号能让整条命令变形。改为 `execFileSync` + argv 后，
+     * 无论路径里有什么字符都只是 tar 的一个参数。
+     * `-z` 只在非 Windows 下加（Windows 自带的 bsdtar 按内容自动识别，也能处理 gz）。
+     */
+    try {
+      const tarArgs = isWin
+        ? ['-xf', tempArchive, '-C', stagingDir]
+        : ['-xzf', tempArchive, '-C', stagingDir];
+      execFileSync('tar', tarArgs, { stdio: 'ignore' });
+    } catch (err) {
+      try {
+        fs.rmSync(stagingDir, { recursive: true, force: true });
+      } catch {}
+      throw new Error(
+        `解压失败：${err instanceof Error ? err.message : String(err)}（压缩包可能不完整）`,
+      );
+    }
 
     // 清理临时压缩包
     try {
       if (fs.existsSync(tempArchive)) fs.unlinkSync(tempArchive);
     } catch {}
 
+    // 先确认解压结果真的像一个 JDK，再顶替旧目录
+    const stagedHome = resolveJavaHome(stagingDir);
+    if (!stagedHome) {
+      try {
+        fs.rmSync(stagingDir, { recursive: true, force: true });
+      } catch {}
+      throw new Error('解压完成但未能在其中找到有效的 JAVA_HOME 目录');
+    }
+    fs.renameSync(stagingDir, installTargetDir);
+
     // macOS 去除 quarantine 并赋予执行权限
     if (isMac) {
+      // 同样避免拼 shell：目录名可能带空格（用户主目录名很常见），
+      // 而 `|| true` 这类 shell 语法在 argv 调用里要靠 catch 承担。
       try {
-        execSync(`xattr -r -d com.apple.quarantine "${installTargetDir}" 2>/dev/null || true`);
-        execSync(`find "${installTargetDir}" -type f -name "java" -exec chmod +x {} + 2>/dev/null || true`);
+        execFileSync('xattr', ['-r', '-d', 'com.apple.quarantine', installTargetDir], {
+          stdio: 'ignore',
+        });
+      } catch {}
+      try {
+        execFileSync(
+          'find',
+          [installTargetDir, '-type', 'f', '-name', 'java', '-exec', 'chmod', '+x', '{}', '+'],
+          {
+            stdio: 'ignore',
+          },
+        );
       } catch {}
     }
 
@@ -563,7 +708,6 @@ export async function installOnlineJdk(
     if (!home) {
       throw new Error('解压成功但未能找到有效的 JAVA_HOME 目录');
     }
-
     broadcastProgress({
       id: jdkId,
       status: 'done',

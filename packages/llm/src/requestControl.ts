@@ -71,6 +71,57 @@ export function isRetryableStatus(status: number): boolean {
   return RETRYABLE_STATUS.has(status);
 }
 
+/** 服务端允许我们等的最长时间：真按一个离谱的 `Retry-After` 睡下去，界面会觉得卡死。 */
+const MAX_SERVER_HINTED_DELAY_MS = 30_000;
+
+/**
+ * 解析 429/503 上的 `Retry-After`。
+ *
+ * 两种合法格式：秒数（`Retry-After: 5`）与 HTTP 日期（`Retry-After: Wed, 21 Oct 2015 07:28:00 GMT`）。
+ * 网关上还见过直接给毫秒的（值大得离谱），所以超过一个阈值时按毫秒理解 ——
+ * 一个将该等 60 秒的响应被读成 60 毫秒，会让重试全部撞在同一秒里。
+ *
+ * 返回 null 表示响应里没有可用的提示，调用方回退到指数退避。
+ */
+export function retryAfterMs(res: Response | undefined): number | null {
+  if (!res || typeof res.headers?.get !== 'function') return null;
+  const raw = res.headers.get('retry-after') ?? res.headers.get('x-ratelimit-reset');
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // 纯数字：秒（> 1000 时按毫秒理解，见上）
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    const n = Number(trimmed);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const ms = n > 1000 ? n : n * 1000;
+    return Math.min(Math.round(ms), MAX_SERVER_HINTED_DELAY_MS);
+  }
+
+  // HTTP 日期
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return null;
+  const delta = at - Date.now();
+  if (delta <= 0) return null;
+  return Math.min(Math.round(delta), MAX_SERVER_HINTED_DELAY_MS);
+}
+
+/**
+ * 丢弃一个不打算再读的响应体。
+ *
+ * 不读也不 cancel 的话，Node 的 undici 会一直持有这个连接，直到 GC 才回收 ——
+ * 重试几次之后连接池就被这些「死响应」占满了，表现是后续请求**没发出就超时**。
+ * 之前的实现正是这样：`withRetry` 拿到 429 就丢掉 resp 直接重发。
+ */
+export async function discardResponse(res: Response | undefined): Promise<void> {
+  if (!res || !res.body) return;
+  try {
+    await res.body.cancel();
+  } catch {
+    // 已经读掉或已关闭：无事可做
+  }
+}
+
 /**
  * 只有网络层错误才重试：`TypeError: fetch failed`、ECONNREFUSED、DNS 失败等。
  * 主动 abort（用户取消 / 看门狗超时）绝不能重试 —— 那会把「停止」变成「再等一轮」。
@@ -108,12 +159,25 @@ export function sleepAbortable(ms: number, signal?: AbortSignal): Promise<boolea
   });
 }
 
-export interface RetryOptions {
+export interface RetryOptions<T = unknown> {
   /** 重试次数上限（不含首次请求）。默认 1，即最多发两次。 */
   maxAttempts?: number;
   signal?: AbortSignal;
   /** 每次失败后、下一次重试前调用（用于日志 / 事件上报）。 */
   onRetry?: (info: { attempt: number; delayMs: number; reason: string }) => void;
+  /**
+   * 服务端显式给出的等待时长（毫秒）。返回 null 表示没有提示，走指数退避。
+   *
+   * 单独做成回调而不是让 `withRetry` 自己看 `Response`：这个模块只管调度，
+   * 不该知道调用方的返回值长什么样。
+   */
+  delayHintMs?: (result: T | undefined, error: unknown) => number | null;
+  /**
+   * 放弃一个结果对象时的清理钩子（典型场景：`Response` 的响应体）。
+   *
+   * 必须提供，否则被丢掉的响应体会一直占着连接 —— 重试反而让后续请求更容易超时。
+   */
+  dispose?: (result: T) => void | Promise<void>;
 }
 
 /** `shouldRetry` 只需回答「这次失败值得再试一次吗」，退避与计数由本模块负责。 */
@@ -128,13 +192,18 @@ export type ShouldRetry<T> = (result: T | undefined, error: unknown) => boolean;
 export async function withRetry<T>(
   attempt: () => Promise<T>,
   shouldRetry: ShouldRetry<T>,
-  options: RetryOptions = {},
+  options: RetryOptions<T> = {},
 ): Promise<
   | { ok: true; value: T; attempts: number }
   | { ok: false; cancelled: boolean; attempts: number; lastError: unknown }
 > {
   const total = (options.maxAttempts ?? MAX_RETRY_ATTEMPTS) + 1;
   let lastError: unknown;
+
+  const delayFor = (value: T | undefined, error: unknown, attempt: number): number => {
+    const hint = options.delayHintMs?.(value, error) ?? null;
+    return hint !== null && hint > 0 ? hint : retryDelayMs(attempt);
+  };
 
   for (let i = 0; i < total; i++) {
     const isLast = i === total - 1;
@@ -143,16 +212,19 @@ export async function withRetry<T>(
       if (isLast || !shouldRetry(value, undefined)) {
         return { ok: true, value, attempts: i + 1 };
       }
-      const delayMs = retryDelayMs(i);
+      const delayMs = delayFor(value, undefined, i);
       options.onRetry?.({ attempt: i + 1, delayMs, reason: describe(value, undefined) });
       if (!(await sleepAbortable(delayMs, options.signal))) {
-        // 被取消时把已经拿到的响应交回去：它不是失败，只是不再重试了
+        // 被取消时把已经拿到的响应交回去：它不是失败，只是不再重试了。
+        // dispose 必须放在这之后 —— 否则会把一个已经释放掉的结果交给调用方。
         return { ok: true, value, attempts: i + 1 };
       }
+      // 确认要重试了，才丢弃这个结果并释放它占用的资源（响应体 / 连接）。
+      await options.dispose?.(value);
     } catch (err) {
       lastError = err;
       if (isLast || !shouldRetry(undefined, err)) break;
-      const delayMs = retryDelayMs(i);
+      const delayMs = delayFor(undefined, err, i);
       options.onRetry?.({ attempt: i + 1, delayMs, reason: describe(undefined, err) });
       if (!(await sleepAbortable(delayMs, options.signal))) {
         return { ok: false, cancelled: true, attempts: i + 1, lastError: err };

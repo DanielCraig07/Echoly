@@ -11,10 +11,7 @@ const fs = require('fs');
 async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
 
-  const appPath = path.join(
-    context.appOutDir,
-    `${context.packager.appInfo.productFilename}.app`,
-  );
+  const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   if (!fs.existsSync(appPath)) return;
 
   const entitlementsPath = path.join(__dirname, '..', 'resources', 'entitlements.mac.plist');
@@ -22,10 +19,9 @@ async function afterPack(context) {
 
   console.log(`[after-pack] Re-signing ${appPath} with entitlements: ${entitlementsPath}`);
   try {
-    execSync(
-      `codesign --force --deep --sign - --entitlements "${entitlementsPath}" "${appPath}"`,
-      { stdio: 'inherit' },
-    );
+    execSync(`codesign --force --deep --sign - --entitlements "${entitlementsPath}" "${appPath}"`, {
+      stdio: 'inherit',
+    });
     console.log('[after-pack] Ad-hoc re-sign with entitlements completed successfully');
   } catch (err) {
     console.warn('[after-pack] codesign warning:', err && err.message ? err.message : err);

@@ -1,0 +1,59 @@
+version: 2
+updates:
+  # npm 依赖。workspace 是 monorepo，根目录一份 package-lock.json 就够，
+  # 所以只配置根目录，不需要给每个 workspace 各写一份。
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # 分组：Electron / 构建工具链这类包必须整体升 —— electron、electron-vite、
+    # electron-builder 拆成三个 PR 时任何一个单独合进来都装不上，评审人只会
+    # 得到一个「CI 莫名其妙红了」的 PR。合成一个组，要么一起过要么一起不过。
+    groups:
+      electron:
+        patterns:
+          - electron
+          - electron-*
+          - '@electron/*'
+      build-tooling:
+        patterns:
+          - vite
+          - vitest
+          - '@vitejs/*'
+          - '@vitest/*'
+          - typescript
+          - esbuild
+          - rollup
+      react:
+        patterns:
+          - react
+          - react-dom
+          - '@types/react'
+          - '@types/react-dom'
+      linting:
+        patterns:
+          - eslint
+          - eslint-*
+          - '@typescript-eslint/*'
+          - prettier
+    # 只开小版本与补丁的自动 PR。大版本升级（React 18→19 这种）会改 API，
+    # 由人来看，不要让机器每周推一个必然编不过的 PR 把列表刷满。
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  # GitHub Actions 也要跟版本：actions/checkout 停在 v3 这类过时版本会在
+  # GitHub 下线旧 runtime 的那天集体失效，而且失效发生在发布流程里。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']

@@ -72,16 +72,75 @@ function shellEscape(arg: string): string {
   return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * 把 glob 编译成正则。
+ *
+ * 支持 `**`、`*`、`?` 与 `{a,b}` 花括号展开。花括号不是可选项：工具描述里
+ * 给的例子就是 `**\/*.{ts,tsx}`，模型照着抄，而早先的实现把 `{ts,tsx}` 当字面量转义，
+ * 于是 `src/a.ts` 匹配失败 —— 而且是**静默**失败：搜索返回 0 条，看起来就像仓库里没有。
+ */
 export function globToRegExp(glob: string): RegExp {
+  const expanded = expandBraces(glob);
+  const body = expanded.map(compileSingleGlob).join('|');
+  // 多个展开分支时必须整体包一层非捕获组，否则 `^a$|^b$` 里两侧锚点各管一半还行，
+  // 但 `x/{a,b}.ts` 会变成 `^x/a\.ts$|^x/b\.ts$` —— 语义正确却容易在读的时候看错。
+  return new RegExp(`^(?:${body})$`);
+}
+
+/**
+ * `{a,b}` → 多条 glob。
+ *
+ * 只支持一层（可嵌套展开但没有交叉积以外的语义），这与 rg / bash 的实际用法一致：
+ * 从来没有人写 `{a,{b,c}}` 之外的形状，而递归处理嵌套已经能覆盖它。
+ * 没有花括号时返回单元素数组。
+ */
+function expandBraces(glob: string): string[] {
+  const open = glob.indexOf('{');
+  if (open < 0) return [glob];
+  const close = glob.indexOf('}', open + 1);
+  if (close < 0) return [glob]; // 没闭合：当字面量，交给编译阶段转义
+  const prefix = glob.slice(0, open);
+  const suffix = glob.slice(close + 1);
+  const alternates = splitTopLevel(glob.slice(open + 1, close));
+  const out: string[] = [];
+  for (const alt of alternates) {
+    for (const tail of expandBraces(suffix)) {
+      out.push(`${prefix}${alt}${tail}`);
+    }
+  }
+  return out;
+}
+
+/** 按顶层逗号切分（嵌套花括号里的逗号不属于本级）。 */
+function splitTopLevel(src: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of src) {
+    if (ch === '{') depth++;
+    else if (ch === '}') depth--;
+    if (ch === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+  return parts;
+}
+
+function compileSingleGlob(glob: string): string {
   // Placeholder for `**/` so the inserted `(?:.*/)?` quantifier isn't mangled by
   // the later `? -> .` replacement. `**/` matches zero or more directory segments.
-  const escaped = glob
+  return glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*\//g, '__DOUBLE_STAR_SLASH__')
+    .replace(/\*\*/g, '__DOUBLE_STAR__')
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '.')
-    .replace(/__DOUBLE_STAR_SLASH__/g, '(?:.*/)?');
-  return new RegExp(`^${escaped}$`);
+    .replace(/__DOUBLE_STAR_SLASH__/g, '(?:.*/)?')
+    .replace(/__DOUBLE_STAR__/g, '.*');
 }
 
 function parseRgLine(line: string): CodeSearchHit | null {
@@ -535,6 +594,66 @@ export function getAugmentedEnv(): NodeJS.ProcessEnv {
   };
 }
 
+/**
+ * 构造「按文件名定向查找」的远程命令。
+ *
+ * 单独导出是**为了强制走引号转义**：这个文件名来自用户在聊天框里敲的
+ * `@xxx` / 跳转输入，早先的写法是把它直接插进 `sh -c` 的字符串里，
+ * 一个 `a"; touch PWNED; echo "` 就能在工作区里落一个文件。
+ * 远端 `runCommand` 只接受命令字符串，所以这里必须显式 `shellEscape`。
+ */
+export function buildRemoteFindByNameCommand(fileName: string): string {
+  return `find . -name ${shellEscape(fileName)} -not -path "*/.*" -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/build/*" -print | head -n 5`;
+}
+
+/**
+ * 本地按文件名定向查找。
+ *
+ * 走 `spawn` 的参数数组，文件名**原样**作为一个 argv 元素传给 `find`，
+ * 不经过任何 shell —— 于是引号、分号、`$(...)` 都只是文件名的一部分。
+ */
+export async function findLocalByName(
+  root: string,
+  fileName: string,
+  timeout = 1500,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(
+        'find',
+        [
+          '.',
+          '-name',
+          fileName,
+          '-not',
+          '-path',
+          '*/.*',
+          '-not',
+          '-path',
+          '*/node_modules/*',
+          '-not',
+          '-path',
+          '*/dist/*',
+          '-not',
+          '-path',
+          '*/build/*',
+          '-print',
+        ],
+        { cwd: root, env: getAugmentedEnv(), timeout, stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      let stdout = '';
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+        if (stdout.length > 600_000) child.kill();
+      });
+      child.on('error', () => resolve(null));
+      child.on('close', () => resolve(stdout || null));
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 export async function runLocalCommand(
   cmd: string,
   args: string[],
@@ -635,11 +754,34 @@ export async function collectFilePathsLocal(root: string, maxFiles = 5000): Prom
   }
 
   // 3. 尝试 Unix find 命令极速索引（~50-100ms）
+  //    走 argv 数组而不是 `sh -c`：这条命令本身没有变量，但少经过一层 shell
+  //    就少一处「将来有人往里插一个变量」的机会，代价为零。
   if (process.platform !== 'win32') {
     try {
-      const findCmd =
-        'find . -maxdepth 10 \\( -name .git -o -name node_modules -o -name dist -o -name out -o -name build -o -name .next -o -name __pycache__ -o -name vendor -o -name target -o -name .venv -o -name venv \\) -prune -o -type f -print';
-      const findOut = await runLocalCommand('sh', ['-c', findCmd], root, 3000);
+      const pruneNames = [
+        '.git',
+        'node_modules',
+        'dist',
+        'out',
+        'build',
+        '.next',
+        '__pycache__',
+        'vendor',
+        'target',
+        '.venv',
+        'venv',
+      ];
+      const pruneExpr: string[] = [];
+      pruneNames.forEach((name, i) => {
+        if (i > 0) pruneExpr.push('-o');
+        pruneExpr.push('-name', name);
+      });
+      const findOut = await runLocalCommand(
+        'find',
+        ['.', '-maxdepth', '10', '(', ...pruneExpr, ')', '-prune', '-o', '-type', 'f', '-print'],
+        root,
+        3000,
+      );
       if (findOut && findOut.trim()) {
         const lines = findOut
           .split(/\r?\n/)
@@ -746,7 +888,9 @@ export async function globFilesByPattern(
   }
   const cleanPattern = pattern.trim();
   const re = globToRegExp(
-    cleanPattern.startsWith('**/') || cleanPattern.includes('/') ? cleanPattern : `**/${cleanPattern}`,
+    cleanPattern.startsWith('**/') || cleanPattern.includes('/')
+      ? cleanPattern
+      : `**/${cleanPattern}`,
   );
   const files = await collectFilePaths(backend, Math.max(maxResults * 20, 2000));
   const matches: string[] = [];
@@ -780,7 +924,9 @@ export function extractSymbolFromLine(lineText: string): { name: string; kind: S
   }
 
   // 1. class
-  const classMatch = line.match(/\b(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z0-9_$]+)/);
+  const classMatch = line.match(
+    /\b(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z0-9_$]+)/,
+  );
   if (classMatch) return { name: classMatch[1], kind: 'class' };
 
   // 2. interface
@@ -788,7 +934,9 @@ export function extractSymbolFromLine(lineText: string): { name: string; kind: S
   if (ifaceMatch) return { name: ifaceMatch[1], kind: 'interface' };
 
   // 3. struct / record / trait
-  const structMatch = line.match(/\b(?:export\s+)?(?:type\s+([A-Za-z0-9_$]+)\s+struct|(?:struct|record|trait)\s+([A-Za-z0-9_$]+))/);
+  const structMatch = line.match(
+    /\b(?:export\s+)?(?:type\s+([A-Za-z0-9_$]+)\s+struct|(?:struct|record|trait)\s+([A-Za-z0-9_$]+))/,
+  );
   if (structMatch) return { name: structMatch[1] || structMatch[2], kind: 'struct' };
 
   // 4. enum
@@ -800,11 +948,15 @@ export function extractSymbolFromLine(lineText: string): { name: string; kind: S
   if (typeMatch) return { name: typeMatch[1], kind: 'type' };
 
   // 6. function (JS/TS function / async function / Go func / Python def / Rust fn)
-  const fnMatch = line.match(/\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)|\b(?:def|func|fn)\s+([A-Za-z0-9_$]+)/);
+  const fnMatch = line.match(
+    /\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_$]+)|\b(?:def|func|fn)\s+([A-Za-z0-9_$]+)/,
+  );
   if (fnMatch) return { name: fnMatch[1] || fnMatch[2], kind: 'function' };
 
   // 7. arrow function: export const foo = () =>
-  const arrowMatch = line.match(/\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[a-zA-Z0-9_$]+)?\s*=>/);
+  const arrowMatch = line.match(
+    /\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[a-zA-Z0-9_$]+)?\s*=>/,
+  );
   if (arrowMatch) return { name: arrowMatch[1], kind: 'function' };
 
   return null;
@@ -858,4 +1010,3 @@ export async function searchSymbols(
 
   return symbolHits;
 }
-

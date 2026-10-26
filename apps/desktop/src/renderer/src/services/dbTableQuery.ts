@@ -10,7 +10,12 @@
 
 import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
 import { qualifyIdent, quoteIdent, type DbDriverType } from './dbIdentifiers';
-import { formatSqlLiteral, isNumericColumnType, pkColumnsOf, type DbCellValue } from './dbMutations';
+import {
+  formatSqlLiteral,
+  isNumericColumnType,
+  pkColumnsOf,
+  type DbCellValue,
+} from './dbMutations';
 
 /** 支持的条件运算符 */
 export type DbTableFilterOperator =

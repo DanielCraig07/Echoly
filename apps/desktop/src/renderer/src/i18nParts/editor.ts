@@ -7,23 +7,42 @@
  */
 export const editorDict: Record<string, { zh: string; en: string }> = {
   // ── 编辑器：Monaco 悬停 / 断点提示 ──────────────────────────────
-  'editor.debugHoverTitle': { zh: '**调试变量求值 (DAP)**', en: '**Debug variable evaluation (DAP)**' },
+  'editor.debugHoverTitle': {
+    zh: '**调试变量求值 (DAP)**',
+    en: '**Debug variable evaluation (DAP)**',
+  },
   'editor.bpConditional': {
     zh: '条件断点: 第 {line} 行 (条件: `{cond}`)',
     en: 'Conditional breakpoint: line {line} (condition: `{cond}`)',
   },
   'editor.bpPlain': { zh: '断点: 第 {line} 行', en: 'Breakpoint: line {line}' },
-  'editor.bpEditConditional': {
-    zh: '编辑第 {line} 行条件断点表达式（留空则转为普通断点，点击取消不修改）:',
-    en: 'Edit the conditional breakpoint expression for line {line} (leave empty to make it a plain breakpoint; Cancel to keep it unchanged):',
+  'editor.bpEditConditionalTitle': {
+    zh: '编辑第 {line} 行条件断点',
+    en: 'Edit conditional breakpoint on line {line}',
   },
-  'editor.bpSetConditional': {
-    zh: '为第 {line} 行设置条件断点表达式（例如: i > 10 或 ptr != nullptr）:',
-    en: 'Set a conditional breakpoint expression for line {line} (e.g. i > 10 or ptr != nullptr):',
+  'editor.bpSetConditionalTitle': {
+    zh: '第 {line} 行条件断点',
+    en: 'Conditional breakpoint on line {line}',
   },
+  'editor.bpConditionIntro': {
+    zh: '表达式为真时该断点才会命中。例如 `i > 10`、`ptr != nullptr`、`list.size() == 0`。',
+    en: 'The breakpoint only stops when this expression is true — e.g. `i > 10`, `ptr != nullptr`, `list.size() == 0`.',
+  },
+  'editor.bpConditionEmptyNote': {
+    zh: '留空并确认会把该断点转为普通断点（条件清空，断点仍保留）。',
+    en: 'Confirming with an empty expression turns it into a plain breakpoint — the condition is cleared, the breakpoint stays.',
+  },
+  'editor.bpConditionLabel': {
+    zh: '条件表达式（可留空）',
+    en: 'Condition expression (may be empty)',
+  },
+  'editor.bpConditionSave': { zh: '应用', en: 'Apply' },
 
   // ── 编辑器：Smart Apply / 行内 AI 的 toast ──────────────────────
-  'editor.smartApplyAccepted': { zh: '✓ 已采纳 Smart Apply 代码修改', en: '✓ Smart Apply changes accepted' },
+  'editor.smartApplyAccepted': {
+    zh: '✓ 已采纳 Smart Apply 代码修改',
+    en: '✓ Smart Apply changes accepted',
+  },
   'editor.smartApplyRejected': {
     zh: '✗ 已拒绝并撤销 Smart Apply 代码修改',
     en: '✗ Smart Apply changes rejected and reverted',
@@ -34,7 +53,10 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
     zh: '✦ Smart Apply：代码修改已应用，请在编辑器顶部审查并选择采纳或撤销',
     en: '✦ Smart Apply: changes applied — review them at the top of the editor and accept or revert',
   },
-  'editor.codeInserted': { zh: '已将代码片段插入当前光标处', en: 'Code snippet inserted at the cursor' },
+  'editor.codeInserted': {
+    zh: '已将代码片段插入当前光标处',
+    en: 'Code snippet inserted at the cursor',
+  },
   'editor.codeAlreadySame': {
     zh: '当前代码与建议修改一致，无需更新',
     en: 'The code already matches the suggestion — nothing to update',
@@ -52,20 +74,32 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
   // ── 编辑器：Monaco 右键菜单项 ──────────────────────────────────
   'editor.actionInlineAi': { zh: '✦ 行内 AI 编辑 (⌘I / ⌘K)', en: '✦ Inline AI Edit (⌘I / ⌘K)' },
   'editor.actionAddToChat': { zh: '✦ 添加到 AI 对话', en: '✦ Add to AI Chat' },
-  'editor.actionFixWithAi': { zh: '✦ Fix with AI: 修复此行错误', en: '✦ Fix with AI: fix the error on this line' },
-  'editor.actionToggleSplit': { zh: 'View: 切换拆分编辑器 (⌘\\)', en: 'View: Toggle Split Editor (⌘\\)' },
+  'editor.actionFixWithAi': {
+    zh: '✦ Fix with AI: 修复此行错误',
+    en: '✦ Fix with AI: fix the error on this line',
+  },
+  'editor.actionToggleSplit': {
+    zh: 'View: 切换拆分编辑器 (⌘\\)',
+    en: 'View: Toggle Split Editor (⌘\\)',
+  },
 
   // ── 编辑器：Git 合并冲突 ───────────────────────────────────────
   'editor.conflictResolvedTitle': { zh: 'Git 冲突已解决', en: 'Git conflict resolved' },
   'editor.conflictResolvedDetail': { zh: '已应用{which}更改', en: '{which} changes applied' },
   'editor.conflictAllResolvedTitle': { zh: 'Git 冲突全部解决', en: 'All Git conflicts resolved' },
-  'editor.conflictAllResolvedDetail': { zh: '已批量应用{which}更改', en: '{which} changes applied in bulk' },
+  'editor.conflictAllResolvedDetail': {
+    zh: '已批量应用{which}更改',
+    en: '{which} changes applied in bulk',
+  },
   'editor.conflictWhichCurrent': { zh: '当前', en: 'current' },
   'editor.conflictWhichIncoming': { zh: '传入', en: 'incoming' },
   'editor.conflictWhichBoth': { zh: '双方', en: 'both' },
   // Monaco CodeLens 上的三个采纳动作。{header} 是 git 写进冲突标记的那一串
   // （分支名 / commit），它属于仓库数据、不翻译，所以整句进字典而不是拼接。
-  'editor.conflictTakeCurrent': { zh: '✦ 采用当前更改 ({header})', en: '✦ Take current change ({header})' },
+  'editor.conflictTakeCurrent': {
+    zh: '✦ 采用当前更改 ({header})',
+    en: '✦ Take current change ({header})',
+  },
   'editor.conflictTakeIncoming': {
     zh: '✦ 采用传入更改 ({header})',
     en: '✦ Take incoming change ({header})',
@@ -93,7 +127,10 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
     en: 'Accept all changes from the current branch (HEAD)',
   },
   'editor.acceptCurrentBtn': { zh: '全部采用当前', en: 'Accept All Current' },
-  'editor.acceptIncomingTip': { zh: '批量采用传入分支修改 (Incoming)', en: 'Accept all incoming changes' },
+  'editor.acceptIncomingTip': {
+    zh: '批量采用传入分支修改 (Incoming)',
+    en: 'Accept all incoming changes',
+  },
   'editor.acceptIncomingBtn': { zh: '全部采用传入', en: 'Accept All Incoming' },
   'editor.keepBothTip': { zh: '保留双方修改', en: 'Keep both sides' },
   'editor.keepBothBtn': { zh: '全部保留双方', en: 'Keep Both' },
@@ -160,7 +197,10 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
     zh: '上一个差异 (跳转至第 {n}/{total} 处，快捷键: Shift+F5 或 ⌥F5)',
     en: 'Previous difference (jump to {n}/{total}; Shift+F5 or ⌥F5)',
   },
-  'editor.prevDiffNone': { zh: '上一个差异 (当前无差异)', en: 'Previous difference (no differences)' },
+  'editor.prevDiffNone': {
+    zh: '上一个差异 (当前无差异)',
+    en: 'Previous difference (no differences)',
+  },
   'editor.nextDiffTooltip': {
     zh: '下一个差异 (跳转至第 {n}/{total} 处，快捷键: F5)',
     en: 'Next difference (jump to {n}/{total}; F5)',
@@ -175,7 +215,10 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
     en: 'Next modified file ({idx}/{total}: {name})',
   },
   'editor.stageFileChanges': { zh: '暂存文件更改', en: 'Stage File Changes' },
-  'editor.discardChangesRestore': { zh: '放弃更改 (还原文件)', en: 'Discard Changes (Revert File)' },
+  'editor.discardChangesRestore': {
+    zh: '放弃更改 (还原文件)',
+    en: 'Discard Changes (Revert File)',
+  },
   'editor.closeDiffEsc': { zh: '关闭对比视图 (Esc)', en: 'Close Diff View (Esc)' },
   'editor.lineCount': { zh: '{n} 行', en: '{n} lines' },
   'editor.loadingDiff': { zh: '正在加载改动对比数据...', en: 'Loading diff data...' },
@@ -231,14 +274,23 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
   'editor.splitPane': { zh: '拆分窗格', en: 'Split Pane' },
   'editor.switchSplitHorizontal': { zh: '切换为上下拆分', en: 'Switch to stacked split' },
   'editor.switchSplitVertical': { zh: '切换为左右拆分', en: 'Switch to side-by-side split' },
-  'editor.resizeSplitVertical': { zh: '拖动调整上下分屏比例', en: 'Drag to resize the vertical split' },
-  'editor.resizeSplitHorizontal': { zh: '拖动调整左右分屏比例', en: 'Drag to resize the horizontal split' },
+  'editor.resizeSplitVertical': {
+    zh: '拖动调整上下分屏比例',
+    en: 'Drag to resize the vertical split',
+  },
+  'editor.resizeSplitHorizontal': {
+    zh: '拖动调整左右分屏比例',
+    en: 'Drag to resize the horizontal split',
+  },
 
   // ── 编辑器：选区浮动 AI 快捷栏 ─────────────────────────────────
   'editor.addToChatTip': { zh: '添加到 AI 会话提问 ({key}L)', en: 'Add to the AI chat ({key}L)' },
   'editor.aiAsk': { zh: 'AI 提问', en: 'Ask AI' },
   'editor.inlineEditTip': { zh: '行内智能编辑 ({key}K)', en: 'Inline AI edit ({key}K)' },
-  'editor.explainSelectionTip': { zh: '向 AI 提问解释选中的代码', en: 'Ask AI to explain the selection' },
+  'editor.explainSelectionTip': {
+    zh: '向 AI 提问解释选中的代码',
+    en: 'Ask AI to explain the selection',
+  },
   'editor.explain': { zh: '解释', en: 'Explain' },
   'editor.optimizeSelectionTip': {
     zh: '行内 AI 优化重构选中的代码',
@@ -256,7 +308,10 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
   'editor.acceptBtn': { zh: '✓ 接受 (⌘↵)', en: '✓ Accept (⌘↵)' },
   'editor.rejectTip': { zh: '放弃变更并还原 (Esc)', en: 'Discard the changes and revert (Esc)' },
   'editor.rejectBtn': { zh: '✕ 放弃 (Esc)', en: '✕ Discard (Esc)' },
-  'editor.inlineAiGenerating': { zh: 'AI 正在原地生成代码修改...', en: 'AI is generating the code changes in place...' },
+  'editor.inlineAiGenerating': {
+    zh: 'AI 正在原地生成代码修改...',
+    en: 'AI is generating the code changes in place...',
+  },
   'editor.inlineAiFollowUpPh': {
     zh: '在当前修改基础上追问微调，如：改为异步函数、增加空值校验 (Enter 再次生成)...',
     en: 'Ask for a tweak on top of these changes, e.g. make it async, add null checks (Enter to regenerate)...',
@@ -403,8 +458,14 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
     zh: '进程已启动，正在执行并监听输出 (已执行 {s}s)...',
     en: 'Process started — running and streaming output ({s}s elapsed)...',
   },
-  'chat.stdoutEmpty': { zh: '（命令执行完成，标准输出为空）', en: '(Command finished with empty stdout)' },
-  'chat.exitOk': { zh: '✔ 进程正常退出 (exit code 0)', en: '✔ Process exited normally (exit code 0)' },
+  'chat.stdoutEmpty': {
+    zh: '（命令执行完成，标准输出为空）',
+    en: '(Command finished with empty stdout)',
+  },
+  'chat.exitOk': {
+    zh: '✔ 进程正常退出 (exit code 0)',
+    en: '✔ Process exited normally (exit code 0)',
+  },
   'chat.exitBad': {
     zh: '✘ 进程异常退出 (exit code {code})',
     en: '✘ Process exited abnormally (exit code {code})',
@@ -416,13 +477,22 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
   },
   'chat.statusFailed': { zh: '失败', en: 'Failed' },
   'chat.statusDone': { zh: '完成', en: 'Done' },
-  'chat.expandProcessTip': { zh: '点击展开查看具体执行过程', en: 'Click to expand the execution details' },
-  'chat.collapseProcessTip': { zh: '点击收起具体执行过程', en: 'Click to collapse the execution details' },
+  'chat.expandProcessTip': {
+    zh: '点击展开查看具体执行过程',
+    en: 'Click to expand the execution details',
+  },
+  'chat.collapseProcessTip': {
+    zh: '点击收起具体执行过程',
+    en: 'Click to collapse the execution details',
+  },
   'chat.collapseProcess': { zh: '▴ 收起过程', en: '▴ Collapse' },
   'chat.expandProcess': { zh: '▾ 展开查看具体过程', en: '▾ Expand details' },
   'chat.args': { zh: '参数', en: 'Arguments' },
   'chat.result': { zh: '结果', en: 'Result' },
-  'chat.expandAllTail': { zh: '展开全部（共 {n} 行，当前显示末尾）', en: 'Expand all ({n} lines; showing the tail)' },
+  'chat.expandAllTail': {
+    zh: '展开全部（共 {n} 行，当前显示末尾）',
+    en: 'Expand all ({n} lines; showing the tail)',
+  },
   'chat.expandAllMore': { zh: '展开全部（还有 {n} 行）', en: 'Expand all ({n} more lines)' },
 
   // ── 工作过程分组（WorkedForGroup） ─────────────────────────────
@@ -447,7 +517,10 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
   'chat.outLines': { zh: '{n} 行输出', en: '{n} lines of output' },
   'chat.collapseOutput': { zh: '收起输出', en: 'Collapse output' },
   'chat.expandOutput': { zh: '展开输出', en: 'Expand output' },
-  'chat.waitTerminalCap': { zh: '[等待终端执行中 · {s}s / 超时上限5m]', en: '[Waiting for terminal · {s}s / 5m limit]' },
+  'chat.waitTerminalCap': {
+    zh: '[等待终端执行中 · {s}s / 超时上限5m]',
+    en: '[Waiting for terminal · {s}s / 5m limit]',
+  },
   'chat.waitTerminalSec': {
     zh: '正在等待终端执行... ({s}s / 安全超时上限5分钟)',
     en: 'Waiting for the terminal... ({s}s / 5-minute safety timeout)',
@@ -464,7 +537,10 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
   'chat.toolNoOutput': { zh: '(无返回输出)', en: '(No output)' },
   'chat.workedExpandTip': { zh: '点击展开查看完整执行过程', en: 'Click to expand the full run' },
   'chat.workedCollapseTip': { zh: '点击折叠执行过程', en: 'Click to collapse the run' },
-  'chat.waitTerminalRunning': { zh: '等待终端执行中 · {time}', en: 'Waiting for terminal · {time}' },
+  'chat.waitTerminalRunning': {
+    zh: '等待终端执行中 · {time}',
+    en: 'Waiting for terminal · {time}',
+  },
   'chat.statusThinking': { zh: '思考中...', en: 'Thinking...' },
   'chat.statusWaitingTerminal': { zh: '等待终端执行中...', en: 'Waiting for terminal...' },
   'chat.statusWorking': { zh: '处理中...', en: 'Working...' },
@@ -477,7 +553,10 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
     zh: '达到最大 Token 长度截断 (length)',
     en: 'Truncated at max token length (length)',
   },
-  'chat.finishContentFilter': { zh: '触发安全过滤 (content_filter)', en: 'Content filtered (content_filter)' },
+  'chat.finishContentFilter': {
+    zh: '触发安全过滤 (content_filter)',
+    en: 'Content filtered (content_filter)',
+  },
   'chat.tpsLabel': { zh: '生成速率 (TPS)', en: 'Generation Speed (TPS)' },
   'chat.tpsFast': { zh: '🚀 极速吞吐', en: '🚀 Blazing fast' },
   'chat.tpsSmooth': { zh: '⚡ 流畅生成', en: '⚡ Smooth' },

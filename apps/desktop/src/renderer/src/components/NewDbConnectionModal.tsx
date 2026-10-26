@@ -1,7 +1,11 @@
 import React, { Fragment, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DatabaseConnectionInfo, DbSavedConnection } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n, translateSegments } from '../i18n';
 import {
   DB_FORM_ERROR_KEY,
@@ -20,7 +24,11 @@ export interface NewDbConnectionModalProps {
   onSaved?: (conn: DbSavedConnection) => void;
   /** 传入则为「编辑连接」模式；为空则是「新建连接」 */
   editing?: DbSavedConnection | null;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 const TYPE_LABEL: Record<DbDriverType, string> = {
@@ -70,9 +78,7 @@ export function NewDbConnectionModal({
       setName(editing.name || '');
       setSqlitePath(editing.path || '');
       setHost(editing.host || 'localhost');
-      setPort(
-        editing.port != null ? String(editing.port) : defaultPortFor(editing.type),
-      );
+      setPort(editing.port != null ? String(editing.port) : defaultPortFor(editing.type));
       setDatabase(editing.database || '');
       // 用户名统一默认 root（不再按驱动切换成 postgres），历史连接没存用户名时也回落到 root
       setUsername(editing.user || 'root');
@@ -218,7 +224,11 @@ export function NewDbConnectionModal({
 
       const res = await window.ide?.dbConnectSaved(saved.id);
       if (res && res.ok && res.connection) {
-        onShowToast?.(t('db.connSavedConnected', { name: res.connection.name }), undefined, 'success');
+        onShowToast?.(
+          t('db.connSavedConnected', { name: res.connection.name }),
+          undefined,
+          'success',
+        );
         onConnected(res.connection);
         onClose();
       } else {
@@ -292,7 +302,16 @@ export function NewDbConnectionModal({
             onClick={onClose}
             title={t('db.closeEsc')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -312,14 +331,26 @@ export function NewDbConnectionModal({
         >
           {/* 驱动类型选择 */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
+            <div
+              style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}
+            >
               {t('db.connDriverTypeLabel')}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
               {[
-                { type: 'sqlite' as const, label: 'SQLite', icon: '🪶', desc: t('db.connDescSqlite') },
+                {
+                  type: 'sqlite' as const,
+                  label: 'SQLite',
+                  icon: '🪶',
+                  desc: t('db.connDescSqlite'),
+                },
                 { type: 'mysql' as const, label: 'MySQL', icon: '🐬', desc: t('db.connDescMysql') },
-                { type: 'postgres' as const, label: 'PostgreSQL', icon: '🐘', desc: t('db.connDescPostgres') },
+                {
+                  type: 'postgres' as const,
+                  label: 'PostgreSQL',
+                  icon: '🐘',
+                  desc: t('db.connDescPostgres'),
+                },
               ].map((item) => (
                 <div
                   key={item.type}
@@ -334,7 +365,10 @@ export function NewDbConnectionModal({
                     padding: '8px 10px',
                     borderRadius: 6,
                     border: `1.5px solid ${driver === item.type ? 'var(--accent, #3b82f6)' : 'var(--border)'}`,
-                    background: driver === item.type ? 'rgba(59, 130, 246, 0.12)' : 'rgba(255, 255, 255, 0.02)',
+                    background:
+                      driver === item.type
+                        ? 'rgba(59, 130, 246, 0.12)'
+                        : 'rgba(255, 255, 255, 0.02)',
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
@@ -356,7 +390,9 @@ export function NewDbConnectionModal({
 
           {/* 连接名称 */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
+            <div
+              style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}
+            >
               {t('db.connNameLabel')}
             </div>
             <input
@@ -385,12 +421,26 @@ export function NewDbConnectionModal({
           </div>
 
           {/* 驱动专属配置区（设置固定最小高度 160px，切换时完全平稳不跳变） */}
-          <div style={{ minHeight: 160, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+          <div
+            style={{
+              minHeight: 160,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-start',
+            }}
+          >
             {/* SQLite 表单 */}
             {driver === 'sqlite' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: 4,
+                    }}
+                  >
                     <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
                       {t('db.connSqlitePathLabel')}
                     </span>
@@ -458,13 +508,14 @@ export function NewDbConnectionModal({
                   }}
                 >
                   {/* 「提示：」是强调片段，整句（含强调位置）由字典给出，避免把中文语序钉进 JSX */}
-                  {translateSegments('db.connSqliteTip', locale, { label: t('db.connTipLabel') }).map(
-                    (seg, i) =>
-                      seg.emphasis ? (
-                        <strong key={i}>{seg.text}</strong>
-                      ) : (
-                        <Fragment key={i}>{seg.text}</Fragment>
-                      ),
+                  {translateSegments('db.connSqliteTip', locale, {
+                    label: t('db.connTipLabel'),
+                  }).map((seg, i) =>
+                    seg.emphasis ? (
+                      <strong key={i}>{seg.text}</strong>
+                    ) : (
+                      <Fragment key={i}>{seg.text}</Fragment>
+                    ),
                   )}
                 </div>
               </div>
@@ -475,7 +526,9 @@ export function NewDbConnectionModal({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 8 }}>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{t('db.connHostLabel')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
+                      {t('db.connHostLabel')}
+                    </div>
                     <input
                       type="text"
                       placeholder={t('db.connHostPlaceholder')}
@@ -495,7 +548,9 @@ export function NewDbConnectionModal({
                     />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{t('db.connPortLabel')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
+                      {t('db.connPortLabel')}
+                    </div>
                     <input
                       type="text"
                       inputMode="numeric"
@@ -518,7 +573,8 @@ export function NewDbConnectionModal({
 
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
-                    {t('db.connDatabaseLabel')}{driver === 'postgres' ? ' *' : ''}
+                    {t('db.connDatabaseLabel')}
+                    {driver === 'postgres' ? ' *' : ''}
                   </div>
                   <input
                     type="text"
@@ -541,7 +597,9 @@ export function NewDbConnectionModal({
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{t('db.connUsernameLabel')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
+                      {t('db.connUsernameLabel')}
+                    </div>
                     <input
                       type="text"
                       placeholder="root"
@@ -561,7 +619,9 @@ export function NewDbConnectionModal({
                     />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{t('db.connPasswordLabel')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
+                      {t('db.connPasswordLabel')}
+                    </div>
                     <input
                       type="password"
                       placeholder={isEditing ? t('db.connPasswordSavedPlaceholder') : '••••••••'}
@@ -661,7 +721,8 @@ export function NewDbConnectionModal({
               }}
             >
               {t('db.cancel')}
-            </button>            <button
+            </button>{' '}
+            <button
               type="button"
               onClick={handleSaveAndConnect}
               disabled={connecting}
@@ -676,7 +737,11 @@ export function NewDbConnectionModal({
                 fontWeight: 600,
               }}
             >
-              {connecting ? t('db.connConnecting') : isEditing ? t('db.connSaveAndConnect') : t('db.connConnect')}
+              {connecting
+                ? t('db.connConnecting')
+                : isEditing
+                  ? t('db.connSaveAndConnect')
+                  : t('db.connConnect')}
             </button>
           </div>
         </div>

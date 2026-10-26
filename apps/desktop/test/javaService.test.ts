@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { detectInstalledJdks, getAvailableOnlineJdks, resolveJavaHome, getEcholyJdksDir } from '../src/main/javaService';
+import {
+  detectInstalledJdks,
+  getAvailableOnlineJdks,
+  resolveJavaHome,
+  getEcholyJdksDir,
+} from '../src/main/javaService';
 import fs from 'fs';
 import path from 'path';
 

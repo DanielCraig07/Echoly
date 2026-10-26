@@ -2,7 +2,11 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChatSession, WorkspaceInfo, RecentWorkspaceItem } from '@deepseek-ide/shared';
 import { formatSessionWorkspaceLine, folderNameFromPath } from '../utils';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { useI18n, type Translate } from '../i18n';
@@ -116,10 +120,7 @@ export function collectAvailableProjects(
   t: Translate,
 ): AvailableProject[] {
   // key 为规范化小写项目名，确保相同项目名称在下拉列表中全局唯一，不重复出现
-  const map = new Map<
-    string,
-    { key: string; name: string; path?: string; isCurrent: boolean }
-  >();
+  const map = new Map<string, { key: string; name: string; path?: string; isCurrent: boolean }>();
 
   const getCanonical = (
     rawName?: string,
@@ -137,9 +138,7 @@ export function collectAvailableProjects(
   // 1. 当前打开的工作区（置顶）
   if (workspaceInfo?.root) {
     const currentName =
-      folderNameFromPath(workspaceInfo.root) ||
-      workspaceInfo.label ||
-      t('session.currentProject');
+      folderNameFromPath(workspaceInfo.root) || workspaceInfo.label || t('session.currentProject');
     const { canonicalKey, name } = getCanonical(currentName, workspaceInfo.root);
     map.set(canonicalKey, {
       key: canonicalKey,
@@ -315,10 +314,7 @@ export function SessionModal({
   useEffect(() => {
     if (!projectDropdownOpen) return;
     const onMouseDown = (e: MouseEvent) => {
-      if (
-        projectDropdownRef.current &&
-        !projectDropdownRef.current.contains(e.target as Node)
-      ) {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
         setProjectDropdownOpen(false);
       }
     };
@@ -345,8 +341,14 @@ export function SessionModal({
       }),
       details: [
         { label: t('session.labelTitle'), value: target?.title?.trim() || t('session.untitled') },
-        { label: t('session.labelTime'), value: target ? formatTime(target.updatedAt) : t('session.unknown') },
-        { label: t('session.labelTurns'), value: t('session.turnsCount', { n: target?.messages?.length ?? 0 }) },
+        {
+          label: t('session.labelTime'),
+          value: target ? formatTime(target.updatedAt) : t('session.unknown'),
+        },
+        {
+          label: t('session.labelTurns'),
+          value: t('session.turnsCount', { n: target?.messages?.length ?? 0 }),
+        },
       ],
       tone: 'danger',
       confirmLabel: t('session.confirmDelete'),
@@ -401,9 +403,7 @@ export function SessionModal({
     }
   };
 
-  const currentProjectName = workspaceInfo?.root
-    ? folderNameFromPath(workspaceInfo.root)
-    : '';
+  const currentProjectName = workspaceInfo?.root ? folderNameFromPath(workspaceInfo.root) : '';
 
   const isCurrentProjectSession = useCallback(
     (s: ChatSession) => {
@@ -441,9 +441,7 @@ export function SessionModal({
       return workspaceInfo?.root ? currentProjectSessions : sessions;
     }
     if (selectedSpecificProject) {
-      return sessions.filter((s) =>
-        isSessionMatchingProject(s, selectedSpecificProject),
-      );
+      return sessions.filter((s) => isSessionMatchingProject(s, selectedSpecificProject));
     }
     return sessions;
   }, [filterScope, sessions, workspaceInfo, currentProjectSessions, selectedSpecificProject]);
@@ -490,7 +488,10 @@ export function SessionModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="session-modal-header">
-          <div className="session-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div
+            className="session-modal-title"
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
             <span>{t('session.historyTitle')}</span>
             <span
               style={{
@@ -506,13 +507,18 @@ export function SessionModal({
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}
-              title={selectedSpecificProject?.path || workspaceInfo?.root || t('session.allProjects')}
+              title={
+                selectedSpecificProject?.path || workspaceInfo?.root || t('session.allProjects')
+              }
             >
               {activeScopeBadgeText}
             </span>
             <span className="session-modal-count">({filteredSessions.length})</span>
           </div>
-          <div className="session-modal-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div
+            className="session-modal-actions"
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
             {/* 项目会话切换器：永久展示（放出来），支持选择所有已知项目（不管有没有历史会话） */}
             <div
               style={{
@@ -533,7 +539,8 @@ export function SessionModal({
                     fontSize: 11,
                     borderRadius: 4,
                     border: 'none',
-                    background: filterScope === 'current' ? 'var(--primary, #38bdf8)' : 'transparent',
+                    background:
+                      filterScope === 'current' ? 'var(--primary, #38bdf8)' : 'transparent',
                     color: filterScope === 'current' ? '#000' : 'var(--muted)',
                     fontWeight: filterScope === 'current' ? 700 : 500,
                     cursor: 'pointer',
@@ -641,11 +648,20 @@ export function SessionModal({
                         </span>
                       </div>
                       <div className="session-project-item-right">
-                        <span className={`session-project-count-pill${sessions.length > 0 ? ' has-sessions' : ''}`}>
+                        <span
+                          className={`session-project-count-pill${sessions.length > 0 ? ' has-sessions' : ''}`}
+                        >
                           {t('session.countBadge', { n: sessions.length })}
                         </span>
                         {filterScope === 'all' && (
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                          >
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
                         )}
@@ -707,11 +723,20 @@ export function SessionModal({
                             )}
                           </div>
                           <div className="session-project-item-right">
-                            <span className={`session-project-count-pill${p.count > 0 ? ' has-sessions' : ''}`}>
+                            <span
+                              className={`session-project-count-pill${p.count > 0 ? ' has-sessions' : ''}`}
+                            >
                               {p.count > 0 ? t('session.countBadge', { n: p.count }) : '0'}
                             </span>
                             {isSelected && (
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <svg
+                                width="13"
+                                height="13"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.5"
+                              >
                                 <polyline points="20 6 9 17 4 12" />
                               </svg>
                             )}
@@ -740,7 +765,14 @@ export function SessionModal({
               onClick={onClose}
               title={t('common.closeEsc')}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -784,17 +816,35 @@ export function SessionModal({
 
         <div className="session-modal-body">
           {loading ? (
-            <div className="session-modal-empty" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}>
-                <line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" />
-                <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" /><line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
-                <line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" />
-                <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
+            <div
+              className="session-modal-empty"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                style={{ animation: 'spin 1s linear infinite' }}
+              >
+                <line x1="12" y1="2" x2="12" y2="6" />
+                <line x1="12" y1="18" x2="12" y2="22" />
+                <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" />
+                <line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
+                <line x1="2" y1="12" x2="6" y2="12" />
+                <line x1="18" y1="12" x2="22" y2="12" />
+                <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
+                <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
               </svg>
               <span>{t('session.loading')}</span>
             </div>
           ) : filteredSessions.length === 0 ? (
-            <div className="session-modal-empty" style={{ padding: '32px 16px', textAlign: 'center' }}>
+            <div
+              className="session-modal-empty"
+              style={{ padding: '32px 16px', textAlign: 'center' }}
+            >
               {search ? (
                 t('session.noMatch')
               ) : filterScope === 'current' ? (
@@ -822,7 +872,9 @@ export function SessionModal({
                   <div style={{ color: 'var(--muted)', marginBottom: 12 }}>
                     {t('session.emptyProject', { name: selectedSpecificProject.name })}
                   </div>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <div
+                    style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}
+                  >
                     {workspaceInfo?.root && (
                       <button
                         type="button"
@@ -906,7 +958,16 @@ export function SessionModal({
                                   void handleSaveRename(s.id);
                                 }}
                               >
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <svg
+                                  width="11"
+                                  height="11"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
                                   <polyline points="20 6 9 17 4 12" />
                                 </svg>
                               </button>
@@ -920,7 +981,16 @@ export function SessionModal({
                                   setEditingId(null);
                                 }}
                               >
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <svg
+                                  width="11"
+                                  height="11"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
                                   <line x1="18" y1="6" x2="6" y2="18" />
                                   <line x1="6" y1="6" x2="18" y2="18" />
                                 </svg>
@@ -983,7 +1053,10 @@ export function SessionModal({
                       >
                         {t('session.turnsBadge', { n: msgCount })}
                       </span>
-                      <div className="session-row-actions" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <div
+                        className="session-row-actions"
+                        style={{ display: 'flex', alignItems: 'center', gap: 2 }}
+                      >
                         {!isEditing && (
                           <button
                             type="button"
@@ -1003,7 +1076,16 @@ export function SessionModal({
                               cursor: 'pointer',
                             }}
                           >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
                               <path d="M12 20h9" />
                               <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                             </svg>
@@ -1028,7 +1110,16 @@ export function SessionModal({
                             cursor: 'pointer',
                           }}
                         >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
                             <polyline points="3 6 5 6 21 6" />
                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                           </svg>

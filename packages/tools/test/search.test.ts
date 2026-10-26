@@ -31,6 +31,36 @@ describe('globToRegExp', () => {
     expect(re.test('a.b+c(ts)')).toBe(true);
     expect(re.test('aXbXcXts')).toBe(false);
   });
+
+  it('expands brace alternation', () => {
+    // 工具描述里给的例子就是这个形状，而早先它编译成字面量 `{ts,tsx}`，静默匹配不到。
+    const re = globToRegExp('**/*.{ts,tsx}');
+    expect(re.test('src/a.ts')).toBe(true);
+    expect(re.test('src/a.tsx')).toBe(true);
+    expect(re.test('src/deep/a.tsx')).toBe(true);
+    expect(re.test('a.ts')).toBe(true);
+    expect(re.test('src/a.js')).toBe(false);
+  });
+
+  it('expands braces in the middle of a segment', () => {
+    const re = globToRegExp('src/*.{test,spec}.ts');
+    expect(re.test('src/a.test.ts')).toBe(true);
+    expect(re.test('src/a.spec.ts')).toBe(true);
+    expect(re.test('src/a.ts')).toBe(false);
+  });
+
+  it('handles a brace group with more than two alternatives', () => {
+    const re = globToRegExp('*.{js,mjs,cjs}');
+    expect(re.test('a.js')).toBe(true);
+    expect(re.test('a.mjs')).toBe(true);
+    expect(re.test('a.cjs')).toBe(true);
+    expect(re.test('a.ts')).toBe(false);
+  });
+
+  it('treats an unclosed brace as a literal', () => {
+    const re = globToRegExp('a{b');
+    expect(re.test('a{b')).toBe(true);
+  });
 });
 
 describe('extractSymbolFromLine', () => {
@@ -95,4 +125,3 @@ describe('extractSymbolFromLine', () => {
     expect(extractSymbolFromLine('const x = 123;')).toBeNull();
   });
 });
-

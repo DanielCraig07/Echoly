@@ -34,6 +34,7 @@ import {
 import {
   clampSummary,
   formatCompactionNotice,
+  isCompactionNotice,
   splitForCompaction,
   summarizeCompaction,
 } from './contextCompaction.js';
@@ -137,7 +138,8 @@ export interface AgentRunOptions {
   };
 }
 
-const MAX_OPEN_FILE_CHARS = 12_000;const MAX_LINES_PER_FILE = 200;
+const MAX_OPEN_FILE_CHARS = 12_000;
+const MAX_LINES_PER_FILE = 200;
 /** 光标附近上下文：前后各 N 行，控制在几 KB 内，避免整文件占满 context */
 const CURSOR_LINES_BEFORE = 30;
 const CURSOR_LINES_AFTER = 30;
@@ -315,28 +317,96 @@ ${formatCursorContext(cursor)}${selectionBlock}${planExecBlock}${skillsBlock}${m
 
 /**
  * Fallback: when the model does not support native tool_calls, parse
- * ```json tool blocks of shape {"name":"...","arguments":{...}}
+ * fenced code blocks of shape {"name":"...","arguments":{...}}
+ *
+ * 这段代码唯一的职责是「把一个工具调用从文本里救出来」，所以判定必须**偏松**：
+ * 漏掉一个工具调用 = Agent 什么都没做就结束（用户看到的是一次空回合），
+ * 而多解析出一个畸形条目 = 一次明确的「参数解析失败」错误，模型下一轮能自己改。
+ *
+ * 之前这里要求围栏后紧跟字面量「json tool」，于是
+ * 「jsontool」「json  tool」「tool」、以及模型最自然的那种只带 json 标记的围栏
+ * 全部落空。
+ *
+ * 唯一的例外是「不带 tool 标记」的围栏：那里必须同时具备 name 与 arguments
+ * 才认（见下方 markedAsTool 分支），否则贴一段 package.json 就会被当成工具调用执行。
  */
 export function parseXmlToolCalls(
   content: string,
 ): Array<{ id: string; name: string; args: string }> {
   const results: Array<{ id: string; name: string; args: string }> = [];
-  const re = /```json\s*tool\s*([\s\S]*?)```/gi;
+  // 围栏开口行的信息串整段捕获（`json tool` / `jsontool` / `tool` / `json` / 空），
+  // 再在里面找 `tool` —— 用「允许任意空白」的写法无法覆盖 `jsontool` 这种粘连写法。
+  const re = /```[ \t]*([^\n]*)\r?\n([\s\S]*?)```/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content))) {
-    try {
-      const obj = JSON.parse(m[1]) as { name: string; arguments?: unknown; args?: unknown };
-      const args = obj.arguments ?? obj.args ?? {};
-      results.push({
-        id: `xml_${randomUUID()}`,
-        name: obj.name,
-        args: typeof args === 'string' ? args : JSON.stringify(args),
-      });
-    } catch {
-      // ignore
-    }
+    const info = m[1] ?? '';
+    const markedAsTool = /tool/i.test(info);
+    const raw = (m[2] ?? '').trim();
+    if (!raw) continue;
+    const obj = parseToolCallObject(raw);
+    if (!obj) continue;
+
+    // name 必须是非空字符串：早先只做 `obj.name`，模型写出 `{"arguments":{...}}`
+    // （漏了 name）时会造出一个 `name: undefined` 的调用，一路传到执行层才炸，
+    // 报的还是「未知工具 undefined」这种看不懂的错。
+    const name = typeof obj.name === 'string' ? obj.name.trim() : '';
+    if (!name) continue;
+
+    const hasArgs = obj.arguments !== undefined || obj.args !== undefined;
+    // **没有 `tool` 标记的围栏必须同时具备 name 与 arguments/args 才算工具调用。**
+    // 否则模型在回答里贴一段 `package.json`（第一个键就是 `"name"`）会被解析成
+    // 一次对工具「my-app」的调用 —— 那比漏判严重得多：它会真的去执行。
+    if (!markedAsTool && !hasArgs) continue;
+
+    const args = obj.arguments ?? obj.args ?? {};
+    results.push({
+      id: `xml_${randomUUID()}`,
+      name,
+      args: typeof args === 'string' ? args : JSON.stringify(args),
+    });
   }
   return results;
+}
+
+/**
+ * 解析一个代码块的内容为工具调用对象。
+ *
+ * 三层兜底，因为这段文本是模型逐 token 生成的，任何一处都可能不完美：
+ * 1. 直接 JSON.parse（绝大多数情况）
+ * 2. 从第一个 `{` 到最后一个 `}` 再试一次（前后带了说明文字）
+ * 3. 修掉常见畸形（尾随逗号、中文引号、未转义换行）后再试
+ */
+function parseToolCallObject(
+  raw: string,
+): { name?: unknown; arguments?: unknown; args?: unknown } | null {
+  const attempts: string[] = [raw];
+
+  const first = raw.indexOf('{');
+  const last = raw.lastIndexOf('}');
+  if (first >= 0 && last > first) attempts.push(raw.slice(first, last + 1));
+
+  for (const candidate of [...attempts]) {
+    attempts.push(
+      candidate
+        // 尾随逗号：`{"a":1,}` —— 模型写数组/对象时的高频笔误
+        .replace(/,(\s*[}\]])/g, '$1')
+        // 中文引号：只有在混进 JSON 结构里时才是错的，所以只替换成对出现的位置
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'"),
+    );
+  }
+
+  for (const candidate of attempts) {
+    try {
+      const obj = JSON.parse(candidate);
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+        return obj as { name?: unknown; arguments?: unknown; args?: unknown };
+      }
+    } catch {
+      // 换下一种修法
+    }
+  }
+  return null;
 }
 
 export function parsePlanProposal(content: string): PlanProposal | null {
@@ -377,10 +447,7 @@ export function parsePlanProposal(content: string): PlanProposal | null {
  * 于是丢掉手上没做完的活，或者反过来把已经做完的步骤再做一遍。
  * 同时明确要求**不要**重头开始，把「继续」这件事写进指令而不是指望模型自己推断。
  */
-export function formatQueuedMessageBlock(
-  content: string,
-  attachmentBlocks: string,
-): string {
+export function formatQueuedMessageBlock(content: string, attachmentBlocks: string): string {
   return [
     '[系统说明：以下是用户在本次任务执行过程中追加的消息。]',
     '请把它当作对当前任务的**补充要求**：先完成你手上正在进行的步骤，再据此调整后续做法。',
@@ -503,6 +570,8 @@ export async function runAgent(
     getDiagnostics: options.getDiagnostics,
     codebaseSearch: options.codebaseSearch,
     onFileMutation: options.onFileMutation,
+    // 把取消信号交给工具层：没有它，一条长跑命令按「停止」不会真的停。
+    signal,
     mcp: options.mcp
       ? {
           toolNames: new Set(options.mcp.definitions.map((d) => d.function.name)),
@@ -683,14 +752,29 @@ ${el.outerHtml || att.content || ''}
   let lastIntermediateContent = '';
   let consecutiveStuckSteps = 0;
   /**
-   * 整轮对话只做一次摘要压缩。每超一次预算就调一次模型的话，
-   * 长任务里光是「压缩」本身的开销就会盖过它省下的 token。
+   * 上一轮压缩留下的进展记录。
+   *
+   * 旧实现是 `summarizedOnce` 布尔量：整轮只准摘要一次，之后所有压缩都退回
+   * 一行「早期细节已归档」。可上下文是**持续增长**的 —— 一次摘要撑不过上千步，
+   * 再涨上去就只剩那行说明，前面积累的进展记录反而被下一次 Stage3 整段丢掉。
+   * 改成允许再摘要，但把上一次的记录作为输入带上，让模型做**增量合并**。
    */
-  let summarizedOnce = false;
+  let priorSummary: string | null = null;
+  /** 上次摘要发生的步号，用于给重复摘要加冷却。 */
+  let lastSummaryStep = -Infinity;
 
   const runStartTime = Date.now();
   let firstTokenGlobalTime: number | null = null;
   let totalCompletionTokens = 0;
+  /**
+   * 累计「模型真正在吐字」的时间，用作 tokens/s 的分母。
+   *
+   * 不能用 `now - runStartTime`：一整轮 Agent 里绝大部分耗时是工具执行
+   * （读文件、跑终端、等用户确认、等 MCP 响应），把这些算进分母会让
+   * 一个 60 tok/s 的模型在长任务里显示成 3 tok/s —— 用户看到的数字
+   * 与实际推理速度无关，只会误导「模型是不是变慢了」的判断。
+   */
+  let totalGenerationMs = 0;
   let lastPromptTokens: number | undefined;
   let totalToolCallsCount = 0;
   let lastFinishReason: string | undefined;
@@ -699,12 +783,10 @@ ${el.outerHtml || att.content || ''}
     const now = Date.now();
     const durationMs = Math.max(0, now - runStartTime);
     const ttftMs =
-      firstTokenGlobalTime !== null
-        ? Math.max(0, firstTokenGlobalTime - runStartTime)
-        : undefined;
+      firstTokenGlobalTime !== null ? Math.max(0, firstTokenGlobalTime - runStartTime) : undefined;
     const tokensPerSecond =
-      durationMs > 0 && totalCompletionTokens > 0
-        ? Number(((totalCompletionTokens / durationMs) * 1000).toFixed(1))
+      totalGenerationMs > 0 && totalCompletionTokens > 0
+        ? Number(((totalCompletionTokens / totalGenerationMs) * 1000).toFixed(1))
         : undefined;
     const promptTokens = lastPromptTokens ?? estimateTokensFromMessages(messages);
     const totalTokens = promptTokens + totalCompletionTokens;
@@ -777,19 +859,34 @@ ${el.outerHtml || att.content || ''}
             );
 
         if (estimated > maxPromptBudget && messages.length > 8) {
+          const tailReserve = isLocalNode ? 4 : 8;
+          /**
+           * Stage 1 与 Stage 2 都靠**改写正文**生效，而 `messages` 里的历史条目
+           * 与调用方共享同一个对象引用（`messages` 是用 `...history` 拼出来的，
+           * 上一轮的会话记录拿的就是这批对象）。就地 `m.content = ...` 等于把
+           * 用户的历史消息也永久改短了：切回那个会话时，当初的完整回答只剩下
+           * 前 150 个字符 —— 而且没有任何报错，看起来就像消息本来就那么短。
+           *
+           * 所以只对「会被压缩的那一段」做浅拷贝，后面两步都改副本。
+           */
+          const working = messages.slice();
+          for (let i = 1; i < messages.length - tailReserve; i++) {
+            working[i] = { ...working[i] };
+          }
+
           // Stage 1: Compress older tool outputs
-          for (let i = 1; i < messages.length - (isLocalNode ? 4 : 8); i++) {
-            const m = messages[i];
+          for (let i = 1; i < messages.length - tailReserve; i++) {
+            const m = working[i];
             if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 300) {
               m.content = `${m.content.slice(0, 200)}\n...[早期步骤输出已压缩]`;
             }
           }
-          estimated = estimateTokensFromMessages(messages);
+          estimated = estimateTokensFromMessages(working);
 
           // Stage 2: If still over budget, prune verbose reasoning and thinking blocks from early turns
           if (estimated > maxPromptBudget) {
-            for (let i = 1; i < messages.length - (isLocalNode ? 4 : 8); i++) {
-              const m = messages[i];
+            for (let i = 1; i < messages.length - tailReserve; i++) {
+              const m = working[i];
               if (
                 m.role === 'assistant' &&
                 typeof m.content === 'string' &&
@@ -801,17 +898,21 @@ ${el.outerHtml || att.content || ''}
                 m.thinking = undefined;
               }
             }
-            estimated = estimateTokensFromMessages(messages);
+            estimated = estimateTokensFromMessages(working);
           }
+
+          // 到这里 Stage 1/2 的成果必须落回 `messages`：Stage 3 可能因为条数不够
+          // 而不触发，只改副本不改引用的话，这一轮等于什么都没压缩。
+          messages = working;
 
           // Stage 3: 滑动窗口。与旧实现的区别在于中间段落不再直接丢弃，
           // 而是先尝试交给模型归档成一份进展记录，丢了什么由模型自己判断。
           const stage3Threshold = isLocalNode ? 10 : 18;
           const stage3RecentCount = isLocalNode ? 8 : 14;
-          if (estimated > maxPromptBudget && messages.length > stage3Threshold) {
+          if (estimated > maxPromptBudget && working.length > stage3Threshold) {
             // 保留 [0]（system）为前缀；userMessage 在下面显式拼回，所以它不参与 tail，
             // 否则同一份（可能带上附件正文的）用户消息会被塞两次。
-            const split = splitForCompaction(messages, 1, stage3RecentCount);
+            const split = splitForCompaction(working, 1, stage3RecentCount);
             // 尾部可能以 tool 结果开头，其发起方被切在 middle 里 ——
             // 孤立的 tool 结果会让多数网关直接 400，这里整段丢掉这几条。
             let tail = split.keepTail.filter((m) => m !== userMessage);
@@ -822,34 +923,49 @@ ${el.outerHtml || att.content || ''}
             }
 
             let notice: string | null = null;
-            if (!summarizedOnce) {
-              summarizedOnce = true;
+            // 冷却：摘要是一次真实的模型调用，不能每步都做。两次摘要之间至少隔
+            // 这么多步，否则上下文一旦越过预算线就会连续触发，压缩开销盖过它省下的 token。
+            const SUMMARY_COOLDOWN_STEPS = 12;
+            if (step - lastSummaryStep >= SUMMARY_COOLDOWN_STEPS) {
+              lastSummaryStep = step;
               onEvent({ type: 'status', status: 'thinking' });
               const summary = await summarizeCompaction(client, {
-                middle: split.middle,
+                // 上一次的压缩说明本身不要喂进摘要输入：它包含的内容已经由
+                // priorSummary 单独带进去了，重复一遍只会挤占片段预算。
+                middle: split.middle.filter((m) => !isCompactionNotice(m)),
                 originalPrompt: prompt,
                 droppedFromTruncation: orphanCount,
+                priorSummary,
                 signal,
               });
               if (summary) {
+                // 保留未截断的版本给下一次合并用，喂给模型的用截断后的
+                priorSummary = summary;
                 notice = formatCompactionNotice(clampSummary(summary), prompt);
               }
             }
             if (!notice) {
-              // 摘要不可用（失败 / 已做过一次 / 没有可压缩内容）：退回原来的一行说明
+              // 摘要不可用（失败 / 处于冷却期 / 没有可压缩内容）：退回原来的说明。
+              // 有历史记录时把它带上 —— 直接丢掉等于把前面积累的进展抹掉。
               notice = [
                 `[系统说明：当前执行步数较多，早期的中间调用细节已归档压缩。]`,
                 `【当前任务的原始诉求】:`,
                 `"""`,
                 prompt.trim(),
                 `"""`,
+                ...(priorSummary
+                  ? [
+                      `【此前已归档的进展记录（仍然有效，请勿重复已完成的步骤）】:`,
+                      clampSummary(priorSummary),
+                    ]
+                  : []),
                 `请直接基于上述原始诉求、当前工作区最新状态及最近的工具调用结果，继续完成任务并直接向用户给出最终结论。`,
                 `【特别注意】：若当前改动已完整且测试已通过，请直接总结任务成果并回复用户，切勿因中间历史被压缩而向用户询问重复确认原始诉求。`,
               ].join('\n');
             }
 
             messages = [
-              messages[0],
+              working[0],
               userMessage,
               {
                 role: 'system',
@@ -879,6 +995,9 @@ ${el.outerHtml || att.content || ''}
         while (true) {
           try {
             let callFirstTokenTime: number | null = null;
+            /** 本次调用的最后一个 token 到达时刻，用于算这次调用真正吐字花了多久。 */
+            let callLastTokenTime: number | null = null;
+            const callStartTime = Date.now();
             const result = await client.chatStreamCollect(
               {
                 messages,
@@ -891,18 +1010,33 @@ ${el.outerHtml || att.content || ''}
                 const now = Date.now();
                 if (callFirstTokenTime === null) callFirstTokenTime = now;
                 if (firstTokenGlobalTime === null) firstTokenGlobalTime = now;
+                callLastTokenTime = now;
                 onEvent({ type: 'token', text: token });
               },
               (thinking: string) => {
                 const now = Date.now();
                 if (callFirstTokenTime === null) callFirstTokenTime = now;
                 if (firstTokenGlobalTime === null) firstTokenGlobalTime = now;
+                callLastTokenTime = now;
                 onEvent({ type: 'thinking_token', text: thinking });
               },
             );
             assistant = result.message;
             finishReason = result.finishReason;
             lastFinishReason = finishReason;
+
+            // 计入吐字时长：有 token 用「首 token → 末 token」，一个 token 都没吐
+            // （例如直接返回 tool_calls）时不计——那种调用本来就没有生成速度可言。
+            if (callFirstTokenTime !== null && callLastTokenTime !== null) {
+              totalGenerationMs += Math.max(0, callLastTokenTime - callFirstTokenTime);
+            } else if (
+              result.usage?.completionTokens != null &&
+              result.usage.completionTokens > 0
+            ) {
+              // 服务端没有走流式回调（部分后端在非流式回退时会一次性返回整段），
+              // 退而求其次用整次调用的墙钟时间。
+              totalGenerationMs += Math.max(0, Date.now() - callStartTime);
+            }
 
             if (result.usage?.promptTokens != null) {
               lastPromptTokens = result.usage.promptTokens;

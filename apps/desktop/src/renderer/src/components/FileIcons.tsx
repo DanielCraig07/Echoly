@@ -38,9 +38,19 @@ export function detectCodeSubtype(name: string, contentSnippet?: string): CodeSu
       if (/\benum\s+\w+/.test(contentSnippet)) return 'enum';
       if (/\binterface\s+\w+/.test(contentSnippet)) return 'interface';
       if (/\brecord\s+\w+/.test(contentSnippet)) return 'record';
-      if (/\babstract\s+(?:(?:non-sealed|sealed)\s+)?class\s+\w+/i.test(contentSnippet) || /\bclass\s+\w+.*?\babstract\b/i.test(contentSnippet)) return 'abstract';
-      if (/\bclass\s+\w+.*?\bextends\s+(?:Throwable|Exception|RuntimeException|Error|\w*Exception)\b/s.test(contentSnippet)) return 'exception';
-      if (/@Test\b|\bextends\s+TestCase\b|\borg\.junit\b|\borg\.testng\b/.test(contentSnippet)) return 'test';
+      if (
+        /\babstract\s+(?:(?:non-sealed|sealed)\s+)?class\s+\w+/i.test(contentSnippet) ||
+        /\bclass\s+\w+.*?\babstract\b/i.test(contentSnippet)
+      )
+        return 'abstract';
+      if (
+        /\bclass\s+\w+.*?\bextends\s+(?:Throwable|Exception|RuntimeException|Error|\w*Exception)\b/s.test(
+          contentSnippet,
+        )
+      )
+        return 'exception';
+      if (/@Test\b|\bextends\s+TestCase\b|\borg\.junit\b|\borg\.testng\b/.test(contentSnippet))
+        return 'test';
       if (/\bclass\s+\w+/.test(contentSnippet)) return 'class';
     }
     // 依据文件名智能推断（全面适配 Java 业界标准约定）
@@ -87,11 +97,27 @@ export function detectCodeSubtype(name: string, contentSnippet?: string): CodeSu
   }
 
   // 2. TypeScript / JavaScript 深度语义检测
-  if (lower.endsWith('.ts') || lower.endsWith('.tsx') || lower.endsWith('.js') || lower.endsWith('.jsx')) {
-    if (lower.endsWith('.test.ts') || lower.endsWith('.test.tsx') || lower.endsWith('.spec.ts') || lower.endsWith('.spec.tsx') || lower.endsWith('.test.js')) {
+  if (
+    lower.endsWith('.ts') ||
+    lower.endsWith('.tsx') ||
+    lower.endsWith('.js') ||
+    lower.endsWith('.jsx')
+  ) {
+    if (
+      lower.endsWith('.test.ts') ||
+      lower.endsWith('.test.tsx') ||
+      lower.endsWith('.spec.ts') ||
+      lower.endsWith('.spec.tsx') ||
+      lower.endsWith('.test.js')
+    ) {
       return 'test';
     }
-    if (lower.endsWith('.d.ts') || lower.endsWith('.d.cts') || lower.endsWith('.d.mts') || /type|types|interface|interfaces|schema|schemas/i.test(name)) {
+    if (
+      lower.endsWith('.d.ts') ||
+      lower.endsWith('.d.cts') ||
+      lower.endsWith('.d.mts') ||
+      /type|types|interface|interfaces|schema|schemas/i.test(name)
+    ) {
       return 'interface';
     }
     if (/config|rc|\.env/i.test(name)) {
@@ -103,11 +129,22 @@ export function detectCodeSubtype(name: string, contentSnippet?: string): CodeSu
   if (lower.endsWith('.py')) {
     if (/^test_|_test\.py$/.test(lower)) return 'test';
     if (lower === '__init__.py') return 'config';
-    if (lower === '__main__.py' || lower === 'main.py' || lower === 'app.py' || lower === 'manage.py') return 'entry';
+    if (
+      lower === '__main__.py' ||
+      lower === 'main.py' ||
+      lower === 'app.py' ||
+      lower === 'manage.py'
+    )
+      return 'entry';
   }
 
   // 4. C / C++ 深度检测
-  if (lower.endsWith('.c') || lower.endsWith('.cpp') || lower.endsWith('.cc') || lower.endsWith('.cxx')) {
+  if (
+    lower.endsWith('.c') ||
+    lower.endsWith('.cpp') ||
+    lower.endsWith('.cc') ||
+    lower.endsWith('.cxx')
+  ) {
     if (/main\.(c|cpp|cc|cxx)$/.test(lower)) return 'entry';
     if (/test|spec/i.test(name)) return 'test';
     return 'class';
@@ -193,19 +230,16 @@ function renderFolderIcon(name: string, isOpen = false): React.ReactElement {
         stroke="#f97316"
         strokeWidth="1"
         fill="#f97316"
-      />
+      />,
     );
   }
   if (match(['resources', 'main/resources', 'test/resources'])) {
-    return outline(
-      '#fb923c',
-      <circle cx="11.5" cy="11.5" r="1.3" fill="#fb923c" />
-    );
+    return outline('#fb923c', <circle cx="11.5" cy="11.5" r="1.3" fill="#fb923c" />);
   }
   if (match(['gradle', '.gradle'])) {
     return outline(
       '#0284c7',
-      <path d="M8 10l2 2 3-3" stroke="#0284c7" strokeWidth="1.1" strokeLinecap="round" />
+      <path d="M8 10l2 2 3-3" stroke="#0284c7" strokeWidth="1.1" strokeLinecap="round" />,
     );
   }
 
@@ -216,7 +250,7 @@ function renderFolderIcon(name: string, isOpen = false): React.ReactElement {
       <g>
         <circle cx="10" cy="11.5" r="1.2" fill="#388bfd" />
         <circle cx="12.5" cy="11.5" r="1.2" fill="#eab308" />
-      </g>
+      </g>,
     );
   }
 
@@ -234,7 +268,7 @@ function renderFolderIcon(name: string, isOpen = false): React.ReactElement {
         fontFamily="sans-serif"
       >
         C
-      </text>
+      </text>,
     );
   }
 
@@ -252,7 +286,7 @@ function renderFolderIcon(name: string, isOpen = false): React.ReactElement {
         fontFamily="sans-serif"
       >
         G
-      </text>
+      </text>,
     );
   }
 
@@ -260,7 +294,7 @@ function renderFolderIcon(name: string, isOpen = false): React.ReactElement {
   if (match(['crates', 'benches'])) {
     return outline(
       '#ea580c',
-      <circle cx="11.5" cy="11.5" r="1.4" stroke="#ea580c" strokeWidth="1" />
+      <circle cx="11.5" cy="11.5" r="1.4" stroke="#ea580c" strokeWidth="1" />,
     );
   }
 
@@ -279,7 +313,7 @@ function renderFolderIcon(name: string, isOpen = false): React.ReactElement {
         strokeWidth="1.1"
         strokeLinecap="round"
         strokeLinejoin="round"
-      />
+      />,
     );
   }
 
@@ -298,18 +332,30 @@ function renderFolderIcon(name: string, isOpen = false): React.ReactElement {
         strokeWidth="1"
         strokeLinecap="round"
         strokeLinejoin="round"
-      />
+      />,
     );
   }
 
   // 10. Components & Views & Pages
-  if (match(['components', 'component', 'ui', 'widgets', 'views', 'pages', 'screens', 'layouts', 'routes'])) {
+  if (
+    match([
+      'components',
+      'component',
+      'ui',
+      'widgets',
+      'views',
+      'pages',
+      'screens',
+      'layouts',
+      'routes',
+    ])
+  ) {
     return outline(
       '#f0883e',
       <g fill="#f0883e">
         <circle cx="10" cy="11.5" r="0.8" />
         <circle cx="12.5" cy="11.5" r="0.8" />
-      </g>
+      </g>,
     );
   }
 
@@ -332,12 +378,28 @@ function renderFolderIcon(name: string, isOpen = false): React.ReactElement {
   if (match(['test', 'tests', 'spec', 'specs', '__tests__', '__mocks__'])) {
     return outline(
       '#39c5bb',
-      <circle cx="11.5" cy="11.5" r="1.3" stroke="#39c5bb" strokeWidth="1" />
+      <circle cx="11.5" cy="11.5" r="1.3" stroke="#39c5bb" strokeWidth="1" />,
     );
   }
 
   // 15. Utils, Helpers & Hooks & Services & Store
-  if (match(['utils', 'util', 'helpers', 'helper', 'tools', 'common', 'shared', 'hooks', 'services', 'store', 'stores', 'types', 'api'])) {
+  if (
+    match([
+      'utils',
+      'util',
+      'helpers',
+      'helper',
+      'tools',
+      'common',
+      'shared',
+      'hooks',
+      'services',
+      'store',
+      'stores',
+      'types',
+      'api',
+    ])
+  ) {
     return outline('#a371f7');
   }
 
@@ -373,9 +435,14 @@ function renderFolderIcon(name: string, isOpen = false): React.ReactElement {
 // ── Minimalist File Icons ───────────────────────────────────────────────────
 // 采用无厚重底色的轻盈图标风格（文本字标、线框与官方图形）
 
-function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: string): React.ReactElement {
+function renderFileIcon(
+  name: string,
+  codeType?: CodeSubtype,
+  contentSnippet?: string,
+): React.ReactElement {
   const lower = name.toLowerCase();
-  const resolvedType = codeType && codeType !== 'default' ? codeType : detectCodeSubtype(name, contentSnippet);
+  const resolvedType =
+    codeType && codeType !== 'default' ? codeType : detectCodeSubtype(name, contentSnippet);
 
   // 0. 测试代码文件（烧瓶图标 🧪 - 排除 Java/Kotlin/Scala 等有官方专属测试类徽标的语言）
   if (
@@ -406,7 +473,14 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
   if (resolvedType === 'entry') {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-        <circle cx="8" cy="8" r="6" stroke="#38bdf8" strokeWidth="1.1" fill="rgba(56, 189, 248, 0.12)" />
+        <circle
+          cx="8"
+          cy="8"
+          r="6"
+          stroke="#38bdf8"
+          strokeWidth="1.1"
+          fill="rgba(56, 189, 248, 0.12)"
+        />
         <polygon points="6.5,5 11.5,8 6.5,11" fill="#38bdf8" />
       </svg>
     );
@@ -419,10 +493,7 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
   ) {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-        <path
-          d="M13.5 2.5C8 2 3.5 6 3 11c0 1.5.8 2.5 2 2.5 5 0 8.5-4.5 8.5-11z"
-          fill="#6db33f"
-        />
+        <path d="M13.5 2.5C8 2 3.5 6 3 11c0 1.5.8 2.5 2 2.5 5 0 8.5-4.5 8.5-11z" fill="#6db33f" />
         <path
           d="M4 12c2.5-3 5-5.5 8-8M6.5 9c1.5-1 3-1.8 4.5-2.2M9 11.5c1-.8 2-1.5 2.8-2"
           stroke="#ffffff"
@@ -509,14 +580,19 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
   if (lower === 'cmakelists.txt' || lower.endsWith('.cmake')) {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-        <polygon points="2,14 8,2 14,14" stroke="#06b6d4" strokeWidth="1.2" fill="rgba(6, 182, 212, 0.15)" />
+        <polygon
+          points="2,14 8,2 14,14"
+          stroke="#06b6d4"
+          strokeWidth="1.2"
+          fill="rgba(6, 182, 212, 0.15)"
+        />
         <line x1="4.5" y1="9" x2="11.5" y2="9" stroke="#f43f5e" strokeWidth="1.1" />
       </svg>
     );
   }
 
   // Maven pom.xml
-  if (lower === 'pom.xml' || lower.startsWith('pom.') && lower.endsWith('.xml')) {
+  if (lower === 'pom.xml' || (lower.startsWith('pom.') && lower.endsWith('.xml'))) {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <path
@@ -541,11 +617,21 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
   }
 
   // Gradle files
-  if (lower.startsWith('build.gradle') || lower.startsWith('settings.gradle') || lower === 'gradle.properties') {
+  if (
+    lower.startsWith('build.gradle') ||
+    lower.startsWith('settings.gradle') ||
+    lower === 'gradle.properties'
+  ) {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <circle cx="8" cy="8" r="6" stroke="#0284c7" strokeWidth="1.1" />
-        <path d="M5.5 8.5l2 2 3.5-4" stroke="#0284c7" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        <path
+          d="M5.5 8.5l2 2 3.5-4"
+          stroke="#0284c7"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       </svg>
     );
   }
@@ -669,7 +755,12 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
         <circle cx="8" cy="4" r="1.3" fill="#f78166" />
         <circle cx="5" cy="11.5" r="1.3" fill="#f78166" />
         <circle cx="11" cy="9.5" r="1.3" fill="#f78166" />
-        <path d="M8 4v5L5 11.5M8 8.5l3 1" stroke="#f78166" strokeWidth="1.1" strokeLinecap="round" />
+        <path
+          d="M8 4v5L5 11.5M8 8.5l3 1"
+          stroke="#f78166"
+          strokeWidth="1.1"
+          strokeLinecap="round"
+        />
       </svg>
     );
   }
@@ -975,7 +1066,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#00add8" />
-          <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9" fontWeight="900" fontFamily="sans-serif">I</text>
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="9"
+            fontWeight="900"
+            fontFamily="sans-serif"
+          >
+            I
+          </text>
         </svg>
       );
     }
@@ -1038,7 +1139,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#59A869" />
-          <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">I</text>
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="9.2"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            I
+          </text>
         </svg>
       );
     }
@@ -1046,7 +1157,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#E08930" />
-          <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">E</text>
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="9.2"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            E
+          </text>
         </svg>
       );
     }
@@ -1054,7 +1175,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#9973B5" />
-          <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">@</text>
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="9.2"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            @
+          </text>
         </svg>
       );
     }
@@ -1062,15 +1193,43 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#D4772A" />
-          <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">R</text>
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="9.2"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            R
+          </text>
         </svg>
       );
     }
     if (resolvedType === 'abstract') {
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-          <circle cx="8" cy="8" r="5.6" stroke="#3592C4" strokeWidth="1.3" fill="rgba(53, 146, 196, 0.12)" />
-          <text x="8" y="11.2" textAnchor="middle" fill="#3592C4" fontSize="9.2" fontWeight="900" fontStyle="italic" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">C</text>
+          <circle
+            cx="8"
+            cy="8"
+            r="5.6"
+            stroke="#3592C4"
+            strokeWidth="1.3"
+            fill="rgba(53, 146, 196, 0.12)"
+          />
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill="#3592C4"
+            fontSize="9.2"
+            fontWeight="900"
+            fontStyle="italic"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            C
+          </text>
         </svg>
       );
     }
@@ -1078,7 +1237,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#E55757" />
-          <text x="8" y="11.5" textAnchor="middle" fill="#ffffff" fontSize="9.5" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">!</text>
+          <text
+            x="8"
+            y="11.5"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="9.5"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            !
+          </text>
         </svg>
       );
     }
@@ -1086,7 +1255,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#3592C4" />
-          <text x="7" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="8.5" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">C</text>
+          <text
+            x="7"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="8.5"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            C
+          </text>
           {/* IntelliJ 测试运行绿标 */}
           <circle cx="12" cy="12" r="3.2" fill="#59A869" />
           <polygon points="10.8,10.7 13.6,12 10.8,13.3" fill="#ffffff" />
@@ -1097,7 +1276,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <circle cx="8" cy="8" r="6.2" fill="#3592C4" />
-        <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">C</text>
+        <text
+          x="8"
+          y="11.2"
+          textAnchor="middle"
+          fill="#ffffff"
+          fontSize="9.2"
+          fontWeight="900"
+          fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        >
+          C
+        </text>
       </svg>
     );
   }
@@ -1108,7 +1297,13 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <rect x="2" y="2" width="12" height="12" rx="2.5" fill="#7f52ff" />
-          <path d="M4.5 4.5v7M11.5 4.5L7.5 8.5l4 3" stroke="#ffffff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M4.5 4.5v7M11.5 4.5L7.5 8.5l4 3"
+            stroke="#ffffff"
+            strokeWidth="1.3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       );
     }
@@ -1116,7 +1311,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#59A869" />
-          <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">I</text>
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="9.2"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            I
+          </text>
         </svg>
       );
     }
@@ -1124,7 +1329,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#E08930" />
-          <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">E</text>
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="9.2"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            E
+          </text>
         </svg>
       );
     }
@@ -1132,7 +1347,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#3592C4" />
-          <text x="7" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="8.5" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">K</text>
+          <text
+            x="7"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="8.5"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            K
+          </text>
           <circle cx="12" cy="12" r="3.2" fill="#59A869" />
           <polygon points="10.8,10.7 13.6,12 10.8,13.3" fill="#ffffff" />
         </svg>
@@ -1142,7 +1367,17 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <circle cx="8" cy="8" r="6.2" fill="#3592C4" />
-        <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">K</text>
+        <text
+          x="8"
+          y="11.2"
+          textAnchor="middle"
+          fill="#ffffff"
+          fontSize="9.2"
+          fontWeight="900"
+          fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        >
+          K
+        </text>
       </svg>
     );
   }
@@ -1153,20 +1388,45 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
       return (
         <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
           <circle cx="8" cy="8" r="6.2" fill="#59A869" />
-          <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">T</text>
+          <text
+            x="8"
+            y="11.2"
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="9.2"
+            fontWeight="900"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+          >
+            T
+          </text>
         </svg>
       );
     }
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <circle cx="8" cy="8" r="6.2" fill="#3592C4" />
-        <text x="8" y="11.2" textAnchor="middle" fill="#ffffff" fontSize="9.2" fontWeight="900" fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">S</text>
+        <text
+          x="8"
+          y="11.2"
+          textAnchor="middle"
+          fill="#ffffff"
+          fontSize="9.2"
+          fontWeight="900"
+          fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        >
+          S
+        </text>
       </svg>
     );
   }
 
   // C / C++ Source (.c, .cpp, .cc, .cxx)
-  if (lower.endsWith('.c') || lower.endsWith('.cpp') || lower.endsWith('.cc') || lower.endsWith('.cxx')) {
+  if (
+    lower.endsWith('.c') ||
+    lower.endsWith('.cpp') ||
+    lower.endsWith('.cc') ||
+    lower.endsWith('.cxx')
+  ) {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <text
@@ -1185,7 +1445,12 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
   }
 
   // C / C++ Header (.h, .hpp, .hxx, .inl)
-  if (lower.endsWith('.h') || lower.endsWith('.hpp') || lower.endsWith('.hxx') || lower.endsWith('.inl')) {
+  if (
+    lower.endsWith('.h') ||
+    lower.endsWith('.hpp') ||
+    lower.endsWith('.hxx') ||
+    lower.endsWith('.inl')
+  ) {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
         <text
@@ -1247,9 +1512,25 @@ function renderFileIcon(name: string, codeType?: CodeSubtype, contentSnippet?: s
   if (lower.endsWith('.properties') || lower.includes('.properties.')) {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" style={svgStyle} fill="none">
-        <line x1="3" y1="5" x2="13" y2="5" stroke="#10b981" strokeWidth="1.2" strokeLinecap="round" />
+        <line
+          x1="3"
+          y1="5"
+          x2="13"
+          y2="5"
+          stroke="#10b981"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
         <circle cx="6" cy="5" r="1.8" fill="#10b981" />
-        <line x1="3" y1="11" x2="13" y2="11" stroke="#10b981" strokeWidth="1.2" strokeLinecap="round" />
+        <line
+          x1="3"
+          y1="11"
+          x2="13"
+          y2="11"
+          stroke="#10b981"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
         <circle cx="10" cy="11" r="1.8" fill="#10b981" />
       </svg>
     );

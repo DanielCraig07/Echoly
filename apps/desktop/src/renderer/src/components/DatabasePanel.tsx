@@ -79,7 +79,11 @@ export interface DatabasePanelProps {
   onDeleteScript?: (script: DbProjectScriptEntry) => void;
   /** 当前打开着的脚本相对路径集合：列表里给它们一个「已打开」记号 */
   openScriptPaths?: string[];
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 /** 面板底部「项目查询脚本」列表里的一条 */
@@ -121,7 +125,16 @@ function IconReload({ spinning }: { spinning?: boolean }) {
 
 function IconPlus() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <line x1="12" y1="5" x2="12" y2="19" />
       <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
@@ -130,7 +143,16 @@ function IconPlus() {
 
 function IconBolt() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
     </svg>
   );
@@ -140,7 +162,16 @@ function IconBolt() {
 
 function IconMenuData() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <rect width="18" height="18" x="3" y="3" rx="2" />
       <path d="M3 9h18" />
       <path d="M3 15h18" />
@@ -151,7 +182,16 @@ function IconMenuData() {
 
 function IconMenuDdl() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
       <line x1="8" y1="13" x2="16" y2="13" />
@@ -162,7 +202,16 @@ function IconMenuDdl() {
 
 function IconMenuColumns() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <line x1="4" y1="9" x2="20" y2="9" />
       <line x1="4" y1="15" x2="20" y2="15" />
       <line x1="10" y1="3" x2="8" y2="21" />
@@ -173,7 +222,16 @@ function IconMenuColumns() {
 
 function IconMenuCopy() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <rect width="14" height="14" x="8" y="8" rx="2" />
       <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
     </svg>
@@ -182,7 +240,16 @@ function IconMenuCopy() {
 
 function IconMenuRefresh() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
     </svg>
   );
@@ -190,7 +257,16 @@ function IconMenuRefresh() {
 
 function IconMenuExpand() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polyline points="7 13 12 18 17 13" />
       <polyline points="7 6 12 11 17 6" />
     </svg>
@@ -199,7 +275,16 @@ function IconMenuExpand() {
 
 function IconMenuPlug() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M12 22v-5" />
       <path d="M9 8V2" />
       <path d="M15 8V2" />
@@ -210,7 +295,16 @@ function IconMenuPlug() {
 
 function IconMenuCsv() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
@@ -220,7 +314,16 @@ function IconMenuCsv() {
 
 function IconTable() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#60a5fa"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M12 3v18" />
       <rect width="18" height="18" x="3" y="3" rx="2" />
       <path d="M3 9h18" />
@@ -231,7 +334,16 @@ function IconTable() {
 
 function IconColumn() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <line x1="4" y1="9" x2="20" y2="9" />
       <line x1="4" y1="15" x2="20" y2="15" />
       <line x1="10" y1="3" x2="8" y2="21" />
@@ -242,7 +354,16 @@ function IconColumn() {
 
 function IconKey() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#f59e0b"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="7.5" cy="15.5" r="5.5" />
       <path d="m21 2-9.6 9.6" />
       <path d="m15.5 7.5 3 3L22 7l-3-3" />
@@ -260,7 +381,16 @@ function IconChevronDown() {
 
 function IconDatabase() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#a78bfa"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <ellipse cx="12" cy="5" rx="9" ry="3" />
       <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
       <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
@@ -270,7 +400,16 @@ function IconDatabase() {
 
 function IconTrash() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M3 6h18" />
       <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
       <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
@@ -280,7 +419,16 @@ function IconTrash() {
 
 function IconMenuLink() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M9 17H7A5 5 0 0 1 7 7h2" />
       <path d="M15 7h2a5 5 0 1 1 0 10h-2" />
       <line x1="8" y1="12" x2="16" y2="12" />
@@ -290,7 +438,16 @@ function IconMenuLink() {
 
 function IconMenuEdit() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
       <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" />
     </svg>
@@ -470,7 +627,16 @@ function ProjectScriptsList({
                       onDelete(s);
                     }}
                   >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg
+                      width="13"
+                      height="13"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
                       <path d="M3 6h18" />
                       <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
                       <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
@@ -499,7 +665,9 @@ export function DatabasePanel({
   onShowToast,
 }: DatabasePanelProps) {
   const { t } = useI18n();
-  const [connections, setConnections] = useState<DbConnectionView[]>([]);  /** connId -> 库 / schema 列表 */
+  const [connections, setConnections] = useState<DbConnectionView[]>(
+    [],
+  ); /** connId -> 库 / schema 列表 */
   const [schemasMap, setSchemasMap] = useState<Record<string, DatabaseSchemaInfo[]>>({});
   /** `${connId}:${schema}` -> 表列表 */
   const [tablesMap, setTablesMap] = useState<Record<string, DatabaseTableInfo[]>>({});
@@ -863,11 +1031,7 @@ export function DatabasePanel({
       script,
       t('db.renameConsoleTitle', { noun, name: schemaName }),
     );
-    onShowToast?.(
-      t('db.renameScriptGenerated'),
-      t('db.renameScriptGeneratedDetail'),
-      'info',
-    );
+    onShowToast?.(t('db.renameScriptGenerated'), t('db.renameScriptGeneratedDetail'), 'info');
   };
 
   /** 删除表（要求手输表名） */
@@ -960,7 +1124,8 @@ export function DatabasePanel({
           ? [firstConnected]
           : []
         : Object.keys(expandedConns).filter(
-            (id) => expandedConns[id] && connIds.has(id) && conns.find((c) => c.id === id)?.connected,
+            (id) =>
+              expandedConns[id] && connIds.has(id) && conns.find((c) => c.id === id)?.connected,
           );
 
       // 首次挂载时把「上一轮遗留的展开态」收敛到实际会加载的节点上
@@ -1046,7 +1211,9 @@ export function DatabasePanel({
     const schemaKeys = Object.keys(expandedSchemasRef.current).filter(
       (k) => expandedSchemasRef.current[k],
     );
-    const connIds = new Set(Object.keys(expandedConnsRef.current).filter((k) => expandedConnsRef.current[k]));
+    const connIds = new Set(
+      Object.keys(expandedConnsRef.current).filter((k) => expandedConnsRef.current[k]),
+    );
     for (const key of schemaKeys) {
       const [connId, schemaName] = key.split(':');
       if (!connIds.has(connId)) continue;
@@ -1205,12 +1372,7 @@ export function DatabasePanel({
 
     if (preflight.action === 'prompt-password') {
       if (preflight.reason) onShowToast?.(t('db.cannotConnectDirectly'), preflight.reason, 'error');
-      else
-        onShowToast?.(
-          t('db.noSavedPassword'),
-          t('db.noSavedPasswordDetail'),
-          'warn',
-        );
+      else onShowToast?.(t('db.noSavedPassword'), t('db.noSavedPasswordDetail'), 'warn');
       // 直接把编辑弹窗打开，省掉用户再找一遍菜单
       if (conn) {
         setEditing(conn);
@@ -1228,11 +1390,7 @@ export function DatabasePanel({
         return false;
       }
       if (!refreshed.connected) {
-        onShowToast?.(
-          t('db.connCannotReconnect'),
-          t('db.connCannotReconnectDetail'),
-          'warn',
-        );
+        onShowToast?.(t('db.connCannotReconnect'), t('db.connCannotReconnectDetail'), 'warn');
         return false;
       }
       return true;
@@ -1322,7 +1480,8 @@ export function DatabasePanel({
     let x = menu.x;
     let y = menu.y;
     if (x + rect.width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - rect.width - 8);
-    if (y + rect.height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - rect.height - 8);
+    if (y + rect.height > window.innerHeight - 8)
+      y = Math.max(8, window.innerHeight - rect.height - 8);
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }, [menu]);
@@ -1333,10 +1492,7 @@ export function DatabasePanel({
   );
 
   /** 连接的中文短标签，用在确认弹窗正文里指明「这条语句要打在哪个库上」 */
-  const connLabelOf = useCallback(
-    (connId: string) => connById(connId)?.name ?? connId,
-    [connById],
-  );
+  const connLabelOf = useCallback((connId: string) => connById(connId)?.name ?? connId, [connById]);
 
   /** 统一的剪贴板反馈，避免每个菜单项各写一遍 toast 文案 */
   const copyText = useCallback(
@@ -1493,9 +1649,7 @@ export function DatabasePanel({
             icon={<IconMenuCsv />}
             label={t('db.menuCopyInsertTemplate')}
             onClick={() => {
-              const cols =
-                columnsMap[`${target.connId}:${schemaName}:${tableName}`] ||
-                [];
+              const cols = columnsMap[`${target.connId}:${schemaName}:${tableName}`] || [];
               if (cols.length === 0) {
                 onShowToast?.(
                   t('db.needExpandColumnsFirst'),
@@ -1600,10 +1754,7 @@ export function DatabasePanel({
             icon={<IconMenuCopy />}
             label={t('db.menuCopyWhere')}
             onClick={() =>
-              void copyText(
-                `${quoteIdent(driver, columnName)} = ?`,
-                t('db.copyObj.whereFragment'),
-              )
+              void copyText(`${quoteIdent(driver, columnName)} = ?`, t('db.copyObj.whereFragment'))
             }
           />
           <MenuItem
@@ -1951,7 +2102,16 @@ export function DatabasePanel({
                 });
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="3" y1="9" x2="21" y2="9" />
                 <line x1="12" y1="13" x2="12" y2="19" />
@@ -2065,9 +2225,7 @@ export function DatabasePanel({
                     isConnected
                       ? t('db.connTitleConnected', {
                           driver: conn.type.toUpperCase(),
-                          target: conn.host
-                            ? `${conn.host}:${conn.port ?? ''}`
-                            : (conn.path ?? ''),
+                          target: conn.host ? `${conn.host}:${conn.port ?? ''}` : (conn.path ?? ''),
                         })
                       : conn.requiresPassword
                         ? t('db.connNotConnectedNoPassword')
@@ -2210,7 +2368,9 @@ export function DatabasePanel({
                               className="db-tree-row"
                               style={{ padding: '3px 6px' }}
                               onClick={() => toggleTable(conn.id, schema.name, tbl.name)}
-                              onDoubleClick={() => onOpenTableData?.(conn.id, tbl.name, schema.name)}
+                              onDoubleClick={() =>
+                                onOpenTableData?.(conn.id, tbl.name, schema.name)
+                              }
                               onContextMenu={(e) =>
                                 openMenu(e, {
                                   kind: 'table',
@@ -2228,7 +2388,14 @@ export function DatabasePanel({
                                   : t('db.tableNodeTitle', { name: tbl.name })
                               }
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  minWidth: 0,
+                                }}
+                              >
                                 <span style={{ color: 'var(--text-muted)', display: 'flex' }}>
                                   {isTableExpanded ? <IconChevronDown /> : <IconChevronRight />}
                                 </span>
@@ -2245,7 +2412,13 @@ export function DatabasePanel({
                                   {tbl.name}
                                 </span>
                                 {tbl.rowCount !== undefined && (
-                                  <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      color: 'var(--text-muted)',
+                                      flexShrink: 0,
+                                    }}
+                                  >
                                     ({tbl.rowCount})
                                   </span>
                                 )}
@@ -2300,11 +2473,19 @@ export function DatabasePanel({
                             {isTableExpanded && (
                               <div style={{ paddingLeft: 22, paddingBottom: 4 }}>
                                 {loadingKeys[columnsKey] && columns.length === 0 && (
-                                  <div style={{ fontSize: 10, color: 'var(--text-muted)', padding: '2px 0' }}>
+                                  <div
+                                    style={{
+                                      fontSize: 10,
+                                      color: 'var(--text-muted)',
+                                      padding: '2px 0',
+                                    }}
+                                  >
                                     {t('db.loadingColumns')}
                                   </div>
                                 )}
-                                {errorMap[columnsKey] && <TreeError message={errorMap[columnsKey]} />}
+                                {errorMap[columnsKey] && (
+                                  <TreeError message={errorMap[columnsKey]} />
+                                )}
                                 {columns.map((col) => (
                                   <div
                                     key={col.name}
@@ -2364,7 +2545,9 @@ export function DatabasePanel({
                             }
                             title={t('db.schemaNodeTitle', { name: schema.name })}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                            <div
+                              style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}
+                            >
                               <span style={{ color: 'var(--text-muted)', display: 'flex' }}>
                                 {isSchemaExpanded ? <IconChevronDown /> : <IconChevronRight />}
                               </span>
@@ -2381,7 +2564,13 @@ export function DatabasePanel({
                                 {schema.name}
                               </span>
                               {isSchemaExpanded && !errorMap[tablesKey] && (
-                                <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    color: 'var(--text-muted)',
+                                    flexShrink: 0,
+                                  }}
+                                >
                                   ({tables.length})
                                 </span>
                               )}
@@ -2428,8 +2617,7 @@ export function DatabasePanel({
                                 const count = kindRows ? kindRows.length : names.length;
                                 // 仅表 / 视图依赖 tables 那条请求；其余四类只看 objects
                                 const dependKey = kindRows ? tablesKey : objectsKey;
-                                const waiting =
-                                  !kindRows && !!loadingKeys[objectsKey] && !objects;
+                                const waiting = !kindRows && !!loadingKeys[objectsKey] && !objects;
                                 // 分组各自的错误优先；整条 objects 请求都失败时（清单根本没拿到），
                                 // 退回显示那条总错误 —— 否则四个分组会一起安静地显示「(0)」，
                                 // 把「查询失败了」伪装成「确实没有」
@@ -2444,7 +2632,9 @@ export function DatabasePanel({
                                     group={group}
                                     label={label}
                                     count={count}
-                                    supported={kindRows ? true : (objects?.supported?.[group] ?? true)}
+                                    supported={
+                                      kindRows ? true : (objects?.supported?.[group] ?? true)
+                                    }
                                     error={waiting ? undefined : groupError}
                                     expanded={isGroupExpanded}
                                     loading={!!loadingKeys[dependKey] && count === 0}
@@ -2452,11 +2642,19 @@ export function DatabasePanel({
                                   >
                                     {count === 0 ? (
                                       // 空分组展开后也要有话说：一片空白会被读成「还没加载」
-                                      <div style={{ fontSize: 10, color: 'var(--text-muted)', padding: '2px 0' }}>
+                                      <div
+                                        style={{
+                                          fontSize: 10,
+                                          color: 'var(--text-muted)',
+                                          padding: '2px 0',
+                                        }}
+                                      >
                                         {emptyGroupHint(t, group)}
                                       </div>
                                     ) : kindRows ? (
-                                      kindRows.map((tbl) => renderTableNode(tbl, group as 'table' | 'view'))
+                                      kindRows.map((tbl) =>
+                                        renderTableNode(tbl, group as 'table' | 'view'),
+                                      )
                                     ) : (
                                       names.map((name) => (
                                         <DbObjectRow
@@ -2472,7 +2670,6 @@ export function DatabasePanel({
                               })}
                             </div>
                           )}
-
                         </div>
                       );
                     })}
@@ -2501,9 +2698,7 @@ export function DatabasePanel({
       <TableStructureModal
         isOpen={structureModal !== null}
         mode={structureModal?.mode ?? 'create'}
-        driver={
-          (structureModal && connById(structureModal.connId)?.type) || 'sqlite'
-        }
+        driver={(structureModal && connById(structureModal.connId)?.type) || 'sqlite'}
         schemaName={structureModal?.schemaName}
         tableName={structureModal?.tableName}
         existingColumns={structureModal?.existingColumns}

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SshSessionManager } from '../src/main/ssh/SshSessionManager';
+import type { WindowSession } from '../src/main/windowRegistry';
 import { Client } from 'ssh2';
 
 vi.mock('ssh2', () => {
@@ -18,8 +19,15 @@ vi.mock('ssh2', () => {
 
 describe('SshSessionManager Local Network Error Diagnosis', () => {
   it('formats helpful local network permission diagnosis on EHOSTUNREACH for LAN IPs', async () => {
-    const mockSession = { webContentsId: 1, workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/home' } };
-    const manager = new SshSessionManager(() => mockSession as any, '/tmp/test-user-data', () => null);
+    const mockSession = {
+      webContentsId: 1,
+      workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/home' },
+    };
+    const manager = new SshSessionManager(
+      () => mockSession as any,
+      '/tmp/test-user-data',
+      () => null,
+    );
 
     // Mock Client.connect to trigger error on direct and fallback
     vi.mocked(Client).mockImplementation(function () {
@@ -60,8 +68,15 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
   });
 
   it('formats helpful local network diagnosis on Connection lost before handshake', async () => {
-    const mockSession = { webContentsId: 1, workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/home' } };
-    const manager = new SshSessionManager(() => mockSession as any, '/tmp/test-user-data', () => null);
+    const mockSession = {
+      webContentsId: 1,
+      workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/home' },
+    };
+    const manager = new SshSessionManager(
+      () => mockSession as any,
+      '/tmp/test-user-data',
+      () => null,
+    );
 
     vi.mocked(Client).mockImplementation(function () {
       const listeners: Record<string, ((...args: any[]) => void)[]> = {};
@@ -73,9 +88,7 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
         },
         connect: () => {
           process.nextTick(() => {
-            listeners['error']?.forEach((cb) =>
-              cb(new Error('Connection lost before handshake')),
-            );
+            listeners['error']?.forEach((cb) => cb(new Error('Connection lost before handshake')));
           });
           return clientInstance;
         },
@@ -100,8 +113,15 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
   });
 
   it('formats user-friendly error on All configured authentication methods failed without retrying via nc', async () => {
-    const mockSession = { webContentsId: 1, workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/home' } };
-    const manager = new SshSessionManager(() => mockSession as any, '/tmp/test-user-data', () => null);
+    const mockSession = {
+      webContentsId: 1,
+      workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/home' },
+    };
+    const manager = new SshSessionManager(
+      () => mockSession as any,
+      '/tmp/test-user-data',
+      () => null,
+    );
 
     let connectCount = 0;
     vi.mocked(Client).mockImplementation(function () {
@@ -139,8 +159,15 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
   });
 
   it('buffers resize and write before shell channel opens and applies on ready', async () => {
-    const mockSession = { webContentsId: 1, workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/remote/home' } };
-    const manager = new SshSessionManager(() => mockSession as any, '/tmp/test-user-data', () => null);
+    const mockSession = {
+      webContentsId: 1,
+      workspace: { setRemoteBackend: vi.fn(), getRoot: () => '/remote/home' },
+    };
+    const manager = new SshSessionManager(
+      () => mockSession as any,
+      '/tmp/test-user-data',
+      () => null,
+    );
     let shellCallback: any;
     const mockClient = {
       shell: vi.fn((opts, cb) => {
@@ -194,7 +221,9 @@ describe('SshSessionManager Local Network Error Diagnosis', () => {
       };
 
       const manager = new SshSessionManager(
-        () => ({ webContentsId: 1, workspace: 'ssh-1' }),
+        // 只用到 webContentsId 与 workspace 两个字段：真实的 WindowSession 会拉起
+        // WorkspaceService / LSP / DAP / 数据库等一堆服务，这里不需要也不可能构造出来。
+        () => ({ webContentsId: 1, workspace: 'ssh-1' }) as unknown as WindowSession,
         '/tmp/user-data',
         () => null,
       );

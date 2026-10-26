@@ -2,7 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { OpenTab } from '@deepseek-ide/shared';
 import { isUntitledPath, untitledTabLabel } from '../utils';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n } from '../i18n';
 
 export interface UnsavedChangesModalProps {
@@ -107,7 +111,14 @@ export function UnsavedChangesModal({
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
           {/* Header & Icon */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 12,
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, minWidth: 0 }}>
               <div
                 style={{
@@ -171,7 +182,14 @@ export function UnsavedChangesModal({
               disabled={saving}
               style={{ flexShrink: 0 }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -196,11 +214,26 @@ export function UnsavedChangesModal({
             }}
             title={filePath}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0 }}>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              style={{ flexShrink: 0 }}
+            >
               <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
               <polyline points="13 2 13 9 20 9" />
             </svg>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', direction: 'rtl', textAlign: 'left' }}>
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                direction: 'rtl',
+                textAlign: 'left',
+              }}
+            >
               {filePath}
             </span>
           </div>

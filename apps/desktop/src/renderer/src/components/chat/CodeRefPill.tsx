@@ -11,12 +11,44 @@ export interface ParsedCodeRef {
 }
 
 export const CODE_EXTENSIONS = new Set([
-  'tsx', 'ts', 'jsx', 'js', 'mjs', 'cjs',
-  'py', 'java', 'cpp', 'cc', 'c', 'h', 'hpp',
-  'go', 'rs', 'json', 'yaml', 'yml', 'toml', 'xml',
-  'css', 'scss', 'less', 'html', 'vue', 'svelte',
-  'sql', 'sh', 'bash', 'zsh', 'md', 'graphql',
-  'proto', 'gradle', 'properties', 'ini', 'env', 'txt'
+  'tsx',
+  'ts',
+  'jsx',
+  'js',
+  'mjs',
+  'cjs',
+  'py',
+  'java',
+  'cpp',
+  'cc',
+  'c',
+  'h',
+  'hpp',
+  'go',
+  'rs',
+  'json',
+  'yaml',
+  'yml',
+  'toml',
+  'xml',
+  'css',
+  'scss',
+  'less',
+  'html',
+  'vue',
+  'svelte',
+  'sql',
+  'sh',
+  'bash',
+  'zsh',
+  'md',
+  'graphql',
+  'proto',
+  'gradle',
+  'properties',
+  'ini',
+  'env',
+  'txt',
 ]);
 
 export function isCodeFile(fileName: string): boolean {
@@ -273,9 +305,10 @@ export function parseContentWithCodeRefs(
 
     let lineLabel: string | undefined;
     if (startLine !== undefined) {
-      lineLabel = endLine !== undefined && endLine !== startLine
-        ? `#L${startLine}-${endLine}`
-        : `#L${startLine}`;
+      lineLabel =
+        endLine !== undefined && endLine !== startLine
+          ? `#L${startLine}-${endLine}`
+          : `#L${startLine}`;
     }
 
     result.push({
@@ -376,7 +409,17 @@ export function FileLanguageIcon({ fileName }: { fileName: string }) {
 
   if (ext === 'java') {
     return (
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#f59e0b"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ flexShrink: 0 }}
+      >
         <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
         <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
         <line x1="6" y1="1" x2="6" y2="4" />
@@ -387,9 +430,20 @@ export function FileLanguageIcon({ fileName }: { fileName: string }) {
 
   if (ext === 'py') {
     return (
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2" style={{ flexShrink: 0 }}>
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#38bdf8"
+        strokeWidth="2"
+        style={{ flexShrink: 0 }}
+      >
         <path d="M12 2a5 5 0 0 0-5 5v3h5v2H6a4 4 0 0 0-4 4 4 4 0 0 0 4 4h2v-2a3 3 0 0 1 3-3h5a3 3 0 0 0 3-3V7a5 5 0 0 0-5-5z" />
-        <path d="M12 22a5 5 0 0 0 5-5v-3h-5v-2h6a4 4 0 0 0 4-4 4 4 0 0 0-4-4h-2v2a3 3 0 0 1-3 3h-5a3 3 0 0 0-3 3v4a5 5 0 0 0 5 5z" stroke="#f59e0b" />
+        <path
+          d="M12 22a5 5 0 0 0 5-5v-3h-5v-2h6a4 4 0 0 0 4-4 4 4 0 0 0-4-4h-2v2a3 3 0 0 1-3 3h-5a3 3 0 0 0-3 3v4a5 5 0 0 0 5 5z"
+          stroke="#f59e0b"
+        />
       </svg>
     );
   }
@@ -440,7 +494,17 @@ export function FileLanguageIcon({ fileName }: { fileName: string }) {
 
   // 通用文件图标
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.8 }}>
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ flexShrink: 0, opacity: 0.8 }}
+    >
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
     </svg>
@@ -485,9 +549,7 @@ export const CodeRefPill: React.FC<{
     >
       <FileLanguageIcon fileName={codeRef.fileName} />
       <span className="chat-code-ref-pill-name">{codeRef.fileName}</span>
-      {codeRef.lineLabel && (
-        <span className="chat-code-ref-pill-line">{codeRef.lineLabel}</span>
-      )}
+      {codeRef.lineLabel && <span className="chat-code-ref-pill-line">{codeRef.lineLabel}</span>}
     </span>
   );
 };

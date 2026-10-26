@@ -10,7 +10,10 @@ vi.mock('monaco-editor', () => ({
     },
   },
   Position: class Position {
-    constructor(public lineNumber: number, public column: number) {}
+    constructor(
+      public lineNumber: number,
+      public column: number,
+    ) {}
   },
 }));
 
@@ -69,9 +72,33 @@ describe('sqlCompletionService 智能补全', () => {
           return Promise.resolve({
             ok: true,
             columns: [
-              { cid: 0, name: 'id', type: 'bigint', notnull: true, pk: true, dflt_value: null, comment: '主键' },
-              { cid: 1, name: 'monitor_name', type: 'varchar(128)', notnull: true, pk: false, dflt_value: '', comment: '监控项名称' },
-              { cid: 2, name: 'status', type: 'int', notnull: false, pk: false, dflt_value: 0, comment: '状态' },
+              {
+                cid: 0,
+                name: 'id',
+                type: 'bigint',
+                notnull: true,
+                pk: true,
+                dflt_value: null,
+                comment: '主键',
+              },
+              {
+                cid: 1,
+                name: 'monitor_name',
+                type: 'varchar(128)',
+                notnull: true,
+                pk: false,
+                dflt_value: '',
+                comment: '监控项名称',
+              },
+              {
+                cid: 2,
+                name: 'status',
+                type: 'int',
+                notnull: false,
+                pk: false,
+                dflt_value: 0,
+                comment: '状态',
+              },
             ],
           });
         }
@@ -79,7 +106,14 @@ describe('sqlCompletionService 智能补全', () => {
           ok: true,
           columns: [
             { cid: 0, name: 'id', type: 'int', notnull: true, pk: true, dflt_value: null },
-            { cid: 1, name: 'username', type: 'varchar(64)', notnull: true, pk: false, dflt_value: null },
+            {
+              cid: 1,
+              name: 'username',
+              type: 'varchar(64)',
+              notnull: true,
+              pk: false,
+              dflt_value: null,
+            },
           ],
         });
       }),
@@ -111,7 +145,11 @@ describe('sqlCompletionService 智能补全', () => {
     const model = {
       getLineContent: () => line,
       getValue: () => line,
-      getWordUntilPosition: () => ({ word: '', startColumn: line.length + 1, endColumn: line.length + 1 }),
+      getWordUntilPosition: () => ({
+        word: '',
+        startColumn: line.length + 1,
+        endColumn: line.length + 1,
+      }),
     } as any;
 
     const position = new monaco.Position(1, line.length + 1);
@@ -128,7 +166,11 @@ describe('sqlCompletionService 智能补全', () => {
     const model = {
       getLineContent: () => sql,
       getValue: () => sql,
-      getWordUntilPosition: () => ({ word: '', startColumn: sql.length + 1, endColumn: sql.length + 1 }),
+      getWordUntilPosition: () => ({
+        word: '',
+        startColumn: sql.length + 1,
+        endColumn: sql.length + 1,
+      }),
     } as any;
 
     const position = new monaco.Position(1, sql.length + 1);
@@ -170,7 +212,11 @@ describe('sqlCompletionService 智能补全', () => {
       getLineContent: () => sql,
       getValue: () => sql,
       getOffsetAt: () => sql.length,
-      getWordUntilPosition: () => ({ word: '', startColumn: sql.length + 1, endColumn: sql.length + 1 }),
+      getWordUntilPosition: () => ({
+        word: '',
+        startColumn: sql.length + 1,
+        endColumn: sql.length + 1,
+      }),
     } as any;
 
     const position = new monaco.Position(1, sql.length + 1);
@@ -188,7 +234,11 @@ describe('sqlCompletionService 智能补全', () => {
       getLineContent: () => sql,
       getValue: () => sql,
       getOffsetAt: () => sql.length,
-      getWordUntilPosition: () => ({ word: 'm', startColumn: sql.length, endColumn: sql.length + 1 }),
+      getWordUntilPosition: () => ({
+        word: 'm',
+        startColumn: sql.length,
+        endColumn: sql.length + 1,
+      }),
     } as any;
 
     const position = new monaco.Position(1, sql.length + 1);
@@ -206,7 +256,11 @@ describe('sqlCompletionService 智能补全', () => {
       getLineContent: () => sql,
       getValue: () => sql,
       getOffsetAt: () => sql.length,
-      getWordUntilPosition: () => ({ word: '', startColumn: sql.length + 1, endColumn: sql.length + 1 }),
+      getWordUntilPosition: () => ({
+        word: '',
+        startColumn: sql.length + 1,
+        endColumn: sql.length + 1,
+      }),
     } as any;
 
     const position = new monaco.Position(1, sql.length + 1);

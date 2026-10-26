@@ -28,7 +28,8 @@ describe('detectPortsFromText', () => {
   });
 
   it('filters out ANSI escape sequences', () => {
-    const ansiOutput = '\x1b[32m➜\x1b[39m  \x1b[1mLocal\x1b[22m:   \x1b[36mhttp://localhost:\x1b[1m5174\x1b[22m/\x1b[39m';
+    const ansiOutput =
+      '\x1b[32m➜\x1b[39m  \x1b[1mLocal\x1b[22m:   \x1b[36mhttp://localhost:\x1b[1m5174\x1b[22m/\x1b[39m';
     expect(detectPortsFromText(ansiOutput)).toEqual([5174]);
   });
 
@@ -38,7 +39,8 @@ describe('detectPortsFromText', () => {
   });
 
   it('deduplicates multiple mentions of the same port', () => {
-    const output = 'Local: http://localhost:3000, visit http://127.0.0.1:3000, listening on port 3000';
+    const output =
+      'Local: http://localhost:3000, visit http://127.0.0.1:3000, listening on port 3000';
     expect(detectPortsFromText(output)).toEqual([3000]);
   });
 });

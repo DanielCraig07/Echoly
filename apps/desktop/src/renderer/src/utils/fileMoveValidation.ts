@@ -16,8 +16,7 @@ export type MoveRejectionCode =
   | 'already-in-target';
 
 export type MoveValidationResult =
-  | { valid: true; newPath: string }
-  | { valid: false; code: MoveRejectionCode };
+  { valid: true; newPath: string } | { valid: false; code: MoveRejectionCode };
 
 export function validateMove(
   sourcePath: string,

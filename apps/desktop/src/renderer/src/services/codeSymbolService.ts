@@ -14,7 +14,9 @@ export function extractCodeSymbols(content: string, language: string): CodeSymbo
   const symbols: CodeSymbol[] = [];
   const lang = (language || '').toLowerCase();
 
-  const isJsTs = /^(typescript|javascript|javascriptreact|typescriptreact|tsx|jsx|ts|js)$/.test(lang);
+  const isJsTs = /^(typescript|javascript|javascriptreact|typescriptreact|tsx|jsx|ts|js)$/.test(
+    lang,
+  );
   const isPython = /^(python|py)$/.test(lang);
   const isJava = /^(java)$/.test(lang);
   const isGo = /^(go)$/.test(lang);
@@ -23,7 +25,13 @@ export function extractCodeSymbols(content: string, language: string): CodeSymbo
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
     const trimmed = rawLine.trim();
-    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('#')) {
+    if (
+      !trimmed ||
+      trimmed.startsWith('//') ||
+      trimmed.startsWith('/*') ||
+      trimmed.startsWith('*') ||
+      trimmed.startsWith('#')
+    ) {
       continue;
     }
 
@@ -32,7 +40,9 @@ export function extractCodeSymbols(content: string, language: string): CodeSymbo
     // TypeScript / JavaScript
     if (isJsTs) {
       // class
-      let m = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z0-9_$]+)/);
+      let m = trimmed.match(
+        /^(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z0-9_$]+)/,
+      );
       if (m) {
         symbols.push({ name: m[1], kind: 'class', line: lineNum });
         continue;
@@ -50,13 +60,17 @@ export function extractCodeSymbols(content: string, language: string): CodeSymbo
         continue;
       }
       // function
-      m = trimmed.match(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*([A-Za-z0-9_$]+)?\s*\(/);
+      m = trimmed.match(
+        /^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*([A-Za-z0-9_$]+)?\s*\(/,
+      );
       if (m && m[1]) {
         symbols.push({ name: m[1], kind: 'function', line: lineNum });
         continue;
       }
       // const/let fn = ... =>
-      m = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:useCallback\()?(?:async\s*)?(?:\([^)]*\)|[A-Za-z0-9_$]+)\s*=>/);
+      m = trimmed.match(
+        /^(?:export\s+)?(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:useCallback\()?(?:async\s*)?(?:\([^)]*\)|[A-Za-z0-9_$]+)\s*=>/,
+      );
       if (m) {
         symbols.push({ name: m[1], kind: 'function', line: lineNum });
         continue;
@@ -79,12 +93,16 @@ export function extractCodeSymbols(content: string, language: string): CodeSymbo
 
     // Java
     if (isJava) {
-      let m = trimmed.match(/^(?:public|protected|private)?\s*(?:static\s+)?(?:abstract\s+)?(?:final\s+)?(?:class|interface|enum)\s+([A-Za-z0-9_]+)/);
+      let m = trimmed.match(
+        /^(?:public|protected|private)?\s*(?:static\s+)?(?:abstract\s+)?(?:final\s+)?(?:class|interface|enum)\s+([A-Za-z0-9_]+)/,
+      );
       if (m) {
         symbols.push({ name: m[1], kind: 'class', line: lineNum });
         continue;
       }
-      m = trimmed.match(/^(?:public|protected|private)?\s*(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:[\w<>[\],]+)\s+([A-Za-z0-9_]+)\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{/);
+      m = trimmed.match(
+        /^(?:public|protected|private)?\s*(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(?:[\w<>[\],]+)\s+([A-Za-z0-9_]+)\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{/,
+      );
       if (m && m[1] !== 'if' && m[1] !== 'for' && m[1] !== 'while' && m[1] !== 'switch') {
         symbols.push({ name: m[1], kind: 'method', line: lineNum });
         continue;

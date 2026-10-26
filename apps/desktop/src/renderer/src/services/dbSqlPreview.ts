@@ -83,8 +83,9 @@ export function parseTableOptions(ddl: string | undefined): DbTableOptions | nul
   if (!ddl) return null;
   const engine = /\bENGINE\s*=\s*([A-Za-z0-9_]+)/i.exec(ddl)?.[1];
   // `DEFAULT CHARSET=utf8mb4` 与 `DEFAULT CHARACTER SET=utf8mb4` 两种写法都要认
-  const charset =
-    /\b(?:DEFAULT\s+)?(?:CHARSET|CHARACTER\s+SET)\s*=\s*([A-Za-z0-9_]+)/i.exec(ddl)?.[1];
+  const charset = /\b(?:DEFAULT\s+)?(?:CHARSET|CHARACTER\s+SET)\s*=\s*([A-Za-z0-9_]+)/i.exec(
+    ddl,
+  )?.[1];
   const collation = /\bCOLLATE\s*=?\s*([A-Za-z0-9_]+)/i.exec(ddl)?.[1];
   if (!engine && !charset && !collation) return null;
   return { engine, charset, collation };

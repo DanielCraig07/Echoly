@@ -150,7 +150,9 @@ describe('buildAlterTableStatements · 三驱动分支', () => {
       { name: 'obsolete', originalName: 'obsolete', drop: true },
     ]);
     expect(res.ok).toBe(true);
-    expect(res.statements.some((s) => s.startsWith('ALTER TABLE `shop`.`users` ADD COLUMN `nick`'))).toBe(true);
+    expect(
+      res.statements.some((s) => s.startsWith('ALTER TABLE `shop`.`users` ADD COLUMN `nick`')),
+    ).toBe(true);
     expect(res.statements.some((s) => s.includes('CHANGE COLUMN `username` `name`'))).toBe(true);
     expect(res.statements.some((s) => s.includes('MODIFY COLUMN `age` BIGINT'))).toBe(true);
     expect(res.statements.some((s) => s.includes('DROP COLUMN `obsolete`'))).toBe(true);
@@ -158,7 +160,13 @@ describe('buildAlterTableStatements · 三驱动分支', () => {
 
   it('PostgreSQL：改名用 RENAME COLUMN，改类型用 ALTER COLUMN ... TYPE', () => {
     const res = buildAlterTableStatements('postgres', 'public', 'users', [
-      { name: 'username', originalName: 'username', type: 'VARCHAR', length: '80', newName: 'name' },
+      {
+        name: 'username',
+        originalName: 'username',
+        type: 'VARCHAR',
+        length: '80',
+        newName: 'name',
+      },
       { name: 'age', originalName: 'age', type: 'BIGINT' },
     ]);
     expect(res.statements).toContain(
@@ -178,7 +186,9 @@ describe('buildAlterTableStatements · 三驱动分支', () => {
     ]);
     expect(res.statements).toContain('ALTER TABLE "public"."t" ALTER COLUMN "a" SET NOT NULL;');
     expect(res.statements).toContain('ALTER TABLE "public"."t" ALTER COLUMN "b" DROP NOT NULL;');
-    expect(res.statements).toContain("ALTER TABLE \"public\".\"t\" ALTER COLUMN \"c\" SET DEFAULT 'x';");
+    expect(res.statements).toContain(
+      'ALTER TABLE "public"."t" ALTER COLUMN "c" SET DEFAULT \'x\';',
+    );
     expect(res.statements).toContain('ALTER TABLE "public"."t" ALTER COLUMN "d" DROP DEFAULT;');
   });
 
@@ -282,9 +292,9 @@ describe('列级 DDL 快捷入口', () => {
     expect(buildRenameColumnSql('postgres', 'public', 't', 'a', 'b')).toBe(
       'ALTER TABLE "public"."t" RENAME COLUMN "a" TO "b";',
     );
-    expect(buildAddColumnSql('mysql', 'shop', 't', { name: 'nick', type: 'VARCHAR', length: '50' })).toBe(
-      'ALTER TABLE `shop`.`t` ADD COLUMN `nick` VARCHAR(50);',
-    );
+    expect(
+      buildAddColumnSql('mysql', 'shop', 't', { name: 'nick', type: 'VARCHAR', length: '50' }),
+    ).toBe('ALTER TABLE `shop`.`t` ADD COLUMN `nick` VARCHAR(50);');
   });
 
   it('白名单覆盖三驱动的常用类型', () => {
@@ -327,7 +337,7 @@ describe('buildTableOptionsSql · 表级选项（注释 / 引擎 / 字符集 / �
 
   it('PostgreSQL 用 COMMENT ON TABLE，清空时走 IS NULL', () => {
     expect(buildTableOptionsSql('postgres', 'public', 'goods', { comment: '商品主表' })).toEqual([
-      "COMMENT ON TABLE \"public\".\"goods\" IS '商品主表';",
+      'COMMENT ON TABLE "public"."goods" IS \'商品主表\';',
     ]);
     expect(buildTableOptionsSql('postgres', 'public', 'goods', { comment: '' })).toEqual([
       'COMMENT ON TABLE "public"."goods" IS NULL;',

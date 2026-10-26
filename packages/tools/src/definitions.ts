@@ -92,7 +92,10 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
               type: 'object',
               properties: {
                 old_text: { type: 'string', description: 'Exact text to find in the file.' },
-                new_text: { type: 'string', description: 'Replacement text (may be empty to delete).' },
+                new_text: {
+                  type: 'string',
+                  description: 'Replacement text (may be empty to delete).',
+                },
                 replace_all: {
                   type: 'boolean',
                   description:
@@ -171,7 +174,10 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Natural-language description of what you are looking for' },
+          query: {
+            type: 'string',
+            description: 'Natural-language description of what you are looking for',
+          },
           limit: { type: 'integer', description: 'Max chunks to return (default 20)' },
         },
         required: ['query'],
@@ -295,12 +301,7 @@ export const READONLY_TOOL_NAMES = new Set([
 ]);
 
 /** 会产生文件系统副作用的工具：权限门控与运行后自检都以此为准。 */
-export const WRITE_TOOL_NAMES = new Set([
-  'write_file',
-  'apply_patch',
-  'delete_path',
-  'move_path',
-]);
+export const WRITE_TOOL_NAMES = new Set(['write_file', 'apply_patch', 'delete_path', 'move_path']);
 
 /**
  * 宿主注入的 MCP 工具：定义来自远端服务器，我们只知道名字和 schema。
@@ -318,7 +319,7 @@ export function toolsForMode(mode: 'ask' | 'plan' | 'agent', mcp?: McpToolSet): 
   const mcpDefs = mcp?.definitions ?? [];
   if (mode === 'agent') return [...AGENT_TOOL_DEFINITIONS, ...mcpDefs];
   const readonlyExtra = new Set(mcp?.readonlyNames ?? []);
-  return [...AGENT_TOOL_DEFINITIONS, ...mcpDefs].filter((t) =>
-    READONLY_TOOL_NAMES.has(t.function.name) || readonlyExtra.has(t.function.name),
+  return [...AGENT_TOOL_DEFINITIONS, ...mcpDefs].filter(
+    (t) => READONLY_TOOL_NAMES.has(t.function.name) || readonlyExtra.has(t.function.name),
   );
 }

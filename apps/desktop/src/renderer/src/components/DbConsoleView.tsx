@@ -6,6 +6,8 @@ import { resolveExecutableSql, splitSqlStatements } from '../services/sqlStateme
 import { formatCellValue } from '../services/dbCellDisplay';
 import { PanelSelect } from './PanelSelect';
 import { useI18n } from '../i18n';
+import { useDbConfirm } from '../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import {
   provideSqlCompletions,
   getOrFetchTables,
@@ -86,6 +88,8 @@ export function DbConsoleView({
   onShowToast,
 }: DbConsoleViewProps) {
   const { t } = useI18n();
+  // 收藏命名需要弹窗收集一个字符串，所以这里也要有自己的一个确认框实例
+  const confirm = useDbConfirm();
   const [sql, setSql] = useState<string>(initialSql);
   const [runs, setRuns] = useState<StatementRun[]>([]);
   const [activeRunIndex, setActiveRunIndex] = useState<number>(0);
@@ -198,12 +202,7 @@ export function DbConsoleView({
     const disposable = monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: ['.', ' '],
       provideCompletionItems(model, position) {
-        return provideSqlCompletions(
-          model,
-          position,
-          metadataProviderRef.current,
-          tRef.current,
-        );
+        return provideSqlCompletions(model, position, metadataProviderRef.current, tRef.current);
       },
     });
     return () => {
@@ -250,7 +249,11 @@ export function DbConsoleView({
 
       const target = connections.find((c) => c.id === nextId);
       const fail = (detail?: string) => {
-        onShowToast?.(t('db.sqlConnectFailedTo', { name: target?.name ?? nextId }), detail, 'error');
+        onShowToast?.(
+          t('db.sqlConnectFailedTo', { name: target?.name ?? nextId }),
+          detail,
+          'error',
+        );
         // 切不过去就退回原样，别把一个连不上的连接挂在控制台上
         setActiveConnId(prevConnId);
         setActiveSchema(prevSchema);
@@ -283,7 +286,7 @@ export function DbConsoleView({
       // MySQL 一个连接下有多个库、PG 有多个 schema，所以选完连接必须再选一次库；
       // SQLite 只有 main，没得选就不打扰用户
       const nextSchema =
-        names.length > 1 ? undefined : names[0] ?? target?.database ?? prevSchema;
+        names.length > 1 ? undefined : (names[0] ?? target?.database ?? prevSchema);
       setActiveSchema(nextSchema);
       selfRetargetRef.current = { connectionId: nextId, schemaName: nextSchema };
       onRetarget?.({ connectionId: nextId, schemaName: nextSchema }, 'connection');
@@ -384,7 +387,10 @@ export function DbConsoleView({
         setRuns(collected);
         // 默认展示最后一个有结果集的语句
         const withRows = collected.filter((r) => r.result.columns.length > 0);
-        setActiveRunIndex((withRows.length > 0 ? withRows[withRows.length - 1] : collected[collected.length - 1]).index);
+        setActiveRunIndex(
+          (withRows.length > 0 ? withRows[withRows.length - 1] : collected[collected.length - 1])
+            .index,
+        );
 
         const failed = collected.filter((r) => !r.result.ok);
         const totalMs = collected.reduce((sum, r) => sum + (r.result.executionTimeMs || 0), 0);
@@ -436,16 +442,35 @@ export function DbConsoleView({
     [sql, activeConnId, activeSchema, onShowToast, t],
   );
 
-  const handleSaveFavorite = useCallback(() => {
+  const handleSaveFavorite = useCallback(async () => {
     if (!sql.trim()) {
       onShowToast?.(t('db.sqlEmptyCannotFavorite'), undefined, 'warn');
       return;
     }
     const defaultTitle = summarizeSql(sql, 28);
-    const title = window.prompt(t('db.sqlFavoritePrompt'), defaultTitle) || defaultTitle;
+    // 收藏名的输入走应用内弹窗，不用 `window.prompt`：Electron 里 `window.prompt`
+    // 是被禁用的，项目在 `main.tsx` 里塞了个 polyfill —— 它**直接返回默认值**，
+    // 等于用户从来没有机会改这个名字。收藏保存下来全叫「SELECT * FROM …」，
+    // 而界面上一切正常，只有用户自己发现"我明明改过名字"。
+    const title = await confirm.confirm({
+      title: t('db.sqlFavoritePrompt'),
+      content: buildSqlConfirmMarkdown({
+        t,
+        intro: t('db.sqlFavoriteIntro'),
+        statements: [sql.trim()],
+        notes: [],
+      }),
+      input: {
+        label: t('db.sqlFavoriteNameLabel'),
+        defaultValue: defaultTitle,
+        placeholder: defaultTitle,
+      },
+      confirmLabel: t('db.sqlFavoriteSave'),
+    });
+    if (title === null) return;
     const item: SqlFavoriteItem = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      title: title.trim(),
+      title: (title.trim() || defaultTitle).trim(),
       sql: sql.trim(),
       time: Date.now(),
     };
@@ -457,8 +482,8 @@ export function DbConsoleView({
       } catch {}
       return next;
     });
-    onShowToast?.(t('db.sqlFavorited'), title, 'success');
-  }, [sql, onShowToast, t]);
+    onShowToast?.(t('db.sqlFavorited'), item.title, 'success');
+  }, [sql, onShowToast, t, confirm]);
 
   const handleDeleteFavorite = useCallback((id: string) => {
     setFavoritesList((prev) => {
@@ -497,17 +522,48 @@ export function DbConsoleView({
     if (!sql.trim()) return;
     try {
       const keywords = [
-        'SELECT', 'FROM', 'WHERE', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'JOIN',
-        'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'OFFSET',
-        'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
-        'UNION ALL', 'UNION', 'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE',
+        'SELECT',
+        'FROM',
+        'WHERE',
+        'LEFT JOIN',
+        'RIGHT JOIN',
+        'INNER JOIN',
+        'JOIN',
+        'GROUP BY',
+        'ORDER BY',
+        'HAVING',
+        'LIMIT',
+        'OFFSET',
+        'INSERT INTO',
+        'VALUES',
+        'UPDATE',
+        'SET',
+        'DELETE FROM',
+        'UNION ALL',
+        'UNION',
+        'CREATE TABLE',
+        'ALTER TABLE',
+        'DROP TABLE',
       ];
       let formatted = sql;
       keywords.forEach((kw) => {
         const regex = new RegExp(`\\b${kw}\\b`, 'gi');
         formatted = formatted.replace(regex, kw);
       });
-      ['FROM', 'WHERE', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'JOIN', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT', 'SET', 'VALUES'].forEach((clause) => {
+      [
+        'FROM',
+        'WHERE',
+        'LEFT JOIN',
+        'RIGHT JOIN',
+        'INNER JOIN',
+        'JOIN',
+        'GROUP BY',
+        'ORDER BY',
+        'HAVING',
+        'LIMIT',
+        'SET',
+        'VALUES',
+      ].forEach((clause) => {
         const regex = new RegExp(`\\s+(${clause})\\b`, 'g');
         formatted = formatted.replace(regex, `\n$1`);
       });
@@ -635,7 +691,16 @@ export function DbConsoleView({
               flexShrink: 0,
             }}
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polygon points="5 3 19 12 5 21 5 3" />
               <line x1="22" y1="5" x2="22" y2="19" />
             </svg>
@@ -648,7 +713,16 @@ export function DbConsoleView({
             title={t('db.sqlFormatTitle')}
             onClick={formatSql}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="21" y1="10" x2="7" y2="10" />
               <line x1="21" y1="6" x2="3" y2="6" />
               <line x1="21" y1="14" x2="3" y2="14" />
@@ -662,7 +736,16 @@ export function DbConsoleView({
             title={t('db.sqlFavoriteTitle')}
             onClick={handleSaveFavorite}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
           </button>
@@ -676,7 +759,16 @@ export function DbConsoleView({
               setShowHistoryModal(false);
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
             </svg>
           </button>
@@ -690,7 +782,16 @@ export function DbConsoleView({
               setShowFavoriteModal(false);
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <circle cx="12" cy="12" r="10" />
               <polyline points="12 6 12 12 16 14" />
             </svg>
@@ -787,9 +888,19 @@ export function DbConsoleView({
               background: 'rgba(255, 255, 255, 0.03)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontWeight: 600,
+                fontSize: 12,
+              }}
+            >
               <span>{t('db.sqlHistoryPanelTitle')}</span>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>({historyList.length})</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                ({historyList.length})
+              </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               {historyList.length > 0 && (
@@ -848,13 +959,22 @@ export function DbConsoleView({
             {historyList.filter((item) =>
               historySearch ? item.sql.toLowerCase().includes(historySearch.toLowerCase()) : true,
             ).length === 0 ? (
-              <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
+              <div
+                style={{
+                  padding: '24px 0',
+                  textAlign: 'center',
+                  color: 'var(--text-muted)',
+                  fontSize: 11,
+                }}
+              >
                 {t('db.sqlNoHistory')}
               </div>
             ) : (
               historyList
                 .filter((item) =>
-                  historySearch ? item.sql.toLowerCase().includes(historySearch.toLowerCase()) : true,
+                  historySearch
+                    ? item.sql.toLowerCase().includes(historySearch.toLowerCase())
+                    : true,
                 )
                 .map((item) => (
                   <div
@@ -867,9 +987,16 @@ export function DbConsoleView({
                       gap: 4,
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
                       <span style={{ fontSize: 10, color: item.ok ? '#34d399' : '#f87171' }}>
-                        {item.ok ? t('db.sqlRunOk') : t('db.sqlRunFail')} · {new Date(item.time).toLocaleTimeString()}
+                        {item.ok ? t('db.sqlRunOk') : t('db.sqlRunFail')} ·{' '}
+                        {new Date(item.time).toLocaleTimeString()}
                       </span>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button
@@ -955,9 +1082,19 @@ export function DbConsoleView({
               background: 'rgba(255, 255, 255, 0.03)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontWeight: 600,
+                fontSize: 12,
+              }}
+            >
               <span>{t('db.sqlFavoritesPanelTitle')}</span>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>({favoritesList.length})</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                ({favoritesList.length})
+              </span>
             </div>
             <button
               type="button"
@@ -1001,7 +1138,14 @@ export function DbConsoleView({
                 item.title.toLowerCase().includes(favoriteSearch.toLowerCase()) ||
                 item.sql.toLowerCase().includes(favoriteSearch.toLowerCase()),
             ).length === 0 ? (
-              <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
+              <div
+                style={{
+                  padding: '24px 0',
+                  textAlign: 'center',
+                  color: 'var(--text-muted)',
+                  fontSize: 11,
+                }}
+              >
                 {t('db.sqlNoFavorites')}
               </div>
             ) : (
@@ -1023,8 +1167,16 @@ export function DbConsoleView({
                       gap: 4,
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{item.title}</span>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                        {item.title}
+                      </span>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <button
                           type="button"
@@ -1131,7 +1283,8 @@ export function DbConsoleView({
                 whiteSpace: 'nowrap',
                 cursor: 'pointer',
                 border: `1px solid ${run.index === activeRunIndex ? 'var(--accent, #3b82f6)' : 'var(--border)'}`,
-                background: run.index === activeRunIndex ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                background:
+                  run.index === activeRunIndex ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
                 color: run.result.ok ? 'var(--text)' : '#f87171',
               }}
             >
@@ -1305,7 +1458,14 @@ export function DbConsoleView({
             </tbody>
           </table>
         ) : result ? (
-          <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+          <div
+            style={{
+              padding: '32px',
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+              fontSize: 12,
+            }}
+          >
             {result.ok
               ? result.columns.length > 0
                 ? t('db.sqlOkNoRows')
@@ -1313,11 +1473,20 @@ export function DbConsoleView({
               : t('db.sqlExecError', { error: result.error ?? '' })}
           </div>
         ) : (
-          <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+          <div
+            style={{
+              padding: '32px',
+              textAlign: 'center',
+              color: 'var(--text-muted)',
+              fontSize: 12,
+            }}
+          >
             {t('db.sqlWriteAndRun')}
           </div>
         )}
       </div>
+
+      {confirm.modal}
     </div>
   );
 }

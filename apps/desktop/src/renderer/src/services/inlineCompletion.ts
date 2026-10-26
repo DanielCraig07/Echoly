@@ -69,7 +69,9 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
           let completionText = res.completion;
           // 若包含 markdown 标记则剔除
           if (completionText.startsWith('```')) {
-            completionText = completionText.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '');
+            completionText = completionText
+              .replace(/^```[a-zA-Z0-9_-]*\n?/, '')
+              .replace(/\n?```$/, '');
           }
 
           if (!completionText.trim()) {

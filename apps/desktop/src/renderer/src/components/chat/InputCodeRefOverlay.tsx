@@ -1,4 +1,11 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import { parseContentWithCodeRefs, FileLanguageIcon, type ParsedCodeRef } from './CodeRefPill';
 import { useI18n } from '../../i18n';
 
@@ -9,7 +16,10 @@ import { useI18n } from '../../i18n';
  * 为何从头部提取：insertPath 始终追加到末尾；用户发送前 refs 在前，正文在后。
  * 这样 textarea 只呈现纯文本，Pills 显示在上方独立行，无需对齐。
  */
-export function splitInputValue(raw: string): { refs: Array<{ raw: string; ref: ParsedCodeRef }>; plainText: string } {
+export function splitInputValue(raw: string): {
+  refs: Array<{ raw: string; ref: ParsedCodeRef }>;
+  plainText: string;
+} {
   const segments = parseContentWithCodeRefs(raw);
   const refs: Array<{ raw: string; ref: ParsedCodeRef }> = [];
   const textParts: string[] = [];
@@ -42,7 +52,10 @@ export function splitInputValue(raw: string): { refs: Array<{ raw: string; ref: 
 }
 
 /** 从 refs 和 plainText 重新组合为完整 input 字符串 */
-export function buildValue(refs: Array<{ raw: string; ref: ParsedCodeRef }>, plainText: string): string {
+export function buildValue(
+  refs: Array<{ raw: string; ref: ParsedCodeRef }>,
+  plainText: string,
+): string {
   const refPart = refs.map((r) => r.raw).join(' ');
   if (!refPart) return plainText;
   if (!plainText) return refPart + ' ';
@@ -85,9 +98,7 @@ function RefPillChip({
         <FileLanguageIcon fileName={codeRef.fileName} />
       </span>
       <span className="chat-ref-chip-name">{codeRef.fileName}</span>
-      {codeRef.lineLabel && (
-        <span className="chat-ref-chip-line">{codeRef.lineLabel}</span>
-      )}
+      {codeRef.lineLabel && <span className="chat-ref-chip-line">{codeRef.lineLabel}</span>}
       <button
         type="button"
         className="chat-ref-chip-remove"

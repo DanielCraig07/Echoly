@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+} from 'react';
 import { createPortal } from 'react-dom';
 import type {
   AgentEvent,
@@ -27,9 +35,14 @@ import { PlanPanel } from './PlanPanel';
 import { SessionModal } from './SessionModal';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { showGlobalToast } from '../services/toast';
 import { resolveSpecialMentions } from '../services/specialMentions';
 import { translateSegments, useI18n, type Translate } from '../i18n';
-import { expandCommandSelection, matchMentionTrigger, matchSlashTrigger } from '../services/slashTrigger';
+import {
+  expandCommandSelection,
+  matchMentionTrigger,
+  matchSlashTrigger,
+} from '../services/slashTrigger';
 import { ThinkingBlock } from './ThinkingBlock';
 import { WorkedForGroup } from './chat/WorkedForGroup';
 import { CollapsibleUserContent } from './chat/CollapsibleUserContent';
@@ -37,6 +50,7 @@ import { InputCodeRefOverlay, type InputCodeRefOverlayHandle } from './chat/Inpu
 import { FileLanguageIcon } from './chat/CodeRefPill';
 import { ModelMetricsBadge } from './chat/ModelMetricsBadge';
 import { PanelChevron } from './PanelChevron';
+import { computeLineDiffStats } from '../services/diffStats';
 import echolyAppIcon from '../assets/echoly-icon.png';
 
 interface MentionItem {
@@ -245,10 +259,28 @@ function formatFileSize(bytes?: number): string {
 }
 
 /** 特殊引用（@Git / @Terminal / @Problems）附件在气泡里的图标与配色。 */
-const SPECIAL_MENTION_STYLE: Record<string, { icon: string; color: string; border: string; bg: string }> = {
-  '@Git': { icon: '🌳', color: '#4ade80', border: 'rgba(74, 222, 128, 0.4)', bg: 'rgba(74, 222, 128, 0.08)' },
-  '@Terminal': { icon: '▶', color: '#fbbf24', border: 'rgba(251, 191, 36, 0.4)', bg: 'rgba(251, 191, 36, 0.08)' },
-  '@Problems': { icon: '⚠', color: '#f87171', border: 'rgba(248, 113, 113, 0.4)', bg: 'rgba(248, 113, 113, 0.08)' },
+const SPECIAL_MENTION_STYLE: Record<
+  string,
+  { icon: string; color: string; border: string; bg: string }
+> = {
+  '@Git': {
+    icon: '🌳',
+    color: '#4ade80',
+    border: 'rgba(74, 222, 128, 0.4)',
+    bg: 'rgba(74, 222, 128, 0.08)',
+  },
+  '@Terminal': {
+    icon: '▶',
+    color: '#fbbf24',
+    border: 'rgba(251, 191, 36, 0.4)',
+    bg: 'rgba(251, 191, 36, 0.08)',
+  },
+  '@Problems': {
+    icon: '⚠',
+    color: '#f87171',
+    border: 'rgba(248, 113, 113, 0.4)',
+    bg: 'rgba(248, 113, 113, 0.08)',
+  },
 };
 
 function getProviderBadge(provider?: string) {
@@ -262,59 +294,6 @@ function getProviderBadge(provider?: string) {
     default:
       return { label: 'Custom', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)' };
   }
-}
-
-function computeLineDiffStats(
-  original?: string,
-  modified?: string,
-): { added: number; deleted: number } {
-  const origText = original ?? '';
-  const modText = modified ?? '';
-  if (!origText) {
-    const lines = modText.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    return { added: lines.length || 1, deleted: 0 };
-  }
-  if (!modText) {
-    const lines = origText.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    return { added: 0, deleted: lines.length || 1 };
-  }
-
-  const origLines = origText.split(/\r?\n/);
-  const modLines = modText.split(/\r?\n/);
-
-  let added = 0;
-  let deleted = 0;
-  let oi = 0;
-  let mi = 0;
-
-  while (oi < origLines.length || mi < modLines.length) {
-    if (oi < origLines.length && mi < modLines.length && origLines[oi] === modLines[mi]) {
-      oi++;
-      mi++;
-    } else {
-      const findOrig = origLines.indexOf(modLines[mi], oi);
-      const findMod = modLines.indexOf(origLines[oi], mi);
-
-      if (findOrig !== -1 && (findMod === -1 || findOrig - oi <= findMod - mi)) {
-        deleted += findOrig - oi;
-        oi = findOrig;
-      } else if (findMod !== -1) {
-        added += findMod - mi;
-        mi = findMod;
-      } else {
-        if (oi < origLines.length) {
-          deleted++;
-          oi++;
-        }
-        if (mi < modLines.length) {
-          added++;
-          mi++;
-        }
-      }
-    }
-  }
-
-  return { added, deleted };
 }
 
 // ChatPanel Component
@@ -496,9 +475,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           const firstUserSnippet = firstUserMsg ? firstUserMsg.content.slice(0, 40) : '';
           // 判定收在 utils.isCustomSessionTitle 里（原先这段在 5 处各抄一遍，
           // 而它比较的 `'当前对话'` 是哨兵值，漏改一处就会静默失灵）
-          const isCustom = isCustomSessionTitle(updated.title, firstUserSnippet, updated.customTitle);
+          const isCustom = isCustomSessionTitle(
+            updated.title,
+            firstUserSnippet,
+            updated.customTitle,
+          );
 
-          const title = isCustom ? updated.title : (firstUserSnippet || updated.title);
+          const title = isCustom ? updated.title : firstUserSnippet || updated.title;
           const meta = buildSessionWorkspaceMeta(workspaceInfoRef.current);
           void window.ide.saveSession({
             id: updated.id,
@@ -540,7 +523,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             notes: [t('chat.rollbackNote')],
           }),
           details: [
-            { label: t('chat.rollbackDropped'), value: t('chat.rollbackDroppedValue', { n: droppedCount }) },
+            {
+              label: t('chat.rollbackDropped'),
+              value: t('chat.rollbackDroppedValue', { n: droppedCount }),
+            },
             ...(hasRunning
               ? [{ label: t('chat.rollbackRunning'), value: t('chat.rollbackRunningValue') }]
               : []),
@@ -587,7 +573,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
         if (isImage || isPdf) {
           if (file.size > 20 * 1024 * 1024) {
-            alert(t('chat.fileTooLarge20', { name: file.name }));
+            showGlobalToast(t('chat.fileTooLarge20', { name: file.name }), 'warn');
             continue;
           }
           try {
@@ -610,7 +596,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           }
         } else {
           if (file.size > 5 * 1024 * 1024) {
-            alert(t('chat.fileTooLarge5', { name: file.name }));
+            showGlobalToast(t('chat.fileTooLarge5', { name: file.name }), 'warn');
             continue;
           }
           try {
@@ -792,10 +778,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const sel = typeof window !== 'undefined' ? window.getSelection() : null;
     const hasSelection = Boolean(
       sel &&
-        !sel.isCollapsed &&
-        sel.rangeCount > 0 &&
-        ((sel.anchorNode && (el.contains(sel.anchorNode) || (sel.anchorNode.parentElement && el.contains(sel.anchorNode.parentElement)))) ||
-          (sel.focusNode && (el.contains(sel.focusNode) || (sel.focusNode.parentElement && el.contains(sel.focusNode.parentElement))))),
+      !sel.isCollapsed &&
+      sel.rangeCount > 0 &&
+      ((sel.anchorNode &&
+        (el.contains(sel.anchorNode) ||
+          (sel.anchorNode.parentElement && el.contains(sel.anchorNode.parentElement)))) ||
+        (sel.focusNode &&
+          (el.contains(sel.focusNode) ||
+            (sel.focusNode.parentElement && el.contains(sel.focusNode.parentElement))))),
     );
     if (!force && (!stickRef.current || userInteractingRef.current || hasSelection)) return;
     isProgrammaticScrollRef.current = true;
@@ -1113,7 +1103,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         desc: c.description,
         insertText: `/${c.name} `,
         commandBody: c.body,
-        badge: c.source === 'workspace' ? t('chat.commandBadgeWorkspace') : t('chat.commandBadgeUser'),
+        badge:
+          c.source === 'workspace' ? t('chat.commandBadgeWorkspace') : t('chat.commandBadgeUser'),
       })),
     [commands, t],
   );
@@ -1124,8 +1115,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     if (!q) return commandCandidates;
     // 同时匹配名字与描述：模板的描述往往比名字更能说明它是干什么的
     return commandCandidates.filter(
-      (item) =>
-        item.title.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q),
+      (item) => item.title.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q),
     );
   }, [commandState.isOpen, commandState.query, commandCandidates]);
 
@@ -1179,27 +1169,31 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
    * 命令优先，且**哪怕一个命令都没有也要开**：空列表时弹出的引导文案是用户
    * 发现这个功能的唯一途径，静默什么都不显示等于功能不存在。
    */
-  const suggestMode: 'mention' | 'command' | null =
-    commandState.isOpen
-      ? 'command'
-      : mentionState.isOpen && filteredMentions.length > 0
-        ? 'mention'
-        : null;
+  const suggestMode: 'mention' | 'command' | null = commandState.isOpen
+    ? 'command'
+    : mentionState.isOpen && filteredMentions.length > 0
+      ? 'mention'
+      : null;
   const suggestItems =
     suggestMode === 'command'
       ? filteredCommands
       : suggestMode === 'mention'
         ? filteredMentions
         : [];
-  const suggestIndex = suggestMode === 'command' ? commandState.selectedIndex : mentionState.selectedIndex;
+  const suggestIndex =
+    suggestMode === 'command' ? commandState.selectedIndex : mentionState.selectedIndex;
   const suggestListRef = suggestMode === 'command' ? commandListRef : mentionListRef;
 
   const setSuggestIndex = useCallback(
     (idx: number) => {
       if (suggestMode === 'command') {
-        setCommandState((prev) => (prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx }));
+        setCommandState((prev) =>
+          prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx },
+        );
       } else if (suggestMode === 'mention') {
-        setMentionState((prev) => (prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx }));
+        setMentionState((prev) =>
+          prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx },
+        );
       }
     },
     [suggestMode],
@@ -1254,8 +1248,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       const anchor = sel.anchorNode;
       const focus = sel.focusNode;
       return Boolean(
-        (anchor && (el.contains(anchor) || (anchor.parentElement && el.contains(anchor.parentElement)))) ||
-          (focus && (el.contains(focus) || (focus.parentElement && el.contains(focus.parentElement)))),
+        (anchor &&
+          (el.contains(anchor) || (anchor.parentElement && el.contains(anchor.parentElement)))) ||
+        (focus &&
+          (el.contains(focus) || (focus.parentElement && el.contains(focus.parentElement)))),
       );
     };
 
@@ -1405,7 +1401,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           ) {
             isProgrammaticScrollRef.current = true;
             messagesElRef.current.scrollTop = messagesElRef.current.scrollHeight;
-            if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
+            if (programmaticScrollTimerRef.current)
+              clearTimeout(programmaticScrollTimerRef.current);
             programmaticScrollTimerRef.current = setTimeout(() => {
               isProgrammaticScrollRef.current = false;
             }, 60);
@@ -1535,8 +1532,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
     const handlePageRef = (e: Event) => {
       const detail = (e as CustomEvent)?.detail as
-        | { url: string; title: string; errors?: string[] }
-        | undefined;
+        { url: string; title: string; errors?: string[] } | undefined;
       if (!detail) return;
       const currentTabId = activeTabIdRef.current;
       if (!currentTabId) return;
@@ -1544,7 +1540,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     };
 
     const handleAskQuestion = (e: Event) => {
-      const detail = (e as CustomEvent)?.detail as { prompt: string; autoSubmit?: boolean } | undefined;
+      const detail = (e as CustomEvent)?.detail as
+        { prompt: string; autoSubmit?: boolean } | undefined;
       if (!detail?.prompt) return;
       const currentTabId = activeTabIdRef.current;
       if (!currentTabId) return;
@@ -1673,7 +1670,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   }, [activeTab, checkpoints, knownRunIds, refreshCheckpoints]);
 
   // 流式输出节流缓冲池：避免高频单 token 触发过密 React 重渲染与长文 Markdown AST 全量反复解析
-  const streamingBufferRef = useRef<Map<string, { streaming: string; thinking: string }>>(new Map());
+  const streamingBufferRef = useRef<Map<string, { streaming: string; thinking: string }>>(
+    new Map(),
+  );
   const streamingRafRef = useRef<number | null>(null);
 
   const flushStreamingBuffer = useCallback(() => {
@@ -1831,7 +1830,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   },
                 }),
               );
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
             const newMsg: ChatSessionMessage = {
               id: event.id || uid(),
               role: 'tool',
@@ -1902,7 +1903,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   },
                 }),
               );
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
             break;
           }
           case 'assistant_message': {
@@ -1960,9 +1963,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             next.stepInfo = null;
             const textToDisplay =
               event.finalText ||
-              (next.messages.some((m) => m.role === 'tool')
-                ? t('chat.workedFoldHint')
-                : '');
+              (next.messages.some((m) => m.role === 'tool') ? t('chat.workedFoldHint') : '');
             const finalizedId = targetTab.streamingMsgId || uid();
             next.streamingMsgId = undefined;
             if (textToDisplay && textToDisplay !== '(cancelled)') {
@@ -1974,11 +1975,23 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               // the same answer to be appended twice.
               if (last && last.role === 'assistant' && last.isIntermediate) {
                 const msgs = [...next.messages];
-                msgs[lastIdx] = { ...last, id: finalizedId, content: textToDisplay, isIntermediate: false, metrics: event.metrics, circuitBroken: event.circuitBroken };
+                msgs[lastIdx] = {
+                  ...last,
+                  id: finalizedId,
+                  content: textToDisplay,
+                  isIntermediate: false,
+                  metrics: event.metrics,
+                  circuitBroken: event.circuitBroken,
+                };
                 next.messages = msgs;
               } else if (last && last.role === 'assistant' && last.content === textToDisplay) {
                 const msgs = [...next.messages];
-                msgs[lastIdx] = { ...last, isIntermediate: false, metrics: event.metrics, circuitBroken: event.circuitBroken };
+                msgs[lastIdx] = {
+                  ...last,
+                  isIntermediate: false,
+                  metrics: event.metrics,
+                  circuitBroken: event.circuitBroken,
+                };
                 next.messages = msgs;
               } else {
                 next.messages = [
@@ -1999,7 +2012,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               const last = next.messages[lastIdx];
               if (last && last.role === 'assistant' && last.isIntermediate) {
                 const msgs = [...next.messages];
-                msgs[lastIdx] = { ...last, isIntermediate: false, metrics: event.metrics, circuitBroken: event.circuitBroken };
+                msgs[lastIdx] = {
+                  ...last,
+                  isIntermediate: false,
+                  metrics: event.metrics,
+                  circuitBroken: event.circuitBroken,
+                };
                 next.messages = msgs;
               }
             }
@@ -2013,11 +2031,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   },
                 }),
               );
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
             break;
           }
           case 'error': {
-            const isConnErr = /econnrefused|fetch failed|timeout|network|connect|enotfound|offline|abort/i.test(event.message);
+            const isConnErr =
+              /econnrefused|fetch failed|timeout|network|connect|enotfound|offline|abort/i.test(
+                event.message,
+              );
             const errContent = isConnErr
               ? t('chat.modelConnWarning', { msg: event.message })
               : t('chat.errorPrefix', { msg: event.message });
@@ -2044,7 +2067,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   },
                 }),
               );
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
             break;
           }
         }
@@ -2069,7 +2094,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     planForRun?: PlanProposal | null,
   ): Promise<void> {
     if (!workspace) {
-      alert(t('chat.needWorkspace'));
+      showGlobalToast(t('chat.needWorkspace'), 'warn');
       return;
     }
     if (!activeTab) return;
@@ -2138,7 +2163,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           },
         }),
       );
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     const userMsg: ChatSessionMessage = {
       id: uid(),
@@ -2249,7 +2276,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const summary = checkpoints[runId];
     if (summary?.incomplete) {
       // 已知不可完整撤销：与其还原一半，不如让用户走 Git
-      window.alert(
+      showGlobalToast(
+        t('chat.revertNotPossible'),
+        'warn',
         t('chat.revertIncompleteAlert', {
           reason: summary.incompleteReason ?? t('chat.unknownReason'),
         }),
@@ -2277,7 +2306,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
     const res = await window.ide.revertCheckpoint(runId);
     if ('error' in res) {
-      window.alert(res.error);
+      showGlobalToast(t('chat.revertFailed'), 'error', res.error);
       return;
     }
 
@@ -2286,22 +2315,29 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     await onRevertTurn?.(res.reverted);
     setCheckpoints((prev) => ({ ...prev, [runId]: null }));
 
-    const lines = [t('chat.revertResult', { n: res.reverted.length })];
+    // 标题给结论，明细进 detail：toast 放不下多行清单，但点开就是一个可滚动的明细弹窗。
+    // 没成功还原任何一处、或有被跳过的文件时降级为 warn —— 那种结果不该显示成绿色的「成功」。
+    const headline = t('chat.revertResult', { n: res.reverted.length });
+    const details: string[] = [];
     if (res.conflicts.length > 0) {
-      lines.push(
+      details.push(
         t('chat.revertConflicts', {
           list: res.conflicts.map((p) => `  · ${p}`).join('\n'),
         }),
       );
     }
     if (res.skipped.length > 0) {
-      lines.push(
+      details.push(
         t('chat.revertSkipped', {
           list: res.skipped.map((sk) => `  · ${sk.path}（${sk.reason}）`).join('\n'),
         }),
       );
     }
-    window.alert(lines.join('\n'));
+    showGlobalToast(
+      headline,
+      res.skipped.length > 0 || res.conflicts.length > 0 ? 'warn' : 'success',
+      details.length > 0 ? details.join('\n') : undefined,
+    );
   }
 
   async function answerConfirm(approved: boolean, answer?: string): Promise<void> {
@@ -2407,7 +2443,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 ...t,
                 title: session.title || t.title,
                 customTitle: isCustom,
-                messages: session.messages && session.messages.length > 0 ? session.messages : t.messages,
+                messages:
+                  session.messages && session.messages.length > 0 ? session.messages : t.messages,
               }
             : t,
         ),
@@ -2611,9 +2648,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     </svg>
                   )}
                 </span>
-                <span className="chat-tab-title">
-                  {tb.title || 'New Chat'}
-                </span>
+                <span className="chat-tab-title">{tb.title || 'New Chat'}</span>
                 {tabs.length > 1 && (
                   <button
                     type="button"
@@ -2692,7 +2727,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             </svg>
           </button>
-          <button type="button" className="icon-btn" title={t('chat.newChat')} onClick={handleNewTab}>
+          <button
+            type="button"
+            className="icon-btn"
+            title={t('chat.newChat')}
+            onClick={handleNewTab}
+          >
             <svg
               width="17"
               height="17"
@@ -2793,7 +2833,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                               navigator.clipboard?.writeText(att.content).catch(() => {});
                             }
                           }}
-                          style={{ borderColor: 'rgba(59, 130, 246, 0.4)', background: 'rgba(59, 130, 246, 0.08)', cursor: 'pointer' }}
+                          style={{
+                            borderColor: 'rgba(59, 130, 246, 0.4)',
+                            background: 'rgba(59, 130, 246, 0.08)',
+                            cursor: 'pointer',
+                          }}
                         >
                           {att.browserElement?.screenshotDataUrl ? (
                             <img
@@ -2811,8 +2855,15 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                           ) : (
                             <span className="file-pill-icon">🎯</span>
                           )}
-                          <span className="file-pill-name" style={{ color: '#60a5fa', fontWeight: 600 }}>{att.name}</span>
-                          <span className="file-pill-size" style={{ color: '#93c5fd' }}>{t('chat.domElement')}</span>
+                          <span
+                            className="file-pill-name"
+                            style={{ color: '#60a5fa', fontWeight: 600 }}
+                          >
+                            {att.name}
+                          </span>
+                          <span className="file-pill-size" style={{ color: '#93c5fd' }}>
+                            {t('chat.domElement')}
+                          </span>
                         </div>
                       ) : att.type === 'browser-page' ? (
                         <div
@@ -2828,10 +2879,18 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                                 })
                               : '',
                           })}
-                          style={{ borderColor: 'rgba(147, 51, 234, 0.4)', background: 'rgba(147, 51, 234, 0.08)' }}
+                          style={{
+                            borderColor: 'rgba(147, 51, 234, 0.4)',
+                            background: 'rgba(147, 51, 234, 0.08)',
+                          }}
                         >
                           <span className="file-pill-icon">🌐</span>
-                          <span className="file-pill-name" style={{ color: '#c084fc', fontWeight: 600 }}>{att.name}</span>
+                          <span
+                            className="file-pill-name"
+                            style={{ color: '#c084fc', fontWeight: 600 }}
+                          >
+                            {att.name}
+                          </span>
                           <span className="file-pill-size" style={{ color: '#d8b4fe' }}>
                             {att.browserPage?.errors?.length
                               ? t('chat.pageErrorsBadge', { n: att.browserPage.errors.length })
@@ -2851,14 +2910,22 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                             background: SPECIAL_MENTION_STYLE[att.name].bg,
                           }}
                         >
-                          <span className="file-pill-icon">{SPECIAL_MENTION_STYLE[att.name].icon}</span>
+                          <span className="file-pill-icon">
+                            {SPECIAL_MENTION_STYLE[att.name].icon}
+                          </span>
                           <span
                             className="file-pill-name"
-                            style={{ color: SPECIAL_MENTION_STYLE[att.name].color, fontWeight: 600 }}
+                            style={{
+                              color: SPECIAL_MENTION_STYLE[att.name].color,
+                              fontWeight: 600,
+                            }}
                           >
                             {att.name}
                           </span>
-                          <span className="file-pill-size" style={{ color: SPECIAL_MENTION_STYLE[att.name].color, opacity: 0.8 }}>
+                          <span
+                            className="file-pill-size"
+                            style={{ color: SPECIAL_MENTION_STYLE[att.name].color, opacity: 0.8 }}
+                          >
                             {t('chat.contextBadge')}
                           </span>
                         </div>
@@ -2896,7 +2963,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     {t('chat.deliveryUndelivered')}
                   </div>
                 )}
-                <div className={`msg-actions msg-actions-corner ${copiedId === m.id ? 'has-active' : ''}`}>
+                <div
+                  className={`msg-actions msg-actions-corner ${copiedId === m.id ? 'has-active' : ''}`}
+                >
                   <button
                     type="button"
                     className={`msg-action-btn ${copiedId === m.id ? 'copied' : ''}`}
@@ -3078,12 +3147,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               if (turnIsLive && activeTab?.streaming) {
                 const streamingKey = activeTab.streamingMsgId || 'streaming-current';
                 bodyEls.push(
-                  <div
-                    key={streamingKey}
-                    id={`msg-${streamingKey}`}
-                    className="msg assistant"
-                  >
-                    <MarkdownMessage content={activeTab.streaming} streaming onOpenFile={onOpenFile} />
+                  <div key={streamingKey} id={`msg-${streamingKey}`} className="msg assistant">
+                    <MarkdownMessage
+                      content={activeTab.streaming}
+                      streaming
+                      onOpenFile={onOpenFile}
+                    />
                   </div>,
                 );
               }
@@ -3098,9 +3167,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               return (
                 <div key={turnKey} className="chat-turn">
                   {turn.user && (
-                    <div className="chat-turn-folder">
-                      {renderUserBubble(turn.user)}
-                    </div>
+                    <div className="chat-turn-folder">{renderUserBubble(turn.user)}</div>
                   )}
                   <div className="chat-turn-files">
                     {renderTurnBody(turn.body, turnKey, isLastTurn)}
@@ -3164,7 +3231,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                       >
                         <span className="chat-prompt-pill-icon">🔍</span>
                         <span className="chat-prompt-pill-text">
-                          {selection?.trim() ? t('chat.quickExplainSelection') : t('chat.quickExplain')}
+                          {selection?.trim()
+                            ? t('chat.quickExplainSelection')
+                            : t('chat.quickExplain')}
                         </span>
                         <span className="chat-prompt-pill-arrow">→</span>
                       </button>
@@ -3290,7 +3359,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
                 <polyline points="14 2 14 8 20 8" />
               </svg>
-              <span className="count-text">{t('chat.diffFilesWithChanges', { n: diffs.length })}</span>
+              <span className="count-text">
+                {t('chat.diffFilesWithChanges', { n: diffs.length })}
+              </span>
             </div>
             <div className="chat-diff-action-right">
               <button type="button" className="btn-reject-all" onClick={onRejectAllDiffs}>
@@ -3455,19 +3526,28 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         src={att.browserElement.screenshotDataUrl}
                         alt={att.name}
                         className="staged-img-thumb"
-                        onClick={() => setPreviewImage(att.browserElement?.screenshotDataUrl || null)}
+                        onClick={() =>
+                          setPreviewImage(att.browserElement?.screenshotDataUrl || null)
+                        }
                         title={t('chat.zoomElementTip')}
                       />
                     ) : (
-                      <span className="staged-file-icon" style={{ fontSize: 13 }}>🎯</span>
+                      <span className="staged-file-icon" style={{ fontSize: 13 }}>
+                        🎯
+                      </span>
                     )
                   ) : att.type === 'browser-page' ? (
-                    <span className="staged-file-icon" style={{ fontSize: 13 }}>🌐</span>
+                    <span className="staged-file-icon" style={{ fontSize: 13 }}>
+                      🌐
+                    </span>
                   ) : (
                     <span className="staged-file-icon">📄</span>
                   )}
                   <div className="staged-info">
-                    <span className="staged-name" title={att.browserElement?.selectorPath || att.browserPage?.url || att.name}>
+                    <span
+                      className="staged-name"
+                      title={att.browserElement?.selectorPath || att.browserPage?.url || att.name}
+                    >
                       {att.name}
                     </span>
                     <span
@@ -3524,7 +3604,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   <div className="chat-mention-empty">
                     {translateSegments('chat.commandEmpty', locale, { fileName: 'name.md' }).map(
                       (seg, i) =>
-                        seg.emphasis ? <code key={i}>{seg.text}</code> : <span key={i}>{seg.text}</span>,
+                        seg.emphasis ? (
+                          <code key={i}>{seg.text}</code>
+                        ) : (
+                          <span key={i}>{seg.text}</span>
+                        ),
                     )}
                   </div>
                 )}
@@ -3596,7 +3680,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     fileName: 'name.md',
                     args: '$ARGUMENTS',
                   }).map((seg, i) =>
-                    seg.emphasis ? <code key={i}>{seg.text}</code> : <span key={i}>{seg.text}</span>,
+                    seg.emphasis ? (
+                      <code key={i}>{seg.text}</code>
+                    ) : (
+                      <span key={i}>{seg.text}</span>
+                    ),
                   )}
                 </div>
               )}
@@ -3709,7 +3797,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   const fullInput = activeTab.input ?? '';
                   const newPlain = plain.substring(0, start) + '\n' + plain.substring(end);
                   // 保留 refs 前缀（fullInput 头部），替换 plainText 部分
-                  const refPart = fullInput.endsWith(plain) ? fullInput.slice(0, fullInput.length - plain.length) : '';
+                  const refPart = fullInput.endsWith(plain)
+                    ? fullInput.slice(0, fullInput.length - plain.length)
+                    : '';
                   updateTab(activeTab.id, (t) => ({ ...t, input: refPart + newPlain }));
                   requestAnimationFrame(() => {
                     target.selectionStart = target.selectionEnd = start + 1;
@@ -3809,7 +3899,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         <span className="chat-model-name">
                           {currentModel?.name || currentModelId}
                         </span>
-                        <PanelChevron expanded={modelDropdownOpen} size={10} style={{ opacity: 0.6, marginLeft: 3 }} />
+                        <PanelChevron
+                          expanded={modelDropdownOpen}
+                          size={10}
+                          style={{ opacity: 0.6, marginLeft: 3 }}
+                        />
                       </button>
 
                       {modelDropdownOpen && (
@@ -3953,7 +4047,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   fontSize: 11,
                   padding: '2px 8px',
                   borderRadius: 9999,
-                  border: hasRules ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid var(--border)',
+                  border: hasRules
+                    ? '1px solid rgba(168, 85, 247, 0.4)'
+                    : '1px solid var(--border)',
                   background: hasRules ? 'rgba(168, 85, 247, 0.12)' : 'transparent',
                   color: hasRules ? '#c084fc' : 'var(--text-secondary)',
                   cursor: 'pointer',

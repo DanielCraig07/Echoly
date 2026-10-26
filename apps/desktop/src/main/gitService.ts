@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import fs from 'node:fs';
 import type { BrowserWindow } from 'electron';
 import type {
   GitBranchInfo,
@@ -70,7 +69,14 @@ export class GitService {
 
   constructor(
     private readonly resolveWorkspace: () => WorkspaceService,
-    private readonly getWindow: () => BrowserWindow | null,
+    /**
+     * 取当前窗口，用于向渲染层推送 clone 日志 / 分支切换事件。
+     *
+     * 是可选的：这些推送都是**通知**，拿不到窗口时服务本身照常工作（真实宿主总是会传）。
+     * 做成必填会迫使所有只关心「git 命令跑得对不对」的调用方 —— 尤其是测试 ——
+     * 造一个用不上的 BrowserWindow 出来，或者写 `as any` 把类型检查关掉。
+     */
+    private readonly getWindow?: () => BrowserWindow | null,
     private readonly ssh?: SshSessionManager,
   ) {}
 
@@ -86,11 +92,16 @@ export class GitService {
     return this.resolveWorkspace();
   }
 
-  private log(line: string): void {
-    const win = this.getWindow();
+  /** 统一的「拿窗口 -- 还活着 -- 发消息」三步：`getWindow` 可选，所以三处都要判空 */
+  private notify(channel: string, payload?: unknown): void {
+    const win = this.getWindow?.();
     if (win && !win.isDestroyed()) {
-      win.webContents.send('git:cloneLog', line);
+      win.webContents.send(channel, payload);
     }
+  }
+
+  private log(line: string): void {
+    this.notify('git:cloneLog', line);
   }
 
   private localRootOrError(): { root: string } | GitOpResult {
@@ -166,43 +177,72 @@ export class GitService {
       let stdout = '';
       let stderr = '';
       let timedOut = false;
+      let overflow = false;
+      let settled = false;
+      let killTimer: NodeJS.Timeout | null = null;
+
+      /**
+       * 先 SIGTERM 再 SIGKILL。
+       *
+       * 只发 SIGTERM 是不够的：git 在等待编辑器、凭据助手、或卡在某个长时间运行的
+       * hook 里时**会忽略 SIGTERM**（它默认的退出路径是等这些子进程收摊），
+       * 于是「30 秒超时」实际上永远不会兑现，Promise 一直悬着，界面上的 Git 面板
+       * 就一直是禁用的转圈状态。宽限 1 秒后补一发 SIGKILL，保证一定会结束。
+       */
+      const killGracefully = () => {
+        try {
+          child.kill('SIGTERM');
+        } catch {}
+        if (!killTimer) {
+          killTimer = setTimeout(() => {
+            try {
+              child.kill('SIGKILL');
+            } catch {}
+          }, 1000);
+        }
+      };
+
+      const finish = (result: { code: number; stdout: string; stderr: string; error?: string }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        if (killTimer) clearTimeout(killTimer);
+        resolve(result);
+      };
 
       // 30 秒超时保护
       const timeout = setTimeout(() => {
         timedOut = true;
-        child.kill('SIGTERM');
-        setTimeout(() => child.kill('SIGKILL'), 1000);
+        killGracefully();
       }, 30000);
 
       child.stdout.on('data', (d: Buffer) => {
         stdout += d.toString('utf8');
         // 输出过大保护（防止 git log 等命令输出巨量数据）
         if (stdout.length > 10_000_000) {
-          timedOut = true;
-          child.kill('SIGTERM');
+          overflow = true;
+          killGracefully();
         }
       });
       child.stderr.on('data', (d: Buffer) => {
-        stderr += d.toString('utf8');
+        // stderr 同样要有上限：一个刷屏的 hook（npm install 失败重试、ssh verbose）
+        // 能在几秒内把内存吃到几百兆，而它的内容最后只会显示在一个小面板里。
+        if (stderr.length < 1_000_000) stderr += d.toString('utf8');
       });
       child.on('error', (err) => {
-        clearTimeout(timeout);
         const detail =
           (err as NodeJS.ErrnoException).code === 'ENOENT'
             ? '未找到 git，请先安装 Git 并确保在 PATH 中'
             : err.message;
-        resolve({ code: -1, stdout, stderr, error: detail });
+        finish({ code: -1, stdout, stderr, error: detail });
       });
       child.on('close', (code) => {
-        clearTimeout(timeout);
         if (timedOut) {
-          resolve({
-            code: 124,
-            stdout,
-            stderr: stderr || 'Git 操作超时（30秒）',
-          });
+          finish({ code: 124, stdout, stderr: stderr || 'Git 操作超时（30秒）' });
+        } else if (overflow) {
+          finish({ code: 124, stdout, stderr: stderr || 'Git 输出过大，已终止' });
         } else {
-          resolve({ code: code ?? 1, stdout, stderr });
+          finish({ code: code ?? 1, stdout, stderr });
         }
       });
     });
@@ -216,12 +256,7 @@ export class GitService {
 
     // Capture owning window/workspace before spawn callbacks (no ALS there).
     const workspace = this.resolveWorkspace();
-    const logWin = this.getWindow();
-    const log = (line: string) => {
-      if (logWin && !logWin.isDestroyed()) {
-        logWin.webContents.send('git:cloneLog', line);
-      }
-    };
+    const log = (line: string) => this.notify('git:cloneLog', line);
 
     const args = ['clone', '--progress'];
     if (req.branch?.trim()) {
@@ -338,7 +373,10 @@ export class GitService {
    * 将原本 5~6 次串行 SSH exec 往返合成为单条 Shell 管道一次性返回，
    * 在网络波动/高延迟下将响应时间从几秒锐减至 100~150ms。
    */
-  private async statusRemoteSsh(root: string, workspace: WorkspaceService): Promise<GitStatusResult> {
+  private async statusRemoteSsh(
+    root: string,
+    workspace: WorkspaceService,
+  ): Promise<GitStatusResult> {
     const SEP = '===ECHOLY_STATUS_SEP===';
     const compositeScript = [
       `git rev-parse --is-inside-work-tree 2>&1`,
@@ -394,7 +432,12 @@ export class GitService {
 
     if (!isInsideWorkTree.includes('true')) {
       if (isInsideWorkTree.toLowerCase().includes('detected dubious ownership')) {
-        await this.runGit(['config', '--global', '--add', 'safe.directory', root], root, workspace, 6000);
+        await this.runGit(
+          ['config', '--global', '--add', 'safe.directory', root],
+          root,
+          workspace,
+          6000,
+        );
       }
       return {
         ok: false,
@@ -449,7 +492,9 @@ export class GitService {
     }
 
     const numstatOut = parts[4] || '';
-    const workTreeModified = entries.filter((e) => !e.untracked && e.workTree && e.workTree !== ' ');
+    const workTreeModified = entries.filter(
+      (e) => !e.untracked && e.workTree && e.workTree !== ' ',
+    );
     if (workTreeModified.length > 0 && numstatOut) {
       const realDiffPaths = new Set<string>();
       for (const line of numstatOut.split(/\r?\n/)) {
@@ -817,7 +862,9 @@ export class GitService {
               // 磁盘原本带可执行权限位（如自定义脚本或配置），保留原有权限位，绝不强行降级为 644
               const chmodOctal = (preMode & 0o7777).toString(8);
               if (this.workspace.getKind() === 'ssh' && this.ssh) {
-                await this.ssh.runCommand(`chmod ${chmodOctal} '${filePath.replace(/'/g, "'\\''")}'`);
+                await this.ssh.runCommand(
+                  `chmod ${chmodOctal} '${filePath.replace(/'/g, "'\\''")}'`,
+                );
               } else if (process.platform !== 'win32') {
                 try {
                   const fsModule = await import('fs/promises');
@@ -830,7 +877,9 @@ export class GitService {
               // 普通非可执行文件，恢复 preMode 原有权限位
               const chmodOctal = (preMode & 0o7777).toString(8);
               if (this.workspace.getKind() === 'ssh' && this.ssh) {
-                await this.ssh.runCommand(`chmod ${chmodOctal} '${filePath.replace(/'/g, "'\\''")}'`);
+                await this.ssh.runCommand(
+                  `chmod ${chmodOctal} '${filePath.replace(/'/g, "'\\''")}'`,
+                );
               } else if (process.platform !== 'win32') {
                 try {
                   const fsModule = await import('fs/promises');
@@ -1202,10 +1251,7 @@ export class GitService {
     await this.runGit(['update-index', '-q', '--really-refresh'], root);
 
     // 7. 向渲染进程广播分支切换成功事件
-    const win = this.getWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('git:branchSwitched', { branch: targetLocal });
-    }
+    this.notify('git:branchSwitched', { branch: targetLocal });
 
     return { ok: true, detail: `已切换到 ${name}` };
   }
@@ -1222,10 +1268,7 @@ export class GitService {
     if (res.code !== 0) return { ok: false, detail: res.stderr.trim() || '创建分支失败' };
 
     if (doCheckout) {
-      const win = this.getWindow();
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('git:branchSwitched', { branch });
-      }
+      this.notify('git:branchSwitched', { branch });
     }
 
     return { ok: true, detail: doCheckout ? `已创建并切换到 ${branch}` : `已创建 ${branch}` };
@@ -1277,9 +1320,7 @@ export class GitService {
     }
     const { root } = gate as { root: string };
     const maxCount =
-      typeof optionsOrMaxCount === 'number'
-        ? optionsOrMaxCount
-        : optionsOrMaxCount?.maxCount;
+      typeof optionsOrMaxCount === 'number' ? optionsOrMaxCount : optionsOrMaxCount?.maxCount;
     const isAll =
       typeof optionsOrMaxCount === 'object'
         ? optionsOrMaxCount.all !== false && !optionsOrMaxCount.branch
@@ -1699,7 +1740,7 @@ export class GitService {
           author: isUncommitted ? 'You' : info.author,
           date: fullDate,
           relativeDate: isUncommitted ? '未提交的更改' : relativeDate,
-          message: isUncommitted ? '未保存或未提交的修改' : (info.summary || '无提交说明'),
+          message: isUncommitted ? '未保存或未提交的修改' : info.summary || '无提交说明',
         });
         continue;
       }
@@ -1729,7 +1770,10 @@ export class GitService {
     return { ok: true, entries };
   }
 
-  async showFileAtRef(ref: string, filePath: string): Promise<{ ok: boolean; content?: string; detail?: string }> {
+  async showFileAtRef(
+    ref: string,
+    filePath: string,
+  ): Promise<{ ok: boolean; content?: string; detail?: string }> {
     const gate = this.localRootOrError();
     if ('ok' in gate && gate.ok === false) {
       return { ok: false, detail: gate.detail };
@@ -1777,19 +1821,12 @@ export class GitService {
     }
     const showRes = await this.runGit(['show', `${ref}:${posix}`], root);
     let localContent = '';
+    // 只读 `posix`：上面已经把可能带 root 前缀的绝对路径归一化成工作区相对路径了，
+    // 再拿原始 `filePath` 兜一次既读不到新东西，又会把绝对路径喂给 jail。
     try {
       localContent = await this.workspace.readFile(posix);
     } catch {
-      try {
-        localContent = await this.workspace.readFile(filePath);
-      } catch {
-        try {
-          const absPath = path.resolve(root, posix);
-          if (fs.existsSync(absPath)) {
-            localContent = await fs.promises.readFile(absPath, 'utf8');
-          }
-        } catch {}
-      }
+      localContent = '';
     }
 
     if (showRes.code !== 0 && !localContent) {
@@ -2023,7 +2060,14 @@ export class GitService {
     const untrackedCount = status.entries.filter((e) => e.untracked).length;
 
     if (files.length === 0) {
-      return { ok: true, files: [], diffSnippet: '', stagedCount: 0, unstagedCount: 0, untrackedCount: 0 };
+      return {
+        ok: true,
+        files: [],
+        diffSnippet: '',
+        stagedCount: 0,
+        unstagedCount: 0,
+        untrackedCount: 0,
+      };
     }
 
     // 优先读取暂存区改动；如果暂存区为空，则读取工作区未暂存改动
@@ -2050,7 +2094,10 @@ export class GitService {
     };
   }
 
-  async compareBranches(baseRef: string, targetRef: string): Promise<{
+  async compareBranches(
+    baseRef: string,
+    targetRef: string,
+  ): Promise<{
     ok: boolean;
     ahead: number;
     behind: number;
@@ -2098,10 +2145,21 @@ export class GitService {
     }
   }
 
-  async diffBetweenRefs(baseRef: string, targetRef: string, filePath: string): Promise<GitDiffResult> {
+  async diffBetweenRefs(
+    baseRef: string,
+    targetRef: string,
+    filePath: string,
+  ): Promise<GitDiffResult> {
     const gate = this.localRootOrError();
     if ('ok' in gate && gate.ok === false) {
-      return { ok: false, detail: gate.detail, path: filePath, original: '', modified: '', staged: false };
+      return {
+        ok: false,
+        detail: gate.detail,
+        path: filePath,
+        original: '',
+        modified: '',
+        staged: false,
+      };
     }
     const { root } = gate as { root: string };
     const baseShow = await this.runGit(['show', `${baseRef}:${filePath}`], root);
@@ -2115,4 +2173,3 @@ export class GitService {
     };
   }
 }
-

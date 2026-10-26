@@ -105,8 +105,14 @@ export function SessionDrawer({
       }),
       details: [
         { label: t('session.labelTitle'), value: target?.title?.trim() || t('session.untitled') },
-        { label: t('session.labelTime'), value: target ? formatTime(target.updatedAt) : t('session.unknown') },
-        { label: t('session.labelTurns'), value: t('session.turnsCount', { n: target?.messages?.length ?? 0 }) },
+        {
+          label: t('session.labelTime'),
+          value: target ? formatTime(target.updatedAt) : t('session.unknown'),
+        },
+        {
+          label: t('session.labelTurns'),
+          value: t('session.turnsCount', { n: target?.messages?.length ?? 0 }),
+        },
       ],
       tone: 'danger',
       confirmLabel: t('session.confirmDelete'),
@@ -130,9 +136,16 @@ export function SessionDrawer({
       const firstUser = currentMessages.find((m) => m.role === 'user');
       const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
       const existing = sessions.find((s) => s.id === currentSessionId);
-      const isCustom = isCustomSessionTitle(existing?.title, firstUserSnippet, existing?.customTitle);
+      const isCustom = isCustomSessionTitle(
+        existing?.title,
+        firstUserSnippet,
+        existing?.customTitle,
+      );
 
-      const title = isCustom && existing?.title ? existing.title : firstUserSnippet || AUTO_SESSION_TITLE_FALLBACK;
+      const title =
+        isCustom && existing?.title
+          ? existing.title
+          : firstUserSnippet || AUTO_SESSION_TITLE_FALLBACK;
       const meta = buildSessionWorkspaceMeta(workspaceInfo);
       await window.ide.saveSession({
         id: currentSessionId,
@@ -152,7 +165,12 @@ export function SessionDrawer({
       <div className="session-drawer">
         <div className="session-drawer-header">
           <span>{t('session.historyTitle')}</span>
-          <button type="button" className="session-drawer-close" onClick={onClose} title={t('session.close')}>
+          <button
+            type="button"
+            className="session-drawer-close"
+            onClick={onClose}
+            title={t('session.close')}
+          >
             ✕
           </button>
         </div>

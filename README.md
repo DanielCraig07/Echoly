@@ -9,7 +9,7 @@
 ### 🤖 1. 下一代 AI 协同中枢
 
 - **多模型灵活切换 (Model Switcher)**：
-  - 开箱即用支持 **DeepSeek-V3 / DeepSeek-R1（深度思考）**、**Claude 3.5 Sonnet**、**OpenAI GPT-4o** 等主流前沿大模型；
+  - 开箱即用预置 **DeepSeek-V4.1（内网）**、**DeepSeek-R1（深度思考）**、**Claude 3.7 Sonnet / 3.5 Haiku**、**OpenAI GPT-4o / GPT-4o-mini** 等主流大模型，另可自定义任意 OpenAI 兼容端点；
   - 聊天输入区直观下拉切换当前模型，支持自定义 Base URL 与 API Key。
 - **三大 AI 交互模式**：
   - 💬 **Ask 模式**：纯只读提问与代码答疑；
@@ -71,12 +71,30 @@ npm run dev
 ### 类型检查与编译验证
 
 ```bash
-# 执行全工作区 TypeScript 类型严格检查
+# 执行全工作区 TypeScript 类型严格检查（含 test/ 目录）
 npm run typecheck
 
 # 编译主进程与渲染进程
 npm run build
 ```
+
+### 测试与代码规范
+
+```bash
+# 运行全部单元测试（vitest，5 个 workspace project）
+npm test
+
+# 带覆盖率报告（v8，产物在 coverage/）
+npm run test:coverage
+
+# ESLint 检查 / 格式化
+npm run lint
+npm run format        # 自动格式化
+npm run format:check  # 只检查（CI 用的就是这条）
+```
+
+> 本地改动提交前请至少跑一遍 `npm run typecheck && npm test && npm run format:check`，
+> 这三条正是 CI `quality-gate` 里卡住合并的部分。
 
 ---
 

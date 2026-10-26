@@ -1,4 +1,12 @@
-import { shell, BrowserWindow, webContents, WebContentsView, type IpcMain, type Dialog, type WebContents } from 'electron';
+import {
+  shell,
+  BrowserWindow,
+  webContents,
+  WebContentsView,
+  type IpcMain,
+  type Dialog,
+  type WebContents,
+} from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import type {
@@ -26,7 +34,12 @@ import { detectMavenEnvironment, initMavenWrapper, initMavenSettings } from './m
 import { detectInstalledJdks, getAvailableOnlineJdks, installOnlineJdk } from './javaService';
 import { detectCppToolchain, detectMultiLangToolchain } from './cppToolchainService';
 import { UnifiedLlmClient, guardSettingsFromAppSettings } from '@deepseek-ide/llm';
-import { PROJECT_TEMPLATES, DEFAULT_LLM_MODEL, type ChatMessage, type ProviderConfig } from '@deepseek-ide/shared';
+import {
+  PROJECT_TEMPLATES,
+  DEFAULT_LLM_MODEL,
+  type ChatMessage,
+  type ProviderConfig,
+} from '@deepseek-ide/shared';
 import { RulesService } from './rulesService';
 import { detectWorkspaceTechFromDisk } from './workspaceDetector';
 
@@ -249,10 +262,7 @@ export function registerIpc(deps: {
 
   ipcMain.handle(
     'project:createFromTemplate',
-    async (
-      _event,
-      params: { templateId: string; parentDir: string; projectName: string },
-    ) => {
+    async (_event, params: { templateId: string; parentDir: string; projectName: string }) => {
       const { templateId, parentDir, projectName } = params;
       const cleanName = (projectName || '').trim();
       if (!parentDir || !cleanName) {
@@ -407,7 +417,9 @@ export function registerIpc(deps: {
           root = undefined;
         }
         const rules = await rulesService.getRules(root);
-        const rulesBlock = rules.content ? `\n\n【项目规则规范 (.echolyrules)】\n${rules.content}\n` : '';
+        const rulesBlock = rules.content
+          ? `\n\n【项目规则规范 (.echolyrules)】\n${rules.content}\n`
+          : '';
         const finalSystem = (payload.systemPrompt || '') + rulesBlock;
         if (finalSystem.trim()) {
           messages.push({ role: 'system', content: finalSystem.trim() });
@@ -526,9 +538,7 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('git:blameLine', (e, path: string, line: number) =>
     run(e, () => git.blameLine(path, line)),
   );
-  ipcMain.handle('git:blameFile', (e, path: string) =>
-    run(e, () => git.blameFile(path)),
-  );
+  ipcMain.handle('git:blameFile', (e, path: string) => run(e, () => git.blameFile(path)));
   ipcMain.handle('git:showCommitDiff', (e, hash: string, path: string) =>
     run(e, () => git.showCommitDiff(hash, path)),
   );
@@ -580,7 +590,11 @@ ${payload.suffix.slice(0, 1000)}
         });
 
         const fullText = typeof chatRes.content === 'string' ? chatRes.content : '';
-        const cleaned = fullText.trim().replace(/^```[a-z]*\s*/i, '').replace(/```$/, '').trim();
+        const cleaned = fullText
+          .trim()
+          .replace(/^```[a-z]*\s*/i, '')
+          .replace(/```$/, '')
+          .trim();
         if (cleaned) {
           return { ok: true, message: cleaned };
         }
@@ -593,10 +607,14 @@ ${payload.suffix.slice(0, 1000)}
       const first = files[0] || '';
       const ext = first.split('.').pop()?.toLowerCase() || '';
       const baseName = first.split('/').pop() || '';
-      const hasCssOrStyle = files.some((f) => /\.(css|less|scss|sass)$/i.test(f) || f.includes('style'));
+      const hasCssOrStyle = files.some(
+        (f) => /\.(css|less|scss|sass)$/i.test(f) || f.includes('style'),
+      );
       const hasTest = files.some((f) => /\.(test|spec)\.[a-z]+$/i.test(f) || f.includes('test/'));
       const hasDoc = files.some((f) => /\.(md|markdown|txt)$/i.test(f));
-      const hasBuild = files.some((f) => /package\.json|tsconfig|vite|webpack|cargo|pom\.xml|go\.mod|CMakeLists/i.test(f));
+      const hasBuild = files.some((f) =>
+        /package\.json|tsconfig|vite|webpack|cargo|pom\.xml|go\.mod|CMakeLists/i.test(f),
+      );
 
       let type = 'feat';
       let scope = 'workspace';
@@ -621,7 +639,10 @@ ${payload.suffix.slice(0, 1000)}
       } else {
         if (files.some((f) => f.includes('git') || f.includes('Git'))) {
           scope = 'git';
-          type = summary.diffSnippet.includes('fix') || summary.diffSnippet.includes('bug') ? 'fix' : 'feat';
+          type =
+            summary.diffSnippet.includes('fix') || summary.diffSnippet.includes('bug')
+              ? 'fix'
+              : 'feat';
           desc = `优化 Git 状态管理与面板交互 (${files.length} 个文件)`;
         } else if (files.some((f) => f.includes('terminal') || f.includes('Terminal'))) {
           scope = 'terminal';
@@ -637,7 +658,10 @@ ${payload.suffix.slice(0, 1000)}
           desc = `更新偏好设置与个性化配置项`;
         } else {
           scope = first.split('/')[0] || ext || 'core';
-          type = summary.diffSnippet.includes('fix') || summary.diffSnippet.includes('err') ? 'fix' : 'feat';
+          type =
+            summary.diffSnippet.includes('fix') || summary.diffSnippet.includes('err')
+              ? 'fix'
+              : 'feat';
           desc = files.length === 1 ? `更新 ${baseName}` : `协同更新 ${files.length} 个相关模块`;
         }
       }
@@ -679,9 +703,7 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('ssh:stopPortForward', (e, remotePort: number) =>
     run(e, () => ssh.stopPortForward(remotePort)),
   );
-  ipcMain.handle('ssh:listPortForwards', (e) =>
-    run(e, () => ssh.listPortForwards()),
-  );
+  ipcMain.handle('ssh:listPortForwards', (e) => run(e, () => ssh.listPortForwards()));
 
   ipcMain.handle('terminal:create', (e, options?: TerminalCreateOptions) =>
     run(e, () => terminals.create(options, e.sender.id)),
@@ -720,9 +742,7 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('codebase:search', (e, query: string, limit?: number) =>
     run(e, () => registry.current().codebase.search(query, limit)),
   );
-  ipcMain.handle('codebase:status', (e) =>
-    run(e, () => registry.current().codebase.getStatus()),
-  );
+  ipcMain.handle('codebase:status', (e) => run(e, () => registry.current().codebase.getStatus()));
 
   // ── 工作区诊断上报 ──
   // TS/JS 的 marker 只存在于渲染层的 Monaco 里，Agent 的 get_diagnostics 工具却跑在主进程，
@@ -741,30 +761,16 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('dap:startSession', (e, config) =>
     run(e, () => registry.current().dap.startSession(config)),
   );
-  ipcMain.handle('dap:stopSession', (e) =>
-    run(e, () => registry.current().dap.stopSession()),
-  );
+  ipcMain.handle('dap:stopSession', (e) => run(e, () => registry.current().dap.stopSession()));
   ipcMain.handle('dap:setBreakpoints', (e, filePath: string, lines: number[]) =>
     run(e, () => registry.current().dap.setBreakpoints(filePath, lines)),
   );
-  ipcMain.handle('dap:continue', (e) =>
-    run(e, () => registry.current().dap.continue()),
-  );
-  ipcMain.handle('dap:stepOver', (e) =>
-    run(e, () => registry.current().dap.stepOver()),
-  );
-  ipcMain.handle('dap:stepInto', (e) =>
-    run(e, () => registry.current().dap.stepInto()),
-  );
-  ipcMain.handle('dap:stepOut', (e) =>
-    run(e, () => registry.current().dap.stepOut()),
-  );
-  ipcMain.handle('dap:pause', (e) =>
-    run(e, () => registry.current().dap.pause()),
-  );
-  ipcMain.handle('dap:getThreads', (e) =>
-    run(e, () => registry.current().dap.getThreads()),
-  );
+  ipcMain.handle('dap:continue', (e) => run(e, () => registry.current().dap.continue()));
+  ipcMain.handle('dap:stepOver', (e) => run(e, () => registry.current().dap.stepOver()));
+  ipcMain.handle('dap:stepInto', (e) => run(e, () => registry.current().dap.stepInto()));
+  ipcMain.handle('dap:stepOut', (e) => run(e, () => registry.current().dap.stepOut()));
+  ipcMain.handle('dap:pause', (e) => run(e, () => registry.current().dap.pause()));
+  ipcMain.handle('dap:getThreads', (e) => run(e, () => registry.current().dap.getThreads()));
   ipcMain.handle('dap:getStackTrace', (e, threadId?: number) =>
     run(e, () => registry.current().dap.getStackTrace(threadId)),
   );
@@ -800,15 +806,9 @@ ${payload.suffix.slice(0, 1000)}
     }),
   );
 
-  ipcMain.handle('java:listInstalled', (e) =>
-    run(e, () => detectInstalledJdks()),
-  );
-  ipcMain.handle('java:listOnline', (e) =>
-    run(e, () => getAvailableOnlineJdks()),
-  );
-  ipcMain.handle('java:installOnline', (e, id: string) =>
-    run(e, () => installOnlineJdk(id)),
-  );
+  ipcMain.handle('java:listInstalled', (e) => run(e, () => detectInstalledJdks()));
+  ipcMain.handle('java:listOnline', (e) => run(e, () => getAvailableOnlineJdks()));
+  ipcMain.handle('java:installOnline', (e, id: string) => run(e, () => installOnlineJdk(id)));
 
   ipcMain.handle('system:openPrivacySettings', async (_e, type?: string) => {
     if (process.platform === 'darwin') {
@@ -868,7 +868,9 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle(
     'db:getTableSchema',
     async (e, connectionId: string, tableName: string, schemaName?: string) => {
-      return run(e, () => registry.current().db.getTableSchema(connectionId, tableName, schemaName));
+      return run(e, () =>
+        registry.current().db.getTableSchema(connectionId, tableName, schemaName),
+      );
     },
   );
   ipcMain.handle(

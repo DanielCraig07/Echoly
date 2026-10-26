@@ -29,6 +29,11 @@ jobs:
       - name: TypeScript Strict Typecheck
         run: npm run typecheck
 
+      # 放在 lint 前：格式问题一眼就能看出「跑 npm run format 就好」，
+      # 而 lint 的报错要看上下文。顺序反了会让人先读一堆 lint 提示再发现有格式问题。
+      - name: Prettier Format Check
+        run: npm run format:check
+
       - name: ESLint Code Inspection
         run: npm run lint
 

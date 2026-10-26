@@ -50,7 +50,10 @@ describe('CodebaseService', () => {
       getRoot: () => tmpDir,
       getBackend: () => new LocalFsBackend(tmpDir),
     };
-    service = new CodebaseService(() => fakeWorkspace, (root) => projectIndexDir(root, homeDir));
+    service = new CodebaseService(
+      () => fakeWorkspace,
+      (root) => projectIndexDir(root, homeDir),
+    );
   });
 
   afterEach(() => {
@@ -129,7 +132,10 @@ describe('CodebaseService', () => {
     expect(original.totalSymbols).toBeGreaterThan(0);
 
     // 换一个实例，模拟「关掉应用再打开」：不重新 buildIndex 也应该能搜到东西
-    const reopened = new CodebaseService(() => fakeWorkspace, (root) => projectIndexDir(root, homeDir));
+    const reopened = new CodebaseService(
+      () => fakeWorkspace,
+      (root) => projectIndexDir(root, homeDir),
+    );
     const hits = await reopened.search('authenticateUser', 5);
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0].name).toBe('authenticateUser');
@@ -137,12 +143,24 @@ describe('CodebaseService', () => {
   });
 
   it('reuses unchanged files when indexing again', async () => {
-    fs.writeFileSync(path.join(tmpDir, 'a.ts'), 'export function alphaFn() { return 1; }\n', 'utf-8');
-    fs.writeFileSync(path.join(tmpDir, 'b.ts'), 'export function betaFn() { return 2; }\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(tmpDir, 'a.ts'),
+      'export function alphaFn() { return 1; }\n',
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'b.ts'),
+      'export function betaFn() { return 2; }\n',
+      'utf-8',
+    );
     await service.buildIndex();
 
     // 只碰 a.ts，并且把 mtime 推到足以被察觉
-    fs.writeFileSync(path.join(tmpDir, 'a.ts'), 'export function alphaFn() { return 42; }\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(tmpDir, 'a.ts'),
+      'export function alphaFn() { return 42; }\n',
+      'utf-8',
+    );
     const later = new Date(Date.now() + 5000);
     fs.utimesSync(path.join(tmpDir, 'a.ts'), later, later);
 
@@ -156,8 +174,16 @@ describe('CodebaseService', () => {
   });
 
   it('drops chunks of a deleted file', async () => {
-    fs.writeFileSync(path.join(tmpDir, 'gone.ts'), 'export function vanishedFn() { return 1; }\n', 'utf-8');
-    fs.writeFileSync(path.join(tmpDir, 'stays.ts'), 'export function remainsFn() { return 1; }\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(tmpDir, 'gone.ts'),
+      'export function vanishedFn() { return 1; }\n',
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'stays.ts'),
+      'export function remainsFn() { return 1; }\n',
+      'utf-8',
+    );
     await service.buildIndex();
     expect((await service.search('vanishedFn', 5)).length).toBeGreaterThan(0);
 
@@ -174,7 +200,11 @@ describe('CodebaseService', () => {
   });
 
   it('forces a full re-read when asked', async () => {
-    fs.writeFileSync(path.join(tmpDir, 'a.ts'), 'export function alphaFn() { return 1; }\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(tmpDir, 'a.ts'),
+      'export function alphaFn() { return 1; }\n',
+      'utf-8',
+    );
     await service.buildIndex();
     const status = await service.buildIndex({ force: true });
     expect(status.progress?.reused).toBe(0);
@@ -182,9 +212,17 @@ describe('CodebaseService', () => {
   });
 
   it('skips oversized files instead of stalling the index', async () => {
-    fs.writeFileSync(path.join(tmpDir, 'small.ts'), 'export function smallFn() { return 1; }\n', 'utf-8');
+    fs.writeFileSync(
+      path.join(tmpDir, 'small.ts'),
+      'export function smallFn() { return 1; }\n',
+      'utf-8',
+    );
     // 600KB > 500KB 上限
-    fs.writeFileSync(path.join(tmpDir, 'huge.ts'), `export const big = "${'x'.repeat(600 * 1024)}";\n`, 'utf-8');
+    fs.writeFileSync(
+      path.join(tmpDir, 'huge.ts'),
+      `export const big = "${'x'.repeat(600 * 1024)}";\n`,
+      'utf-8',
+    );
     const status = await service.buildIndex();
     expect(status.indexedFiles).toBe(1);
     expect(await service.search('big', 5)).toEqual([]);
@@ -199,14 +237,21 @@ describe('CodebaseService', () => {
     const cacheFile = path.join(projectIndexDir(tmpDir, homeDir), 'codebase.json');
     if (fs.existsSync(cacheFile)) fs.writeFileSync(cacheFile, '{ this is not json', 'utf-8');
 
-    const reopened = new CodebaseService(() => fakeWorkspace, (root) => projectIndexDir(root, homeDir));
+    const reopened = new CodebaseService(
+      () => fakeWorkspace,
+      (root) => projectIndexDir(root, homeDir),
+    );
     const hits = await reopened.search('authenticateUser', 5);
     expect(hits[0].name).toBe('authenticateUser');
   });
 
   it('reports progress while indexing', async () => {
     for (let i = 0; i < 5; i++) {
-      fs.writeFileSync(path.join(tmpDir, `f${i}.ts`), `export function fn${i}() { return ${i}; }\n`, 'utf-8');
+      fs.writeFileSync(
+        path.join(tmpDir, `f${i}.ts`),
+        `export function fn${i}() { return ${i}; }\n`,
+        'utf-8',
+      );
     }
     const phases: string[] = [];
     service.setProgressListener((p) => phases.push(p.phase));

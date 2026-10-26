@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { PROJECT_TEMPLATE_LIST, type ProjectTemplate } from '../utils/projectTemplates';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n, translateSegments } from '../i18n';
 
 interface Props {
@@ -9,15 +13,19 @@ interface Props {
   onClose: () => void;
   defaultWorkspace?: string | null;
   onOpenWorkspace: (targetPath: string, openInNewWindow: boolean, entryFile?: string) => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 const DEFAULT_PROJECT_NAMES: Record<string, string> = {
   'nextjs-ai': 'nextjs-ai-demo',
   'fastapi-ai': 'fastapi-agent-demo',
   'java-maven': 'java-demo',
-  'python': 'python-demo',
-  'go': 'go-demo',
+  python: 'python-demo',
+  go: 'go-demo',
   'node-ts': 'ts-node-demo',
   'cpp-cmake': 'cpp-demo',
 };
@@ -90,8 +98,7 @@ export function NewProjectWizardModal({
 
   const activeTemplate: ProjectTemplate = useMemo(() => {
     return (
-      PROJECT_TEMPLATE_LIST.find((t) => t.id === selectedTemplateId) ||
-      PROJECT_TEMPLATE_LIST[0]
+      PROJECT_TEMPLATE_LIST.find((t) => t.id === selectedTemplateId) || PROJECT_TEMPLATE_LIST[0]
     );
   }, [selectedTemplateId]);
 
@@ -110,9 +117,7 @@ export function NewProjectWizardModal({
   // 计算完整目标路径
   const fullTargetPath = useMemo(() => {
     if (!parentDir.trim()) {
-      return projectName.trim()
-        ? `${t('workspace.noParentDir')}/${projectName.trim()}`
-        : '';
+      return projectName.trim() ? `${t('workspace.noParentDir')}/${projectName.trim()}` : '';
     }
     const cleanParent = parentDir.trim().replace(/[/\\]+$/, '');
     const cleanName = projectName.trim();
@@ -230,7 +235,14 @@ export function NewProjectWizardModal({
             onClick={onClose}
             title={t('common.closeEsc')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -238,10 +250,37 @@ export function NewProjectWizardModal({
         </div>
 
         {/* Body */}
-        <div style={{ padding: 20, display: 'flex', gap: 18, flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <div
+          style={{
+            padding: 20,
+            display: 'flex',
+            gap: 18,
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+          }}
+        >
           {/* 左侧技术栈列表 (使用 PROJECT_TEMPLATE_LIST 保证无任何重复项) */}
-          <div style={{ width: 230, display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, overflowY: 'auto', paddingRight: 4 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginBottom: 2, flexShrink: 0 }}>
+          <div
+            style={{
+              width: 230,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              flexShrink: 0,
+              overflowY: 'auto',
+              paddingRight: 4,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--muted)',
+                marginBottom: 2,
+                flexShrink: 0,
+              }}
+            >
               {t('workspace.techSection')}
             </div>
             {PROJECT_TEMPLATE_LIST.map((tpl) => {
@@ -255,9 +294,19 @@ export function NewProjectWizardModal({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                     <span style={{ fontSize: 15 }}>
-                      {tpl.id.includes('java') ? '☕' : tpl.id.includes('python') ? '🐍' : tpl.id.includes('cpp') ? '⚡' : tpl.id.includes('go') ? '🐹' : '🟢'}
+                      {tpl.id.includes('java')
+                        ? '☕'
+                        : tpl.id.includes('python')
+                          ? '🐍'
+                          : tpl.id.includes('cpp')
+                            ? '⚡'
+                            : tpl.id.includes('go')
+                              ? '🐹'
+                              : '🟢'}
                     </span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
                       {tpl.name}
                     </span>
                   </div>
@@ -303,7 +352,15 @@ export function NewProjectWizardModal({
               }}
             >
               <span style={{ fontSize: 24, lineHeight: 1 }}>
-                {activeTemplate.id.includes('java') ? '☕' : activeTemplate.id.includes('python') ? '🐍' : activeTemplate.id.includes('cpp') ? '⚡' : activeTemplate.id.includes('go') ? '🐹' : '🟢'}
+                {activeTemplate.id.includes('java')
+                  ? '☕'
+                  : activeTemplate.id.includes('python')
+                    ? '🐍'
+                    : activeTemplate.id.includes('cpp')
+                      ? '⚡'
+                      : activeTemplate.id.includes('go')
+                        ? '🐹'
+                        : '🟢'}
               </span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -331,7 +388,9 @@ export function NewProjectWizardModal({
 
             {/* 项目名称输入 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+              >
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
                   {t('workspace.projectNameLabel')}
                 </label>
@@ -353,7 +412,9 @@ export function NewProjectWizardModal({
 
             {/* 上级存储位置选择 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+              >
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
                   {t('workspace.parentDirLabel')}
                 </label>
@@ -399,14 +460,20 @@ export function NewProjectWizardModal({
               }}
             >
               <span style={{ flexShrink: 0 }}>📍</span>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fullTargetPath}>
+              <span
+                style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                title={fullTargetPath}
+              >
                 {translateSegments('workspace.willGenerateAt', locale, {
                   path: fullTargetPath || t('workspace.pickParentAndName'),
                 }).map((seg, i) =>
                   seg.emphasis ? (
                     <strong
                       key={i}
-                      style={{ color: 'var(--accent-light, #3794ff)', fontFamily: 'var(--font-mono)' }}
+                      style={{
+                        color: 'var(--accent-light, #3794ff)',
+                        fontFamily: 'var(--font-mono)',
+                      }}
                     >
                       {seg.text}
                     </strong>
@@ -462,7 +529,16 @@ export function NewProjectWizardModal({
                   {t('workspace.fileCount', { n: activeTemplate.files.length })}
                 </span>
               </div>
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, paddingRight: 4 }}>
+              <div
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  paddingRight: 4,
+                }}
+              >
                 {activeTemplate.files.map((f) => (
                   <div
                     key={f.path}
@@ -475,11 +551,15 @@ export function NewProjectWizardModal({
                       background: 'rgba(255, 255, 255, 0.02)',
                     }}
                   >
-                    <span style={{ opacity: 0.6, fontSize: 12 }}>{f.path.includes('/') ? '📁' : '📄'}</span>
+                    <span style={{ opacity: 0.6, fontSize: 12 }}>
+                      {f.path.includes('/') ? '📁' : '📄'}
+                    </span>
                     <span
                       style={{
                         color:
-                          f.path.includes('CMakeLists') || f.path.includes('pom.xml') || f.path.includes('package.json')
+                          f.path.includes('CMakeLists') ||
+                          f.path.includes('pom.xml') ||
+                          f.path.includes('package.json')
                             ? '#38bdf8'
                             : 'inherit',
                       }}

@@ -49,10 +49,7 @@ async function pathOccupied(backend: WorkspaceBackend, relPath: string): Promise
   }
 }
 
-async function restoreSnapshot(
-  backend: WorkspaceBackend,
-  snapshot: PathSnapshot,
-): Promise<void> {
+async function restoreSnapshot(backend: WorkspaceBackend, snapshot: PathSnapshot): Promise<void> {
   // dirs 按层级升序排列（父在前），逐个确保存在；再写文件，写文件本身也会补父目录，
   // 但空目录不会有文件，必须显式建出来，否则撤销后目录结构少一层。
   for (const dir of snapshot.dirs) {
@@ -89,7 +86,12 @@ export async function revertMutations(
     try {
       if (m.kind === 'write') {
         const current = await readIfExists(backend, m.path);
-        if (m.written !== null && current !== null && current !== m.written && current !== m.original) {
+        if (
+          m.written !== null &&
+          current !== null &&
+          current !== m.written &&
+          current !== m.original
+        ) {
           result.conflicts.push(m.path);
           continue;
         }

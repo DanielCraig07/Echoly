@@ -55,7 +55,8 @@ describe('sqlStatements 语句切分', () => {
   });
 
   it('不切分 dollar-quoted 块里的分号', () => {
-    const sql = 'create function f() returns int as $fn$ begin; return 1; end; $fn$ language plpgsql; select 2;';
+    const sql =
+      'create function f() returns int as $fn$ begin; return 1; end; $fn$ language plpgsql; select 2;';
     const stmts = splitSqlStatements(sql);
     expect(stmts).toHaveLength(2);
     expect(stmts[0].text).toContain('$fn$');
@@ -101,9 +102,9 @@ describe('sqlStatements 执行内容解析', () => {
   it('有选区时优先只执行选中内容', () => {
     const start = sql.indexOf('cvm');
     const text = 'cvm;';
-    expect(
-      resolveExecutableSql(sql, { start, end: start + text.length, text }, start),
-    ).toBe('cvm;');
+    expect(resolveExecutableSql(sql, { start, end: start + text.length, text }, start)).toBe(
+      'cvm;',
+    );
   });
 
   it('选区是空白时不当作选中内容', () => {

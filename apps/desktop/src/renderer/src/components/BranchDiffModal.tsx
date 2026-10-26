@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DiffEditor } from '@monaco-editor/react';
 import type { GitBranchInfo, GitDiffResult } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n } from '../i18n';
 
 interface Props {
@@ -51,8 +55,16 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
         // 默认基准分支挑 main 或 master 或 develop
         const hasMain = res.branches.some((b) => b.name === 'main');
         const hasMaster = res.branches.some((b) => b.name === 'master');
-        const defaultBase = hasMain ? 'main' : hasMaster ? 'master' : res.branches[0]?.name || 'main';
-        setBaseBranch(defaultBase === curName ? (res.branches.find((b) => b.name !== curName)?.name || 'main') : defaultBase);
+        const defaultBase = hasMain
+          ? 'main'
+          : hasMaster
+            ? 'master'
+            : res.branches[0]?.name || 'main';
+        setBaseBranch(
+          defaultBase === curName
+            ? res.branches.find((b) => b.name !== curName)?.name || 'main'
+            : defaultBase,
+        );
       }
     });
   }, [open, currentBranch]);
@@ -173,7 +185,14 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" strokeWidth="2">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth="2"
+            >
               <circle cx="18" cy="18" r="3" />
               <circle cx="6" cy="6" r="3" />
               <path d="M13 6h3a2 2 0 0 1 2 2v7" />
@@ -190,7 +209,14 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             onClick={onClose}
             title={t('git.closeEsc')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -211,7 +237,9 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>{t('git.baseBranchLabel')}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>
+              {t('git.baseBranchLabel')}
+            </span>
             <select
               value={baseBranch}
               onChange={(e) => setBaseBranch(e.target.value)}
@@ -239,7 +267,14 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             onClick={swapBranches}
             title={t('git.swapBranchesTip')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="17 1 21 5 17 9" />
               <path d="M3 11V9a4 4 0 0 1 4-4h14" />
               <polyline points="7 23 3 19 7 15" />
@@ -248,7 +283,9 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>{t('git.targetBranchLabel')}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>
+              {t('git.targetBranchLabel')}
+            </span>
             <select
               value={targetBranch}
               onChange={(e) => setTargetBranch(e.target.value)}
@@ -347,12 +384,26 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
               {t('git.changedFilesCount', { n: files.length })}
             </div>
             {loading && (
-              <div style={{ padding: 20, textAlign: 'center', fontSize: 11, color: 'var(--muted, #888)' }}>
+              <div
+                style={{
+                  padding: 20,
+                  textAlign: 'center',
+                  fontSize: 11,
+                  color: 'var(--muted, #888)',
+                }}
+              >
                 {t('git.calculatingDiff')}
               </div>
             )}
             {!loading && files.length === 0 && (
-              <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--muted, #888)' }}>
+              <div
+                style={{
+                  padding: 24,
+                  textAlign: 'center',
+                  fontSize: 12,
+                  color: 'var(--muted, #888)',
+                }}
+              >
                 {t('git.noBranchChanges')}
               </div>
             )}
@@ -382,7 +433,8 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                         fontWeight: 700,
                         padding: '0 4px',
                         borderRadius: 3,
-                        color: f.status === 'A' ? '#34d399' : f.status === 'D' ? '#f87171' : '#f59e0b',
+                        color:
+                          f.status === 'A' ? '#34d399' : f.status === 'D' ? '#f87171' : '#f59e0b',
                         background: 'rgba(255, 255, 255, 0.08)',
                       }}
                     >

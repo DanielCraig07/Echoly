@@ -27,7 +27,11 @@ function formatFinishReason(t: Translate, reason?: string): string {
   }
 }
 
-export const ModelMetricsBadge: React.FC<ModelMetricsBadgeProps> = ({ metrics }) => {
+/**
+ * 每条助手消息脚下都挂一个。流式输出期间聊天面板每次增量都会重渲整个列表，
+ * 而历史消息的对象引用不变 —— `memo` 让这一屏徽章整体跳过重算。
+ */
+export const ModelMetricsBadge: React.FC<ModelMetricsBadgeProps> = React.memo(({ metrics }) => {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -109,7 +113,8 @@ export const ModelMetricsBadge: React.FC<ModelMetricsBadgeProps> = ({ metrics })
   const tpsVal = metrics.tokensPerSecond ?? 0;
   const durationSec = (durationMs / 1000).toFixed(1);
   const tps = tpsVal > 0 ? tpsVal.toFixed(1) : '0';
-  const totalTokens = metrics.totalTokens ?? ((metrics.promptTokens || 0) + (metrics.completionTokens || 0));
+  const totalTokens =
+    metrics.totalTokens ?? (metrics.promptTokens || 0) + (metrics.completionTokens || 0);
   const promptTokens = metrics.promptTokens || 0;
   const completionTokens = metrics.completionTokens || 0;
 
@@ -158,7 +163,14 @@ export const ModelMetricsBadge: React.FC<ModelMetricsBadgeProps> = ({ metrics })
             title={t('editor.closeEsc')}
             onClick={() => setIsOpen(false)}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -173,7 +185,11 @@ export const ModelMetricsBadge: React.FC<ModelMetricsBadgeProps> = ({ metrics })
             {tps} <span className="unit">t/s</span>
           </div>
           <div className="model-metrics-card-sub">
-            {tpsVal >= 40 ? t('chat.tpsFast') : tpsVal >= 20 ? t('chat.tpsSmooth') : t('chat.tpsSteady')}
+            {tpsVal >= 40
+              ? t('chat.tpsFast')
+              : tpsVal >= 20
+                ? t('chat.tpsSmooth')
+                : t('chat.tpsSteady')}
           </div>
         </div>
 
@@ -228,7 +244,8 @@ export const ModelMetricsBadge: React.FC<ModelMetricsBadgeProps> = ({ metrics })
           </div>
           <div className="model-metrics-ratio-legend">
             <span className="legend-item prompt">
-              <span className="legend-dot prompt-dot" /> {t('chat.legendPrompt', { pct: promptPct })}
+              <span className="legend-dot prompt-dot" />{' '}
+              {t('chat.legendPrompt', { pct: promptPct })}
             </span>
             <span className="legend-item completion">
               <span className="legend-dot completion-dot" />{' '}
@@ -268,14 +285,28 @@ export const ModelMetricsBadge: React.FC<ModelMetricsBadgeProps> = ({ metrics })
         >
           {copied ? (
             <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
                 <polyline points="20 6 9 17 4 12" />
               </svg>
               <span>{t('chat.copiedJson')}</span>
             </>
           ) : (
             <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
@@ -326,4 +357,4 @@ export const ModelMetricsBadge: React.FC<ModelMetricsBadgeProps> = ({ metrics })
       {isOpen && createPortal(popoverContent, document.body)}
     </>
   );
-};
+});

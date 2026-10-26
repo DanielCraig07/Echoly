@@ -15,8 +15,7 @@ describe('colorizeTerminalLogs', () => {
   });
 
   it('colorizes application WARN log with amber background badge and message highlight', () => {
-    const raw =
-      '2026-09-12 11:57:03 EmbeddedLeaderService.java WARN Connection timeout occurred';
+    const raw = '2026-09-12 11:57:03 EmbeddedLeaderService.java WARN Connection timeout occurred';
     const result = colorizeTerminalLogs(raw);
 
     expect(result).toContain('\x1b[48;2;120;65;0m');
@@ -35,8 +34,7 @@ describe('colorizeTerminalLogs', () => {
   });
 
   it('colorizes application DEBUG log with purple background badge', () => {
-    const raw =
-      '2026-09-12 11:57:03 EmbeddedLeaderService.java DEBUG Heartbeat ping acknowledged';
+    const raw = '2026-09-12 11:57:03 EmbeddedLeaderService.java DEBUG Heartbeat ping acknowledged';
     const result = colorizeTerminalLogs(raw);
 
     expect(result).toContain('\x1b[48;2;65;35;95m');
@@ -76,7 +74,9 @@ describe('colorizeTerminalLogs', () => {
   it('colorizes BUILD SUCCESS, BUILD FAILURE and process exit badges', () => {
     expect(colorizeTerminalLogs('BUILD SUCCESS')).toContain('\x1b[48;2;22;101;52m');
     expect(colorizeTerminalLogs('BUILD FAILURE')).toContain('\x1b[48;2;153;27;27m');
-    expect(colorizeTerminalLogs('[Process finished with exit code 0]')).toContain('\x1b[48;2;22;101;52m');
+    expect(colorizeTerminalLogs('[Process finished with exit code 0]')).toContain(
+      '\x1b[48;2;22;101;52m',
+    );
   });
 
   it('does not alter regular shell commands or inputs without log prefixes', () => {
@@ -85,7 +85,8 @@ describe('colorizeTerminalLogs', () => {
   });
 
   it('correctly handles and preserves multi-thousand character single-line logs without breaking newlines', () => {
-    const prefix = '2026-09-12 12:11:48 CheckpointFailureManager.java INFO Failed to trigger checkpoint: ';
+    const prefix =
+      '2026-09-12 12:11:48 CheckpointFailureManager.java INFO Failed to trigger checkpoint: ';
     const payload = 'task-sink-'.repeat(300); // 3000 chars
     const raw = `${prefix}${payload}`;
     const result = colorizeTerminalLogs(raw);
@@ -104,4 +105,3 @@ describe('colorizeTerminalLogs', () => {
     expect(DEFAULT_SETTINGS.terminalScrollback).toBe(10000);
   });
 });
-

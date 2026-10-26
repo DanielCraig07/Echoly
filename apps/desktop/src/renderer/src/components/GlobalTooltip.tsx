@@ -166,7 +166,7 @@ export const GlobalTooltip: React.FC<GlobalTooltipProps> = ({ delay = 500 }) => 
     let placement: 'top' | 'bottom';
 
     if (isTall) {
-      const anchorY = state.mouseY != null ? state.mouseY : (rect.top + rect.height / 2);
+      const anchorY = state.mouseY != null ? state.mouseY : rect.top + rect.height / 2;
       if (anchorY > tooltipH + 20) {
         top = anchorY - tooltipH - 10;
         placement = 'top';

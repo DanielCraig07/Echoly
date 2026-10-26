@@ -1,10 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type {
-  DapBreakpoint,
-  DapScope,
-  DapStackFrame,
-  DapVariable,
-} from '@deepseek-ide/shared';
+import type { DapBreakpoint, DapScope, DapStackFrame, DapVariable } from '@deepseek-ide/shared';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { PanelChevron } from './PanelChevron';
@@ -80,42 +75,45 @@ export function DebugPanel({
   const isResizingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const startResizeLeft = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizingRef.current = true;
-    const startX = e.clientX;
-    const startWidth = leftWidth;
-    const prevUserSelect = document.body.style.userSelect;
-    const prevCursor = document.body.style.cursor;
-    document.body.style.userSelect = 'none';
-    document.body.style.cursor = 'col-resize';
+  const startResizeLeft = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isResizingRef.current = true;
+      const startX = e.clientX;
+      const startWidth = leftWidth;
+      const prevUserSelect = document.body.style.userSelect;
+      const prevCursor = document.body.style.cursor;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
 
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!isResizingRef.current) return;
-      const delta = ev.clientX - startX;
-      const clientW = containerRef.current?.clientWidth || 800;
-      const maxW = Math.max(240, clientW - 240);
-      const next = Math.max(200, Math.min(maxW, startWidth + delta));
-      setLeftWidth(next);
-    };
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!isResizingRef.current) return;
+        const delta = ev.clientX - startX;
+        const clientW = containerRef.current?.clientWidth || 800;
+        const maxW = Math.max(240, clientW - 240);
+        const next = Math.max(200, Math.min(maxW, startWidth + delta));
+        setLeftWidth(next);
+      };
 
-    const onMouseUp = () => {
-      isResizingRef.current = false;
-      document.body.style.userSelect = prevUserSelect;
-      document.body.style.cursor = prevCursor;
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      try {
-        setLeftWidth((current) => {
-          localStorage.setItem('echoly.debugPanel.leftWidth', String(current));
-          return current;
-        });
-      } catch {}
-    };
+      const onMouseUp = () => {
+        isResizingRef.current = false;
+        document.body.style.userSelect = prevUserSelect;
+        document.body.style.cursor = prevCursor;
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        try {
+          setLeftWidth((current) => {
+            localStorage.setItem('echoly.debugPanel.leftWidth', String(current));
+            return current;
+          });
+        } catch {}
+      };
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  }, [leftWidth]);
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    },
+    [leftWidth],
+  );
 
   // ── 调试控制台输出与输入 ──
   const [consoleLogs, setConsoleLogs] = useState<Array<{ category: string; text: string }>>([]);
@@ -164,7 +162,10 @@ export function DebugPanel({
 
     const unlisten = window.ide.onDapEvent(async (ev) => {
       if (ev.type === 'output' && ev.output) {
-        setConsoleLogs((prev) => [...prev, { category: ev.category || 'console', text: ev.output! }]);
+        setConsoleLogs((prev) => [
+          ...prev,
+          { category: ev.category || 'console', text: ev.output! },
+        ]);
         setTimeout(() => {
           if (logContainerRef.current) {
             logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
@@ -251,21 +252,18 @@ export function DebugPanel({
     if (isDebugging && window.ide?.dapEvaluate) {
       try {
         const res = await window.ide.dapEvaluate(cmd, selectedFrameId ?? undefined);
-        setConsoleLogs((prev) => [
-          ...prev,
-          { category: 'result', text: res.result },
-        ]);
+        setConsoleLogs((prev) => [...prev, { category: 'result', text: res.result }]);
       } catch (err: any) {
         setConsoleLogs((prev) => [
           ...prev,
-          { category: 'stderr', text: t('debug.errorPrefix', { msg: err?.message || String(err) }) },
+          {
+            category: 'stderr',
+            text: t('debug.errorPrefix', { msg: err?.message || String(err) }),
+          },
         ]);
       }
     } else {
-      setConsoleLogs((prev) => [
-        ...prev,
-        { category: 'stderr', text: t('debug.noActiveSession') },
-      ]);
+      setConsoleLogs((prev) => [...prev, { category: 'stderr', text: t('debug.noActiveSession') }]);
     }
   };
 
@@ -326,12 +324,20 @@ export function DebugPanel({
                 fontWeight: 600,
               }}
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
                 <rect x="8" y="9" width="8" height="10" rx="4" />
                 <line x1="6" y1="4" x2="8" y2="7" />
                 <line x1="18" y1="4" x2="16" y2="7" />
               </svg>
-              {debugSessionInfo.language?.toUpperCase() || 'DEBUG'}{debugSessionInfo.port ? ` :${debugSessionInfo.port}` : ''}
+              {debugSessionInfo.language?.toUpperCase() || 'DEBUG'}
+              {debugSessionInfo.port ? ` :${debugSessionInfo.port}` : ''}
             </span>
           )}
         </div>
@@ -369,7 +375,14 @@ export function DebugPanel({
                 onClick={onStepOver}
                 title={t('debug.stepOver')}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <polyline points="19 12 12 19 5 12" />
                 </svg>
@@ -380,7 +393,14 @@ export function DebugPanel({
                 onClick={onStepInto}
                 title={t('debug.stepInto')}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <polyline points="7 13 12 18 17 13" />
                   <polyline points="7 6 12 11 17 6" />
                 </svg>
@@ -391,7 +411,14 @@ export function DebugPanel({
                 onClick={onStepOut}
                 title={t('debug.stepOut')}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <polyline points="7 11 12 6 17 11" />
                   <polyline points="7 18 12 13 17 18" />
                 </svg>
@@ -414,7 +441,14 @@ export function DebugPanel({
             onClick={() => setConsoleLogs([])}
             title={t('debug.clearLogs')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <polyline points="3 6 5 6 21 6" />
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             </svg>
@@ -422,7 +456,10 @@ export function DebugPanel({
         </div>
       </div>
 
-      <div ref={containerRef} style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+      <div
+        ref={containerRef}
+        style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}
+      >
         {/* 左半侧: 变量、堆栈、断点与监视 */}
         <div
           style={{
@@ -436,7 +473,11 @@ export function DebugPanel({
         >
           {/* 1. 变量 (Variables) */}
           <div className="debug-section">
-            <div className="debug-section-header" onClick={() => toggleSection('variables')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div
+              className="debug-section-header"
+              onClick={() => toggleSection('variables')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
               <PanelChevron expanded={!collapsed.variables} size={11} color="var(--muted)" />
               <span>{t('debug.variables')}</span>
             </div>
@@ -476,7 +517,11 @@ export function DebugPanel({
 
           {/* 2. 调用堆栈 (Call Stack) */}
           <div className="debug-section">
-            <div className="debug-section-header" onClick={() => toggleSection('callStack')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div
+              className="debug-section-header"
+              onClick={() => toggleSection('callStack')}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
               <PanelChevron expanded={!collapsed.callStack} size={11} color="var(--muted)" />
               <span>{t('debug.callStack')}</span>
             </div>
@@ -519,7 +564,10 @@ export function DebugPanel({
               className="debug-section-header"
               style={{ display: 'flex', justifyContent: 'space-between' }}
             >
-              <span onClick={() => toggleSection('watch')} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <span
+                onClick={() => toggleSection('watch')}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+              >
                 <PanelChevron expanded={!collapsed.watch} size={11} color="var(--muted)" />
                 <span>{t('debug.watch')}</span>
               </span>
@@ -562,7 +610,9 @@ export function DebugPanel({
                   </div>
                 )}
                 {watchExpressions.length === 0 && !isAddingWatch ? (
-                  <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>{t('debug.watchEmpty')}</div>
+                  <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>
+                    {t('debug.watchEmpty')}
+                  </div>
                 ) : (
                   watchExpressions.map((w, idx) => (
                     <div
@@ -597,7 +647,10 @@ export function DebugPanel({
               className="debug-section-header"
               style={{ display: 'flex', justifyContent: 'space-between' }}
             >
-              <span onClick={() => toggleSection('breakpoints')} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <span
+                onClick={() => toggleSection('breakpoints')}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+              >
                 <PanelChevron expanded={!collapsed.breakpoints} size={11} color="var(--muted)" />
                 <span>{t('debug.breakpoints', { n: breakpoints.length })}</span>
               </span>
@@ -615,15 +668,21 @@ export function DebugPanel({
                         statements: [],
                       }),
                       details: [
-                        { label: t('debug.count'), value: t('debug.countBreakpoints', { n: breakpoints.length }) },
-                        ...breakpoints
-                          .slice(0, 8)
-                          .map((bp, i) => ({
-                            label: i === 0 ? t('debug.location') : '',
-                            value: `${bp.path}:${bp.line}`,
-                          })),
+                        {
+                          label: t('debug.count'),
+                          value: t('debug.countBreakpoints', { n: breakpoints.length }),
+                        },
+                        ...breakpoints.slice(0, 8).map((bp, i) => ({
+                          label: i === 0 ? t('debug.location') : '',
+                          value: `${bp.path}:${bp.line}`,
+                        })),
                         ...(breakpoints.length > 8
-                          ? [{ label: '', value: t('debug.moreBreakpoints', { n: breakpoints.length - 8 }) }]
+                          ? [
+                              {
+                                label: '',
+                                value: t('debug.moreBreakpoints', { n: breakpoints.length - 8 }),
+                              },
+                            ]
                           : []),
                       ],
                       tone: 'danger',
@@ -634,7 +693,14 @@ export function DebugPanel({
                   }}
                   title={t('debug.clearAllBreakpoints')}
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
                   </svg>
@@ -709,27 +775,35 @@ export function DebugPanel({
                 )}
               </div>
             )}
+          </div>
         </div>
-      </div>
 
-      {/* 中间可左右拖动划线 */}
-      <div
-        className="splitter splitter-v"
-        onMouseDown={startResizeLeft}
-        title={t('debug.resizeSplitter')}
-        style={{
-          width: 5,
-          cursor: 'col-resize',
-          background: 'transparent',
-          borderLeft: '1px solid var(--border)',
-          flexShrink: 0,
-          zIndex: 10,
-          userSelect: 'none',
-        }}
-      />
+        {/* 中间可左右拖动划线 */}
+        <div
+          className="splitter splitter-v"
+          onMouseDown={startResizeLeft}
+          title={t('debug.resizeSplitter')}
+          style={{
+            width: 5,
+            cursor: 'col-resize',
+            background: 'transparent',
+            borderLeft: '1px solid var(--border)',
+            flexShrink: 0,
+            zIndex: 10,
+            userSelect: 'none',
+          }}
+        />
 
-      {/* 右半侧: 调试控制台输出与 REPL */}
-      <div style={{ flex: 1, minWidth: 220, display: 'flex', flexDirection: 'column', background: 'var(--bg-bottom, #141414)' }}>
+        {/* 右半侧: 调试控制台输出与 REPL */}
+        <div
+          style={{
+            flex: 1,
+            minWidth: 220,
+            display: 'flex',
+            flexDirection: 'column',
+            background: 'var(--bg-bottom, #141414)',
+          }}
+        >
           <div
             ref={logContainerRef}
             style={{
@@ -742,9 +816,7 @@ export function DebugPanel({
             }}
           >
             {consoleLogs.length === 0 ? (
-              <div style={{ color: 'var(--muted)', marginTop: 8 }}>
-                {t('debug.consoleReady')}
-              </div>
+              <div style={{ color: 'var(--muted)', marginTop: 8 }}>{t('debug.consoleReady')}</div>
             ) : (
               consoleLogs.map((l, i) => (
                 <div
@@ -798,11 +870,7 @@ export function DebugPanel({
                 fontFamily: 'monospace',
               }}
             />
-            <button
-              type="submit"
-              className="panel-action-btn"
-              title={t('debug.evalExpression')}
-            >
+            <button type="submit" className="panel-action-btn" title={t('debug.evalExpression')}>
               ↵
             </button>
           </form>

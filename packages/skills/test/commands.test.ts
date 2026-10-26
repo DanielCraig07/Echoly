@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {
-  discoverCommands,
-  normalizeCommandName,
-  renderCommand,
-} from '../src/commands';
+import { discoverCommands, normalizeCommandName, renderCommand } from '../src/commands';
 
 async function makeTree(files: Record<string, string>): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'echoly-cmd-'));
@@ -152,7 +148,9 @@ describe('renderCommand', () => {
   });
 
   it('substitutes $ARGUMENTS in place', () => {
-    expect(renderCommand(cmd('审查 $ARGUMENTS 这个文件'), 'src/a.ts')).toBe('审查 src/a.ts 这个文件');
+    expect(renderCommand(cmd('审查 $ARGUMENTS 这个文件'), 'src/a.ts')).toBe(
+      '审查 src/a.ts 这个文件',
+    );
   });
 
   it('substitutes every occurrence', () => {

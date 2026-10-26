@@ -32,7 +32,9 @@ describe('projectConfigKey · 项目标识的稳定性', () => {
     const b = projectConfigKey('/Users/tester/proj-b');
     expect(a).not.toBe(b);
     // 前缀相同的两个路径也必须区分开，不能只看前几段
-    expect(projectConfigKey('/Users/tester/proj')).not.toBe(projectConfigKey('/Users/tester/projx'));
+    expect(projectConfigKey('/Users/tester/proj')).not.toBe(
+      projectConfigKey('/Users/tester/projx'),
+    );
   });
 
   it('结尾斜杠 / 反斜杠 / 大小写差异不改变 key（同一目录的不同写法）', () => {
@@ -58,7 +60,9 @@ describe('projectConfigKey · 项目标识的稳定性', () => {
 describe('projectConfigDir · 落点永远在用户主目录', () => {
   it('目录形如 ~/.echoly/projects/<key>', () => {
     const dir = projectConfigDir('/Users/tester/proj', HOME);
-    expect(dir).toBe(path.join(HOME, '.echoly', 'projects', projectConfigKey('/Users/tester/proj')));
+    expect(dir).toBe(
+      path.join(HOME, '.echoly', 'projects', projectConfigKey('/Users/tester/proj')),
+    );
     expect(dir.startsWith(projectConfigsRoot(HOME))).toBe(true);
   });
 

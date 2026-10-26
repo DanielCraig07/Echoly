@@ -15,8 +15,10 @@ import { translate, translateWith, type Translate } from '../src/renderer/src/i1
 const t: Translate = (key, params) =>
   params ? translateWith(key, 'zh', params) : translate(key, 'zh');
 
-const errText = (res: { errorCode?: keyof typeof DB_FORM_ERROR_KEY; params?: Record<string, string> }) =>
-  t(DB_FORM_ERROR_KEY[res.errorCode!], res.params);
+const errText = (res: {
+  errorCode?: keyof typeof DB_FORM_ERROR_KEY;
+  params?: Record<string, string>;
+}) => t(DB_FORM_ERROR_KEY[res.errorCode!], res.params);
 
 const baseForm: DbConnectionForm = {
   driver: 'mysql',

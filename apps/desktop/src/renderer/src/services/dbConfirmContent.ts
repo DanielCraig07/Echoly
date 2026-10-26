@@ -109,9 +109,7 @@ export function isTypingConfirmed(expected: string, typed: string): boolean {
  * 这里返回中文串的话，英文环境下按钮永远是中文，而且因为它是函数返回值、
  * 不是 JSX 里的字面量，扫「源码里的中文字符串」那类检查也扫不到它。
  */
-export function confirmLabelKey(
-  action: 'execute' | 'drop' | 'truncate' | 'delete',
-): string {
+export function confirmLabelKey(action: 'execute' | 'drop' | 'truncate' | 'delete'): string {
   switch (action) {
     case 'drop':
       return 'db.confirmDropLabel';

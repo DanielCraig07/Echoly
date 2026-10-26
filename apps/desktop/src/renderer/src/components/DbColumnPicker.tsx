@@ -48,7 +48,8 @@ export function DbColumnPicker({
     let y = anchor.y;
     if (x + rect.width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - rect.width - 8);
     if (x < 8) x = 8;
-    if (y + rect.height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - rect.height - 8);
+    if (y + rect.height > window.innerHeight - 8)
+      y = Math.max(8, window.innerHeight - rect.height - 8);
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }, [anchor]);

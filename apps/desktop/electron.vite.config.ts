@@ -26,10 +26,7 @@ export default defineConfig({
         entry: resolve('src/main/index.ts'),
       },
       watch: {
-        include: [
-          resolve('src/main/**'),
-          resolve('../../packages/**/src/**'),
-        ],
+        include: [resolve('src/main/**'), resolve('../../packages/**/src/**')],
       },
       rollupOptions: {
         output: {

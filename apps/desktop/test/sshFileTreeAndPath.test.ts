@@ -74,13 +74,19 @@ describe('SftpBackend listDir & Path Resolution', () => {
       }),
     } as any;
 
-    const manager = new SshSessionManager(() => ({} as any), '/mock/userData', () => null);
+    const manager = new SshSessionManager(
+      () => ({}) as any,
+      '/mock/userData',
+      () => null,
+    );
     const resolve = (manager as any).resolveRemotePath.bind(manager);
 
     expect(await resolve(mockClient, '', 'developer')).toBe('/home/developer');
     expect(await resolve(mockClient, '.', 'developer')).toBe('/home/developer');
     expect(await resolve(mockClient, '~', 'developer')).toBe('/home/developer');
-    expect(await resolve(mockClient, '~/workspace/echoly', 'developer')).toBe('/home/developer/workspace/echoly');
+    expect(await resolve(mockClient, '~/workspace/echoly', 'developer')).toBe(
+      '/home/developer/workspace/echoly',
+    );
     expect(await resolve(mockClient, 'my-folder', 'developer')).toBe('/home/developer/my-folder');
     expect(await resolve(mockClient, '/opt/apps/echoly', 'developer')).toBe('/opt/apps/echoly');
     expect(await resolve(mockClient, '/var/www/', 'developer')).toBe('/var/www');

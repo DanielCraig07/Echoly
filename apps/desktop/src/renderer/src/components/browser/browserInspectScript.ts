@@ -656,4 +656,3 @@ export function buildAutofillScript(username: string, password: string): string 
 })();
 `;
 }
-

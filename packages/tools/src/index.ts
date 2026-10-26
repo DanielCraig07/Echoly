@@ -11,10 +11,15 @@ import {
   searchWithRg,
 } from './search.js';
 
-export { AGENT_TOOL_DEFINITIONS, toolsForMode, READONLY_TOOL_NAMES, WRITE_TOOL_NAMES } from './definitions.js';
+export {
+  AGENT_TOOL_DEFINITIONS,
+  toolsForMode,
+  READONLY_TOOL_NAMES,
+  WRITE_TOOL_NAMES,
+} from './definitions.js';
 export { revertMutations } from './checkpoint.js';
 export type { RevertResult } from './checkpoint.js';
-export { resolveInWorkspace, PathJailError, toPosixRel } from './pathJail.js';
+export { resolveInWorkspace, assertRealPathInside, PathJailError, toPosixRel } from './pathJail.js';
 export type { WorkspaceBackend, DirEntry, CommandResult, FileStat } from './backend.js';
 export { LocalFsBackend } from './backend.js';
 export {
@@ -33,8 +38,16 @@ export {
   searchSymbols,
   runLocalCommand,
   getAugmentedEnv,
+  findLocalByName,
+  buildRemoteFindByNameCommand,
 } from './search.js';
-export type { CodeSearchHit, FileSearchHit, SearchOpts, CodeSymbolHit, SymbolKind } from './search.js';
+export type {
+  CodeSearchHit,
+  FileSearchHit,
+  SearchOpts,
+  CodeSymbolHit,
+  SymbolKind,
+} from './search.js';
 
 export interface ToolContext {
   workspaceRoot: string;
@@ -42,10 +55,14 @@ export interface ToolContext {
   permissionMode: PermissionMode;
   /** 运行中实时读取权限（切换「允许所有」后立即生效） */
   getPermissionMode?: () => PermissionMode;
-  /** @deprecated Derived from permissionMode. */
-  autoApproveReadonlyTerminal: boolean;
-  /** @deprecated Derived from permissionMode. */
-  requireConfirmForWrites: boolean;
+  /**
+   * @deprecated 由 permissionMode 派生。全仓已无读取方 —— `resolvePermission`
+   * 直接看 `permissionMode` / `getPermissionMode()`。保留只为兼容宿主里仍在写的字段，
+   * 因此是**可选**的：新写的 ToolContext（尤其是测试）不必再填一个没人读的值。
+   */
+  autoApproveReadonlyTerminal?: boolean;
+  /** @deprecated 同上，由 permissionMode 派生，无读取方。 */
+  requireConfirmForWrites?: boolean;
   requestConfirm: (req: {
     title: string;
     detail: string;
@@ -87,8 +104,21 @@ export interface ToolContext {
     /** 全部由 MCP 提供的暴露名。命中即走 MCP 分支，不再落入内置工具的 switch。 */
     toolNames: ReadonlySet<string>;
     readonlyNames: ReadonlySet<string>;
-    call: (name: string, args: Record<string, unknown>) => Promise<ToolResult>;
+    call: (
+      name: string,
+      args: Record<string, unknown>,
+      signal?: AbortSignal,
+    ) => Promise<ToolResult>;
   };
+  /**
+   * 本轮运行的取消信号。
+   *
+   * 传进来是为了让**长耗时的工具调用本身**能被取消：早先只有 Agent 主循环在每一步
+   * 之间检查 `signal.aborted`，于是一条跑了十分钟的 `npm run build` 在中途按「停止」
+   * 不会有任何反应 —— 用户看到的是停止键失灵。真正能停下来的只有把信号一路交到
+   * 子进程 / MCP 请求那里。
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -278,10 +308,7 @@ function recordMutation(ctx: ToolContext, mutation: FileMutation): void {
  * 后者撤销时该把它写回成 0 字节。`readFile` 失败一律被当成空串，
  * 所以这里额外问一次 `exists`。
  */
-async function readOriginal(
-  backend: WorkspaceBackend,
-  relPath: string,
-): Promise<string | null> {
+async function readOriginal(backend: WorkspaceBackend, relPath: string): Promise<string | null> {
   try {
     if (!(await backend.exists(relPath))) return null;
   } catch {
@@ -307,20 +334,144 @@ function parseArgs<T extends Record<string, unknown>>(raw: unknown): T {
   }
 }
 
+/**
+ * 只读命令前缀。
+ *
+ * 末尾的 `(?:\s|$)` 是必要的：没有它 `catalog.csv` 会命中 `cat`、`lsass` 会命中 `ls`。
+ * 前缀匹配本身**只是必要条件**，真正的把关在 `isReadonlyTerminalCommand` 的组合判断里。
+ */
 const READONLY_TERMINAL_RE =
-  /^(rg|dir|ls|cat|type|git\s+(status|diff|log|show|branch|rev-parse)|pwd|echo|where|which|node\s+-v|npm\s+-v|python\s+--version)/i;
+  /^(rg|grep|dir|ls|cat|type|head|tail|wc|file|stat|tree|du|df|pwd|echo|where|which|whoami|date|env|git\s+(status|diff|log|show|branch|rev-parse|remote|config\s+--get)|node\s+(-v|--version)|npm\s+(-v|--version|ls|list)|python3?\s+--version|go\s+version|java\s+-version|cargo\s+--version)(?:\s|$)/i;
 
+/**
+ * 破坏性命令。
+ *
+ * 前缀必须是**命令位置**（行首，或跟在 `;` `&&` `||` `|` `&` 之后，允许 `sudo` 一类包装），
+ * 而不是任意词边界。原来看法用 `\b`，于是 `git commit -m "rm -rf cleanup"` 里被引号包住的
+ * 描述文字也会被当成危险命令 —— 提交信息里出现这类字眼太常见，误报会直接训练用户
+ * 对确认弹窗视而不见，那比不弹更糟。
+ */
 const DANGEROUS_TERMINAL_RE =
-  /\b(rm\s+-rf|del\s+\/s|format\s+|shutdown|reg\s+delete|Remove-Item\s+-Recurse|curl\s+.+\|\s*sh)\b/i;
+  /(?:^|[;&|]\s*)(?:sudo\s+|doas\s+|env\s+|command\s+|nohup\s+|time\s+)*(?:rm\s+-[a-z-]*[rf]|rmdir\s|del\s+\/[sq]|format\s|shutdown|reboot|reg\s+delete|Remove-Item\s+-Recurse|curl\s+.+\|\s*(?:ba)?sh|wget\s+.+\|\s*(?:ba)?sh|git\s+(?:reset\s+--hard|clean\s+-[a-z]*[fd]|push\s+--force|push\s+-f)|chmod\s+-R|chown\s+-R|dd\s+if=|mkfs|:\(\)\s*\{)/i;
 
+/**
+ * 判断一段命令是否可能改变磁盘状态 —— 用于决定「要不要弹确认」。
+ *
+ * 早先这里只做前缀匹配，于是 `ls; rm -rf x`、`cat a > b`、`echo x | sh` 全都算只读：
+ * 任何一个都能在无确认的情况下拿到 shell 的全部能力。前缀只说明**开头**是什么，
+ * 不说明后面还接了什么，所以必须先把「能拼出第二条命令」的字符全挡掉。
+ */
 export function isReadonlyTerminalCommand(command: string): boolean {
   if (!command || typeof command !== 'string') return false;
-  return READONLY_TERMINAL_RE.test(command.trim());
+
+  // 1. 命令替换与反引号：即使写在双引号里也会先展开成命令，必须在去引号**之前**判。
+  //    单引号里的 `$(` 是字面量，这里会误判为不安全 —— 方向是「多弹一次确认」，
+  //    而不是「少弹一次」，可以接受。
+  if (/`|\$\(|\$\{/.test(command)) return false;
+
+  // 2. 把引号里的内容中和掉：`rg 'a|b'` 里的 `|` 是正则而不是管道，
+  //    直接扫原串会把正常的搜索命令判成危险。
+  const neutralized = stripQuoted(command);
+
+  // 3. 去引号后仍存在的连接符 / 重定向 / 后台符 —— 任一条都能接出第二条命令。
+  if (/[;&|<>]|\n|\r/.test(neutralized)) return false;
+
+  return READONLY_TERMINAL_RE.test(neutralized.trim());
 }
 
 export function isDangerousTerminalCommand(command: string): boolean {
   if (!command || typeof command !== 'string') return false;
-  return DANGEROUS_TERMINAL_RE.test(command);
+  // 原串与「去掉引号」后的串都测一遍：shell 会把相邻的带引号/不带引号片段直接拼接，
+  // 所以 `r"m" -rf /` 与 `rm -rf /` 等价。这里去掉引号而**不是**替换成占位符 ——
+  // 替换会打断 token，恰好把这个绕过藏起来。
+  if (DANGEROUS_TERMINAL_RE.test(command)) return true;
+  return DANGEROUS_TERMINAL_RE.test(command.replace(/["']/g, ''));
+}
+
+/**
+ * 把引号包裹的片段替换成一个不含任何元字符的占位符。
+ *
+ * 关键是**替换**而不是删除：删除会让 `rg 'a;b' --flag` 变成 `rg  --flag`，
+ * 相邻 token 粘连后可能拼出新的形状；换成 `Q` 则保留了 token 边界。
+ */
+function stripQuoted(command: string): string {
+  let out = '';
+  let i = 0;
+  while (i < command.length) {
+    const ch = command[i];
+    if (ch === '\\') {
+      // 反斜杠转义：连同下一个字符一起跳过（`\;` 不是分隔符）。
+      if (i + 1 < command.length) {
+        out += '__ESC__';
+        i += 2;
+      } else {
+        out += ch;
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      const end = command.indexOf(ch, i + 1);
+      if (end < 0) {
+        // 引号没闭合：当成整段都是字面量，但保留一个 token 占位。
+        out += 'Q';
+        break;
+      }
+      out += 'Q';
+      i = end + 1;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * 权限判定的**唯一**出口。
+ *
+ * 之前这里散着三份各自为政的判断（写文件看 `mode === 'ask'`、终端在函数里手写
+ * 四个分支、MCP 干脆不看 mode），三份放在一起就能看出它们对同一个 mode 的解释不一致。
+ * 现在收敛成一张表，任何新增的「会改状态的操作」都必须落进这张表里，
+ * 否则就是一条没人能一眼看出来的旁路。
+ *
+ * `'ask'` 的含义是「**交给宿主去问**」，不是「弹窗」：宿主（agent 包的 requestConfirm 包装）
+ * 会按实时权限决定要不要真的打扰用户，工具层不重复做这个决定。
+ */
+export type PermissionVerdict = 'allow' | 'ask' | 'deny';
+
+export function resolvePermission(
+  mode: PermissionMode,
+  request: {
+    kind: 'terminal' | 'write' | 'delete' | 'other';
+    /** 终端命令原文，用于判断是不是只读。 */
+    command?: string;
+    /** 调用方已确认这次操作没有副作用（如只读 MCP 工具）。 */
+    readonly?: boolean;
+  },
+): PermissionVerdict {
+  // deny_all 在最前面：它表达的是「这次运行别动任何东西」，
+  // 连只读也要挡 —— 否则「全部拒绝」就成了「全部拒绝写」。
+  if (mode === 'deny_all') return 'deny';
+
+  // 只读操作在其余任何模式下都不需要确认。
+  if (request.readonly) return 'allow';
+
+  if (mode === 'allow_all_extreme') return 'allow';
+
+  if (mode === 'allow_all') {
+    // `other` 是 ask_user 这类「向用户提问」的调用：它不是副作用，
+    // 但把问题吞掉等于替用户回答，所以仍然走宿主。
+    return request.kind === 'other' ? 'ask' : 'allow';
+  }
+
+  // mode === 'ask'
+  if (request.kind === 'terminal') {
+    const command = request.command ?? '';
+    if (isDangerousTerminalCommand(command)) return 'ask';
+    return isReadonlyTerminalCommand(command) ? 'allow' : 'ask';
+  }
+  return 'ask';
 }
 
 function backendOf(ctx: ToolContext): WorkspaceBackend {
@@ -328,17 +479,11 @@ function backendOf(ctx: ToolContext): WorkspaceBackend {
 }
 
 function needsWriteConfirm(ctx: ToolContext): boolean {
-  return currentPermissionMode(ctx) === 'ask';
+  return resolvePermission(currentPermissionMode(ctx), { kind: 'write' }) === 'ask';
 }
 
 function needsTerminalConfirm(ctx: ToolContext, command: string): boolean {
-  const mode = currentPermissionMode(ctx);
-  if (mode === 'allow_all' || mode === 'allow_all_extreme') {
-    return false;
-  }
-  if (mode === 'deny_all') return true;
-  if (isDangerousTerminalCommand(command)) return true;
-  return !isReadonlyTerminalCommand(command);
+  return resolvePermission(currentPermissionMode(ctx), { kind: 'terminal', command }) === 'ask';
 }
 
 async function listDir(ctx: ToolContext, relPath = '.'): Promise<ToolResult> {
@@ -445,16 +590,18 @@ function countOccurrences(haystack: string, needle: string): number {
 function applyEdits(
   original: string,
   edits: PatchEdit[],
-):
-  | { ok: true; modified: string }
-  | { ok: false; error: string; index: number } {
+): { ok: true; modified: string } | { ok: false; error: string; index: number } {
   let modified = original;
   for (let i = 0; i < edits.length; i++) {
     const edit = edits[i];
     const oldText = edit.old_text;
     const newText = edit.new_text;
     if (typeof oldText !== 'string' || typeof newText !== 'string') {
-      return { ok: false, error: `edits[${i}]: old_text and new_text must both be strings`, index: i };
+      return {
+        ok: false,
+        error: `edits[${i}]: old_text and new_text must both be strings`,
+        index: i,
+      };
     }
     if (oldText === newText) {
       return { ok: false, error: `edits[${i}]: old_text and new_text are identical`, index: i };
@@ -485,9 +632,10 @@ function applyEdits(
         index: i,
       };
     }
-    modified = edit.replace_all
-      ? modified.split(oldText).join(newText)
-      : modified.replace(oldText, newText);
+    // `split/join` 而不是 `replace`：`String.replace` 会把替换串里的 `$&`、`$1`、`$'`
+    // 当作回组引用展开。模型写的替换文本里出现 `$&` 是常事（正则、模板字符串、美元金额），
+    // 一旦命中就会被**静默改写**，而 diff 显示的还是模型原本给出的内容。
+    modified = modified.split(oldText).join(newText);
   }
   return { ok: true, modified };
 }
@@ -552,7 +700,9 @@ async function globFiles(ctx: ToolContext, pattern: string, maxResults = 200): P
   return { content: matches.join('\n') || '(no files)' };
 }
 
-function formatSymbolHits(hits: Array<{ name: string; kind: string; path: string; line: number }>): string {
+function formatSymbolHits(
+  hits: Array<{ name: string; kind: string; path: string; line: number }>,
+): string {
   return hits.map((h) => `${h.kind}\t${h.name}\t${h.path}:${h.line}`).join('\n');
 }
 
@@ -595,7 +745,8 @@ async function codebaseSearchTool(
 export function formatCodebaseChunks(hits: CodebaseChunk[]): string {
   return hits
     .map((h) => {
-      const docs = h.content.length > 800 ? `${h.content.slice(0, 800)}\n...[truncated]` : h.content;
+      const docs =
+        h.content.length > 800 ? `${h.content.slice(0, 800)}\n...[truncated]` : h.content;
       return `### ${h.name} (${h.kind}) — ${h.path}:${h.line}\n${docs}`;
     })
     .join('\n\n');
@@ -762,9 +913,14 @@ async function runTerminal(
     }
   }
 
-  const result = await backendOf(ctx).runCommand(command, safeTimeoutMs, (chunk) => {
-    ctx.onTerminalOutput?.(chunk);
-  });
+  const result = await backendOf(ctx).runCommand(
+    command,
+    safeTimeoutMs,
+    (chunk) => {
+      ctx.onTerminalOutput?.(chunk);
+    },
+    ctx.signal,
+  );
   return {
     content: truncate(
       `exit=${result.code}\n${result.stdout}${result.stderr ? `\nSTDERR:\n${result.stderr}` : ''}`,
@@ -812,7 +968,7 @@ async function runMcpTool(ctx: ToolContext, name: string, rawArgs: string): Prom
   }
 
   try {
-    return await mcp.call(name, args);
+    return await mcp.call(name, args, ctx.signal);
   } catch (err) {
     return { content: err instanceof Error ? err.message : String(err), isError: true };
   }
@@ -856,14 +1012,20 @@ export async function executeTool(
       case 'read_file': {
         const args = parseArgs<{ path: string; offset?: number; limit?: number }>(rawArgs);
         if (!args.path || typeof args.path !== 'string') {
-          return { content: 'Error: missing required "path" argument for read_file', isError: true };
+          return {
+            content: 'Error: missing required "path" argument for read_file',
+            isError: true,
+          };
         }
         return await readFileTool(ctx, args.path, args.offset, args.limit);
       }
       case 'read_file_lines': {
         const args = parseArgs<{ path: string; offset?: number; limit?: number }>(rawArgs);
         if (!args.path || typeof args.path !== 'string') {
-          return { content: 'Error: missing required "path" argument for read_file_lines', isError: true };
+          return {
+            content: 'Error: missing required "path" argument for read_file_lines',
+            isError: true,
+          };
         }
         const backend = backendOf(ctx);
         const { lines, total, offset, truncated } = await backend.readFileLines(
@@ -881,10 +1043,16 @@ export async function executeTool(
       case 'write_file': {
         const args = parseArgs<{ path: string; content: string }>(rawArgs);
         if (!args.path || typeof args.path !== 'string') {
-          return { content: 'Error: missing required "path" argument for write_file', isError: true };
+          return {
+            content: 'Error: missing required "path" argument for write_file',
+            isError: true,
+          };
         }
         if (typeof args.content !== 'string') {
-          return { content: 'Error: missing required "content" argument for write_file', isError: true };
+          return {
+            content: 'Error: missing required "content" argument for write_file',
+            isError: true,
+          };
         }
         return await writeFileTool(ctx, args.path, args.content);
       }
@@ -896,7 +1064,10 @@ export async function executeTool(
           edits?: PatchEdit[];
         }>(rawArgs);
         if (!args.path || typeof args.path !== 'string') {
-          return { content: 'Error: missing required "path" argument for apply_patch', isError: true };
+          return {
+            content: 'Error: missing required "path" argument for apply_patch',
+            isError: true,
+          };
         }
         // 两种写法都要支持：`edits` 数组是新格式，`old_text`/`new_text` 是历史格式，
         // 模型在长会话里仍可能沿用旧格式（尤其是从调用历史里学到的），直接收紧会打断它。
@@ -923,7 +1094,10 @@ export async function executeTool(
           max_results?: number;
         }>(rawArgs);
         if (!args.pattern || typeof args.pattern !== 'string') {
-          return { content: 'Error: missing required "pattern" argument for search_code', isError: true };
+          return {
+            content: 'Error: missing required "pattern" argument for search_code',
+            isError: true,
+          };
         }
         const backend = backendOf(ctx);
         const opts = {
@@ -957,7 +1131,10 @@ export async function executeTool(
       case 'glob_files': {
         const args = parseArgs<{ pattern: string; max_results?: number }>(rawArgs);
         if (!args.pattern || typeof args.pattern !== 'string') {
-          return { content: 'Error: missing required "pattern" argument for glob_files', isError: true };
+          return {
+            content: 'Error: missing required "pattern" argument for glob_files',
+            isError: true,
+          };
         }
         return await globFiles(ctx, args.pattern, args.max_results);
       }
@@ -985,13 +1162,21 @@ export async function executeTool(
       case 'delete_path': {
         const args = parseArgs<{ path: string; recursive?: boolean }>(rawArgs);
         if (!args.path || typeof args.path !== 'string') {
-          return { content: 'Error: missing required "path" argument for delete_path', isError: true };
+          return {
+            content: 'Error: missing required "path" argument for delete_path',
+            isError: true,
+          };
         }
         return await deletePathTool(ctx, args.path, args.recursive === true);
       }
       case 'move_path': {
         const args = parseArgs<{ from: string; to: string }>(rawArgs);
-        if (!args.from || typeof args.from !== 'string' || !args.to || typeof args.to !== 'string') {
+        if (
+          !args.from ||
+          typeof args.from !== 'string' ||
+          !args.to ||
+          typeof args.to !== 'string'
+        ) {
           return {
             content: 'Error: move_path requires both "from" and "to" string arguments',
             isError: true,
@@ -1002,7 +1187,10 @@ export async function executeTool(
       case 'run_terminal': {
         const args = parseArgs<{ command: string; timeout_ms?: number }>(rawArgs);
         if (!args.command || typeof args.command !== 'string') {
-          return { content: 'Error: missing required "command" argument for run_terminal', isError: true };
+          return {
+            content: 'Error: missing required "command" argument for run_terminal',
+            isError: true,
+          };
         }
         return await runTerminal(ctx, args.command, args.timeout_ms);
       }

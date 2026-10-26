@@ -10,11 +10,7 @@
  */
 
 import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
-import {
-  COLUMN_TYPES,
-  type DbColumnChange,
-  type DbColumnSpec,
-} from './dbDdl';
+import { COLUMN_TYPES, type DbColumnChange, type DbColumnSpec } from './dbDdl';
 import type { DbDriverType } from './dbIdentifiers';
 
 /** 界面上的列行（新建表与编辑表结构共用） */
@@ -111,7 +107,10 @@ export function buildAlterChange(row: EditableColumn): DbColumnChange {
 }
 
 /** 该行是否被改动过（决定「应用」按钮是否可用、以及要不要画标记） */
-export function isColumnDirty(row: EditableColumn, original: DatabaseColumnMeta | undefined): boolean {
+export function isColumnDirty(
+  row: EditableColumn,
+  original: DatabaseColumnMeta | undefined,
+): boolean {
   if (row.drop) return true;
   if (!row.originalName) return true; // 新增列一定是改动
   if (!original) return true; // 找不到原元数据时说不上「没变」，按改动处理更安全

@@ -253,7 +253,8 @@ export class WorkspaceService {
     }
     const nodes: FileTreeNode[] = [];
     for (const entry of entries) {
-      if (!entry.name || SKIP.has(entry.name) || entry.name === '.' || entry.name === '..') continue;
+      if (!entry.name || SKIP.has(entry.name) || entry.name === '.' || entry.name === '..')
+        continue;
 
       let childPath =
         !relPath || relPath === '.' ? entry.name : `${relPath.replace(/\/$/, '')}/${entry.name}`;
@@ -278,15 +279,15 @@ export class WorkspaceService {
     );
   }
 
+  /**
+   * 读取工作区内的文件。
+   *
+   * 这里**曾有一条绝对路径旁路**（注释说为了 pyright typeshed / node_modules stub），
+   * 但全仓没有任何调用方需要它，而 `workspace:readFile` 是渲染层可直接触发的 IPC ——
+   * 等于把「读本机任意文件」暴露成一条公用的读接口。真需要读工作区外的文件时，
+   * 应该走 `readProjectConfigFile` 那种按用途命名的专用通道，而不是把 jail 拆掉。
+   */
   async readFile(relPath: string): Promise<string> {
-    // If it's an absolute path that exists on the local machine (e.g. pyright typeshed-fallback, node_modules stubs, local virtualenv, etc.)
-    if (path.isAbsolute(relPath)) {
-      try {
-        return await fs.readFile(relPath, 'utf8');
-      } catch {
-        // if not found locally, proceed to backend
-      }
-    }
     return this.requireBackend().readFile(relPath);
   }
 

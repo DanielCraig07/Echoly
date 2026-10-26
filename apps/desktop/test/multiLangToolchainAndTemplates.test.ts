@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { PROJECT_TEMPLATE_LIST, PROJECT_TEMPLATES } from '../src/renderer/src/utils/projectTemplates';
+import {
+  PROJECT_TEMPLATE_LIST,
+  PROJECT_TEMPLATES,
+} from '../src/renderer/src/utils/projectTemplates';
 import { detectMultiLangToolchain } from '../src/main/cppToolchainService';
 
 describe('Multi-Language Templates & Toolchain Suite', () => {

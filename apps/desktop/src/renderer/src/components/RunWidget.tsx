@@ -24,7 +24,11 @@ interface Props {
   isBottomExpanded: boolean;
   onExpandBottom: (targetTab?: 'terminal' | 'debug') => void;
   onSelectBottomTab?: (tab: 'terminal' | 'debug') => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 export interface ScriptOption {
@@ -190,7 +194,9 @@ export async function detectProjectScripts(
       const rCfg = runtimeCfg || loadProjectRuntimeConfig(workspace);
 
       const envPrefix = rCfg.envVars.trim()
-        ? (isWin ? `set "${rCfg.envVars.trim()}" && ` : `export ${rCfg.envVars.trim().replace(/,/g, ' ')} && `)
+        ? isWin
+          ? `set "${rCfg.envVars.trim()}" && `
+          : `export ${rCfg.envVars.trim().replace(/,/g, ' ')} && `
         : '';
 
       if (envCfg?.selectedJavaHome) {
@@ -202,7 +208,9 @@ export async function detectProjectScripts(
 
       const profileArg = rCfg.activeProfiles.trim() ? `-P${rCfg.activeProfiles.trim()} ` : '';
       const vmArgsPart = rCfg.vmArgs.trim() ? ` ${rCfg.vmArgs.trim()}` : '';
-      const progArgsPart = rCfg.programArgs.trim() ? ` -Dexec.args="${rCfg.programArgs.trim()}"` : '';
+      const progArgsPart = rCfg.programArgs.trim()
+        ? ` -Dexec.args="${rCfg.programArgs.trim()}"`
+        : '';
 
       if (hasPom || hasMvnw) {
         let mvnExe = 'mvn';
@@ -233,9 +241,12 @@ export async function detectProjectScripts(
           // - addProvidedToClasspath: 将 "provided" 依赖添加到类路径 (-Dexec.classpathScope=compile)，杜绝 NoClassDefFoundError
           // - saveConsoleToFile: 控制台输出写入日志文件
           const compilePhase = rCfg.skipBuildBeforeRun ? '' : 'compile ';
-          const providedScopeArg = rCfg.addProvidedToClasspath ? ' -Dexec.classpathScope=compile' : '';
+          const providedScopeArg = rCfg.addProvidedToClasspath
+            ? ' -Dexec.classpathScope=compile'
+            : '';
           const logRedirect = rCfg.saveConsoleToFile ? ' | tee -a .echoly/logs/run.log' : '';
-          const mvnRunCmd = `${javaPrefix}${mvnExe} ${settingsArg}${profileArg}${compilePhase}exec:java -Dexec.mainClass="${fullClassName}"${providedScopeArg}${vmArgsPart}${progArgsPart}${logRedirect}`.trim();
+          const mvnRunCmd =
+            `${javaPrefix}${mvnExe} ${settingsArg}${profileArg}${compilePhase}exec:java -Dexec.mainClass="${fullClassName}"${providedScopeArg}${vmArgsPart}${progArgsPart}${logRedirect}`.trim();
           results.push({
             id: `active:${relPath}`,
             name: `${rawClassName}`,
@@ -245,14 +256,18 @@ export async function detectProjectScripts(
             badgeBg: 'rgba(251, 146, 60, 0.15)',
             badgeColor: '#fb923c',
             group: 'current',
-            description: t('run.descMavenRunMain', { cls: fullClassName, vm: rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : '' }),
+            description: t('run.descMavenRunMain', {
+              cls: fullClassName,
+              vm: rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : '',
+            }),
           });
         } else if (isTestFile) {
           // 若是测试文件，提供一键单测执行
           results.push({
             id: `active:test:${relPath}`,
             name: t('run.nameTest', { name: rawClassName }),
-            command: `${javaPrefix}${mvnExe} ${settingsArg}${profileArg}test -Dtest=${rawClassName}${vmArgsPart}`.trim(),
+            command:
+              `${javaPrefix}${mvnExe} ${settingsArg}${profileArg}test -Dtest=${rawClassName}${vmArgsPart}`.trim(),
             source: 'java',
             badge: 'Maven',
             badgeBg: 'rgba(251, 146, 60, 0.15)',
@@ -306,7 +321,10 @@ export async function detectProjectScripts(
           badgeColor: '#fb923c',
           group: 'current',
           description: hasMainMethod
-            ? t('run.descRunJavaMain', { cls: fullClassName, vm: rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : '' })
+            ? t('run.descRunJavaMain', {
+                cls: fullClassName,
+                vm: rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : '',
+              })
             : t('run.descJavacCompile', { cls: rawClassName }),
         });
       }
@@ -353,7 +371,14 @@ export async function detectProjectScripts(
           description: t('run.descGoVet'),
         });
       }
-    } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx' || ext === 'c' || ext === 'h' || ext === 'hpp') {
+    } else if (
+      ext === 'cpp' ||
+      ext === 'cc' ||
+      ext === 'cxx' ||
+      ext === 'c' ||
+      ext === 'h' ||
+      ext === 'hpp'
+    ) {
       const isCpp = ext !== 'c';
       const isHeader = ext === 'h' || ext === 'hpp';
       const baseName = fileName.replace(/\.[^.]+$/, '');
@@ -362,7 +387,9 @@ export async function detectProjectScripts(
 
       const rCfg = runtimeCfg || loadProjectRuntimeConfig(workspace);
       const envPrefix = rCfg.envVars.trim()
-        ? (isWin ? `set "${rCfg.envVars.trim()}" && ` : `export ${rCfg.envVars.trim().replace(/,/g, ' ')} && `)
+        ? isWin
+          ? `set "${rCfg.envVars.trim()}" && `
+          : `export ${rCfg.envVars.trim().replace(/,/g, ' ')} && `
         : '';
       const progArgs = rCfg.programArgs.trim() ? ` ${rCfg.programArgs.trim()}` : '';
 
@@ -374,15 +401,13 @@ export async function detectProjectScripts(
         /\bTEST(?:_F|_P)?\s*\(/i.test(code || '') ||
         /\bTEST_CASE\s*\(/i.test(code || '');
 
-      const defaultCompiler = isWin
-        ? (isCpp ? 'g++' : 'gcc')
-        : (isCpp ? 'clang++' : 'clang');
+      const defaultCompiler = isWin ? (isCpp ? 'g++' : 'gcc') : isCpp ? 'clang++' : 'clang';
 
       // 智能识别工程头文件路径 (include, inc 等)，自动附加包含目录，防止 'demo.h' file not found
       const incList: string[] = [];
       if (await exists('include')) incList.push('include');
       if (await exists('inc')) incList.push('inc');
-      if (await exists('src') && relPath.startsWith('src/')) incList.push('src');
+      if ((await exists('src')) && relPath.startsWith('src/')) incList.push('src');
       const incFlags = incList.length > 0 ? incList.map((d) => `-I"${d}"`).join(' ') + ' ' : '';
 
       if (isHeader) {
@@ -390,7 +415,8 @@ export async function detectProjectScripts(
         results.push({
           id: `active:check:${relPath}`,
           name: t('run.nameSyntaxCheck', { name: fileName }),
-          command: `${envPrefix}${defaultCompiler} -fsyntax-only ${headerMode}${incFlags}"${relPath}"`.trim(),
+          command:
+            `${envPrefix}${defaultCompiler} -fsyntax-only ${headerMode}${incFlags}"${relPath}"`.trim(),
           source: isCpp ? 'cpp' : 'c',
           badge: isCpp ? 'C++' : 'C',
           badgeBg: 'rgba(59, 130, 246, 0.15)',
@@ -401,10 +427,13 @@ export async function detectProjectScripts(
       } else if (isTest) {
         const binDir = isWin ? '.echoly\\bin' : '.echoly/bin';
         const binPath = isWin ? `${binDir}\\${baseName}_test.exe` : `${binDir}/${baseName}_test`;
-        const mkdirCmd = isWin ? `if not exist "${binDir}" mkdir "${binDir}" && ` : `mkdir -p "${binDir}" && `;
+        const mkdirCmd = isWin
+          ? `if not exist "${binDir}" mkdir "${binDir}" && `
+          : `mkdir -p "${binDir}" && `;
         const testLibs = /gtest/i.test(code || '') ? ' -lgtest -lgtest_main -pthread' : '';
         const stdFlag = isCpp ? '-std=c++17 ' : '-std=c11 ';
-        const compileCmd = `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}${incFlags}-g "${relPath}" -o "${binPath}"${testLibs} && "${binPath}"${progArgs}`.trim();
+        const compileCmd =
+          `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}${incFlags}-g "${relPath}" -o "${binPath}"${testLibs} && "${binPath}"${progArgs}`.trim();
         results.push({
           id: `active:test:${relPath}`,
           name: t('run.nameTest', { name: baseName }),
@@ -419,9 +448,12 @@ export async function detectProjectScripts(
       } else if (hasMain) {
         const binDir = isWin ? '.echoly\\bin' : '.echoly/bin';
         const binPath = isWin ? `${binDir}\\${baseName}.exe` : `${binDir}/${baseName}`;
-        const mkdirCmd = isWin ? `if not exist "${binDir}" mkdir "${binDir}" && ` : `mkdir -p "${binDir}" && `;
+        const mkdirCmd = isWin
+          ? `if not exist "${binDir}" mkdir "${binDir}" && `
+          : `mkdir -p "${binDir}" && `;
         const stdFlag = isCpp ? '-std=c++17 ' : '-std=c11 ';
-        const compileCmd = `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}${incFlags}-g "${relPath}" -o "${binPath}" && "${binPath}"${progArgs}`.trim();
+        const compileCmd =
+          `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}${incFlags}-g "${relPath}" -o "${binPath}" && "${binPath}"${progArgs}`.trim();
         results.push({
           id: `active:${relPath}`,
           name: baseName,
@@ -736,7 +768,8 @@ export async function detectProjectScripts(
       if (parsed.scripts && typeof parsed.scripts === 'object') {
         const keys = Object.keys(parsed.scripts);
         for (const key of keys) {
-          const isTsKey = isTs && (key.includes('tsc') || key.includes('type') || key.includes('check'));
+          const isTsKey =
+            isTs && (key.includes('tsc') || key.includes('type') || key.includes('check'));
           results.push({
             id: `npm:${key}`,
             name: key,
@@ -834,10 +867,10 @@ export async function detectProjectScripts(
   if (hasGoMod) {
     let goRunCmd = 'go run .';
     let goRunName = 'go run .';
-    if (await exists('cmd/app/main.go') || (await exists('cmd/app'))) {
+    if ((await exists('cmd/app/main.go')) || (await exists('cmd/app'))) {
       goRunCmd = 'go run ./cmd/app';
       goRunName = 'go run ./cmd/app';
-    } else if (await exists('cmd/server/main.go') || (await exists('cmd/server'))) {
+    } else if ((await exists('cmd/server/main.go')) || (await exists('cmd/server'))) {
       goRunCmd = 'go run ./cmd/server';
       goRunName = 'go run ./cmd/server';
     } else if (rootFiles.includes('main.go') || (await exists('main.go'))) {
@@ -944,7 +977,8 @@ export async function detectProjectScripts(
     results.push({
       id: 'cmake:build',
       name: 'CMake: Build All',
-      command: 'cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build -j',
+      command:
+        'cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build build -j',
       source: 'cmake',
       badge: 'CMake',
       badgeBg: 'rgba(6, 182, 212, 0.15)',
@@ -1078,20 +1112,22 @@ export function RunWidget({
 
   useEffect(() => {
     const handleRuntimeConfigChanged = (e: Event) => {
-      const detail = (e as CustomEvent<{ workspace?: string; config: ProjectRuntimeConfig }>).detail;
+      const detail = (e as CustomEvent<{ workspace?: string; config: ProjectRuntimeConfig }>)
+        .detail;
       if (!detail?.workspace || detail.workspace === workspace) {
         setRuntimeConfig(detail.config || loadProjectRuntimeConfig(workspace || undefined));
       }
     };
     window.addEventListener('echoly:runtimeConfigChanged', handleRuntimeConfigChanged);
-    return () => window.removeEventListener('echoly:runtimeConfigChanged', handleRuntimeConfigChanged);
+    return () =>
+      window.removeEventListener('echoly:runtimeConfigChanged', handleRuntimeConfigChanged);
   }, [workspace]);
 
   const hasActiveRuntimeArgs = Boolean(
     runtimeConfig.vmArgs.trim() ||
-      runtimeConfig.programArgs.trim() ||
-      runtimeConfig.envVars.trim() ||
-      runtimeConfig.activeProfiles.trim(),
+    runtimeConfig.programArgs.trim() ||
+    runtimeConfig.envVars.trim() ||
+    runtimeConfig.activeProfiles.trim(),
   );
 
   // 读取自定义配置
@@ -1345,7 +1381,9 @@ export function RunWidget({
 
     // 启动前将本地已标记的全部断点预同步给主进程，确保调试启动时能自动命中断点
     try {
-      const bpKey = workspace ? `echoly.dap.breakpoints.${workspace}` : 'echoly.dap.breakpoints.global';
+      const bpKey = workspace
+        ? `echoly.dap.breakpoints.${workspace}`
+        : 'echoly.dap.breakpoints.global';
       const rawBps = localStorage.getItem(bpKey) || localStorage.getItem('echoly.dap.breakpoints');
       if (rawBps && window.ide?.dapSetBreakpoints) {
         const bpsList: Array<{ path: string; line: number }> = JSON.parse(rawBps);
@@ -1368,7 +1406,7 @@ export function RunWidget({
         binPath = `build/${tgt}`;
       } else {
         const fileMatch = currentOption.id.match(/^active:(.+)$/);
-        const relPath = fileMatch ? fileMatch[1] : (activePath || '');
+        const relPath = fileMatch ? fileMatch[1] : activePath || '';
         const baseName = (relPath.split('/').pop() || '').replace(/\.[^.]+$/, '');
         binPath = `.echoly/bin/${baseName}`;
       }
@@ -1425,7 +1463,11 @@ export function RunWidget({
               if (dbgConfig.language === 'python') {
                 onShowToast?.(t('run.missingDebugpyTitle'), t('run.missingDebugpyDetail'), 'warn');
               } else {
-                onShowToast?.(t('run.debugNotReadyTitle'), res.error || t('run.debugNotReadyDetail'), 'warn');
+                onShowToast?.(
+                  t('run.debugNotReadyTitle'),
+                  res.error || t('run.debugNotReadyDetail'),
+                  'warn',
+                );
               }
               window.dispatchEvent(new CustomEvent('echoly:stopDebug'));
               setIsRunning(false);
@@ -1438,7 +1480,15 @@ export function RunWidget({
         }
       }, 700);
     }
-  }, [currentOption, isBottomExpanded, onExpandBottom, onRunCommand, onShowToast, activePath, workspace]);
+  }, [
+    currentOption,
+    isBottomExpanded,
+    onExpandBottom,
+    onRunCommand,
+    onShowToast,
+    activePath,
+    workspace,
+  ]);
 
   // 监听进程执行结束或报错事件，自动解除 isRunning 运行状态
   useEffect(() => {
@@ -1509,7 +1559,10 @@ export function RunWidget({
         onClick={() => setDropdownOpen((v) => !v)}
         title={
           currentOption
-            ? t('run.currentConfigTitle', { name: currentOption.name, command: currentOption.command })
+            ? t('run.currentConfigTitle', {
+                name: currentOption.name,
+                command: currentOption.command,
+              })
             : t('run.selectRunCommand')
         }
         style={{
@@ -1720,9 +1773,7 @@ export function RunWidget({
               >
                 {t('run.emptyDetected')}
                 <br />
-                <span style={{ fontSize: 10.5, opacity: 0.7 }}>
-                  {t('run.emptyDetectedHint')}
-                </span>
+                <span style={{ fontSize: 10.5, opacity: 0.7 }}>{t('run.emptyDetectedHint')}</span>
               </div>
             )}
 
@@ -1883,8 +1934,12 @@ export function RunWidget({
                   justifyContent: 'space-between',
                   gap: 8,
                   width: '100%',
-                  background: hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.07)' : 'rgba(255, 255, 255, 0.03)',
-                  border: hasActiveRuntimeArgs ? '1px solid rgba(56, 189, 248, 0.25)' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: hasActiveRuntimeArgs
+                    ? 'rgba(56, 189, 248, 0.07)'
+                    : 'rgba(255, 255, 255, 0.03)',
+                  border: hasActiveRuntimeArgs
+                    ? '1px solid rgba(56, 189, 248, 0.25)'
+                    : '1px solid rgba(255, 255, 255, 0.08)',
                   cursor: 'pointer',
                   padding: '7px 10px',
                   borderRadius: 6,
@@ -1896,12 +1951,30 @@ export function RunWidget({
                   e.currentTarget.style.borderColor = 'rgba(56, 189, 248, 0.45)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.07)' : 'rgba(255, 255, 255, 0.03)';
-                  e.currentTarget.style.borderColor = hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.25)' : 'var(--border)';
+                  e.currentTarget.style.background = hasActiveRuntimeArgs
+                    ? 'rgba(56, 189, 248, 0.07)'
+                    : 'rgba(255, 255, 255, 0.03)';
+                  e.currentTarget.style.borderColor = hasActiveRuntimeArgs
+                    ? 'rgba(56, 189, 248, 0.25)'
+                    : 'var(--border)';
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, overflow: 'hidden' }}>
-                  <span style={{ fontSize: 13, color: hasActiveRuntimeArgs ? '#38bdf8' : 'var(--muted)', flexShrink: 0 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: hasActiveRuntimeArgs ? '#38bdf8' : 'var(--muted)',
+                      flexShrink: 0,
+                    }}
+                  >
                     ⚙
                   </span>
                   <div style={{ minWidth: 0, overflow: 'hidden' }}>
@@ -1941,7 +2014,9 @@ export function RunWidget({
                     fontSize: 10.5,
                     padding: '2px 8px',
                     borderRadius: 12,
-                    background: hasActiveRuntimeArgs ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255, 255, 255, 0.06)',
+                    background: hasActiveRuntimeArgs
+                      ? 'rgba(56, 189, 248, 0.18)'
+                      : 'rgba(255, 255, 255, 0.06)',
                     border: hasActiveRuntimeArgs
                       ? '1px solid rgba(56, 189, 248, 0.4)'
                       : '1px solid var(--border)',
@@ -2017,7 +2092,16 @@ export function RunWidget({
             : t('run.debugDisabled')
         }
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <rect x="8" y="9" width="8" height="10" rx="4" />
           <line x1="6" y1="4" x2="8" y2="7" />
           <line x1="18" y1="4" x2="16" y2="7" />
@@ -2042,7 +2126,16 @@ export function RunWidget({
             : t('run.runtimeArgsIdleTitle')
         }
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
@@ -2104,11 +2197,7 @@ function ScriptItem({
         cursor: 'pointer',
         fontSize: 12,
         color: isSelected ? '#ffffff' : 'var(--text)',
-        background: isSelected
-          ? '#242424'
-          : hovered
-            ? 'rgba(255, 255, 255, 0.06)'
-            : 'transparent',
+        background: isSelected ? '#242424' : hovered ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
         border: isSelected ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid transparent',
         marginBottom: 2,
         transition: 'background 0.1s',

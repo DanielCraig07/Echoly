@@ -174,7 +174,9 @@ export class StdioMcpTransport {
       this.pending.delete(key);
       clearTimeout(entry.timer);
       if ('error' in msg && msg.error) {
-        entry.reject(new Error(`${entry.method} 失败：${msg.error.message} (code ${msg.error.code})`));
+        entry.reject(
+          new Error(`${entry.method} 失败：${msg.error.message} (code ${msg.error.code})`),
+        );
       } else {
         entry.resolve((msg as { result: unknown }).result);
       }
@@ -216,8 +218,19 @@ export class StdioMcpTransport {
     this.pending.clear();
   }
 
-  /** 发一条请求并等响应。超时/进程退出/协议错误都会 reject，绝不挂起。 */
-  request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T> {
+  /**
+   * 发一条请求并等响应。超时/进程退出/取消/协议错误都会 reject，绝不挂起。
+   *
+   * `signal` 是**用户按停止**这一动作的传递路径：MCP 调用没有超时兜底之外的
+   * 中断手段（一个跑十分钟的查询、一个卡住的数据库连接），不给信号的话
+   * 「停止」要等到 requestTimeoutMs 才会生效。
+   */
+  request<T = unknown>(
+    method: string,
+    params?: unknown,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<T> {
     if (this.closed || !this.child) {
       return Promise.reject(
         new McpTransportClosedError(`MCP 进程不可用，无法调用 ${method}（服务器未启动或已退出）`),
@@ -228,13 +241,38 @@ export class StdioMcpTransport {
     const message: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
 
     return new Promise<T>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+      };
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        cleanup();
         reject(new Error(`${method} 超时（${limit}ms）：MCP 服务器无响应`));
       }, limit);
+
+      const onAbort = () => {
+        // 只是放弃等待，不发 cancel 通知 —— MCP 协议里没有通用的取消方法，
+        // 而服务器那边最终会随连接关闭一起收摊。这里的目标是让**界面**立刻恢复
+        // 可用，而不是保证远端已经停止。
+        this.pending.delete(id);
+        cleanup();
+        reject(new Error(`${method} 已被用户取消`));
+      };
+      if (signal) {
+        if (signal.aborted) return onAbort();
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
+
       this.pending.set(id, {
-        resolve: resolve as (value: unknown) => void,
-        reject,
+        resolve: (value) => {
+          cleanup();
+          resolve(value as T);
+        },
+        reject: (err) => {
+          cleanup();
+          reject(err);
+        },
         timer,
         method,
       });

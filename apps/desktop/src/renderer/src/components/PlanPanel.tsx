@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { PlanProposal, PlanTodo } from '@deepseek-ide/shared';
+import { useI18n } from '../i18n';
 
 interface Props {
   plan: PlanProposal;
@@ -16,6 +17,7 @@ function autosizeTextarea(el: HTMLTextAreaElement | null): void {
 }
 
 export function PlanPanel({ plan, onChange, onExecute, onDismiss, busy }: Props) {
+  const { t } = useI18n();
   const summaryRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -47,13 +49,13 @@ export function PlanPanel({ plan, onChange, onExecute, onDismiss, busy }: Props)
   return (
     <div className="plan-panel">
       <div className="plan-panel-header">
-        <strong>Plan</strong>
+        <strong>{t('plan.title')}</strong>
         <div className="actions">
           <button className="primary" disabled={busy || !plan.todos.length} onClick={onExecute}>
-            开始执行
+            {t('plan.execute')}
           </button>
           <button disabled={busy} onClick={onDismiss}>
-            关闭
+            {t('plan.dismiss')}
           </button>
         </div>
       </div>
@@ -61,7 +63,7 @@ export function PlanPanel({ plan, onChange, onExecute, onDismiss, busy }: Props)
         className="plan-title-input"
         value={plan.title}
         onChange={(e) => onChange({ ...plan, title: e.target.value })}
-        placeholder="计划标题"
+        placeholder={t('plan.titlePlaceholder')}
       />
       <textarea
         ref={summaryRef}
@@ -71,7 +73,7 @@ export function PlanPanel({ plan, onChange, onExecute, onDismiss, busy }: Props)
           onChange({ ...plan, summary: e.target.value });
           autosizeTextarea(e.target);
         }}
-        placeholder="计划摘要"
+        placeholder={t('plan.summaryPlaceholder')}
         rows={1}
       />
       <div className="plan-todos">
@@ -87,17 +89,17 @@ export function PlanPanel({ plan, onChange, onExecute, onDismiss, busy }: Props)
             <input
               value={todo.content}
               onChange={(e) => updateTodo(todo.id, { content: e.target.value })}
-              placeholder="待办步骤"
+              placeholder={t('plan.todoPlaceholder')}
               title={todo.content}
             />
-            <button onClick={() => removeTodo(todo.id)} title="删除">
+            <button onClick={() => removeTodo(todo.id)} title={t('plan.removeTodo')}>
               ×
             </button>
           </div>
         ))}
       </div>
       <button type="button" className="plan-add-todo" onClick={addTodo}>
-        + 添加步骤
+        {t('plan.addTodo')}
       </button>
     </div>
   );

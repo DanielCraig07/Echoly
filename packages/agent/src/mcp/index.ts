@@ -25,8 +25,4 @@ export {
 export type { StdioTransportOptions } from './transport.js';
 
 export { McpManager, MAX_TOOLS_PER_SERVER } from './manager.js';
-export type {
-  McpServerConfig,
-  McpToolInfo,
-  McpServerStatus,
-} from './manager.js';
+export type { McpServerConfig, McpToolInfo, McpServerStatus } from './manager.js';

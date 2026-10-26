@@ -46,6 +46,8 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
       mode: 'agent',
       client: mockClient as any,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: (e) => events.push(e),
     });
 
@@ -100,6 +102,8 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
       mode: 'agent',
       client: mockClient as any,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: () => {},
     });
 
@@ -194,6 +198,8 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
       mode: 'agent',
       client: mockClient as any,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: (e) => events.push(e),
     });
 
@@ -250,6 +256,8 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
       mode: 'agent',
       client: mockClient as any,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: () => {},
     });
 
@@ -295,6 +303,8 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
       mode: 'agent',
       client: mockClient as any,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: (e) => events.push(e),
     });
 
@@ -328,6 +338,8 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
       mode: 'agent',
       client: mockClient as any,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: (e) => events.push(e),
     });
 
@@ -373,6 +385,8 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
       mode: 'agent',
       client: mockClient as any,
       applyImmediately: true,
+      // 测试里没有权限交互：一律放行，免得每轮都卡在确认上
+      requestConfirm: async () => true,
       onEvent: (e) => events.push(e),
     });
 

@@ -139,7 +139,7 @@ export function parseJavaStructure(code: string): JavaParsedFile {
     // 4. Field declaration: e.g. @Autowired private UserMapper userMapper;
     // or private final UserService userService;
     const fieldMatch = line.match(
-      /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|protected|private|static|final|volatile|transient)\s+)+([A-Z][a-zA-Z0-9_<>]*)\s+([a-z][a-zA-Z0-9_]*)\s*[=;]/
+      /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:public|protected|private|static|final|volatile|transient)\s+)+([A-Z][a-zA-Z0-9_<>]*)\s+([a-z][a-zA-Z0-9_]*)\s*[=;]/,
     );
     if (fieldMatch) {
       const type = fieldMatch[1].replace(/<.*>/, '').trim();
@@ -165,7 +165,7 @@ export function parseJavaStructure(code: string): JavaParsedFile {
 
     // 5. Method declaration (handles both interface methods with ; and class methods with {)
     const methodMatch = line.match(
-      /(?:public|protected|private|static|final|abstract|default|synchronized|\s)*\s+([A-Za-z0-9_<>]+)\s+([a-zA-Z0-9_]+)\s*\([^)]*\)\s*(?:throws\s+[^{;]+)?[{;]/
+      /(?:public|protected|private|static|final|abstract|default|synchronized|\s)*\s+([A-Za-z0-9_<>]+)\s+([a-zA-Z0-9_]+)\s*\([^)]*\)\s*(?:throws\s+[^{;]+)?[{;]/,
     );
     if (methodMatch) {
       const methodName = methodMatch[2];
@@ -213,7 +213,7 @@ export function findJavaReceiver(lineContent: string, col: number, symbol: strin
 export function resolveJavaCandidatePaths(
   parsed: JavaParsedFile,
   symbol: string,
-  receiver: string | null
+  receiver: string | null,
 ): { targetClass: string | null; candidatePaths: string[]; methodName: string | null } {
   let targetClass: string | null = null;
   let methodName: string | null = null;
@@ -292,7 +292,7 @@ export function resolveJavaCandidatePaths(
 export async function findJavaDefinitionLocations(
   model: monaco.editor.ITextModel,
   position: monaco.IPosition,
-  opts?: { getWorkspaceRoot?: () => string | null | undefined }
+  opts?: { getWorkspaceRoot?: () => string | null | undefined },
 ): Promise<monaco.languages.Location[]> {
   const word = model.getWordAtPosition(position);
   if (!word || !word.word) return [];
@@ -316,7 +316,12 @@ export async function findJavaDefinitionLocations(
       return [
         {
           uri: currentUri,
-          range: new monaco.Range(line, idx >= 0 ? idx + 1 : 1, line, (idx >= 0 ? idx + 1 : 1) + symbol.length),
+          range: new monaco.Range(
+            line,
+            idx >= 0 ? idx + 1 : 1,
+            line,
+            (idx >= 0 ? idx + 1 : 1) + symbol.length,
+          ),
         },
       ];
     }
@@ -332,7 +337,12 @@ export async function findJavaDefinitionLocations(
         return [
           {
             uri: currentUri,
-            range: new monaco.Range(line, idx >= 0 ? idx + 1 : 1, line, (idx >= 0 ? idx + 1 : 1) + symbol.length),
+            range: new monaco.Range(
+              line,
+              idx >= 0 ? idx + 1 : 1,
+              line,
+              (idx >= 0 ? idx + 1 : 1) + symbol.length,
+            ),
           },
         ];
       }
@@ -350,7 +360,12 @@ export async function findJavaDefinitionLocations(
         return [
           {
             uri: currentUri,
-            range: new monaco.Range(i, idx >= 0 ? idx + 1 : 1, i, (idx >= 0 ? idx + 1 : 1) + symbol.length),
+            range: new monaco.Range(
+              i,
+              idx >= 0 ? idx + 1 : 1,
+              i,
+              (idx >= 0 ? idx + 1 : 1) + symbol.length,
+            ),
           },
         ];
       }
@@ -358,7 +373,11 @@ export async function findJavaDefinitionLocations(
   }
 
   // ── Step 2: Resolve candidate paths via Imports and Package ─────────────────
-  const { targetClass, candidatePaths, methodName } = resolveJavaCandidatePaths(parsed, symbol, receiver);
+  const { targetClass, candidatePaths, methodName } = resolveJavaCandidatePaths(
+    parsed,
+    symbol,
+    receiver,
+  );
   const candidateLocations: monaco.languages.Location[] = [];
 
   if (candidatePaths.length > 0 && window.ide?.readFile) {
@@ -388,7 +407,10 @@ export async function findJavaDefinitionLocations(
             if (window.ide.searchFiles) {
               const fileHits = await window.ide.searchFiles(fileName, 10);
               for (const h of fileHits) {
-                if (h.path.endsWith('/' + fileName) || (cand.includes('/') && h.path.endsWith(cand))) {
+                if (
+                  h.path.endsWith('/' + fileName) ||
+                  (cand.includes('/') && h.path.endsWith(cand))
+                ) {
                   try {
                     content = await window.ide.readFile(h.path);
                     matchedPath = h.path;
@@ -430,7 +452,10 @@ export async function findJavaDefinitionLocations(
 
           // Match class, interface, method, or constructor in candidate file
           const targetRegex = methodName
-            ? new RegExp(`(?:public|protected|private|static|final|abstract|default|synchronized|\\s)*\\s+([A-Za-z0-9_<>]+)\\s+${sEsc}\\s*\\(`, 'i')
+            ? new RegExp(
+                `(?:public|protected|private|static|final|abstract|default|synchronized|\\s)*\\s+([A-Za-z0-9_<>]+)\\s+${sEsc}\\s*\\(`,
+                'i',
+              )
             : new RegExp(`\\b(class|interface|enum|record)\\s+${sEsc}\\b`, 'i');
 
           for (let li = 0; li < candLines.length; li++) {
@@ -442,9 +467,10 @@ export async function findJavaDefinitionLocations(
             }
           }
 
-          const fullPath = root && !matchedPath.startsWith('/') && !/^[a-zA-Z]:/.test(matchedPath)
-            ? `${root.replace(/[/\\]+$/, '')}/${matchedPath}`
-            : matchedPath;
+          const fullPath =
+            root && !matchedPath.startsWith('/') && !/^[a-zA-Z]:/.test(matchedPath)
+              ? `${root.replace(/[/\\]+$/, '')}/${matchedPath}`
+              : matchedPath;
           const targetUri = monaco.Uri.file(fullPath);
 
           if (!monaco.editor.getModel(targetUri)) {
@@ -453,7 +479,9 @@ export async function findJavaDefinitionLocations(
 
           // Avoid duplicate locations
           const isDup = candidateLocations.some(
-            (loc) => loc.uri.toString() === targetUri.toString() && loc.range.startLineNumber === foundLine
+            (loc) =>
+              loc.uri.toString() === targetUri.toString() &&
+              loc.range.startLineNumber === foundLine,
           );
           if (!isDup) {
             candidateLocations.push({
@@ -499,9 +527,10 @@ export async function findJavaDefinitionLocations(
         // Skip current line
         if (h.path === model.uri.fsPath && h.line === position.lineNumber) continue;
 
-        const fullPath = root && !h.path.startsWith('/') && !/^[a-zA-Z]:/.test(h.path)
-          ? `${root.replace(/[/\\]+$/, '')}/${h.path}`
-          : h.path;
+        const fullPath =
+          root && !h.path.startsWith('/') && !/^[a-zA-Z]:/.test(h.path)
+            ? `${root.replace(/[/\\]+$/, '')}/${h.path}`
+            : h.path;
         const hitUri = monaco.Uri.file(fullPath);
         const colIndex = h.preview.indexOf(symbol);
         const startCol = colIndex >= 0 ? colIndex + 1 : 1;
@@ -522,4 +551,3 @@ export async function findJavaDefinitionLocations(
 
   return [];
 }
-

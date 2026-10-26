@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { measureContentColumns, type CellLike, type LineLike, type BufferLike } from '../src/renderer/src/utils/terminalWidth';
+import {
+  measureContentColumns,
+  type CellLike,
+  type LineLike,
+  type BufferLike,
+} from '../src/renderer/src/utils/terminalWidth';
 
 /** 造一行：chars 为每个位置的字符码，0 表示空单元格；widths 可指定单元格宽度（宽字符） */
 function makeLine(chars: number[], opts: { wrapped?: boolean; widths?: number[] } = {}): LineLike {
@@ -24,7 +29,11 @@ function padLine(line: LineLike, cols: number): LineLike {
     chars.push(c ? c.getCode() : 0);
     widths.push(c ? c.getWidth() : 1);
   }
-  return { isWrapped: line.isWrapped, length: cols, getCell: (x: number) => ({ getWidth: () => widths[x] ?? 1, getCode: () => chars[x] ?? 0 }) };
+  return {
+    isWrapped: line.isWrapped,
+    length: cols,
+    getCell: (x: number) => ({ getWidth: () => widths[x] ?? 1, getCode: () => chars[x] ?? 0 }),
+  };
 }
 
 function makeBuffer(lines: LineLike[]): BufferLike {
@@ -71,12 +80,7 @@ describe('measureContentColumns', () => {
     const first = makeLine(codes('X'.repeat(40)));
     const second = makeLine(codes('X'.repeat(40)), { wrapped: true });
     const third = makeLine(codes('X'.repeat(20)), { wrapped: true });
-    const buf = makeBuffer([
-      first,
-      second,
-      third,
-      padLine(makeLine([]), cols),
-    ]);
+    const buf = makeBuffer([first, second, third, padLine(makeLine([]), cols)]);
     // 40 + 40 + 20 = 100
     expect(measureContentColumns(buf, cols)).toBe(100);
   });
@@ -85,10 +89,7 @@ describe('measureContentColumns', () => {
     const cols = 80;
     // 真实 xterm：'中' 占 x0(w=2)，续格 x1 宽度为 0、字符码为 0
     const buf = makeBuffer([
-      padLine(
-        makeLine([20013, 0, 25991, 0, 97, 98, 99], { widths: [2, 0, 2, 0, 1, 1, 1] }),
-        cols,
-      ),
+      padLine(makeLine([20013, 0, 25991, 0, 97, 98, 99], { widths: [2, 0, 2, 0, 1, 1, 1] }), cols),
     ]);
     // 中文 = 4 列，abc = 3 列 → 7
     expect(measureContentColumns(buf, cols)).toBe(7);

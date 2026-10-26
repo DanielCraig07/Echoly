@@ -1,7 +1,6 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
-import mermaid from 'mermaid';
 import {
   parseAiContentCodeRefs,
   parseAnyCodeRef,
@@ -94,16 +93,34 @@ function stabilizeMarkdown(text: string): string {
   return out;
 }
 
+/**
+ * mermaid 走**动态 import**。
+ *
+ * 它是个大包（解析器 + 十几种图表的渲染器），而绝大多数对话里根本没有 mermaid 代码块 ——
+ * 静态 import 会让它在启动时就进主包，每个用户都为「少数人偶尔画一张图」付首屏体积。
+ * 这里改成用到才拉：第一次渲染图表时网络/磁盘里已经缓存好了，之后再无额外开销。
+ *
+ * 记忆化的是**Promise**而不是模块本身：并发渲染多个图表时保证只 import 一次
+ * （存模块的话，两个同时开始的调用会各自发起一次加载）。
+ */
+let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
 let mermaidInitialized = false;
-function initMermaid() {
-  if (mermaidInitialized) return;
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
-    securityLevel: 'loose',
-    fontFamily: 'inherit',
-  });
-  mermaidInitialized = true;
+
+async function initMermaid(): Promise<typeof import('mermaid').default> {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid').then((m) => m.default);
+  }
+  const mermaid = await mermaidPromise;
+  if (!mermaidInitialized) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
+      securityLevel: 'loose',
+      fontFamily: 'inherit',
+    });
+    mermaidInitialized = true;
+  }
+  return mermaid;
 }
 
 let mermaidCounter = 0;
@@ -119,7 +136,7 @@ function MermaidBlock({ chart }: { chart: string }) {
     let cancelled = false;
     const render = async () => {
       try {
-        initMermaid();
+        const mermaid = await initMermaid();
         const cleanChart = chart.trim();
         if (!cleanChart) return;
         const res = await mermaid.render(chartIdRef.current, cleanChart);
@@ -238,10 +255,7 @@ function highlightCode(code: string, language: string): string {
       // fallback to escaped code
     }
   }
-  return code
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export const MarkdownOpenFileContext = React.createContext<
@@ -269,7 +283,9 @@ function CodeBlock({
 
   const cleanLang = (language || '').toLowerCase().trim();
   const isShellCommand = useMemo(() => {
-    return ['bash', 'sh', 'shell', 'zsh', 'terminal', 'powershell', 'cmd', 'ps1'].includes(cleanLang);
+    return ['bash', 'sh', 'shell', 'zsh', 'terminal', 'powershell', 'cmd', 'ps1'].includes(
+      cleanLang,
+    );
   }, [cleanLang]);
 
   const handleCopy = (e: React.MouseEvent) => {
@@ -298,7 +314,7 @@ function CodeBlock({
     window.dispatchEvent(
       new CustomEvent('echoly:applyCodeToFile', {
         detail: { code, path: fileRef?.path },
-      })
+      }),
     );
     setApplied(true);
     setTimeout(() => setApplied(false), 1800);
@@ -313,7 +329,9 @@ function CodeBlock({
   return (
     <div className="md-code-block">
       <div className="md-code-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}
+        >
           <span className="md-code-lang">{language || 'text'}</span>
           {fileRef && <CodeRefPill codeRef={fileRef} onOpenFile={effectiveOnOpenFile} />}
         </div>
@@ -327,14 +345,32 @@ function CodeBlock({
             >
               {ranInTerm ? (
                 <>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   <span>{t('editor.ran')}</span>
                 </>
               ) : (
                 <>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <polyline points="4 17 10 11 4 5" />
                     <line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
@@ -353,14 +389,32 @@ function CodeBlock({
             >
               {inserted ? (
                 <>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   <span>{t('editor.inserted')}</span>
                 </>
               ) : (
                 <>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M12 5v14M5 12h14" />
                   </svg>
                   <span>{t('editor.insert')}</span>
@@ -374,18 +428,40 @@ function CodeBlock({
               type="button"
               className={`md-code-action-btn ${applied ? 'active' : ''}`}
               onClick={handleApplyToFile}
-              title={applied ? t('editor.appliedToFile') : t('editor.applyToFileTip', { path: fileRef.path })}
+              title={
+                applied
+                  ? t('editor.appliedToFile')
+                  : t('editor.applyToFileTip', { path: fileRef.path })
+              }
             >
               {applied ? (
                 <>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   <span>{t('editor.applied')}</span>
                 </>
               ) : (
                 <>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
                     <line x1="12" y1="18" x2="12" y2="12" />
@@ -463,7 +539,11 @@ export function extractNodeText(node: any): string {
 }
 
 export function slugifyHeading(text: string): string {
-  const clean = text.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '');
+  const clean = text
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-')
+    .replace(/^-+|-+$/g, '');
   return `heading-${clean || 'section'}`;
 }
 
@@ -632,7 +712,8 @@ export function createMarkdownComponents(
         // 若语言头中未携带路径，检测第一行注释是否为 // File: path:line
         if (!headerFileRef) {
           const firstLine = rawCode.split('\n')[0]?.trim() || '';
-          const commentMatch = /^(?:\/\/|#|--|\/\*)\s*(?:File|Path)?\s*[:：]?\s*([^\s*]+)(?:\*\/)?$/i.exec(firstLine);
+          const commentMatch =
+            /^(?:\/\/|#|--|\/\*)\s*(?:File|Path)?\s*[:：]?\s*([^\s*]+)(?:\*\/)?$/i.exec(firstLine);
           if (commentMatch) {
             const candidate = commentMatch[1];
             const parsed = parseAnyCodeRef(candidate);
@@ -703,32 +784,56 @@ export function createMarkdownComponents(
     h1({ node, children, ...props }: any) {
       const text = extractNodeText(children);
       const id = slugifyHeading(text);
-      return <h1 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h1>;
+      return (
+        <h1 id={id} data-heading-line={node?.position?.start?.line} {...props}>
+          {processTextChildren(children)}
+        </h1>
+      );
     },
     h2({ node, children, ...props }: any) {
       const text = extractNodeText(children);
       const id = slugifyHeading(text);
-      return <h2 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h2>;
+      return (
+        <h2 id={id} data-heading-line={node?.position?.start?.line} {...props}>
+          {processTextChildren(children)}
+        </h2>
+      );
     },
     h3({ node, children, ...props }: any) {
       const text = extractNodeText(children);
       const id = slugifyHeading(text);
-      return <h3 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h3>;
+      return (
+        <h3 id={id} data-heading-line={node?.position?.start?.line} {...props}>
+          {processTextChildren(children)}
+        </h3>
+      );
     },
     h4({ node, children, ...props }: any) {
       const text = extractNodeText(children);
       const id = slugifyHeading(text);
-      return <h4 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h4>;
+      return (
+        <h4 id={id} data-heading-line={node?.position?.start?.line} {...props}>
+          {processTextChildren(children)}
+        </h4>
+      );
     },
     h5({ node, children, ...props }: any) {
       const text = extractNodeText(children);
       const id = slugifyHeading(text);
-      return <h5 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h5>;
+      return (
+        <h5 id={id} data-heading-line={node?.position?.start?.line} {...props}>
+          {processTextChildren(children)}
+        </h5>
+      );
     },
     h6({ node, children, ...props }: any) {
       const text = extractNodeText(children);
       const id = slugifyHeading(text);
-      return <h6 id={id} data-heading-line={node?.position?.start?.line} {...props}>{processTextChildren(children)}</h6>;
+      return (
+        <h6 id={id} data-heading-line={node?.position?.start?.line} {...props}>
+          {processTextChildren(children)}
+        </h6>
+      );
     },
     strong({ node, children, ...props }: any) {
       return (
@@ -745,11 +850,7 @@ export function createMarkdownComponents(
       );
     },
     em({ node, children, ...props }: any) {
-      return (
-        <em {...props}>
-          {processTextChildren(children)}
-        </em>
-      );
+      return <em {...props}>{processTextChildren(children)}</em>;
     },
   };
 }
@@ -784,7 +885,9 @@ export const MarkdownMessage = memo(function MarkdownMessage({
             >
               <span className="think-icon reasoning-step-dot">●</span>
               <span>
-                {streaming && !content.includes('</think>') ? t('editor.thinking') : t('editor.thinkingProcess')}
+                {streaming && !content.includes('</think>')
+                  ? t('editor.thinking')
+                  : t('editor.thinkingProcess')}
               </span>
               <span className="think-chevron">{thinkExpanded ? '▲' : '▼'}</span>
             </button>

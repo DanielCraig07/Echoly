@@ -21,5 +21,9 @@ apps/desktop/electron-dist-cache/
 .env.*
 !*.example
 
+# `npm run test:coverage` 的产物：几 MB 的 HTML + lcov，纯派生数据。
+# CI 要留档的话由 workflow 自己上传 artifact，不进版本库。
+coverage/
+
 # GitHub Actions self-hosted runner
 actions-runner/

@@ -49,7 +49,7 @@ export function resolveDebugConfig(
     source === 'java' ||
     badge === 'Java' ||
     badge === 'Maven' ||
-    id.startsWith('active:') && id.endsWith('.java') ||
+    (id.startsWith('active:') && id.endsWith('.java')) ||
     /\b(mvn|mvnw|java)\b/.test(command)
   ) {
     const jdwpArg = '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005';

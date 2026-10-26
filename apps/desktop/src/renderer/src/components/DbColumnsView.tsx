@@ -51,7 +51,11 @@ export interface DbColumnsViewProps {
    * 必须把新名字交给外层去收尾（见 `App.handleTableRenamed`）。
    */
   onRenamed?: (newTableName: string) => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 /**
@@ -574,7 +578,16 @@ export function DbColumnsView({
                         title={r.drop ? t('db.undoDelete') : t('db.markColumnDelete')}
                         onClick={() => patchRow(r.key, { drop: !r.drop })}
                       >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={r.drop ? '#f59e0b' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke={r.drop ? '#f59e0b' : 'currentColor'}
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <path d="M3 6h18" />
                           <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
                           <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
@@ -587,7 +600,15 @@ export function DbColumnsView({
                         title={t('db.removeRow')}
                         onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}
                       >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        >
                           <line x1="5" y1="12" x2="19" y2="12" />
                         </svg>
                       </button>

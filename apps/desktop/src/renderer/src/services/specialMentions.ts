@@ -156,9 +156,7 @@ function collectMonacoProblems(root: string | null): Array<{
         line: m.startLineNumber,
         column: m.startColumn,
         severity:
-          m.severity === monaco.MarkerSeverity.Error
-            ? ('error' as const)
-            : ('warning' as const),
+          m.severity === monaco.MarkerSeverity.Error ? ('error' as const) : ('warning' as const),
         message: m.message,
         source: m.source,
       }));
@@ -210,7 +208,9 @@ async function buildGitContext(): Promise<string> {
     return [
       '--- Git 状态 ---',
       head,
-      status.entries.length ? `变更文件 (${status.entries.length}):\n${lines}${more}` : '工作区干净，无变更。',
+      status.entries.length
+        ? `变更文件 (${status.entries.length}):\n${lines}${more}`
+        : '工作区干净，无变更。',
       diffParts.length ? `\n--- 未提交改动 diff (最多 8 个文件) ---\n${diffParts.join('\n')}` : '',
     ]
       .filter(Boolean)

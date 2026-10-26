@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { GitCommitEntry, PendingDiff } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n } from '../i18n';
+import { showGlobalToast } from '../services/toast';
 
 interface Props {
   filePath: string | null;
@@ -120,10 +125,10 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
         });
         onClose();
       } else {
-        alert(res.detail || t('history.diffLoadFailed'));
+        showGlobalToast(res.detail || t('history.diffLoadFailed'), 'error');
       }
     } catch (e: any) {
-      alert(e?.message || t('history.diffError'));
+      showGlobalToast(e?.message || t('history.diffError'), 'error');
     } finally {
       setPreviewingHash(null);
     }
@@ -233,7 +238,14 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
             onClick={onClose}
             title={t('common.closeEsc')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -310,9 +322,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
             >
               <span style={{ fontSize: 24 }}>🍃</span>
               <div>{error || (query ? t('history.noMatch') : t('history.noHistory'))}</div>
-              <div style={{ fontSize: 11, opacity: 0.7 }}>
-                {t('history.noHistoryNote')}
-              </div>
+              <div style={{ fontSize: 11, opacity: 0.7 }}>{t('history.noHistoryNote')}</div>
             </div>
           ) : (
             filteredCommits.map((c, idx) => {
@@ -346,7 +356,9 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                       top: 0,
                       bottom: 0,
                       width: 2,
-                      background: isSelected ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.08)',
+                      background: isSelected
+                        ? 'rgba(255, 255, 255, 0.35)'
+                        : 'rgba(255, 255, 255, 0.08)',
                     }}
                   />
                   <div
@@ -418,7 +430,9 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                             width: 16,
                             height: 16,
                             borderRadius: '50%',
-                            background: isSelected ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 122, 204, 0.2)',
+                            background: isSelected
+                              ? 'rgba(255, 255, 255, 0.25)'
+                              : 'rgba(0, 122, 204, 0.2)',
                             color: isSelected ? '#ffffff' : 'var(--accent-light, #3794ff)',
                             fontSize: 9.5,
                             fontWeight: 700,
@@ -449,7 +463,9 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                       fontWeight: 600,
                       background: isSelected ? 'var(--accent, #007acc)' : 'rgba(255,255,255,0.05)',
                       color: isSelected ? '#fff' : 'var(--text)',
-                      border: isSelected ? '1px solid var(--accent, #007acc)' : '1px solid var(--border)',
+                      border: isSelected
+                        ? '1px solid var(--accent, #007acc)'
+                        : '1px solid var(--border)',
                       borderRadius: 6,
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',

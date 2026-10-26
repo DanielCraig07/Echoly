@@ -102,7 +102,9 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
   });
 
   const hitsCount = isLineJump
-    ? (activePath ? 1 : 0)
+    ? activePath
+      ? 1
+      : 0
     : mode === 'files'
       ? fileHits.length
       : mode === 'actions'
@@ -376,391 +378,392 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
         >
           {/* 顶部搜索输入与模式切换 */}
           <div className="cmd-palette-header">
-              <div className="cmd-input-box">
-                <div className="cmd-palette-icon">
-                  {loading ? (
-                    <div className="cmd-mini-spinner" />
-                  ) : isLineJump ? (
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="7 13 12 18 17 13" />
-                      <polyline points="7 6 12 11 17 6" />
-                    </svg>
-                  ) : mode === 'actions' ? (
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <polyline points="9 18 15 12 9 6" />
-                    </svg>
-                  ) : mode === 'files' ? (
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                    </svg>
-                  ) : (
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <circle cx="11" cy="11" r="8" />
-                      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                    </svg>
-                  )}
-                </div>
-                <input
-                  ref={inputRef}
-                  className="cmd-palette-input"
-                  type="text"
-                  disabled={!enabled && mode !== 'actions'}
-                  placeholder={placeholderText}
-                  value={query}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setQuery(val);
-                    if (val.startsWith('>') && mode !== 'actions') {
-                      setMode('actions');
-                    } else if (val.startsWith('@') && mode !== 'code') {
-                      setMode('code');
-                    }
-                    setOpen(true);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Tab') {
-                      e.preventDefault();
-                      handleTabSwitch();
-                      return;
-                    }
-                    onKeyDown(e);
-                  }}
-                />
-                {query.length > 0 && (
-                  <button
-                    type="button"
-                    className="cmd-input-clear-btn"
-                    title={t('search.clearTitle')}
-                    onClick={() => {
-                      setQuery('');
-                      setActiveIndex(0);
-                      inputRef.current?.focus();
-                    }}
+            <div className="cmd-input-box">
+              <div className="cmd-palette-icon">
+                {loading ? (
+                  <div className="cmd-mini-spinner" />
+                ) : isLineJump ? (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
+                    <polyline points="7 13 12 18 17 13" />
+                    <polyline points="7 6 12 11 17 6" />
+                  </svg>
+                ) : mode === 'actions' ? (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                ) : mode === 'files' ? (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
                 )}
               </div>
-              <div className="cmd-palette-tabs">
-                <button
-                  type="button"
-                  className={`cmd-tab ${mode === 'actions' ? 'active' : ''}`}
-                  onClick={() => {
+              <input
+                ref={inputRef}
+                className="cmd-palette-input"
+                type="text"
+                disabled={!enabled && mode !== 'actions'}
+                placeholder={placeholderText}
+                value={query}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setQuery(val);
+                  if (val.startsWith('>') && mode !== 'actions') {
                     setMode('actions');
-                    setActiveIndex(0);
-                    inputRef.current?.focus();
-                  }}
-                >
-                  {t('search.tabActions')}
-                </button>
-                <button
-                  type="button"
-                  className={`cmd-tab ${mode === 'files' ? 'active' : ''}`}
-                  onClick={() => {
-                    setMode('files');
-                    setActiveIndex(0);
-                    inputRef.current?.focus();
-                  }}
-                  disabled={!enabled}
-                >
-                  {t('search.tabFiles')}
-                </button>
-                <button
-                  type="button"
-                  className={`cmd-tab ${mode === 'code' ? 'active' : ''}`}
-                  onClick={() => {
+                  } else if (val.startsWith('@') && mode !== 'code') {
                     setMode('code');
+                  }
+                  setOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Tab') {
+                    e.preventDefault();
+                    handleTabSwitch();
+                    return;
+                  }
+                  onKeyDown(e);
+                }}
+              />
+              {query.length > 0 && (
+                <button
+                  type="button"
+                  className="cmd-input-clear-btn"
+                  title={t('search.clearTitle')}
+                  onClick={() => {
+                    setQuery('');
                     setActiveIndex(0);
                     inputRef.current?.focus();
                   }}
-                  disabled={!enabled}
                 >
-                  {t('search.tabCode')}
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
                 </button>
-              </div>
+              )}
+            </div>
+            <div className="cmd-palette-tabs">
               <button
                 type="button"
-                className="cmd-palette-close-btn"
-                title={t('common.closeEsc')}
+                className={`cmd-tab ${mode === 'actions' ? 'active' : ''}`}
                 onClick={() => {
-                  setOpen(false);
-                  setQuery('');
+                  setMode('actions');
+                  setActiveIndex(0);
+                  inputRef.current?.focus();
                 }}
               >
-                Esc
+                {t('search.tabActions')}
+              </button>
+              <button
+                type="button"
+                className={`cmd-tab ${mode === 'files' ? 'active' : ''}`}
+                onClick={() => {
+                  setMode('files');
+                  setActiveIndex(0);
+                  inputRef.current?.focus();
+                }}
+                disabled={!enabled}
+              >
+                {t('search.tabFiles')}
+              </button>
+              <button
+                type="button"
+                className={`cmd-tab ${mode === 'code' ? 'active' : ''}`}
+                onClick={() => {
+                  setMode('code');
+                  setActiveIndex(0);
+                  inputRef.current?.focus();
+                }}
+                disabled={!enabled}
+              >
+                {t('search.tabCode')}
               </button>
             </div>
+            <button
+              type="button"
+              className="cmd-palette-close-btn"
+              title={t('common.closeEsc')}
+              onClick={() => {
+                setOpen(false);
+                setQuery('');
+              }}
+            >
+              Esc
+            </button>
+          </div>
 
-            {/* 结果列表区 */}
-            <div className="cmd-palette-body" ref={bodyRef}>
-              {loading && hitsCount === 0 && (
-                <div className="cmd-palette-state">
-                  <div className="cmd-spinner" />
-                  <span>{t('search.searchingAll')}</span>
-                </div>
-              )}
+          {/* 结果列表区 */}
+          <div className="cmd-palette-body" ref={bodyRef}>
+            {loading && hitsCount === 0 && (
+              <div className="cmd-palette-state">
+                <div className="cmd-spinner" />
+                <span>{t('search.searchingAll')}</span>
+              </div>
+            )}
 
-              {isLineJump && (
-                <div className="cmd-palette-list">
-                  {activePath ? (
+            {isLineJump && (
+              <div className="cmd-palette-list">
+                {activePath ? (
+                  <div
+                    data-index={0}
+                    className="cmd-item active"
+                    onClick={() => {
+                      if (jumpLine && jumpLine > 0) {
+                        selectFile(activePath, jumpLine);
+                      }
+                    }}
+                  >
+                    <div className="cmd-item-left">
+                      <span className="cmd-category-tag cat-navigation">{t('search.tagJump')}</span>
+                      <span className="cmd-item-title">
+                        {jumpLine ? t('search.jumpToLineN', { n: jumpLine }) : t('search.jumpHint')}
+                      </span>
+                      <span
+                        className="cmd-item-path"
+                        style={{ marginLeft: 8, opacity: 0.65, fontSize: 12 }}
+                      >
+                        {activePath}
+                      </span>
+                    </div>
+                    <div className="cmd-item-right">
+                      <kbd className="cmd-kbd">{t('search.kbdJump')}</kbd>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="cmd-palette-state">
+                    <span className="cmd-state-hint">{t('search.noActiveFile')}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!isLineJump && !loading && !query.trim() && mode !== 'actions' && (
+              <div className="cmd-palette-state">
+                <span className="cmd-state-hint">{t('search.typeToFindFile')}</span>
+              </div>
+            )}
+
+            {!isLineJump && !loading && hitsCount === 0 && query.trim() && (
+              <div className="cmd-palette-state">
+                <span className="cmd-state-hint">{t('search.noMatch')}</span>
+              </div>
+            )}
+
+            {!isLineJump && mode === 'actions' && actionHits.length > 0 && (
+              <div className="cmd-palette-list">
+                {actionHits.map((act, i) => {
+                  const isSelected = i === activeIndex;
+                  return (
                     <div
-                      data-index={0}
-                      className="cmd-item active"
+                      key={act.id}
+                      data-index={i}
+                      className={`cmd-item ${isSelected ? 'active' : ''}`}
+                      onMouseMove={(e) => handleItemMouseMove(i, e)}
+                      onClick={() => executeAction(act)}
+                    >
+                      <div className="cmd-item-left">
+                        <span className={`cmd-category-tag cat-${act.category}`}>
+                          {act.category}
+                        </span>
+                        <span className="cmd-item-title">{act.title}</span>
+                      </div>
+                      {act.shortcut && (
+                        <div className="cmd-item-right">
+                          <kbd className="cmd-kbd">{formatShortcut(act.shortcut, isMac)}</kbd>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {!isLineJump && mode === 'files' && fileHits.length > 0 && (
+              <div className="cmd-palette-list">
+                {fileHits.map((h, i) => {
+                  const isSelected = i === activeIndex;
+                  const fileName = h.path.split('/').pop() || h.path;
+                  const dirName = h.path.substring(0, h.path.lastIndexOf('/')) || '';
+                  return (
+                    <div
+                      key={h.path}
+                      data-index={i}
+                      className={`cmd-item ${isSelected ? 'active' : ''}`}
+                      onMouseMove={(e) => handleItemMouseMove(i, e)}
                       onClick={() => {
-                        if (jumpLine && jumpLine > 0) {
-                          selectFile(activePath, jumpLine);
-                        }
+                        const fileWithLine = query.match(/:(\d+)$/);
+                        const targetLine = fileWithLine ? parseInt(fileWithLine[1], 10) : undefined;
+                        selectFile(h.path, targetLine);
                       }}
                     >
                       <div className="cmd-item-left">
-                        <span className="cmd-category-tag cat-navigation">
-                          {t('search.tagJump')}
-                        </span>
-                        <span className="cmd-item-title">
-                          {jumpLine
-                            ? t('search.jumpToLineN', { n: jumpLine })
-                            : t('search.jumpHint')}
-                        </span>
-                        <span className="cmd-item-path" style={{ marginLeft: 8, opacity: 0.65, fontSize: 12 }}>
-                          {activePath}
-                        </span>
-                      </div>
-                      <div className="cmd-item-right">
-                        <kbd className="cmd-kbd">{t('search.kbdJump')}</kbd>
+                        <svg
+                          className="cmd-file-icon"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                        >
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span className="cmd-item-title">{fileName}</span>
+                        {dirName && <span className="cmd-item-subpath">{dirName}</span>}
                       </div>
                     </div>
-                  ) : (
-                    <div className="cmd-palette-state">
-                      <span className="cmd-state-hint">{t('search.noActiveFile')}</span>
-                    </div>
-                  )}
-                </div>
-              )}
+                  );
+                })}
+              </div>
+            )}
 
-              {!isLineJump && !loading && !query.trim() && mode !== 'actions' && (
-                <div className="cmd-palette-state">
-                  <span className="cmd-state-hint">{t('search.typeToFindFile')}</span>
-                </div>
-              )}
-
-              {!isLineJump && !loading && hitsCount === 0 && query.trim() && (
-                <div className="cmd-palette-state">
-                  <span className="cmd-state-hint">{t('search.noMatch')}</span>
-                </div>
-              )}
-
-              {!isLineJump && mode === 'actions' && actionHits.length > 0 && (
-                <div className="cmd-palette-list">
-                  {actionHits.map((act, i) => {
-                    const isSelected = i === activeIndex;
-                    return (
-                      <div
-                        key={act.id}
-                        data-index={i}
-                        className={`cmd-item ${isSelected ? 'active' : ''}`}
-                        onMouseMove={(e) => handleItemMouseMove(i, e)}
-                        onClick={() => executeAction(act)}
-                      >
-                        <div className="cmd-item-left">
-                          <span className={`cmd-category-tag cat-${act.category}`}>
-                            {act.category}
-                          </span>
-                          <span className="cmd-item-title">{act.title}</span>
-                        </div>
-                        {act.shortcut && (
-                          <div className="cmd-item-right">
-                            <kbd className="cmd-kbd">{formatShortcut(act.shortcut, isMac)}</kbd>
-                          </div>
+            {mode === 'code' && codeHits.length > 0 && (
+              <div className="cmd-code-groups">
+                {groupedCodeHits.map((group) => (
+                  <div key={group.path} className="cmd-code-group">
+                    <div
+                      className="cmd-code-group-header"
+                      onClick={() => selectFile(group.path, group.items[0]?.hit.line)}
+                      title={t('search.openFileTitle', { path: group.path })}
+                    >
+                      <div className="cmd-code-group-info">
+                        <svg
+                          className="cmd-file-icon"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                        >
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span className="cmd-code-group-filename">{group.fileName}</span>
+                        {group.dirName && (
+                          <span className="cmd-code-group-dir">{group.dirName}</span>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {!isLineJump && mode === 'files' && fileHits.length > 0 && (
-                <div className="cmd-palette-list">
-                  {fileHits.map((h, i) => {
-                    const isSelected = i === activeIndex;
-                    const fileName = h.path.split('/').pop() || h.path;
-                    const dirName = h.path.substring(0, h.path.lastIndexOf('/')) || '';
-                    return (
-                      <div
-                        key={h.path}
-                        data-index={i}
-                        className={`cmd-item ${isSelected ? 'active' : ''}`}
-                        onMouseMove={(e) => handleItemMouseMove(i, e)}
-                        onClick={() => {
-                          const fileWithLine = query.match(/:(\d+)$/);
-                          const targetLine = fileWithLine ? parseInt(fileWithLine[1], 10) : undefined;
-                          selectFile(h.path, targetLine);
-                        }}
-                      >
-                        <div className="cmd-item-left">
-                          <svg
-                            className="cmd-file-icon"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                          >
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                          </svg>
-                          <span className="cmd-item-title">{fileName}</span>
-                          {dirName && <span className="cmd-item-subpath">{dirName}</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {mode === 'code' && codeHits.length > 0 && (
-                <div className="cmd-code-groups">
-                  {groupedCodeHits.map((group) => (
-                    <div key={group.path} className="cmd-code-group">
-                      <div
-                        className="cmd-code-group-header"
-                        onClick={() => selectFile(group.path, group.items[0]?.hit.line)}
-                        title={t('search.openFileTitle', { path: group.path })}
-                      >
-                        <div className="cmd-code-group-info">
-                          <svg
-                            className="cmd-file-icon"
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.8"
-                          >
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                            <polyline points="14 2 14 8 20 8" />
-                          </svg>
-                          <span className="cmd-code-group-filename">{group.fileName}</span>
-                          {group.dirName && <span className="cmd-code-group-dir">{group.dirName}</span>}
-                        </div>
-                        <span className="cmd-code-group-badge">
-                          {t('search.matchesInFile', { n: group.items.length })}
-                        </span>
-                      </div>
-                      <div className="cmd-code-group-items">
-                        {group.items.map(({ hit, flatIndex }) => {
-                          const isSelected = flatIndex === activeIndex;
-                          return (
-                            <div
-                              key={`${hit.path}:${hit.line}:${flatIndex}`}
-                              data-index={flatIndex}
-                              className={`cmd-item cmd-code-match-item ${isSelected ? 'active' : ''}`}
-                              onMouseMove={(e) => handleItemMouseMove(flatIndex, e)}
-                              onClick={() => selectFile(hit.path, hit.line)}
-                            >
-                              <span className="cmd-code-line-badge">:{hit.line}</span>
-                              <span className="cmd-code-preview-text">
-                                {renderMatchPreview(hit.preview, query)}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <span className="cmd-code-group-badge">
+                        {t('search.matchesInFile', { n: group.items.length })}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 底部极客状态栏 */}
-            <div className="cmd-palette-footer">
-              <div className="cmd-footer-shortcuts">
-                <span className="cmd-shortcut-tip">
-                  <kbd className="cmd-mini-kbd">↑</kbd>
-                  <kbd className="cmd-mini-kbd">↓</kbd> {t('search.kbdSelect')}
-                </span>
-                <span className="cmd-shortcut-tip">
-                  <kbd className="cmd-mini-kbd">↵</kbd> {t('search.kbdRun')}
-                </span>
-                <span className="cmd-shortcut-tip">
-                  <kbd className="cmd-mini-kbd">Tab</kbd> {t('search.kbdSwitchMode')}
-                </span>
-                <span className="cmd-shortcut-tip" title={t('search.kbdCommandTip')}>
-                  <kbd className="cmd-mini-kbd">&gt;</kbd> {t('search.kbdCommand')}
-                </span>
-                <span className="cmd-shortcut-tip" title={t('search.kbdCodeTip')}>
-                  <kbd className="cmd-mini-kbd">@</kbd> {t('search.kbdCode')}
-                </span>
-                <span className="cmd-shortcut-tip" title={t('search.kbdLineTip')}>
-                  <kbd className="cmd-mini-kbd">:</kbd> {t('search.kbdLine')}
-                </span>
-                <span className="cmd-shortcut-tip">
-                  <kbd className="cmd-mini-kbd">Esc</kbd> {t('search.kbdExit')}
-                </span>
+                    <div className="cmd-code-group-items">
+                      {group.items.map(({ hit, flatIndex }) => {
+                        const isSelected = flatIndex === activeIndex;
+                        return (
+                          <div
+                            key={`${hit.path}:${hit.line}:${flatIndex}`}
+                            data-index={flatIndex}
+                            className={`cmd-item cmd-code-match-item ${isSelected ? 'active' : ''}`}
+                            onMouseMove={(e) => handleItemMouseMove(flatIndex, e)}
+                            onClick={() => selectFile(hit.path, hit.line)}
+                          >
+                            <span className="cmd-code-line-badge">:{hit.line}</span>
+                            <span className="cmd-code-preview-text">
+                              {renderMatchPreview(hit.preview, query)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="cmd-footer-count">
-                {isLineJump
-                  ? t('search.modeLineJump')
-                  : mode === 'actions'
-                    ? t('search.footerActions', { n: actionHits.length })
-                    : mode === 'files'
-                      ? t('search.footerFiles', { n: fileHits.length })
-                      : t('search.footerCode', {
-                          n: groupedCodeHits.length,
-                          m: codeHits.length,
-                        })}
-              </div>
-              <ModalResizeHandle
-                onMouseDown={handleResizeStart}
-                className="cmd-resize-handle"
-                title={t('common.resizeHandle')}
-              />
-            </div>
+            )}
           </div>
-        )}
-      </>
+
+          {/* 底部极客状态栏 */}
+          <div className="cmd-palette-footer">
+            <div className="cmd-footer-shortcuts">
+              <span className="cmd-shortcut-tip">
+                <kbd className="cmd-mini-kbd">↑</kbd>
+                <kbd className="cmd-mini-kbd">↓</kbd> {t('search.kbdSelect')}
+              </span>
+              <span className="cmd-shortcut-tip">
+                <kbd className="cmd-mini-kbd">↵</kbd> {t('search.kbdRun')}
+              </span>
+              <span className="cmd-shortcut-tip">
+                <kbd className="cmd-mini-kbd">Tab</kbd> {t('search.kbdSwitchMode')}
+              </span>
+              <span className="cmd-shortcut-tip" title={t('search.kbdCommandTip')}>
+                <kbd className="cmd-mini-kbd">&gt;</kbd> {t('search.kbdCommand')}
+              </span>
+              <span className="cmd-shortcut-tip" title={t('search.kbdCodeTip')}>
+                <kbd className="cmd-mini-kbd">@</kbd> {t('search.kbdCode')}
+              </span>
+              <span className="cmd-shortcut-tip" title={t('search.kbdLineTip')}>
+                <kbd className="cmd-mini-kbd">:</kbd> {t('search.kbdLine')}
+              </span>
+              <span className="cmd-shortcut-tip">
+                <kbd className="cmd-mini-kbd">Esc</kbd> {t('search.kbdExit')}
+              </span>
+            </div>
+            <div className="cmd-footer-count">
+              {isLineJump
+                ? t('search.modeLineJump')
+                : mode === 'actions'
+                  ? t('search.footerActions', { n: actionHits.length })
+                  : mode === 'files'
+                    ? t('search.footerFiles', { n: fileHits.length })
+                    : t('search.footerCode', {
+                        n: groupedCodeHits.length,
+                        m: codeHits.length,
+                      })}
+            </div>
+            <ModalResizeHandle
+              onMouseDown={handleResizeStart}
+              className="cmd-resize-handle"
+              title={t('common.resizeHandle')}
+            />
+          </div>
+        </div>
+      )}
+    </>
   );
 });

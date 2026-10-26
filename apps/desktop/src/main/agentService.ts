@@ -380,8 +380,8 @@ export class AgentService {
                 definitions: mcpManager.toToolDefinitions(),
                 readonlyNames: mcpManager.readonlyToolNames(),
                 meta: mcpManager.toolMeta(),
-                call: (name: string, args: Record<string, unknown>) =>
-                  this.deps.mcp!.call(name, args),
+                call: (name: string, args: Record<string, unknown>, signal?: AbortSignal) =>
+                  this.deps.mcp!.call(name, args, signal),
               }
             : undefined;
 

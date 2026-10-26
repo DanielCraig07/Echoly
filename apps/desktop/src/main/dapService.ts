@@ -74,7 +74,12 @@ export class DapService extends EventEmitter {
   /**
    * Connect to debug port with retry mechanism.
    */
-  private connectSocket(host: string, port: number, maxRetries = 8, intervalMs = 200): Promise<net.Socket> {
+  private connectSocket(
+    host: string,
+    port: number,
+    maxRetries = 8,
+    intervalMs = 200,
+  ): Promise<net.Socket> {
     return new Promise((resolve, reject) => {
       let retries = 0;
       const attempt = () => {
@@ -85,7 +90,11 @@ export class DapService extends EventEmitter {
           socket.destroy();
           retries++;
           if (retries >= maxRetries) {
-            reject(new Error(`无法连接到调试端口 ${host}:${port} (${err.message})，请确认调试进程已启动`));
+            reject(
+              new Error(
+                `无法连接到调试端口 ${host}:${port} (${err.message})，请确认调试进程已启动`,
+              ),
+            );
           } else {
             setTimeout(attempt, intervalMs);
           }
@@ -305,7 +314,8 @@ export class DapService extends EventEmitter {
    * Sends raw DAP request with timeout via stdio or socket.
    */
   private sendRequest(command: string, args?: any): Promise<any> {
-    const hasTransport = (this.process && this.process.stdin) || (this.socket && !this.socket.destroyed);
+    const hasTransport =
+      (this.process && this.process.stdin) || (this.socket && !this.socket.destroyed);
     if (!hasTransport || !this.isSessionActive) {
       return Promise.reject(new Error('调试会话未建立或已终止'));
     }
@@ -604,7 +614,8 @@ export class DapService extends EventEmitter {
     if (!this.isSessionActive && !this.process && !this.socket) return;
 
     try {
-      const hasTransport = (this.process && this.process.stdin) || (this.socket && !this.socket.destroyed);
+      const hasTransport =
+        (this.process && this.process.stdin) || (this.socket && !this.socket.destroyed);
       if (hasTransport) {
         await Promise.race([
           this.sendRequest('disconnect', { terminateDebuggee: true }),

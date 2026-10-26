@@ -1,7 +1,11 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { GitBranchInfo } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n, translateSegments } from '../i18n';
 
 interface Props {
@@ -69,8 +73,12 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
   const localBranches = branches.filter((b) => !b.remote);
   const remoteBranches = branches.filter((b) => b.remote);
 
-  const filteredLocal = q ? localBranches.filter((b) => b.name.toLowerCase().includes(q)) : localBranches;
-  const filteredRemote = q ? remoteBranches.filter((b) => b.name.toLowerCase().includes(q)) : remoteBranches;
+  const filteredLocal = q
+    ? localBranches.filter((b) => b.name.toLowerCase().includes(q))
+    : localBranches;
+  const filteredRemote = q
+    ? remoteBranches.filter((b) => b.name.toLowerCase().includes(q))
+    : remoteBranches;
   const filteredTags = q ? tags.filter((tag) => tag.toLowerCase().includes(q)) : tags;
 
   const visibleBranches =
@@ -80,8 +88,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
         ? filteredRemote
         : [...filteredLocal, ...filteredRemote];
 
-  const currentListLength =
-    activeTab === 'tags' ? filteredTags.length : visibleBranches.length;
+  const currentListLength = activeTab === 'tags' ? filteredTags.length : visibleBranches.length;
 
   useEffect(() => {
     if (activeTab === 'tags') {
@@ -173,10 +180,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
     setLoading(true);
     setError(null);
     try {
-      const stashRes = await window.ide.gitStash(
-        'push',
-        t('git.autoStashMessage', { target }),
-      );
+      const stashRes = await window.ide.gitStash('push', t('git.autoStashMessage', { target }));
       if (!stashRes.ok) {
         setError(stashRes.detail || t('git.autoStashFailed'));
         setLoading(false);
@@ -277,7 +281,8 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
           background: 'var(--bg-modal, #141414)',
           border: '1px solid var(--border, rgba(255, 255, 255, 0.12))',
           borderRadius: 10,
-          boxShadow: '0 24px 64px -8px rgba(0, 0, 0, 0.8), 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+          boxShadow:
+            '0 24px 64px -8px rgba(0, 0, 0, 0.8), 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.08)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
@@ -664,7 +669,12 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                       }}
                     >
                       <div
-                        style={{ display: 'flex', alignItems: 'center', gap: 9, overflow: 'hidden' }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 9,
+                          overflow: 'hidden',
+                        }}
                       >
                         {isCurrent ? (
                           <span
@@ -803,7 +813,9 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                           <span style={{ fontSize: 10, opacity: 0.85 }}>
                             {b.remote ? t('git.checkoutAction') : t('git.switchAction')}
                           </span>
-                          <kbd className="cmd-mini-kbd" style={{ fontSize: 9 }}>↵</kbd>
+                          <kbd className="cmd-mini-kbd" style={{ fontSize: 9 }}>
+                            ↵
+                          </kbd>
                         </span>
                       ) : null}
                     </div>
@@ -825,8 +837,11 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                       >
                         <span
                           style={{
-                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-                            background: isSelected ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.07)',
+                            fontFamily:
+                              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                            background: isSelected
+                              ? 'rgba(56, 189, 248, 0.15)'
+                              : 'rgba(255, 255, 255, 0.07)',
                             color: isSelected ? '#7dd3fc' : 'var(--muted, #aaa)',
                             padding: '1px 5px',
                             borderRadius: 3,
@@ -1008,9 +1023,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                     padding: '8px 12px',
                     borderRadius: 7,
                     cursor: 'pointer',
-                    background: isSelected
-                      ? '#242424'
-                      : 'transparent',
+                    background: isSelected ? '#242424' : 'transparent',
                     border: isSelected
                       ? '1px solid rgba(255, 255, 255, 0.18)'
                       : '1px solid transparent',
@@ -1090,7 +1103,9 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                         flexShrink: 0,
                       }}
                     >
-                      <kbd className="cmd-mini-kbd" style={{ fontSize: 9 }}>↵</kbd>
+                      <kbd className="cmd-mini-kbd" style={{ fontSize: 9 }}>
+                        ↵
+                      </kbd>
                     </span>
                   ) : null}
                 </div>
@@ -1179,16 +1194,22 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
               </div>
 
               <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text, #ddd)' }}>
-                {translateSegments('git.unsavedWarningLead', locale, { changed: unsavedWarning.changedCount }).map((seg, i) =>
+                {translateSegments('git.unsavedWarningLead', locale, {
+                  changed: unsavedWarning.changedCount,
+                }).map((seg, i) =>
                   seg.emphasis ? (
                     <b key={i}>{seg.text}</b>
                   ) : (
                     <Fragment key={i}>{seg.text}</Fragment>
                   ),
                 )}
-                {unsavedWarning.stagedCount > 0 && t('git.unsavedWarningStaged', { n: unsavedWarning.stagedCount })}
-                {unsavedWarning.unstagedCount > 0 && t('git.unsavedWarningUnstaged', { n: unsavedWarning.unstagedCount })}
-                {translateSegments('git.unsavedWarningTail', locale, { target: unsavedWarning.target }).map((seg, i) =>
+                {unsavedWarning.stagedCount > 0 &&
+                  t('git.unsavedWarningStaged', { n: unsavedWarning.stagedCount })}
+                {unsavedWarning.unstagedCount > 0 &&
+                  t('git.unsavedWarningUnstaged', { n: unsavedWarning.unstagedCount })}
+                {translateSegments('git.unsavedWarningTail', locale, {
+                  target: unsavedWarning.target,
+                }).map((seg, i) =>
                   seg.emphasis ? (
                     <b key={i}>{seg.text}</b>
                   ) : (

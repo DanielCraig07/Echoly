@@ -149,7 +149,9 @@ export function DbGroupRow({
         }
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-          <span style={{ color: 'var(--text-muted)', display: 'flex', opacity: disabled ? 0.4 : 1 }}>
+          <span
+            style={{ color: 'var(--text-muted)', display: 'flex', opacity: disabled ? 0.4 : 1 }}
+          >
             {expanded ? <ChevronDown /> : <ChevronRight />}
           </span>
           <span style={{ display: 'flex', opacity: disabled ? 0.4 : 1 }}>
@@ -198,7 +200,16 @@ export function DbGroupRow({
 
 function ChevronRight() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polyline points="9 18 15 12 9 6" />
     </svg>
   );
@@ -206,7 +217,16 @@ function ChevronRight() {
 
 function ChevronDown() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polyline points="6 9 12 15 18 9" />
     </svg>
   );

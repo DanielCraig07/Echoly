@@ -105,15 +105,17 @@ export function languageFromPath(filePath: string): string {
   }
 
   // 3. Ruby special files
-  if (lower === 'gemfile' || lower === 'rakefile' || lower === 'podfile' || lower === 'vagrantfile') {
+  if (
+    lower === 'gemfile' ||
+    lower === 'rakefile' ||
+    lower === 'podfile' ||
+    lower === 'vagrantfile'
+  ) {
     return 'ruby';
   }
 
   // 4. Jenkinsfile variants (Groovy DSL)
-  if (
-    lower === 'jenkinsfile' ||
-    lower.startsWith('jenkinsfile.')
-  ) {
+  if (lower === 'jenkinsfile' || lower.startsWith('jenkinsfile.')) {
     return 'groovy';
   }
 
@@ -341,7 +343,6 @@ export const DEFAULT_SESSION_TITLE = '当前对话';
  * 这个字面量才判定得出「这条标题不是用户写的」。翻了它，存量会话的判定就崩了。
  */
 export const AUTO_SESSION_TITLE_FALLBACK = '对话';
-
 
 export function folderNameFromPath(p: string): string {
   const cleaned = p.replace(/^ssh:\/\//i, '').replace(/^ssh\s+/i, '');

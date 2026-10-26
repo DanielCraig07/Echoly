@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -14,6 +15,7 @@ import type { FileTreeNode, GitStatusEntry, GitStatusResult } from '@deepseek-id
 import { createSafeOverlayHandlers } from '../hooks/useModalResize';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { showGlobalToast } from '../services/toast';
 import { validateMove } from '../utils/fileMoveValidation';
 import { PanelChevron } from './PanelChevron';
 import { useI18n } from '../i18n';
@@ -64,7 +66,7 @@ function basename(relPath: string): string {
 
 export function normalizePathToRel(
   filePath: string | null | undefined,
-  workspaceRoot: string | null | undefined
+  workspaceRoot: string | null | undefined,
 ): string {
   if (!filePath) return '';
   let p = filePath.replace(/\\/g, '/');
@@ -227,7 +229,15 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: gitSubmenuOpen ? '#ffffff' : '#38bdf8' }}>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            style={{ color: gitSubmenuOpen ? '#ffffff' : '#38bdf8' }}
+          >
             <line x1="6" y1="3" x2="6" y2="15" />
             <circle cx="18" cy="6" r="3" />
             <circle cx="6" cy="18" r="3" />
@@ -242,21 +252,24 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
 
   const hasGitChange = Boolean(
     node &&
-      gitStatus?.entries?.some((e) => {
-        const ep = e.path.replace(/\\/g, '/');
-        const np = node.path.replace(/\\/g, '/');
-        return ep === np || (isDir && ep.startsWith(np + '/'));
-      }),
+    gitStatus?.entries?.some((e) => {
+      const ep = e.path.replace(/\\/g, '/');
+      const np = node.path.replace(/\\/g, '/');
+      return ep === np || (isDir && ep.startsWith(np + '/'));
+    }),
   );
   if (hasGitChange) {
     items.push(item('git-rollback', t('tree.rollback'), { danger: true }));
   }
   if (node) {
-    const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
+    const isMac =
+      typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
     items.push(sep('s5'));
     items.push(item('copy-abs', t('tree.copyPath')));
     items.push(item('copy-rel', t('tree.copyRelativePath')));
-    items.push(item('reveal-in-finder', isMac ? t('tree.revealInFinder') : t('tree.revealInExplorer')));
+    items.push(
+      item('reveal-in-finder', isMac ? t('tree.revealInFinder') : t('tree.revealInExplorer')),
+    );
     items.push(sep('s6'));
     items.push(item('rename', t('tree.rename')));
     items.push(item('delete', t('tree.deletePermanently'), { danger: true }));
@@ -316,8 +329,24 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                <rect x="2" y="2" width="5.5" height="12" rx="1.5" stroke="#f87171" strokeWidth="1.5" />
-                <rect x="8.5" y="2" width="5.5" height="12" rx="1.5" stroke="#38bdf8" strokeWidth="1.5" />
+                <rect
+                  x="2"
+                  y="2"
+                  width="5.5"
+                  height="12"
+                  rx="1.5"
+                  stroke="#f87171"
+                  strokeWidth="1.5"
+                />
+                <rect
+                  x="8.5"
+                  y="2"
+                  width="5.5"
+                  height="12"
+                  rx="1.5"
+                  stroke="#38bdf8"
+                  strokeWidth="1.5"
+                />
                 <line x1="4.5" y1="5" x2="6" y2="5" stroke="#f87171" strokeWidth="1.2" />
                 <line x1="10" y1="5" x2="12" y2="5" stroke="#38bdf8" strokeWidth="1.2" />
                 <line x1="4.5" y1="8" x2="6" y2="8" stroke="#f87171" strokeWidth="1.2" />
@@ -364,7 +393,15 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
             onClick={handleGitAction('git-history')}
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" style={{ flexShrink: 0 }}>
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#fbbf24"
+                strokeWidth="2"
+                style={{ flexShrink: 0 }}
+              >
                 <circle cx="12" cy="12" r="9" />
                 <polyline points="12 7 12 12 15 15" />
               </svg>
@@ -394,7 +431,15 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
             onClick={handleGitAction('git-rollback')}
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, color: 'var(--muted)' }}>
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                style={{ flexShrink: 0, color: 'var(--muted)' }}
+              >
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                 <path d="M3 3v5h5" />
               </svg>
@@ -463,49 +508,114 @@ export { RenderFileTreeIcon, detectCodeSubtype };
 // 全局缓存探测到的代码文件子类型（如 Java 类、接口、枚举等）
 const codeTypeCache = new Map<string, CodeSubtype>();
 
+/** 归一化：反斜杠转正斜杠、去掉开头的 `/`。索引与查询两侧都跑一遍，
+ *  保证「索引里存的是什么、查的时候拿什么比」是同一套写法。 */
+function normGitPath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+}
 
-function getNodeGitStatus(
-  nodePath: string,
-  isDir: boolean,
+/**
+ * Git 状态的**预建索引**。
+ *
+ * 早先每个树节点都拿着完整的 `entries` 数组自己遍历一遍（`find` 找文件、
+ * `some` 找目录子树）。可见 2000 个节点、状态里 5000 条改动时，每渲染一次就是
+ * 上千万次路径比较 —— 而 `gitStatus` 每次刷新都是新对象，等于**每次刷新都把
+ * 整个树重算一遍**。改成建一次索引、每个节点 O(1) 查表。
+ *
+ * 目录不能只存「有改动的目录路径」再去前缀匹配，那样又退回线性扫描了；
+ * 所以建索引时把每个改动路径的**所有祖先目录**都展开进 `dirsWithChanges`，
+ * 查询就退化成一次 `has()`。
+ */
+export type GitStatusIndex = {
+  /** 精确路径 → 状态条目（给文件用） */
+  files: Map<string, GitStatusEntry>;
+  /** 自身或子孙有改动的目录路径 */
+  dirsWithChanges: Set<string>;
+  /**
+   * 被 .gitignore 忽略的**条目**路径。
+   *
+   * 这里存的是「忽略规则命中的那个路径」本身（可能是目录），查询时沿节点的祖先
+   * 链找 —— 而不能像 `dirsWithChanges` 那样在建立索引时把子孙展开：忽略项是
+   * 目录时，我们并不知道它底下还有哪些文件（真要枚举就得先遍历一遍磁盘，
+   * 那正是要避免的事）。
+   */
+  ignored: Set<string>;
+};
+
+/** 把一个路径的所有祖先目录（不含自身）逐个加进集合。 */
+function addAncestors(target: Set<string>, normalizedPath: string): void {
+  let idx = normalizedPath.indexOf('/');
+  while (idx > 0) {
+    target.add(normalizedPath.slice(0, idx));
+    idx = normalizedPath.indexOf('/', idx + 1);
+  }
+}
+
+/** 路径自身或其任一祖先命中集合时为真（即「在这个目录下面」）。 */
+function inPathTree(set: Set<string>, normalizedPath: string): boolean {
+  if (set.has(normalizedPath)) return true;
+  let idx = normalizedPath.lastIndexOf('/');
+  while (idx > 0) {
+    if (set.has(normalizedPath.slice(0, idx))) return true;
+    idx = normalizedPath.lastIndexOf('/', idx - 1);
+  }
+  return false;
+}
+
+export function buildGitStatusIndex(
   entries: GitStatusEntry[] = [],
   ignoredPaths: string[] = [],
+): GitStatusIndex {
+  const index: GitStatusIndex = {
+    files: new Map(),
+    dirsWithChanges: new Set(),
+    ignored: new Set(),
+  };
+
+  for (const entry of entries) {
+    if (!entry || typeof entry.path !== 'string' || !entry.path) continue;
+    const p = normGitPath(entry.path);
+    if (!p) continue;
+    index.files.set(p, entry);
+    // 自身也进集合：目录恰好与某条改动同路径时（子模块、被替换的目录链接），
+    // 原实现靠 `e.path === norm` 命中，而展开祖先时不会包含自身。
+    index.dirsWithChanges.add(p);
+    addAncestors(index.dirsWithChanges, p);
+  }
+
+  for (const raw of ignoredPaths) {
+    if (typeof raw !== 'string' || !raw) continue;
+    const p = normGitPath(raw);
+    if (p) index.ignored.add(p);
+  }
+
+  return index;
+}
+
+/** 导出只为测试：状态字母的判定逻辑必须在改动后保持逐字节一致。 */
+export function getNodeGitStatus(
+  nodePath: string,
+  isDir: boolean,
+  index: GitStatusIndex,
 ): { label?: string; hasChanges?: boolean; color?: string; isIgnored?: boolean } | null {
   if (!nodePath || typeof nodePath !== 'string') return null;
-  const norm = nodePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const norm = normGitPath(nodePath);
 
-  try {
-    // 1. 优先检测是否被 .gitignore 忽略（浅色置灰）
-    if (ignoredPaths && ignoredPaths.length > 0) {
-      const isIgnored = ignoredPaths.some((ig) => {
-        const cleanIg = ig.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
-        return norm === cleanIg || norm.startsWith(`${cleanIg}/`);
-      });
-      if (isIgnored) {
-        return { isIgnored: true, color: 'var(--muted, #888888)' };
-      }
-    }
+  // 1. 优先检测是否被 .gitignore 忽略（浅色置灰）
+  if (inPathTree(index.ignored, norm)) {
+    return { isIgnored: true, color: 'var(--muted, #888888)' };
+  }
 
-    if (!entries || !Array.isArray(entries) || !entries.length) return null;
-
-    if (!isDir) {
-      const matched = entries.find((e) => e && e.path === norm);
-      if (!matched) return null;
-      if (matched.untracked) return { label: 'U', color: '#4caf50' };
-      if (matched.staged) return { label: 'A', color: '#4caf50' };
-      if (matched.workTree && matched.workTree.trim()) return { label: 'M', color: '#e5a54b' };
-      return null;
-    } else {
-      const hasSubChanges = entries.some(
-        (e) => e && e.path && (e.path.startsWith(norm + '/') || e.path === norm),
-      );
-      if (hasSubChanges) {
-        return { hasChanges: true, color: '#e5a54b' };
-      }
-      return null;
-    }
-  } catch {
+  if (!isDir) {
+    const matched = index.files.get(norm);
+    if (!matched) return null;
+    if (matched.untracked) return { label: 'U', color: '#4caf50' };
+    if (matched.staged) return { label: 'A', color: '#4caf50' };
+    if (matched.workTree && matched.workTree.trim()) return { label: 'M', color: '#e5a54b' };
     return null;
   }
+
+  return index.dirsWithChanges.has(norm) ? { hasChanges: true, color: '#e5a54b' } : null;
 }
 
 function TreeNode({
@@ -513,8 +623,7 @@ function TreeNode({
   depth,
   activePath,
   selectedNode,
-  gitEntries = [],
-  gitIgnoredPaths = [],
+  gitIndex,
   refreshKey,
   collapseKey,
   expandKey,
@@ -532,8 +641,8 @@ function TreeNode({
   depth: number;
   activePath: string | null;
   selectedNode: { path: string; isDirectory: boolean } | null;
-  gitEntries?: GitStatusEntry[];
-  gitIgnoredPaths?: string[];
+  /** 由 FileTree 顶层 useMemo 建一次，整棵树共用 —— 每个节点各建一份等于没优化。 */
+  gitIndex: GitStatusIndex;
   refreshKey: number;
   collapseKey?: number;
   expandKey?: number;
@@ -572,12 +681,15 @@ function TreeNode({
     }
     let cancelled = false;
     if (window.ide?.readFile) {
-      window.ide.readFile(node.path).then((content) => {
-        if (cancelled || !content) return;
-        const resolved = detectCodeSubtype(node.name, content.slice(0, 800));
-        codeTypeCache.set(node.path, resolved);
-        setDetectedType(resolved);
-      }).catch(() => {});
+      window.ide
+        .readFile(node.path)
+        .then((content) => {
+          if (cancelled || !content) return;
+          const resolved = detectCodeSubtype(node.name, content.slice(0, 800));
+          codeTypeCache.set(node.path, resolved);
+          setDetectedType(resolved);
+        })
+        .catch(() => {});
     }
     return () => {
       cancelled = true;
@@ -617,22 +729,68 @@ function TreeNode({
       expandPath === node.path ||
       expandPath.startsWith(`${node.path}/`) ||
       node.path.startsWith(`${expandPath}/`) ||
-      (expandRel && nodeRel && (
-        expandRel === nodeRel ||
-        expandRel.startsWith(`${nodeRel}/`) ||
-        nodeRel.startsWith(`${expandRel}/`)
-      ))
+      (expandRel &&
+        nodeRel &&
+        (expandRel === nodeRel ||
+          expandRel.startsWith(`${nodeRel}/`) ||
+          nodeRel.startsWith(`${expandRel}/`)))
     ) {
       setOpen(true);
     }
   }, [expandPath, node.isDirectory, node.path, locateKey]);
 
-  const gitMeta = getNodeGitStatus(node.path, node.isDirectory, gitEntries, gitIgnoredPaths);
+  const gitMeta = getNodeGitStatus(node.path, node.isDirectory, gitIndex);
 
   const indents = [];
   for (let i = 1; i <= depth; i++) {
     indents.push(<div key={i} className="tree-indent-guide" style={{ left: 16 * i - 4 }} />);
   }
+
+  /**
+   * 定位滚动用的 ref 与 effect。**必须放在下面 `if (node.isDirectory)` 之前**：
+   * 那条分支会提前 return，把这对 hook 留在它后面时，同一个节点从目录变文件
+   * （重命名、拖拽、或列表刷新后复用同一个 key）会让 hook 数量变化，React 直接抛
+   * `Rendered more hooks than during the previous render`，整棵文件树变成错误页。
+   * 目录节点只是拿不到 `nodeRef`（分支里没挂 `ref`），effect 自然什么都不做。
+   */
+  const nodeRef = useRef<HTMLDivElement>(null);
+
+  const activeRel = normalizePathToRel(activePath, undefined);
+  const nodeRel = normalizePathToRel(node.path, undefined);
+  const isThisActive =
+    activePath === node.path ||
+    (activeRel && nodeRel && activeRel === nodeRel) ||
+    (activeRel && activeRel.endsWith('/' + nodeRel)) ||
+    (nodeRel && nodeRel.endsWith('/' + activeRel));
+
+  useEffect(() => {
+    if (isThisActive && nodeRef.current) {
+      const el = nodeRef.current;
+      const container = el.closest('.explorer-tree-body') as HTMLElement | null;
+      if (!container) return;
+
+      const triggerScroll = (smooth: boolean) => {
+        const elRect = el.getBoundingClientRect();
+        const cRect = container.getBoundingClientRect();
+        if (elRect.top < cRect.top || elRect.bottom > cRect.bottom || smooth) {
+          const targetScroll =
+            container.scrollTop + (elRect.top - cRect.top) - cRect.height / 2 + elRect.height / 2;
+          container.scrollTo({
+            top: Math.max(0, targetScroll),
+            behavior: smooth ? 'smooth' : 'auto',
+          });
+        }
+      };
+
+      if (locateKey && locateKey > 0) {
+        const t = setTimeout(() => triggerScroll(true), 100);
+        return () => clearTimeout(t);
+      } else {
+        const t = setTimeout(() => triggerScroll(false), 50);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [isThisActive, locateKey]);
 
   if (node.isDirectory) {
     const stickyTop = (depth - 1) * 24;
@@ -747,7 +905,9 @@ function TreeNode({
         {showCreateHere && (
           <InlineNameInput
             initial=""
-            placeholder={inlineEdit.mode === 'create-file' ? t('tree.fileName') : t('tree.folderName')}
+            placeholder={
+              inlineEdit.mode === 'create-file' ? t('tree.fileName') : t('tree.folderName')
+            }
             depth={depth + 1}
             onSubmit={(name) => onInlineDone(inlineEdit, name)}
             onCancel={onInlineCancel}
@@ -763,8 +923,7 @@ function TreeNode({
                 depth={depth + 1}
                 activePath={activePath}
                 selectedNode={selectedNode}
-                gitEntries={gitEntries}
-                gitIgnoredPaths={gitIgnoredPaths}
+                gitIndex={gitIndex}
                 refreshKey={refreshKey}
                 collapseKey={collapseKey}
                 expandKey={expandKey}
@@ -784,48 +943,6 @@ function TreeNode({
       </div>
     );
   }
-
-  const nodeRef = useRef<HTMLDivElement>(null);
-
-  const activeRel = normalizePathToRel(activePath, undefined);
-  const nodeRel = normalizePathToRel(node.path, undefined);
-  const isThisActive =
-    activePath === node.path ||
-    (activeRel && nodeRel && activeRel === nodeRel) ||
-    (activeRel && activeRel.endsWith('/' + nodeRel)) ||
-    (nodeRel && nodeRel.endsWith('/' + activeRel));
-
-  useEffect(() => {
-    if (isThisActive && nodeRef.current) {
-      const el = nodeRef.current;
-      const container = el.closest('.explorer-tree-body') as HTMLElement | null;
-      if (!container) return;
-
-      const triggerScroll = (smooth: boolean) => {
-        const elRect = el.getBoundingClientRect();
-        const cRect = container.getBoundingClientRect();
-        if (elRect.top < cRect.top || elRect.bottom > cRect.bottom || smooth) {
-          const targetScroll =
-            container.scrollTop +
-            (elRect.top - cRect.top) -
-            cRect.height / 2 +
-            elRect.height / 2;
-          container.scrollTo({
-            top: Math.max(0, targetScroll),
-            behavior: smooth ? 'smooth' : 'auto',
-          });
-        }
-      };
-
-      if (locateKey && locateKey > 0) {
-        const t = setTimeout(() => triggerScroll(true), 100);
-        return () => clearTimeout(t);
-      } else {
-        const t = setTimeout(() => triggerScroll(false), 50);
-        return () => clearTimeout(t);
-      }
-    }
-  }, [isThisActive, locateKey]);
 
   if (showRename) {
     return (
@@ -885,7 +1002,10 @@ function TreeNode({
         {node.name}
       </span>
       {gitMeta?.label && (
-        <span className={`git-file-status-tag ${gitMeta.label.toLowerCase()}`} style={{ color: gitMeta.color }}>
+        <span
+          className={`git-file-status-tag ${gitMeta.label.toLowerCase()}`}
+          style={{ color: gitMeta.color }}
+        >
           <span className="git-status-dot" style={{ backgroundColor: gitMeta.color }} />
           <span>{gitMeta.label}</span>
         </span>
@@ -932,7 +1052,14 @@ function FindInFolderModal({
         if (cancelled) return;
         const base = e.name || basename(e.path);
         if (e.isDirectory) {
-          if (base === '.git' || base === 'node_modules' || base === '.next' || base === 'dist' || base === 'build') continue;
+          if (
+            base === '.git' ||
+            base === 'node_modules' ||
+            base === '.next' ||
+            base === 'dist' ||
+            base === 'build'
+          )
+            continue;
           await walk(e.path, acc);
         } else {
           acc.push(e.path);
@@ -1090,7 +1217,14 @@ function FindInFolderModal({
               }}
               title={t('findInFolder.clear')}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -1147,7 +1281,9 @@ function FindInFolderModal({
         <div className="find-folder-footer">
           <div className="find-folder-meta">
             <span className="find-folder-count">
-              {scanning ? t('findInFolder.scanningShort') : t('findInFolder.count', { n: filtered.length })}
+              {scanning
+                ? t('findInFolder.scanningShort')
+                : t('findInFolder.count', { n: filtered.length })}
             </span>
             <span className="find-folder-tips">
               <kbd>↑↓</kbd> {t('findInFolder.navNav')} <kbd>↵</kbd> {t('findInFolder.navOpen')}{' '}
@@ -1186,7 +1322,11 @@ interface Props extends FileTreeHandlers {
   onShowCurrentRevision?: (path: string) => void;
   onRollbackPath?: (path: string) => void;
   onFileMoved?: (oldPath: string, newPath: string) => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
   refreshKey: number;
 }
 
@@ -1216,6 +1356,14 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
   ref,
 ) {
   const { t } = useI18n();
+  // 建一次索引给整棵树用。依赖只看 entries / ignoredPaths 这两个**数组本身**：
+  // 外层每次 git 刷新都会给出新数组，索引随之重建（这正是需要的）；
+  // 而不相关的状态变化（展开、选中、行内改名）不会改变这两个引用，
+  // 于是整棵树的 O(1) 查表结果保持稳定。
+  const gitIndex = useMemo(
+    () => buildGitStatusIndex(gitStatus?.entries, gitStatus?.ignoredPaths),
+    [gitStatus?.entries, gitStatus?.ignoredPaths],
+  );
   const [roots, setRoots] = useState<FileTreeNode[]>([]);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [collapseKey, setCollapseKey] = useState(0);
@@ -1254,7 +1402,11 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           'success',
         );
       } catch (err) {
-        onShowToast?.(t('tree.moveFail'), err instanceof Error ? err.message : String(err), 'error');
+        onShowToast?.(
+          t('tree.moveFail'),
+          err instanceof Error ? err.message : String(err),
+          'error',
+        );
       }
     },
     [onFileMoved, onShowToast, t],
@@ -1366,7 +1518,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
       if (edit.mode === 'create-file') {
         const path = joinRel(edit.parentPath, name);
         if (await window.ide.pathExists(path)) {
-          window.alert(t('tree.nameExistsFile'));
+          showGlobalToast(t('tree.nameExistsFile'), 'warn');
           return;
         }
         await window.ide.writeFile(path, '');
@@ -1379,7 +1531,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
       } else if (edit.mode === 'create-folder') {
         const path = joinRel(edit.parentPath, name);
         if (await window.ide.pathExists(path)) {
-          window.alert(t('tree.nameExistsFolder'));
+          showGlobalToast(t('tree.nameExistsFolder'), 'warn');
           return;
         }
         await window.ide.mkdir(path);
@@ -1393,7 +1545,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
         const next = joinRel(parent, name);
         if (next === edit.node.path) return;
         if (await window.ide.pathExists(next)) {
-          window.alert(t('tree.targetExists'));
+          showGlobalToast(t('tree.targetExists'), 'warn');
           return;
         }
         await window.ide.renamePath(edit.node.path, next);
@@ -1404,7 +1556,13 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
         if (!edit.node.isDirectory) onOpenFile(next);
       }
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
+      // 新建/重命名失败（权限不足、目标被占用、名字非法）必须让用户看到，
+      // 否则输入框一关就好像什么都没发生，文件却并没有出现。
+      showGlobalToast(
+        t('tree.operationFailed'),
+        'error',
+        err instanceof Error ? err.message : String(err),
+      );
       bump();
     }
   }
@@ -1555,7 +1713,11 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           break;
       }
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : String(err));
+      showGlobalToast(
+        t('tree.operationFailed'),
+        'error',
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
@@ -1605,7 +1767,9 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
       {rootCreate && (
         <InlineNameInput
           initial=""
-          placeholder={inlineEdit.mode === 'create-file' ? t('tree.fileName') : t('tree.folderName')}
+          placeholder={
+            inlineEdit.mode === 'create-file' ? t('tree.fileName') : t('tree.folderName')
+          }
           depth={0}
           onSubmit={(name) => void handleInlineDone(inlineEdit, name)}
           onCancel={() => setInlineEdit(null)}
@@ -1618,8 +1782,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           depth={1}
           activePath={activePath}
           selectedNode={selectedNode}
-          gitEntries={gitStatus?.entries ?? []}
-          gitIgnoredPaths={gitStatus?.ignoredPaths ?? []}
+          gitIndex={gitIndex}
           refreshKey={refreshKey}
           collapseKey={collapseKey}
           expandKey={expandKey}

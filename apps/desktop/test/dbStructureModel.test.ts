@@ -10,7 +10,11 @@ import {
 } from '../src/renderer/src/services/dbStructureModel';
 import { buildAlterTableStatements } from '../src/renderer/src/services/dbDdl';
 
-function col(name: string, type: string, extra: Partial<DatabaseColumnMeta> = {}): DatabaseColumnMeta {
+function col(
+  name: string,
+  type: string,
+  extra: Partial<DatabaseColumnMeta> = {},
+): DatabaseColumnMeta {
   return { cid: 0, name, type, notnull: false, dflt_value: null, pk: false, ...extra };
 }
 
@@ -28,7 +32,9 @@ describe('fromMeta · 元数据 → 可编辑行', () => {
 
   it('自增只能从 EXTRA 读出来，读不到就会在设计表时把 AUTO_INCREMENT 抹掉', () => {
     expect(fromMeta(idMeta).autoIncrement).toBe(true);
-    expect(fromMeta(col('n', 'int', { extra: 'on update CURRENT_TIMESTAMP' })).autoIncrement).toBe(false);
+    expect(fromMeta(col('n', 'int', { extra: 'on update CURRENT_TIMESTAMP' })).autoIncrement).toBe(
+      false,
+    );
   });
 
   it('dflt_value 为 null 时默认值是空串，为 0 时保留 "0"', () => {

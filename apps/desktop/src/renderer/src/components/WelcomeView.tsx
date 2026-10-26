@@ -12,7 +12,11 @@ interface Props {
   onCreateCppProject?: () => void;
   onCreateProject?: (templateId: string) => void;
   onOpenWorkspace?: (targetPath: string, openInNewWindow: boolean, entryFile?: string) => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
   recentWorkspaces?: RecentWorkspaceItem[];
   onSelectRecent?: (item: RecentWorkspaceItem) => void;
   onRemoveRecent?: (path: string) => void;
@@ -31,7 +35,11 @@ const MAX_VISIBLE_RECENT = 8;
  * 超过 30 天退回日期，此时 `toLocaleDateString` 的 locale 也必须跟着走，
  * 否则英文界面里会冒出一个「10月26日」。
  */
-function formatRelativeTime(ts: number, t: (key: string, params?: Record<string, string | number>) => string, locale: Locale): string {
+function formatRelativeTime(
+  ts: number,
+  t: (key: string, params?: Record<string, string | number>) => string,
+  locale: Locale,
+): string {
   if (!ts) return '';
   const now = Date.now();
   const diffSec = Math.floor((now - ts) / 1000);

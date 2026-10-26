@@ -68,7 +68,9 @@ function startLocalNcProxy(remoteHost: string, remotePort: number): Promise<Loca
           // ignore
         }
         if (ncStderr) {
-          electronLog.warn(`[ssh-proxy] nc stderr for ${remoteHost}:${remotePort}: ${ncStderr.trim()}`);
+          electronLog.warn(
+            `[ssh-proxy] nc stderr for ${remoteHost}:${remotePort}: ${ncStderr.trim()}`,
+          );
         }
       };
 
@@ -180,6 +182,7 @@ export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, opName: s
 export class SftpBackend implements WorkspaceBackend {
   readonly kind = 'ssh' as const;
   private dirCache = new Map<string, { entries: DirEntry[]; expireAt: number }>();
+  private realpathCache = new Map<string, { value: string | null; expireAt: number }>();
 
   constructor(
     public root: string,
@@ -195,12 +198,66 @@ export class SftpBackend implements WorkspaceBackend {
     return posixJoin(this.root, relPath);
   }
 
+  /**
+   * 词法归一化 + 符号链接校验。
+   *
+   * `posixJoin` 只处理 `.` 与 `..` 这类**字面**片段，对远端软链是盲的：
+   * 远端工作区里一个指向 `/etc` 的 `link` 会让 `link/hosts` 词法上完全合法。
+   * SFTP 协议本身没有 `openat`/`O_NOFOLLOW`，唯一能拿到的解析结果是 `realpath`，
+   * 所以这里像本地 `assertRealPathInside` 一样逐级上溯到第一个真实存在的祖先。
+   *
+   * `realpath` 失败分两种：路径不存在（正常，继续上溯）和服务器不支持该扩展
+   * （`SSH_FX_OP_UNSUPPORTED`）。后者不能当成「路径不存在」一直上溯到 `/` ——
+   * 那样每次调用都要多花 N 次网络往返，而且最终会用 `/` 当基准误判。
+   * 所以一旦遇到「不支持」，就退回词法校验后的结果（至少 `..` 还是被挡住的）。
+   */
+  async resolveSafe(relPath = '.'): Promise<string> {
+    const abs = this.resolve(relPath);
+    const rootReal = await this.realpathOrNull(this.root);
+    if (rootReal === null) return abs;
+
+    let probe = abs;
+    for (let i = 0; i < 64; i++) {
+      const real = await this.realpathOrNull(probe);
+      if (real !== null) {
+        const rel = toRel(rootReal, real);
+        if (rel !== '.' && (rel.startsWith('..') || rel.startsWith('/'))) {
+          throw new Error(`[ssh] 路径经符号链接逃出工作区: ${relPath}`);
+        }
+        return abs;
+      }
+      const parent = probe.replace(/\/[^/]*$/, '') || '/';
+      if (parent === probe) break;
+      probe = parent;
+    }
+    return abs;
+  }
+
+  private realpathOrNull(p: string): Promise<string | null> {
+    const hit = this.realpathCache.get(p);
+    if (hit && hit.expireAt > Date.now()) return Promise.resolve(hit.value);
+    return new Promise((resolve) => {
+      try {
+        this.sftp.realpath(p, (err, absPath) => {
+          const value = err || !absPath ? null : absPath.replace(/\/$/, '') || '/';
+          // 缓存（含否定结果）：解析软链每次都是一个网络往返，
+          // 而文件树遍历 / 增量索引会在同一批目录上反复问同一个问题。
+          // TTL 取得很短，新建目录后最多 20 秒内就会重新解析。
+          this.realpathCache.set(p, { value, expireAt: Date.now() + 20_000 });
+          resolve(value);
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
   toRel(absOrRemotePath: string): string {
     return toRel(this.root, absOrRemotePath);
   }
 
   async listDir(relPath = '.'): Promise<DirEntry[]> {
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     const cached = this.dirCache.get(abs);
     if (cached && cached.expireAt > Date.now()) {
       return cached.entries;
@@ -257,7 +314,7 @@ export class SftpBackend implements WorkspaceBackend {
    * 没有它，SSH 工作区的每次增量索引都等于一次全量重读。
    */
   async stat(relPath: string): Promise<FileStat | null> {
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     const op = new Promise<FileStat | null>((resolve) => {
       this.sftp.stat(abs, (err, stats) => {
         if (err || !stats) return resolve(null);
@@ -272,14 +329,16 @@ export class SftpBackend implements WorkspaceBackend {
   }
 
   async readFile(relPath: string): Promise<string> {
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     const op = (async () => {
       // 先检查文件大小
       const stat = await new Promise<{ size: number }>((resolve, reject) => {
         this.sftp.stat(abs, (err, stats) => {
           if (err) {
             const isNotFound = (err as any).code === 2 || err.message?.includes('No such file');
-            reject(new Error(isNotFound ? `文件不存在: ${relPath}` : `无法获取文件信息: ${err.message}`));
+            reject(
+              new Error(isNotFound ? `文件不存在: ${relPath}` : `无法获取文件信息: ${err.message}`),
+            );
           } else {
             resolve(stats);
           }
@@ -312,7 +371,9 @@ export class SftpBackend implements WorkspaceBackend {
           });
           stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
         } catch (err) {
-          reject(new Error(`读取远程文件异常: ${err instanceof Error ? err.message : String(err)}`));
+          reject(
+            new Error(`读取远程文件异常: ${err instanceof Error ? err.message : String(err)}`),
+          );
         }
       });
     })();
@@ -339,7 +400,7 @@ export class SftpBackend implements WorkspaceBackend {
   }
 
   async readFileBuffer(relPath: string): Promise<Buffer> {
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     const op = (async () => {
       // 检查文件大小
       const stat = await new Promise<{ size: number }>((resolve, reject) => {
@@ -375,7 +436,9 @@ export class SftpBackend implements WorkspaceBackend {
           });
           stream.on('end', () => resolve(Buffer.concat(chunks)));
         } catch (err) {
-          reject(new Error(`读取远程文件异常: ${err instanceof Error ? err.message : String(err)}`));
+          reject(
+            new Error(`读取远程文件异常: ${err instanceof Error ? err.message : String(err)}`),
+          );
         }
       });
     })();
@@ -385,7 +448,7 @@ export class SftpBackend implements WorkspaceBackend {
 
   async writeFile(relPath: string, content: string): Promise<void> {
     this.dirCache.clear();
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     const op = (async () => {
       const dir = abs.includes('/') ? abs.slice(0, abs.lastIndexOf('/')) || '/' : '/';
       await this.mkdirp(dir);
@@ -434,13 +497,13 @@ export class SftpBackend implements WorkspaceBackend {
 
   async mkdir(relPath: string): Promise<void> {
     this.dirCache.clear();
-    await withTimeout(this.mkdirp(this.resolve(relPath)), 10000, `mkdir(${relPath})`);
+    await withTimeout(this.mkdirp(await this.resolveSafe(relPath)), 10000, `mkdir(${relPath})`);
   }
 
   async exists(relPath: string): Promise<boolean> {
     if (!this.sftp) return false;
     try {
-      const abs = this.resolve(relPath);
+      const abs = await this.resolveSafe(relPath);
       const op = new Promise<boolean>((resolve) => {
         this.sftp.stat(abs, (err) => resolve(!err));
       });
@@ -452,8 +515,8 @@ export class SftpBackend implements WorkspaceBackend {
 
   async rename(fromRel: string, toRel: string): Promise<void> {
     this.dirCache.clear();
-    const from = this.resolve(fromRel);
-    const to = this.resolve(toRel);
+    const from = await this.resolveSafe(fromRel);
+    const to = await this.resolveSafe(toRel);
     const dir = to.includes('/') ? to.slice(0, to.lastIndexOf('/')) || '/' : '/';
     await this.mkdirp(dir);
     const op = new Promise<void>((resolve, reject) => {
@@ -464,7 +527,7 @@ export class SftpBackend implements WorkspaceBackend {
 
   async remove(relPath: string): Promise<void> {
     this.dirCache.clear();
-    const abs = this.resolve(relPath);
+    const abs = await this.resolveSafe(relPath);
     const op = (async () => {
       const isDir = await new Promise<boolean>((resolve, reject) => {
         this.sftp.stat(abs, (err, stats) => {
@@ -514,8 +577,8 @@ export class SftpBackend implements WorkspaceBackend {
 
   async copy(fromRel: string, toRel: string): Promise<void> {
     this.dirCache.clear();
-    const from = this.resolve(fromRel);
-    const to = this.resolve(toRel);
+    const from = await this.resolveSafe(fromRel);
+    const to = await this.resolveSafe(toRel);
     const op = (async () => {
       const isDir = await new Promise<boolean>((resolve, reject) => {
         this.sftp.stat(from, (err, stats) => {
@@ -717,7 +780,10 @@ export class SshSessionManager {
   private readonly profilesPath: string;
   private readonly live = new Map<number, LiveSsh>();
   private readonly browseLive = new Map<number, LiveSsh>();
-  private readonly portForwards = new Map<string, { server: net.Server; localPort: number; remotePort: number }>();
+  private readonly portForwards = new Map<
+    string,
+    { server: net.Server; localPort: number; remotePort: number }
+  >();
 
   constructor(
     private readonly resolveSession: () => WindowSession,
@@ -1281,7 +1347,12 @@ export class SshSessionManager {
     // 只有在未提供明确密码且未提供具体私钥时，才尝试使用系统 SSH_AUTH_SOCK
     // 避免在 GUI 应用中向无效或无权限的 Apple launchd agent socket 发起查询导致认证冲突或被拦截
     let agentSocket: string | undefined;
-    if (!req.password && !privateKey && process.env.SSH_AUTH_SOCK && fsSync.existsSync(process.env.SSH_AUTH_SOCK)) {
+    if (
+      !req.password &&
+      !privateKey &&
+      process.env.SSH_AUTH_SOCK &&
+      fsSync.existsSync(process.env.SSH_AUTH_SOCK)
+    ) {
       agentSocket = process.env.SSH_AUTH_SOCK;
     }
 
@@ -1327,12 +1398,10 @@ export class SshSessionManager {
 
         // 在 macOS 平台，当连接局域网遇到网络不可达、连接重置或握手前断开时（通常受 macOS 15 Local Network 隐私机制或 TCC 缓存阻断），
         // 自动利用系统内置且拥有完整原生网络权限的 /usr/bin/nc 建立本地回环 TCP 代理进行无缝重连自愈
-        if (
-          !isAuthError &&
-          process.platform === 'darwin' &&
-          fsSync.existsSync('/usr/bin/nc')
-        ) {
-          electronLog.info(`[ssh] direct connect failed (${rawMsg}), retrying via local loopback bridge (/usr/bin/nc)...`);
+        if (!isAuthError && process.platform === 'darwin' && fsSync.existsSync('/usr/bin/nc')) {
+          electronLog.info(
+            `[ssh] direct connect failed (${rawMsg}), retrying via local loopback bridge (/usr/bin/nc)...`,
+          );
           try {
             client.end();
           } catch {
@@ -1567,7 +1636,9 @@ export class SshSessionManager {
               try {
                 const childAbs = abs === '/' ? `/${e.filename}` : `${abs}/${e.filename}`;
                 const stat = await new Promise<{ mode: number }>((resStat, rejStat) => {
-                  live.sftp.stat(childAbs, (statErr, s) => (statErr ? rejStat(statErr) : resStat(s)));
+                  live.sftp.stat(childAbs, (statErr, s) =>
+                    statErr ? rejStat(statErr) : resStat(s),
+                  );
                 });
                 isDir = (stat.mode & 0o170000) === 0o040000;
               } catch {

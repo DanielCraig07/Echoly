@@ -48,7 +48,10 @@
   height: 100%;
   background: rgba(255, 255, 255, 0.28);
   box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-  transition: background 0.15s ease, width 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background 0.15s ease,
+    width 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 [data-theme='light'] .terminal-split-resizer-line {
@@ -134,7 +137,8 @@
 }
 
 @keyframes pulsePortDot {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.6;
     transform: scale(0.9);
   }

@@ -172,16 +172,10 @@ function InOutExecutionBox({
               <span className="tool-inout-tag">IN</span>
               {inExpanded ? (
                 <span className="tool-inout-meta">
-                  {inLines.length > 1
-                    ? t('chat.inLines', { n: inLines.length })
-                    : t('chat.inFull')}
+                  {inLines.length > 1 ? t('chat.inLines', { n: inLines.length }) : t('chat.inFull')}
                 </span>
               ) : (
-                <div
-                  className={`tool-inout-content${
-                    inCanToggle ? ' collapsed-single' : ''
-                  }`}
-                >
+                <div className={`tool-inout-content${inCanToggle ? ' collapsed-single' : ''}`}>
                   {inTrimmed}
                 </div>
               )}
@@ -244,9 +238,7 @@ function InOutExecutionBox({
 
           {/* 展开后作为独立的全宽代码块撑满整张卡片，避免挤在单行狭窄区域 */}
           {inExpanded && inCanToggle && (
-            <div className="tool-inout-body tool-inout-in-body expanded-scroll">
-              {inTrimmed}
-            </div>
+            <div className="tool-inout-body tool-inout-in-body expanded-scroll">{inTrimmed}</div>
           )}
         </div>
       )}
@@ -269,9 +261,7 @@ function InOutExecutionBox({
           <div className="tool-inout-header-left">
             <span className="tool-inout-tag">OUT</span>
             {outLines.length > 0 && (
-              <span className="tool-inout-meta">
-                {t('chat.outLines', { n: outLines.length })}
-              </span>
+              <span className="tool-inout-meta">{t('chat.outLines', { n: outLines.length })}</span>
             )}
           </div>
         </div>
@@ -471,7 +461,8 @@ export function WorkedForGroup({
                 : `line ${args.start_line}`;
           } else if (typeof args.offset === 'number') {
             const limit = typeof args.limit === 'number' ? args.limit : 0;
-            rangeStr = limit > 0 ? `lines ${args.offset}-${args.offset + limit}` : `line ${args.offset}`;
+            rangeStr =
+              limit > 0 ? `lines ${args.offset}-${args.offset + limit}` : `line ${args.offset}`;
           }
 
           items.push({
@@ -600,7 +591,9 @@ export function WorkedForGroup({
     );
   }, [stepItems]);
   const isWaitingTerminal = Boolean(
-    isStreaming && runningTerminalStep && (runningTerminalStep.badge === 'Bash' || runningTerminalStep.badge === 'Tool'),
+    isStreaming &&
+    runningTerminalStep &&
+    (runningTerminalStep.badge === 'Bash' || runningTerminalStep.badge === 'Tool'),
   );
 
   if (stepItems.length === 0 && !isStreaming) return null;
@@ -737,7 +730,8 @@ export function WorkedForGroup({
                   ({formatDuration(currentStepLiveDuration || 1)}
                   {contextUsage?.usedTokens
                     ? ` · ${formatTokens(contextUsage.usedTokens)} tokens`
-                    : ''})
+                    : ''}
+                  )
                 </span>
               </div>
               {liveThinking && (

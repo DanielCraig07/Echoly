@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CORE_DICT, DICT, DICT_PARTS, translate, translateSegments, translateWith } from '../src/renderer/src/i18n';
+import {
+  CORE_DICT,
+  DICT,
+  DICT_PARTS,
+  translate,
+  translateSegments,
+  translateWith,
+} from '../src/renderer/src/i18n';
 
 /**
  * i18n 字典的完整性。
@@ -32,8 +39,16 @@ describe('translateWith', () => {
   it('reorders arguments for languages with a different word order', () => {
     // 「在 3 个文件中找到了 12 个结果」 vs "Found 12 results in 3 files"：
     // 数字出现的顺序是反的，所以整句必须进字典而不是拼接
-    const zh = translateWith('search.resultsSummary', 'zh', { files: 3, matches: 12, mode: '列表模式' });
-    const en = translateWith('search.resultsSummary', 'en', { files: 3, matches: 12, mode: 'list' });
+    const zh = translateWith('search.resultsSummary', 'zh', {
+      files: 3,
+      matches: 12,
+      mode: '列表模式',
+    });
+    const en = translateWith('search.resultsSummary', 'en', {
+      files: 3,
+      matches: 12,
+      mode: 'list',
+    });
     expect(zh).toBe('在 3 个文件中找到了 12 个结果 (列表模式)');
     expect(en).toBe('Found 12 results in 3 files (list)');
   });

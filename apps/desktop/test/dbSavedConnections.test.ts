@@ -2,7 +2,12 @@ import { describe, expect, it, afterAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { DatabaseService, makeSavedId, connectionNeedsPassword, type DbWorkspaceIo } from '../src/main/db/databaseService';
+import {
+  DatabaseService,
+  makeSavedId,
+  connectionNeedsPassword,
+  type DbWorkspaceIo,
+} from '../src/main/db/databaseService';
 
 /**
  * 指向真实临时目录的假工作区（与 databaseService.test.ts 同款，这里独立一份避免跨文件耦合）。
@@ -42,12 +47,12 @@ describe('makeSavedId · 稳定 id 派生', () => {
     expect(makeSavedId({ type: 'mysql', host: '10.0.0.2', port: 3306, database: 'demo' })).not.toBe(
       base,
     );
-    expect(makeSavedId({ type: 'mysql', host: '127.0.0.1', port: 3307, database: 'demo' })).not.toBe(
-      base,
-    );
-    expect(makeSavedId({ type: 'mysql', host: '127.0.0.1', port: 3306, database: 'other' })).not.toBe(
-      base,
-    );
+    expect(
+      makeSavedId({ type: 'mysql', host: '127.0.0.1', port: 3307, database: 'demo' }),
+    ).not.toBe(base);
+    expect(
+      makeSavedId({ type: 'mysql', host: '127.0.0.1', port: 3306, database: 'other' }),
+    ).not.toBe(base);
   });
 
   it('sqlite 用文件路径派生，且同一路径的 / 与 \\ 视为同一个库', () => {
@@ -61,7 +66,9 @@ describe('makeSavedId · 稳定 id 派生', () => {
 
   it('缺省 type 时按 sqlite 处理，不会抛异常', () => {
     expect(() => makeSavedId({ path: '/tmp/x.db' })).not.toThrow();
-    expect(makeSavedId({ path: '/tmp/x.db' })).toBe(makeSavedId({ type: 'sqlite', path: '/tmp/x.db' }));
+    expect(makeSavedId({ path: '/tmp/x.db' })).toBe(
+      makeSavedId({ type: 'sqlite', path: '/tmp/x.db' }),
+    );
   });
 });
 

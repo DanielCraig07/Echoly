@@ -1,6 +1,10 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n, translateSegments } from '../i18n';
 
 export interface SwitchWorkspaceTarget {
@@ -40,7 +44,11 @@ export function SwitchWorkspaceModal({
     : typeof target === 'string'
       ? {
           path: target,
-          name: target.split(/[/\\\\]/).filter(Boolean).pop() || target,
+          name:
+            target
+              .split(/[/\\\\]/)
+              .filter(Boolean)
+              .pop() || target,
           kind:
             target.startsWith('ssh ') ||
             target.startsWith('ssh:') ||
@@ -78,7 +86,12 @@ export function SwitchWorkspaceModal({
   if (!open || !targetObj || typeof document === 'undefined') return null;
 
   const folderName =
-    targetObj.name || targetObj.path.split(/[/\\\\]/).filter(Boolean).pop() || targetObj.path;
+    targetObj.name ||
+    targetObj.path
+      .split(/[/\\\\]/)
+      .filter(Boolean)
+      .pop() ||
+    targetObj.path;
   const isSsh = targetObj.kind === 'ssh' || !!targetObj.sshServer;
 
   const safeOverlay = createSafeOverlayHandlers(onClose);
@@ -218,10 +231,16 @@ export function SwitchWorkspaceModal({
               </div>
               <div className="switch-workspace-option-content">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="switch-workspace-option-title">{t('workspace.openHereOption')}</span>
-                  <kbd className="cmd-mini-kbd" style={{ fontSize: 10 }}>↵ Enter</kbd>
+                  <span className="switch-workspace-option-title">
+                    {t('workspace.openHereOption')}
+                  </span>
+                  <kbd className="cmd-mini-kbd" style={{ fontSize: 10 }}>
+                    ↵ Enter
+                  </kbd>
                 </div>
-                <div className="switch-workspace-option-desc">{t('workspace.openHereOptionDesc')}</div>
+                <div className="switch-workspace-option-desc">
+                  {t('workspace.openHereOptionDesc')}
+                </div>
               </div>
               <div className="switch-workspace-option-arrow">
                 <svg
@@ -264,10 +283,16 @@ export function SwitchWorkspaceModal({
               </div>
               <div className="switch-workspace-option-content">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="switch-workspace-option-title">{t('workspace.openNewOption')}</span>
-                  <kbd className="cmd-mini-kbd" style={{ fontSize: 10 }}>⌘/Ctrl + ↵</kbd>
+                  <span className="switch-workspace-option-title">
+                    {t('workspace.openNewOption')}
+                  </span>
+                  <kbd className="cmd-mini-kbd" style={{ fontSize: 10 }}>
+                    ⌘/Ctrl + ↵
+                  </kbd>
                 </div>
-                <div className="switch-workspace-option-desc">{t('workspace.openNewOptionDesc')}</div>
+                <div className="switch-workspace-option-desc">
+                  {t('workspace.openNewOptionDesc')}
+                </div>
               </div>
               <div className="switch-workspace-option-arrow">
                 <svg

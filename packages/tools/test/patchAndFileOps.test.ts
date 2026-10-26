@@ -76,7 +76,9 @@ describe('apply_patch', () => {
     );
     expect(res.isError).toBe(true);
     expect(res.content).toContain('not unique');
-    expect(await fs.readFile(path.join(root, 'a.txt'), 'utf8')).toBe('return null;\nreturn null;\n');
+    expect(await fs.readFile(path.join(root, 'a.txt'), 'utf8')).toBe(
+      'return null;\nreturn null;\n',
+    );
   });
 
   it('replaces every occurrence when replace_all is set', async () => {
@@ -149,11 +151,7 @@ describe('delete_path', () => {
 
   it('deletes a non-empty directory with recursive: true', async () => {
     const { ctx, root } = await makeCtx({ 'dir/a.txt': 'x' });
-    const res = await executeTool(
-      'delete_path',
-      parse({ path: 'dir', recursive: true }),
-      ctx,
-    );
+    const res = await executeTool('delete_path', parse({ path: 'dir', recursive: true }), ctx);
     expect(res.isError).toBeFalsy();
     await expect(fs.stat(path.join(root, 'dir'))).rejects.toThrow();
   });

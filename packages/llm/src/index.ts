@@ -14,8 +14,10 @@ import { AnthropicClient, formatLlmErrorMessage } from './anthropic';
 import {
   Semaphore,
   defaultRequestGate,
+  discardResponse,
   isRetryableNetworkError,
   isRetryableStatus,
+  retryAfterMs,
   withRetry,
 } from './requestControl';
 import {
@@ -199,16 +201,143 @@ function usageFromApi(usage?: {
   return { promptTokens, completionTokens, totalTokens };
 }
 
-/** Rough heuristic when the gateway does not return usage. */
-export function estimateTokensFromMessages(messages: ChatMessage[]): number {
-  let chars = 0;
-  for (const m of messages) {
-    if (typeof m.content === 'string') chars += m.content.length;
-    if (m.name) chars += m.name.length;
-    if (m.tool_calls) chars += JSON.stringify(m.tool_calls).length;
-    if (m.tool_call_id) chars += m.tool_call_id.length;
+/** 把一行 SSE `data:` 解析成 chunk；不是数据行、是 `[DONE]`、或 JSON 坏了都返回 null。 */
+function parseSseDataLine(rawLine: string): StreamChunk | null {
+  const line = rawLine.trim();
+  if (!line || !line.startsWith('data:')) return null;
+  const payload = line.slice(5).trim();
+  if (!payload || payload === '[DONE]') return null;
+  try {
+    return JSON.parse(payload) as StreamChunk;
+  } catch {
+    return null;
   }
-  return Math.max(1, Math.ceil(chars / 4));
+}
+
+/**
+ * 从 chunk 里取出流内错误。
+ *
+ * 有些网关**不断开连接**，而是在生成中途发一条 `{"error":{...}}`（或
+ * `{"type":"error","message":...}`）然后正常 EOF。不认它的话，这次调用会被当成
+ * 「模型输出为空」正常返回 —— 用户看到一个什么都没做的回合，日志里没有任何异常。
+ * 这里只负责把错误**取出来**，由调用方决定是抛还是重试。
+ */
+function extractStreamError(chunk: unknown): string | null {
+  if (!chunk || typeof chunk !== 'object') return null;
+  const obj = chunk as Record<string, unknown>;
+
+  const err = obj.error;
+  if (err) {
+    if (typeof err === 'string' && err.trim()) return `流式响应中返回了错误: ${err.trim()}`;
+    if (typeof err === 'object') {
+      const e = err as Record<string, unknown>;
+      const msg = e.message ?? e.detail ?? e.code;
+      if (typeof msg === 'string' && msg.trim()) {
+        // 带上 code：网关的错误码（如 context_length_exceeded）比一句人话更能定位问题
+        const code = typeof e.code === 'string' && e.code !== msg ? ` (${e.code})` : '';
+        return `流式响应中返回了错误: ${msg.trim()}${code}`;
+      }
+      return `流式响应中返回了错误: ${JSON.stringify(err).slice(0, 300)}`;
+    }
+  }
+
+  // Anthropic / 部分兼容层用 type: 'error'
+  if (obj.type === 'error') {
+    const e = (obj.error ?? obj) as Record<string, unknown>;
+    const msg = e.message ?? obj.message;
+    if (typeof msg === 'string' && msg.trim()) {
+      return `流式响应中返回了错误: ${msg.trim()}`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 无 usage 时的 token 粗估。
+ *
+ * 估算值唯一的用途是**决定要不要压缩上下文**，所以它的错误方向必须是「估多」：
+ * 估少了 → 压缩不触发 → 请求超过窗口 → 后端 400，用户看到的是「莫名其妙的报错」；
+ * 估多了 → 提前压缩一次，浪费一点 token 但功能正常。
+ *
+ * 因此这里刻意不精确，但必须**不遗漏大块内容**。早先只数 `content` 与 tool_calls 的
+ * 字符数，于是：
+ * - 图片 / PDF 附件一个字节都不算 —— 而它们恰恰是单条消息里最大的那部分
+ *   （一张 1MB 的图 base64 后约 133 万字符），带图会话永远等不到压缩；
+ * - 思考链（`reasoning_content` / `thinking`）不算 —— 服务端按它计费并占用窗口；
+ * - 中文按 1/4 字符估 —— 中文实际接近一字一 token，混排文档会低估约 4 倍。
+ */
+export function estimateTokensFromMessages(messages: ChatMessage[]): number {
+  let tokens = 0;
+
+  const addText = (text: string | null | undefined): void => {
+    if (!text) return;
+    tokens += textToTokens(text);
+  };
+
+  for (const m of messages) {
+    // 每条消息有固定的角色/分隔开销，量小但条数多时不能忽略。
+    tokens += 4;
+
+    if (typeof m.content === 'string') addText(m.content);
+    addText(m.name);
+    addText(m.tool_call_id);
+    addText(m.reasoning_content);
+    if (m.tool_calls) addText(JSON.stringify(m.tool_calls));
+
+    for (const block of m.thinking ?? []) addText(block.thinking);
+
+    // 附件按 base64 长度折算：多模态模型对图像的计费与像素面积相关，
+    // 但不解码就拿不到尺寸，而 base64 长度与原始字节成正比（×4/3），
+    // 是**不需要解码**的前提下能拿到的最好代理量。
+    for (const img of m.images ?? []) tokens += dataUrlTokens(img.dataUrl);
+    for (const doc of m.documents ?? []) tokens += dataUrlTokens(doc.dataUrl);
+  }
+
+  return Math.max(1, tokens);
+}
+
+/** 文本 → token 数。CJK / 全角标点按一字一 token，其余按 4 字符一 token。 */
+function textToTokens(text: string): number {
+  // 粗略圈定 CJK 与常见全角标点：这些字符在 BPE 词表里基本都是独立或近独立的 token，
+  // 用「4 字符一 token」会把中文段落低估到实际值的四分之一。
+  const cjk = countCjk(text);
+  const rest = text.length - cjk;
+  return cjk + Math.ceil(rest / 4);
+}
+
+function countCjk(text: string): number {
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (
+      (c >= 0x3040 && c <= 0x30ff) || // 日文假名
+      (c >= 0x3400 && c <= 0x4dbf) || // 扩展 A
+      (c >= 0x4e00 && c <= 0x9fff) || // 基本区
+      (c >= 0xf900 && c <= 0xfaff) || // 兼容表意
+      (c >= 0xff00 && c <= 0xff60) || // 全角
+      (c >= 0x3000 && c <= 0x303f) // CJK 标点
+    ) {
+      n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * `data:image/png;base64,xxxx` → 近似 token 数。
+ *
+ * base64 每 4 字符编码 3 字节，所以字节数 = 字符数 × 3/4。图像 token 与字节数
+ * 大致同阶（不同厂商系数不同），这里取 1 token / 750 字节，是一个**偏保守**
+ * （即偏大）的折中值 —— 方向与整个函数一致。
+ *
+ * 非 data URL（裸 base64 或外部链接）按同一规则处理，取不到前缀就整串当 base64。
+ */
+function dataUrlTokens(dataUrl: string): number {
+  const comma = dataUrl.indexOf(',');
+  const payload = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+  const bytes = Math.ceil((payload.length * 3) / 4);
+  return Math.ceil(bytes / 750) + 85; // +85：单张图固定的分块开销量级
 }
 
 /**
@@ -350,6 +479,13 @@ export class LlmClient {
       tool_choice: params.tools?.length ? 'auto' : undefined,
     };
 
+    // 流式请求默认不带 usage（OpenAI 协议的默认行为），于是上下文用量只能靠估算。
+    // 打开这个开关后，最后一个 chunk 里会带真实 token 数 —— 上下文压缩的触发阈值
+    // 就能建立在真实值上，而不是一个偏保守的估算。
+    // 挂在 `includeSamplingGuards` 这一层，是因为它同样是「网关不一定认识的增强字段」：
+    // 400 降级时与 max_tokens 一起摘掉，避免某个老网关卡在这一个字段上整个用不了。
+    if (stream && includeSamplingGuards) body.stream_options = { include_usage: true };
+
     if (includeReasoning) this.applyReasoningControls(body, params);
     if (includeSamplingGuards) this.applySamplingGuards(body, params);
     return body as ChatCompletionRequest;
@@ -455,7 +591,15 @@ export class LlmClient {
         if (!res) return false;
         return isRetryableStatus(res.status);
       },
-      { maxAttempts: this.maxRetries, signal },
+      {
+        maxAttempts: this.maxRetries,
+        signal,
+        // 网关在 429/503 上给 Retry-After 时必须听它的：我们自己的指数退避是猜的，
+        // 猜短了会在限流窗口内反复撞墙，把一次限流拖成一段时间的持续 429。
+        delayHintMs: (res) => retryAfterMs(res),
+        // 丢掉一个不打算读的响应必须 cancel 它的 body，否则连接一直被 undici 占着。
+        dispose: (res) => discardResponse(res),
+      },
     );
 
     const res = outcome.ok
@@ -478,7 +622,8 @@ export class LlmClient {
     let retry: () => Promise<Response>;
     if (blamesReasoning && !blamesSampling) retry = () => send(true, false);
     else if (blamesSampling && !blamesReasoning) retry = () => send(false, true);
-    else if (blamesReasoning || blamesSampling || genericUnknownField) retry = () => send(false, false);
+    else if (blamesReasoning || blamesSampling || genericUnknownField)
+      retry = () => send(false, false);
     else {
       // body 已被消费，重新包一个等价响应交回调用方去报错
       return new Response(text, { status: res.status, statusText: res.statusText });
@@ -488,7 +633,12 @@ export class LlmClient {
     const degraded = await withRetry(
       retry,
       (r, err) => (err ? isRetryableNetworkError(err) : !!r && isRetryableStatus(r.status)),
-      { maxAttempts: this.maxRetries, signal },
+      {
+        maxAttempts: this.maxRetries,
+        signal,
+        delayHintMs: (r) => retryAfterMs(r),
+        dispose: (r) => discardResponse(r),
+      },
     );
     if (degraded.ok) return degraded.value;
     throw degraded.lastError;
@@ -728,7 +878,26 @@ export class LlmClient {
         }
 
         const { done, value } = readResult;
-        if (done) break;
+        if (done) {
+          // 流结束时 buffer 里可能还留着最后一行（没有以换行符收尾的数据）。
+          // 不处理它就会**静默丢掉**最后一个 chunk —— 而 `stream_options.include_usage`
+          // 恰好让服务端把 usage 单独放在末尾一个只有几行的 chunk 里，
+          // 于是「最后那条」正好是最不该丢的一条。MCP 的 LineJsonRpcDecoder 早在
+          // flush() 里做了这件事，这里对齐。
+          buffer += decoder.decode();
+          for (const rawLine of buffer.split(/\r?\n/)) {
+            const chunk = parseSseDataLine(rawLine);
+            if (!chunk) continue;
+            const streamErr = extractStreamError(chunk);
+            if (streamErr) throw new Error(streamErr);
+            const parsedUsage = usageFromApi(chunk.usage);
+            if (parsedUsage) usage = parsedUsage;
+            const chunkFinish = chunk.choices?.[0]?.finish_reason;
+            if (chunkFinish) finishReason = chunkFinish;
+          }
+          buffer = '';
+          break;
+        }
 
         if (!receivedFirstChunk) {
           receivedFirstChunk = true;
@@ -757,6 +926,11 @@ export class LlmClient {
           } catch {
             continue;
           }
+          // 流内错误事件：网关可能不断开连接，只发一条 error chunk 然后正常 EOF。
+          // 认它，才不会把一次失败当成「模型什么都没说」。
+          const streamErr = extractStreamError(chunk);
+          if (streamErr) throw new Error(streamErr);
+
           const parsedUsage = usageFromApi(chunk.usage);
           if (parsedUsage) usage = parsedUsage;
 

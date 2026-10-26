@@ -1,6 +1,10 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n } from '../i18n';
 
 interface Props {
@@ -15,7 +19,10 @@ const STORAGE_LAST_PARENT_DIR = 'echoly:last-clone-parent-dir';
  * 从 Git URL 中智能解析仓库名称
  */
 export function extractRepoName(url: string): string {
-  const clean = url.trim().replace(/\.git\/?$/i, '').replace(/\/+$/, '');
+  const clean = url
+    .trim()
+    .replace(/\.git\/?$/i, '')
+    .replace(/\/+$/, '');
   const match = clean.match(/[:/]([^/:]+)$/);
   return match ? match[1] : '';
 }
@@ -90,7 +97,10 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
         e.preventDefault();
         e.stopPropagation();
         if (!busy) onClose();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.target instanceof HTMLInputElement)) {
+      } else if (
+        e.key === 'Enter' &&
+        (e.metaKey || e.ctrlKey || e.target instanceof HTMLInputElement)
+      ) {
         if (!busy && url.trim() && parentDir.trim()) {
           e.preventDefault();
           void clone();
@@ -120,7 +130,14 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
   const handlePasteClipboard = useCallback(async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (text && (text.includes('github.com') || text.includes('gitlab') || text.includes('gitee') || text.endsWith('.git') || text.startsWith('git@'))) {
+      if (
+        text &&
+        (text.includes('github.com') ||
+          text.includes('gitlab') ||
+          text.includes('gitee') ||
+          text.endsWith('.git') ||
+          text.startsWith('git@'))
+      ) {
         setUrl(text.trim());
       }
     } catch {}
@@ -188,7 +205,16 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
               }}
             >
               {/* Git Logo SVG */}
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <circle cx="18" cy="18" r="3" />
                 <circle cx="6" cy="6" r="3" />
                 <circle cx="6" cy="18" r="3" />
@@ -197,7 +223,16 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
               </svg>
             </div>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-bright, #fff)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: 'var(--text-bright, #fff)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
                 <span>{t('clone.title')}</span>
                 <span
                   style={{
@@ -225,7 +260,16 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
             disabled={busy}
             title={t('common.closeEsc')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -245,9 +289,15 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                       fontSize: 10,
                       padding: '0 5px',
                       borderRadius: 3,
-                      background: protocol === 'SSH' ? 'rgba(168, 85, 247, 0.16)' : 'rgba(56, 189, 248, 0.16)',
+                      background:
+                        protocol === 'SSH'
+                          ? 'rgba(168, 85, 247, 0.16)'
+                          : 'rgba(56, 189, 248, 0.16)',
                       color: protocol === 'SSH' ? '#c084fc' : '#38bdf8',
-                      border: protocol === 'SSH' ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid rgba(56, 189, 248, 0.3)',
+                      border:
+                        protocol === 'SSH'
+                          ? '1px solid rgba(168, 85, 247, 0.3)'
+                          : '1px solid rgba(56, 189, 248, 0.3)',
                     }}
                   >
                     {protocol}
@@ -267,7 +317,14 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
 
             <div className="clone-repo-input-wrapper">
               <span className="clone-repo-input-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                   <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                 </svg>
@@ -285,7 +342,15 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
             </div>
 
             {/* 常用托管平台辅助快捷前缀 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginTop: 2,
+                flexWrap: 'wrap',
+              }}
+            >
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('clone.presetHint')}</span>
               <button
                 type="button"
@@ -312,7 +377,16 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 GitLab
               </button>
               {repoName && (
-                <span style={{ fontSize: 11, color: '#38bdf8', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: '#38bdf8',
+                    marginLeft: 'auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
                   <span>✓</span> {t('clone.projectNameLabel')} <strong>{repoName}</strong>
                 </span>
               )}
@@ -333,7 +407,14 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div className="clone-repo-input-wrapper" style={{ flex: 1 }}>
                 <span className="clone-repo-input-icon">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                   </svg>
                 </span>
@@ -369,7 +450,14 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                   transition: 'all 0.15s ease',
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg>
                 {t('clone.browse')}
@@ -379,11 +467,21 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
             {/* 目标工作区路径实时预览卡片 */}
             {resolvedTargetPath && (
               <div className="clone-repo-preview-card" style={{ marginTop: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#38bdf8', fontWeight: 600 }}>{t('clone.previewTitle')}</span>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <span style={{ color: '#38bdf8', fontWeight: 600 }}>
+                    {t('clone.previewTitle')}
+                  </span>
                   <span style={{ fontSize: 10.5, color: '#34d399' }}>{t('clone.previewAuto')}</span>
                 </div>
-                <div style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-bright, #fff)', wordBreak: 'break-all' }}>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-mono, monospace)',
+                    color: 'var(--text-bright, #fff)',
+                    wordBreak: 'break-all',
+                  }}
+                >
                   {resolvedTargetPath}
                 </div>
               </div>
@@ -401,7 +499,14 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
 
             <div className="clone-repo-input-wrapper">
               <span className="clone-repo-input-icon">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="6" y1="3" x2="6" y2="15" />
                   <circle cx="18" cy="6" r="3" />
                   <circle cx="6" cy="18" r="3" />
@@ -421,7 +526,9 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
 
             {/* 常用分支快捷按钮 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('clone.branchPresetHint')}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                {t('clone.branchPresetHint')}
+              </span>
               {['main', 'master', 'dev', 'release'].map((b) => (
                 <button
                   key={b}
@@ -482,7 +589,17 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                   <span className="runtime-terminal-dot red" />
                   <span className="runtime-terminal-dot yellow" />
                   <span className="runtime-terminal-dot green" />
-                  <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: '#94a3b8',
+                      marginLeft: 8,
+                      fontWeight: 500,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
                     <span>{t('clone.terminalTitle')}</span>
                     {busy && (
                       <span
@@ -528,14 +645,38 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
 
         {/* ── 底部操作栏 ── */}
         <div className="clone-repo-footer">
-          <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: 'var(--muted)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
             <span>{t('clone.hotkey')}</span>
-            <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)', fontSize: 10 }}>
+            <kbd
+              style={{
+                padding: '1px 5px',
+                borderRadius: 4,
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid var(--border)',
+                fontSize: 10,
+              }}
+            >
               Esc
             </kbd>
             <span>{t('clone.cancel')}</span>
             <span style={{ opacity: 0.5 }}>·</span>
-            <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)', fontSize: 10 }}>
+            <kbd
+              style={{
+                padding: '1px 5px',
+                borderRadius: 4,
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid var(--border)',
+                fontSize: 10,
+              }}
+            >
               ↵ Enter
             </kbd>
             <span>{t('clone.cloneAction')}</span>
@@ -571,21 +712,33 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 padding: '6px 18px',
                 borderRadius: 6,
                 border: 'none',
-                background: busy || !url.trim() || !parentDir.trim()
-                  ? 'rgba(255, 255, 255, 0.1)'
-                  : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                background:
+                  busy || !url.trim() || !parentDir.trim()
+                    ? 'rgba(255, 255, 255, 0.1)'
+                    : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                 color: '#fff',
                 fontSize: 12.5,
                 fontWeight: 600,
                 cursor: busy || !url.trim() || !parentDir.trim() ? 'not-allowed' : 'pointer',
                 opacity: busy || !url.trim() || !parentDir.trim() ? 0.45 : 1,
-                boxShadow: busy || !url.trim() || !parentDir.trim() ? 'none' : '0 2px 8px rgba(34, 197, 94, 0.4)',
+                boxShadow:
+                  busy || !url.trim() || !parentDir.trim()
+                    ? 'none'
+                    : '0 2px 8px rgba(34, 197, 94, 0.4)',
                 transition: 'all 0.15s ease',
               }}
             >
               {busy ? (
                 <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="spin-icon">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    className="spin-icon"
+                  >
                     <line x1="12" y1="2" x2="12" y2="6" />
                     <line x1="12" y1="18" x2="12" y2="22" />
                     <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" />
@@ -599,7 +752,14 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 </>
               ) : (
                 <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path d="M12 3v12" />
                     <path d="m8 11 4 4 4-4" />
                     <path d="M5 19h14" />

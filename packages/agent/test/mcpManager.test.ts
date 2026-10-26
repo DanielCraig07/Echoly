@@ -91,7 +91,10 @@ describe('McpManager lifecycle', () => {
 
   it('reports an exited server as error with its stderr, and does not block other servers', async () => {
     const m = new McpManager();
-    await m.apply([server('crash', { id: 'bad', name: 'Bad' }), server('ok', { id: 'good', name: 'Good' })]);
+    await m.apply([
+      server('crash', { id: 'bad', name: 'Bad' }),
+      server('ok', { id: 'good', name: 'Good' }),
+    ]);
     const byId = Object.fromEntries(m.status().map((s) => [s.id, s]));
     expect(byId.bad.state).toBe('error');
     expect(byId.good.state).toBe('ready');
@@ -111,7 +114,13 @@ describe('McpManager lifecycle', () => {
     // 命令写错是用户最常见的失误。它必须变成一条状态，而不是一个把设置页炸掉的异常。
     const m = new McpManager();
     await m.apply([
-      { id: 'nope', name: 'Nope', enabled: true, command: '/definitely/not/a/real/binary', args: [] },
+      {
+        id: 'nope',
+        name: 'Nope',
+        enabled: true,
+        command: '/definitely/not/a/real/binary',
+        args: [],
+      },
     ]);
     const st = m.status()[0];
     expect(st.state).toBe('error');
@@ -258,7 +267,10 @@ describe('McpManager apply / reload semantics', () => {
       server('ok', { id: 'a', name: 'A' }),
       server('ok', { id: 'b', name: 'B', access: 'readonly' }),
     ]);
-    const names = m.listTools().map((t) => t.exposedName).sort();
+    const names = m
+      .listTools()
+      .map((t) => t.exposedName)
+      .sort();
     expect(names).toEqual([
       'a__boom',
       'a__raise',
@@ -269,12 +281,7 @@ describe('McpManager apply / reload semantics', () => {
       'b__tool_0',
       'b__tool_1',
     ]);
-    expect(m.readonlyToolNames().sort()).toEqual([
-      'b__boom',
-      'b__raise',
-      'b__tool_0',
-      'b__tool_1',
-    ]);
+    expect(m.readonlyToolNames().sort()).toEqual(['b__boom', 'b__raise', 'b__tool_0', 'b__tool_1']);
     expect(m.toolMeta()['b__tool_0']).toEqual({ serverName: 'B', readonly: true });
     await m.disposeAll();
   });

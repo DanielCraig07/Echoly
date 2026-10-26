@@ -8,7 +8,12 @@ import { useI18n, type Translate } from '../i18n';
 export interface MavenPanelProps {
   workspaceInfo?: WorkspaceInfo | null;
   onOpenFile?: (filePath: string) => void;
-  onRunCommand: (command: string, cwd?: string, terminalType?: string, terminalTitle?: string) => void;
+  onRunCommand: (
+    command: string,
+    cwd?: string,
+    terminalType?: string,
+    terminalTitle?: string,
+  ) => void;
   onShowToast?: (message: string, type?: 'info' | 'error' | 'success') => void;
   onOpenSettings?: (tab?: 'environment' | string) => void;
 }
@@ -61,14 +66,14 @@ const getMavenLifecycleGoals = (t: Translate): MavenLifecycleGoal[] => [
   { name: 'deploy', goal: 'deploy', description: t('maven.goalDeploy') },
 ];
 
-
-
 function parsePomXml(content: string, pomPath: string): MavenModule {
   const dirPath = pomPath.includes('/') ? pomPath.substring(0, pomPath.lastIndexOf('/')) : '.';
   const isRoot = pomPath === 'pom.xml';
 
   const artifactIdMatch = content.match(/<artifactId>([^<]+)<\/artifactId>/);
-  const artifactId = artifactIdMatch ? artifactIdMatch[1].trim() : pomPath.replace(/\/pom\.xml$/, '');
+  const artifactId = artifactIdMatch
+    ? artifactIdMatch[1].trim()
+    : pomPath.replace(/\/pom\.xml$/, '');
   const groupIdMatch = content.match(/<groupId>([^<]+)<\/groupId>/);
   const groupId = groupIdMatch ? groupIdMatch[1].trim() : undefined;
   const versionMatch = content.match(/<version>([^<]+)<\/version>/);
@@ -139,11 +144,29 @@ function parsePomXml(content: string, pomPath: string): MavenModule {
       { artifactId: 'deploy', goals: ['deploy'] },
     );
     if (isSpringBoot) {
-      plugins.unshift({ groupId: 'org.springframework.boot', artifactId: 'spring-boot', goals: ['run', 'repackage'] });
+      plugins.unshift({
+        groupId: 'org.springframework.boot',
+        artifactId: 'spring-boot',
+        goals: ['run', 'repackage'],
+      });
     }
   }
 
-  return { name, artifactId, groupId, version, packaging, pomPath, dirPath, isRoot, isSpringBoot, profiles, subModules, dependencies, plugins };
+  return {
+    name,
+    artifactId,
+    groupId,
+    version,
+    packaging,
+    pomPath,
+    dirPath,
+    isRoot,
+    isSpringBoot,
+    profiles,
+    subModules,
+    dependencies,
+    plugins,
+  };
 }
 
 // ── Sleek Monochrome Vector Icons (Matching Git Header Standard) ──────
@@ -166,13 +189,7 @@ const IconReload = ({ spinning }: { spinning?: boolean }) => (
 );
 
 const IconPlay = () => (
-  <svg
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    style={{ flexShrink: 0 }}
-  >
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
     <path d="M6 4.5v15a1 1 0 0 0 1.52.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 6 4.5z" />
   </svg>
 );
@@ -207,7 +224,10 @@ const IconSkipTest = ({ active }: { active?: boolean }) => (
     strokeLinejoin="round"
     style={{ flexShrink: 0 }}
   >
-    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill={active ? 'currentColor' : 'none'} />
+    <polygon
+      points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"
+      fill={active ? 'currentColor' : 'none'}
+    />
     <line x1="2" y1="22" x2="22" y2="2" strokeWidth="2.2" />
   </svg>
 );
@@ -265,14 +285,25 @@ const IconCollapseAll = () => (
 const ProjectIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="#f43f5e" strokeWidth="1.8" />
-    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" fill="#881337" stroke="#f43f5e" strokeWidth="1.6" />
+    <path
+      d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"
+      fill="#881337"
+      stroke="#f43f5e"
+      strokeWidth="1.6"
+    />
     <path d="M10 2v7l2.5-1.5L15 9V2" fill="#fbbf24" />
   </svg>
 );
 
 const FolderGearIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-    <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" fill="#0891b2" fillOpacity="0.25" stroke="#06b6d4" strokeWidth="1.4" />
+    <path
+      d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"
+      fill="#0891b2"
+      fillOpacity="0.25"
+      stroke="#06b6d4"
+      strokeWidth="1.4"
+    />
     <circle cx="16" cy="15" r="3.5" fill="#0e7490" stroke="#67e8f9" strokeWidth="1" />
     <circle cx="16" cy="15" r="1.3" fill="#0f172a" />
   </svg>
@@ -280,8 +311,23 @@ const FolderGearIcon = () => (
 
 const FolderPackageIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-    <path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" fill="#0284c7" fillOpacity="0.22" stroke="#38bdf8" strokeWidth="1.4" />
-    <rect x="13" y="12" width="5.5" height="5.5" rx="1" fill="#f59e0b" stroke="#fde68a" strokeWidth="0.8" />
+    <path
+      d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z"
+      fill="#0284c7"
+      fillOpacity="0.22"
+      stroke="#38bdf8"
+      strokeWidth="1.4"
+    />
+    <rect
+      x="13"
+      y="12"
+      width="5.5"
+      height="5.5"
+      rx="1"
+      fill="#f59e0b"
+      stroke="#fde68a"
+      strokeWidth="0.8"
+    />
   </svg>
 );
 
@@ -298,7 +344,16 @@ interface TreeNodeProps {
   children?: React.ReactNode;
 }
 
-function TreeNode({ label, icon, badge, badgeColor = 'var(--muted)', collapsed, onToggle, depth, children }: TreeNodeProps) {
+function TreeNode({
+  label,
+  icon,
+  badge,
+  badgeColor = 'var(--muted)',
+  collapsed,
+  onToggle,
+  depth,
+  children,
+}: TreeNodeProps) {
   return (
     <div>
       <div
@@ -316,18 +371,28 @@ function TreeNode({ label, icon, badge, badgeColor = 'var(--muted)', collapsed, 
       >
         <PanelChevron expanded={!collapsed} size={11} color="var(--muted)" />
         <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
-        <span style={{
-          fontSize: depth === 0 ? 13 : 12.5,
-          fontWeight: depth === 0 ? 600 : 500,
-          color: 'var(--text-bright, #ffffff)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}>
+        <span
+          style={{
+            fontSize: depth === 0 ? 13 : 12.5,
+            fontWeight: depth === 0 ? 600 : 500,
+            color: 'var(--text-bright, #ffffff)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
           {label}
         </span>
         {badge && (
-          <span style={{ fontSize: 10.5, color: badgeColor, fontWeight: 500, flexShrink: 0, marginLeft: 'auto' }}>
+          <span
+            style={{
+              fontSize: 10.5,
+              color: badgeColor,
+              fontWeight: 500,
+              flexShrink: 0,
+              marginLeft: 'auto',
+            }}
+          >
             {badge}
           </span>
         )}
@@ -374,7 +439,19 @@ const DependencyPackageIcon = () => (
 
 // ── PluginItem Component ──────────────────────────────────────────────────────
 
-function PluginItem({ name, version, onClick, color, t }: { name: string; version?: string; onClick: () => void; color?: string; t: Translate }) {
+function PluginItem({
+  name,
+  version,
+  onClick,
+  color,
+  t,
+}: {
+  name: string;
+  version?: string;
+  onClick: () => void;
+  color?: string;
+  t: Translate;
+}) {
   return (
     <div
       onClick={onClick}
@@ -391,18 +468,37 @@ function PluginItem({ name, version, onClick, color, t }: { name: string; versio
         fontSize: 12.5,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+      <div
+        style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}
+      >
         <PluginGearIcon />
-        <span style={{ color: color || 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+        <span
+          style={{
+            color: color || 'var(--text)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {name}
+        </span>
       </div>
-      {version && <span style={{ fontSize: 10.5, color: 'var(--muted)', flexShrink: 0 }}>{version}</span>}
+      {version && (
+        <span style={{ fontSize: 10.5, color: 'var(--muted)', flexShrink: 0 }}>{version}</span>
+      )}
     </div>
   );
 }
 
 // ── Main MavenPanel Component ─────────────────────────────────────────────────
 
-export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToast, onOpenSettings }: MavenPanelProps) {
+export function MavenPanel({
+  workspaceInfo,
+  onOpenFile,
+  onRunCommand,
+  onShowToast,
+  onOpenSettings,
+}: MavenPanelProps) {
   const { t } = useI18n();
   const mavenLifecycleGoals = useMemo(() => getMavenLifecycleGoals(t), [t]);
   const workspace = workspaceInfo?.root;
@@ -419,19 +515,27 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
   const [generatingWrapper, setGeneratingWrapper] = useState(false);
   const [mavenEnv, setMavenEnv] = useState<MavenEnvironmentInfo | null>(null);
   const [envModalOpen, setEnvModalOpen] = useState(false);
-  const [envConfig, setEnvConfig] = useState<EnvConfig>(() => loadEnvConfig(workspace || undefined));
+  const [envConfig, setEnvConfig] = useState<EnvConfig>(() =>
+    loadEnvConfig(workspace || undefined),
+  );
 
   useEffect(() => {
     setEnvConfig(loadEnvConfig(workspace || undefined));
   }, [workspace]);
 
   const [collapsedNodes, setCollapsedNodes] = useState<Record<string, boolean>>({
-    project: false, lifecycle: false, plugins: true, dependencies: true,
+    project: false,
+    lifecycle: false,
+    plugins: true,
+    dependencies: true,
   });
 
-  const toggleNode = (nodeId: string) => setCollapsedNodes((prev) => ({ ...prev, [nodeId]: !prev[nodeId] }));
-  const expandAll = () => setCollapsedNodes({ project: false, lifecycle: false, plugins: false, dependencies: false });
-  const collapseAll = () => setCollapsedNodes({ project: false, lifecycle: true, plugins: true, dependencies: true });
+  const toggleNode = (nodeId: string) =>
+    setCollapsedNodes((prev) => ({ ...prev, [nodeId]: !prev[nodeId] }));
+  const expandAll = () =>
+    setCollapsedNodes({ project: false, lifecycle: false, plugins: false, dependencies: false });
+  const collapseAll = () =>
+    setCollapsedNodes({ project: false, lifecycle: true, plugins: true, dependencies: true });
 
   const checkMavenEnv = useCallback(async () => {
     try {
@@ -446,12 +550,19 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
   }, []);
 
   const scanMavenProjects = useCallback(async () => {
-    if (!workspaceInfo?.root) { setModules([]); return; }
+    if (!workspaceInfo?.root) {
+      setModules([]);
+      return;
+    }
     setLoading(true);
     try {
       await checkMavenEnv();
       const hasRootPom = await window.ide.pathExists('pom.xml');
-      if (!hasRootPom) { setModules([]); setLoading(false); return; }
+      if (!hasRootPom) {
+        setModules([]);
+        setLoading(false);
+        return;
+      }
 
       const isWin = navigator.userAgent.includes('Windows');
       const [existsWrapper, existsSettings] = await Promise.all([
@@ -462,7 +573,11 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
       setHasProjectSettingsXml(existsSettings);
 
       const rootPomContent = await window.ide.readFile('pom.xml');
-      if (!rootPomContent) { setModules([]); setLoading(false); return; }
+      if (!rootPomContent) {
+        setModules([]);
+        setLoading(false);
+        return;
+      }
 
       const rootModule = parsePomXml(rootPomContent, 'pom.xml');
       const loadedModules: MavenModule[] = [rootModule];
@@ -474,11 +589,16 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
             const subContent = await window.ide.readFile(subPomPath);
             if (subContent) loadedModules.push(parsePomXml(subContent, subPomPath));
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
 
       setModules(loadedModules);
-      if (loadedModules.length > 0 && !loadedModules.some((m) => m.pomPath === selectedModulePath)) {
+      if (
+        loadedModules.length > 0 &&
+        !loadedModules.some((m) => m.pomPath === selectedModulePath)
+      ) {
         setSelectedModulePath(loadedModules[0].pomPath);
       }
     } catch (e) {
@@ -489,7 +609,9 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
     }
   }, [workspaceInfo, onShowToast, selectedModulePath, checkMavenEnv]);
 
-  useEffect(() => { void scanMavenProjects(); }, [scanMavenProjects]);
+  useEffect(() => {
+    void scanMavenProjects();
+  }, [scanMavenProjects]);
 
   const handleInitWrapper = async () => {
     setGeneratingWrapper(true);
@@ -542,7 +664,14 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
 
       parts.push(effectiveMvnExe);
       if (activeProfiles.size > 0) parts.push(`-P${Array.from(activeProfiles).join(',')}`);
-      if (skipTests && (goal.includes('package') || goal.includes('install') || goal.includes('verify') || goal.includes('compile') || goal === 'clean')) {
+      if (
+        skipTests &&
+        (goal.includes('package') ||
+          goal.includes('install') ||
+          goal.includes('verify') ||
+          goal.includes('compile') ||
+          goal === 'clean')
+      ) {
         parts.push('-DskipTests');
       }
       // 如果指定了自定义 settings.xml 或项目包含 .mvn/settings.xml，传入 -s 参数
@@ -574,12 +703,14 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
     onShowToast?.(t('maven.started', { command }), 'info');
   };
 
-  const executeSelectedGoal = () => executeGoal(selectedGoal || 'clean compile', currentModule || undefined);
+  const executeSelectedGoal = () =>
+    executeGoal(selectedGoal || 'clean compile', currentModule || undefined);
 
   const toggleProfile = (profileId: string) => {
     setActiveProfiles((prev) => {
       const next = new Set(prev);
-      if (next.has(profileId)) next.delete(profileId); else next.add(profileId);
+      if (next.has(profileId)) next.delete(profileId);
+      else next.add(profileId);
       return next;
     });
   };
@@ -605,16 +736,41 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
 
   const envStatus = useMemo(() => {
     if (envConfig.customMvnPath) return { label: t('maven.envCustomMvn'), color: '#60a5fa' };
-    if (hasMvnw || mavenEnv?.type === 'wrapper') return { label: t('maven.envWrapper'), color: '#34d399' };
+    if (hasMvnw || mavenEnv?.type === 'wrapper')
+      return { label: t('maven.envWrapper'), color: '#34d399' };
     if (mavenEnv?.available) return { label: t('maven.envSystemMvn'), color: '#a3e635' };
     return { label: t('maven.envNotConfigured'), color: '#f87171' };
   }, [envConfig, hasMvnw, mavenEnv, t]);
 
   return (
-    <div className="maven-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: 'var(--bg-panel)', color: 'var(--text)', fontSize: 13, userSelect: 'none', overflow: 'hidden', position: 'relative' }}>
-
+    <div
+      className="maven-panel"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        width: '100%',
+        background: 'var(--bg-panel)',
+        color: 'var(--text)',
+        fontSize: 13,
+        userSelect: 'none',
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
       {/* ── Header: Height 30px, Typography & Actions Unified with Explorer/Search/Git ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 30, padding: '0 10px', boxSizing: 'border-box', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          height: 30,
+          padding: '0 10px',
+          boxSizing: 'border-box',
+          borderBottom: '1px solid var(--border)',
+          flexShrink: 0,
+        }}
+      >
         <div
           className="panel-header-title"
           style={{
@@ -632,22 +788,56 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button type="button" className="panel-action-btn" title={t('maven.rescan')} onClick={() => void scanMavenProjects()}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('maven.rescan')}
+            onClick={() => void scanMavenProjects()}
+          >
             <IconReload spinning={loading} />
           </button>
-          <button type="button" className="panel-action-btn" title={t('maven.runGoal', { goal: selectedGoal || 'clean' })} onClick={executeSelectedGoal}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('maven.runGoal', { goal: selectedGoal || 'clean' })}
+            onClick={executeSelectedGoal}
+          >
             <IconPlay />
           </button>
-          <button type="button" className={`panel-action-btn${customGoalInputOpen ? ' active' : ''}`} title={t('maven.customGoal')} onClick={() => setCustomGoalInputOpen((v) => !v)}>
+          <button
+            type="button"
+            className={`panel-action-btn${customGoalInputOpen ? ' active' : ''}`}
+            title={t('maven.customGoal')}
+            onClick={() => setCustomGoalInputOpen((v) => !v)}
+          >
             <IconTerminal />
           </button>
-          <button type="button" className={`panel-action-btn${skipTests ? ' active' : ''}`} title={skipTests ? t('maven.skipTestsOnTitle') : t('maven.skipTestsOffTitle')} onClick={() => { const n = !skipTests; setSkipTests(n); onShowToast?.(n ? t('maven.skipTestsOn') : t('maven.skipTestsOff'), 'info'); }}>
+          <button
+            type="button"
+            className={`panel-action-btn${skipTests ? ' active' : ''}`}
+            title={skipTests ? t('maven.skipTestsOnTitle') : t('maven.skipTestsOffTitle')}
+            onClick={() => {
+              const n = !skipTests;
+              setSkipTests(n);
+              onShowToast?.(n ? t('maven.skipTestsOn') : t('maven.skipTestsOff'), 'info');
+            }}
+          >
             <IconSkipTest active={skipTests} />
           </button>
-          <button type="button" className="panel-action-btn" title={t('maven.expandAll')} onClick={expandAll}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('maven.expandAll')}
+            onClick={expandAll}
+          >
             <IconExpandAll />
           </button>
-          <button type="button" className="panel-action-btn" title={t('maven.collapseAll')} onClick={collapseAll}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('maven.collapseAll')}
+            onClick={collapseAll}
+          >
             <IconCollapseAll />
           </button>
 
@@ -655,7 +845,11 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
           <button
             type="button"
             className="panel-action-btn"
-            title={t('maven.envConfigTitle', { label: envStatus.label + (envConfig.selectedJavaLabel ? ` · ${envConfig.selectedJavaLabel}` : '') })}
+            title={t('maven.envConfigTitle', {
+              label:
+                envStatus.label +
+                (envConfig.selectedJavaLabel ? ` · ${envConfig.selectedJavaLabel}` : ''),
+            })}
             onClick={() => {
               if (onOpenSettings) onOpenSettings('environment');
               else setEnvModalOpen(true);
@@ -668,18 +862,40 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
 
       {/* ── Custom goal input ── */}
       {customGoalInputOpen && (
-        <div style={{ padding: '6px 8px', background: 'var(--bg-input, #1f1f1f)', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+        <div
+          style={{
+            padding: '6px 8px',
+            background: 'var(--bg-input, #1f1f1f)',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            gap: 6,
+            alignItems: 'center',
+            flexShrink: 0,
+          }}
+        >
           <input
             type="text"
             placeholder={t('maven.customGoalPlaceholder')}
             value={customGoalText}
             onChange={(e) => setCustomGoalText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && customGoalText.trim()) { executeGoal(customGoalText.trim()); setCustomGoalInputOpen(false); setCustomGoalText(''); }
-              else if (e.key === 'Escape') setCustomGoalInputOpen(false);
+              if (e.key === 'Enter' && customGoalText.trim()) {
+                executeGoal(customGoalText.trim());
+                setCustomGoalInputOpen(false);
+                setCustomGoalText('');
+              } else if (e.key === 'Escape') setCustomGoalInputOpen(false);
             }}
             autoFocus
-            style={{ flex: 1, background: 'rgba(0,0,0,0.3)', color: 'var(--text-bright,#fff)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 8px', fontSize: 12, outline: 'none' }}
+            style={{
+              flex: 1,
+              background: 'rgba(0,0,0,0.3)',
+              color: 'var(--text-bright,#fff)',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              padding: '4px 8px',
+              fontSize: 12,
+              outline: 'none',
+            }}
           />
           <button
             type="button"
@@ -687,7 +903,14 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
             onClick={() => setCustomGoalInputOpen(false)}
             title={t('common.close')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -697,9 +920,40 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
 
       {/* ── No Maven warning ── */}
       {mavenEnv && !mavenEnv.available && !hasMvnw && !envConfig.customMvnPath && (
-        <div style={{ margin: '8px 10px 0', padding: '10px 12px', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.25)', borderRadius: 8, fontSize: 12, lineHeight: 1.5, flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#fbbf24', fontWeight: 600, marginBottom: 5 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+        <div
+          style={{
+            margin: '8px 10px 0',
+            padding: '10px 12px',
+            background: 'rgba(234,179,8,0.08)',
+            border: '1px solid rgba(234,179,8,0.25)',
+            borderRadius: 8,
+            fontSize: 12,
+            lineHeight: 1.5,
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              color: '#fbbf24',
+              fontWeight: 600,
+              marginBottom: 5,
+            }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
             {t('maven.noMavenTitle')}
           </div>
           <div style={{ color: 'var(--text)', fontSize: 11.5, marginBottom: 8 }}>
@@ -717,7 +971,15 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
             >
               {t('maven.openEnvConfig')}
             </button>
-            <button type="button" className="panel-standard-btn primary" onClick={() => void handleInitWrapper()} disabled={generatingWrapper || !mavenEnv.hasJava} style={{ fontSize: 11.5, padding: '3px 10px' }}>{generatingWrapper ? t('maven.generating') : t('maven.genMvnw')}</button>
+            <button
+              type="button"
+              className="panel-standard-btn primary"
+              onClick={() => void handleInitWrapper()}
+              disabled={generatingWrapper || !mavenEnv.hasJava}
+              style={{ fontSize: 11.5, padding: '3px 10px' }}
+            >
+              {generatingWrapper ? t('maven.generating') : t('maven.genMvnw')}
+            </button>
           </div>
         </div>
       )}
@@ -725,30 +987,102 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
       {/* ── Project Tree ── */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 4px' }}>
         {modules.length === 0 ? (
-          <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--muted)', lineHeight: 1.6 }}>
+          <div
+            style={{
+              padding: '36px 16px',
+              textAlign: 'center',
+              color: 'var(--muted)',
+              lineHeight: 1.6,
+            }}
+          >
             <div style={{ opacity: 0.35, marginBottom: 12 }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
+              <svg
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              >
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
               </svg>
             </div>
-            <div style={{ fontWeight: 600, color: 'var(--text-bright)', fontSize: 13 }}>{t('maven.noProjectTitle')}</div>
+            <div style={{ fontWeight: 600, color: 'var(--text-bright)', fontSize: 13 }}>
+              {t('maven.noProjectTitle')}
+            </div>
             <div style={{ fontSize: 12, marginTop: 4 }}>{t('maven.noProjectDesc')}</div>
-            <button type="button" className="panel-standard-btn" onClick={() => void scanMavenProjects()} style={{ marginTop: 14, fontSize: 12 }}>{t('maven.rescanShort')}</button>
+            <button
+              type="button"
+              className="panel-standard-btn"
+              onClick={() => void scanMavenProjects()}
+              style={{ marginTop: 14, fontSize: 12 }}
+            >
+              {t('maven.rescanShort')}
+            </button>
           </div>
         ) : (
           <div>
             {modules.length > 1 && (
-              <div style={{ padding: '2px 8px 8px 8px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('maven.module')}</div>
-                <select value={selectedModulePath} onChange={(e) => setSelectedModulePath(e.target.value)} style={{ width: '100%', background: 'var(--bg-input,#222)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none' }}>
-                  {modules.map((m) => <option key={m.pomPath} value={m.pomPath}>{m.isRoot ? `[Root] ${m.artifactId}` : m.artifactId}</option>)}
+              <div
+                style={{
+                  padding: '2px 8px 8px 8px',
+                  borderBottom: '1px solid var(--border)',
+                  marginBottom: 4,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    color: 'var(--muted)',
+                    marginBottom: 3,
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  {t('maven.module')}
+                </div>
+                <select
+                  value={selectedModulePath}
+                  onChange={(e) => setSelectedModulePath(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg-input,#222)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 4,
+                    padding: '4px 6px',
+                    fontSize: 12,
+                    outline: 'none',
+                  }}
+                >
+                  {modules.map((m) => (
+                    <option key={m.pomPath} value={m.pomPath}>
+                      {m.isRoot ? `[Root] ${m.artifactId}` : m.artifactId}
+                    </option>
+                  ))}
                 </select>
               </div>
             )}
 
-            <TreeNode label={projectRootName} icon={<ProjectIcon />} badge={hasMvnw ? 'mvnw' : undefined} badgeColor="#34d399" collapsed={collapsedNodes['project']} onToggle={() => toggleNode('project')} depth={0}>
-              <TreeNode label={t('maven.treeLifecycle')} icon={<FolderGearIcon />} collapsed={collapsedNodes['lifecycle']} onToggle={() => toggleNode('lifecycle')} depth={1}>
+            <TreeNode
+              label={projectRootName}
+              icon={<ProjectIcon />}
+              badge={hasMvnw ? 'mvnw' : undefined}
+              badgeColor="#34d399"
+              collapsed={collapsedNodes['project']}
+              onToggle={() => toggleNode('project')}
+              depth={0}
+            >
+              <TreeNode
+                label={t('maven.treeLifecycle')}
+                icon={<FolderGearIcon />}
+                collapsed={collapsedNodes['lifecycle']}
+                onToggle={() => toggleNode('lifecycle')}
+                depth={1}
+              >
                 {mavenLifecycleGoals.map((item) => {
                   const isSelected = selectedGoal === item.goal;
                   const isMutedTest = skipTests && item.goal === 'test';
@@ -782,33 +1116,80 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
                         style={{
                           fontSize: 12.5,
                           fontWeight: isSelected ? 500 : 400,
-                          color: isSelected ? 'var(--text-bright)' : isMutedTest ? '#71717a' : 'var(--text)',
+                          color: isSelected
+                            ? 'var(--text-bright)'
+                            : isMutedTest
+                              ? '#71717a'
+                              : 'var(--text)',
                           textDecoration: isMutedTest ? 'line-through' : 'none',
                         }}
                       >
                         {item.name}
                       </span>
-                      {isMutedTest && <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>{t('maven.skipped')}</span>}
+                      {isMutedTest && (
+                        <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
+                          {t('maven.skipped')}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
               </TreeNode>
 
-              <TreeNode label={t('maven.treePlugins')} icon={<FolderGearIcon />} badge={currentModule?.plugins?.length ? `${currentModule.plugins.length}` : undefined} collapsed={collapsedNodes['plugins']} onToggle={() => toggleNode('plugins')} depth={1}>
-                {currentModule?.isSpringBoot && <PluginItem t={t} name="spring-boot:run" onClick={() => executeGoal('spring-boot:run', currentModule)} color="#34d399" />}
+              <TreeNode
+                label={t('maven.treePlugins')}
+                icon={<FolderGearIcon />}
+                badge={
+                  currentModule?.plugins?.length ? `${currentModule.plugins.length}` : undefined
+                }
+                collapsed={collapsedNodes['plugins']}
+                onToggle={() => toggleNode('plugins')}
+                depth={1}
+              >
+                {currentModule?.isSpringBoot && (
+                  <PluginItem
+                    t={t}
+                    name="spring-boot:run"
+                    onClick={() => executeGoal('spring-boot:run', currentModule)}
+                    color="#34d399"
+                  />
+                )}
                 {currentModule?.plugins?.map((plug) => (
-                  <PluginItem t={t} key={plug.artifactId} name={plug.artifactId} version={plug.version} onClick={() => plug.goals && plug.goals.length > 0 ? executeGoal(`${plug.artifactId}:${plug.goals[0]}`) : executeGoal(`${plug.artifactId}:help`)} />
+                  <PluginItem
+                    t={t}
+                    key={plug.artifactId}
+                    name={plug.artifactId}
+                    version={plug.version}
+                    onClick={() =>
+                      plug.goals && plug.goals.length > 0
+                        ? executeGoal(`${plug.artifactId}:${plug.goals[0]}`)
+                        : executeGoal(`${plug.artifactId}:help`)
+                    }
+                  />
                 ))}
               </TreeNode>
 
-              <TreeNode label={t('maven.treeDependencies')} icon={<FolderPackageIcon />} badge={currentModule?.dependencies?.length ? `${currentModule.dependencies.length}` : undefined} collapsed={collapsedNodes['dependencies']} onToggle={() => toggleNode('dependencies')} depth={1}>
+              <TreeNode
+                label={t('maven.treeDependencies')}
+                icon={<FolderPackageIcon />}
+                badge={
+                  currentModule?.dependencies?.length
+                    ? `${currentModule.dependencies.length}`
+                    : undefined
+                }
+                collapsed={collapsedNodes['dependencies']}
+                onToggle={() => toggleNode('dependencies')}
+                depth={1}
+              >
                 {currentModule?.dependencies && currentModule.dependencies.length > 0 ? (
                   currentModule.dependencies.map((dep, idx) => (
                     <div
                       key={`${dep.groupId}:${dep.artifactId}-${idx}`}
                       onDoubleClick={() => currentModule && onOpenFile?.(currentModule.pomPath)}
                       className="search-result-item"
-                      title={t('maven.depTitle', { dep: `${dep.groupId}:${dep.artifactId}${dep.version ? `:${dep.version}` : ''}` })}
+                      title={t('maven.depTitle', {
+                        dep: `${dep.groupId}:${dep.artifactId}${dep.version ? `:${dep.version}` : ''}`,
+                      })}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -820,16 +1201,44 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
                         fontSize: 12.5,
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          minWidth: 0,
+                          overflow: 'hidden',
+                        }}
+                      >
                         <DependencyPackageIcon />
-                        <span style={{ fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span
+                          style={{
+                            fontSize: 12.5,
+                            color: 'var(--text)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
                           {dep.artifactId}
                         </span>
                       </div>
                       <div style={{ display: 'flex', gap: 4, flexShrink: 0, alignItems: 'center' }}>
-                        {dep.version && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{dep.version}</span>}
+                        {dep.version && (
+                          <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                            {dep.version}
+                          </span>
+                        )}
                         {dep.scope && dep.scope !== 'compile' && (
-                          <span style={{ fontSize: 10, padding: '1px 4px', borderRadius: 2, background: 'rgba(255,255,255,0.06)', color: 'var(--muted)' }}>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              padding: '1px 4px',
+                              borderRadius: 2,
+                              background: 'rgba(255,255,255,0.06)',
+                              color: 'var(--muted)',
+                            }}
+                          >
                             {dep.scope}
                           </span>
                         )}
@@ -837,19 +1246,48 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
                     </div>
                   ))
                 ) : (
-                  <div style={{ fontSize: 11.5, color: 'var(--muted)', padding: '4px 6px 4px 32px' }}>{t('maven.noDependencies')}</div>
+                  <div
+                    style={{ fontSize: 11.5, color: 'var(--muted)', padding: '4px 6px 4px 32px' }}
+                  >
+                    {t('maven.noDependencies')}
+                  </div>
                 )}
               </TreeNode>
 
               {allProfiles.length > 0 && (
-                <TreeNode label={t('maven.treeProfiles')} icon={<FolderGearIcon />} collapsed={collapsedNodes['profiles']} onToggle={() => toggleNode('profiles')} depth={1}>
+                <TreeNode
+                  label={t('maven.treeProfiles')}
+                  icon={<FolderGearIcon />}
+                  collapsed={collapsedNodes['profiles']}
+                  onToggle={() => toggleNode('profiles')}
+                  depth={1}
+                >
                   {allProfiles.map((p) => {
                     const isChecked = activeProfiles.has(p);
                     return (
-                      <label key={p} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: isChecked ? 'var(--text-bright)' : 'var(--text)', padding: '3px 6px 3px 32px', margin: '1px 4px' }}>
-                        <input type="checkbox" checked={isChecked} onChange={() => toggleProfile(p)} style={{ cursor: 'pointer', accentColor: 'var(--accent,#4c8dff)' }} />
+                      <label
+                        key={p}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          cursor: 'pointer',
+                          fontSize: 12,
+                          color: isChecked ? 'var(--text-bright)' : 'var(--text)',
+                          padding: '3px 6px 3px 32px',
+                          margin: '1px 4px',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleProfile(p)}
+                          style={{ cursor: 'pointer', accentColor: 'var(--accent,#4c8dff)' }}
+                        />
                         <span>{p}</span>
-                        {isChecked && <span style={{ fontSize: 10, color: 'var(--accent)' }}>(-P{p})</span>}
+                        {isChecked && (
+                          <span style={{ fontSize: 10, color: 'var(--accent)' }}>(-P{p})</span>
+                        )}
                       </label>
                     );
                   })}

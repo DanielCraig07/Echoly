@@ -331,11 +331,7 @@ export function isSameCellValue(a: DbCellValue, b: DbCellValue): boolean {
 
 /** 改动总数（界面上的「提交 N 项」与按钮 disabled 判定用） */
 export function countStagedChanges(changes: DbStagedChanges): number {
-  return (
-    changes.deletes.length +
-    changes.updates.length +
-    changes.inserts.length
-  );
+  return changes.deletes.length + changes.updates.length + changes.inserts.length;
 }
 
 /** 某行是否有暂存改动 */
@@ -470,7 +466,11 @@ export const DB_COMMIT_ERROR_KEY: Record<DbCommitErrorCode, string> = {
 
 export type DbCommitBuildResult =
   | { ok: true; statements: string[] }
-  | { ok: false; errorCode: DbCommitErrorCode; /** 插值参数（目前是定位失败时的 rowKey） */ params?: { rowKey: string } };
+  | {
+      ok: false;
+      errorCode: DbCommitErrorCode;
+      /** 插值参数（目前是定位失败时的 rowKey） */ params?: { rowKey: string };
+    };
 
 /**
  * 把暂存改动汇总成一批语句。

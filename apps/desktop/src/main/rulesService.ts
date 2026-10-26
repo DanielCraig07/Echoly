@@ -7,8 +7,29 @@ export interface RulesResult {
   filename?: string;
 }
 
+/**
+ * 缓存条数上限。
+ *
+ * 键是规则文件的绝对路径，所以**换一个工作区就多一条**，而且永远不会被淘汰 ——
+ * 一个开着不关的窗口先后打开几十个项目，就会在内存里留下几十份规则正文。
+ * 规则文件本身很小，但这个缓存没有任何理由无界；超出后按插入顺序丢最老的，
+ * 丢掉的代价只是下一次多读一次磁盘。
+ */
+const MAX_CACHED_RULES = 32;
+
 export class RulesService {
   private cache = new Map<string, { content: string; mtime: number; filename: string }>();
+
+  private remember(key: string, value: { content: string; mtime: number; filename: string }): void {
+    // 重新插入同一个键时先删再设，让 Map 的插入顺序反映「最近使用」而不是「首次使用」
+    this.cache.delete(key);
+    this.cache.set(key, value);
+    while (this.cache.size > MAX_CACHED_RULES) {
+      const oldest = this.cache.keys().next();
+      if (oldest.done) break;
+      this.cache.delete(oldest.value);
+    }
+  }
 
   /**
    * 自动探测并获取工作区根目录下的规则文件内容
@@ -45,7 +66,7 @@ export class RulesService {
       }
 
       const content = await fs.promises.readFile(targetPath, 'utf8');
-      this.cache.set(targetPath, { content, mtime: stat.mtimeMs, filename });
+      this.remember(targetPath, { content, mtime: stat.mtimeMs, filename });
 
       return { ok: true, content, filename };
     } catch (err) {
@@ -101,7 +122,12 @@ export class RulesService {
       }
 
       // 2. Python
-      if (exists('requirements.txt') || exists('pyproject.toml') || exists('Pipfile') || exists('setup.py')) {
+      if (
+        exists('requirements.txt') ||
+        exists('pyproject.toml') ||
+        exists('Pipfile') ||
+        exists('setup.py')
+      ) {
         return `# .echolyrules
 # Echoly 项目级 AI 规则规范 (针对 Python 项目定制)
 # AI 在代码补全、行内编辑 (⌘K)、对话重构及 Composer (⌘I) 时将遵循本规范
@@ -211,7 +237,11 @@ export class RulesService {
       const targetPath = path.join(workspaceRoot, '.echolyrules');
       await fs.promises.writeFile(targetPath, finalContent, 'utf8');
       const stat = await fs.promises.stat(targetPath);
-      this.cache.set(targetPath, { content: finalContent, mtime: stat.mtimeMs, filename: '.echolyrules' });
+      this.remember(targetPath, {
+        content: finalContent,
+        mtime: stat.mtimeMs,
+        filename: '.echolyrules',
+      });
       return { ok: true };
     } catch (err) {
       console.error('[RulesService] Failed to save rules file:', err);

@@ -1,0 +1,37 @@
+# 构建产物与依赖：不是源码，格式化它们既没意义也会随构建被覆盖
+node_modules/
+dist/
+out/
+build/
+release/
+apps/desktop/out/
+apps/desktop/release/
+apps/desktop/electron-dist-cache/
+apps/desktop/user-data/
+apps/desktop/resources/
+
+# 包管理器锁文件：由 npm 生成，手工格式化会与 npm 的写法来回打架
+package-lock.json
+
+# 生成物与缓存
+coverage/
+.cache/
+*.tsbuildinfo
+*.log
+
+# 本机工具配置：不入库，各人写法不同（.claude 下只有 settings.local.json 属于此类）
+.claude/settings.local.json
+
+# 二进制与资源：prettier 不认识，列进来只会让它尝试解析失败
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.icns
+*.svg
+*.woff
+*.woff2
+*.ttf
+*.dmg
+*.zip

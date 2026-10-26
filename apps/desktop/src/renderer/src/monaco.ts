@@ -30,7 +30,8 @@ monaco.languages.registerCodeActionProvider('*', {
     const markers = context.markers || [];
     if (!markers.length) return { actions: [], dispose: () => {} };
     const err = markers.find(
-      (m) => m.severity === monaco.MarkerSeverity.Error || m.severity === monaco.MarkerSeverity.Warning,
+      (m) =>
+        m.severity === monaco.MarkerSeverity.Error || m.severity === monaco.MarkerSeverity.Warning,
     );
     if (!err) return { actions: [], dispose: () => {} };
 
@@ -357,18 +358,83 @@ const enhancedPythonLanguage: monaco.languages.IMonarchLanguage = {
   defaultToken: '',
   tokenPostfix: '.python',
   keywords: [
-    'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await',
-    'break', 'case', 'class', 'continue', 'def', 'del', 'elif', 'else',
-    'except', 'exec', 'finally', 'for', 'from', 'global', 'if', 'import',
-    'in', 'is', 'lambda', 'match', 'nonlocal', 'not', 'or', 'pass', 'print',
-    'raise', 'return', 'try', 'type', 'while', 'with', 'yield',
+    'False',
+    'None',
+    'True',
+    'and',
+    'as',
+    'assert',
+    'async',
+    'await',
+    'break',
+    'case',
+    'class',
+    'continue',
+    'def',
+    'del',
+    'elif',
+    'else',
+    'except',
+    'exec',
+    'finally',
+    'for',
+    'from',
+    'global',
+    'if',
+    'import',
+    'in',
+    'is',
+    'lambda',
+    'match',
+    'nonlocal',
+    'not',
+    'or',
+    'pass',
+    'print',
+    'raise',
+    'return',
+    'try',
+    'type',
+    'while',
+    'with',
+    'yield',
   ],
   builtins: [
-    'int', 'float', 'str', 'bool', 'list', 'dict', 'set', 'tuple', 'bytes',
-    'object', 'len', 'range', 'enumerate', 'zip', 'map', 'filter',
-    'isinstance', 'issubclass', 'iter', 'next', 'reversed', 'sorted', 'sum',
-    'min', 'max', 'abs', 'all', 'any', 'open', 'id', 'repr',
-    'super', 'property', 'classmethod', 'staticmethod',
+    'int',
+    'float',
+    'str',
+    'bool',
+    'list',
+    'dict',
+    'set',
+    'tuple',
+    'bytes',
+    'object',
+    'len',
+    'range',
+    'enumerate',
+    'zip',
+    'map',
+    'filter',
+    'isinstance',
+    'issubclass',
+    'iter',
+    'next',
+    'reversed',
+    'sorted',
+    'sum',
+    'min',
+    'max',
+    'abs',
+    'all',
+    'any',
+    'open',
+    'id',
+    'repr',
+    'super',
+    'property',
+    'classmethod',
+    'staticmethod',
   ],
   brackets: [
     { open: '{', close: '}', token: 'delimiter.curly' },
@@ -396,30 +462,39 @@ const enhancedPythonLanguage: monaco.languages.IMonarchLanguage = {
       [/\b(self|cls)\b/, 'variable.predefined'],
 
       // 函数/方法调用: func_name(...)
-      [/[a-zA-Z_]\w*(?=\s*\()/, {
-        cases: {
-          '@keywords': 'keyword',
-          '@builtins': 'support.function',
-          '@default': 'function.call',
+      [
+        /[a-zA-Z_]\w*(?=\s*\()/,
+        {
+          cases: {
+            '@keywords': 'keyword',
+            '@builtins': 'support.function',
+            '@default': 'function.call',
+          },
         },
-      }],
+      ],
 
       // 大驼峰 PascalCase 类名/类型 (如 ModelTargetBinding, StreamProcessingRepository)
-      [/\b[A-Z][a-zA-Z0-9_]*\b/, {
-        cases: {
-          '@keywords': 'keyword',
-          '@default': 'type',
+      [
+        /\b[A-Z][a-zA-Z0-9_]*\b/,
+        {
+          cases: {
+            '@keywords': 'keyword',
+            '@default': 'type',
+          },
         },
-      }],
+      ],
 
       // 其它标识符与关键字
-      [/[a-zA-Z_]\w*/, {
-        cases: {
-          '@keywords': 'keyword',
-          '@builtins': 'type',
-          '@default': 'identifier',
+      [
+        /[a-zA-Z_]\w*/,
+        {
+          cases: {
+            '@keywords': 'keyword',
+            '@builtins': 'type',
+            '@default': 'identifier',
+          },
         },
-      }],
+      ],
 
       [/[+\-*/%=<>!&|^~]/, 'operator'],
     ],
@@ -467,10 +542,7 @@ const enhancedPythonLanguage: monaco.languages.IMonarchLanguage = {
       [/\\./, 'string.escape'],
       [/"/, 'string.escape', '@popall'],
     ],
-    fInterpolation: [
-      [/\}/, { token: 'delimiter.curly', next: '@pop' }],
-      { include: 'root' },
-    ],
+    fInterpolation: [[/\}/, { token: 'delimiter.curly', next: '@pop' }], { include: 'root' }],
     stringBody: [
       [/[^\\']+$/, 'string', '@popall'],
       [/[^\\']+/, 'string'],
@@ -491,14 +563,63 @@ const enhancedJavaLanguage: monaco.languages.IMonarchLanguage = {
   defaultToken: '',
   tokenPostfix: '.java',
   keywords: [
-    'abstract', 'continue', 'for', 'new', 'switch', 'assert', 'default',
-    'goto', 'package', 'synchronized', 'boolean', 'do', 'if', 'private',
-    'this', 'break', 'double', 'implements', 'protected', 'throw', 'byte',
-    'else', 'import', 'public', 'throws', 'case', 'enum', 'instanceof',
-    'return', 'transient', 'catch', 'extends', 'int', 'short', 'try',
-    'char', 'final', 'interface', 'static', 'void', 'class', 'finally',
-    'long', 'strictfp', 'volatile', 'const', 'float', 'native', 'super',
-    'while', 'true', 'false', 'yield', 'record', 'sealed', 'non-sealed', 'permits',
+    'abstract',
+    'continue',
+    'for',
+    'new',
+    'switch',
+    'assert',
+    'default',
+    'goto',
+    'package',
+    'synchronized',
+    'boolean',
+    'do',
+    'if',
+    'private',
+    'this',
+    'break',
+    'double',
+    'implements',
+    'protected',
+    'throw',
+    'byte',
+    'else',
+    'import',
+    'public',
+    'throws',
+    'case',
+    'enum',
+    'instanceof',
+    'return',
+    'transient',
+    'catch',
+    'extends',
+    'int',
+    'short',
+    'try',
+    'char',
+    'final',
+    'interface',
+    'static',
+    'void',
+    'class',
+    'finally',
+    'long',
+    'strictfp',
+    'volatile',
+    'const',
+    'float',
+    'native',
+    'super',
+    'while',
+    'true',
+    'false',
+    'yield',
+    'record',
+    'sealed',
+    'non-sealed',
+    'permits',
   ],
   brackets: [
     { open: '{', close: '}', token: 'delimiter.curly' },
@@ -520,28 +641,37 @@ const enhancedJavaLanguage: monaco.languages.IMonarchLanguage = {
       [/((?:class|interface|enum|record)\s+)([a-zA-Z_$][\w$]*)/, ['keyword', 'type.identifier']],
 
       // 函数/方法调用
-      [/[a-zA-Z_$][\w$]*(?=\s*\()/, {
-        cases: {
-          '@keywords': 'keyword',
-          '@default': 'function.call',
+      [
+        /[a-zA-Z_$][\w$]*(?=\s*\()/,
+        {
+          cases: {
+            '@keywords': 'keyword',
+            '@default': 'function.call',
+          },
         },
-      }],
+      ],
 
       // PascalCase 类名/类型
-      [/\b[A-Z][\w$]*\b/, {
-        cases: {
-          '@keywords': 'keyword',
-          '@default': 'type',
+      [
+        /\b[A-Z][\w$]*\b/,
+        {
+          cases: {
+            '@keywords': 'keyword',
+            '@default': 'type',
+          },
         },
-      }],
+      ],
 
       // 标识符与关键字
-      [/[a-zA-Z_$][\w$]*/, {
-        cases: {
-          '@keywords': 'keyword',
-          '@default': 'identifier',
+      [
+        /[a-zA-Z_$][\w$]*/,
+        {
+          cases: {
+            '@keywords': 'keyword',
+            '@default': 'identifier',
+          },
         },
-      }],
+      ],
 
       [/[=><!~?:&|+\-*^%/]+/, 'operator'],
     ],
@@ -600,7 +730,11 @@ registerEnhancedLanguages();
 // ── Groovy / Jenkinsfile 语言注册 ─────────────────────────────────────────────
 // Monaco 不内置 Groovy，手动注册 Monarch tokenizer。
 // 涵盖 Groovy 语法 + Jenkins Pipeline DSL 关键字（pipeline/stage/steps 等）。
-monaco.languages.register({ id: 'groovy', extensions: ['.groovy', '.gvy', '.gy'], filenames: ['Jenkinsfile'] });
+monaco.languages.register({
+  id: 'groovy',
+  extensions: ['.groovy', '.gvy', '.gy'],
+  filenames: ['Jenkinsfile'],
+});
 
 monaco.languages.setMonarchTokensProvider('groovy', {
   defaultToken: '',
@@ -608,23 +742,146 @@ monaco.languages.setMonarchTokensProvider('groovy', {
 
   // Jenkins Pipeline DSL + Groovy 关键字合集
   keywords: [
-    'abstract', 'assert', 'break', 'case', 'catch', 'class', 'const', 'continue',
-    'def', 'default', 'do', 'else', 'enum', 'extends', 'final', 'finally', 'for',
-    'goto', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'native',
-    'new', 'package', 'private', 'protected', 'public', 'return', 'static', 'strictfp',
-    'super', 'switch', 'synchronized', 'this', 'throw', 'throws', 'trait', 'transient',
-    'try', 'volatile', 'while',
+    'abstract',
+    'assert',
+    'break',
+    'case',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'def',
+    'default',
+    'do',
+    'else',
+    'enum',
+    'extends',
+    'final',
+    'finally',
+    'for',
+    'goto',
+    'if',
+    'implements',
+    'import',
+    'in',
+    'instanceof',
+    'interface',
+    'native',
+    'new',
+    'package',
+    'private',
+    'protected',
+    'public',
+    'return',
+    'static',
+    'strictfp',
+    'super',
+    'switch',
+    'synchronized',
+    'this',
+    'throw',
+    'throws',
+    'trait',
+    'transient',
+    'try',
+    'volatile',
+    'while',
     // Jenkins Pipeline DSL
-    'pipeline', 'agent', 'stages', 'stage', 'steps', 'post', 'environment',
-    'options', 'parameters', 'triggers', 'tools', 'when', 'parallel', 'matrix',
-    'axes', 'axis', 'excludes', 'input', 'libraries', 'script', 'node', 'label',
-    'always', 'success', 'failure', 'unstable', 'changed', 'aborted', 'cleanup',
-    'any', 'none', 'dockerfile',
+    'pipeline',
+    'agent',
+    'stages',
+    'stage',
+    'steps',
+    'post',
+    'environment',
+    'options',
+    'parameters',
+    'triggers',
+    'tools',
+    'when',
+    'parallel',
+    'matrix',
+    'axes',
+    'axis',
+    'excludes',
+    'input',
+    'libraries',
+    'script',
+    'node',
+    'label',
+    'always',
+    'success',
+    'failure',
+    'unstable',
+    'changed',
+    'aborted',
+    'cleanup',
+    'any',
+    'none',
+    'dockerfile',
   ],
 
-  typeKeywords: ['boolean', 'byte', 'char', 'double', 'float', 'int', 'long', 'short', 'void', 'String', 'Integer', 'Boolean', 'List', 'Map', 'Object'],
+  typeKeywords: [
+    'boolean',
+    'byte',
+    'char',
+    'double',
+    'float',
+    'int',
+    'long',
+    'short',
+    'void',
+    'String',
+    'Integer',
+    'Boolean',
+    'List',
+    'Map',
+    'Object',
+  ],
 
-  operators: ['=', '>', '<', '!', '~', '?', ':', '==', '<=', '>=', '!=', '&&', '||', '++', '--', '+', '-', '*', '/', '&', '|', '^', '%', '<<', '>>', '>>>', '+=', '-=', '*=', '/=', '&=', '|=', '^=', '%=', '<<=', '>>=', '>>>=', '->', '::', '?.', '**'],
+  operators: [
+    '=',
+    '>',
+    '<',
+    '!',
+    '~',
+    '?',
+    ':',
+    '==',
+    '<=',
+    '>=',
+    '!=',
+    '&&',
+    '||',
+    '++',
+    '--',
+    '+',
+    '-',
+    '*',
+    '/',
+    '&',
+    '|',
+    '^',
+    '%',
+    '<<',
+    '>>',
+    '>>>',
+    '+=',
+    '-=',
+    '*=',
+    '/=',
+    '&=',
+    '|=',
+    '^=',
+    '%=',
+    '<<=',
+    '>>=',
+    '>>>=',
+    '->',
+    '::',
+    '?.',
+    '**',
+  ],
 
   symbols: /[=><!~?:&|+\-*^%/]+/,
   escapes: /\\(?:[abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
@@ -635,13 +892,16 @@ monaco.languages.setMonarchTokensProvider('groovy', {
       [/^#!.*$/, 'comment'],
 
       // Identifiers & keywords
-      [/[a-zA-Z_$][\w$]*/, {
-        cases: {
-          '@keywords': 'keyword',
-          '@typeKeywords': 'type',
-          '@default': 'identifier',
+      [
+        /[a-zA-Z_$][\w$]*/,
+        {
+          cases: {
+            '@keywords': 'keyword',
+            '@typeKeywords': 'type',
+            '@default': 'identifier',
+          },
         },
-      }],
+      ],
 
       // Whitespace
       { include: '@whitespace' },
@@ -649,12 +909,15 @@ monaco.languages.setMonarchTokensProvider('groovy', {
       // Delimiters
       [/[{}()[\]]/, '@brackets'],
       [/[<>](?!@symbols)/, '@brackets'],
-      [/@symbols/, {
-        cases: {
-          '@operators': 'operator',
-          '@default': '',
+      [
+        /@symbols/,
+        {
+          cases: {
+            '@operators': 'operator',
+            '@default': '',
+          },
         },
-      }],
+      ],
 
       // Annotations / decorators
       [/@[a-zA-Z_$][\w$]*/, 'annotation'],
@@ -741,7 +1004,11 @@ monaco.languages.setMonarchTokensProvider('groovy', {
 // 补全提示关键字
 monaco.languages.setLanguageConfiguration('groovy', {
   comments: { lineComment: '//', blockComment: ['/*', '*/'] },
-  brackets: [['{', '}'], ['[', ']'], ['(', ')']],
+  brackets: [
+    ['{', '}'],
+    ['[', ']'],
+    ['(', ')'],
+  ],
   autoClosingPairs: [
     { open: '{', close: '}' },
     { open: '[', close: ']' },
@@ -761,5 +1028,3 @@ monaco.languages.setLanguageConfiguration('groovy', {
     decreaseIndentPattern: /^(.*\*\/)?\s*\}.*$/,
   },
 });
-
-

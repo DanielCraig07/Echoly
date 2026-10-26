@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { PanelSelect } from './PanelSelect';
 import { DbConfirmModal } from './DbConfirmModal';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
@@ -45,7 +49,11 @@ export interface TableStructureModalProps {
    * 调用方按顺序执行，遇到第一条失败即停止并把错误抛回来。
    */
   onExecute: (statements: string[]) => Promise<{ ok: boolean; error?: string }>;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 /**
@@ -165,16 +173,26 @@ export function TableStructureModal({
     }
 
     const res = buildAlterTableStatements(driver, schemaName, tableName || '', changes);
-    return { statements: problems.length > 0 ? [] : res.statements, problems, skipped: res.skipped ?? [] };
+    return {
+      statements: problems.length > 0 ? [] : res.statements,
+      problems,
+      skipped: res.skipped ?? [],
+    };
   }, [mode, driver, schemaName, createTableName, columns, tableName, t]);
+
+  /**
+   * 确认框打开时才非空；真正执行挂在弹窗 onConfirm 上。
+   *
+   * **必须放在下面 `if (!isOpen) return null` 之前**：这个弹窗是常驻挂载的（开关只改
+   * `isOpen` 属性），把 hook 留在早退之后，「关闭 → 打开」这一次渲染的 hook 数量就和
+   * 上一次对不上，React 抛 `Rendered more hooks than during the previous render`。
+   */
+  const [confirmContent, setConfirmContent] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const previewSql = built.statements.join('\n');
   const canExecute = built.problems.length === 0 && built.statements.length > 0 && !executing;
-
-  /** 确认框打开时才非空；真正执行挂在弹窗 onConfirm 上 */
-  const [confirmContent, setConfirmContent] = useState<string | null>(null);
 
   const handleExecute = () => {
     if (!canExecute) return;
@@ -261,13 +279,28 @@ export function TableStructureModal({
         >
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em' }}>
             {mode === 'create' ? t('db.newTable') : t('db.designTable', { table: tableName ?? '' })}
-            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>
+            <span
+              style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}
+            >
               {driver.toUpperCase()}
               {schemaName ? ` · ${schemaName}` : ''}
             </span>
           </div>
-          <button type="button" className="panel-action-btn" title={t('db.close')} onClick={onClose}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('db.close')}
+            onClick={onClose}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -276,7 +309,15 @@ export function TableStructureModal({
 
         {/* 表名 */}
         {mode === 'create' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', flexShrink: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 12px',
+              flexShrink: 0,
+            }}
+          >
             <span style={{ fontSize: 12, width: 56 }}>{t('db.metaTableName')}</span>
             <input
               type="text"
@@ -296,7 +337,15 @@ export function TableStructureModal({
 
         {/* 主体：左列清单 / 右 SQL 预览 */}
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)' }}>
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              borderRight: '1px solid var(--border)',
+            }}
+          >
             <div style={{ flex: 1, overflow: 'auto', padding: '0 12px 12px' }}>
               <table className="db-structure-table">
                 <thead>
@@ -367,7 +416,9 @@ export function TableStructureModal({
                           type="checkbox"
                           checked={c.autoIncrement}
                           disabled={c.drop || driver === 'postgres'}
-                          title={driver === 'postgres' ? t('db.pgUseSerial') : t('db.autoIncrement')}
+                          title={
+                            driver === 'postgres' ? t('db.pgUseSerial') : t('db.autoIncrement')
+                          }
                           onChange={(e) => patchColumn(c.key, { autoIncrement: e.target.checked })}
                         />
                       </td>
@@ -389,7 +440,16 @@ export function TableStructureModal({
                             title={c.drop ? t('db.undoDelete') : t('db.markColumnDelete')}
                             onClick={() => patchColumn(c.key, { drop: !c.drop })}
                           >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c.drop ? '#f59e0b' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke={c.drop ? '#f59e0b' : 'currentColor'}
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
                               <path d="M3 6h18" />
                               <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
                               <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
@@ -400,9 +460,19 @@ export function TableStructureModal({
                             type="button"
                             className="panel-action-btn"
                             title={t('db.removeRow')}
-                            onClick={() => setColumns((prev) => prev.filter((x) => x.key !== c.key))}
+                            onClick={() =>
+                              setColumns((prev) => prev.filter((x) => x.key !== c.key))
+                            }
                           >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                            >
                               <line x1="5" y1="12" x2="19" y2="12" />
                             </svg>
                           </button>
@@ -484,8 +554,14 @@ export function TableStructureModal({
             disabled={!canExecute}
             title={canExecute ? t('db.runDdlTitle') : t('db.fillRequiredFirst')}
           >
-            <span style={{ fontSize: 12, padding: '0 4px', color: canExecute ? '#4ade80' : undefined }}>
-              {executing ? t('db.executing') : mode === 'create' ? t('db.createTable') : t('db.applyChanges')}
+            <span
+              style={{ fontSize: 12, padding: '0 4px', color: canExecute ? '#4ade80' : undefined }}
+            >
+              {executing
+                ? t('db.executing')
+                : mode === 'create'
+                  ? t('db.createTable')
+                  : t('db.applyChanges')}
             </span>
           </button>
         </div>

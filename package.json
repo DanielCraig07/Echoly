@@ -29,15 +29,18 @@
     "build-cursor-ext": "npm run build -w packages/cursor-extension",
     "package-cursor-ext": "npm run build -w packages/cursor-extension && node scripts/package-cursor-ext.js",
     "sync-version": "node scripts/sync-version.js",
-    "release": "node scripts/release.js"
+    "release": "node scripts/release.js",
+    "test:coverage": "vitest run --coverage"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "prettier": "^3.9.6",
     "typescript-eslint": "^8.69.0",
     "vite": "^5.4.11",

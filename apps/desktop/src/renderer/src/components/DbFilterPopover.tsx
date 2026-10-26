@@ -65,7 +65,8 @@ export function DbFilterPopover({
     let x = anchor.x;
     let y = anchor.y;
     if (x + rect.width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - rect.width - 8);
-    if (y + rect.height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - rect.height - 8);
+    if (y + rect.height > window.innerHeight - 8)
+      y = Math.max(8, window.innerHeight - rect.height - 8);
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
   }, [anchor]);
@@ -91,7 +92,9 @@ export function DbFilterPopover({
   const submit = () => {
     // 「为空 / 非空」不带值；其余运算符留空视为未填完，不生成一个永远匹配不到的条件
     if (needsValue && !value.trim()) return;
-    const numeric = /INT|DEC|NUM|REAL|FLOAT|DOUBLE|MONEY|SERIAL/.test((meta?.type || '').toUpperCase());
+    const numeric = /INT|DEC|NUM|REAL|FLOAT|DOUBLE|MONEY|SERIAL/.test(
+      (meta?.type || '').toUpperCase(),
+    );
     const raw = numeric && /^-?\d+(\.\d+)?$/.test(value.trim()) ? Number(value.trim()) : value;
     onApply({ column, operator, value: needsValue ? raw : undefined });
   };

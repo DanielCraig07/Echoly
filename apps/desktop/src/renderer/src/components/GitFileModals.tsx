@@ -1,7 +1,16 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import type { GitBranchInfo, GitCommitEntry, GitDiffResult, PendingDiff } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import type {
+  GitBranchInfo,
+  GitCommitEntry,
+  GitDiffResult,
+  PendingDiff,
+} from '@deepseek-ide/shared';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n, translateSegments } from '../i18n';
 
 // ── 1. 与历史版本对比弹窗 (CompareWithRevisionModal) ──
@@ -214,9 +223,31 @@ export function CompareWithRevisionModal({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             {/* Git Diff Dual Sheets Icon */}
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: 'var(--accent, #007acc)' }}>
-              <rect x="2" y="2" width="5.5" height="12" rx="1.5" stroke="#f87171" strokeWidth="1.5" />
-              <rect x="8.5" y="2" width="5.5" height="12" rx="1.5" stroke="var(--accent, #007acc)" strokeWidth="1.5" />
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="none"
+              style={{ flexShrink: 0, color: 'var(--accent, #007acc)' }}
+            >
+              <rect
+                x="2"
+                y="2"
+                width="5.5"
+                height="12"
+                rx="1.5"
+                stroke="#f87171"
+                strokeWidth="1.5"
+              />
+              <rect
+                x="8.5"
+                y="2"
+                width="5.5"
+                height="12"
+                rx="1.5"
+                stroke="var(--accent, #007acc)"
+                strokeWidth="1.5"
+              />
             </svg>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
               {t('git.compareRevisionTitle')}
@@ -238,13 +269,24 @@ export function CompareWithRevisionModal({
               {fileName}
             </span>
           </div>
-          <button type="button" className="panel-action-btn" title={t('git.closeEsc')} onClick={onClose}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('git.closeEsc')}
+            onClick={onClose}
+          >
             ✕
           </button>
         </div>
 
         {/* Search bar */}
-        <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border)', background: 'rgba(0, 0, 0, 0.15)' }}>
+        <div
+          style={{
+            padding: '8px 14px',
+            borderBottom: '1px solid var(--border)',
+            background: 'rgba(0, 0, 0, 0.15)',
+          }}
+        >
           <input
             ref={searchInputRef}
             type="text"
@@ -272,7 +314,9 @@ export function CompareWithRevisionModal({
             }}
           >
             {loading && (
-              <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+              <div
+                style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+              >
                 {t('git.loadingHistory')}
               </div>
             )}
@@ -282,7 +326,9 @@ export function CompareWithRevisionModal({
               </div>
             )}
             {!loading && !error && filteredCommits.length === 0 && (
-              <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+              <div
+                style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+              >
                 {t('git.noMatchingCommits')}
               </div>
             )}
@@ -301,7 +347,14 @@ export function CompareWithRevisionModal({
                       margin: '2px 4px',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 6,
+                      }}
+                    >
                       <span
                         className="git-item-badge-hash"
                         style={{
@@ -309,14 +362,18 @@ export function CompareWithRevisionModal({
                           fontFamily: 'monospace',
                           color: 'var(--accent-light, #3794ff)',
                           background: 'color-mix(in srgb, var(--accent, #007acc) 16%, transparent)',
-                          border: '1px solid color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
+                          border:
+                            '1px solid color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
                           padding: '1px 5px',
                           borderRadius: 4,
                         }}
                       >
                         {c.shortHash}
                       </span>
-                      <span className="git-item-muted" style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      <span
+                        className="git-item-muted"
+                        style={{ fontSize: 11, color: 'var(--muted)' }}
+                      >
                         {c.relativeDate || c.date}
                       </span>
                     </div>
@@ -343,7 +400,15 @@ export function CompareWithRevisionModal({
           </div>
 
           {/* Diff Preview / Comparison Details */}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-editor, #1e1e1e)' }}>
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              background: 'var(--bg-editor, #1e1e1e)',
+            }}
+          >
             {selectedCommit ? (
               <>
                 <div
@@ -365,7 +430,10 @@ export function CompareWithRevisionModal({
                         seg.emphasis ? (
                           <span
                             key={i}
-                            style={{ color: 'var(--accent-light, #3794ff)', fontFamily: 'monospace' }}
+                            style={{
+                              color: 'var(--accent-light, #3794ff)',
+                              fontFamily: 'monospace',
+                            }}
                           >
                             {seg.text}
                           </span>
@@ -375,7 +443,8 @@ export function CompareWithRevisionModal({
                       )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                      {selectedCommit.author} • {selectedCommit.relativeDate || selectedCommit.date} • {selectedCommit.message}
+                      {selectedCommit.author} • {selectedCommit.relativeDate || selectedCommit.date}{' '}
+                      • {selectedCommit.message}
                     </div>
                   </div>
                   <button
@@ -389,9 +458,20 @@ export function CompareWithRevisionModal({
                   </button>
                 </div>
 
-                <div style={{ flex: 1, minHeight: 0, padding: 14, overflow: 'auto', fontFamily: 'monospace', fontSize: 12 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    padding: 14,
+                    overflow: 'auto',
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                  }}
+                >
                   {diffLoading ? (
-                    <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>{t('git.generatingDiff')}</div>
+                    <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>
+                      {t('git.generatingDiff')}
+                    </div>
                   ) : diffResult ? (
                     diffResult.original === diffResult.modified ? (
                       <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>
@@ -433,7 +513,9 @@ export function CompareWithRevisionModal({
                 </div>
               </>
             ) : (
-              <div style={{ padding: 48, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+              <div
+                style={{ padding: 48, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+              >
                 {t('git.selectCommitHint')}
               </div>
             )}
@@ -656,7 +738,15 @@ export function CompareWithBranchOrTagModal({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             {/* Git Branch Icon */}
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--accent, #007acc)' }}>
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              style={{ color: 'var(--accent, #007acc)' }}
+            >
               <line x1="6" y1="3" x2="6" y2="15" />
               <circle cx="18" cy="6" r="3" />
               <circle cx="6" cy="18" r="3" />
@@ -682,7 +772,12 @@ export function CompareWithBranchOrTagModal({
               {fileName}
             </span>
           </div>
-          <button type="button" className="panel-action-btn" title={t('git.closeEsc')} onClick={onClose}>
+          <button
+            type="button"
+            className="panel-action-btn"
+            title={t('git.closeEsc')}
+            onClick={onClose}
+          >
             ✕
           </button>
         </div>
@@ -698,13 +793,24 @@ export function CompareWithBranchOrTagModal({
             gap: 12,
           }}
         >
-          <div style={{ display: 'flex', gap: 4, background: 'rgba(255, 255, 255, 0.05)', padding: 2, borderRadius: 6 }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 4,
+              background: 'rgba(255, 255, 255, 0.05)',
+              padding: 2,
+              borderRadius: 6,
+            }}
+          >
             <button
               type="button"
               className={`git-tab-btn ${tab === 'branches' ? 'active' : ''}`}
               onClick={() => {
                 setTab('branches');
-                if (filteredBranches.length > 0 && !filteredBranches.some((b) => b.name === selectedRef)) {
+                if (
+                  filteredBranches.length > 0 &&
+                  !filteredBranches.some((b) => b.name === selectedRef)
+                ) {
                   setSelectedRef(filteredBranches[0].name);
                 }
               }}
@@ -731,10 +837,15 @@ export function CompareWithBranchOrTagModal({
               type="text"
               className="git-modal-input"
               value={query}
-              placeholder={tab === 'branches' ? t('git.searchBranchNamesPlaceholder') : t('git.searchTagNamesPlaceholder')}
+              placeholder={
+                tab === 'branches'
+                  ? t('git.searchBranchNamesPlaceholder')
+                  : t('git.searchTagNamesPlaceholder')
+              }
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
-                const list = tab === 'branches' ? filteredBranches.map((b) => b.name) : filteredTags;
+                const list =
+                  tab === 'branches' ? filteredBranches.map((b) => b.name) : filteredTags;
                 if (e.key === 'ArrowDown') {
                   e.preventDefault();
                   if (list.length > 0) {
@@ -766,7 +877,17 @@ export function CompareWithBranchOrTagModal({
             </div>
           )}
           {!loading && error && (
-            <div style={{ padding: 16, margin: 8, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 6, color: '#f87171', fontSize: 12 }}>
+            <div
+              style={{
+                padding: 16,
+                margin: 8,
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: 6,
+                color: '#f87171',
+                fontSize: 12,
+              }}
+            >
               {error}
             </div>
           )}
@@ -774,7 +895,9 @@ export function CompareWithBranchOrTagModal({
           {tab === 'branches' && !loading && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {filteredBranches.length === 0 ? (
-                <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+                <div
+                  style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+                >
                   {t('git.noMatchingBranch')}
                 </div>
               ) : (
@@ -813,7 +936,11 @@ export function CompareWithBranchOrTagModal({
                         </svg>
                         <span
                           className="git-item-title"
-                          style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: b.current ? 600 : 400 }}
+                          style={{
+                            fontSize: 12.5,
+                            color: 'var(--text)',
+                            fontWeight: b.current ? 600 : 400,
+                          }}
                         >
                           {b.name}
                         </span>
@@ -856,7 +983,9 @@ export function CompareWithBranchOrTagModal({
           {tab === 'tags' && !loading && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {filteredTags.length === 0 ? (
-                <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+                <div
+                  style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+                >
                   {t('git.noMatchingTag')}
                 </div>
               ) : (
@@ -891,7 +1020,10 @@ export function CompareWithBranchOrTagModal({
                           <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
                           <line x1="7" y1="7" x2="7.01" y2="7" />
                         </svg>
-                        <span className="git-item-title" style={{ fontSize: 12.5, color: 'var(--text)' }}>
+                        <span
+                          className="git-item-title"
+                          style={{ fontSize: 12.5, color: 'var(--text)' }}
+                        >
                           {tag}
                         </span>
                       </div>
@@ -920,7 +1052,12 @@ export function CompareWithBranchOrTagModal({
             {selectedRef ? t('git.selectedRef', { ref: selectedRef }) : t('git.selectBranchOrTag')}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="git-modal-btn secondary" onClick={onClose} disabled={comparing}>
+            <button
+              type="button"
+              className="git-modal-btn secondary"
+              onClick={onClose}
+              disabled={comparing}
+            >
               {t('common.cancel')}
             </button>
             <button
@@ -949,12 +1086,7 @@ interface RollbackFileModalProps {
   onConfirm: (path: string) => Promise<void>;
 }
 
-export function RollbackFileModal({
-  open,
-  filePath,
-  onClose,
-  onConfirm,
-}: RollbackFileModalProps) {
+export function RollbackFileModal({ open, filePath, onClose, onConfirm }: RollbackFileModalProps) {
   const { t } = useI18n();
   const [submitting, setSubmitting] = useState(false);
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
@@ -1034,7 +1166,14 @@ export function RollbackFileModal({
             }}
           >
             {/* Rollback counter-clockwise arrow icon */}
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
               <path d="M3 3v5h5" />
             </svg>
@@ -1058,11 +1197,17 @@ export function RollbackFileModal({
             marginBottom: 16,
           }}
         >
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{t('git.targetFile')}</div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', wordBreak: 'break-all' }}>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+            {t('git.targetFile')}
+          </div>
+          <div
+            style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', wordBreak: 'break-all' }}
+          >
             {fileName}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}>
+          <div
+            style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}
+          >
             {filePath}
           </div>
         </div>

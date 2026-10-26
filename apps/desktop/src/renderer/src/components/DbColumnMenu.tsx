@@ -65,7 +65,8 @@ export function DbColumnMenu({
     let x = anchor.x;
     let y = anchor.y;
     if (x + rect.width > window.innerWidth - 8) x = Math.max(8, window.innerWidth - rect.width - 8);
-    if (y + rect.height > window.innerHeight - 8) y = Math.max(8, window.innerHeight - rect.height - 8);
+    if (y + rect.height > window.innerHeight - 8)
+      y = Math.max(8, window.innerHeight - rect.height - 8);
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
     // 展开「更多筛选」会把菜单撑高，这里必须跟着重量一次，否则底部项目会掉到窗口外
@@ -124,7 +125,10 @@ export function DbColumnMenu({
       <div
         className="menu-item"
         role="menuitem"
-        style={{ opacity: sortDirection ? 1 : 0.45, pointerEvents: sortDirection ? 'auto' : 'none' }}
+        style={{
+          opacity: sortDirection ? 1 : 0.45,
+          pointerEvents: sortDirection ? 'auto' : 'none',
+        }}
         onClick={() => onSort(null)}
       >
         <div className="menu-item-left">
@@ -138,7 +142,16 @@ export function DbColumnMenu({
       <div className="menu-item" role="menuitem" onClick={() => onFilter()}>
         <div className="menu-item-left">
           <span className="menu-item-icon">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
             </svg>
           </span>
@@ -206,11 +219,7 @@ export function DbColumnMenu({
       {hasFilter && (
         <>
           {filterSummary && <div className="db-column-menu-summary">{filterSummary}</div>}
-          <div
-            className="menu-item menu-item-danger"
-            role="menuitem"
-            onClick={onClearFilter}
-          >
+          <div className="menu-item menu-item-danger" role="menuitem" onClick={onClearFilter}>
             <div className="menu-item-left">
               <span className="menu-item-icon">✕</span>
               <span>{t('db.clearFilter')}</span>
@@ -223,15 +232,19 @@ export function DbColumnMenu({
 
       {/* 隐藏列：字段多的表里「把这一列收起来」比来回横滚顺手，
           放回来后走右上角的「显示字段」—— 在菜单里只留单向入口，避免两个方向各写一套 */}
-      <div
-        className="menu-item"
-        role="menuitem"
-        title={t('db.hideColumnTitle')}
-        onClick={onHide}
-      >
+      <div className="menu-item" role="menuitem" title={t('db.hideColumnTitle')} onClick={onHide}>
         <div className="menu-item-left">
           <span className="menu-item-icon">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
               <line x1="1" y1="1" x2="23" y2="23" />
             </svg>

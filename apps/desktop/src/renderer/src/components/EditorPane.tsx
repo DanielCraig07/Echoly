@@ -23,10 +23,20 @@ import {
 import { BrowserViewPane } from './browser/BrowserViewPane';
 import { RenderFileTreeIcon } from './FileTree';
 import { translateSegments, useI18n, type Translate } from '../i18n';
-import { MarkdownMessage, extractMarkdownHeadings, type MarkdownHeadingItem } from './MarkdownMessage';
+import {
+  MarkdownMessage,
+  extractMarkdownHeadings,
+  type MarkdownHeadingItem,
+} from './MarkdownMessage';
 import { WelcomeView } from './WelcomeView';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
-import { setupCmdClickGesture, navigateBack, highlightJumpLocation, navigationStack, switchSourceHeader } from '../services/symbolNavigation';
+import {
+  setupCmdClickGesture,
+  navigateBack,
+  highlightJumpLocation,
+  navigationStack,
+  switchSourceHeader,
+} from '../services/symbolNavigation';
 import { registerAiInlineCompletions } from '../services/inlineCompletion';
 import type { CursorPos } from '../workspaceSession';
 import * as monaco from 'monaco-editor';
@@ -48,6 +58,13 @@ import {
   type ConflictBlock,
 } from '../services/mergeConflictResolver';
 import { ThreeWayMergeModal } from './ThreeWayMergeModal';
+import {
+  computeLineDiffs,
+  computeInlineHunks,
+  computeLineSimilarity,
+  computeLineTokenDiff,
+  type InlineDiffPart,
+} from '../services/textDiff';
 import {
   extractCodeSymbols,
   findCurrentSymbol,
@@ -105,7 +122,11 @@ interface Props {
   onCreateCppProject?: () => void;
   onCreateProject?: (templateId: string) => void;
   onOpenWorkspace?: (targetPath: string, openInNewWindow: boolean, entryFile?: string) => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
   /**
    * 由宿主 App 注入的确认弹窗句柄。
    *
@@ -226,423 +247,6 @@ function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
   }
 }
 
-interface GitLineDiff {
-  type: 'added' | 'modified' | 'deleted';
-  startLine: number;
-  endLine: number;
-}
-
-function computeLineDiffs(originalText: string, modifiedText: string): GitLineDiff[] {
-  const origLines = originalText.replace(/\r/g, '').split('\n');
-  const modLines = modifiedText.replace(/\r/g, '').split('\n');
-
-  const N = origLines.length;
-  const M = modLines.length;
-
-  let start = 0;
-  while (start < N && start < M && origLines[start] === modLines[start]) {
-    start++;
-  }
-
-  let origEnd = N - 1;
-  let modEnd = M - 1;
-  while (origEnd >= start && modEnd >= start && origLines[origEnd] === modLines[modEnd]) {
-    origEnd--;
-    modEnd--;
-  }
-
-  const subOrig = origLines.slice(start, origEnd + 1);
-  const subMod = modLines.slice(start, modEnd + 1);
-
-  const subN = subOrig.length;
-  const subM = subMod.length;
-
-  const diffs: GitLineDiff[] = [];
-
-  if (subN === 0 && subM === 0) {
-    return diffs;
-  }
-
-  if (subN === 0 && subM > 0) {
-    diffs.push({
-      type: 'added',
-      startLine: start + 1,
-      endLine: start + subM,
-    });
-    return diffs;
-  }
-
-  if (subN > 0 && subM === 0) {
-    diffs.push({
-      type: 'deleted',
-      startLine: Math.max(1, start),
-      endLine: Math.max(1, start),
-    });
-    return diffs;
-  }
-
-  // Standard DP LCS for the sub-range
-  const dp: number[][] = Array.from({ length: subN + 1 }, () => new Array(subM + 1).fill(0));
-  for (let i = 1; i <= subN; i++) {
-    for (let j = 1; j <= subM; j++) {
-      if (subOrig[i - 1] === subMod[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-      }
-    }
-  }
-
-  let i = subN;
-  let j = subM;
-  type DiffOp = { type: 'equal' | 'added' | 'deleted'; origIdx: number; modIdx: number };
-  const ops: DiffOp[] = [];
-
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && subOrig[i - 1] === subMod[j - 1]) {
-      ops.push({ type: 'equal', origIdx: i - 1, modIdx: j - 1 });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      ops.push({ type: 'added', origIdx: i, modIdx: j - 1 });
-      j--;
-    } else {
-      ops.push({ type: 'deleted', origIdx: i - 1, modIdx: j });
-      i--;
-    }
-  }
-
-  ops.reverse();
-
-  // Group consecutive non-equal ops into hunks
-  let k = 0;
-  while (k < ops.length) {
-    if (ops[k].type === 'equal') {
-      k++;
-      continue;
-    }
-
-    let delCount = 0;
-    let addCount = 0;
-    const hunkStartMod = ops[k].modIdx;
-    let firstModIdx = -1;
-    let lastModIdx = -1;
-
-    while (k < ops.length && ops[k].type !== 'equal') {
-      if (ops[k].type === 'deleted') {
-        delCount++;
-      } else if (ops[k].type === 'added') {
-        addCount++;
-        if (firstModIdx === -1) firstModIdx = ops[k].modIdx;
-        lastModIdx = ops[k].modIdx;
-      }
-      k++;
-    }
-
-    if (delCount > 0 && addCount > 0) {
-      diffs.push({
-        type: 'modified',
-        startLine: start + (firstModIdx >= 0 ? firstModIdx : hunkStartMod) + 1,
-        endLine: start + (lastModIdx >= 0 ? lastModIdx : hunkStartMod) + 1,
-      });
-    } else if (addCount > 0) {
-      diffs.push({
-        type: 'added',
-        startLine: start + firstModIdx + 1,
-        endLine: start + lastModIdx + 1,
-      });
-    } else if (delCount > 0) {
-      const lineNum = Math.min(M, Math.max(1, start + hunkStartMod + 1));
-      diffs.push({
-        type: 'deleted',
-        startLine: lineNum,
-        endLine: lineNum,
-      });
-    }
-  }
-
-  return diffs;
-}
-
-export interface InlineDiffOp {
-  type: 'same' | 'del' | 'add';
-  origNum?: number;
-  modNum?: number;
-  text: string;
-}
-
-export interface InlineDiffHunk {
-  id: number;
-  dels: InlineDiffOp[];
-  adds: InlineDiffOp[];
-  startOrigLine: number;
-  endOrigLine: number;
-  startModLine: number;
-  endModLine: number;
-  opsStartIndex: number;
-  opsEndIndex: number;
-}
-
-export function computeInlineHunks(
-  originalText: string,
-  modifiedText: string,
-): {
-  ops: InlineDiffOp[];
-  hunks: InlineDiffHunk[];
-} {
-  const origLines = originalText.replace(/\r/g, '').split('\n');
-  const modLines = modifiedText.replace(/\r/g, '').split('\n');
-
-  const N = origLines.length;
-  const M = modLines.length;
-
-  let start = 0;
-  while (start < N && start < M && origLines[start] === modLines[start]) {
-    start++;
-  }
-
-  let origEnd = N - 1;
-  let modEnd = M - 1;
-  while (origEnd >= start && modEnd >= start && origLines[origEnd] === modLines[modEnd]) {
-    origEnd--;
-    modEnd--;
-  }
-
-  const subOrig = origLines.slice(start, origEnd + 1);
-  const subMod = modLines.slice(start, modEnd + 1);
-  const subN = subOrig.length;
-  const subM = subMod.length;
-
-  const dp: number[][] = Array.from({ length: subN + 1 }, () => new Array(subM + 1).fill(0));
-  for (let i = 1; i <= subN; i++) {
-    for (let j = 1; j <= subM; j++) {
-      if (subOrig[i - 1] === subMod[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
-      }
-    }
-  }
-
-  let i = subN;
-  let j = subM;
-  const subOps: Array<{
-    type: 'same' | 'del' | 'add';
-    origSubIdx?: number;
-    modSubIdx?: number;
-    text: string;
-  }> = [];
-
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && subOrig[i - 1] === subMod[j - 1]) {
-      subOps.push({ type: 'same', origSubIdx: i - 1, modSubIdx: j - 1, text: subOrig[i - 1] });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      subOps.push({ type: 'add', modSubIdx: j - 1, text: subMod[j - 1] });
-      j--;
-    } else {
-      subOps.push({ type: 'del', origSubIdx: i - 1, text: subOrig[i - 1] });
-      i--;
-    }
-  }
-  subOps.reverse();
-
-  const ops: InlineDiffOp[] = [];
-  for (let k = 0; k < start; k++) {
-    ops.push({ type: 'same', origNum: k + 1, modNum: k + 1, text: origLines[k] });
-  }
-  for (const s of subOps) {
-    if (s.type === 'same') {
-      const origNum = start + s.origSubIdx! + 1;
-      const modNum = start + s.modSubIdx! + 1;
-      ops.push({ type: 'same', origNum, modNum, text: s.text });
-    } else if (s.type === 'del') {
-      const origNum = start + s.origSubIdx! + 1;
-      ops.push({ type: 'del', origNum, text: s.text });
-    } else {
-      const modNum = start + s.modSubIdx! + 1;
-      ops.push({ type: 'add', modNum, text: s.text });
-    }
-  }
-  for (let k = origEnd + 1; k < N; k++) {
-    const origNum = k + 1;
-    const modNum = modEnd + 1 + (k - origEnd);
-    ops.push({ type: 'same', origNum, modNum, text: origLines[k] });
-  }
-
-  const hunks: InlineDiffHunk[] = [];
-  let curHunk: InlineDiffHunk | null = null;
-
-  for (let k = 0; k < ops.length; k++) {
-    const op = ops[k];
-    if (op.type === 'same') {
-      if (curHunk) {
-        hunks.push(curHunk);
-        curHunk = null;
-      }
-    } else {
-      if (!curHunk) {
-        curHunk = {
-          id: hunks.length + 1,
-          dels: [],
-          adds: [],
-          startOrigLine: op.origNum ?? 1,
-          endOrigLine: op.origNum ?? 1,
-          startModLine: op.modNum ?? 1,
-          endModLine: op.modNum ?? 1,
-          opsStartIndex: k,
-          opsEndIndex: k,
-        };
-      }
-      if (op.type === 'del') {
-        curHunk.dels.push(op);
-        if (op.origNum != null) {
-          if (curHunk.dels.length === 1) curHunk.startOrigLine = op.origNum;
-          curHunk.endOrigLine = op.origNum;
-        }
-      } else {
-        curHunk.adds.push(op);
-        if (op.modNum != null) {
-          if (curHunk.adds.length === 1) curHunk.startModLine = op.modNum;
-          curHunk.endModLine = op.modNum;
-        }
-      }
-      curHunk.opsEndIndex = k;
-    }
-  }
-  if (curHunk) hunks.push(curHunk);
-
-  return { ops, hunks };
-}
-
-export function computeLineSimilarity(s1: string, s2: string): number {
-  if (s1 === s2) return 1;
-  if (!s1 || !s2) return 0;
-  const t1 = s1.trim();
-  const t2 = s2.trim();
-  if (t1 === t2) return 0.95;
-  let p = 0;
-  while (p < t1.length && p < t2.length && t1[p] === t2[p]) p++;
-  let s = 0;
-  while (s < t1.length - p && s < t2.length - p && t1[t1.length - 1 - s] === t2[t2.length - 1 - s]) s++;
-  return ((p + s) * 2) / (t1.length + t2.length);
-}
-
-export interface InlineDiffPart {
-  text: string;
-  isDiff: boolean;
-}
-
-export function computeLineTokenDiff(
-  oldStr: string,
-  newStr: string,
-): {
-  partsOld: InlineDiffPart[];
-  partsNew: InlineDiffPart[];
-} {
-  const t1 = oldStr.match(/(\s+|\w+|[^\w\s]+)/g) || [];
-  const t2 = newStr.match(/(\s+|\w+|[^\w\s]+)/g) || [];
-  const n = t1.length;
-  const m = t2.length;
-  if (n === 0 && m === 0) {
-    return { partsOld: [], partsNew: [] };
-  }
-  if (n === 0) {
-    return {
-      partsOld: [],
-      partsNew: [{ text: newStr, isDiff: true }],
-    };
-  }
-  if (m === 0) {
-    return {
-      partsOld: [{ text: oldStr, isDiff: true }],
-      partsNew: [],
-    };
-  }
-
-  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < m; j++) {
-      if (t1[i] === t2[j]) {
-        dp[i + 1][j + 1] = dp[i][j] + 1;
-      } else {
-        dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
-      }
-    }
-  }
-
-  const matched1 = new Set<number>();
-  const matched2 = new Set<number>();
-  let i = n;
-  let j = m;
-  while (i > 0 && j > 0) {
-    if (t1[i - 1] === t2[j - 1]) {
-      matched1.add(i - 1);
-      matched2.add(j - 1);
-      i--;
-      j--;
-    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
-      i--;
-    } else {
-      j--;
-    }
-  }
-
-  const merge = (tokens: string[], matched: Set<number>): InlineDiffPart[] => {
-    const merged: InlineDiffPart[] = [];
-    for (let idx = 0; idx < tokens.length; idx++) {
-      const isDiff = !matched.has(idx);
-      if (merged.length > 0 && merged[merged.length - 1].isDiff === isDiff) {
-        merged[merged.length - 1].text += tokens[idx];
-      } else {
-        merged.push({ text: tokens[idx], isDiff });
-      }
-    }
-    return merged;
-  };
-
-  return {
-    partsOld: merge(t1, matched1),
-    partsNew: merge(t2, matched2),
-  };
-}
-
-export function computeWordDiff(
-  oldStr: string,
-  newStr: string,
-): {
-  prefix: string;
-  middleOld: string;
-  middleNew: string;
-  suffix: string;
-} {
-  let prefixLen = 0;
-  while (
-    prefixLen < oldStr.length &&
-    prefixLen < newStr.length &&
-    oldStr[prefixLen] === newStr[prefixLen]
-  ) {
-    prefixLen++;
-  }
-
-  let suffixLen = 0;
-  while (
-    suffixLen < oldStr.length - prefixLen &&
-    suffixLen < newStr.length - prefixLen &&
-    oldStr[oldStr.length - 1 - suffixLen] === newStr[newStr.length - 1 - suffixLen]
-  ) {
-    suffixLen++;
-  }
-
-  return {
-    prefix: oldStr.slice(0, prefixLen),
-    middleOld: oldStr.slice(prefixLen, oldStr.length - suffixLen),
-    middleNew: newStr.slice(prefixLen, newStr.length - suffixLen),
-    suffix: oldStr.slice(oldStr.length - suffixLen),
-  };
-}
-
 interface TabContextMenuState {
   x: number;
   y: number;
@@ -723,12 +327,18 @@ export function EditorPane({
    */
   const tRef = useRef(t);
   tRef.current = t;
+  /**
+   * Monaco 的鼠标事件处理器同样是**挂载期一次性绑定**的，闭包锁死在首次渲染的
+   * `t` 与 `confirm` 上。条件断点那里要用弹窗收集表达式，所以这两个都要走 ref：
+   * 少了 `confirm` 的 ref，切换工作区重建 App 之后弹窗会指向一个已经卸载的实例
+   * （表现是点了确认什么也不发生）。
+   */
+  const confirmRef = useRef(confirm);
+  confirmRef.current = confirm;
   const active = tabs.find((t) => t.path === activePath) ?? null;
   const browserTabs = useMemo(
     () =>
-      tabs.filter(
-        (t) => isBrowserPath(t.path) || t.language === 'browser' || t.virtual?.browser,
-      ),
+      tabs.filter((t) => isBrowserPath(t.path) || t.language === 'browser' || t.virtual?.browser),
     [tabs],
   );
   const isBrowserActive = !!(
@@ -751,7 +361,8 @@ export function EditorPane({
   onAddToChatRef.current = onAddToChat;
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
-  const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
+  const isMac =
+    typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
   const cmdKey = isMac ? '⌘' : 'Ctrl+';
   const pendingRevealTargetRef = useRef<{
     path: string;
@@ -790,7 +401,8 @@ export function EditorPane({
   const jumpToDiffHunk = useCallback(
     (targetIndex: number) => {
       const diffEd = diffEditorRef.current;
-      const changes = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current : previewDiffHunks;
+      const changes =
+        diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current : previewDiffHunks;
       const total = changes.length;
       if (!diffEd || total === 0) return;
 
@@ -824,7 +436,7 @@ export function EditorPane({
         origEd.setPosition({ lineNumber: origLine, column: 1 });
       }
     },
-    [previewDiffHunks]
+    [previewDiffHunks],
   );
 
   /**
@@ -864,9 +476,10 @@ export function EditorPane({
         e.stopImmediatePropagation();
 
         // 构造等效但附带 shiftKey: true 的代理事件，派发给点击的目标元素
-        const EventConstructor = (typeof PointerEvent !== 'undefined' && e instanceof PointerEvent)
-          ? PointerEvent
-          : MouseEvent;
+        const EventConstructor =
+          typeof PointerEvent !== 'undefined' && e instanceof PointerEvent
+            ? PointerEvent
+            : MouseEvent;
 
         const patchedEvent = new EventConstructor(e.type, {
           bubbles: true,
@@ -902,7 +515,7 @@ export function EditorPane({
         },
       };
     },
-    []
+    [],
   );
 
   const [internalBreakpoints, setInternalBreakpoints] = useState<DapBreakpoint[]>([]);
@@ -912,31 +525,78 @@ export function EditorPane({
 
   const [isDebugging, setIsDebugging] = useState(false);
   const [debugState, setDebugState] = useState<'running' | 'paused' | 'stopped'>('stopped');
-  const [debugStoppedInfo, setDebugStoppedInfo] = useState<{ path: string; line: number } | null>(null);
+  const [debugStoppedInfo, setDebugStoppedInfo] = useState<{ path: string; line: number } | null>(
+    null,
+  );
   const debugDecorationsRef = useRef<string[]>([]);
 
-  const toggleBreakpoint = useCallback((targetPath: string, line: number, condition?: string) => {
-    if (controlledOnToggleBreakpoint) {
-      controlledOnToggleBreakpoint(targetPath, line, condition);
-      return;
-    }
-    setInternalBreakpoints((prev) => {
-      const exists = prev.some((b) => b.path === targetPath && b.line === line);
-      const next = exists
-        ? prev.filter((b) => !(b.path === targetPath && b.line === line))
-        : [...prev, { path: targetPath, line, condition: condition?.trim() || undefined, verified: true }];
+  const toggleBreakpoint = useCallback(
+    (targetPath: string, line: number, condition?: string) => {
+      if (controlledOnToggleBreakpoint) {
+        controlledOnToggleBreakpoint(targetPath, line, condition);
+        return;
+      }
+      setInternalBreakpoints((prev) => {
+        const exists = prev.some((b) => b.path === targetPath && b.line === line);
+        const next = exists
+          ? prev.filter((b) => !(b.path === targetPath && b.line === line))
+          : [
+              ...prev,
+              { path: targetPath, line, condition: condition?.trim() || undefined, verified: true },
+            ];
 
-      const fileBps = next
-        .filter((b) => b.path === targetPath)
-        .map((b) => ({ line: b.line, condition: b.condition }));
-      void window.ide?.dapSetBreakpoints?.(targetPath, fileBps);
+        const fileBps = next
+          .filter((b) => b.path === targetPath)
+          .map((b) => ({ line: b.line, condition: b.condition }));
+        void window.ide?.dapSetBreakpoints?.(targetPath, fileBps);
 
-      return next;
-    });
-  }, [controlledOnToggleBreakpoint]);
+        return next;
+      });
+    },
+    [controlledOnToggleBreakpoint],
+  );
 
   const toggleBreakpointRef = useRef(toggleBreakpoint);
   toggleBreakpointRef.current = toggleBreakpoint;
+
+  /**
+   * 右键行号区设置/编辑条件断点：收集一个条件表达式。
+   *
+   * 这里原本是 `window.prompt(...)`。Electron 已禁用 `window.prompt`，
+   * 项目在 `main.tsx` 里补的实现**直接返回默认值**（"留空则转为普通断点"那句提示
+   * 因此永远是一句空话）—— 也就是说：用户右键想设条件断点，界面看似接受，
+   * 实际这个断点永远是普通的，而且没有任何反馈。
+   *
+   * 弹窗用 `allowEmpty: true`：空表达式在这里是**合法输入**（转为普通断点），
+   * 不能套用「必须填点什么」的默认校验。
+   */
+  const askConditionalBreakpoint = useCallback(
+    async (line: number, existingCondition: string): Promise<string | null> => {
+      const tr = tRef.current;
+      const editing = existingCondition.length > 0;
+      const value = await confirmRef.current.confirm({
+        title: editing
+          ? tr('editor.bpEditConditionalTitle', { line })
+          : tr('editor.bpSetConditionalTitle', { line }),
+        content: buildSqlConfirmMarkdown({
+          t: tr,
+          intro: tr('editor.bpConditionIntro'),
+          statements: [],
+          notes: [tr('editor.bpConditionEmptyNote')],
+        }),
+        input: {
+          label: tr('editor.bpConditionLabel'),
+          defaultValue: existingCondition,
+          allowEmpty: true,
+        },
+        confirmLabel: tr('editor.bpConditionSave'),
+      });
+      return value;
+    },
+    [],
+  );
+  const askConditionalBreakpointRef = useRef(askConditionalBreakpoint);
+  askConditionalBreakpointRef.current = askConditionalBreakpoint;
 
   // 停止调试：立即收回浮动条并联动终止后台终端进程与 DAP 会话
   const handleStopDebug = useCallback(() => {
@@ -950,25 +610,27 @@ export function EditorPane({
 
   // 监听 DAP 调试事件及全局停止信号
   useEffect(() => {
-    const unlisten = window.ide?.onDapEvent ? window.ide.onDapEvent(async (ev) => {
-      if (ev.type === 'stopped') {
-        setIsDebugging(true);
-        setDebugState('paused');
-        try {
-          const st = (await window.ide?.dapGetStackTrace?.(ev.threadId || 1)) || [];
-          if (st.length > 0 && st[0].source?.path) {
-            setDebugStoppedInfo({ path: st[0].source.path, line: st[0].line });
+    const unlisten = window.ide?.onDapEvent
+      ? window.ide.onDapEvent(async (ev) => {
+          if (ev.type === 'stopped') {
+            setIsDebugging(true);
+            setDebugState('paused');
+            try {
+              const st = (await window.ide?.dapGetStackTrace?.(ev.threadId || 1)) || [];
+              if (st.length > 0 && st[0].source?.path) {
+                setDebugStoppedInfo({ path: st[0].source.path, line: st[0].line });
+              }
+            } catch {}
+          } else if (ev.type === 'continued') {
+            setDebugState('running');
+            setDebugStoppedInfo(null);
+          } else if (ev.type === 'terminated' || ev.type === 'exited') {
+            setIsDebugging(false);
+            setDebugState('stopped');
+            setDebugStoppedInfo(null);
           }
-        } catch {}
-      } else if (ev.type === 'continued') {
-        setDebugState('running');
-        setDebugStoppedInfo(null);
-      } else if (ev.type === 'terminated' || ev.type === 'exited') {
-        setIsDebugging(false);
-        setDebugState('stopped');
-        setDebugStoppedInfo(null);
-      }
-    }) : () => {};
+        })
+      : () => {};
 
     const handleStartDebug = () => {
       setIsDebugging(true);
@@ -1096,16 +758,19 @@ export function EditorPane({
     }, 600);
   }, []);
 
-  const trackCursorJump = useCallback((path: string | null | undefined, line: number, column: number) => {
-    if (!path || isNavigatingBackRef.current) return;
-    const prev = lastCursorPosRef.current;
-    if (prev) {
-      if (prev.path !== path || Math.abs(prev.line - line) >= 5) {
-        navigationStack.push(prev);
+  const trackCursorJump = useCallback(
+    (path: string | null | undefined, line: number, column: number) => {
+      if (!path || isNavigatingBackRef.current) return;
+      const prev = lastCursorPosRef.current;
+      if (prev) {
+        if (prev.path !== path || Math.abs(prev.line - line) >= 5) {
+          navigationStack.push(prev);
+        }
       }
-    }
-    lastCursorPosRef.current = { path, line, column };
-  }, []);
+      lastCursorPosRef.current = { path, line, column };
+    },
+    [],
+  );
 
   const [selectedText, setSelectedText] = useState('');
   const [tabsScrolling, setTabsScrolling] = useState(false);
@@ -1277,7 +942,11 @@ export function EditorPane({
         if (uriStr.startsWith('file://')) {
           const isNotActiveTab = !activeUris.has(uriStr);
           const isLruEvicted = lruEvictedUris.has(uriStr);
-          if ((isNotActiveTab || isLruEvicted) && !uriStr.includes('git-diff-temp') && !uriStr.includes('inmemory://')) {
+          if (
+            (isNotActiveTab || isLruEvicted) &&
+            !uriStr.includes('git-diff-temp') &&
+            !uriStr.includes('inmemory://')
+          ) {
             model.dispose();
           }
         }
@@ -1341,31 +1010,44 @@ export function EditorPane({
   const [inlineAiDiff, setInlineAiDiff] = useState<{
     originalText: string;
     newText: string;
-    range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
-    originalRange: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number };
+    range: {
+      startLineNumber: number;
+      startColumn: number;
+      endLineNumber: number;
+      endColumn: number;
+    };
+    originalRange: {
+      startLineNumber: number;
+      startColumn: number;
+      endLineNumber: number;
+      endColumn: number;
+    };
   } | null>(null);
   const inlineAiDecorationsRef = useRef<string[]>([]);
   const inlineInputRef = useRef<HTMLInputElement>(null);
 
-  const startSplitResize = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const container = editorSplitContainerRef.current;
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-    const isVert = splitOrientation === 'vertical';
-    const onMove = (ev: MouseEvent) => {
-      const ratio = isVert
-        ? (ev.clientY - rect.top) / rect.height
-        : (ev.clientX - rect.left) / rect.width;
-      setSplitRatio(Math.max(0.15, Math.min(0.85, ratio)));
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [splitOrientation]);
+  const startSplitResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const container = editorSplitContainerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const isVert = splitOrientation === 'vertical';
+      const onMove = (ev: MouseEvent) => {
+        const ratio = isVert
+          ? (ev.clientY - rect.top) / rect.height
+          : (ev.clientX - rect.left) / rect.width;
+        setSplitRatio(Math.max(0.15, Math.min(0.85, ratio)));
+      };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    },
+    [splitOrientation],
+  );
 
   const handleInlineAiSubmit = useCallback(async () => {
     if (!inlinePrompt.trim() || !active || !editorRef.current) return;
@@ -1399,7 +1081,9 @@ export function EditorPane({
         targetRange = new monaco.Range(line, 1, line, model.getLineMaxColumn(line));
       }
 
-      const origText = inlineAiDiff ? inlineAiDiff.originalText : model.getValueInRange(targetRange);
+      const origText = inlineAiDiff
+        ? inlineAiDiff.originalText
+        : model.getValueInRange(targetRange);
       const currentCode = model.getValueInRange(targetRange);
       const fullDoc = model.getValue();
 
@@ -1554,7 +1238,9 @@ export function EditorPane({
   const currentBlameLineRef = useRef<number | null>(null);
   const blameCacheRef = useRef<Map<string, { text: string; lineNumber: number }>>(new Map());
   const [gitInlineDiffLine, setGitInlineDiffLine] = useState<number | null>(null);
-  const [editorInstance, setEditorInstance] = useState<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const [editorInstance, setEditorInstance] = useState<MonacoEditor.IStandaloneCodeEditor | null>(
+    null,
+  );
   // 数据库连接类型缓存：db:// 虚拟标签只带 connectionId，需要它来决定标识符引号与库名限定
   const [dbConnections, setDbConnections] = useState<DbConnectionView[]>([]);
   const isSyncingScrollRef = useRef(false);
@@ -1562,7 +1248,9 @@ export function EditorPane({
   // 保存每个 md 文件的预览滚动位置，切换文件时持久化，切回时恢复
   const mdPreviewScrollCacheRef = useRef<Map<string, number>>(new Map());
   // 保存每个代码文件的视图与滚动位置（scrollTop, scrollLeft, 光标位置），杜绝粗暴居中跳行
-  const editorScrollStateMapRef = useRef<Map<string, { scrollTop: number; scrollLeft: number; line: number; col: number }>>(new Map());
+  const editorScrollStateMapRef = useRef<
+    Map<string, { scrollTop: number; scrollLeft: number; line: number; col: number }>
+  >(new Map());
   const editorViewStateMapRef = useRef<Map<string, MonacoEditor.ICodeEditorViewState>>(new Map());
   // 切换文件锁定标志：在 Monaco 切换 model 期间屏蔽 reset 产生的 (1,1) 和 scrollTop=0 误写
   const isSwitchingFileRef = useRef(false);
@@ -1591,7 +1279,10 @@ export function EditorPane({
   // ── 代码大纲与符号导航状态 ──────────────────────────
   const [showSymbolDropdown, setShowSymbolDropdown] = useState(false);
   const [cursorLine, setCursorLine] = useState<number>(1);
-  const [symbolDropdownCoords, setSymbolDropdownCoords] = useState<{ top: number; left: number } | null>(null);
+  const [symbolDropdownCoords, setSymbolDropdownCoords] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const [symbolFilter, setSymbolFilter] = useState('');
   const symbolBtnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -1707,8 +1398,6 @@ export function EditorPane({
     window.addEventListener('echoly:formatActiveEditor', handleFormat);
     return () => window.removeEventListener('echoly:formatActiveEditor', handleFormat);
   }, [active?.isLargeFile]);
-
-
 
   const applyBlameDecoration = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor, lineNumber: number, text: string) => {
@@ -2026,7 +1715,7 @@ export function EditorPane({
         onRevealTargetConsumed?.();
       }
     },
-    [activePath, onRevealTargetConsumed]
+    [activePath, onRevealTargetConsumed],
   );
 
   useEffect(() => {
@@ -2040,8 +1729,7 @@ export function EditorPane({
     if (pendingRevealTargetRef.current) {
       const curActive = (activePath || '').replace(/\\/g, '/');
       const targetPath = pendingRevealTargetRef.current.path.replace(/\\/g, '/');
-      const matches =
-        Boolean(curActive && targetPath) && isSameFileByPath(curActive, targetPath);
+      const matches = Boolean(curActive && targetPath) && isSameFileByPath(curActive, targetPath);
       if (!matches) {
         pendingRevealTargetRef.current = null;
         onRevealTargetConsumed?.();
@@ -2068,12 +1756,17 @@ export function EditorPane({
           el = previewEl.querySelector(`[data-heading-line="${h.line}"]`) as HTMLElement | null;
         }
         if (!el && h.text) {
-          const headings = Array.from(previewEl.querySelectorAll('h1, h2, h3, h4, h5, h6')) as HTMLElement[];
+          const headings = Array.from(
+            previewEl.querySelectorAll('h1, h2, h3, h4, h5, h6'),
+          ) as HTMLElement[];
           el = headings.find((item) => item.textContent?.trim() === h.text.trim()) || null;
         }
         if (el) {
           const pTop =
-            el.getBoundingClientRect().top - previewEl.getBoundingClientRect().top + previewEl.scrollTop - 16;
+            el.getBoundingClientRect().top -
+            previewEl.getBoundingClientRect().top +
+            previewEl.scrollTop -
+            16;
           const eTop = ed.getTopForLineNumber(h.line) - 16;
           anchors.push({
             editorTop: Math.max(0, eTop),
@@ -2107,7 +1800,8 @@ export function EditorPane({
       const a2 = anchors[Math.min(i + 1, anchors.length - 1)];
 
       const eDelta = a2.editorTop - a1.editorTop;
-      const ratio = eDelta > 0 ? Math.max(0, Math.min(1, (editorScrollTop - a1.editorTop) / eDelta)) : 0;
+      const ratio =
+        eDelta > 0 ? Math.max(0, Math.min(1, (editorScrollTop - a1.editorTop) / eDelta)) : 0;
       const targetPreviewTop = a1.previewTop + ratio * (a2.previewTop - a1.previewTop);
 
       isSyncingScrollRef.current = true;
@@ -2133,7 +1827,8 @@ export function EditorPane({
       const a2 = anchors[Math.min(i + 1, anchors.length - 1)];
 
       const pDelta = a2.previewTop - a1.previewTop;
-      const ratio = pDelta > 0 ? Math.max(0, Math.min(1, (previewScrollTop - a1.previewTop) / pDelta)) : 0;
+      const ratio =
+        pDelta > 0 ? Math.max(0, Math.min(1, (previewScrollTop - a1.previewTop) / pDelta)) : 0;
       const targetEditorTop = a1.editorTop + ratio * (a2.editorTop - a1.editorTop);
 
       isSyncingScrollRef.current = true;
@@ -2223,12 +1918,15 @@ export function EditorPane({
               const a1 = anchors[ai];
               const a2 = anchors[Math.min(ai + 1, anchors.length - 1)];
               const pDelta = a2.previewTop - a1.previewTop;
-              const ratio = pDelta > 0 ? Math.max(0, Math.min(1, (cached - a1.previewTop) / pDelta)) : 0;
+              const ratio =
+                pDelta > 0 ? Math.max(0, Math.min(1, (cached - a1.previewTop) / pDelta)) : 0;
               const targetEditorTop = a1.editorTop + ratio * (a2.editorTop - a1.editorTop);
               ed.setScrollTop(Math.max(0, targetEditorTop));
             }
             // 4. 延长锁定时间（250ms），覆盖 Monaco 模型初始化后的所有延迟滚动事件
-            setTimeout(() => { isSyncingScrollRef.current = false; }, 250);
+            setTimeout(() => {
+              isSyncingScrollRef.current = false;
+            }, 250);
             updateActiveHeading();
           } else {
             syncEditorToPreview(ed, previewEl);
@@ -2238,7 +1936,14 @@ export function EditorPane({
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [showMdPreview, isMarkdown, activePath, getMarkdownAnchors, syncEditorToPreview, updateActiveHeading]);
+  }, [
+    showMdPreview,
+    isMarkdown,
+    activePath,
+    getMarkdownAnchors,
+    syncEditorToPreview,
+    updateActiveHeading,
+  ]);
 
   // Keep active item visible inside TOC floating list
   useEffect(() => {
@@ -2280,13 +1985,18 @@ export function EditorPane({
         el = previewEl.querySelector(`[data-heading-line="${h.line}"]`) as HTMLElement | null;
       }
       if (!el && h.text) {
-        const headings = Array.from(previewEl.querySelectorAll('h1, h2, h3, h4, h5, h6')) as HTMLElement[];
+        const headings = Array.from(
+          previewEl.querySelectorAll('h1, h2, h3, h4, h5, h6'),
+        ) as HTMLElement[];
         el = headings.find((item) => item.textContent?.trim() === h.text.trim()) || null;
       }
 
       if (el) {
         const offset =
-          el.getBoundingClientRect().top - previewEl.getBoundingClientRect().top + previewEl.scrollTop - 16;
+          el.getBoundingClientRect().top -
+          previewEl.getBoundingClientRect().top +
+          previewEl.scrollTop -
+          16;
         previewEl.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
       }
     }
@@ -2353,7 +2063,9 @@ export function EditorPane({
 
           // 同步第二行替换框与第一行输入框等宽
           const findInput = findWidget.querySelector<HTMLElement>('.find-part .monaco-findInput');
-          const replaceInput = findWidget.querySelector<HTMLElement>('.replace-part .monaco-findInput');
+          const replaceInput = findWidget.querySelector<HTMLElement>(
+            '.replace-part .monaco-findInput',
+          );
           if (findInput && replaceInput) {
             replaceInput.style.width = `${findInput.offsetWidth}px`;
           }
@@ -2490,7 +2202,9 @@ export function EditorPane({
         }
 
         // 恢复精确滚动条与光标位置，绝不强制调用 revealLineInCenter！
-        const saved = editorScrollStateMapRef.current.get(restoreTarget) ?? initialCursorPositionsRef.current?.[restoreTarget];
+        const saved =
+          editorScrollStateMapRef.current.get(restoreTarget) ??
+          initialCursorPositionsRef.current?.[restoreTarget];
         if (saved) {
           if (typeof saved.scrollTop === 'number' && saved.scrollTop >= 0) {
             currentEd.setScrollTop(saved.scrollTop);
@@ -2555,10 +2269,16 @@ export function EditorPane({
       ranges.push({ start: startLine, end: endLine });
       const diffColor =
         diff.type === 'added'
-          ? (isLight ? '#1a7f37' : '#2ea043')
+          ? isLight
+            ? '#1a7f37'
+            : '#2ea043'
           : diff.type === 'deleted'
-            ? (isLight ? '#cf222e' : '#f85149')
-            : (isLight ? '#bf8700' : '#e2c08d');
+            ? isLight
+              ? '#cf222e'
+              : '#f85149'
+            : isLight
+              ? '#bf8700'
+              : '#e2c08d';
 
       decorations.push({
         range: {
@@ -2689,7 +2409,16 @@ export function EditorPane({
     };
     window.addEventListener('keydown', handleKey, true);
     return () => window.removeEventListener('keydown', handleKey, true);
-  }, [gitInlineDiffLine, previewDiff, onCloseDiff, selectionCoords, showToc, splitPath, tabs, activePath]);
+  }, [
+    gitInlineDiffLine,
+    previewDiff,
+    onCloseDiff,
+    selectionCoords,
+    showToc,
+    splitPath,
+    tabs,
+    activePath,
+  ]);
 
   useEffect(() => {
     if (!active) {
@@ -2700,7 +2429,13 @@ export function EditorPane({
 
   // Single-Hunk Discard Handler (reverts ONLY the target modified hunk, leaving other changes in the file intact)
   const handleDiscardSingleHunk = async () => {
-    if (!active?.path || !gitDiffData || gitDiffData.path !== activePath || gitInlineDiffLine == null) return;
+    if (
+      !active?.path ||
+      !gitDiffData ||
+      gitDiffData.path !== activePath ||
+      gitInlineDiffLine == null
+    )
+      return;
     // 兜底防线：虚拟标签（db:// / git-head:）绝不写盘
     if (isVirtualPath(active.path)) return;
     // 这里直接写盘还原、不经过 Git，是编辑器里唯一没有第二份的改动 —— 必须确认
@@ -2852,54 +2587,59 @@ export function EditorPane({
 
   const isMouseDownRef = useRef(false);
   const lastMousePosRef = useRef<{ clientX: number; clientY: number } | null>(null);
-  const selectionHighlightDecosRef = useRef<Map<MonacoEditor.IStandaloneCodeEditor, string[]>>(new Map());
+  const selectionHighlightDecosRef = useRef<Map<MonacoEditor.IStandaloneCodeEditor, string[]>>(
+    new Map(),
+  );
 
   // 选中文本全文档即时高亮显示：划选任何单词/短语/符号时，全文档所有相同匹配项同步高亮发光并在标尺上指示
-  const updateSelectionOccurrenceHighlights = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
-    const model = ed.getModel();
-    const prevDecos = selectionHighlightDecosRef.current.get(ed) ?? [];
-    if (!model || model.isDisposed()) {
-      if (prevDecos.length > 0) {
-        selectionHighlightDecosRef.current.delete(ed);
+  const updateSelectionOccurrenceHighlights = useCallback(
+    (ed: MonacoEditor.IStandaloneCodeEditor) => {
+      const model = ed.getModel();
+      const prevDecos = selectionHighlightDecosRef.current.get(ed) ?? [];
+      if (!model || model.isDisposed()) {
+        if (prevDecos.length > 0) {
+          selectionHighlightDecosRef.current.delete(ed);
+        }
+        return;
       }
-      return;
-    }
-    const sel = ed.getSelection();
-    if (!sel || sel.isEmpty()) {
-      if (prevDecos.length > 0) {
-        const next = ed.deltaDecorations(prevDecos, []);
-        selectionHighlightDecosRef.current.set(ed, next);
+      const sel = ed.getSelection();
+      if (!sel || sel.isEmpty()) {
+        if (prevDecos.length > 0) {
+          const next = ed.deltaDecorations(prevDecos, []);
+          selectionHighlightDecosRef.current.set(ed, next);
+        }
+        return;
       }
-      return;
-    }
-    const text = model.getValueInRange(sel);
-    if (!text || text.trim().length === 0 || text.includes('\n')) {
-      if (prevDecos.length > 0) {
-        const next = ed.deltaDecorations(prevDecos, []);
-        selectionHighlightDecosRef.current.set(ed, next);
+      const text = model.getValueInRange(sel);
+      if (!text || text.trim().length === 0 || text.includes('\n')) {
+        if (prevDecos.length > 0) {
+          const next = ed.deltaDecorations(prevDecos, []);
+          selectionHighlightDecosRef.current.set(ed, next);
+        }
+        return;
       }
-      return;
-    }
 
-    try {
-      const matches = model.findMatches(text, false, false, true, null, true);
-      const decos: MonacoEditor.IModelDeltaDecoration[] = matches.slice(0, 2000).map((m) => ({
-        range: m.range,
-        options: {
-          className: 'monaco-selection-occurrence-highlight',
-          description: 'selection-occurrence-highlight',
-          overviewRuler: {
-            color: uiTheme === 'light' ? 'rgba(37, 99, 235, 0.45)' : 'rgba(255, 255, 255, 0.45)',
-            position: 4, // OverviewRulerLane.Center
+      try {
+        const matches = model.findMatches(text, false, false, true, null, true);
+        const decos: MonacoEditor.IModelDeltaDecoration[] = matches.slice(0, 2000).map((m) => ({
+          range: m.range,
+          options: {
+            className: 'monaco-selection-occurrence-highlight',
+            description: 'selection-occurrence-highlight',
+            overviewRuler: {
+              color: uiTheme === 'light' ? 'rgba(37, 99, 235, 0.45)' : 'rgba(255, 255, 255, 0.45)',
+              position: 4, // OverviewRulerLane.Center
+            },
           },
-        },
-      }));
-      const next = ed.deltaDecorations(prevDecos, decos);
-      selectionHighlightDecosRef.current.set(ed, next);
-    } catch {
-      // 容错忽略
-    }
-  }, [uiTheme]);
+        }));
+        const next = ed.deltaDecorations(prevDecos, decos);
+        selectionHighlightDecosRef.current.set(ed, next);
+      } catch {
+        // 容错忽略
+      }
+    },
+    [uiTheme],
+  );
 
   const updateSelectionTextOnly = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
     updateSelectionOccurrenceHighlights(ed);
@@ -2966,10 +2706,7 @@ export function EditorPane({
       const endVis = ed.getScrolledVisiblePosition(endPos);
 
       // 若选区已完全滚出可视区域，自动隐藏
-      if (
-        (startVis && startVis.top > containerRect.height + 30) ||
-        (endVis && endVis.top < -30)
-      ) {
+      if ((startVis && startVis.top > containerRect.height + 30) || (endVis && endVis.top < -30)) {
         setSelectionCoords(null);
         return;
       }
@@ -2985,7 +2722,11 @@ export function EditorPane({
       } else {
         const refVis = endVis || startVis;
         anchorX = editorRect.left - containerRect.left + (refVis?.left ?? contentLeft);
-        anchorY = editorRect.top - containerRect.top + (refVis?.top ?? 0) + (refVis?.height || defaultLineHeight);
+        anchorY =
+          editorRect.top -
+          containerRect.top +
+          (refVis?.top ?? 0) +
+          (refVis?.height || defaultLineHeight);
       }
 
       // 收集选区及周边行代码文本占用的矩形范围，用于碰撞检测
@@ -3002,7 +2743,8 @@ export function EditorPane({
         const lineEndVis = ed.getScrolledVisiblePosition({ lineNumber: ln, column: maxCol });
 
         const codeLeft = editorRect.left - containerRect.left + contentLeft;
-        const codeRight = editorRect.left - containerRect.left + (lineEndVis ? lineEndVis.left : contentLeft);
+        const codeRight =
+          editorRect.left - containerRect.left + (lineEndVis ? lineEndVis.left : contentLeft);
         const isCursorLine = ed.getPosition()?.lineNumber === ln;
         // 当前光标行可能有 Git Blame 装饰信息
         const occupiedRight = Math.max(codeLeft, codeRight + (isCursorLine ? 220 : 16));
@@ -3049,7 +2791,9 @@ export function EditorPane({
       // 候选 2：选区/鼠标下方行的空白处（优先贴近鼠标 X 坐标，但避开该行文字）
       if (finalLeft == null) {
         const cand2Top = anchorY + 8;
-        const belowObs = codeObstacles.find((o) => cand2Top >= o.top - 2 && cand2Top <= o.bottom + 2);
+        const belowObs = codeObstacles.find(
+          (o) => cand2Top >= o.top - 2 && cand2Top <= o.bottom + 2,
+        );
         const cand2Left = Math.max(
           minAllowedLeft,
           Math.max(anchorX - 20, (belowObs?.right ?? minAllowedLeft) + 12),
@@ -3067,7 +2811,9 @@ export function EditorPane({
       // 候选 3：选区/鼠标上方行的空白处
       if (finalLeft == null) {
         const cand3Top = anchorY - widgetHeight - 8;
-        const aboveObs = codeObstacles.find((o) => cand3Top >= o.top - 2 && cand3Top <= o.bottom + 2);
+        const aboveObs = codeObstacles.find(
+          (o) => cand3Top >= o.top - 2 && cand3Top <= o.bottom + 2,
+        );
         const cand3Left = Math.max(
           minAllowedLeft,
           Math.max(anchorX - 20, (aboveObs?.right ?? minAllowedLeft) + 12),
@@ -3085,7 +2831,10 @@ export function EditorPane({
       // 候选 4：当前鼠标所在行，停靠在右侧边距安全区
       if (finalLeft == null) {
         const cand4Left = maxAllowedRight - widgetWidth;
-        const cand4Top = Math.max(8, Math.min(anchorY - widgetHeight / 2, containerRect.height - widgetHeight - 8));
+        const cand4Top = Math.max(
+          8,
+          Math.min(anchorY - widgetHeight / 2, containerRect.height - widgetHeight - 8),
+        );
         if (!doesOverlapCode(cand4Left, cand4Top, widgetWidth, widgetHeight)) {
           finalLeft = cand4Left;
           finalTop = cand4Top;
@@ -3096,12 +2845,12 @@ export function EditorPane({
       if (finalLeft == null) {
         const refBottomVis = endVis || startVis;
         const selBottomY =
-          editorRect.top - containerRect.top + (refBottomVis?.top ?? anchorY) + (refBottomVis?.height || defaultLineHeight);
+          editorRect.top -
+          containerRect.top +
+          (refBottomVis?.top ?? anchorY) +
+          (refBottomVis?.height || defaultLineHeight);
         finalTop = Math.max(8, Math.min(selBottomY + 6, containerRect.height - widgetHeight - 8));
-        finalLeft = Math.max(
-          minAllowedLeft,
-          Math.min(anchorX, maxAllowedRight - widgetWidth),
-        );
+        finalLeft = Math.max(minAllowedLeft, Math.min(anchorX, maxAllowedRight - widgetWidth));
       }
 
       if (finalLeft != null && finalTop != null) {
@@ -3114,134 +2863,134 @@ export function EditorPane({
     }
   }, []);
 
-  const updateSelectionAndCoords = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
-    updateSelectionOccurrenceHighlights(ed);
-    const model = ed.getModel();
-    const sel = ed.getSelection();
-    const selections = ed.getSelections();
-    // 查找框打开时不显示 AI 悬浮提示，避免遮挡搜索框
-    if (ed.getDomNode()?.querySelector('.find-widget.visible')) {
-      setSelectionCoords(null);
-      return;
-    }
-    // 块选择 / 列选择 / 多光标模式 (selections 数量 > 1)：绝不显示 AI 辅助悬浮
-    if (selections && selections.length > 1) {
-      setSelectionCoords(null);
-      if (model && sel && !sel.isEmpty()) {
-        const val = model.getValueInRange(sel);
-        onSelectionChangeRef.current?.(val);
-        setSelectedText(val);
-      }
-      return;
-    }
-    if (!model || !sel || sel.isEmpty()) {
-      dismissedSelectionKeyRef.current = null;
-      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
-      clearTimerRef.current = setTimeout(() => {
-        onSelectionChangeRef.current?.('');
-        setSelectedText('');
-        setSelectionRange(null);
-        setSelectionCoords(null);
-      }, 250);
-      return;
-    }
-    if (clearTimerRef.current) {
-      clearTimeout(clearTimerRef.current);
-      clearTimerRef.current = null;
-    }
-    const val = model.getValueInRange(sel);
-    onSelectionChangeRef.current?.(val);
-    setSelectedText(val);
-    setSelectionRange({
-      startLine: sel.startLineNumber,
-      endLine: sel.endLineNumber,
-    });
-
-    // Only compute and display floating coordinates when mouse is NOT pressed down
-    if (isMouseDownRef.current) {
-      setSelectionCoords(null);
-      return;
-    }
-
-    const currentKey = `${sel.startLineNumber}:${sel.startColumn}-${sel.endLineNumber}:${sel.endColumn}`;
-    // 滑动后当前选区隐藏不再提示 AI；当用户重新划选或改变选区时恢复展示
-    if (dismissedSelectionKeyRef.current === currentKey) {
-      setSelectionCoords(null);
-      return;
-    }
-
-    dismissedSelectionKeyRef.current = null;
-    repositionSelectionCoords(ed);
-  }, [repositionSelectionCoords, updateSelectionOccurrenceHighlights]);
-
-  const openInlineAiForEditor = useCallback(
+  const updateSelectionAndCoords = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor) => {
-      const sel = ed.getSelection();
+      updateSelectionOccurrenceHighlights(ed);
       const model = ed.getModel();
-      let startLine = 1;
-      let endLine = 1;
-      if (model && sel) {
-        if (!sel.isEmpty()) {
-          const text = model.getValueInRange(sel);
-          setSelectedText(text);
-          startLine = sel.startLineNumber;
-          endLine = sel.endLineNumber;
-          setSelectionRange({
-            startLine,
-            endLine,
-          });
-        } else {
-          // If no selection range, select current line
-          const lineNum = sel.positionLineNumber;
-          const lineContent = model.getLineContent(lineNum);
-          setSelectedText(lineContent);
-          startLine = lineNum;
-          endLine = lineNum;
-          setSelectionRange({
-            startLine: lineNum,
-            endLine: lineNum,
-          });
-        }
+      const sel = ed.getSelection();
+      const selections = ed.getSelections();
+      // 查找框打开时不显示 AI 悬浮提示，避免遮挡搜索框
+      if (ed.getDomNode()?.querySelector('.find-widget.visible')) {
+        setSelectionCoords(null);
+        return;
       }
-      try {
-        const editorDom = ed.getDomNode();
-        const containerDom = editorContainerRef.current;
-        const startPos = sel ? sel.getStartPosition() : { lineNumber: startLine, column: 1 };
-        const visiblePos = ed.getScrolledVisiblePosition(startPos);
-        if (visiblePos && editorDom && containerDom) {
-          const editorRect = editorDom.getBoundingClientRect();
-          const containerRect = containerDom.getBoundingClientRect();
-          const left = Math.max(
-            16,
-            Math.min(
-              editorRect.left - containerRect.left + visiblePos.left - 40,
-              containerRect.width - 440,
-            ),
-          );
-          const isNearTop = visiblePos.top < 120;
-          const top = isNearTop
-            ? editorRect.top - containerRect.top + visiblePos.top + 28
-            : editorRect.top - containerRect.top + visiblePos.top - 95;
-          setInlineAiCoords({ left, top });
-        } else {
-          setInlineAiCoords(null);
+      // 块选择 / 列选择 / 多光标模式 (selections 数量 > 1)：绝不显示 AI 辅助悬浮
+      if (selections && selections.length > 1) {
+        setSelectionCoords(null);
+        if (model && sel && !sel.isEmpty()) {
+          const val = model.getValueInRange(sel);
+          onSelectionChangeRef.current?.(val);
+          setSelectedText(val);
         }
-      } catch {
+        return;
+      }
+      if (!model || !sel || sel.isEmpty()) {
+        dismissedSelectionKeyRef.current = null;
+        if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+        clearTimerRef.current = setTimeout(() => {
+          onSelectionChangeRef.current?.('');
+          setSelectedText('');
+          setSelectionRange(null);
+          setSelectionCoords(null);
+        }, 250);
+        return;
+      }
+      if (clearTimerRef.current) {
+        clearTimeout(clearTimerRef.current);
+        clearTimerRef.current = null;
+      }
+      const val = model.getValueInRange(sel);
+      onSelectionChangeRef.current?.(val);
+      setSelectedText(val);
+      setSelectionRange({
+        startLine: sel.startLineNumber,
+        endLine: sel.endLineNumber,
+      });
+
+      // Only compute and display floating coordinates when mouse is NOT pressed down
+      if (isMouseDownRef.current) {
+        setSelectionCoords(null);
+        return;
+      }
+
+      const currentKey = `${sel.startLineNumber}:${sel.startColumn}-${sel.endLineNumber}:${sel.endColumn}`;
+      // 滑动后当前选区隐藏不再提示 AI；当用户重新划选或改变选区时恢复展示
+      if (dismissedSelectionKeyRef.current === currentKey) {
+        setSelectionCoords(null);
+        return;
+      }
+
+      dismissedSelectionKeyRef.current = null;
+      repositionSelectionCoords(ed);
+    },
+    [repositionSelectionCoords, updateSelectionOccurrenceHighlights],
+  );
+
+  const openInlineAiForEditor = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
+    const sel = ed.getSelection();
+    const model = ed.getModel();
+    let startLine = 1;
+    let endLine = 1;
+    if (model && sel) {
+      if (!sel.isEmpty()) {
+        const text = model.getValueInRange(sel);
+        setSelectedText(text);
+        startLine = sel.startLineNumber;
+        endLine = sel.endLineNumber;
+        setSelectionRange({
+          startLine,
+          endLine,
+        });
+      } else {
+        // If no selection range, select current line
+        const lineNum = sel.positionLineNumber;
+        const lineContent = model.getLineContent(lineNum);
+        setSelectedText(lineContent);
+        startLine = lineNum;
+        endLine = lineNum;
+        setSelectionRange({
+          startLine: lineNum,
+          endLine: lineNum,
+        });
+      }
+    }
+    try {
+      const editorDom = ed.getDomNode();
+      const containerDom = editorContainerRef.current;
+      const startPos = sel ? sel.getStartPosition() : { lineNumber: startLine, column: 1 };
+      const visiblePos = ed.getScrolledVisiblePosition(startPos);
+      if (visiblePos && editorDom && containerDom) {
+        const editorRect = editorDom.getBoundingClientRect();
+        const containerRect = containerDom.getBoundingClientRect();
+        const left = Math.max(
+          16,
+          Math.min(
+            editorRect.left - containerRect.left + visiblePos.left - 40,
+            containerRect.width - 440,
+          ),
+        );
+        const isNearTop = visiblePos.top < 120;
+        const top = isNearTop
+          ? editorRect.top - containerRect.top + visiblePos.top + 28
+          : editorRect.top - containerRect.top + visiblePos.top - 95;
+        setInlineAiCoords({ left, top });
+      } else {
         setInlineAiCoords(null);
       }
-      setInlineAiLoading(false);
-      setInlineAiDiff(null);
-      if (inlineAiDecorationsRef.current.length) {
-        inlineAiDecorationsRef.current = ed.deltaDecorations(inlineAiDecorationsRef.current, []);
-      }
-      setShowInlineAi(true);
-      setTimeout(() => {
-        inlineInputRef.current?.focus();
-        inlineInputRef.current?.select();
-      }, 50);
-    },
-    [],
-  );
+    } catch {
+      setInlineAiCoords(null);
+    }
+    setInlineAiLoading(false);
+    setInlineAiDiff(null);
+    if (inlineAiDecorationsRef.current.length) {
+      inlineAiDecorationsRef.current = ed.deltaDecorations(inlineAiDecorationsRef.current, []);
+    }
+    setShowInlineAi(true);
+    setTimeout(() => {
+      inlineInputRef.current?.focus();
+      inlineInputRef.current?.select();
+    }, 50);
+  }, []);
 
   const triggerAddToChatForEditor = useCallback((ed: MonacoEditor.IStandaloneCodeEditor) => {
     const curActive = activeRef.current;
@@ -3372,19 +3121,16 @@ export function EditorPane({
       ]);
 
       const newEndLine = model.getLineCount();
-      smartApplyDecorationsRef.current = ed.deltaDecorations(
-        smartApplyDecorationsRef.current,
-        [
-          {
-            range: new monaco.Range(1, 1, newEndLine, model.getLineMaxColumn(newEndLine)),
-            options: {
-              isWholeLine: true,
-              className: 'smart-apply-diff-line',
-              marginClassName: 'smart-apply-diff-gutter',
-            },
+      smartApplyDecorationsRef.current = ed.deltaDecorations(smartApplyDecorationsRef.current, [
+        {
+          range: new monaco.Range(1, 1, newEndLine, model.getLineMaxColumn(newEndLine)),
+          options: {
+            isWholeLine: true,
+            className: 'smart-apply-diff-line',
+            marginClassName: 'smart-apply-diff-gutter',
           },
-        ],
-      );
+        },
+      ]);
 
       setSmartApplyDiff({
         originalText: origText,
@@ -3406,35 +3152,35 @@ export function EditorPane({
     };
   }, [onChangeContent, onShowToast]);
 
-/**
- * 唤起编辑器查找框并自动将光标定位至输入框内，全选已有文本
- */
-function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | undefined) {
-  if (!ed) return;
-  // 1. 运行 Monaco 内置的 actions.find 命令唤起或刷新查找组件
-  ed.getAction('actions.find')?.run();
+  /**
+   * 唤起编辑器查找框并自动将光标定位至输入框内，全选已有文本
+   */
+  function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | undefined) {
+    if (!ed) return;
+    // 1. 运行 Monaco 内置的 actions.find 命令唤起或刷新查找组件
+    ed.getAction('actions.find')?.run();
 
-  // 2. 无论查找框是刚刚挂载还是此前已经展开，强制定位光标并全选查找输入框
-  const locateAndFocus = () => {
-    const domNode = ed.getDomNode();
-    if (!domNode) return;
-    const findWidget = domNode.querySelector('.find-widget');
-    if (!findWidget) return;
-    const input = findWidget.querySelector<HTMLTextAreaElement | HTMLInputElement>(
-      '.find-part .monaco-inputbox .input, .monaco-findInput textarea.input, .monaco-findInput input.input, textarea.input, input'
-    );
-    if (input) {
-      input.focus();
-      input.select();
-    }
-  };
+    // 2. 无论查找框是刚刚挂载还是此前已经展开，强制定位光标并全选查找输入框
+    const locateAndFocus = () => {
+      const domNode = ed.getDomNode();
+      if (!domNode) return;
+      const findWidget = domNode.querySelector('.find-widget');
+      if (!findWidget) return;
+      const input = findWidget.querySelector<HTMLTextAreaElement | HTMLInputElement>(
+        '.find-part .monaco-inputbox .input, .monaco-findInput textarea.input, .monaco-findInput input.input, textarea.input, input',
+      );
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    };
 
-  locateAndFocus();
-  requestAnimationFrame(locateAndFocus);
-  setTimeout(locateAndFocus, 25);
-  setTimeout(locateAndFocus, 80);
-  setTimeout(locateAndFocus, 200);
-}
+    locateAndFocus();
+    requestAnimationFrame(locateAndFocus);
+    setTimeout(locateAndFocus, 25);
+    setTimeout(locateAndFocus, 80);
+    setTimeout(locateAndFocus, 200);
+  }
 
   const setupEditorKeybindings = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor, onOpenFileRef?: { current?: typeof onOpenFile }) => {
@@ -3612,7 +3358,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 return pos ? { line: pos.lineNumber, column: pos.column } : null;
               },
             },
-            ed
+            ed,
           );
         }
       });
@@ -3631,7 +3377,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 return pos ? { line: pos.lineNumber, column: pos.column } : null;
               },
             },
-            ed
+            ed,
           );
         }
       });
@@ -3651,7 +3397,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   return pos ? { line: pos.lineNumber, column: pos.column } : null;
                 },
               },
-              ed
+              ed,
             );
           }
         }
@@ -3663,7 +3409,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         });
       });
     },
-    [openInlineAiForEditor, triggerAddToChatForEditor, workspace, onOpenFile, executeRevealTarget, t],
+    [
+      openInlineAiForEditor,
+      triggerAddToChatForEditor,
+      workspace,
+      onOpenFile,
+      executeRevealTarget,
+      t,
+    ],
   );
 
   useEffect(() => {
@@ -3699,15 +3452,28 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
 
       // 终端处于激活状态或目标元素在终端容器内时，严禁拦截，让终端原生或终端自定义按键处理
       const isTerminal = !!(
-        (target && (target.closest('.terminal-sessions') || target.closest('.terminal-panel') || target.closest('.xterm'))) ||
-        (activeEl && (activeEl.closest('.terminal-sessions') || activeEl.closest('.terminal-panel') || activeEl.closest('.xterm') || activeEl.classList.contains('xterm-helper-textarea')))
+        (target &&
+          (target.closest('.terminal-sessions') ||
+            target.closest('.terminal-panel') ||
+            target.closest('.xterm'))) ||
+        (activeEl &&
+          (activeEl.closest('.terminal-sessions') ||
+            activeEl.closest('.terminal-panel') ||
+            activeEl.closest('.xterm') ||
+            activeEl.classList.contains('xterm-helper-textarea')))
       );
       if (isTerminal) return;
 
       // 如果不是在代码编辑区、Monaco 或行内编辑浮条内，也不要拦截
       const isInsideEditor = !!(
-        (target && (target.closest('.editor-area') || target.closest('.monaco-editor') || target.closest('.inline-ai-widget'))) ||
-        (activeEl && (activeEl.closest('.editor-area') || activeEl.closest('.monaco-editor') || activeEl.closest('.inline-ai-widget')))
+        (target &&
+          (target.closest('.editor-area') ||
+            target.closest('.monaco-editor') ||
+            target.closest('.inline-ai-widget'))) ||
+        (activeEl &&
+          (activeEl.closest('.editor-area') ||
+            activeEl.closest('.monaco-editor') ||
+            activeEl.closest('.inline-ai-widget')))
       );
       if (!isInsideEditor) return;
 
@@ -3863,8 +3629,18 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           }}
         >
           {/* 左侧区域：文件名 + 对比版本描述 + 总差异数徽标 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflow: 'hidden' }}>
-            <span style={{ fontWeight: 600, color: 'var(--text)', flexShrink: 0 }}>{currentFileName}</span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              minWidth: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <span style={{ fontWeight: 600, color: 'var(--text)', flexShrink: 0 }}>
+              {currentFileName}
+            </span>
             <span
               style={{
                 color: 'var(--muted)',
@@ -3882,7 +3658,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 fontWeight: 600,
                 padding: '1.5px 7px',
                 borderRadius: 10,
-                background: totalHunks > 0 ? 'color-mix(in srgb, var(--accent, #007acc) 14%, transparent)' : 'rgba(255, 255, 255, 0.05)',
+                background:
+                  totalHunks > 0
+                    ? 'color-mix(in srgb, var(--accent, #007acc) 14%, transparent)'
+                    : 'rgba(255, 255, 255, 0.05)',
                 color: totalHunks > 0 ? 'var(--accent-light, #3794ff)' : 'var(--muted)',
                 border: `1px solid ${totalHunks > 0 ? 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)' : 'var(--border)'}`,
                 whiteSpace: 'nowrap',
@@ -3906,7 +3685,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 background: 'rgba(255, 255, 255, 0.06)',
                 border: '1px solid var(--border)',
                 fontSize: 11.5,
-                fontFamily: 'ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Monaco, monospace',
+                fontFamily:
+                  'ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Monaco, monospace',
                 color: totalHunks > 0 ? 'var(--text)' : 'var(--muted)',
                 whiteSpace: 'nowrap',
                 userSelect: 'none',
@@ -3925,7 +3705,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     total: totalHunks,
                   }).map((seg, i) =>
                     seg.emphasis ? (
-                      <strong key={i} style={{ color: 'var(--accent-light, #3794ff)', fontWeight: 700 }}>
+                      <strong
+                        key={i}
+                        style={{ color: 'var(--accent-light, #3794ff)', fontWeight: 700 }}
+                      >
                         {seg.text}
                       </strong>
                     ) : (
@@ -3958,7 +3741,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               }}
               style={totalHunks === 0 ? { opacity: 0.35, cursor: 'not-allowed' } : undefined}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="12" y1="19" x2="12" y2="5" />
                 <polyline points="5 12 12 5 19 12" />
               </svg>
@@ -3984,7 +3774,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               }}
               style={totalHunks === 0 ? { opacity: 0.35, cursor: 'not-allowed' } : undefined}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <polyline points="19 12 12 19 5 12" />
               </svg>
@@ -3993,7 +3790,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             {/* 当存在多个修改文件时，支持跨文件切换 */}
             {modifiedFiles.length > 1 && (
               <>
-                <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
+                <div
+                  style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }}
+                />
                 <button
                   type="button"
                   className="panel-action-btn"
@@ -4001,16 +3800,26 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     idx: displayIndex > 1 ? displayIndex - 1 : modifiedFiles.length,
                     total: modifiedFiles.length,
                     name:
-                      modifiedFiles[(currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length]?.path
+                      modifiedFiles[
+                        (currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length
+                      ]?.path
                         .split('/')
                         .pop() ?? '',
                   })}
                   onClick={() => {
-                    const prevIdx = (currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length;
+                    const prevIdx =
+                      (currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length;
                     onPreviewGitDiff?.(modifiedFiles[prevIdx].path);
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <polyline points="15 18 9 12 15 6" />
                   </svg>
                 </button>
@@ -4021,14 +3830,23 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     idx: displayIndex < modifiedFiles.length ? displayIndex + 1 : 1,
                     total: modifiedFiles.length,
                     name:
-                      modifiedFiles[(currentIndex + 1) % modifiedFiles.length]?.path.split('/').pop() ?? '',
+                      modifiedFiles[(currentIndex + 1) % modifiedFiles.length]?.path
+                        .split('/')
+                        .pop() ?? '',
                   })}
                   onClick={() => {
                     const nextIdx = (currentIndex + 1) % modifiedFiles.length;
                     onPreviewGitDiff?.(modifiedFiles[nextIdx].path);
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
                 </button>
@@ -4038,22 +3856,31 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
 
             {/* 1. Stage button + (暂存更改，仅在本地未暂存更改时显示) */}
-            {!id.startsWith('git:ref:') && !id.startsWith('git:rev:') && !id.startsWith('staged:') && (
-              <button
-                type="button"
-                className="panel-action-btn"
-                title={t('editor.stageFileChanges')}
-                onClick={async () => {
-                  await window.ide.gitStage([previewDiff.path]);
-                  onRefreshGitStatus?.();
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-            )}
+            {!id.startsWith('git:ref:') &&
+              !id.startsWith('git:rev:') &&
+              !id.startsWith('staged:') && (
+                <button
+                  type="button"
+                  className="panel-action-btn"
+                  title={t('editor.stageFileChanges')}
+                  onClick={async () => {
+                    await window.ide.gitStage([previewDiff.path]);
+                    onRefreshGitStatus?.();
+                  }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+              )}
 
             {/* 2. Discard button ⟲ (放弃更改，仅在本地工作树改动时显示) */}
             {!id.startsWith('git:ref:') && !id.startsWith('git:rev:') && onDiscardPath && (
@@ -4065,7 +3892,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   onDiscardPath?.(previewDiff.path);
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                   <path d="M3 3v5h5" />
                 </svg>
@@ -4080,7 +3914,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 title={t('editor.closeDiffEsc')}
                 onClick={onCloseDiff}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -4117,7 +3958,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               background: 'rgba(255, 255, 255, 0.01)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                minWidth: 0,
+                overflow: 'hidden',
+              }}
+            >
               <span
                 style={{
                   fontSize: 10,
@@ -4163,7 +4012,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               background: 'rgba(255, 255, 255, 0.01)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                minWidth: 0,
+                overflow: 'hidden',
+              }}
+            >
               <span
                 style={{
                   fontSize: 10,
@@ -4223,7 +4080,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               // 监听光标行号，实时更新当前位于第几个差异
               modEd.onDidChangeCursorPosition((e) => {
                 const line = e.position.lineNumber;
-                const changes = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current : previewDiffHunks;
+                const changes =
+                  diffLineChangesRef.current.length > 0
+                    ? diffLineChangesRef.current
+                    : previewDiffHunks;
                 if (!changes || changes.length === 0) return;
                 for (let i = 0; i < changes.length; i++) {
                   const ch = changes[i] as any;
@@ -4240,7 +4100,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               [modEd, origEd].forEach((ed) => {
                 ed.addCommand(monaco.KeyCode.F5, () => {
                   setDiffHunkIdx((prev) => {
-                    const total = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current.length : previewDiffHunks.length;
+                    const total =
+                      diffLineChangesRef.current.length > 0
+                        ? diffLineChangesRef.current.length
+                        : previewDiffHunks.length;
                     const next = total > 0 ? (prev + 1) % total : 0;
                     jumpToDiffHunk(next);
                     return next;
@@ -4248,7 +4111,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 });
                 ed.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F5, () => {
                   setDiffHunkIdx((prev) => {
-                    const total = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current.length : previewDiffHunks.length;
+                    const total =
+                      diffLineChangesRef.current.length > 0
+                        ? diffLineChangesRef.current.length
+                        : previewDiffHunks.length;
                     const next = total > 0 ? (prev - 1 + total) % total : 0;
                     jumpToDiffHunk(next);
                     return next;
@@ -4256,7 +4122,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 });
                 ed.addCommand(monaco.KeyCode.F7, () => {
                   setDiffHunkIdx((prev) => {
-                    const total = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current.length : previewDiffHunks.length;
+                    const total =
+                      diffLineChangesRef.current.length > 0
+                        ? diffLineChangesRef.current.length
+                        : previewDiffHunks.length;
                     const next = total > 0 ? (prev + 1) % total : 0;
                     jumpToDiffHunk(next);
                     return next;
@@ -4264,7 +4133,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 });
                 ed.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F7, () => {
                   setDiffHunkIdx((prev) => {
-                    const total = diffLineChangesRef.current.length > 0 ? diffLineChangesRef.current.length : previewDiffHunks.length;
+                    const total =
+                      diffLineChangesRef.current.length > 0
+                        ? diffLineChangesRef.current.length
+                        : previewDiffHunks.length;
                     const next = total > 0 ? (prev - 1 + total) % total : 0;
                     jumpToDiffHunk(next);
                     return next;
@@ -4329,10 +4201,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           title={onNewUntitled ? t('editor.newUntitledDblClick') : undefined}
         >
           {tabs.map((tab) => {
-            const isBrowser = isBrowserPath(tab.path) || tab.language === 'browser' || tab.virtual?.browser;
-            const fileName = tab.title || (isUntitledPath(tab.path)
-              ? untitledTabLabel(tab.path)
-              : tab.path.split('/').pop() || tab.path);
+            const isBrowser =
+              isBrowserPath(tab.path) || tab.language === 'browser' || tab.virtual?.browser;
+            const fileName =
+              tab.title ||
+              (isUntitledPath(tab.path)
+                ? untitledTabLabel(tab.path)
+                : tab.path.split('/').pop() || tab.path);
             const gitMeta = getTabGitMeta(tab.path, gitStatus?.entries);
             const isActive = tab.path === activePath;
             return (
@@ -4343,7 +4218,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 title={
                   isBrowser
                     ? `${fileName}${tab.virtual?.browser?.url ? `\n${tab.virtual.browser.url}` : ''}`
-                    : (tab.path.startsWith('/') ? tab.path : fileName)
+                    : tab.path.startsWith('/')
+                      ? tab.path
+                      : fileName
                 }
                 onClick={() => onSelectTab(tab.path)}
                 onAuxClick={(e) => {
@@ -4454,7 +4331,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   }}
                 >
                   {tab.dirty && <span className="dirty-dot" aria-label={t('editor.dirtyAria')} />}
-                  <svg className="close-icon" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                  <svg
+                    className="close-icon"
+                    width="10"
+                    height="10"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                  >
                     <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z" />
                   </svg>
                 </span>
@@ -4468,293 +4351,348 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       {/* Breadcrumb Navigation Bar (隐藏浏览器标签的面包屑行) */}
       {typeof activePath === 'string' &&
         activePath.trim().length > 0 &&
-        !(isBrowserPath(activePath) || active?.language === 'browser' || active?.virtual?.browser) && (
-        <div className="editor-breadcrumb">
-          <div className="editor-breadcrumb-crumbs">
-            {(isUntitledPath(activePath)
-              ? [untitledTabLabel(activePath)]
-              : activePath.split('/')
-            ).map((part, i, arr) => (
-              <span key={i} className="crumb-item">
-                <span>{part}</span>
-                {i < arr.length - 1 && <span className="crumb-sep">&gt;</span>}
-              </span>
-            ))}
-
-            {currentSymbol && (
-              <div
-                className="crumb-symbol-container"
-                style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
-              >
-                <span className="crumb-sep" style={{ margin: '0 4px', opacity: 0.6 }}>
-                  &gt;
+        !(
+          isBrowserPath(activePath) ||
+          active?.language === 'browser' ||
+          active?.virtual?.browser
+        ) && (
+          <div className="editor-breadcrumb">
+            <div className="editor-breadcrumb-crumbs">
+              {(isUntitledPath(activePath)
+                ? [untitledTabLabel(activePath)]
+                : activePath.split('/')
+              ).map((part, i, arr) => (
+                <span key={i} className="crumb-item">
+                  <span>{part}</span>
+                  {i < arr.length - 1 && <span className="crumb-sep">&gt;</span>}
                 </span>
-                <button
-                  ref={symbolBtnRef}
-                  type="button"
-                  className="crumb-symbol-btn"
-                  title={t('editor.symbolCurrentTooltip', {
-                    name: currentSymbol.name,
-                    line: currentSymbol.line,
-                  })}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (showSymbolDropdown) {
-                      setShowSymbolDropdown(false);
-                    } else {
-                      if (symbolBtnRef.current) {
-                        const rect = symbolBtnRef.current.getBoundingClientRect();
-                        const popupWidth = 320;
-                        const left = Math.max(10, Math.min(rect.left, window.innerWidth - popupWidth - 10));
-                        setSymbolDropdownCoords({ top: rect.bottom + 4, left });
-                      }
-                      setSymbolFilter('');
-                      setShowSymbolDropdown(true);
-                    }
-                  }}
-                >
-                  <span className={`symbol-kind-tag ${currentSymbol.kind}`}>
-                    {currentSymbol.kind === 'class'
-                      ? 'C'
-                      : currentSymbol.kind === 'interface'
-                        ? 'I'
-                        : currentSymbol.kind === 'type'
-                          ? 'T'
-                          : 'ƒ'}
-                  </span>
-                  <span className="symbol-label">{currentSymbol.name}</span>
-                  <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>▾</span>
-                </button>
-              </div>
-            )}
-          </div>
+              ))}
 
-          {showSymbolDropdown && symbolDropdownCoords && fileSymbols.length > 0 &&
-            createPortal(
-              <div
-                id="symbol-outline-portal"
-                className="symbol-outline-dropdown"
-                style={{
-                  position: 'fixed',
-                  top: symbolDropdownCoords.top,
-                  left: symbolDropdownCoords.left,
-                  width: 320,
-                  zIndex: 10000,
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="symbol-dropdown-header">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontWeight: 600, color: 'var(--text)' }}>{t('editor.fileSymbolOutline')}</span>
-                    <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 4, color: 'var(--muted)' }}>
-                      {filteredSymbols.length}
-                    </span>
-                  </div>
+              {currentSymbol && (
+                <div
+                  className="crumb-symbol-container"
+                  style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
+                >
+                  <span className="crumb-sep" style={{ margin: '0 4px', opacity: 0.6 }}>
+                    &gt;
+                  </span>
                   <button
+                    ref={symbolBtnRef}
                     type="button"
-                    className="symbol-dropdown-close"
-                    onClick={() => setShowSymbolDropdown(false)}
-                    title={t('editor.closeEsc')}
+                    className="crumb-symbol-btn"
+                    title={t('editor.symbolCurrentTooltip', {
+                      name: currentSymbol.name,
+                      line: currentSymbol.line,
+                    })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (showSymbolDropdown) {
+                        setShowSymbolDropdown(false);
+                      } else {
+                        if (symbolBtnRef.current) {
+                          const rect = symbolBtnRef.current.getBoundingClientRect();
+                          const popupWidth = 320;
+                          const left = Math.max(
+                            10,
+                            Math.min(rect.left, window.innerWidth - popupWidth - 10),
+                          );
+                          setSymbolDropdownCoords({ top: rect.bottom + 4, left });
+                        }
+                        setSymbolFilter('');
+                        setShowSymbolDropdown(true);
+                      }
+                    }}
                   >
-                    ×
+                    <span className={`symbol-kind-tag ${currentSymbol.kind}`}>
+                      {currentSymbol.kind === 'class'
+                        ? 'C'
+                        : currentSymbol.kind === 'interface'
+                          ? 'I'
+                          : currentSymbol.kind === 'type'
+                            ? 'T'
+                            : 'ƒ'}
+                    </span>
+                    <span className="symbol-label">{currentSymbol.name}</span>
+                    <span style={{ fontSize: 9, opacity: 0.7, marginLeft: 2 }}>▾</span>
                   </button>
                 </div>
+              )}
+            </div>
 
-                <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.1)' }}>
-                  <input
-                    type="text"
-                    value={symbolFilter}
-                    onChange={(e) => setSymbolFilter(e.target.value)}
-                    placeholder={t('editor.searchSymbolPh')}
-                    autoFocus
-                    style={{
-                      width: '100%',
-                      background: 'var(--bg-editor, #141414)',
-                      color: 'var(--text)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 4,
-                      padding: '4px 7px',
-                      fontSize: 11,
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </div>
-
-                <div className="symbol-dropdown-list" style={{ maxHeight: 260, overflowY: 'auto', padding: 4 }}>
-                  {filteredSymbols.length === 0 ? (
-                    <div style={{ padding: '14px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
-                      {t('editor.noSymbolMatch')}
+            {showSymbolDropdown &&
+              symbolDropdownCoords &&
+              fileSymbols.length > 0 &&
+              createPortal(
+                <div
+                  id="symbol-outline-portal"
+                  className="symbol-outline-dropdown"
+                  style={{
+                    position: 'fixed',
+                    top: symbolDropdownCoords.top,
+                    left: symbolDropdownCoords.left,
+                    width: 320,
+                    zIndex: 10000,
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="symbol-dropdown-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>
+                        {t('editor.fileSymbolOutline')}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          background: 'rgba(255,255,255,0.08)',
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                          color: 'var(--muted)',
+                        }}
+                      >
+                        {filteredSymbols.length}
+                      </span>
                     </div>
-                  ) : (
-                    filteredSymbols.map((sym, idx) => {
-                      const isCurrent = sym.line === currentSymbol?.line && sym.name === currentSymbol?.name;
-                      return (
-                        <div
-                          key={`${sym.name}-${sym.line}-${idx}`}
-                          className={`symbol-dropdown-item${isCurrent ? ' current' : ''}`}
-                          onClick={() => {
-                            setShowSymbolDropdown(false);
-                            editorRef.current?.revealLineInCenter(sym.line);
-                            editorRef.current?.setPosition({ lineNumber: sym.line, column: 1 });
-                            editorRef.current?.focus();
-                            if (editorRef.current) {
-                              highlightJumpLocation(editorRef.current, sym.line);
-                            }
-                          }}
-                        >
-                          <span className={`symbol-kind-tag ${sym.kind}`}>
-                            {sym.kind === 'class'
-                              ? 'C'
-                              : sym.kind === 'interface'
-                                ? 'I'
-                                : sym.kind === 'type'
-                                  ? 'T'
-                                  : 'ƒ'}
-                          </span>
-                          <span className="symbol-name">{sym.name}</span>
-                          <span className="symbol-line">:{sym.line}</span>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>,
-              document.body
-            )}
-          <div className="editor-breadcrumb-actions">
-            <button
-              type="button"
-              className="editor-breadcrumb-btn breadcrumb-nav-back-btn"
-              title={t('editor.backToPrev')}
-              onClick={() => {
-                markNavigatingBack();
-                const fn = onOpenFileRef?.current ?? onOpenFile;
-                if (fn) {
-                  navigateBack(
-                    {
-                      onOpenFile: fn,
-                      getWorkspaceRoot: () => workspace,
-                      getCurrentPath: () => activeRef.current?.path ?? null,
-                      getCurrentPosition: () => {
-                        const pos = editorRef.current?.getPosition();
-                        return pos ? { line: pos.lineNumber, column: pos.column } : null;
+                    <button
+                      type="button"
+                      className="symbol-dropdown-close"
+                      onClick={() => setShowSymbolDropdown(false)}
+                      title={t('editor.closeEsc')}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '6px 8px',
+                      borderBottom: '1px solid var(--border)',
+                      background: 'rgba(0,0,0,0.1)',
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={symbolFilter}
+                      onChange={(e) => setSymbolFilter(e.target.value)}
+                      placeholder={t('editor.searchSymbolPh')}
+                      autoFocus
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-editor, #141414)',
+                        color: 'var(--text)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 4,
+                        padding: '4px 7px',
+                        fontSize: 11,
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+
+                  <div
+                    className="symbol-dropdown-list"
+                    style={{ maxHeight: 260, overflowY: 'auto', padding: 4 }}
+                  >
+                    {filteredSymbols.length === 0 ? (
+                      <div
+                        style={{
+                          padding: '14px 10px',
+                          textAlign: 'center',
+                          color: 'var(--text-muted)',
+                          fontSize: 11,
+                        }}
+                      >
+                        {t('editor.noSymbolMatch')}
+                      </div>
+                    ) : (
+                      filteredSymbols.map((sym, idx) => {
+                        const isCurrent =
+                          sym.line === currentSymbol?.line && sym.name === currentSymbol?.name;
+                        return (
+                          <div
+                            key={`${sym.name}-${sym.line}-${idx}`}
+                            className={`symbol-dropdown-item${isCurrent ? ' current' : ''}`}
+                            onClick={() => {
+                              setShowSymbolDropdown(false);
+                              editorRef.current?.revealLineInCenter(sym.line);
+                              editorRef.current?.setPosition({ lineNumber: sym.line, column: 1 });
+                              editorRef.current?.focus();
+                              if (editorRef.current) {
+                                highlightJumpLocation(editorRef.current, sym.line);
+                              }
+                            }}
+                          >
+                            <span className={`symbol-kind-tag ${sym.kind}`}>
+                              {sym.kind === 'class'
+                                ? 'C'
+                                : sym.kind === 'interface'
+                                  ? 'I'
+                                  : sym.kind === 'type'
+                                    ? 'T'
+                                    : 'ƒ'}
+                            </span>
+                            <span className="symbol-name">{sym.name}</span>
+                            <span className="symbol-line">:{sym.line}</span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>,
+                document.body,
+              )}
+            <div className="editor-breadcrumb-actions">
+              <button
+                type="button"
+                className="editor-breadcrumb-btn breadcrumb-nav-back-btn"
+                title={t('editor.backToPrev')}
+                onClick={() => {
+                  markNavigatingBack();
+                  const fn = onOpenFileRef?.current ?? onOpenFile;
+                  if (fn) {
+                    navigateBack(
+                      {
+                        onOpenFile: fn,
+                        getWorkspaceRoot: () => workspace,
+                        getCurrentPath: () => activeRef.current?.path ?? null,
+                        getCurrentPosition: () => {
+                          const pos = editorRef.current?.getPosition();
+                          return pos ? { line: pos.lineNumber, column: pos.column } : null;
+                        },
                       },
-                    },
-                    editorRef.current
-                  );
-                }
-              }}
-            >
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ verticalAlign: -1 }}>
-                <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
-              </svg>
-              <span>{t('editor.back')}</span>
-            </button>
-            {isMarkdown && (
-              <button
-                type="button"
-                className={`md-preview-btn${showMdPreview ? ' active' : ''}`}
-                onClick={() => setShowMdPreview((v) => !v)}
-              >
-                {showMdPreview ? (
-                  <>
-                    <svg
-                      width="12.5"
-                      height="12.5"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      style={{ marginRight: 4, verticalAlign: -1 }}
-                    >
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </svg>
-                    {t('editor.edit')}
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      style={{ marginRight: 4, verticalAlign: -2 }}
-                    >
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                    {t('editor.preview')}
-                  </>
-                )}
-              </button>
-            )}
-            {isMarkdown && showMdPreview && (
-              <button
-                type="button"
-                className={`editor-breadcrumb-btn${showToc ? ' active' : ''}`}
-                onClick={() => setShowToc((v) => !v)}
-                title={showToc ? t('editor.collapseToc') : t('editor.expandToc')}
+                      editorRef.current,
+                    );
+                  }
+                }}
               >
                 <svg
-                  width="13"
-                  height="13"
+                  width="11"
+                  height="11"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  style={{ verticalAlign: -1 }}
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"
+                  />
+                </svg>
+                <span>{t('editor.back')}</span>
+              </button>
+              {isMarkdown && (
+                <button
+                  type="button"
+                  className={`md-preview-btn${showMdPreview ? ' active' : ''}`}
+                  onClick={() => setShowMdPreview((v) => !v)}
+                >
+                  {showMdPreview ? (
+                    <>
+                      <svg
+                        width="12.5"
+                        height="12.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ marginRight: 4, verticalAlign: -1 }}
+                      >
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                      {t('editor.edit')}
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ marginRight: 4, verticalAlign: -2 }}
+                      >
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                      {t('editor.preview')}
+                    </>
+                  )}
+                </button>
+              )}
+              {isMarkdown && showMdPreview && (
+                <button
+                  type="button"
+                  className={`editor-breadcrumb-btn${showToc ? ' active' : ''}`}
+                  onClick={() => setShowToc((v) => !v)}
+                  title={showToc ? t('editor.collapseToc') : t('editor.expandToc')}
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ marginRight: 5, verticalAlign: -2 }}
+                  >
+                    <line x1="9" y1="6" x2="20" y2="6" />
+                    <line x1="9" y1="12" x2="20" y2="12" />
+                    <line x1="9" y1="18" x2="20" y2="18" />
+                    <circle cx="4" cy="6" r="1.5" fill="currentColor" />
+                    <circle cx="4" cy="12" r="1.5" fill="currentColor" />
+                    <circle cx="4" cy="18" r="1.5" fill="currentColor" />
+                  </svg>
+                  {mdHeadings.length > 0
+                    ? t('editor.tocCount', { n: mdHeadings.length })
+                    : t('editor.toc')}
+                </button>
+              )}
+              {onToggleWordWrap && (
+                <button
+                  type="button"
+                  className={`editor-breadcrumb-btn${wordWrap ? ' active' : ''}`}
+                  onClick={onToggleWordWrap}
+                  title={wordWrap ? t('editor.disableWordWrap') : t('editor.enableWordWrap')}
+                >
+                  {t('editor.wordWrapBtn')}
+                </button>
+              )}
+              <button
+                type="button"
+                className={`editor-breadcrumb-btn${isSplit ? ' active' : ''}`}
+                onClick={() => {
+                  setIsSplit((v) => !v);
+                  if (!isSplit && !splitPath) {
+                    const otherTab = tabs.find((t) => t.path !== activePath);
+                    setSplitPath(otherTab ? otherTab.path : activePath);
+                  }
+                }}
+                title={isSplit ? t('editor.closeSplit') : t('editor.splitEditorTip')}
+              >
+                <svg
+                  width="12"
+                  height="12"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ marginRight: 5, verticalAlign: -2 }}
+                  style={{ marginRight: 4, verticalAlign: -1 }}
                 >
-                  <line x1="9" y1="6" x2="20" y2="6" />
-                  <line x1="9" y1="12" x2="20" y2="12" />
-                  <line x1="9" y1="18" x2="20" y2="18" />
-                  <circle cx="4" cy="6" r="1.5" fill="currentColor" />
-                  <circle cx="4" cy="12" r="1.5" fill="currentColor" />
-                  <circle cx="4" cy="18" r="1.5" fill="currentColor" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="12" y1="3" x2="12" y2="21" />
                 </svg>
-                {mdHeadings.length > 0 ? t('editor.tocCount', { n: mdHeadings.length }) : t('editor.toc')}
+                <span>{isSplit ? t('editor.splitClose') : t('editor.split')}</span>
               </button>
-            )}
-            {onToggleWordWrap && (
-              <button
-                type="button"
-                className={`editor-breadcrumb-btn${wordWrap ? ' active' : ''}`}
-                onClick={onToggleWordWrap}
-                title={wordWrap ? t('editor.disableWordWrap') : t('editor.enableWordWrap')}
-              >
-                {t('editor.wordWrapBtn')}
-              </button>
-            )}
-            <button
-              type="button"
-              className={`editor-breadcrumb-btn${isSplit ? ' active' : ''}`}
-              onClick={() => {
-                setIsSplit((v) => !v);
-                if (!isSplit && !splitPath) {
-                  const otherTab = tabs.find((t) => t.path !== activePath);
-                  setSplitPath(otherTab ? otherTab.path : activePath);
-                }
-              }}
-              title={isSplit ? t('editor.closeSplit') : t('editor.splitEditorTip')}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, verticalAlign: -1 }}>
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <line x1="12" y1="3" x2="12" y2="21" />
-              </svg>
-              <span>{isSplit ? t('editor.splitClose') : t('editor.split')}</span>
-            </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       <div
         className="editor-fill"
@@ -4763,9 +4701,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           position: 'relative',
           overflow: 'hidden',
           minWidth: 0,
-          ...(isBrowserActive
-            ? { height: '100%', display: 'flex', flexDirection: 'column' }
-            : {}),
+          ...(isBrowserActive ? { height: '100%', display: 'flex', flexDirection: 'column' } : {}),
         }}
       >
         {/* 常驻挂载所有已打开的内置浏览器标签页，保证切换代码/其他标签时 DOM 与会话不被销毁、绝不重载 */}
@@ -5018,42 +4954,43 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               </button>
             </div>
 
-            {inlineAiDiff && (() => {
-              const origLines = inlineAiDiff.originalText.split('\n').length;
-              const newLines = inlineAiDiff.newText.split('\n').length;
-              const lineDiff = newLines - origLines;
-              const diffText = lineDiff >= 0 ? `+${lineDiff}` : `${lineDiff}`;
-              return (
-                <div className="inline-ai-diff-actions">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="inline-ai-diff-badge">
-                      {t('editor.diffReady', { diff: diffText })}
-                    </span>
-                    <span style={{ fontSize: 10, color: 'var(--muted, #888)', opacity: 0.8 }}>
-                      {t('editor.enterFollowUp')}
-                    </span>
+            {inlineAiDiff &&
+              (() => {
+                const origLines = inlineAiDiff.originalText.split('\n').length;
+                const newLines = inlineAiDiff.newText.split('\n').length;
+                const lineDiff = newLines - origLines;
+                const diffText = lineDiff >= 0 ? `+${lineDiff}` : `${lineDiff}`;
+                return (
+                  <div className="inline-ai-diff-actions">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span className="inline-ai-diff-badge">
+                        {t('editor.diffReady', { diff: diffText })}
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--muted, #888)', opacity: 0.8 }}>
+                        {t('editor.enterFollowUp')}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="inline-ai-accept-btn"
+                        onClick={handleAcceptInlineAi}
+                        title={t('editor.acceptTip')}
+                      >
+                        {t('editor.acceptBtn')}
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-ai-reject-btn"
+                        onClick={handleRejectInlineAi}
+                        title={t('editor.rejectTip')}
+                      >
+                        {t('editor.rejectBtn')}
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <button
-                      type="button"
-                      className="inline-ai-accept-btn"
-                      onClick={handleAcceptInlineAi}
-                      title={t('editor.acceptTip')}
-                    >
-                      {t('editor.acceptBtn')}
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-ai-reject-btn"
-                      onClick={handleRejectInlineAi}
-                      title={t('editor.rejectTip')}
-                    >
-                      {t('editor.rejectBtn')}
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
+                );
+              })()}
 
             {inlineAiLoading ? (
               <div className="inline-ai-loading-row">
@@ -5182,7 +5119,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               onClick={() => window.ide?.dapStepOver?.()}
               title={t('editor.debugStepOver')}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <polyline points="19 12 12 19 5 12" />
               </svg>
@@ -5193,7 +5137,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               onClick={() => window.ide?.dapStepInto?.()}
               title={t('editor.debugStepInto')}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polyline points="7 13 12 18 17 13" />
                 <polyline points="7 6 12 11 17 6" />
               </svg>
@@ -5204,7 +5155,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               onClick={() => window.ide?.dapStepOut?.()}
               title={t('editor.debugStepOut')}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polyline points="7 11 12 6 17 11" />
                 <polyline points="7 18 12 13 17 18" />
               </svg>
@@ -5229,7 +5187,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             const connId = parts[0] || '';
             // 新格式 db://data/<connId>/<schema>/<table>；兼容旧的 2 段式
             const schemaName = parts.length > 2 ? decodeURIComponent(parts[1]) : '';
-            const tableName = parts.length > 2 ? decodeURIComponent(parts[2]) : decodeURIComponent(parts[1] || '');
+            const tableName =
+              parts.length > 2 ? decodeURIComponent(parts[2]) : decodeURIComponent(parts[1] || '');
             // 只把「发给当前这张表」的请求透传下去：否则切到别的表标签页会误套用别人的筛选条件
             const viewRequest = dbViewRequest?.path === active.path ? dbViewRequest : null;
             return (
@@ -5289,9 +5248,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             onShowToast={onShowToast}
             onRetarget={(target, kind) => onRetargetConsole?.(active.path, target, kind)}
           />
-        ) : isBrowserActive ? (
-          null
-        ) : active && isImage ? (
+        ) : isBrowserActive ? null : active && isImage ? (
           <div className="image-preview-pane">
             {active.previewUrl ? (
               <>
@@ -5326,7 +5283,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               }}
             >
               <Editor
-                path={workspace && !active.path.startsWith('/') ? `${workspace.replace(/[/\\]+$/, '')}/${active.path}` : active.path}
+                path={
+                  workspace && !active.path.startsWith('/')
+                    ? `${workspace.replace(/[/\\]+$/, '')}/${active.path}`
+                    : active.path
+                }
                 value={active.content}
                 language={activeLanguage}
                 theme={monacoTheme}
@@ -5334,7 +5295,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
                   const content = v ?? '';
                   onChangeContent(active.path, content);
-                  const isLsp = /^(python|cpp|c|go)$/i.test(activeLanguage) || /\.(py|cpp|cc|cxx|c|h|hpp|go)$/i.test(active.path);
+                  const isLsp =
+                    /^(python|cpp|c|go)$/i.test(activeLanguage) ||
+                    /\.(py|cpp|cc|cxx|c|h|hpp|go)$/i.test(active.path);
                   if (isLsp && window.ide?.lspNotifyDocument) {
                     void window.ide.lspNotifyDocument(active.path, content, activeLanguage);
                   }
@@ -5342,7 +5305,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 onMount={(ed) => {
                   editorRef.current = ed;
                   setEditorInstance(ed);
-                  const isLsp = /^(python|cpp|c|go)$/i.test(activeLanguage) || /\.(py|cpp|cc|cxx|c|h|hpp|go)$/i.test(active.path);
+                  const isLsp =
+                    /^(python|cpp|c|go)$/i.test(activeLanguage) ||
+                    /\.(py|cpp|cc|cxx|c|h|hpp|go)$/i.test(active.path);
                   if (isLsp && window.ide?.lspNotifyDocument) {
                     void window.ide.lspNotifyDocument(active.path, active.content, activeLanguage);
                   }
@@ -5395,7 +5360,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     }
                   });
                   // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，支持随时点击行号及左侧区域打断点
-                  ed.onMouseDown((e) => {
+                  ed.onMouseDown(async (e) => {
                     if (e.event) {
                       const b = e.event.browserEvent;
                       lastMousePosRef.current = {
@@ -5412,9 +5377,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     const curPath = activeRef.current?.path ?? activePath;
 
                     // 1. 支持直接点击吸顶粘性滚动条 (Sticky Scroll) 上的行号或左侧区域打断点
-                    const stickyLineEl = el?.closest('.sticky-line-number') ?? el?.closest('.sticky-widget-line-numbers')?.querySelector('.sticky-line-number');
+                    const stickyLineEl =
+                      el?.closest('.sticky-line-number') ??
+                      el
+                        ?.closest('.sticky-widget-line-numbers')
+                        ?.querySelector('.sticky-line-number');
                     if (stickyLineEl && curPath) {
-                      const innerNode = stickyLineEl.querySelector('.sticky-line-number-inner') || stickyLineEl;
+                      const innerNode =
+                        stickyLineEl.querySelector('.sticky-line-number-inner') || stickyLineEl;
                       const stickyText = innerNode?.textContent?.trim();
                       const stickyLine = stickyText ? parseInt(stickyText, 10) : null;
                       if (stickyLine && !isNaN(stickyLine)) {
@@ -5434,9 +5404,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     }
 
                     // 区分字形边距（行号左侧断点区 type 2 / .cgmr）与行装饰区（Git 差异色条区 type 4 / .line-decorations）：
-                    const isGlyphMarginClick = e.target.type === 2 || !!el?.closest('.debug-breakpoint-glyph, .cgmr, .glyph-margin');
+                    const isGlyphMarginClick =
+                      e.target.type === 2 ||
+                      !!el?.closest('.debug-breakpoint-glyph, .cgmr, .glyph-margin');
                     const isLineNumberClick = e.target.type === 3 || !!el?.closest('.line-numbers');
-                    const isGutterClick = isGlyphMarginClick || isLineNumberClick || e.target.type === 4 || isGitGutterEl;
+                    const isGutterClick =
+                      isGlyphMarginClick ||
+                      isLineNumberClick ||
+                      e.target.type === 4 ||
+                      isGitGutterEl;
 
                     if (isGutterClick) {
                       let line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
@@ -5454,12 +5430,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       if ((isGlyphMarginClick || isLineNumberClick) && line && curPath) {
                         if (e.event.rightButton) {
                           e.event.preventDefault();
-                          const existingBp = breakpointsRef.current.find((b) => b.path === curPath && b.line === line);
-                          const promptMsg = existingBp
-                            ? t('editor.bpEditConditional', { line })
-                            : t('editor.bpSetConditional', { line });
+                          const existingBp = breakpointsRef.current.find(
+                            (b) => b.path === curPath && b.line === line,
+                          );
                           const defaultVal = existingBp?.condition || '';
-                          const cond = window.prompt(promptMsg, defaultVal);
+                          const cond = await askConditionalBreakpointRef.current(line, defaultVal);
                           if (cond !== null) {
                             if (existingBp) {
                               toggleBreakpointRef.current(curPath, line);
@@ -5475,7 +5450,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       }
 
                       // 若直接点击在 Git Gutter 色条元素上且该行有修改，则打开内联 Git Diff
-                      if (isGitGutterEl && line && modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)) {
+                      if (
+                        isGitGutterEl &&
+                        line &&
+                        modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)
+                      ) {
                         setGitInlineDiffLine(line);
                         return;
                       }
@@ -5500,7 +5479,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   ...BASE_MONACO_OPTIONS,
                   fontSize: 13,
                   find: COMMON_FIND_OPTIONS,
-                  fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
+                  fontFamily:
+                    'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
                   fontWeight: '400',
                   disableMonospaceOptimizations: true,
                   minimap: { enabled: minimap !== false },
@@ -5546,11 +5526,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               title={t('editor.resizePreview')}
             />
             <div className="md-preview-container">
-              <div
-                className="md-preview-panel"
-                ref={mdPreviewRef}
-                onScroll={handlePreviewScroll}
-              >
+              <div className="md-preview-panel" ref={mdPreviewRef} onScroll={handlePreviewScroll}>
                 <MarkdownMessage content={active.content} />
               </div>
               {showToc && (
@@ -5789,15 +5765,31 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                         ? t('editor.switchSplitHorizontal')
                         : t('editor.switchSplitVertical')
                     }
-                    onClick={() => setSplitOrientation((o) => (o === 'horizontal' ? 'vertical' : 'horizontal'))}
+                    onClick={() =>
+                      setSplitOrientation((o) => (o === 'horizontal' ? 'vertical' : 'horizontal'))
+                    }
                   >
                     {splitOrientation === 'horizontal' ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <rect x="3" y="3" width="18" height="18" rx="2" />
                         <line x1="3" y1="12" x2="21" y2="12" />
                       </svg>
                     ) : (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <rect x="3" y="3" width="18" height="18" rx="2" />
                         <line x1="12" y1="3" x2="12" y2="21" />
                       </svg>
@@ -5809,7 +5801,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     title={t('editor.closeSplit')}
                     onClick={() => setIsSplit(false)}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    >
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
@@ -5959,7 +5959,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
                   <span style={{ fontWeight: 700, color: '#10b981' }}>✦ Smart Apply</span>
-                  <span style={{ color: 'var(--text, #fff)' }}>{t('editor.smartApplyReviewing')}</span>
+                  <span style={{ color: 'var(--text, #fff)' }}>
+                    {t('editor.smartApplyReviewing')}
+                  </span>
                   <span
                     style={{
                       fontSize: 11,
@@ -5984,7 +5986,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     title={t('editor.acceptAllTip')}
                     style={{ color: '#10b981', fontWeight: 600 }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
                     <span style={{ fontSize: 11, marginLeft: 2 }}>{t('editor.acceptShort')}</span>
@@ -5996,7 +6005,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     title={t('editor.rejectAllTip')}
                     style={{ color: '#ef4444' }}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
@@ -6014,7 +6030,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     {translateSegments('editor.largeFileBanner', locale, {
                       mode: t('editor.bigFileMode'),
                     }).map((seg, i) =>
-                      seg.emphasis ? <strong key={i}>{seg.text}</strong> : <span key={i}>{seg.text}</span>,
+                      seg.emphasis ? (
+                        <strong key={i}>{seg.text}</strong>
+                      ) : (
+                        <span key={i}>{seg.text}</span>
+                      ),
                     )}
                   </span>
                 </div>
@@ -6042,7 +6062,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               {active.isLargeFile && !active.content ? (
                 <div className="large-file-placeholder">
                   <div className="large-file-icon">📄</div>
-                  <div className="large-file-title">{active.path.split('/').pop() || active.path}</div>
+                  <div className="large-file-title">
+                    {active.path.split('/').pop() || active.path}
+                  </div>
                   <div className="large-file-hint">{t('editor.largeFileHint')}</div>
                   <button
                     type="button"
@@ -6057,294 +6079,346 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <Editor
                   path={active.path}
                   value={active.content}
-              language={activeLanguage}
-              theme={monacoTheme}
-              onChange={(v) => {
-                if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
-                onChangeContent(active.path, v ?? '');
-              }}
-              onMount={(ed, monaco) => {
-                editorRef.current = ed;
-                setEditorInstance(ed);
-                registerAiInlineCompletions();
-                if (monaco) {
-                  // 传的是**转发函数**而不是 t 本身：provideCodeLenses 每次由 Monaco 现取，
-                  // 但注册只发生一次，直接把 t 传进去会让 lens 标题锁死在首次 locale
-                  registerConflictCodeLensProvider(monaco, (key, params) => tRef.current(key, params), handleResolveConflict);
-                  registerConflictCommands(monaco, handleResolveConflict);
-                }
-                try {
-                  monaco?.editor?.remeasureFonts?.();
-                  if (typeof document !== 'undefined' && document.fonts?.ready) {
-                    document.fonts.ready.then(() => {
+                  language={activeLanguage}
+                  theme={monacoTheme}
+                  onChange={(v) => {
+                    if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
+                    onChangeContent(active.path, v ?? '');
+                  }}
+                  onMount={(ed, monaco) => {
+                    editorRef.current = ed;
+                    setEditorInstance(ed);
+                    registerAiInlineCompletions();
+                    if (monaco) {
+                      // 传的是**转发函数**而不是 t 本身：provideCodeLenses 每次由 Monaco 现取，
+                      // 但注册只发生一次，直接把 t 传进去会让 lens 标题锁死在首次 locale
+                      registerConflictCodeLensProvider(
+                        monaco,
+                        (key, params) => tRef.current(key, params),
+                        handleResolveConflict,
+                      );
+                      registerConflictCommands(monaco, handleResolveConflict);
+                    }
+                    try {
                       monaco?.editor?.remeasureFonts?.();
-                    });
-                  }
-                } catch {
-                  // ignore
-                }
-                setupEditorKeybindings(ed);
-                const curP = activeRef.current?.path;
-                if (curP) {
-                  const vs = editorViewStateMapRef.current.get(curP);
-                  if (vs) {
-                    try { ed.restoreViewState(vs); } catch { /* ignore */ }
-                  }
-                  const saved = editorScrollStateMapRef.current.get(curP) ?? initialCursorPositionsRef.current?.[curP];
-                  if (saved) {
-                    if (typeof saved.scrollTop === 'number' && saved.scrollTop >= 0) {
-                      ed.setScrollTop(saved.scrollTop);
+                      if (typeof document !== 'undefined' && document.fonts?.ready) {
+                        document.fonts.ready.then(() => {
+                          monaco?.editor?.remeasureFonts?.();
+                        });
+                      }
+                    } catch {
+                      // ignore
                     }
-                    if (typeof saved.scrollLeft === 'number' && saved.scrollLeft >= 0) {
-                      ed.setScrollLeft(saved.scrollLeft);
-                    }
-                    if (!vs && typeof saved.line === 'number' && saved.line > 0) {
-                      ed.setPosition({ lineNumber: saved.line, column: saved.col ?? 1 });
-                    }
-                  }
-                }
-                const cmdClickGesture = setupCmdClickGesture(ed, {
-                  t: () => tRef.current,
-                  getWorkspaceRoot: () => workspace,
-                  onOpenFile: (targetPath, line, col) => {
-                    const fn = onOpenFileRef?.current ?? onOpenFile;
-                    fn?.(targetPath, line, col);
-                  },
-                  getCurrentPath: () => activeRef.current?.path ?? null,
-                  getCurrentPosition: () => {
-                    const pos = ed.getPosition();
-                    return pos ? { line: pos.lineNumber, column: pos.column } : null;
-                  },
-                });
-                const multiCursorMoveGesture = setupMultiCursorColumnClickMove(ed);
-                ed.onDidDispose(() => {
-                  cmdClickGesture.dispose();
-                  multiCursorMoveGesture.dispose();
-                });
-                ed.onDidChangeCursorSelection(() => {
-                  if (isMouseDownRef.current) {
-                    updateSelectionTextOnly(ed);
-                  } else {
-                    updateSelectionAndCoords(ed);
-                  }
-                });
-                ed.onDidScrollChange((e) => {
-                  if (isSwitchingFileRef.current) return;
-                  const curActiveP = activeRef.current?.path;
-                  if (curActiveP) {
-                    const existing = editorScrollStateMapRef.current.get(curActiveP) || { line: 1, col: 1, scrollTop: 0, scrollLeft: 0 };
-                    existing.scrollTop = e.scrollTop;
-                    existing.scrollLeft = e.scrollLeft;
-                    editorScrollStateMapRef.current.set(curActiveP, existing);
-                    onScrollChange?.(curActiveP, e.scrollTop, e.scrollLeft);
-                  }
-                  const sel = ed.getSelection();
-                  if (sel && !sel.isEmpty()) {
-                    dismissedSelectionKeyRef.current = `${sel.startLineNumber}:${sel.startColumn}-${sel.endLineNumber}:${sel.endColumn}`;
-                  }
-                  setSelectionCoords(null);
-                });
-                ed.onDidChangeCursorPosition((e) => {
-                  if (isSwitchingFileRef.current) return;
-                  const curActiveP = activeRef.current?.path;
-                  if (curActiveP) {
-                    const existing = editorScrollStateMapRef.current.get(curActiveP) || { line: 1, col: 1, scrollTop: 0, scrollLeft: 0 };
-                    existing.line = e.position.lineNumber;
-                    existing.col = e.position.column;
-                    editorScrollStateMapRef.current.set(curActiveP, existing);
-                  }
-                  setCursorLine(e.position.lineNumber);
-                  onCursorChange?.(e.position.lineNumber, e.position.column);
-                  updateGitBlameRef.current(e.position.lineNumber);
-                  trackCursorJump(activeRef.current?.path, e.position.lineNumber, e.position.column);
-                });
-                ed.onDidChangeModel((e) => {
-                  if (!e.newModelUrl) return;
-                  const curActiveP = activeRef.current?.path;
-                  if (!curActiveP) return;
-                  const vs = editorViewStateMapRef.current.get(curActiveP);
-                  if (vs) {
-                    try { ed.restoreViewState(vs); } catch { /* ignore */ }
-                  }
-                  const saved = editorScrollStateMapRef.current.get(curActiveP) ?? initialCursorPositionsRef.current?.[curActiveP];
-                  if (saved) {
-                    if (typeof saved.scrollTop === 'number' && saved.scrollTop >= 0) {
-                      ed.setScrollTop(saved.scrollTop);
-                    }
-                    if (typeof saved.scrollLeft === 'number' && saved.scrollLeft >= 0) {
-                      ed.setScrollLeft(saved.scrollLeft);
-                    }
-                    if (!vs && typeof saved.line === 'number' && saved.line > 0) {
-                      ed.setPosition({ lineNumber: saved.line, column: saved.col ?? 1 });
-                    }
-                  }
-                  if (switchFileTimerRef.current) clearTimeout(switchFileTimerRef.current);
-                  switchFileTimerRef.current = setTimeout(() => {
-                    isSwitchingFileRef.current = false;
-                  }, 80);
-                });
-                // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，支持随时点击行号及左侧区域打断点
-                ed.onMouseDown((e) => {
-                  if (e.event) {
-                    const b = e.event.browserEvent;
-                    lastMousePosRef.current = {
-                      clientX: b?.clientX ?? e.event.posx,
-                      clientY: b?.clientY ?? e.event.posy,
-                    };
-                  }
-                  if (e.event.metaKey || e.event.ctrlKey) {
-                    return;
-                  }
-                  isMouseDownRef.current = true;
-                  setSelectionCoords(null);
-                  const el = e.target.element as HTMLElement | null;
-                  const curPath = activeRef.current?.path ?? activePath;
-
-                  // 1. 支持直接点击吸顶粘性滚动条 (Sticky Scroll) 上的行号或左侧区域打断点
-                  const stickyLineEl = el?.closest('.sticky-line-number') ?? el?.closest('.sticky-widget-line-numbers')?.querySelector('.sticky-line-number');
-                  if (stickyLineEl && curPath) {
-                    const innerNode = stickyLineEl.querySelector('.sticky-line-number-inner') || stickyLineEl;
-                    const stickyText = innerNode?.textContent?.trim();
-                    const stickyLine = stickyText ? parseInt(stickyText, 10) : null;
-                    if (stickyLine && !isNaN(stickyLine)) {
-                      e.event?.preventDefault?.();
-                      toggleBreakpointRef.current(curPath, stickyLine);
-                      return;
-                    }
-                  }
-
-                  const isGitGutterEl = !!el?.closest('[class*="git-gutter"]');
-                  const isFoldingEl = !!el?.closest(
-                    '[class*="codicon-folding"], [class*="folding"], [class*="codicon-chevron"], .inline-folded',
-                  );
-                  // 仅当明确点击了代码折叠/展开按钮（且未直接点中 git-gutter 色条）时忽略，保障折叠不误触
-                  if (isFoldingEl && !isGitGutterEl) {
-                    return;
-                  }
-
-                  // 区分字形边距（行号左侧断点区 type 2 / .cgmr）与行装饰区（Git 差异色条区 type 4 / .line-decorations）：
-                  const isGlyphMarginClick = e.target.type === 2 || !!el?.closest('.debug-breakpoint-glyph, .cgmr, .glyph-margin');
-                  const isLineNumberClick = e.target.type === 3 || !!el?.closest('.line-numbers');
-                  const isGutterClick = isGlyphMarginClick || isLineNumberClick || e.target.type === 4 || isGitGutterEl;
-
-                  if (isGutterClick) {
-                    let line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
-                    if (!line && e.event) {
-                      const b = e.event.browserEvent;
-                      const clientY = b?.clientY ?? e.event.posy;
-                      const clientX = b?.clientX ?? e.event.posx;
-                      try {
-                        const target = ed.getTargetAtClientPoint(clientX, clientY);
-                        line = target?.position?.lineNumber ?? target?.range?.startLineNumber;
-                      } catch {}
-                    }
-
-                    // 行号区或字形边距点击：无论调试中还是调试前，均绝对优先打上/取消红点断点
-                    if ((isGlyphMarginClick || isLineNumberClick) && line && curPath) {
-                      if (e.event.rightButton) {
-                        e.event.preventDefault();
-                        const existingBp = breakpointsRef.current.find((b) => b.path === curPath && b.line === line);
-                        const promptMsg = existingBp
-                          ? t('editor.bpEditConditional', { line })
-                          : t('editor.bpSetConditional', { line });
-                        const defaultVal = existingBp?.condition || '';
-                        const cond = window.prompt(promptMsg, defaultVal);
-                        if (cond !== null) {
-                          if (existingBp) {
-                            toggleBreakpointRef.current(curPath, line);
-                            toggleBreakpointRef.current(curPath, line, cond);
-                          } else {
-                            toggleBreakpointRef.current(curPath, line, cond);
-                          }
+                    setupEditorKeybindings(ed);
+                    const curP = activeRef.current?.path;
+                    if (curP) {
+                      const vs = editorViewStateMapRef.current.get(curP);
+                      if (vs) {
+                        try {
+                          ed.restoreViewState(vs);
+                        } catch {
+                          /* ignore */
                         }
+                      }
+                      const saved =
+                        editorScrollStateMapRef.current.get(curP) ??
+                        initialCursorPositionsRef.current?.[curP];
+                      if (saved) {
+                        if (typeof saved.scrollTop === 'number' && saved.scrollTop >= 0) {
+                          ed.setScrollTop(saved.scrollTop);
+                        }
+                        if (typeof saved.scrollLeft === 'number' && saved.scrollLeft >= 0) {
+                          ed.setScrollLeft(saved.scrollLeft);
+                        }
+                        if (!vs && typeof saved.line === 'number' && saved.line > 0) {
+                          ed.setPosition({ lineNumber: saved.line, column: saved.col ?? 1 });
+                        }
+                      }
+                    }
+                    const cmdClickGesture = setupCmdClickGesture(ed, {
+                      t: () => tRef.current,
+                      getWorkspaceRoot: () => workspace,
+                      onOpenFile: (targetPath, line, col) => {
+                        const fn = onOpenFileRef?.current ?? onOpenFile;
+                        fn?.(targetPath, line, col);
+                      },
+                      getCurrentPath: () => activeRef.current?.path ?? null,
+                      getCurrentPosition: () => {
+                        const pos = ed.getPosition();
+                        return pos ? { line: pos.lineNumber, column: pos.column } : null;
+                      },
+                    });
+                    const multiCursorMoveGesture = setupMultiCursorColumnClickMove(ed);
+                    ed.onDidDispose(() => {
+                      cmdClickGesture.dispose();
+                      multiCursorMoveGesture.dispose();
+                    });
+                    ed.onDidChangeCursorSelection(() => {
+                      if (isMouseDownRef.current) {
+                        updateSelectionTextOnly(ed);
+                      } else {
+                        updateSelectionAndCoords(ed);
+                      }
+                    });
+                    ed.onDidScrollChange((e) => {
+                      if (isSwitchingFileRef.current) return;
+                      const curActiveP = activeRef.current?.path;
+                      if (curActiveP) {
+                        const existing = editorScrollStateMapRef.current.get(curActiveP) || {
+                          line: 1,
+                          col: 1,
+                          scrollTop: 0,
+                          scrollLeft: 0,
+                        };
+                        existing.scrollTop = e.scrollTop;
+                        existing.scrollLeft = e.scrollLeft;
+                        editorScrollStateMapRef.current.set(curActiveP, existing);
+                        onScrollChange?.(curActiveP, e.scrollTop, e.scrollLeft);
+                      }
+                      const sel = ed.getSelection();
+                      if (sel && !sel.isEmpty()) {
+                        dismissedSelectionKeyRef.current = `${sel.startLineNumber}:${sel.startColumn}-${sel.endLineNumber}:${sel.endColumn}`;
+                      }
+                      setSelectionCoords(null);
+                    });
+                    ed.onDidChangeCursorPosition((e) => {
+                      if (isSwitchingFileRef.current) return;
+                      const curActiveP = activeRef.current?.path;
+                      if (curActiveP) {
+                        const existing = editorScrollStateMapRef.current.get(curActiveP) || {
+                          line: 1,
+                          col: 1,
+                          scrollTop: 0,
+                          scrollLeft: 0,
+                        };
+                        existing.line = e.position.lineNumber;
+                        existing.col = e.position.column;
+                        editorScrollStateMapRef.current.set(curActiveP, existing);
+                      }
+                      setCursorLine(e.position.lineNumber);
+                      onCursorChange?.(e.position.lineNumber, e.position.column);
+                      updateGitBlameRef.current(e.position.lineNumber);
+                      trackCursorJump(
+                        activeRef.current?.path,
+                        e.position.lineNumber,
+                        e.position.column,
+                      );
+                    });
+                    ed.onDidChangeModel((e) => {
+                      if (!e.newModelUrl) return;
+                      const curActiveP = activeRef.current?.path;
+                      if (!curActiveP) return;
+                      const vs = editorViewStateMapRef.current.get(curActiveP);
+                      if (vs) {
+                        try {
+                          ed.restoreViewState(vs);
+                        } catch {
+                          /* ignore */
+                        }
+                      }
+                      const saved =
+                        editorScrollStateMapRef.current.get(curActiveP) ??
+                        initialCursorPositionsRef.current?.[curActiveP];
+                      if (saved) {
+                        if (typeof saved.scrollTop === 'number' && saved.scrollTop >= 0) {
+                          ed.setScrollTop(saved.scrollTop);
+                        }
+                        if (typeof saved.scrollLeft === 'number' && saved.scrollLeft >= 0) {
+                          ed.setScrollLeft(saved.scrollLeft);
+                        }
+                        if (!vs && typeof saved.line === 'number' && saved.line > 0) {
+                          ed.setPosition({ lineNumber: saved.line, column: saved.col ?? 1 });
+                        }
+                      }
+                      if (switchFileTimerRef.current) clearTimeout(switchFileTimerRef.current);
+                      switchFileTimerRef.current = setTimeout(() => {
+                        isSwitchingFileRef.current = false;
+                      }, 80);
+                    });
+                    // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，支持随时点击行号及左侧区域打断点
+                    ed.onMouseDown(async (e) => {
+                      if (e.event) {
+                        const b = e.event.browserEvent;
+                        lastMousePosRef.current = {
+                          clientX: b?.clientX ?? e.event.posx,
+                          clientY: b?.clientY ?? e.event.posy,
+                        };
+                      }
+                      if (e.event.metaKey || e.event.ctrlKey) {
                         return;
                       }
-                      toggleBreakpointRef.current(curPath, line);
-                      return;
+                      isMouseDownRef.current = true;
+                      setSelectionCoords(null);
+                      const el = e.target.element as HTMLElement | null;
+                      const curPath = activeRef.current?.path ?? activePath;
+
+                      // 1. 支持直接点击吸顶粘性滚动条 (Sticky Scroll) 上的行号或左侧区域打断点
+                      const stickyLineEl =
+                        el?.closest('.sticky-line-number') ??
+                        el
+                          ?.closest('.sticky-widget-line-numbers')
+                          ?.querySelector('.sticky-line-number');
+                      if (stickyLineEl && curPath) {
+                        const innerNode =
+                          stickyLineEl.querySelector('.sticky-line-number-inner') || stickyLineEl;
+                        const stickyText = innerNode?.textContent?.trim();
+                        const stickyLine = stickyText ? parseInt(stickyText, 10) : null;
+                        if (stickyLine && !isNaN(stickyLine)) {
+                          e.event?.preventDefault?.();
+                          toggleBreakpointRef.current(curPath, stickyLine);
+                          return;
+                        }
+                      }
+
+                      const isGitGutterEl = !!el?.closest('[class*="git-gutter"]');
+                      const isFoldingEl = !!el?.closest(
+                        '[class*="codicon-folding"], [class*="folding"], [class*="codicon-chevron"], .inline-folded',
+                      );
+                      // 仅当明确点击了代码折叠/展开按钮（且未直接点中 git-gutter 色条）时忽略，保障折叠不误触
+                      if (isFoldingEl && !isGitGutterEl) {
+                        return;
+                      }
+
+                      // 区分字形边距（行号左侧断点区 type 2 / .cgmr）与行装饰区（Git 差异色条区 type 4 / .line-decorations）：
+                      const isGlyphMarginClick =
+                        e.target.type === 2 ||
+                        !!el?.closest('.debug-breakpoint-glyph, .cgmr, .glyph-margin');
+                      const isLineNumberClick =
+                        e.target.type === 3 || !!el?.closest('.line-numbers');
+                      const isGutterClick =
+                        isGlyphMarginClick ||
+                        isLineNumberClick ||
+                        e.target.type === 4 ||
+                        isGitGutterEl;
+
+                      if (isGutterClick) {
+                        let line = e.target.position?.lineNumber ?? e.target.range?.startLineNumber;
+                        if (!line && e.event) {
+                          const b = e.event.browserEvent;
+                          const clientY = b?.clientY ?? e.event.posy;
+                          const clientX = b?.clientX ?? e.event.posx;
+                          try {
+                            const target = ed.getTargetAtClientPoint(clientX, clientY);
+                            line = target?.position?.lineNumber ?? target?.range?.startLineNumber;
+                          } catch {}
+                        }
+
+                        // 行号区或字形边距点击：无论调试中还是调试前，均绝对优先打上/取消红点断点
+                        if ((isGlyphMarginClick || isLineNumberClick) && line && curPath) {
+                          if (e.event.rightButton) {
+                            e.event.preventDefault();
+                            const existingBp = breakpointsRef.current.find(
+                              (b) => b.path === curPath && b.line === line,
+                            );
+                            const defaultVal = existingBp?.condition || '';
+                            const cond = await askConditionalBreakpointRef.current(
+                              line,
+                              defaultVal,
+                            );
+                            if (cond !== null) {
+                              if (existingBp) {
+                                toggleBreakpointRef.current(curPath, line);
+                                toggleBreakpointRef.current(curPath, line, cond);
+                              } else {
+                                toggleBreakpointRef.current(curPath, line, cond);
+                              }
+                            }
+                            return;
+                          }
+                          toggleBreakpointRef.current(curPath, line);
+                          return;
+                        }
+
+                        // 若直接点击在 Git Gutter 色条元素上且该行有修改，则打开内联 Git Diff
+                        if (
+                          isGitGutterEl &&
+                          line &&
+                          modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)
+                        ) {
+                          setGitInlineDiffLine(line);
+                          return;
+                        }
+                      }
+                    });
+                    ed.onMouseUp((e) => {
+                      isMouseDownRef.current = false;
+                      if (e.event) {
+                        const b = e.event.browserEvent;
+                        lastMousePosRef.current = {
+                          clientX: b?.clientX ?? e.event.posx,
+                          clientY: b?.clientY ?? e.event.posy,
+                        };
+                      }
+                      updateSelectionAndCoords(ed);
+                    });
+                    updateSelectionAndCoords(ed);
+                    const initPos = ed.getPosition();
+                    if (initPos) {
+                      updateGitBlameRef.current(initPos.lineNumber, true);
                     }
 
-                    // 若直接点击在 Git Gutter 色条元素上且该行有修改，则打开内联 Git Diff
-                    if (isGitGutterEl && line && modifiedRangesRef.current.some((r) => line >= r.start && line <= r.end)) {
-                      setGitInlineDiffLine(line);
-                      return;
-                    }
-                  }
-                });
-                ed.onMouseUp((e) => {
-                  isMouseDownRef.current = false;
-                  if (e.event) {
-                    const b = e.event.browserEvent;
-                    lastMousePosRef.current = {
-                      clientX: b?.clientX ?? e.event.posx,
-                      clientY: b?.clientY ?? e.event.posy,
-                    };
-                  }
-                  updateSelectionAndCoords(ed);
-                });
-                updateSelectionAndCoords(ed);
-                const initPos = ed.getPosition();
-                if (initPos) {
-                  updateGitBlameRef.current(initPos.lineNumber, true);
-                }
-
-                executeRevealTarget(ed);
-              }}
-              options={{
-                ...BASE_MONACO_OPTIONS,
-                readOnly: active.readOnly ?? false,
-                fontSize: 13,
-                find: COMMON_FIND_OPTIONS,
-                inlineSuggest: { enabled: true },
-                fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
-                fontWeight: '400',
-                disableMonospaceOptimizations: true,
-                'semanticHighlighting.enabled': !active.isLargeFile,
-                minimap: { enabled: !active.isLargeFile && minimap !== false },
-                hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
-                automaticLayout: true,
-                smoothScrolling: true,
-                wordWrap: active.isLargeFile ? 'off' : (wordWrap ? 'on' : 'off'),
-                scrollBeyondLastColumn: 0,
-                scrollBeyondLastLine: false,
-                bracketPairColorization: { enabled: !active.isLargeFile },
-                guides: { bracketPairs: !active.isLargeFile ? 'active' : false, indentation: true },
-                cursorSmoothCaretAnimation: 'on',
-                cursorBlinking: 'smooth',
-                renderWhitespace: 'selection',
-                padding: { top: 6, bottom: 6 },
-                lineNumbersMinChars: 4,
-                lineDecorationsWidth: 10,
-                glyphMargin: true,
-                folding: !active.isLargeFile,
-                overviewRulerLanes: 3,
-                overviewRulerBorder: false,
-                multiCursorModifier: 'alt',
-                links: true,
-                occurrencesHighlight: 'singleFile',
-                selectionHighlight: true,
-                gotoLocation: {
-                  multiple: 'peek',
-                  multipleDefinitions: 'peek',
-                  multipleReferences: 'peek',
-                  multipleDeclarations: 'peek',
-                  multipleImplementations: 'peek',
-                  multipleTypeDefinitions: 'peek',
-                },
-                scrollbar: {
-                  vertical: 'visible',
-                  horizontal: 'auto',
-                  verticalScrollbarSize: 12,
-                  horizontalScrollbarSize: 8,
-                  verticalSliderSize: 12,
-                  horizontalSliderSize: 8,
-                  useShadows: false,
-                },
-              }}
-            />
-          )}
-        </div>
-      </div>
-    ) : !workspace ? (
+                    executeRevealTarget(ed);
+                  }}
+                  options={{
+                    ...BASE_MONACO_OPTIONS,
+                    readOnly: active.readOnly ?? false,
+                    fontSize: 13,
+                    find: COMMON_FIND_OPTIONS,
+                    inlineSuggest: { enabled: true },
+                    fontFamily:
+                      'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
+                    fontWeight: '400',
+                    disableMonospaceOptimizations: true,
+                    'semanticHighlighting.enabled': !active.isLargeFile,
+                    minimap: { enabled: !active.isLargeFile && minimap !== false },
+                    hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
+                    automaticLayout: true,
+                    smoothScrolling: true,
+                    wordWrap: active.isLargeFile ? 'off' : wordWrap ? 'on' : 'off',
+                    scrollBeyondLastColumn: 0,
+                    scrollBeyondLastLine: false,
+                    bracketPairColorization: { enabled: !active.isLargeFile },
+                    guides: {
+                      bracketPairs: !active.isLargeFile ? 'active' : false,
+                      indentation: true,
+                    },
+                    cursorSmoothCaretAnimation: 'on',
+                    cursorBlinking: 'smooth',
+                    renderWhitespace: 'selection',
+                    padding: { top: 6, bottom: 6 },
+                    lineNumbersMinChars: 4,
+                    lineDecorationsWidth: 10,
+                    glyphMargin: true,
+                    folding: !active.isLargeFile,
+                    overviewRulerLanes: 3,
+                    overviewRulerBorder: false,
+                    multiCursorModifier: 'alt',
+                    links: true,
+                    occurrencesHighlight: 'singleFile',
+                    selectionHighlight: true,
+                    gotoLocation: {
+                      multiple: 'peek',
+                      multipleDefinitions: 'peek',
+                      multipleReferences: 'peek',
+                      multipleDeclarations: 'peek',
+                      multipleImplementations: 'peek',
+                      multipleTypeDefinitions: 'peek',
+                    },
+                    scrollbar: {
+                      vertical: 'visible',
+                      horizontal: 'auto',
+                      verticalScrollbarSize: 12,
+                      horizontalScrollbarSize: 8,
+                      verticalSliderSize: 12,
+                      horizontalSliderSize: 8,
+                      useShadows: false,
+                    },
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        ) : !workspace ? (
           <WelcomeView
             onPickLocal={() => onPickLocal?.()}
             onPickSsh={() => onPickSsh?.()}
@@ -6387,7 +6461,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               borderBottom: '1px solid var(--border)',
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
               fontSize: 12,
-              fontFamily: 'ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Monaco, Consolas, monospace',
+              fontFamily:
+                'ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Monaco, Consolas, monospace',
               color: 'var(--text)',
               boxSizing: 'border-box',
             }}
@@ -6430,7 +6505,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
 
               if (activeHunk) {
                 // 1. 上文 3 行
-                const ctxTop = ops.slice(Math.max(0, activeHunk.opsStartIndex - 3), activeHunk.opsStartIndex);
+                const ctxTop = ops.slice(
+                  Math.max(0, activeHunk.opsStartIndex - 3),
+                  activeHunk.opsStartIndex,
+                );
                 for (let k = 0; k < ctxTop.length; k++) {
                   const o = ctxTop[k];
                   displayRows.push({
@@ -6462,7 +6540,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   });
                 }
                 // 4. 下文 3 行
-                const ctxBottom = ops.slice(activeHunk.opsEndIndex + 1, Math.min(ops.length, activeHunk.opsEndIndex + 4));
+                const ctxBottom = ops.slice(
+                  activeHunk.opsEndIndex + 1,
+                  Math.min(ops.length, activeHunk.opsEndIndex + 4),
+                );
                 for (let k = 0; k < ctxBottom.length; k++) {
                   const o = ctxBottom[k];
                   displayRows.push({
@@ -6532,7 +6613,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       userSelect: 'none',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}
+                    >
                       <span style={{ fontWeight: 600, color: 'var(--text)' }}>
                         {active.path.split('/').pop() || active.path}
                       </span>
@@ -6562,7 +6645,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                         }}
                         className="icon-btn"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <line x1="12" y1="5" x2="12" y2="19" />
                           <line x1="5" y1="12" x2="19" y2="12" />
                         </svg>
@@ -6587,7 +6677,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                         }}
                         className="icon-btn"
                       >
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                        <svg
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                        >
                           <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                           <path d="M3 3v5h5" />
                         </svg>
@@ -6617,7 +6714,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                         }}
                         className="icon-btn"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <line x1="12" y1="19" x2="12" y2="5" />
                           <polyline points="5 12 12 5 19 12" />
                         </svg>
@@ -6647,7 +6751,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                         }}
                         className="icon-btn"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <line x1="12" y1="5" x2="12" y2="19" />
                           <polyline points="19 12 12 19 5 12" />
                         </svg>
@@ -6670,7 +6781,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                         }}
                         className="icon-btn"
                       >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <line x1="18" y1="6" x2="6" y2="18" />
                           <line x1="6" y1="6" x2="18" y2="18" />
                         </svg>
@@ -6679,7 +6797,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   </div>
 
                   {/* Dual Line Numbers & Code Diff Rows */}
-                  <div style={{ maxHeight: 340, overflowY: 'auto', overflowX: 'auto', background: 'var(--bg-editor, #1e1e1e)' }}>
+                  <div
+                    style={{
+                      maxHeight: 340,
+                      overflowY: 'auto',
+                      overflowX: 'auto',
+                      background: 'var(--bg-editor, #1e1e1e)',
+                    }}
+                  >
                     {displayRows.length === 0 ? (
                       <div style={{ padding: '12px 16px', color: 'var(--muted)' }}>
                         {t('editor.noLineChange')}
@@ -6690,7 +6815,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                           const parts = lineDiffPartsMap.get(row.key);
                           if (parts && parts.length > 0) {
                             const isDel = row.type === 'del';
-                            const diffBg = isDel ? 'rgba(248, 81, 73, 0.42)' : 'rgba(46, 160, 67, 0.42)';
+                            const diffBg = isDel
+                              ? 'rgba(248, 81, 73, 0.42)'
+                              : 'rgba(46, 160, 67, 0.42)';
                             const diffColor = isDel ? '#ffdcd7' : '#aff5b4';
                             return (
                               <>
@@ -6804,7 +6931,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                                 whiteSpace: 'pre',
                                 overflow: 'visible',
                                 flex: 1,
-                                color: row.type === 'same' ? 'rgba(255, 255, 255, 0.65)' : 'var(--text, #e6edf3)',
+                                color:
+                                  row.type === 'same'
+                                    ? 'rgba(255, 255, 255, 0.65)'
+                                    : 'var(--text, #e6edf3)',
                               }}
                             >
                               {renderRowContent()}
@@ -6839,14 +6969,34 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 }}
               >
                 <div className="menu-item-left">
-                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    className="menu-item-icon"
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                     <path d="M3 3v5h5" />
                   </svg>
                   <span>{t('editor.discardChangesMenu')}</span>
                 </div>
-                <kbd className="shortcut-badge shortcut-badge-icon" title={t('editor.discardChanges')}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <kbd
+                  className="shortcut-badge shortcut-badge-icon"
+                  title={t('editor.discardChanges')}
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                     <path d="M3 3v5h5" />
                   </svg>
@@ -6857,7 +7007,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           )}
           <div className="menu-item" onClick={() => handleCloseTab(contextMenu.targetPath)}>
             <div className="menu-item-left">
-              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -6867,7 +7025,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           </div>
           <div className="menu-item" onClick={() => handleCloseOthers(contextMenu.targetPath)}>
             <div className="menu-item-left">
-              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <rect x="3" y="3" width="13" height="13" rx="2" />
                 <path d="M9 17h10a2 2 0 0 0 2-2V9" />
               </svg>
@@ -6877,7 +7043,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           </div>
           <div className="menu-item" onClick={() => handleCloseLeft(contextMenu.targetPath)}>
             <div className="menu-item-left">
-              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polyline points="15 18 9 12 15 6" />
                 <line x1="5" y1="5" x2="5" y2="19" />
               </svg>
@@ -6886,7 +7060,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           </div>
           <div className="menu-item" onClick={() => handleCloseRight(contextMenu.targetPath)}>
             <div className="menu-item-left">
-              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polyline points="9 18 15 12 9 6" />
                 <line x1="19" y1="5" x2="19" y2="19" />
               </svg>
@@ -6895,7 +7077,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           </div>
           <div className="menu-item" onClick={handleCloseSaved}>
             <div className="menu-item-left">
-              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                 <polyline points="17 21 17 13 7 13 7 21" />
                 <polyline points="7 3 7 8 15 8" />
@@ -6905,7 +7095,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           </div>
           <div className="menu-item" onClick={handleCloseAll}>
             <div className="menu-item-left">
-              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="9" y1="9" x2="15" y2="15" />
                 <line x1="15" y1="9" x2="9" y2="15" />
@@ -6921,7 +7119,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             onClick={() => void handleCopyPath(contextMenu.targetPath, false)}
           >
             <div className="menu-item-left">
-              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <rect x="9" y="9" width="13" height="13" rx="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
@@ -6934,7 +7140,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             onClick={() => void handleCopyPath(contextMenu.targetPath, true)}
           >
             <div className="menu-item-left">
-              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polyline points="16 18 22 12 16 6" />
                 <polyline points="8 6 2 12 8 18" />
               </svg>
@@ -6956,7 +7170,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 }}
               >
                 <div className="menu-item-left">
-                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    className="menu-item-icon"
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <rect x="2" y="4" width="20" height="16" rx="2" />
                     <line x1="12" y1="4" x2="12" y2="20" />
                   </svg>
@@ -6973,7 +7195,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 }}
               >
                 <div className="menu-item-left">
-                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    className="menu-item-icon"
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <line x1="6" y1="3" x2="6" y2="15" />
                     <circle cx="18" cy="6" r="3" />
                     <circle cx="6" cy="18" r="3" />
@@ -6992,7 +7222,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 }}
               >
                 <div className="menu-item-left">
-                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    className="menu-item-icon"
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <circle cx="12" cy="12" r="10" />
                     <polyline points="12 6 12 12 16 14" />
                   </svg>
@@ -7009,7 +7247,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 }}
               >
                 <div className="menu-item-left">
-                  <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    className="menu-item-icon"
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <path d="M12 20h9" />
                     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                   </svg>
@@ -7025,7 +7271,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             onClick={() => void handleShowInFinder(contextMenu.targetPath)}
           >
             <div className="menu-item-left">
-              <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
               </svg>
               <span>{isMac ? t('editor.revealInFinder') : t('tree.revealInExplorer')}</span>
@@ -7045,7 +7299,15 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               }}
             >
               <div className="menu-item-left">
-                <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  className="menu-item-icon"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <polyline points="4 17 10 11 4 5" />
                   <line x1="12" y1="19" x2="20" y2="19" />
                 </svg>
@@ -7063,7 +7325,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           theme={monacoTheme}
           onSave={(merged) => {
             onChangeContent(active.path, merged, true);
-            onShowToast?.(t('editor.threeWaySavedTitle'), t('editor.threeWaySavedDetail'), 'success');
+            onShowToast?.(
+              t('editor.threeWaySavedTitle'),
+              t('editor.threeWaySavedDetail'),
+              'success',
+            );
           }}
           onClose={() => setShowThreeWayModal(false)}
         />

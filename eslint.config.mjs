@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
+import reactHooks from 'eslint-plugin-react-hooks';
 import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
@@ -39,6 +40,24 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  /**
+   * 只开 `rules-of-hooks` 一条，而且是 error。
+   *
+   * 这类错误**只在运行时炸**，且炸得很晚：`SettingsModal` 里一个 `useEffect` 被写在
+   * `if (!open || !settings) return null` 之后，直到用户点开设置页才抛
+   * 「Rendered more hooks than during the previous render」，整个设置页变成错误页 ——
+   * typecheck 全绿、测试全绿、构建也能过，CI 一声不吭。加这一条是让它变成编译期问题。
+   *
+   * 不开 `react-hooks/exhaustive-deps`：它会给现有的依赖数组灌一屏 warning
+   * （有意省略依赖、依赖稳定的 ref 之类），把上面这条真正的 error 淹掉。
+   */
+  {
+    files: ['**/*.{tsx,jsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+    },
+  },
   prettier,
   {
     rules: {

@@ -117,7 +117,10 @@ describe('loadModalSize', () => {
   });
 
   it('parses valid stored dimensions and clamps them', () => {
-    (globalThis.localStorage as any).setItem('modal_test', JSON.stringify({ width: 9999, height: 10 }));
+    (globalThis.localStorage as any).setItem(
+      'modal_test',
+      JSON.stringify({ width: 9999, height: 10 }),
+    );
     const size = loadModalSize('modal_test', 720, 540, 400, 300, 1200, 900);
     expect(size.width).toBe(1200);
     expect(size.height).toBe(300);

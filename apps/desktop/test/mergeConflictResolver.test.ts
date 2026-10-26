@@ -29,7 +29,9 @@ export function App() {
     expect(b.currentHeader).toBe('HEAD');
     expect(b.currentText).toBe("const TITLE = 'Current Branch Title';\nconst VERSION = '1.0.0';");
     expect(b.incomingHeader).toBe('feature/awesome');
-    expect(b.incomingText).toBe("const TITLE = 'Incoming Feature Title';\nconst VERSION = '2.0.0';");
+    expect(b.incomingText).toBe(
+      "const TITLE = 'Incoming Feature Title';\nconst VERSION = '2.0.0';",
+    );
     expect(b.endLine).toBe(9);
   });
 

@@ -253,7 +253,9 @@ export function layoutColumns(
       }
       const frozen = override.frozen?.[col];
       widths[col] =
-        typeof frozen === 'number' ? clampColumnWidth(frozen) : resolveColumnWidth(prefs, col, metaOf(col));
+        typeof frozen === 'number'
+          ? clampColumnWidth(frozen)
+          : resolveColumnWidth(prefs, col, metaOf(col));
     }
     const sum = INDEX_COLUMN_WIDTH + visibleColumns.reduce((acc, c) => acc + widths[c], 0);
     // 不铺满、不让位：表格宽度就是各列之和，拖动结果所见即所得

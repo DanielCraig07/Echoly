@@ -68,7 +68,10 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
       let cleanCmd = response.text.trim();
       // 去除可能意外包裹的 markdown 标记
       if (cleanCmd.startsWith('```')) {
-        cleanCmd = cleanCmd.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '').trim();
+        cleanCmd = cleanCmd
+          .replace(/^```[a-zA-Z0-9_-]*\n?/, '')
+          .replace(/\n?```$/, '')
+          .trim();
       }
       setGeneratedCmd(cleanCmd);
     } catch (err: any) {
@@ -170,7 +173,14 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
             flexShrink: 0,
           }}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+          >
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
           </svg>
         </div>
@@ -194,8 +204,18 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
         />
 
         {loading ? (
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span className="spinner-icon" style={{ display: 'inline-block' }}>⟳</span>
+          <span
+            style={{
+              fontSize: 12,
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <span className="spinner-icon" style={{ display: 'inline-block' }}>
+              ⟳
+            </span>
             {t('terminalAi.generating')}
           </span>
         ) : (
@@ -217,7 +237,14 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
           onClick={onClose}
           style={{ marginLeft: 2 }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -226,7 +253,14 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
 
       {/* 报错信息 */}
       {errorMsg && (
-        <div style={{ padding: '8px 12px', fontSize: 12, color: '#f87171', background: 'rgba(239, 68, 68, 0.1)' }}>
+        <div
+          style={{
+            padding: '8px 12px',
+            fontSize: 12,
+            color: '#f87171',
+            background: 'rgba(239, 68, 68, 0.1)',
+          }}
+        >
           {errorMsg}
         </div>
       )}
@@ -276,26 +310,45 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
                 void navigator.clipboard.writeText(generatedCmd);
               }}
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
             </button>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: 2,
+            }}
+          >
             <span style={{ fontSize: 11, color: 'var(--text-secondary, #888)' }}>
-              {translateSegments('terminalAi.runHint', locale, { enter: '↵', esc: 'Esc' }).map((seg, i) =>
-                seg.emphasis ? (
-                  <kbd
-                    key={i}
-                    style={{ padding: '1px 4px', borderRadius: 3, border: '1px solid var(--border)' }}
-                  >
-                    {seg.text}
-                  </kbd>
-                ) : (
-                  <span key={i}>{seg.text}</span>
-                ),
+              {translateSegments('terminalAi.runHint', locale, { enter: '↵', esc: 'Esc' }).map(
+                (seg, i) =>
+                  seg.emphasis ? (
+                    <kbd
+                      key={i}
+                      style={{
+                        padding: '1px 4px',
+                        borderRadius: 3,
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      {seg.text}
+                    </kbd>
+                  ) : (
+                    <span key={i}>{seg.text}</span>
+                  ),
               )}
             </span>
 

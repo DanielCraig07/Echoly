@@ -480,7 +480,9 @@ describe('DatabaseService · executeBatch 事务语义', () => {
       expect(res.ok).toBe(false);
       expect(res.error).toContain('批量提交');
 
-      const second = await service.executeBatch(connId, ["INSERT INTO users (username) VALUES ('x')"]);
+      const second = await service.executeBatch(connId, [
+        "INSERT INTO users (username) VALUES ('x')",
+      ]);
       expect(second.ok).toBe(false);
       expect(second.error).toContain('批量提交');
     } finally {

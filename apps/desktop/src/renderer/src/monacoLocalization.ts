@@ -22,7 +22,7 @@ export const MONACO_ZH_TRANSLATIONS: Record<string, string> = {
   'Find All References': '查找所有引用',
 
   // Peek
-  'Peek': '快速查看',
+  Peek: '快速查看',
   'Peek Definition': '查看定义',
   'Peek References': '查看引用',
   'Peek Declaration': '查看声明',
@@ -39,12 +39,12 @@ export const MONACO_ZH_TRANSLATIONS: Record<string, string> = {
   'Quick Fix...': '快速修复...',
 
   // Clipboard & Selection
-  'Cut': '剪切',
-  'Copy': '复制',
-  'Paste': '粘贴',
+  Cut: '剪切',
+  Copy: '复制',
+  Paste: '粘贴',
   'Select All': '全选',
-  'Undo': '撤销',
-  'Redo': '重做',
+  Undo: '撤销',
+  Redo: '重做',
 
   // Command Palette
   'Command Palette': '命令面板',
@@ -54,7 +54,7 @@ export const MONACO_ZH_TRANSLATIONS: Record<string, string> = {
 
   // Terminal
   'Open in Integrated Terminal': '在集成终端中打开',
-  '在集成终端中打开': '在集成终端中打开',
+  在集成终端中打开: '在集成终端中打开',
 };
 
 const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
@@ -69,11 +69,11 @@ export const MONACO_KEYBINDINGS: Record<string, string> = {
   // Navigation
   'editor.action.revealDefinition': isMac ? '⌘F12' : 'F12',
   'Go to Definition': isMac ? '⌘F12' : 'F12',
-  '转到定义': isMac ? '⌘F12' : 'F12',
+  转到定义: isMac ? '⌘F12' : 'F12',
 
   'editor.action.referenceSearch.trigger': isMac ? '⇧F12' : 'Shift+F12',
   'Go to References': isMac ? '⇧F12' : 'Shift+F12',
-  '转到引用': isMac ? '⇧F12' : 'Shift+F12',
+  转到引用: isMac ? '⇧F12' : 'Shift+F12',
 
   'editor.action.quickOutline': isMac ? '⇧⌘O' : 'Ctrl+Shift+O',
   'Go to Symbol...': isMac ? '⇧⌘O' : 'Ctrl+Shift+O',
@@ -81,35 +81,35 @@ export const MONACO_KEYBINDINGS: Record<string, string> = {
 
   'editor.action.peekDefinition': isMac ? '⌥F12' : 'Alt+F12',
   'Peek Definition': isMac ? '⌥F12' : 'Alt+F12',
-  '查看定义': isMac ? '⌥F12' : 'Alt+F12',
+  查看定义: isMac ? '⌥F12' : 'Alt+F12',
 
   'editor.action.rename': 'F2',
   'Rename Symbol': 'F2',
-  '重命名符号': 'F2',
+  重命名符号: 'F2',
 
   'editor.action.changeAll': isMac ? '⌘F2' : 'Ctrl+F2',
   'Change All Occurrences': isMac ? '⌘F2' : 'Ctrl+F2',
-  '更改所有匹配项': isMac ? '⌘F2' : 'Ctrl+F2',
+  更改所有匹配项: isMac ? '⌘F2' : 'Ctrl+F2',
 
   'editor.action.formatDocument': isMac ? '⌥⇧F' : 'Shift+Alt+F',
   'Format Document': isMac ? '⌥⇧F' : 'Shift+Alt+F',
-  '格式化文档': isMac ? '⌥⇧F' : 'Shift+Alt+F',
+  格式化文档: isMac ? '⌥⇧F' : 'Shift+Alt+F',
 
   'editor.action.clipboardCutAction': isMac ? '⌘X' : 'Ctrl+X',
-  'Cut': isMac ? '⌘X' : 'Ctrl+X',
-  '剪切': isMac ? '⌘X' : 'Ctrl+X',
+  Cut: isMac ? '⌘X' : 'Ctrl+X',
+  剪切: isMac ? '⌘X' : 'Ctrl+X',
 
   'editor.action.clipboardCopyAction': isMac ? '⌘C' : 'Ctrl+C',
-  'Copy': isMac ? '⌘C' : 'Ctrl+C',
-  '复制': isMac ? '⌘C' : 'Ctrl+C',
+  Copy: isMac ? '⌘C' : 'Ctrl+C',
+  复制: isMac ? '⌘C' : 'Ctrl+C',
 
   'editor.action.clipboardPasteAction': isMac ? '⌘V' : 'Ctrl+V',
-  'Paste': isMac ? '⌘V' : 'Ctrl+V',
-  '粘贴': isMac ? '⌘V' : 'Ctrl+V',
+  Paste: isMac ? '⌘V' : 'Ctrl+V',
+  粘贴: isMac ? '⌘V' : 'Ctrl+V',
 
   'editor.action.quickCommand': isMac ? '⇧⌘P' : 'F1',
   'Command Palette': isMac ? '⇧⌘P' : 'F1',
-  '命令面板': isMac ? '⇧⌘P' : 'F1',
+  命令面板: isMac ? '⇧⌘P' : 'F1',
 };
 
 function translateText(text: string): string {
@@ -142,7 +142,8 @@ export function applyBadgeStyle(kbEl: HTMLElement, isHovered = false) {
   kbEl.style.display = 'inline-flex';
   kbEl.style.alignItems = 'center';
   kbEl.style.justifyContent = 'center';
-  kbEl.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI', sans-serif";
+  kbEl.style.fontFamily =
+    "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI', sans-serif";
   kbEl.style.fontSize = '11.5px';
   kbEl.style.fontWeight = '500';
   kbEl.style.letterSpacing = '1.5px';
@@ -686,7 +687,11 @@ export function formatMenuItem(itemEl: HTMLElement) {
       labelEl.textContent = translated;
     }
 
-    if (currentText.includes('AI') || (translated && translated.includes('AI')) || currentText.includes('✦')) {
+    if (
+      currentText.includes('AI') ||
+      (translated && translated.includes('AI')) ||
+      currentText.includes('✦')
+    ) {
       itemLi.classList.add('monaco-ai-menu-item');
     }
   }
@@ -836,7 +841,11 @@ export function setupMonacoChineseLocalization() {
           if (focusedViewItem && (focusedViewItem as any).mysubmenu !== pd.submenu) {
             if (this.viewItems) {
               for (const vi of this.viewItems) {
-                if (vi && (vi as any).mysubmenu === pd.submenu && typeof (vi as any).cleanupExistingSubmenu === 'function') {
+                if (
+                  vi &&
+                  (vi as any).mysubmenu === pd.submenu &&
+                  typeof (vi as any).cleanupExistingSubmenu === 'function'
+                ) {
                   (vi as any).cleanupExistingSubmenu(true);
                   break;
                 }
@@ -853,7 +862,7 @@ export function setupMonacoChineseLocalization() {
         windowDimensions: any,
         submenu: any,
         entry: any,
-        expandDirection: any
+        expandDirection: any,
       ) {
         let effectiveWidth = windowDimensions.width;
         try {
@@ -872,7 +881,13 @@ export function setupMonacoChineseLocalization() {
           ...windowDimensions,
           width: effectiveWidth,
         };
-        return origCalculateSubmenu.call(this, customWindowDimensions, submenu, entry, expandDirection);
+        return origCalculateSubmenu.call(
+          this,
+          customWindowDimensions,
+          submenu,
+          entry,
+          expandDirection,
+        );
       };
     }
 
@@ -901,7 +916,7 @@ export function setupMonacoChineseLocalization() {
               const d = this._scrollable.getScrollDimensions();
               this._scrollable.setScrollDimensions({
                 width: Math.max(d.width, d.scrollWidth),
-                scrollWidth: Math.max(d.width, d.scrollWidth)
+                scrollWidth: Math.max(d.width, d.scrollWidth),
               });
               this._scrollable.setScrollPositionNow({ scrollLeft: 0 });
             }
@@ -961,7 +976,11 @@ export function setupMonacoChineseLocalization() {
                 });
                 this.submenuContainer.addEventListener('mouseleave', (e: MouseEvent) => {
                   const to = e.relatedTarget as Node | null;
-                  if (to && ((this.element && this.element.contains(to)) || (this.submenuContainer && this.submenuContainer.contains(to)))) {
+                  if (
+                    to &&
+                    ((this.element && this.element.contains(to)) ||
+                      (this.submenuContainer && this.submenuContainer.contains(to)))
+                  ) {
                     return;
                   }
                   if (subItem.__hideTimer) clearTimeout(subItem.__hideTimer);
@@ -977,11 +996,18 @@ export function setupMonacoChineseLocalization() {
               if (this.submenuContainer) {
                 const subRect = this.submenuContainer.getBoundingClientRect();
                 const parentRect = this.element?.getBoundingClientRect();
-                const editorEl = this.element?.closest?.('.monaco-editor') || document.querySelector('.middle-column');
+                const editorEl =
+                  this.element?.closest?.('.monaco-editor') ||
+                  document.querySelector('.middle-column');
                 const editorRect = editorEl?.getBoundingClientRect();
-                const maxRight = (editorRect && editorRect.right > 0 && editorRect.right < (typeof window !== 'undefined' ? window.innerWidth : 1920))
-                  ? editorRect.right
-                  : (typeof window !== 'undefined' ? window.innerWidth : 1920);
+                const maxRight =
+                  editorRect &&
+                  editorRect.right > 0 &&
+                  editorRect.right < (typeof window !== 'undefined' ? window.innerWidth : 1920)
+                    ? editorRect.right
+                    : typeof window !== 'undefined'
+                      ? window.innerWidth
+                      : 1920;
                 if (subRect.right > maxRight - 4 && parentRect) {
                   const targetLeft = parentRect.left - subRect.width;
                   const deltaX = targetLeft - subRect.left;
@@ -1000,7 +1026,10 @@ export function setupMonacoChineseLocalization() {
             const el = this.element || container;
             if (el) {
               formatMenuItem(el);
-              if (typeof (this as any).cleanupExistingSubmenu === 'function' && !el.__hasSubmenuHoverHandlers) {
+              if (
+                typeof (this as any).cleanupExistingSubmenu === 'function' &&
+                !el.__hasSubmenuHoverHandlers
+              ) {
                 el.__hasSubmenuHoverHandlers = true;
                 const subItem = this as any;
                 el.addEventListener('mouseenter', () => {
@@ -1011,7 +1040,11 @@ export function setupMonacoChineseLocalization() {
                 });
                 el.addEventListener('mouseleave', (e: MouseEvent) => {
                   const to = e.relatedTarget as Node | null;
-                  if (to && ((subItem.submenuContainer && subItem.submenuContainer.contains(to)) || el.contains(to))) {
+                  if (
+                    to &&
+                    ((subItem.submenuContainer && subItem.submenuContainer.contains(to)) ||
+                      el.contains(to))
+                  ) {
                     return;
                   }
                   if (subItem.__hideTimer) clearTimeout(subItem.__hideTimer);
@@ -1042,7 +1075,8 @@ export function setupMonacoChineseLocalization() {
     cvProto.setContainer = function (container: any, domPosition: any) {
       // 始终将 ContextView 挂载在 document.body，彻底逃脱 .editor-area/.editor-fill 等祖先容器的 overflow: hidden 裁剪，
       // 并以全局最高 z-index 浮动在所有面板之上，绝不被底部的终端面板、调试控制台等遮挡
-      const targetContainer = container && typeof document !== 'undefined' ? document.body : container;
+      const targetContainer =
+        container && typeof document !== 'undefined' ? document.body : container;
       return origSetContainer.call(this, targetContainer, domPosition);
     };
 
@@ -1135,7 +1169,10 @@ export function setupMonacoChineseLocalization() {
         const boundaryTop = editorRect && editorRect.top >= 0 ? editorRect.top : 0;
 
         const currentMenuRectV = this.view.getBoundingClientRect();
-        if (currentMenuRectV.bottom > boundaryBottom - 4 || currentMenuRectV.bottom > windowHeight - 4) {
+        if (
+          currentMenuRectV.bottom > boundaryBottom - 4 ||
+          currentMenuRectV.bottom > windowHeight - 4
+        ) {
           const spaceAbove = anchorY - boundaryTop;
           const spaceBelow = boundaryBottom - anchorY;
           let targetTop: number;
@@ -1187,7 +1224,9 @@ export function setupMonacoChineseLocalization() {
       const scanRoot = (root: Document | ShadowRoot | Element) => {
         try {
           // 彻底隐藏任何常驻滚动条与滑块
-          const scrollbars = root.querySelectorAll<HTMLElement>('.scrollbar, .scrollbar.vertical, .slider');
+          const scrollbars = root.querySelectorAll<HTMLElement>(
+            '.scrollbar, .scrollbar.vertical, .slider',
+          );
           scrollbars.forEach((sb) => {
             sb.style.setProperty('display', 'none', 'important');
             sb.style.setProperty('opacity', '0', 'important');
@@ -1221,7 +1260,9 @@ export function setupMonacoChineseLocalization() {
             }
           });
 
-          const containers = root.querySelectorAll<HTMLElement>('.actions-container, .monaco-action-bar.vertical');
+          const containers = root.querySelectorAll<HTMLElement>(
+            '.actions-container, .monaco-action-bar.vertical',
+          );
           containers.forEach((c) => {
             c.style.setProperty('display', 'flex', 'important');
             c.style.setProperty('flex-direction', 'column', 'important');
@@ -1259,7 +1300,7 @@ export function setupMonacoChineseLocalization() {
           }
         }
       },
-      { capture: true, passive: false }
+      { capture: true, passive: false },
     );
 
     window.addEventListener(
@@ -1271,7 +1312,7 @@ export function setupMonacoChineseLocalization() {
         setTimeout(scanAllMenus, 75);
         setTimeout(scanAllMenus, 150);
       },
-      true
+      true,
     );
   }
 
@@ -1296,7 +1337,7 @@ export function setupMonacoChineseLocalization() {
             lastKeyboardTime = Date.now();
           }
         },
-        true
+        true,
       );
     }
 
@@ -1313,7 +1354,10 @@ export function setupMonacoChineseLocalization() {
               }
               const mouseEvent = e.browserEvent;
               if (mouseEvent && typeof mouseEvent.clientX === 'number') {
-                if (mouseEvent.clientX === lastMouseClientX && mouseEvent.clientY === lastMouseClientY) {
+                if (
+                  mouseEvent.clientX === lastMouseClientX &&
+                  mouseEvent.clientY === lastMouseClientY
+                ) {
                   return;
                 }
                 lastMouseClientX = mouseEvent.clientX;
@@ -1326,7 +1370,7 @@ export function setupMonacoChineseLocalization() {
                   this._tree.setFocus([e.element]);
                 }
               }
-            })
+            }),
           );
         }
       };
@@ -1344,7 +1388,10 @@ export function setupMonacoChineseLocalization() {
             const items = added.querySelectorAll<HTMLElement>('.action-item, .action-menu-item');
             if (items.length) {
               items.forEach(formatMenuItem);
-            } else if (added.classList.contains('action-item') || added.classList.contains('action-menu-item')) {
+            } else if (
+              added.classList.contains('action-item') ||
+              added.classList.contains('action-menu-item')
+            ) {
               formatMenuItem(added);
             }
           }
@@ -1355,4 +1402,3 @@ export function setupMonacoChineseLocalization() {
     observer.observe(document.body, { childList: true, subtree: true });
   }
 }
-

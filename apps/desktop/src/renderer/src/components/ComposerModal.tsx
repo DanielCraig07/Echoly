@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { ModelProfile } from '@deepseek-ide/shared';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n } from '../i18n';
 
 interface Props {
@@ -90,7 +94,9 @@ export function ComposerModal({
         if (evt.runId !== runId) return;
 
         if (evt.type === 'status') {
-          setStatusText(evt.status === 'tool_running' ? t('composer.statusTool') : t('composer.statusThinking'));
+          setStatusText(
+            evt.status === 'tool_running' ? t('composer.statusTool') : t('composer.statusThinking'),
+          );
         } else if (evt.type === 'pending_diff' && evt.diff) {
           const d = evt.diff;
           setFileDiffs((prev) => {
@@ -142,16 +148,12 @@ export function ComposerModal({
 
   const handleAcceptSingle = async (diffId: string) => {
     await window.ide.acceptDiff(diffId);
-    setFileDiffs((prev) =>
-      prev.map((d) => (d.id === diffId ? { ...d, status: 'accepted' } : d)),
-    );
+    setFileDiffs((prev) => prev.map((d) => (d.id === diffId ? { ...d, status: 'accepted' } : d)));
   };
 
   const handleRejectSingle = async (diffId: string) => {
     await window.ide.rejectDiff(diffId);
-    setFileDiffs((prev) =>
-      prev.map((d) => (d.id === diffId ? { ...d, status: 'rejected' } : d)),
-    );
+    setFileDiffs((prev) => prev.map((d) => (d.id === diffId ? { ...d, status: 'rejected' } : d)));
   };
 
   const handleAcceptAll = async () => {
@@ -284,7 +286,14 @@ export function ComposerModal({
               onClick={onClose}
               title={t('common.closeEsc')}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -293,7 +302,15 @@ export function ComposerModal({
         </div>
 
         {/* Input Area */}
-        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--border, rgba(255,255,255,0.06))' }}>
+        <div
+          style={{
+            padding: '12px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            borderBottom: '1px solid var(--border, rgba(255,255,255,0.06))',
+          }}
+        >
           <textarea
             ref={inputRef}
             rows={3}
@@ -325,7 +342,14 @@ export function ComposerModal({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>
               {statusText ? (
-                <span style={{ color: 'var(--accent, #4c8dff)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span
+                  style={{
+                    color: 'var(--accent, #4c8dff)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                  }}
+                >
                   <span className="inline-ai-spinner" style={{ width: 10, height: 10 }} />
                   {statusText}
                 </span>
@@ -358,12 +382,33 @@ export function ComposerModal({
         </div>
 
         {/* Diff Results Waterfall */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: '12px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
           {fileDiffs.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 6 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingBottom: 6,
+              }}
+            >
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright, #fff)' }}>
                 {t('composer.changedFiles', { n: fileDiffs.length })}
-                {pendingCount > 0 && <span style={{ color: '#38bdf8', marginLeft: 6 }}>{t('composer.pendingReview', { n: pendingCount })}</span>}
+                {pendingCount > 0 && (
+                  <span style={{ color: '#38bdf8', marginLeft: 6 }}>
+                    {t('composer.pendingReview', { n: pendingCount })}
+                  </span>
+                )}
               </span>
 
               <div style={{ display: 'flex', gap: 8 }}>
@@ -403,7 +448,14 @@ export function ComposerModal({
           )}
 
           {fileDiffs.length === 0 && !isRunning && (
-            <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--muted, #888)', fontSize: 12 }}>
+            <div
+              style={{
+                margin: 'auto',
+                textAlign: 'center',
+                color: 'var(--muted, #888)',
+                fontSize: 12,
+              }}
+            >
               {t('composer.emptyHint')}
             </div>
           )}
@@ -433,9 +485,16 @@ export function ComposerModal({
                   onClick={() => setExpandedDiffs((prev) => ({ ...prev, [diff.id]: !isExpanded }))}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>{isExpanded ? '▼' : '▶'}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>
+                      {isExpanded ? '▼' : '▶'}
+                    </span>
                     <span
-                      style={{ fontSize: 12, fontFamily: 'var(--font-mono, monospace)', fontWeight: 550, color: 'var(--text-bright, #fff)' }}
+                      style={{
+                        fontSize: 12,
+                        fontFamily: 'var(--font-mono, monospace)',
+                        fontWeight: 550,
+                        color: 'var(--text-bright, #fff)',
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
                         onOpenFile?.(diff.path);
@@ -445,10 +504,30 @@ export function ComposerModal({
                       {diff.path}
                     </span>
                     {diff.status === 'accepted' && (
-                      <span style={{ fontSize: 10, color: '#34d399', background: 'rgba(16,185,129,0.15)', padding: '1px 5px', borderRadius: 4 }}>{t('composer.accepted')}</span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: '#34d399',
+                          background: 'rgba(16,185,129,0.15)',
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                        }}
+                      >
+                        {t('composer.accepted')}
+                      </span>
                     )}
                     {diff.status === 'rejected' && (
-                      <span style={{ fontSize: 10, color: '#f87171', background: 'rgba(239,68,68,0.15)', padding: '1px 5px', borderRadius: 4 }}>{t('composer.rejected')}</span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: '#f87171',
+                          background: 'rgba(239,68,68,0.15)',
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                        }}
+                      >
+                        {t('composer.rejected')}
+                      </span>
                     )}
                   </div>
 

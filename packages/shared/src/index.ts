@@ -409,10 +409,7 @@ export interface SlashCommandInfo {
  * 没有占位符时把参数追加到末尾，比丢弃参数好 —— 用户敲了字却什么都没发生，
  * 是最让人困惑的失败方式。
  */
-export function renderCommand(
-  command: Pick<SlashCommandInfo, 'body'>,
-  args: string,
-): string {
+export function renderCommand(command: Pick<SlashCommandInfo, 'body'>, args: string): string {
   const body = command.body.trim();
   const trimmedArgs = args.trim();
   if (!body) return trimmedArgs;
@@ -583,6 +580,14 @@ export interface ToolCall {
 export interface ThinkingBlock {
   type: 'thinking';
   thinking: string;
+  /**
+   * 思考块的签名，由 Anthropic 在流式响应里以 `signature_delta` 下发。
+   *
+   * 有这个字段是**回传思考链的必要条件**：接口要求带 thinking 的 assistant 消息
+   * 必须连同签名一起回传，缺签名会直接 400。所以「把 thinking 塞进历史消息」
+   * 在没有它的时候只能靠丢弃思考块来绕开 —— 代价是模型看不到自己上一轮的推理。
+   */
+  signature?: string;
 }
 
 export interface ChatMessage {
@@ -1233,13 +1238,7 @@ export interface DatabaseTableInfo {
 }
 
 /** 库 / schema 展开后的六个分组 */
-export type DbObjectGroup =
-  | 'tables'
-  | 'views'
-  | 'indexes'
-  | 'procedures'
-  | 'triggers'
-  | 'events';
+export type DbObjectGroup = 'tables' | 'views' | 'indexes' | 'procedures' | 'triggers' | 'events';
 
 /**
  * 一个库 / schema 下的对象清单，按树上要展示的分组切开。
@@ -1484,9 +1483,15 @@ export interface IpcApi {
    * 撤销一轮 AI 的全部文件改动。返回被还原的路径，以及因冲突/无法留底而跳过的部分 ——
    * 调用方必须把跳过项告诉用户，否则「撤销成功」会成为一句谎话。
    */
-  revertCheckpoint: (
-    runId?: string,
-  ) => Promise<{ runId: string; reverted: string[]; conflicts: string[]; skipped: Array<{ path: string; reason: string }> } | { error: string }>;
+  revertCheckpoint: (runId?: string) => Promise<
+    | {
+        runId: string;
+        reverted: string[];
+        conflicts: string[];
+        skipped: Array<{ path: string; reason: string }>;
+      }
+    | { error: string }
+  >;
   listSessions: () => Promise<ChatSession[]>;
   getSession: (id: string) => Promise<ChatSession | null>;
   saveSession: (session: ChatSession) => Promise<void>;
@@ -1515,7 +1520,9 @@ export interface IpcApi {
   /** 重载 MCP 服务器：读设置、连接、返回各服务器状态。设置变更后调用。 */
   mcpReload: () => Promise<McpServerStatus[]>;
   mcpStatus: () => Promise<McpServerStatus[]>;
-  rulesGet: (workspaceRoot?: string) => Promise<{ ok: boolean; content?: string | null; filename?: string }>;
+  rulesGet: (
+    workspaceRoot?: string,
+  ) => Promise<{ ok: boolean; content?: string | null; filename?: string }>;
   rulesSave: (content: string, workspaceRoot?: string) => Promise<{ ok: boolean }>;
   cloneRepo: (req: GitCloneRequest) => Promise<GitCloneResult>;
   gitInit: () => Promise<GitOpResult>;
@@ -1547,9 +1554,15 @@ export interface IpcApi {
   gitBlameLine: (path: string, line: number) => Promise<GitBlameLineResult>;
   gitBlameFile: (path: string) => Promise<GitBlameFileResult>;
   gitShowCommitDiff: (hash: string, path: string) => Promise<GitDiffResult>;
-  gitShowFileAtRef: (ref: string, path: string) => Promise<{ ok: boolean; content?: string; detail?: string }>;
+  gitShowFileAtRef: (
+    ref: string,
+    path: string,
+  ) => Promise<{ ok: boolean; content?: string; detail?: string }>;
   gitDiffWithRef: (ref: string, path: string) => Promise<GitDiffResult>;
-  gitCompareBranches: (baseRef: string, targetRef: string) => Promise<{
+  gitCompareBranches: (
+    baseRef: string,
+    targetRef: string,
+  ) => Promise<{
     ok: boolean;
     ahead: number;
     behind: number;
@@ -1713,7 +1726,11 @@ export interface IpcApi {
   /** LSP 语言服务器跳转到定义 */
   lspGetDefinition: (filePath: string, line: number, column: number) => Promise<LspLocation[]>;
   /** LSP 语言服务器代码补全 */
-  lspGetCompletion?: (filePath: string, line: number, column: number) => Promise<LspCompletionItem[]>;
+  lspGetCompletion?: (
+    filePath: string,
+    line: number,
+    column: number,
+  ) => Promise<LspCompletionItem[]>;
   /** LSP 语言服务器同步文档内容 */
   lspNotifyDocument: (filePath: string, content: string, languageId?: string) => Promise<void>;
   /** LSP C/C++ 头文件与源文件快速切换 (Alt+O) */
@@ -1753,7 +1770,10 @@ export interface IpcApi {
   dapGetStackTrace?: (threadId: number) => Promise<DapStackFrame[]>;
   dapGetScopes?: (frameId: number) => Promise<DapScope[]>;
   dapGetVariables?: (variablesReference: number) => Promise<DapVariable[]>;
-  dapEvaluate?: (expression: string, frameId?: number) => Promise<{ result: string; type?: string }>;
+  dapEvaluate?: (
+    expression: string,
+    frameId?: number,
+  ) => Promise<{ result: string; type?: string }>;
   onDapEvent?: (cb: (event: DapEvent) => void) => () => void;
 
   /** 在访达/资源管理器中显示指定文件 */
@@ -1771,7 +1791,9 @@ export interface IpcApi {
   /** 获取可供在线安装的官方推荐 Java (JDK) 列表 */
   javaGetOnlineJdks: () => Promise<OnlineJdkInfo[]>;
   /** 在线下载并安装指定的 JDK */
-  javaInstallOnlineJdk: (id: string) => Promise<{ success: boolean; javaHome?: string; message: string }>;
+  javaInstallOnlineJdk: (
+    id: string,
+  ) => Promise<{ success: boolean; javaHome?: string; message: string }>;
   /** 监听 JDK 在线下载与解压进度 */
   onJavaInstallProgress: (cb: (progress: JdkInstallProgress) => void) => () => void;
   /** 打开系统设置（如 macOS 本地网络隐私设置） */
@@ -1941,12 +1963,7 @@ export interface DapVariable {
 }
 
 export type DapEventType =
-  | 'stopped'
-  | 'continued'
-  | 'output'
-  | 'terminated'
-  | 'exited'
-  | 'breakpoint';
+  'stopped' | 'continued' | 'output' | 'terminated' | 'exited' | 'breakpoint';
 
 export interface DapEvent {
   type: DapEventType;
@@ -2051,5 +2068,3 @@ declare global {
     ide: IpcApi;
   }
 }
-
-

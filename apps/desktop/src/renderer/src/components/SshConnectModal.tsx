@@ -370,9 +370,7 @@ export function SshConnectModal({
             <header className="ide-modal-header">
               <div>
                 <h2>{t('ssh.title')}</h2>
-                <p className="ide-modal-desc">
-                  {showForm ? t('ssh.descForm') : t('ssh.descList')}
-                </p>
+                <p className="ide-modal-desc">{showForm ? t('ssh.descForm') : t('ssh.descList')}</p>
               </div>
               <button
                 type="button"
@@ -380,14 +378,24 @@ export function SshConnectModal({
                 onClick={handleClose}
                 title={t('common.closeEsc')}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             </header>
 
-            <div className="ide-modal-body" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div
+              className="ide-modal-body"
+              style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+            >
               {!showForm && profiles.length > 0 && (
                 <ul className="ssh-server-list">
                   {profiles.map((p) => (
@@ -398,7 +406,9 @@ export function SshConnectModal({
                         onClick={() => void startConnectAndPickDir(p)}
                         disabled={busy}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+                        <div
+                          style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}
+                        >
                           <div
                             style={{
                               width: 32,
@@ -413,14 +423,31 @@ export function SshConnectModal({
                               border: '1px solid rgba(255, 255, 255, 0.1)',
                             }}
                           >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
                               <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
                               <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
                               <line x1="6" y1="6" x2="6.01" y2="6" />
                               <line x1="6" y1="18" x2="6.01" y2="18" />
                             </svg>
                           </div>
-                          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <div
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 2,
+                            }}
+                          >
                             <span className="ssh-server-name">{p.name}</span>
                             <span className="ssh-server-meta">
                               {p.username}@{p.host}
@@ -449,7 +476,14 @@ export function SshConnectModal({
                         onClick={(e) => void removeProfile(p.id, e)}
                         disabled={busy}
                       >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <polyline points="3 6 5 6 21 6" />
                           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                         </svg>
@@ -537,13 +571,26 @@ export function SshConnectModal({
               )}
 
               {error && (
-                <div className="probe-fail" style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                <div
+                  className="probe-fail"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                    alignItems: 'flex-start',
+                  }}
+                >
                   <span>{error}</span>
                   {needsLocalNetwork && (
                     <button
                       type="button"
                       className="ghost"
-                      style={{ padding: '2px 8px', fontSize: 11, textDecoration: 'underline', cursor: 'pointer' }}
+                      style={{
+                        padding: '2px 8px',
+                        fontSize: 11,
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                      }}
                       onClick={() => void window.ide.openSystemSettings?.('localNetwork')}
                     >
                       {t('ssh.openMacSettings')}
@@ -596,9 +643,7 @@ export function SshConnectModal({
                   </span>
                 </div>
                 <h2>{t('ssh.pickDirTitle')}</h2>
-                <p className="ide-modal-desc">
-                  {t('ssh.pickDirDesc')}
-                </p>
+                <p className="ide-modal-desc">{t('ssh.pickDirDesc')}</p>
               </div>
               <button
                 type="button"
@@ -606,7 +651,14 @@ export function SshConnectModal({
                 onClick={handleClose}
                 title={t('common.closeEsc')}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>

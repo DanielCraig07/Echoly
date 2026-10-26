@@ -13,11 +13,7 @@ export function colorizeTerminalLogs(data: string): string {
   // 2. 避免重复注入背景色
   if (data.includes('\x1b[48;2;')) return data;
   // 3. 包含全屏交互程序（vim / nano / less / htop）进入/退出备用缓冲区的转义序列时，直接原样放行
-  if (
-    data.includes('\x1b[?1049') ||
-    data.includes('\x1b[?47') ||
-    data.includes('\x1b[?1047')
-  ) {
+  if (data.includes('\x1b[?1049') || data.includes('\x1b[?47') || data.includes('\x1b[?1047')) {
     return data;
   }
 
@@ -38,7 +34,14 @@ export function colorizeTerminalLogs(data: string): string {
 
   let result = data.replace(
     APP_TIMESTAMP_LOG_REGEX,
-    (_match, lineBreak: string, timestamp: string, middle: string, level: string, rest: string = '') => {
+    (
+      _match,
+      lineBreak: string,
+      timestamp: string,
+      middle: string,
+      level: string,
+      rest: string = '',
+    ) => {
       const cleanMiddle = middle.trim();
       const lead = cleanMiddle ? `${timestamp} ${cleanMiddle} ` : `${timestamp} `;
       const lvl = level.toUpperCase();
@@ -107,23 +110,58 @@ export function colorizeTerminalLogs(data: string): string {
     },
   );
 
-  return result
-    // 3. [INFO] 蓝底白字/浅蓝
-    .replace(/(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[INFO\](?:\x1b\[[0-9;]*m)?/g, '\x1b[48;2;18;52;98m\x1b[38;2;147;197;253m\x1b[1m INFO \x1b[0m')
-    // 4. [WARNING] / [WARN] 琥珀黄底黑字/深黄
-    .replace(/(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[WARNING\](?:\x1b\[[0-9;]*m)?/g, '\x1b[48;2;120;65;0m\x1b[38;2;253;224;71m\x1b[1m WARN \x1b[0m')
-    .replace(/(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[WARN\](?:\x1b\[[0-9;]*m)?/g, '\x1b[48;2;120;65;0m\x1b[38;2;253;224;71m\x1b[1m WARN \x1b[0m')
-    // 5. [ERROR] 红底白字
-    .replace(/(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[ERROR\](?:\x1b\[[0-9;]*m)?/g, '\x1b[48;2;153;27;27m\x1b[38;2;255;255;255m\x1b[1m ERROR \x1b[0m')
-    // 6. [DEBUG] 紫底浅紫字
-    .replace(/(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[DEBUG\](?:\x1b\[[0-9;]*m)?/g, '\x1b[48;2;65;35;95m\x1b[38;2;216;180;254m\x1b[1m DEBUG \x1b[0m')
-    // 7. BUILD SUCCESS / BUILD FAILURE 横幅背景
-    .replace(/(?:^|(?<=[\r\n]))BUILD SUCCESS\b/g, '\x1b[48;2;22;101;52m\x1b[38;2;240;253;244m\x1b[1m  BUILD SUCCESS  \x1b[0m')
-    .replace(/(?:^|(?<=[\r\n]))BUILD FAILURE\b/g, '\x1b[48;2;153;27;27m\x1b[38;2;255;255;255m\x1b[1m  BUILD FAILURE  \x1b[0m')
-    // 8. 执行完成退出码背景徽章
-    .replace(/\[Process finished with exit code 0\]/g, '\x1b[48;2;22;101;52m\x1b[38;2;240;253;244m\x1b[1m [Process finished with exit code 0] \x1b[0m')
-    .replace(/\[Process finished with exit code ([1-9]\d*)\]/g, '\x1b[48;2;153;27;27m\x1b[38;2;254;242;242m\x1b[1m [Process finished with exit code $1] \x1b[0m')
-    // 9. Java 异常突出显示
-    .replace(/(?:^|(?<=[\r\n]))(Exception in thread [^\r\n]+)/g, '\x1b[48;2;120;25;25m\x1b[38;2;255;255;255m\x1b[1m EXCEPTION \x1b[0m\x1b[38;2;252;165;165m $1\x1b[0m')
-    .replace(/(?:^|(?<=[\r\n]))(Caused by: [^\r\n]+)/g, '\x1b[48;2;90;20;20m\x1b[38;2;255;255;255m\x1b[1m CAUSED BY \x1b[0m\x1b[38;2;252;165;165m $1\x1b[0m');
+  return (
+    result
+      // 3. [INFO] 蓝底白字/浅蓝
+      .replace(
+        /(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[INFO\](?:\x1b\[[0-9;]*m)?/g,
+        '\x1b[48;2;18;52;98m\x1b[38;2;147;197;253m\x1b[1m INFO \x1b[0m',
+      )
+      // 4. [WARNING] / [WARN] 琥珀黄底黑字/深黄
+      .replace(
+        /(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[WARNING\](?:\x1b\[[0-9;]*m)?/g,
+        '\x1b[48;2;120;65;0m\x1b[38;2;253;224;71m\x1b[1m WARN \x1b[0m',
+      )
+      .replace(
+        /(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[WARN\](?:\x1b\[[0-9;]*m)?/g,
+        '\x1b[48;2;120;65;0m\x1b[38;2;253;224;71m\x1b[1m WARN \x1b[0m',
+      )
+      // 5. [ERROR] 红底白字
+      .replace(
+        /(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[ERROR\](?:\x1b\[[0-9;]*m)?/g,
+        '\x1b[48;2;153;27;27m\x1b[38;2;255;255;255m\x1b[1m ERROR \x1b[0m',
+      )
+      // 6. [DEBUG] 紫底浅紫字
+      .replace(
+        /(?:^|(?<=[\r\n]))(?:\x1b\[[0-9;]*m)?\[DEBUG\](?:\x1b\[[0-9;]*m)?/g,
+        '\x1b[48;2;65;35;95m\x1b[38;2;216;180;254m\x1b[1m DEBUG \x1b[0m',
+      )
+      // 7. BUILD SUCCESS / BUILD FAILURE 横幅背景
+      .replace(
+        /(?:^|(?<=[\r\n]))BUILD SUCCESS\b/g,
+        '\x1b[48;2;22;101;52m\x1b[38;2;240;253;244m\x1b[1m  BUILD SUCCESS  \x1b[0m',
+      )
+      .replace(
+        /(?:^|(?<=[\r\n]))BUILD FAILURE\b/g,
+        '\x1b[48;2;153;27;27m\x1b[38;2;255;255;255m\x1b[1m  BUILD FAILURE  \x1b[0m',
+      )
+      // 8. 执行完成退出码背景徽章
+      .replace(
+        /\[Process finished with exit code 0\]/g,
+        '\x1b[48;2;22;101;52m\x1b[38;2;240;253;244m\x1b[1m [Process finished with exit code 0] \x1b[0m',
+      )
+      .replace(
+        /\[Process finished with exit code ([1-9]\d*)\]/g,
+        '\x1b[48;2;153;27;27m\x1b[38;2;254;242;242m\x1b[1m [Process finished with exit code $1] \x1b[0m',
+      )
+      // 9. Java 异常突出显示
+      .replace(
+        /(?:^|(?<=[\r\n]))(Exception in thread [^\r\n]+)/g,
+        '\x1b[48;2;120;25;25m\x1b[38;2;255;255;255m\x1b[1m EXCEPTION \x1b[0m\x1b[38;2;252;165;165m $1\x1b[0m',
+      )
+      .replace(
+        /(?:^|(?<=[\r\n]))(Caused by: [^\r\n]+)/g,
+        '\x1b[48;2;90;20;20m\x1b[38;2;255;255;255m\x1b[1m CAUSED BY \x1b[0m\x1b[38;2;252;165;165m $1\x1b[0m',
+      )
+  );
 }

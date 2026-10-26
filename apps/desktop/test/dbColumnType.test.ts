@@ -16,7 +16,11 @@ import {
 } from '../src/renderer/src/services/dbTableQuery';
 import { defaultPortFor, resolvePort } from '../src/renderer/src/services/dbConnectionForm';
 
-function col(name: string, type: string, extra: Partial<DatabaseColumnMeta> = {}): DatabaseColumnMeta {
+function col(
+  name: string,
+  type: string,
+  extra: Partial<DatabaseColumnMeta> = {},
+): DatabaseColumnMeta {
   return { cid: 0, name, type, notnull: false, dflt_value: null, pk: false, ...extra };
 }
 
@@ -30,7 +34,9 @@ describe('columnCategory 字段大类', () => {
 
   it('日期时间类归到 datetime', () => {
     expect(columnCategory(col('created_at', 'DATETIME'), 'mysql')).toBe('datetime');
-    expect(columnCategory(col('created_at', 'TIMESTAMP WITH TIME ZONE'), 'postgres')).toBe('datetime');
+    expect(columnCategory(col('created_at', 'TIMESTAMP WITH TIME ZONE'), 'postgres')).toBe(
+      'datetime',
+    );
     expect(columnCategory(col('d', 'DATE'), 'mysql')).toBe('datetime');
   });
 

@@ -20,7 +20,8 @@ export function detectPortsFromText(text: string): number[] {
   }
 
   // 2. 语义词格式：port 3000, port: 8080, listening on :4000, running on port 8000
-  const portWordRegex = /(?:port|listening\s+on(?:\s+port)?|running\s+on(?:\s+port)?)\s*[:=]?\s*(?::)?(\d{2,5})\b/gi;
+  const portWordRegex =
+    /(?:port|listening\s+on(?:\s+port)?|running\s+on(?:\s+port)?)\s*[:=]?\s*(?::)?(\d{2,5})\b/gi;
   while ((match = portWordRegex.exec(clean)) !== null) {
     const port = parseInt(match[1], 10);
     if (isValidPort(port)) {

@@ -24,12 +24,20 @@ import type {
   ModelProfile,
   DapBreakpoint,
 } from '@deepseek-ide/shared';
-import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, DEFAULT_MODELS, NO_WORKSPACE_LABEL } from '@deepseek-ide/shared';
+import {
+  DEFAULT_LAYOUT,
+  DEFAULT_SETTINGS,
+  DEFAULT_MODELS,
+  NO_WORKSPACE_LABEL,
+} from '@deepseek-ide/shared';
 import { FileTree, type FileTreeHandle } from './components/FileTree';
 import { useDbConfirm } from './hooks/useDbConfirm';
+import type { ToastType } from './services/toast';
+import { showGlobalToast } from './services/toast';
 import { buildSqlConfirmMarkdown } from './services/dbConfirmContent';
 import { EditorPane } from './components/EditorPane';
 import { ChatPanel, type ChatPanelHandle } from './components/ChatPanel';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { TerminalPanel } from './components/TerminalPanel';
 import { ComposerModal } from './components/ComposerModal';
 import { DebugPanel } from './components/DebugPanel';
@@ -365,7 +373,9 @@ export function App() {
   const [timelineCommits, setTimelineCommits] = useState<GitCommitEntry[]>([]);
   const [fileHistoryModalPath, setFileHistoryModalPath] = useState<string | null>(null);
   const [compareRevisionModalPath, setCompareRevisionModalPath] = useState<string | null>(null);
-  const [compareBranchOrTagModalPath, setCompareBranchOrTagModalPath] = useState<string | null>(null);
+  const [compareBranchOrTagModalPath, setCompareBranchOrTagModalPath] = useState<string | null>(
+    null,
+  );
   const [rollbackModalPath, setRollbackModalPath] = useState<string | null>(null);
   const [annotatedBlamePath, setAnnotatedBlamePath] = useState<string | null>(null);
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
@@ -500,7 +510,10 @@ export function App() {
     const discardDetails = isAll
       ? [{ label: t('app.labelScope'), value: t('app.scopeAllDirty') }]
       : [
-          { label: t('app.labelScope'), value: t('app.scopeFileCount', { n: pathsToDiscard.length }) },
+          {
+            label: t('app.labelScope'),
+            value: t('app.scopeFileCount', { n: pathsToDiscard.length }),
+          },
           ...pathsToDiscard
             .slice(0, 8)
             .map((p, i) => ({ label: i === 0 ? t('app.labelFile') : '', value: p })),
@@ -693,7 +706,11 @@ export function App() {
       setActivePath(headVirtualPath);
       showToast(t('app.headSnapshot'), t('app.headSnapshotLoaded', { name: fileName }), 'info');
     } else {
-      showToast(t('app.headSnapshotFailed'), res.detail || t('app.headSnapshotFailedDetail'), 'error');
+      showToast(
+        t('app.headSnapshotFailed'),
+        res.detail || t('app.headSnapshotFailedDetail'),
+        'error',
+      );
     }
   };
 
@@ -933,9 +950,7 @@ export function App() {
     saveWorkspaceOpenFiles(
       root,
       tabsRef.current.map((t) => t.path).filter((p) => !isVirtualPath(p)),
-      activePathRef.current && !isVirtualPath(activePathRef.current)
-        ? activePathRef.current
-        : null,
+      activePathRef.current && !isVirtualPath(activePathRef.current) ? activePathRef.current : null,
       fileCursorPositionsRef.current,
       cursorLineRef.current,
       cursorColRef.current,
@@ -969,8 +984,10 @@ export function App() {
           ...fileCursorPositionsRef.current[saved.activePath],
           line: saved.activeLine ?? fileCursorPositionsRef.current[saved.activePath]?.line ?? 1,
           col: saved.activeCol ?? fileCursorPositionsRef.current[saved.activePath]?.col ?? 1,
-          scrollTop: saved.activeScrollTop ?? fileCursorPositionsRef.current[saved.activePath]?.scrollTop,
-          scrollLeft: saved.activeScrollLeft ?? fileCursorPositionsRef.current[saved.activePath]?.scrollLeft,
+          scrollTop:
+            saved.activeScrollTop ?? fileCursorPositionsRef.current[saved.activePath]?.scrollTop,
+          scrollLeft:
+            saved.activeScrollLeft ?? fileCursorPositionsRef.current[saved.activePath]?.scrollLeft,
         };
       }
 
@@ -1121,12 +1138,15 @@ export function App() {
         const activeSsh = await window.ide.sshGetActiveSession?.().catch(() => null);
         const targetServer = target.sshServer || userHost || hostOnly || '';
         const targetHost = target.rawItem?.host || hostOnly;
-        const targetUser = target.rawItem?.username || (userHost.includes('@') ? userHost.split('@')[0] : '');
+        const targetUser =
+          target.rawItem?.username || (userHost.includes('@') ? userHost.split('@')[0] : '');
 
         if (activeSsh) {
           const isSameHost =
             (targetHost && targetHost === activeSsh.host) ||
-            (!targetHost && targetServer && (targetServer.includes(activeSsh.host) || activeSsh.host.includes(targetServer)));
+            (!targetHost &&
+              targetServer &&
+              (targetServer.includes(activeSsh.host) || activeSsh.host.includes(targetServer)));
           const isSameUser = !targetUser || targetUser === activeSsh.username;
 
           if (isSameHost && isSameUser) {
@@ -1445,7 +1465,14 @@ export function App() {
       // 项目脚本清单是按工作区哈希存的（配置目录不同），换项目必须重读
       void refreshProjectScripts();
     });
-  }, [applySettings, persistOpenFilesForRoot, restoreOpenFilesForRoot, openTargetInCurrentWindow, resetAiChatSession, refreshProjectScripts]);
+  }, [
+    applySettings,
+    persistOpenFilesForRoot,
+    restoreOpenFilesForRoot,
+    openTargetInCurrentWindow,
+    resetAiChatSession,
+    refreshProjectScripts,
+  ]);
 
   // Remember open tabs for the current project (debounced).
   useEffect(() => {
@@ -1514,27 +1541,35 @@ export function App() {
     return `echoly.dap.breakpoints.${ws}`;
   }, []);
 
-  const isBreakpointBelongsToWorkspace = useCallback((bp: DapBreakpoint, ws?: string | null): boolean => {
-    if (!ws) return true;
-    const normWs = ws.replace(/\\/g, '/').replace(/\/+$/, '');
-    const normPath = bp.path.replace(/\\/g, '/');
-    if (!normPath.startsWith('/') && !/^[A-Za-z]:/.test(normPath)) {
-      return true;
-    }
-    return normPath.startsWith(normWs + '/') || normPath === normWs;
-  }, []);
-
-  const loadWorkspaceBreakpoints = useCallback((ws?: string | null): DapBreakpoint[] => {
-    try {
-      const key = getBreakpointsStorageKey(ws);
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const list: DapBreakpoint[] = JSON.parse(raw);
-        return Array.isArray(list) ? list.filter((b) => isBreakpointBelongsToWorkspace(b, ws)) : [];
+  const isBreakpointBelongsToWorkspace = useCallback(
+    (bp: DapBreakpoint, ws?: string | null): boolean => {
+      if (!ws) return true;
+      const normWs = ws.replace(/\\/g, '/').replace(/\/+$/, '');
+      const normPath = bp.path.replace(/\\/g, '/');
+      if (!normPath.startsWith('/') && !/^[A-Za-z]:/.test(normPath)) {
+        return true;
       }
-    } catch {}
-    return [];
-  }, [getBreakpointsStorageKey, isBreakpointBelongsToWorkspace]);
+      return normPath.startsWith(normWs + '/') || normPath === normWs;
+    },
+    [],
+  );
+
+  const loadWorkspaceBreakpoints = useCallback(
+    (ws?: string | null): DapBreakpoint[] => {
+      try {
+        const key = getBreakpointsStorageKey(ws);
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const list: DapBreakpoint[] = JSON.parse(raw);
+          return Array.isArray(list)
+            ? list.filter((b) => isBreakpointBelongsToWorkspace(b, ws))
+            : [];
+        }
+      } catch {}
+      return [];
+    },
+    [getBreakpointsStorageKey, isBreakpointBelongsToWorkspace],
+  );
 
   // ── C/C++ & 多语言调试会话与底部面板标签 ──
   const [bottomTab, setBottomTab] = useState<'terminal' | 'debug' | 'problems'>('terminal');
@@ -1678,21 +1713,24 @@ export function App() {
     setBreakpoints(loadWorkspaceBreakpoints(workspace));
   }, [workspace, loadWorkspaceBreakpoints]);
 
-  const handleToggleBreakpoint = useCallback((path: string, line: number, condition?: string) => {
-    setBreakpoints((prev) => {
-      const exists = prev.some((b) => b.path === path && b.line === line);
-      const next = exists
-        ? prev.filter((b) => !(b.path === path && b.line === line))
-        : [...prev, { path, line, condition: condition?.trim() || undefined, verified: true }];
-      try {
-        const key = getBreakpointsStorageKey(workspace);
-        localStorage.setItem(key, JSON.stringify(next));
-      } catch {}
-      const fileLines = next.filter((b) => b.path === path).map((b) => b.line);
-      void window.ide?.dapSetBreakpoints?.(path, fileLines);
-      return next;
-    });
-  }, [workspace, getBreakpointsStorageKey]);
+  const handleToggleBreakpoint = useCallback(
+    (path: string, line: number, condition?: string) => {
+      setBreakpoints((prev) => {
+        const exists = prev.some((b) => b.path === path && b.line === line);
+        const next = exists
+          ? prev.filter((b) => !(b.path === path && b.line === line))
+          : [...prev, { path, line, condition: condition?.trim() || undefined, verified: true }];
+        try {
+          const key = getBreakpointsStorageKey(workspace);
+          localStorage.setItem(key, JSON.stringify(next));
+        } catch {}
+        const fileLines = next.filter((b) => b.path === path).map((b) => b.line);
+        void window.ide?.dapSetBreakpoints?.(path, fileLines);
+        return next;
+      });
+    },
+    [workspace, getBreakpointsStorageKey],
+  );
 
   const handleClearBreakpoints = useCallback(() => {
     setBreakpoints([]);
@@ -1750,7 +1788,9 @@ export function App() {
       handleStopDebug();
       if (custom.detail?.message) {
         showToast(
-          custom.detail.language === 'python' ? t('app.debugMissingDebugpy') : t('app.debugStartFailed'),
+          custom.detail.language === 'python'
+            ? t('app.debugMissingDebugpy')
+            : t('app.debugStartFailed'),
           custom.detail.message,
           'warn',
         );
@@ -1803,8 +1843,13 @@ export function App() {
           if (toClose.length > 0) {
             const closeSet = new Set(toClose.map((p) => p.replace(/\\/g, '/').replace(/^\/+/, '')));
             setTabs((prev) => {
-              const next = prev.filter((t) => !closeSet.has(t.path.replace(/\\/g, '/').replace(/^\/+/, '')));
-              if (activePathRef.current && closeSet.has(activePathRef.current.replace(/\\/g, '/').replace(/^\/+/, ''))) {
+              const next = prev.filter(
+                (t) => !closeSet.has(t.path.replace(/\\/g, '/').replace(/^\/+/, '')),
+              );
+              if (
+                activePathRef.current &&
+                closeSet.has(activePathRef.current.replace(/\\/g, '/').replace(/^\/+/, ''))
+              ) {
                 const nextActive = next[next.length - 1]?.path ?? null;
                 setActivePath(nextActive);
                 activePathRef.current = nextActive;
@@ -1879,11 +1924,13 @@ export function App() {
 
     // 编辑器「选中代码 → 添加到对话」(Cmd+L 或工具栏按钮触发)
     const handleAddRefToChat = (e: Event) => {
-      const detail = (e as CustomEvent)?.detail as {
-        path: string;
-        startLine?: number;
-        endLine?: number;
-      } | undefined;
+      const detail = (e as CustomEvent)?.detail as
+        | {
+            path: string;
+            startLine?: number;
+            endLine?: number;
+          }
+        | undefined;
       if (!detail?.path) return;
       const ref =
         detail.startLine !== undefined
@@ -1893,7 +1940,8 @@ export function App() {
     };
     // 全局支持「在集成终端中打开」(任意组件通过事件派发拉起对应路径终端)
     const handleOpenTerminalEvent = (e: Event) => {
-      const detail = (e as CustomEvent)?.detail as { cwd?: string; initialCommand?: string; title?: string } | undefined;
+      const detail = (e as CustomEvent)?.detail as
+        { cwd?: string; initialCommand?: string; title?: string } | undefined;
       const cwd = detail?.cwd || workspaceRef.current || '';
       const targetDirName =
         cwd && cwd !== '.' ? cwd.split(/[/\\]/).filter(Boolean).pop() : undefined;
@@ -1903,7 +1951,9 @@ export function App() {
         cwd,
         nonce: terminalNonce.current,
         initialCommand: detail?.initialCommand,
-        terminalTitle: detail?.title || (targetDirName ? t('app.terminalTitle', { name: targetDirName }) : t('terminal.brand')),
+        terminalTitle:
+          detail?.title ||
+          (targetDirName ? t('app.terminalTitle', { name: targetDirName }) : t('terminal.brand')),
       });
       const next = { ...layoutRef.current, bottomPanelExpanded: true };
       setLayout(next);
@@ -2016,41 +2066,156 @@ export function App() {
     applySettings(next);
   }
 
-  const openFile = useCallback(async (rawPath: string, line?: number, col?: number, endLine?: number) => {
-    setScmDiff(null);
-    setActiveDiffId(null);
-    const ws = workspaceRef.current;
-    let path = rawPath.replace(/\\/g, '/');
-    if (/^\/[a-zA-Z]:/.test(path)) path = path.slice(1);
-    if (ws) {
-      const normWs = ws.replace(/\\/g, '/').replace(/\/+$/, '');
-      if (path.startsWith(normWs)) {
-        path = path.slice(normWs.length).replace(/^\/+/, '');
+  const openFile = useCallback(
+    async (rawPath: string, line?: number, col?: number, endLine?: number) => {
+      setScmDiff(null);
+      setActiveDiffId(null);
+      const ws = workspaceRef.current;
+      let path = rawPath.replace(/\\/g, '/');
+      if (/^\/[a-zA-Z]:/.test(path)) path = path.slice(1);
+      if (ws) {
+        const normWs = ws.replace(/\\/g, '/').replace(/\/+$/, '');
+        if (path.startsWith(normWs)) {
+          path = path.slice(normWs.length).replace(/^\/+/, '');
+        }
       }
-    }
 
-    // 优先检查已解析的相对路径缓存（0ms 极速命中）
-    if (resolvedPathCache.current.has(path)) {
-      path = resolvedPathCache.current.get(path)!;
-    } else if (resolvedPathCache.current.has(rawPath)) {
-      path = resolvedPathCache.current.get(rawPath)!;
-    }
+      // 优先检查已解析的相对路径缓存（0ms 极速命中）
+      if (resolvedPathCache.current.has(path)) {
+        path = resolvedPathCache.current.get(path)!;
+      } else if (resolvedPathCache.current.has(rawPath)) {
+        path = resolvedPathCache.current.get(rawPath)!;
+      }
 
-    const normPath = path;
-    const existingTab = tabsRef.current.find((t) => {
-      const tp = t.path.replace(/\\/g, '/');
-      if (tp === normPath) return true;
-      // 虚拟路径与磁盘文件互不匹配：db:// 标签只能被同名 db:// 路径命中
-      if (requiresExactPathMatch(tp) || requiresExactPathMatch(normPath)) return false;
-      return tp.endsWith('/' + normPath) || normPath.endsWith('/' + tp);
-    });
-    if (existingTab) {
-      setActivePath(existingTab.path);
-      activePathRef.current = existingTab.path;
+      const normPath = path;
+      const existingTab = tabsRef.current.find((t) => {
+        const tp = t.path.replace(/\\/g, '/');
+        if (tp === normPath) return true;
+        // 虚拟路径与磁盘文件互不匹配：db:// 标签只能被同名 db:// 路径命中
+        if (requiresExactPathMatch(tp) || requiresExactPathMatch(normPath)) return false;
+        return tp.endsWith('/' + normPath) || normPath.endsWith('/' + tp);
+      });
+      if (existingTab) {
+        setActivePath(existingTab.path);
+        activePathRef.current = existingTab.path;
+        if (line != null && line > 0) {
+          revealNonceRef.current += 1;
+          setRevealTarget({
+            path: existingTab.path,
+            line,
+            column: col ?? 1,
+            endLine,
+            nonce: revealNonceRef.current,
+          });
+        } else {
+          setRevealTarget(null);
+        }
+        return;
+      }
+      if (isImagePath(path)) {
+        try {
+          const previewUrl = await window.ide.readFileDataUrl(path);
+          setTabs((prev) => {
+            if (prev.some((t) => t.path === path)) return prev;
+            return [
+              ...prev,
+              {
+                path,
+                content: '',
+                language: 'image',
+                dirty: false,
+                previewUrl,
+              },
+            ];
+          });
+        } catch (err) {
+          showGlobalToast(
+            t('app.previewImageFailed', { msg: err instanceof Error ? err.message : String(err) }),
+            'error',
+          );
+          return;
+        }
+        setActivePath(path);
+        return;
+      }
+      let content = '';
+      try {
+        content = await window.ide.readFile(path);
+      } catch (err) {
+        // 1. 优先使用快速定向文件解析器（毫秒级定向探测，避免全盘递归阻塞）
+        let resolved = false;
+        if (window.ide.resolveFilePath) {
+          try {
+            const resolvedPath = await window.ide.resolveFilePath(path);
+            if (resolvedPath) {
+              content = await window.ide.readFile(resolvedPath);
+              resolvedPathCache.current.set(path, resolvedPath);
+              resolvedPathCache.current.set(rawPath, resolvedPath);
+              const fileName = path.split('/').pop() || path;
+              resolvedPathCache.current.set(fileName, resolvedPath);
+              path = resolvedPath;
+              resolved = true;
+            }
+          } catch {
+            // fall through
+          }
+        }
+
+        // 2. 兜底尝试 searchFiles
+        if (!resolved && window.ide.searchFiles) {
+          const fileName = path.split('/').pop() || path;
+          try {
+            const hits = await window.ide.searchFiles(fileName, 5);
+            const matched = hits.find(
+              (h) =>
+                h.path === path ||
+                h.path.endsWith('/' + path) ||
+                h.path.endsWith('/' + fileName) ||
+                h.path.endsWith(fileName),
+            );
+            if (matched) {
+              content = await window.ide.readFile(matched.path);
+              resolvedPathCache.current.set(path, matched.path);
+              resolvedPathCache.current.set(rawPath, matched.path);
+              resolvedPathCache.current.set(fileName, matched.path);
+              path = matched.path;
+              resolved = true;
+            }
+          } catch {
+            // ignore
+          }
+        }
+        if (!resolved) {
+          console.warn(
+            '[navigation] cannot open file:',
+            path,
+            err instanceof Error ? err.message : err,
+          );
+          return;
+        }
+      }
+      // 大文件防护：超过配置阈值（默认 2MB）时开启安全模式，使用纯文本轻量加载避免 AST 卡死
+      const threshold = largeFileThresholdBytesRef.current || 2 * 1024 * 1024;
+      const isLarge = content.length > threshold;
+      setTabs((prev) => {
+        if (prev.some((t) => t.path === path)) return prev;
+        return [
+          ...prev,
+          {
+            path,
+            content,
+            language: isLarge ? 'plaintext' : languageFromPath(path),
+            dirty: false,
+            isLargeFile: isLarge,
+          },
+        ];
+      });
+      setActivePath(path);
+      activePathRef.current = path;
       if (line != null && line > 0) {
         revealNonceRef.current += 1;
         setRevealTarget({
-          path: existingTab.path,
+          path,
           line,
           column: col ?? 1,
           endLine,
@@ -2059,114 +2224,9 @@ export function App() {
       } else {
         setRevealTarget(null);
       }
-      return;
-    }
-    if (isImagePath(path)) {
-      try {
-        const previewUrl = await window.ide.readFileDataUrl(path);
-        setTabs((prev) => {
-          if (prev.some((t) => t.path === path)) return prev;
-          return [
-            ...prev,
-            {
-              path,
-              content: '',
-              language: 'image',
-              dirty: false,
-              previewUrl,
-            },
-          ];
-        });
-      } catch (err) {
-        alert(t('app.previewImageFailed', { msg: err instanceof Error ? err.message : String(err) }));
-        return;
-      }
-      setActivePath(path);
-      return;
-    }
-    let content = '';
-    try {
-      content = await window.ide.readFile(path);
-    } catch (err) {
-      // 1. 优先使用快速定向文件解析器（毫秒级定向探测，避免全盘递归阻塞）
-      let resolved = false;
-      if (window.ide.resolveFilePath) {
-        try {
-          const resolvedPath = await window.ide.resolveFilePath(path);
-          if (resolvedPath) {
-            content = await window.ide.readFile(resolvedPath);
-            resolvedPathCache.current.set(path, resolvedPath);
-            resolvedPathCache.current.set(rawPath, resolvedPath);
-            const fileName = path.split('/').pop() || path;
-            resolvedPathCache.current.set(fileName, resolvedPath);
-            path = resolvedPath;
-            resolved = true;
-          }
-        } catch {
-          // fall through
-        }
-      }
-
-      // 2. 兜底尝试 searchFiles
-      if (!resolved && window.ide.searchFiles) {
-        const fileName = path.split('/').pop() || path;
-        try {
-          const hits = await window.ide.searchFiles(fileName, 5);
-          const matched = hits.find(
-            (h) => h.path === path || h.path.endsWith('/' + path) || h.path.endsWith('/' + fileName) || h.path.endsWith(fileName),
-          );
-          if (matched) {
-            content = await window.ide.readFile(matched.path);
-            resolvedPathCache.current.set(path, matched.path);
-            resolvedPathCache.current.set(rawPath, matched.path);
-            resolvedPathCache.current.set(fileName, matched.path);
-            path = matched.path;
-            resolved = true;
-          }
-        } catch {
-          // ignore
-        }
-      }
-      if (!resolved) {
-        console.warn(
-          '[navigation] cannot open file:',
-          path,
-          err instanceof Error ? err.message : err,
-        );
-        return;
-      }
-    }
-    // 大文件防护：超过配置阈值（默认 2MB）时开启安全模式，使用纯文本轻量加载避免 AST 卡死
-    const threshold = largeFileThresholdBytesRef.current || 2 * 1024 * 1024;
-    const isLarge = content.length > threshold;
-    setTabs((prev) => {
-      if (prev.some((t) => t.path === path)) return prev;
-      return [
-        ...prev,
-        {
-          path,
-          content,
-          language: isLarge ? 'plaintext' : languageFromPath(path),
-          dirty: false,
-          isLargeFile: isLarge,
-        },
-      ];
-    });
-    setActivePath(path);
-    activePathRef.current = path;
-    if (line != null && line > 0) {
-      revealNonceRef.current += 1;
-      setRevealTarget({
-        path,
-        line,
-        column: col ?? 1,
-        endLine,
-        nonce: revealNonceRef.current,
-      });
-    } else {
-      setRevealTarget(null);
-    }
-  }, []);
+    },
+    [],
+  );
 
   const handleChatOpenFile = useCallback(
     (p: string, l?: number, e?: number) => {
@@ -2307,15 +2367,15 @@ export function App() {
         if (relPath === rootAbs || relPath.startsWith(`${rootAbs}/`)) {
           relPath = relPath === rootAbs ? defaultName : relPath.slice(rootAbs.length + 1);
         } else {
-          alert(t('app.saveOutsideWorkspace'));
+          showGlobalToast(t('app.saveOutsideWorkspace'), 'warn');
           return false;
         }
       } catch {
-        alert(t('app.cannotWriteWorkspace'));
+        showGlobalToast(t('app.cannotWriteWorkspace'), 'error');
         return false;
       }
     } else {
-      alert(t('app.openWorkspaceToSave'));
+      showGlobalToast(t('app.openWorkspaceToSave'), 'warn');
       return false;
     }
 
@@ -2340,7 +2400,9 @@ export function App() {
       }
       // 数据库内置视图不是磁盘文件，只能存在于标签页状态里
       if (isDbPath(tabToSave.path)) {
-        setTabs((prev) => prev.map((t) => (t.path === tabToSave.path ? { ...t, dirty: false } : t)));
+        setTabs((prev) =>
+          prev.map((t) => (t.path === tabToSave.path ? { ...t, dirty: false } : t)),
+        );
         return true;
       }
       await window.ide.writeFile(tabToSave.path, tabToSave.content);
@@ -2715,7 +2777,8 @@ export function App() {
         const idx = prev.findIndex((t) => {
           if (t.path === path) return true;
           if (decodeURIComponent(t.path) === normTarget) return true;
-          if (meta?.scriptPath && t.virtual?.scriptPath && t.virtual.scriptPath === meta.scriptPath) return true;
+          if (meta?.scriptPath && t.virtual?.scriptPath && t.virtual.scriptPath === meta.scriptPath)
+            return true;
           return false;
         });
         if (idx >= 0) {
@@ -2723,10 +2786,7 @@ export function App() {
           if (!replaceContent) {
             // 已存在：切前台即可（但路径里仍可能带旧标题 / 旧的会话参数，顺手对齐）
             const same = { ...prev[idx], title, virtual: meta ?? prev[idx].virtual };
-            if (
-              prev[idx].title === same.title &&
-              prev[idx].virtual === same.virtual
-            ) {
+            if (prev[idx].title === same.title && prev[idx].virtual === same.virtual) {
               return prev;
             }
             const copy = [...prev];
@@ -2735,13 +2795,17 @@ export function App() {
           }
           const copy = [...prev];
           // 内容在查看期间可能被用户改过（SQL 控制台），仅在明确要求替换时覆盖，且不改变 dirty
-          copy[idx] = { ...copy[idx], content, title, language, readOnly, virtual: meta ?? copy[idx].virtual };
+          copy[idx] = {
+            ...copy[idx],
+            content,
+            title,
+            language,
+            readOnly,
+            virtual: meta ?? copy[idx].virtual,
+          };
           return copy;
         }
-        return [
-          ...prev,
-          { path, content, language, dirty: false, title, readOnly, virtual: meta },
-        ];
+        return [...prev, { path, content, language, dirty: false, title, readOnly, virtual: meta }];
       });
       const normTarget = decodeURIComponent(path);
       const existing = tabsRef.current.find(
@@ -2853,12 +2917,7 @@ export function App() {
    * 用户随手关掉窗口也不会丢。
    */
   const openSqlConsole = useCallback(
-    async (
-      connId: string,
-      schemaName: string | undefined,
-      initialSql: string,
-      title: string,
-    ) => {
+    async (connId: string, schemaName: string | undefined, initialSql: string, title: string) => {
       const taken = new Set<string>();
       // 已在标签里的先占位，免得「磁盘上没有、但正开着」的名字被再次选中
       for (const t of tabsRef.current) {
@@ -2972,10 +3031,20 @@ export function App() {
       }
 
       if (nextPath === oldPath) {
-        setTabs((prev) => prev.map((t) => (t.path === oldPath ? { ...t, virtual: nextVirtual } : t)));
+        setTabs((prev) =>
+          prev.map((t) => (t.path === oldPath ? { ...t, virtual: nextVirtual } : t)),
+        );
         return;
       }
-      openVirtualTab(nextPath, tab.content, tab.title ?? scriptTitleFromFileName(fileName), 'db-console', true, false, nextVirtual);
+      openVirtualTab(
+        nextPath,
+        tab.content,
+        tab.title ?? scriptTitleFromFileName(fileName),
+        'db-console',
+        true,
+        false,
+        nextVirtual,
+      );
       closeTabDirect(oldPath);
     },
     [closeTabDirect, openVirtualTab, refreshProjectScripts],
@@ -2994,51 +3063,48 @@ export function App() {
    *
    * 树上的表清单也顺手刷新一次：否则左侧还挂着旧表名，点它又是一次「表不存在」。
    */
-  const handleTableRenamed = useCallback(
-    (oldPath: string, newTableName: string) => {
-      const tab = tabsRef.current.find((t) => t.path === oldPath);
-      const meta = tab?.virtual?.dbStructure;
-      if (!tab || !meta) return;
+  const handleTableRenamed = useCallback((oldPath: string, newTableName: string) => {
+    const tab = tabsRef.current.find((t) => t.path === oldPath);
+    const meta = tab?.virtual?.dbStructure;
+    if (!tab || !meta) return;
 
-      const schemaSeg = meta.schemaName ? `${encodeURIComponent(meta.schemaName)}/` : '';
-      const nextPath = `db://structure/${meta.connectionId}/${schemaSeg}${encodeURIComponent(newTableName)}`;
-      const nextVirtual = {
-        dbStructure: {
-          connectionId: meta.connectionId,
-          schemaName: meta.schemaName,
-          tableName: newTableName,
-        },
-      };
+    const schemaSeg = meta.schemaName ? `${encodeURIComponent(meta.schemaName)}/` : '';
+    const nextPath = `db://structure/${meta.connectionId}/${schemaSeg}${encodeURIComponent(newTableName)}`;
+    const nextVirtual = {
+      dbStructure: {
+        connectionId: meta.connectionId,
+        schemaName: meta.schemaName,
+        tableName: newTableName,
+      },
+    };
 
-      if (nextPath !== oldPath) {
-        const existing = tabsRef.current.find((t) => t.path === nextPath);
-        if (existing) {
-          // 目标表本来就开着：不要造出第二个标签，收掉旧的、切过去
-          setTabs((prev) =>
-            prev
-              .filter((t) => t.path !== oldPath)
-              .map((t) => (t.path === nextPath ? { ...t, virtual: nextVirtual } : t)),
-          );
-          setActivePath(nextPath);
-          activePathRef.current = nextPath;
-        } else {
-          setTabs((prev) =>
-            prev.map((t) =>
-              t.path === oldPath
-                ? { ...t, path: nextPath, title: `📜 ${newTableName}`, virtual: nextVirtual }
-                : t,
-            ),
-          );
-          setActivePath(nextPath);
-          activePathRef.current = nextPath;
-        }
+    if (nextPath !== oldPath) {
+      const existing = tabsRef.current.find((t) => t.path === nextPath);
+      if (existing) {
+        // 目标表本来就开着：不要造出第二个标签，收掉旧的、切过去
+        setTabs((prev) =>
+          prev
+            .filter((t) => t.path !== oldPath)
+            .map((t) => (t.path === nextPath ? { ...t, virtual: nextVirtual } : t)),
+        );
+        setActivePath(nextPath);
+        activePathRef.current = nextPath;
+      } else {
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.path === oldPath
+              ? { ...t, path: nextPath, title: `📜 ${newTableName}`, virtual: nextVirtual }
+              : t,
+          ),
+        );
+        setActivePath(nextPath);
+        activePathRef.current = nextPath;
       }
+    }
 
-      // 树上的旧名字要立刻消失，否则用户点它会去查一张已经不存在的表
-      window.dispatchEvent(new CustomEvent('echoly:refreshDbTree'));
-    },
-    [],
-  );
+    // 树上的旧名字要立刻消失，否则用户点它会去查一张已经不存在的表
+    window.dispatchEvent(new CustomEvent('echoly:refreshDbTree'));
+  }, []);
 
   const lastOpenedBrowserTabRef = useRef<{ canonicalUrl: string; time: number } | null>(null);
 
@@ -3061,7 +3127,9 @@ export function App() {
       u = u.replace(':573', ':5173');
     }
     try {
-      const parsed = new URL(u.startsWith('http://') || u.startsWith('https://') ? u : `http://${u}`);
+      const parsed = new URL(
+        u.startsWith('http://') || u.startsWith('https://') ? u : `http://${u}`,
+      );
       let path = parsed.pathname;
       if (path.length > 1 && path.endsWith('/')) {
         path = path.slice(0, -1);
@@ -3080,12 +3148,18 @@ export function App() {
     (rawUrl?: string, customTitle?: string, options?: { forceNew?: boolean }) => {
       // 打开和新建标签页时地址栏都给空，让用户手动输入；若明确传入具体 url 则使用传入的 url
       const targetUrl = (rawUrl ?? '').trim();
-      let normUrl = targetUrl.startsWith('browser://') ? targetUrl.slice('browser://'.length) : targetUrl;
+      let normUrl = targetUrl.startsWith('browser://')
+        ? targetUrl.slice('browser://'.length)
+        : targetUrl;
       // 智能纠正常见端口笔误 (573 -> 5173)
       if (/^(https?:\/\/)?(localhost|127\.0\.0\.1):573(\/.*)?$/i.test(normUrl)) {
         normUrl = normUrl.replace(':573', ':5173');
       }
-      if (normUrl.startsWith('chrome-error://') || normUrl.startsWith('chrome://') || normUrl === 'about:blank') {
+      if (
+        normUrl.startsWith('chrome-error://') ||
+        normUrl.startsWith('chrome://') ||
+        normUrl === 'about:blank'
+      ) {
         normUrl = '';
       }
 
@@ -3188,8 +3262,7 @@ export function App() {
   useEffect(() => {
     const handleOpenBrowserEvent = (e: Event) => {
       const detail = (e as CustomEvent)?.detail as
-        | { url?: string; title?: string; forceNew?: boolean }
-        | undefined;
+        { url?: string; title?: string; forceNew?: boolean } | undefined;
       openBrowserTab(detail?.url, detail?.title, { forceNew: detail?.forceNew });
     };
     const handleEnsureChatOpen = () => {
@@ -3201,13 +3274,12 @@ export function App() {
       setRightPanelTab('chat');
     };
 
-    // 全局轻提示：供不便直接拿到 showToast 的深层组件（如聊天面板的引用去重提示）使用
+    // 全局轻提示：供不便直接拿到 showToast 的深层组件（如文件树、聊天面板）使用
     const handleGlobalToast = (e: Event) => {
       const detail = (e as CustomEvent)?.detail as
-        | { message?: string; type?: 'success' | 'error' | 'info' | 'warn' }
-        | undefined;
+        { message?: string; type?: ToastType; detail?: string } | undefined;
       if (!detail?.message) return;
-      showToast(detail.message, undefined, detail.type || 'info');
+      showToast(detail.message, detail.detail, detail.type || 'info');
     };
 
     window.addEventListener('echoly:openBrowser', handleOpenBrowserEvent);
@@ -3569,11 +3641,7 @@ export function App() {
       }
 
       // 2. AI 窗口展开/折叠: Cmd+B / Ctrl+B
-      if (
-        ctrl &&
-        !e.shiftKey &&
-        (e.key.toLowerCase() === 'b' || e.code === 'KeyB')
-      ) {
+      if (ctrl && !e.shiftKey && (e.key.toLowerCase() === 'b' || e.code === 'KeyB')) {
         e.preventDefault();
         e.stopPropagation();
         toggleAiChat();
@@ -3581,16 +3649,18 @@ export function App() {
       }
 
       // 3. AI 提问 / 添加到对话: Cmd+L / Ctrl+L (聚焦或添加选区到 AI 对话，绝不收起)
-      if (
-        ctrl &&
-        !e.shiftKey &&
-        (e.key.toLowerCase() === 'l' || e.code === 'KeyL')
-      ) {
+      if (ctrl && !e.shiftKey && (e.key.toLowerCase() === 'l' || e.code === 'KeyL')) {
         const target = e.target as HTMLElement | null;
         const activeEl = document.activeElement as HTMLElement | null;
         const isInsideEditor = Boolean(
-          (target && (target.closest('.editor-area') || target.closest('.monaco-editor') || target.closest('.inline-ai-widget'))) ||
-          (activeEl && (activeEl.closest('.editor-area') || activeEl.closest('.monaco-editor') || activeEl.closest('.inline-ai-widget')))
+          (target &&
+            (target.closest('.editor-area') ||
+              target.closest('.monaco-editor') ||
+              target.closest('.inline-ai-widget'))) ||
+          (activeEl &&
+            (activeEl.closest('.editor-area') ||
+              activeEl.closest('.monaco-editor') ||
+              activeEl.closest('.inline-ai-widget'))),
         );
         // 若焦点在编辑器内，放行给 Monaco Action 与 EditorPane 处理选区引用添加
         if (isInsideEditor) {
@@ -3667,7 +3737,8 @@ export function App() {
           const bottomPanel = document.querySelector<HTMLElement>('.bottom-panel');
           const isBottomVisible = bottomPanel && getComputedStyle(bottomPanel).display !== 'none';
           const isTerminalTabActive =
-            document.querySelector('.bottom-tab-btn.active')?.getAttribute('data-tab') === 'terminal';
+            document.querySelector('.bottom-tab-btn.active')?.getAttribute('data-tab') ===
+            'terminal';
           return !!(isBottomVisible && isTerminalTabActive);
         })();
 
@@ -4004,7 +4075,10 @@ export function App() {
         <div className="titlebar-left" style={{ width: 70, WebkitAppRegion: 'drag' } as any}></div>
         <div className="titlebar-center" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {remoteHost && (
-            <span className="titlebar-remote-badge" title={t('app.remoteServer', { host: remoteHost })}>
+            <span
+              className="titlebar-remote-badge"
+              title={t('app.remoteServer', { host: remoteHost })}
+            >
               SSH {remoteHost}
             </span>
           )}
@@ -4475,17 +4549,23 @@ export function App() {
                         type="button"
                         className="panel-action-btn"
                         title={
-          activePath
-            ? t('app.locateCurrentFile', { name: activePath.split('/').pop() ?? '' })
-            : t('app.locateCurrentFilePlain')
-        }
+                          activePath
+                            ? t('app.locateCurrentFile', {
+                                name: activePath.split('/').pop() ?? '',
+                              })
+                            : t('app.locateCurrentFilePlain')
+                        }
                         onClick={() => {
                           if (!activePath) {
                             showToast(t('app.noOpenFile'), undefined, 'info');
                             return;
                           }
                           fileTreeRef.current?.locateActiveFile();
-                          showToast(t('app.located', { name: activePath.split('/').pop() ?? '' }), undefined, 'info');
+                          showToast(
+                            t('app.located', { name: activePath.split('/').pop() ?? '' }),
+                            undefined,
+                            'info',
+                          );
                         }}
                       >
                         <svg
@@ -4622,45 +4702,53 @@ export function App() {
                       className="explorer-section-body explorer-tree-body"
                       style={{ flex: 1, minHeight: 0 }}
                     >
-                      <FileTree
-                        ref={fileTreeRef}
-                        workspace={workspace}
-                        activePath={activePath}
-                        selectedNode={selectedNode}
-                        onSelectNode={setSelectedNode}
-                        gitStatus={gitStatus}
-                        refreshKey={treeRefreshKey}
-                        onViewFileHistory={(p) => void handleViewFileHistory(p)}
-                        onDiscardPath={(p) => void handleDiscardPath(p)}
-                        onPreviewGitDiff={(p) => void handlePreviewGitDiff(p)}
-                        onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
-                        onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
-                        onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
-                        onShowCurrentRevision={(p) => void handleShowCurrentRevision(p)}
-                        onRollbackPath={(p) => setRollbackModalPath(p)}
-                        onFileMoved={handleFileMoved}
-                        onShowToast={showToast}
-                        onOpenFile={(p) => void openFile(p)}
-                        onOpenTerminal={(cwd) => {
-                          const targetDirName =
-                            cwd && cwd !== '.' ? cwd.split(/[/\\]/).filter(Boolean).pop() : undefined;
-                          setBottomTab('terminal');
-                          terminalNonce.current += 1;
-                          setTerminalOpenRequest({
-                            cwd: cwd || workspace || '',
-                            nonce: terminalNonce.current,
-                            terminalTitle: targetDirName ? t('app.terminalTitle', { name: targetDirName }) : t('terminal.brand'),
-                          });
-                          const next = { ...layoutRef.current, bottomPanelExpanded: true };
-                          setLayout(next);
-                          persistLayout(next);
-                        }}
-                        onAddToChat={handleAddToChat}
-                        onAddToNewChat={(path) => {
-                          setMessages([]);
-                          chatRef.current?.startFreshWithPath(path);
-                        }}
-                      />
+                      <ErrorBoundary
+                        title={t('errorBoundary.panelTitle', { name: t('panel.explorer') })}
+                      >
+                        <FileTree
+                          ref={fileTreeRef}
+                          workspace={workspace}
+                          activePath={activePath}
+                          selectedNode={selectedNode}
+                          onSelectNode={setSelectedNode}
+                          gitStatus={gitStatus}
+                          refreshKey={treeRefreshKey}
+                          onViewFileHistory={(p) => void handleViewFileHistory(p)}
+                          onDiscardPath={(p) => void handleDiscardPath(p)}
+                          onPreviewGitDiff={(p) => void handlePreviewGitDiff(p)}
+                          onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
+                          onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
+                          onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
+                          onShowCurrentRevision={(p) => void handleShowCurrentRevision(p)}
+                          onRollbackPath={(p) => setRollbackModalPath(p)}
+                          onFileMoved={handleFileMoved}
+                          onShowToast={showToast}
+                          onOpenFile={(p) => void openFile(p)}
+                          onOpenTerminal={(cwd) => {
+                            const targetDirName =
+                              cwd && cwd !== '.'
+                                ? cwd.split(/[/\\]/).filter(Boolean).pop()
+                                : undefined;
+                            setBottomTab('terminal');
+                            terminalNonce.current += 1;
+                            setTerminalOpenRequest({
+                              cwd: cwd || workspace || '',
+                              nonce: terminalNonce.current,
+                              terminalTitle: targetDirName
+                                ? t('app.terminalTitle', { name: targetDirName })
+                                : t('terminal.brand'),
+                            });
+                            const next = { ...layoutRef.current, bottomPanelExpanded: true };
+                            setLayout(next);
+                            persistLayout(next);
+                          }}
+                          onAddToChat={handleAddToChat}
+                          onAddToNewChat={(path) => {
+                            setMessages([]);
+                            chatRef.current?.startFreshWithPath(path);
+                          }}
+                        />
+                      </ErrorBoundary>
                     </div>
                   )}
                 </div>
@@ -4675,29 +4763,33 @@ export function App() {
                   height: '100%',
                 }}
               >
-                <GitPanel
-                  workspaceInfo={workspaceInfo}
-                  onOpenFile={(p) => void openFile(p)}
-                  onPreviewDiff={(diff) => {
-                    setActiveDiffId(null);
-                    setScmDiff(diff);
-                  }}
-                  onDiscardPath={handleDiscardPath}
-                  onShowToast={showToast}
-                  onViewFileHistory={(p) => void handleViewFileHistory(p)}
-                  onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
-                  onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
-                  onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
-                  onRevealInExplorer={(p) => {
-                    setLeftPanel('explorer');
-                    void openFile(p);
-                    setTimeout(() => {
-                      fileTreeRef.current?.locateActiveFile(p);
-                    }, 60);
-                  }}
-                  onBranchSwitched={handleBranchSwitchSync}
-                  onOpenCloneModal={() => setCloneOpen(true)}
-                />
+                <ErrorBoundary
+                  title={t('errorBoundary.panelTitle', { name: t('panel.sourceControl') })}
+                >
+                  <GitPanel
+                    workspaceInfo={workspaceInfo}
+                    onOpenFile={(p) => void openFile(p)}
+                    onPreviewDiff={(diff) => {
+                      setActiveDiffId(null);
+                      setScmDiff(diff);
+                    }}
+                    onDiscardPath={handleDiscardPath}
+                    onShowToast={showToast}
+                    onViewFileHistory={(p) => void handleViewFileHistory(p)}
+                    onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
+                    onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
+                    onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
+                    onRevealInExplorer={(p) => {
+                      setLeftPanel('explorer');
+                      void openFile(p);
+                      setTimeout(() => {
+                        fileTreeRef.current?.locateActiveFile(p);
+                      }, 60);
+                    }}
+                    onBranchSwitched={handleBranchSwitchSync}
+                    onOpenCloneModal={() => setCloneOpen(true)}
+                  />
+                </ErrorBoundary>
               </div>
               <div
                 className="search-panel"
@@ -4759,35 +4851,37 @@ export function App() {
                   width: '100%',
                 }}
               >
-                <DatabasePanel
-                  onOpenTableData={(connId, tableName, schemaName, view) => {
-                    const schemaSeg = schemaName ? `${encodeURIComponent(schemaName)}/` : '';
-                    const tabPath = `db://data/${connId}/${schemaSeg}${encodeURIComponent(tableName)}`;
-                    // 走统一的虚拟标签入口：已存在则切前台（内容交给 DbTableDataView 自己重载），不存在才新建
-                    openVirtualTab(tabPath, '', `📊 ${tableName}`, 'db-data', false);
-                    // 带筛选 / 排序打开时下发请求：数据视图挂载后按 nonce 套用并立刻按新条件查询。
-                    // 放在 openVirtualTab 之后 —— 先让标签存在，再变更请求，避免视图拿到一个还没打开的路径。
-                    if (view) {
-                      dbViewNonceRef.current += 1;
-                      setDbViewRequest({ path: tabPath, view, nonce: dbViewNonceRef.current });
-                    }
-                  }}
-                  onOpenTableStructure={(connId, tableName, schemaName) => {
-                    const schemaSeg = schemaName ? `${encodeURIComponent(schemaName)}/` : '';
-                    const tabPath = `db://structure/${connId}/${schemaSeg}${encodeURIComponent(tableName)}`;
-                    // DDL 正文由 DbStructureView 自己去拉（DDL / 列清单两个视图都要用到，
-                    // 且「应用」之后还得重新拉一次），这里不预先取。
-                    openVirtualTab(tabPath, '', `📜 ${tableName}`, 'db-structure', false, true, {
-                      dbStructure: { connectionId: connId, schemaName, tableName },
-                    });
-                  }}
-                  onOpenSqlConsole={openSqlConsole}
-                  scripts={projectScripts}
-                  onOpenScript={(s) => void openProjectScript(s)}
-                  onDeleteScript={(s) => void deleteProjectScript(s)}
-                  openScriptPaths={openScriptPaths}
-                  onShowToast={showToast}
-                />
+                <ErrorBoundary title={t('errorBoundary.panelTitle', { name: t('panel.database') })}>
+                  <DatabasePanel
+                    onOpenTableData={(connId, tableName, schemaName, view) => {
+                      const schemaSeg = schemaName ? `${encodeURIComponent(schemaName)}/` : '';
+                      const tabPath = `db://data/${connId}/${schemaSeg}${encodeURIComponent(tableName)}`;
+                      // 走统一的虚拟标签入口：已存在则切前台（内容交给 DbTableDataView 自己重载），不存在才新建
+                      openVirtualTab(tabPath, '', `📊 ${tableName}`, 'db-data', false);
+                      // 带筛选 / 排序打开时下发请求：数据视图挂载后按 nonce 套用并立刻按新条件查询。
+                      // 放在 openVirtualTab 之后 —— 先让标签存在，再变更请求，避免视图拿到一个还没打开的路径。
+                      if (view) {
+                        dbViewNonceRef.current += 1;
+                        setDbViewRequest({ path: tabPath, view, nonce: dbViewNonceRef.current });
+                      }
+                    }}
+                    onOpenTableStructure={(connId, tableName, schemaName) => {
+                      const schemaSeg = schemaName ? `${encodeURIComponent(schemaName)}/` : '';
+                      const tabPath = `db://structure/${connId}/${schemaSeg}${encodeURIComponent(tableName)}`;
+                      // DDL 正文由 DbStructureView 自己去拉（DDL / 列清单两个视图都要用到，
+                      // 且「应用」之后还得重新拉一次），这里不预先取。
+                      openVirtualTab(tabPath, '', `📜 ${tableName}`, 'db-structure', false, true, {
+                        dbStructure: { connectionId: connId, schemaName, tableName },
+                      });
+                    }}
+                    onOpenSqlConsole={openSqlConsole}
+                    scripts={projectScripts}
+                    onOpenScript={(s) => void openProjectScript(s)}
+                    onDeleteScript={(s) => void deleteProjectScript(s)}
+                    openScriptPaths={openScriptPaths}
+                    onShowToast={showToast}
+                  />
+                </ErrorBoundary>
               </div>
               <div
                 className="agent-task-panel-wrapper"
@@ -4828,145 +4922,147 @@ export function App() {
 
         {/* 中间列: 编辑器 + 底部终端 */}
         <div className="middle-column" ref={middleColRef}>
-          <EditorPane
-            tabs={tabs}
-            activePath={activePath}
-            gitStatus={gitStatus}
-            onOpenFile={(path, line, col) => {
-              void openFile(path, line, col);
-            }}
-            onSelectTab={(path) => {
-              setScmDiff(null);
-              setRevealTarget(null);
-              setActivePath(path);
-            }}
-            onCloseTab={(path) => {
-              requestCloseTab(path);
-            }}
-            onCloseOthers={(targetPath) => {
-              setScmDiff(null);
-              const paths = tabs.filter((t) => t.path !== targetPath).map((t) => t.path);
-              requestCloseMultipleTabs(paths);
-            }}
-            onCloseLeft={(targetPath) => {
-              setScmDiff(null);
-              const idx = tabs.findIndex((t) => t.path === targetPath);
-              if (idx > 0) {
-                const paths = tabs.slice(0, idx).map((t) => t.path);
+          <ErrorBoundary title={t('errorBoundary.panelTitle', { name: t('panel.editor') })}>
+            <EditorPane
+              tabs={tabs}
+              activePath={activePath}
+              gitStatus={gitStatus}
+              onOpenFile={(path, line, col) => {
+                void openFile(path, line, col);
+              }}
+              onSelectTab={(path) => {
+                setScmDiff(null);
+                setRevealTarget(null);
+                setActivePath(path);
+              }}
+              onCloseTab={(path) => {
+                requestCloseTab(path);
+              }}
+              onCloseOthers={(targetPath) => {
+                setScmDiff(null);
+                const paths = tabs.filter((t) => t.path !== targetPath).map((t) => t.path);
                 requestCloseMultipleTabs(paths);
-              }
-            }}
-            onCloseRight={(targetPath) => {
-              setScmDiff(null);
-              const idx = tabs.findIndex((t) => t.path === targetPath);
-              if (idx >= 0) {
-                const paths = tabs.slice(idx + 1).map((t) => t.path);
-                requestCloseMultipleTabs(paths);
-              }
-            }}
-            onCloseSaved={() => {
-              setScmDiff(null);
-              setTabs((prev) => {
-                const next = prev.filter((t) => t.dirty);
-                if (!next.some((t) => t.path === activePath)) {
-                  setActivePath(next[next.length - 1]?.path ?? null);
+              }}
+              onCloseLeft={(targetPath) => {
+                setScmDiff(null);
+                const idx = tabs.findIndex((t) => t.path === targetPath);
+                if (idx > 0) {
+                  const paths = tabs.slice(0, idx).map((t) => t.path);
+                  requestCloseMultipleTabs(paths);
                 }
-                return next;
-              });
-            }}
-            onCloseAll={() => {
-              setScmDiff(null);
-              const paths = tabs.map((t) => t.path);
-              requestCloseMultipleTabs(paths);
-            }}
-            onNewUntitled={createUntitledTab}
-            onOpenVirtualTab={openVirtualTab}
-            onCloseVirtualTab={closeTabDirect}
-            onTableRenamed={handleTableRenamed}
-            onRetargetConsole={retargetConsole}
-            onOpenConsoleForTable={openSqlConsole}
-            onUpdateTabMeta={handleUpdateTabMeta}
-            dbViewRequest={dbViewRequest}
-            onChangeContent={onChangeContent}
-            onSelectionChange={setEditorSelection}
-            onCursorChange={(line, col) => {
-              setCursorLine(line);
-              setCursorCol(col);
-              cursorLineRef.current = line;
-              cursorColRef.current = col;
-              if (activePathRef.current) {
-                const cur = fileCursorPositionsRef.current[activePathRef.current];
-                fileCursorPositionsRef.current[activePathRef.current] = {
-                  ...cur,
-                  line,
-                  col,
-                };
+              }}
+              onCloseRight={(targetPath) => {
+                setScmDiff(null);
+                const idx = tabs.findIndex((t) => t.path === targetPath);
+                if (idx >= 0) {
+                  const paths = tabs.slice(idx + 1).map((t) => t.path);
+                  requestCloseMultipleTabs(paths);
+                }
+              }}
+              onCloseSaved={() => {
+                setScmDiff(null);
+                setTabs((prev) => {
+                  const next = prev.filter((t) => t.dirty);
+                  if (!next.some((t) => t.path === activePath)) {
+                    setActivePath(next[next.length - 1]?.path ?? null);
+                  }
+                  return next;
+                });
+              }}
+              onCloseAll={() => {
+                setScmDiff(null);
+                const paths = tabs.map((t) => t.path);
+                requestCloseMultipleTabs(paths);
+              }}
+              onNewUntitled={createUntitledTab}
+              onOpenVirtualTab={openVirtualTab}
+              onCloseVirtualTab={closeTabDirect}
+              onTableRenamed={handleTableRenamed}
+              onRetargetConsole={retargetConsole}
+              onOpenConsoleForTable={openSqlConsole}
+              onUpdateTabMeta={handleUpdateTabMeta}
+              dbViewRequest={dbViewRequest}
+              onChangeContent={onChangeContent}
+              onSelectionChange={setEditorSelection}
+              onCursorChange={(line, col) => {
+                setCursorLine(line);
+                setCursorCol(col);
+                cursorLineRef.current = line;
+                cursorColRef.current = col;
+                if (activePathRef.current) {
+                  const cur = fileCursorPositionsRef.current[activePathRef.current];
+                  fileCursorPositionsRef.current[activePathRef.current] = {
+                    ...cur,
+                    line,
+                    col,
+                  };
+                }
+              }}
+              onScrollChange={(path, scrollTop, scrollLeft) => {
+                if (path) {
+                  const cur = fileCursorPositionsRef.current[path] || { line: 1, col: 1 };
+                  fileCursorPositionsRef.current[path] = { ...cur, scrollTop, scrollLeft };
+                }
+              }}
+              initialCursorPositions={fileCursorPositionsRef.current}
+              onAddToChat={handleAddToChat}
+              previewDiff={previewDiff}
+              onCloseDiff={
+                scmDiff && !agentPreviewDiff
+                  ? () => setScmDiff(null)
+                  : agentPreviewDiff
+                    ? () => setActiveDiffId(null)
+                    : undefined
               }
-            }}
-            onScrollChange={(path, scrollTop, scrollLeft) => {
-              if (path) {
-                const cur = fileCursorPositionsRef.current[path] || { line: 1, col: 1 };
-                fileCursorPositionsRef.current[path] = { ...cur, scrollTop, scrollLeft };
-              }
-            }}
-            initialCursorPositions={fileCursorPositionsRef.current}
-            onAddToChat={handleAddToChat}
-            previewDiff={previewDiff}
-            onCloseDiff={
-              scmDiff && !agentPreviewDiff
-                ? () => setScmDiff(null)
-                : agentPreviewDiff
-                  ? () => setActiveDiffId(null)
-                  : undefined
-            }
-            wordWrap={wordWrap}
-            onToggleWordWrap={() => setWordWrap((w) => !w)}
-            onPreviewGitDiff={handlePreviewGitDiff}
-            onDiscardPath={handleDiscardPath}
-            onViewFileHistory={(p) => void handleViewFileHistory(p)}
-            onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
-            onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
-            onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
-            showBlameAnnotation={annotatedBlamePath === activePath}
-            onCloseBlameAnnotation={() => setAnnotatedBlamePath(null)}
-            onPreviewDiff={(diff) => {
-              setActiveDiffId(null);
-              setScmDiff(diff);
-            }}
-            onRefreshGitStatus={async () => {
-              const res = await window.ide.gitStatus();
-              if (res.ok) setGitStatus(res);
-            }}
-            revealTarget={revealTarget}
-            onRevealTargetConsumed={handleRevealTargetConsumed}
-            uiTheme={uiTheme}
-            gitBlameInline={gitBlameInline}
-            workspace={workspace}
-            onPickLocal={() => void pickWorkspace()}
-            onPickSsh={() => {
-              setSshTargetForModal(null);
-              setSshOpen(true);
-            }}
-            onPickClone={() => setCloneOpen(true)}
-            onCreateCppProject={() => void createTemplateWorkspace('cpp-cmake')}
-            onCreateProject={(tplId) => void createTemplateWorkspace(tplId)}
-            onOpenWorkspace={handleOpenCreatedProject}
-            onShowToast={showToast}
-            confirm={confirm}
-            recentWorkspaces={recentWorkspaces}
-            onSelectRecentWorkspace={(item) => void handleSelectRecentWorkspace(item)}
-            onRemoveRecentWorkspace={handleRemoveRecentWorkspace}
-            onClearRecentWorkspaces={handleClearRecentWorkspaces}
-            onMoreWorkspaceHistory={() => setOpenWorkspaceOpen(true)}
-            hoverDelay={hoverDelay}
-            minimap={minimap}
-            selectionAiFloat={selectionAiFloat}
-            breakpoints={breakpoints}
-            onToggleBreakpoint={handleToggleBreakpoint}
-            formatOnSave={formatOnSave}
-            onForceLoadLargeFile={handleForceLoadLargeFile}
-            onOpenBrowserTab={openBrowserTab}
-          />
+              wordWrap={wordWrap}
+              onToggleWordWrap={() => setWordWrap((w) => !w)}
+              onPreviewGitDiff={handlePreviewGitDiff}
+              onDiscardPath={handleDiscardPath}
+              onViewFileHistory={(p) => void handleViewFileHistory(p)}
+              onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
+              onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
+              onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
+              showBlameAnnotation={annotatedBlamePath === activePath}
+              onCloseBlameAnnotation={() => setAnnotatedBlamePath(null)}
+              onPreviewDiff={(diff) => {
+                setActiveDiffId(null);
+                setScmDiff(diff);
+              }}
+              onRefreshGitStatus={async () => {
+                const res = await window.ide.gitStatus();
+                if (res.ok) setGitStatus(res);
+              }}
+              revealTarget={revealTarget}
+              onRevealTargetConsumed={handleRevealTargetConsumed}
+              uiTheme={uiTheme}
+              gitBlameInline={gitBlameInline}
+              workspace={workspace}
+              onPickLocal={() => void pickWorkspace()}
+              onPickSsh={() => {
+                setSshTargetForModal(null);
+                setSshOpen(true);
+              }}
+              onPickClone={() => setCloneOpen(true)}
+              onCreateCppProject={() => void createTemplateWorkspace('cpp-cmake')}
+              onCreateProject={(tplId) => void createTemplateWorkspace(tplId)}
+              onOpenWorkspace={handleOpenCreatedProject}
+              onShowToast={showToast}
+              confirm={confirm}
+              recentWorkspaces={recentWorkspaces}
+              onSelectRecentWorkspace={(item) => void handleSelectRecentWorkspace(item)}
+              onRemoveRecentWorkspace={handleRemoveRecentWorkspace}
+              onClearRecentWorkspaces={handleClearRecentWorkspaces}
+              onMoreWorkspaceHistory={() => setOpenWorkspaceOpen(true)}
+              hoverDelay={hoverDelay}
+              minimap={minimap}
+              selectionAiFloat={selectionAiFloat}
+              breakpoints={breakpoints}
+              onToggleBreakpoint={handleToggleBreakpoint}
+              formatOnSave={formatOnSave}
+              onForceLoadLargeFile={handleForceLoadLargeFile}
+              onOpenBrowserTab={openBrowserTab}
+            />
+          </ErrorBoundary>
 
           {workspace && (
             <>
@@ -5015,7 +5111,16 @@ export function App() {
                       onClick={() => setBottomTab('terminal')}
                       title={t('app.terminalTab')}
                     >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <polyline points="4 17 10 11 4 5" />
                         <line x1="12" y1="19" x2="20" y2="19" />
                       </svg>
@@ -5027,7 +5132,16 @@ export function App() {
                       onClick={() => setBottomTab('debug')}
                       title={t('app.debugTab')}
                     >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <path d="m8 2 1.88 1.88" />
                         <path d="M14.12 3.88 16 2" />
                         <path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1" />
@@ -5048,7 +5162,8 @@ export function App() {
                             height: 6,
                             borderRadius: '50%',
                             background: debugState === 'paused' ? '#facc15' : '#22c55e',
-                            boxShadow: debugState === 'paused' ? '0 0 6px #facc15' : '0 0 6px #22c55e',
+                            boxShadow:
+                              debugState === 'paused' ? '0 0 6px #facc15' : '0 0 6px #22c55e',
                           }}
                         />
                       )}
@@ -5059,16 +5174,23 @@ export function App() {
                       onClick={() => setBottomTab('problems')}
                       title={t('app.problemsTab')}
                     >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <circle cx="12" cy="12" r="10" />
                         <line x1="12" y1="8" x2="12" y2="12" />
                         <line x1="12" y1="16" x2="12.01" y2="16" />
                       </svg>
                       <span>{t('app.problemsTabLabel')}</span>
                       {problemsCount > 0 && (
-                        <span className="problems-tab-badge">
-                          {problemsCount}
-                        </span>
+                        <span className="problems-tab-badge">{problemsCount}</span>
                       )}
                     </button>
                   </div>
@@ -5076,12 +5198,16 @@ export function App() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {bottomTab === 'problems' && (
                       <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 4 }}>
-                        {problemsCount > 0 ? t('app.problemsCount', { n: problemsCount }) : t('app.problemsNone')}
+                        {problemsCount > 0
+                          ? t('app.problemsCount', { n: problemsCount })
+                          : t('app.problemsNone')}
                       </span>
                     )}
                     {bottomTab === 'terminal' && (
                       <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 4 }}>
-                        {terminalKind === 'ssh' ? t('app.terminalKindSsh') : t('app.terminalKindLocal')}
+                        {terminalKind === 'ssh'
+                          ? t('app.terminalKindSsh')
+                          : t('app.terminalKindLocal')}
                       </span>
                     )}
                     {bottomTab === 'debug' && (
@@ -5133,14 +5259,32 @@ export function App() {
                       title={bottomMaximized ? t('app.restorePanel') : t('app.maximizePanel')}
                     >
                       {bottomMaximized ? (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <polyline points="4 14 10 14 10 20" />
                           <polyline points="20 10 14 10 14 4" />
                           <line x1="14" y1="10" x2="21" y2="3" />
                           <line x1="3" y1="21" x2="10" y2="14" />
                         </svg>
                       ) : (
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
                           <polyline points="15 3 21 3 21 9" />
                           <polyline points="9 21 3 21 3 15" />
                           <line x1="21" y1="3" x2="14" y2="10" />
@@ -5159,7 +5303,16 @@ export function App() {
                       }}
                       title={t('app.collapsePanel')}
                     >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
                       </svg>
@@ -5167,26 +5320,44 @@ export function App() {
                   </div>
                 </div>
 
-                <div style={{ flex: 1, overflow: 'hidden', display: bottomTab === 'terminal' ? 'flex' : 'none' }}>
-                  <TerminalPanel
-                    key={`${terminalKind}-${terminalKey}`}
-                    terminalKind={terminalKind}
-                    uiTheme={uiTheme}
-                    openRequest={terminalOpenRequest}
-                    visible={layout.bottomPanelExpanded === true && bottomTab === 'terminal'}
-                    scrollback={terminalScrollback}
-                    maximized={bottomMaximized}
-                    onRequestCloseConfirm={layout.bottomPanelExpanded === true && bottomTab === 'terminal'}
-                    onCollapse={() => {
-                      const next = { ...layout, bottomPanelExpanded: false };
-                      setLayout(next);
-                      persistLayout(next);
-                    }}
-                    onOpenFile={(p, l, c) => void openFile(p, l, c)}
-                  />
+                <div
+                  style={{
+                    flex: 1,
+                    overflow: 'hidden',
+                    display: bottomTab === 'terminal' ? 'flex' : 'none',
+                  }}
+                >
+                  <ErrorBoundary
+                    title={t('errorBoundary.panelTitle', { name: t('panel.terminal') })}
+                  >
+                    <TerminalPanel
+                      key={`${terminalKind}-${terminalKey}`}
+                      terminalKind={terminalKind}
+                      uiTheme={uiTheme}
+                      openRequest={terminalOpenRequest}
+                      visible={layout.bottomPanelExpanded === true && bottomTab === 'terminal'}
+                      scrollback={terminalScrollback}
+                      maximized={bottomMaximized}
+                      onRequestCloseConfirm={
+                        layout.bottomPanelExpanded === true && bottomTab === 'terminal'
+                      }
+                      onCollapse={() => {
+                        const next = { ...layout, bottomPanelExpanded: false };
+                        setLayout(next);
+                        persistLayout(next);
+                      }}
+                      onOpenFile={(p, l, c) => void openFile(p, l, c)}
+                    />
+                  </ErrorBoundary>
                 </div>
 
-                <div style={{ flex: 1, overflow: 'hidden', display: bottomTab === 'debug' ? 'flex' : 'none' }}>
+                <div
+                  style={{
+                    flex: 1,
+                    overflow: 'hidden',
+                    display: bottomTab === 'debug' ? 'flex' : 'none',
+                  }}
+                >
                   <DebugPanel
                     workspace={workspace}
                     breakpoints={breakpoints}
@@ -5215,12 +5386,22 @@ export function App() {
                   />
                 </div>
 
-                <div style={{ flex: 1, overflow: 'hidden', display: bottomTab === 'problems' ? 'flex' : 'none' }}>
-                  <ProblemsPanel
-                    workspace={workspace}
-                    onOpenFile={(p, l, c) => void openFile(p, l, c)}
-                    onCountChange={(count) => setProblemsCount(count)}
-                  />
+                <div
+                  style={{
+                    flex: 1,
+                    overflow: 'hidden',
+                    display: bottomTab === 'problems' ? 'flex' : 'none',
+                  }}
+                >
+                  <ErrorBoundary
+                    title={t('errorBoundary.panelTitle', { name: t('panel.problems') })}
+                  >
+                    <ProblemsPanel
+                      workspace={workspace}
+                      onOpenFile={(p, l, c) => void openFile(p, l, c)}
+                      onCountChange={(count) => setProblemsCount(count)}
+                    />
+                  </ErrorBoundary>
                 </div>
               </div>
             </>
@@ -5263,13 +5444,13 @@ export function App() {
 
               {/* 根据标签显示不同内容 */}
               {rightPanelTab === 'chat' && (
-                <ChatPanel
-                  key={`${workspaceInfo.kind}-${workspace || 'none'}-${chatResetKey}`}
-                  ref={chatRef}
-                  workspace={workspace}
-                  workspaceInfo={workspaceInfo}
-                  openFiles={
-                    tabs
+                <ErrorBoundary title={t('errorBoundary.panelTitle', { name: t('panel.chat') })}>
+                  <ChatPanel
+                    key={`${workspaceInfo.kind}-${workspace || 'none'}-${chatResetKey}`}
+                    ref={chatRef}
+                    workspace={workspace}
+                    workspaceInfo={workspaceInfo}
+                    openFiles={tabs
                       .filter(
                         (t) =>
                           t.language !== 'image' &&
@@ -5278,34 +5459,34 @@ export function App() {
                           !isDbPath(t.path) &&
                           !isBrowserPath(t.path),
                       )
-                      .map((t) => ({ path: t.path, content: t.content }))
-                  }
-                  selection={editorSelection}
-                  cursor={
-                    activePath
-                      ? { path: activePath, line: cursorLine, column: cursorCol }
-                      : undefined
-                  }
-                  onPendingDiff={onPendingDiff}
-                  sessionMessages={messages}
-                  onMessagesChange={setMessages}
-                  onSessionChange={setSessionId}
-                  permissionMode={permissionMode}
-                  onPermissionModeChange={(m) => void changePermissionMode(m)}
-                  contextWindowTokens={contextWindowTokens}
-                  diffs={diffs}
-                  onAcceptAllDiffs={handleChatAcceptAllDiffs}
-                  onRejectAllDiffs={handleChatRejectAllDiffs}
-                  onRevertTurn={handleChatRevertTurn}
-                  onSelectDiff={handleChatSelectDiff}
-                  onOpenFile={handleChatOpenFile}
-                  onOpenSettings={handleOpenSettings}
-                  onSwitchWorkspace={handleSwitchWorkspacePath}
-                  models={models}
-                  activeModelId={activeModelId}
-                  onActiveModelChange={handleActiveModelChange}
-                  recentWorkspaces={recentWorkspaces}
-                />
+                      .map((t) => ({ path: t.path, content: t.content }))}
+                    selection={editorSelection}
+                    cursor={
+                      activePath
+                        ? { path: activePath, line: cursorLine, column: cursorCol }
+                        : undefined
+                    }
+                    onPendingDiff={onPendingDiff}
+                    sessionMessages={messages}
+                    onMessagesChange={setMessages}
+                    onSessionChange={setSessionId}
+                    permissionMode={permissionMode}
+                    onPermissionModeChange={(m) => void changePermissionMode(m)}
+                    contextWindowTokens={contextWindowTokens}
+                    diffs={diffs}
+                    onAcceptAllDiffs={handleChatAcceptAllDiffs}
+                    onRejectAllDiffs={handleChatRejectAllDiffs}
+                    onRevertTurn={handleChatRevertTurn}
+                    onSelectDiff={handleChatSelectDiff}
+                    onOpenFile={handleChatOpenFile}
+                    onOpenSettings={handleOpenSettings}
+                    onSwitchWorkspace={handleSwitchWorkspacePath}
+                    models={models}
+                    activeModelId={activeModelId}
+                    onActiveModelChange={handleActiveModelChange}
+                    recentWorkspaces={recentWorkspaces}
+                  />
+                </ErrorBoundary>
               )}
 
               {rightPanelTab === 'claude' && claudePanelOpen && (
@@ -5439,7 +5620,9 @@ export function App() {
         onPreviewDiff={async (diff) => {
           let modified = diff.modified;
           if (!modified && diff.path) {
-            const openTab = tabs.find((t) => t.path === diff.path || t.path.endsWith('/' + diff.path));
+            const openTab = tabs.find(
+              (t) => t.path === diff.path || t.path.endsWith('/' + diff.path),
+            );
             if (openTab && openTab.content) {
               modified = openTab.content;
             } else {
@@ -5463,7 +5646,9 @@ export function App() {
         onPreviewDiff={async (diff) => {
           let modified = diff.modified;
           if (!modified && diff.path) {
-            const openTab = tabs.find((t) => t.path === diff.path || t.path.endsWith('/' + diff.path));
+            const openTab = tabs.find(
+              (t) => t.path === diff.path || t.path.endsWith('/' + diff.path),
+            );
             if (openTab && openTab.content) {
               modified = openTab.content;
             } else {
@@ -5502,30 +5687,24 @@ export function App() {
         gitStatus={gitStatus}
         activePath={activePath}
         cursorPos={{ line: cursorLine, col: cursorCol }}
-        docStats={
-          (() => {
-            const tab = tabs.find((t) => t.path === activePath);
-            if (!tab) return null;
-            return {
-              lineCount: tab.content ? tab.content.split('\n').length : 1,
-              charCount: tab.content ? tab.content.length : 0,
-            };
-          })()
-        }
-        language={
-          (() => {
-            const tab = tabs.find((t) => t.path === activePath);
-            if (tab?.language) return tab.language;
-            if (activePath && !isVirtualPath(activePath)) return languageFromPath(activePath);
-            return 'plaintext';
-          })()
-        }
-        eol={
-          (() => {
-            const tab = tabs.find((t) => t.path === activePath);
-            return tab?.content?.includes('\r\n') ? 'CRLF' : 'LF';
-          })()
-        }
+        docStats={(() => {
+          const tab = tabs.find((t) => t.path === activePath);
+          if (!tab) return null;
+          return {
+            lineCount: tab.content ? tab.content.split('\n').length : 1,
+            charCount: tab.content ? tab.content.length : 0,
+          };
+        })()}
+        language={(() => {
+          const tab = tabs.find((t) => t.path === activePath);
+          if (tab?.language) return tab.language;
+          if (activePath && !isVirtualPath(activePath)) return languageFromPath(activePath);
+          return 'plaintext';
+        })()}
+        eol={(() => {
+          const tab = tabs.find((t) => t.path === activePath);
+          return tab?.content?.includes('\r\n') ? 'CRLF' : 'LF';
+        })()}
         onOpenRemote={() => {
           setSshTargetForModal(null);
           setSshOpen(true);
@@ -5724,7 +5903,14 @@ export function App() {
                     {copiedToastId === toast.id ? (
                       <span style={{ fontSize: 12, fontWeight: 700 }}>✓</span>
                     ) : (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                       </svg>
@@ -5747,7 +5933,14 @@ export function App() {
                         })
                       }
                     >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                      >
                         <polyline points="15 3 21 3 21 9" />
                         <polyline points="9 21 3 21 3 15" />
                         <line x1="21" y1="3" x2="14" y2="10" />
@@ -5888,7 +6081,10 @@ export function App() {
         ]
           .filter(
             (t) =>
-              t.language !== 'image' && !t.previewUrl && !isUntitledPath(t.path) && !isDbPath(t.path),
+              t.language !== 'image' &&
+              !t.previewUrl &&
+              !isUntitledPath(t.path) &&
+              !isDbPath(t.path),
           )
           .map((t) => ({ path: t.path, content: t.content }))}
         onOpenFile={(path, line) => openFile(path, line)}

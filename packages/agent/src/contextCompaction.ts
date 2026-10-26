@@ -83,11 +83,23 @@ export function renderForSummary(
   middle: ChatMessage[],
   originalPrompt: string,
   droppedFromTruncation = 0,
+  /** 上一轮压缩留下的进展记录。压缩可能发生不止一次，不含它会「归档了又被归档丢掉」。 */
+  priorSummary?: string | null,
 ): string {
   const lines: string[] = [`【用户最初的任务】\n${originalPrompt.trim()}`];
+  if (priorSummary?.trim()) {
+    lines.push(
+      [
+        `\n【上一轮已归档的进展记录（其中的结论仍然有效，本次摘要必须把它合并进来而不是覆盖）】`,
+        priorSummary.trim(),
+      ].join('\n'),
+    );
+  }
   lines.push(`\n【本次需要归档的执行片段（共 ${middle.length} 条消息）】`);
 
-  let budget = MAX_SUMMARY_INPUT_CHARS;
+  // 上一轮的记录要占掉预算：不扣的话「记录 + 新片段」可能超出后端上下文，
+  // 而摘要请求本身被截断只会安静地少归档一段内容。
+  let budget = Math.max(2_000, MAX_SUMMARY_INPUT_CHARS - (priorSummary?.length ?? 0));
   for (const m of middle) {
     if (budget <= 0) break;
     const body = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '');
@@ -150,6 +162,8 @@ export async function summarizeCompaction(
     middle: ChatMessage[];
     originalPrompt: string;
     droppedFromTruncation?: number;
+    /** 上一轮压缩留下的进展记录；有它才能「增量归档」而不是覆盖。 */
+    priorSummary?: string | null;
     signal?: AbortSignal;
   },
 ): Promise<string | null> {
@@ -158,6 +172,7 @@ export async function summarizeCompaction(
     params.middle,
     params.originalPrompt,
     params.droppedFromTruncation ?? 0,
+    params.priorSummary,
   );
   if (!input.trim()) return null;
 
@@ -188,10 +203,29 @@ export async function summarizeCompaction(
   }
 }
 
+/**
+ * 压缩说明的识别标记。
+ *
+ * 需要它是因为**压缩会重复发生**：第二次压缩时，消息数组里已经躺着上一次的压缩说明，
+ * 若把它当作普通历史喂进摘要输入，模型会去摘要「上次的摘要」——既浪费预算，
+ * 又会让真正的进展记录被稀释。用一个固定前缀识别，比在调用方比对整句话可靠：
+ * 那句提示词随时可能被改写，而改写之后按整句匹配会**静默失效**（过滤不掉，但不报错）。
+ */
+export const COMPACTION_NOTICE_MARKER = '[系统说明：';
+
+/** 判断一条消息是不是压缩说明（而非真实历史）。 */
+export function isCompactionNotice(message: ChatMessage): boolean {
+  return (
+    message.role === 'system' &&
+    typeof message.content === 'string' &&
+    message.content.startsWith(COMPACTION_NOTICE_MARKER)
+  );
+}
+
 /** 摘要被放进上下文时的包装，明确告诉模型这是压缩产物而不是新的用户输入。 */
 export function formatCompactionNotice(summary: string, originalPrompt: string): string {
   return [
-    '[系统说明：本次任务已执行较多步骤，早期中间过程已由你自己归档为下面的进展记录。]',
+    `${COMPACTION_NOTICE_MARKER}本次任务已执行较多步骤，早期中间过程已由你自己归档为下面的进展记录。]`,
     '原始诉求已并入摘要，**不要**因此再次向用户确认需求。',
     '--- 进展记录（自动生成） ---',
     summary,

@@ -18,7 +18,11 @@ export interface DbFilterSqlBarProps {
   onRemoveFilter: (index: number) => void;
   onRemoveSort: (column: string) => void;
   onClearAll: () => void;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 /**
@@ -111,11 +115,29 @@ export function DbFilterSqlBar({
         >
           <span className="db-sql-bar-chevron" aria-hidden="true">
             {expanded ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <polyline points="6 9 12 15 18 9" />
               </svg>
             ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             )}
@@ -129,11 +151,29 @@ export function DbFilterSqlBar({
           onClick={() => void handleCopy()}
         >
           {copied ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#34d399"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
           ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <rect width="14" height="14" x="8" y="8" rx="2" />
               <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
             </svg>
@@ -157,9 +197,7 @@ export function DbFilterSqlBar({
               key={`f-${i}`}
               className="db-view-chip filter"
               title={t('db.editFilterChipTitle', { column: f.column })}
-              onClick={(e) =>
-                onEditFilter(f.column, { x: e.clientX, y: e.clientY })
-              }
+              onClick={(e) => onEditFilter(f.column, { x: e.clientX, y: e.clientY })}
             >
               {t('db.filterChip', {
                 summary: dbDescribeFilter(t, f, columns.find((c) => c.name === f.column)?.type),

@@ -42,8 +42,14 @@ async function makeCtx(overrides: Partial<ToolContext> = {}) {
 
 describe('MCP tool visibility per mode', () => {
   const definitions = [
-    { type: 'function' as const, function: { name: 'db__query', description: 'q', parameters: {} } },
-    { type: 'function' as const, function: { name: 'db__drop_table', description: 'd', parameters: {} } },
+    {
+      type: 'function' as const,
+      function: { name: 'db__query', description: 'q', parameters: {} },
+    },
+    {
+      type: 'function' as const,
+      function: { name: 'db__drop_table', description: 'd', parameters: {} },
+    },
   ];
 
   it('offers read-only MCP tools in ask mode but hides write ones', () => {
@@ -58,7 +64,9 @@ describe('MCP tool visibility per mode', () => {
   });
 
   it('hides all MCP tools in ask mode when none are declared readonly', () => {
-    const names = toolsForMode('ask', { definitions, readonlyNames: [] }).map((t) => t.function.name);
+    const names = toolsForMode('ask', { definitions, readonlyNames: [] }).map(
+      (t) => t.function.name,
+    );
     expect(names).not.toContain('db__query');
     expect(names).not.toContain('db__drop_table');
     // 内置的只读工具不受影响
@@ -110,7 +118,7 @@ describe('MCP tool execution and permission gating', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('asks the same way regardless of permission mode — auto-approval is the host\'s job', async () => {
+  it("asks the same way regardless of permission mode — auto-approval is the host's job", async () => {
     // 工具层永远发问，是宿主（agent 包的 requestConfirm 包装）按权限决定要不要真的打扰用户。
     // 这条测试锁住这个分工：若哪天有人「顺手」在工具层加一个 allow_all 短路，
     // 内置工具与 MCP 工具就会各自短路一次，两套判断迟早分叉。

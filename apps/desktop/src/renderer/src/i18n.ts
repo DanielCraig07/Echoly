@@ -45,6 +45,9 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'panel.settings': { zh: '设置', en: 'Settings' },
   'panel.chat': { zh: 'AI 助手', en: 'AI Assistant' },
   'panel.terminal': { zh: '终端', en: 'Terminal' },
+  'panel.editor': { zh: '编辑器', en: 'Editor' },
+  'panel.problems': { zh: '问题', en: 'Problems' },
+  'panel.database': { zh: '数据库', en: 'Database' },
   'panel.noWorkspace': { zh: '未打开工作区', en: 'No Workspace' },
 
   // 菜单
@@ -156,7 +159,10 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'settings.about.license': { zh: '软件授权', en: 'Software License' },
   'settings.about.licenseVal': { zh: '专有软件 (Proprietary)', en: 'Proprietary Software' },
   'settings.about.copyright': { zh: '版权所有', en: 'Copyright' },
-  'settings.about.copyrightVal': { zh: '© 2026 Daniel. All rights reserved.', en: '© 2026 Daniel. All rights reserved.' },
+  'settings.about.copyrightVal': {
+    zh: '© 2026 Daniel. All rights reserved.',
+    en: '© 2026 Daniel. All rights reserved.',
+  },
   'settings.about.features': { zh: '核心特性', en: 'Core Highlights' },
   'settings.about.featAst': { zh: '毫秒级 AST 符号跳转', en: 'Instant AST Navigation' },
   'settings.about.featAstDesc': {
@@ -220,7 +226,10 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     en: 'Errors & warnings · Toggle bottom console and terminal',
   },
   'status.lastCommit': { zh: '最近提交:', en: 'Last commit:' },
-  'status.cursor': { zh: '光标所在行与列 · 点击输入行号精准跳转', en: 'Cursor position · Click to jump to a line' },
+  'status.cursor': {
+    zh: '光标所在行与列 · 点击输入行号精准跳转',
+    en: 'Cursor position · Click to jump to a line',
+  },
   'status.line': { zh: '行', en: 'Ln' },
   'status.col': { zh: '列', en: 'Col' },
   'status.goto': { zh: '跳转到指定行', en: 'Go to Line' },
@@ -236,13 +245,25 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'status.encoding': { zh: '字符编码 · 点击切换当前编码', en: 'Encoding · Click to change' },
   'status.encodingTitle': { zh: '字符编码', en: 'Encoding' },
   'status.encodingUtf8': { zh: 'UTF-8 (推荐)', en: 'UTF-8 (recommended)' },
-  'status.encodingGbk': { zh: 'GBK (简体中文 / Windows)', en: 'GBK (Simplified Chinese / Windows)' },
+  'status.encodingGbk': {
+    zh: 'GBK (简体中文 / Windows)',
+    en: 'GBK (Simplified Chinese / Windows)',
+  },
   'status.encodingChanged': { zh: '编码已选择为', en: 'Encoding set to' },
-  'status.eol': { zh: '行尾换行序列 · 点击在 LF 与 CRLF 间快速切换', en: 'End of line · Click to toggle LF / CRLF' },
+  'status.eol': {
+    zh: '行尾换行序列 · 点击在 LF 与 CRLF 间快速切换',
+    en: 'End of line · Click to toggle LF / CRLF',
+  },
   'status.eolChanged': { zh: '行尾序列已切换为', en: 'End-of-line set to' },
-  'status.language': { zh: '文件语言模式 · 点击切换语法模式与高亮', en: 'Language mode · Click to change syntax highlighting' },
+  'status.language': {
+    zh: '文件语言模式 · 点击切换语法模式与高亮',
+    en: 'Language mode · Click to change syntax highlighting',
+  },
   'status.languagePh': { zh: '搜索语言模式...', en: 'Search language modes...' },
-  'status.stats': { zh: '文档统计数据 · 点击查看字数与行数统计详情', en: 'Document stats · Click for details' },
+  'status.stats': {
+    zh: '文档统计数据 · 点击查看字数与行数统计详情',
+    en: 'Document stats · Click for details',
+  },
   'status.statsLines': { zh: '行', en: 'Ln' },
   'status.statsChars': { zh: '字数', en: 'Chars' },
   'status.statsTitle': { zh: '文档统计详情', en: 'Document Statistics' },
@@ -256,22 +277,40 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'status.statsAtColEnd': { zh: ' 列', en: '' },
   'status.statsPath': { zh: '文件路径:', en: 'File path:' },
   'status.untitled': { zh: '未命名', en: 'Untitled' },
-  'status.copilotGenerating': { zh: 'AI Copilot 正在生成行内代码补全建议...', en: 'AI Copilot is generating inline completion...' },
-  'status.copilotReady': { zh: 'AI Copilot 行内补全: 已就绪 (Tab 键采纳建议)', en: 'AI Copilot inline: Ready (Tab to accept)' },
-  'status.copilotPaused': { zh: 'AI Copilot 行内补全: 已暂停 (点击启用)', en: 'AI Copilot inline: Paused (click to enable)' },
+  'status.copilotGenerating': {
+    zh: 'AI Copilot 正在生成行内代码补全建议...',
+    en: 'AI Copilot is generating inline completion...',
+  },
+  'status.copilotReady': {
+    zh: 'AI Copilot 行内补全: 已就绪 (Tab 键采纳建议)',
+    en: 'AI Copilot inline: Ready (Tab to accept)',
+  },
+  'status.copilotPaused': {
+    zh: 'AI Copilot 行内补全: 已暂停 (点击启用)',
+    en: 'AI Copilot inline: Paused (click to enable)',
+  },
   'status.copilotOn': { zh: 'AI 行内代码补全已启用', en: 'Inline AI completion enabled' },
   'status.copilotOff': { zh: 'AI 行内代码补全已暂停', en: 'Inline AI completion paused' },
   'status.versionClick': { zh: ' · 点击检查版本更新', en: ' · Click to check for updates' },
   'status.devClick': { zh: ' · 点击查看关于作者与系统设置', en: ' · Click for about & settings' },
   'status.newVersion': { zh: '发现新版本 v', en: 'New version v' },
-  'status.newVersionHint': { zh: '点击设置关于页面可下载更新', en: 'Open Settings → About to download' },
+  'status.newVersionHint': {
+    zh: '点击设置关于页面可下载更新',
+    en: 'Open Settings → About to download',
+  },
   'status.upToDate': { zh: '当前已是最新版本 (v', en: 'Already up to date (v' },
   'status.updateUnreachable': { zh: '无法连接更新服务器', en: 'Update server unreachable' },
 
   // 搜索面板
   'search.title': { zh: '搜索', en: 'Search' },
-  'search.semanticOn': { zh: '语义搜索模式已启用（符号名 + 注释 + 代码体的 BM25 检索）', en: 'Semantic search enabled (BM25 over names, docs, bodies)' },
-  'search.semanticOff': { zh: '开启 @codebase 自然语言搜索（本地 BM25 索引，非向量）', en: 'Enable @codebase search (local BM25 index, not vectors)' },
+  'search.semanticOn': {
+    zh: '语义搜索模式已启用（符号名 + 注释 + 代码体的 BM25 检索）',
+    en: 'Semantic search enabled (BM25 over names, docs, bodies)',
+  },
+  'search.semanticOff': {
+    zh: '开启 @codebase 自然语言搜索（本地 BM25 索引，非向量）',
+    en: 'Enable @codebase search (local BM25 index, not vectors)',
+  },
   'search.searching': { zh: '搜索中...', en: 'Searching...' },
   'search.noResults': { zh: '未找到匹配的结果', en: 'No matches found' },
   'search.indexing': { zh: '正在建立索引…', en: 'Building index…' },
@@ -279,12 +318,18 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     zh: '正在建立索引… {scanned}/{total} 个文件（{pct}%，复用 {reused}）',
     en: 'Building index… {scanned}/{total} files ({pct}%, {reused} reused)',
   },
-  'search.indexMissing': { zh: '尚未建立索引，语义搜索会返回空结果。', en: 'No index yet — semantic search will return nothing.' },
+  'search.indexMissing': {
+    zh: '尚未建立索引，语义搜索会返回空结果。',
+    en: 'No index yet — semantic search will return nothing.',
+  },
   'search.indexSummary': {
     zh: '已索引 {files} 个文件 / {symbols} 个符号',
     en: 'Indexed {files} files / {symbols} symbols',
   },
-  'search.rebuildTitle': { zh: '重新解析全部文件（不信任时间戳缓存）', en: 'Re-parse every file (ignore the timestamp cache)' },
+  'search.rebuildTitle': {
+    zh: '重新解析全部文件（不信任时间戳缓存）',
+    en: 'Re-parse every file (ignore the timestamp cache)',
+  },
   // 语序在中英文之间是反的（"Found 12 results in 3 files"），整句进字典而不是拼接
   'search.resultsSummary': {
     zh: '在 {files} 个文件中找到了 {matches} 个结果 ({mode})',
@@ -319,16 +364,40 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   // 聊天：slash 命令下拉
   'chat.commandHeader': { zh: '命令模板 (/)', en: 'Command Templates (/)' },
   'chat.mentionHeader': { zh: '上下文引用与文件关联 (@)', en: 'Context References (@)' },
-  'chat.suggestTip': { zh: '↑↓ 切换 · ↵ / Tab 采纳 · Esc 取消', en: '↑↓ navigate · ↵ / Tab accept · Esc cancel' },
-  'chat.mentionGitDesc': { zh: '引用当前工作区 Git 变更与状态', en: 'Reference the workspace Git changes and status' },
-  'chat.mentionTerminalDesc': { zh: '引用终端最近执行输出与报错', en: 'Reference recent terminal output and errors' },
-  'chat.mentionProblemsDesc': { zh: '引用当前代码报错与诊断信息', en: 'Reference current errors and diagnostics' },
+  'chat.suggestTip': {
+    zh: '↑↓ 切换 · ↵ / Tab 采纳 · Esc 取消',
+    en: '↑↓ navigate · ↵ / Tab accept · Esc cancel',
+  },
+  'chat.mentionGitDesc': {
+    zh: '引用当前工作区 Git 变更与状态',
+    en: 'Reference the workspace Git changes and status',
+  },
+  'chat.mentionTerminalDesc': {
+    zh: '引用终端最近执行输出与报错',
+    en: 'Reference recent terminal output and errors',
+  },
+  'chat.mentionProblemsDesc': {
+    zh: '引用当前代码报错与诊断信息',
+    en: 'Reference current errors and diagnostics',
+  },
   // 占位文案里「@ 引用上下文，/ 调用命令」是必须被用户看到的功能指引，
   // 中英文括号与顿号都不同，所以整句进字典
-  'chat.placeholderAsk': { zh: '提问关于代码的问题…（@ 引用上下文，/ 调用命令，Enter 发送）', en: 'Ask about the code… (@ to reference context, / for commands, Enter to send)' },
-  'chat.placeholderPlan': { zh: '描述目标，生成可执行计划…（@ 引用上下文，/ 调用命令，Enter 发送）', en: 'Describe the goal to get a plan… (@ to reference context, / for commands, Enter to send)' },
-  'chat.placeholderAgent': { zh: '描述任务…（@ 引用上下文，/ 调用命令，Enter 发送）', en: 'Describe the task… (@ to reference context, / for commands, Enter to send)' },
-  'chat.placeholderRunning': { zh: 'AI 正在执行，输入内容将在当前步骤结束后追加给它…', en: 'AI is running — your input is queued until the current step finishes…' },
+  'chat.placeholderAsk': {
+    zh: '提问关于代码的问题…（@ 引用上下文，/ 调用命令，Enter 发送）',
+    en: 'Ask about the code… (@ to reference context, / for commands, Enter to send)',
+  },
+  'chat.placeholderPlan': {
+    zh: '描述目标，生成可执行计划…（@ 引用上下文，/ 调用命令，Enter 发送）',
+    en: 'Describe the goal to get a plan… (@ to reference context, / for commands, Enter to send)',
+  },
+  'chat.placeholderAgent': {
+    zh: '描述任务…（@ 引用上下文，/ 调用命令，Enter 发送）',
+    en: 'Describe the task… (@ to reference context, / for commands, Enter to send)',
+  },
+  'chat.placeholderRunning': {
+    zh: 'AI 正在执行，输入内容将在当前步骤结束后追加给它…',
+    en: 'AI is running — your input is queued until the current step finishes…',
+  },
   'chat.needWorkspace': { zh: '请先打开工作区', en: 'Open a workspace first' },
   'chat.commandBadgeWorkspace': { zh: '工作区', en: 'Workspace' },
   'chat.commandBadgeUser': { zh: '用户', en: 'User' },
@@ -345,15 +414,30 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   },
 
   // 欢迎页
-  'welcome.subtitle': { zh: '选择一种方式打开项目，即刻开启全自动 Agent 辅助编程', en: 'Pick how to open a project and start agent-assisted coding right away' },
+  'welcome.subtitle': {
+    zh: '选择一种方式打开项目，即刻开启全自动 Agent 辅助编程',
+    en: 'Pick how to open a project and start agent-assisted coding right away',
+  },
   'welcome.localTitle': { zh: '本地文件夹', en: 'Local Folder' },
-  'welcome.localDesc': { zh: '打开本机已有目录作为工作区', en: 'Open an existing directory as the workspace' },
+  'welcome.localDesc': {
+    zh: '打开本机已有目录作为工作区',
+    en: 'Open an existing directory as the workspace',
+  },
   'welcome.sshTitle': { zh: 'SSH 远程主机', en: 'SSH Host' },
-  'welcome.sshDesc': { zh: '通过 SSH / SFTP 安全连接远程服务', en: 'Connect securely over SSH / SFTP' },
+  'welcome.sshDesc': {
+    zh: '通过 SSH / SFTP 安全连接远程服务',
+    en: 'Connect securely over SSH / SFTP',
+  },
   'welcome.cloneTitle': { zh: '从 Git 克隆', en: 'Clone from Git' },
-  'welcome.cloneDesc': { zh: '拉取远程代码仓库至本地并即刻就绪', en: 'Pull a remote repository locally, ready to go' },
+  'welcome.cloneDesc': {
+    zh: '拉取远程代码仓库至本地并即刻就绪',
+    en: 'Pull a remote repository locally, ready to go',
+  },
   'welcome.wizardTitle': { zh: '新建标准工程向导', en: 'New Project Wizard' },
-  'welcome.wizardDesc': { zh: '生成 Java、Python、Go、Node 或 C++ 标准开发与调试工程', en: 'Scaffold a Java, Python, Go, Node or C++ project with debug config' },
+  'welcome.wizardDesc': {
+    zh: '生成 Java、Python、Go、Node 或 C++ 标准开发与调试工程',
+    en: 'Scaffold a Java, Python, Go, Node or C++ project with debug config',
+  },
   'welcome.recent': { zh: '最近打开', en: 'Recent' },
   'welcome.clear': { zh: '清空', en: 'Clear' },
   'welcome.noRecent': { zh: '暂无历史记录', en: 'No history yet' },
@@ -400,7 +484,10 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   // 所以这类「动词 + 用户数据」的提示整句进字典，数据用占位符传入
   'tree.moveFailed': { zh: '无法移动', en: 'Cannot move' },
   // 拖动被拒的三种原因，键名与 validateMove 返回的 code 一一对应
-  'tree.moveReject.move-into-self': { zh: '不能将文件/目录移动到自身', en: "Can't move an item onto itself" },
+  'tree.moveReject.move-into-self': {
+    zh: '不能将文件/目录移动到自身',
+    en: "Can't move an item onto itself",
+  },
   'tree.moveReject.move-into-child': {
     zh: '不能将文件夹移动到自身的子文件夹中',
     en: "Can't move a folder into its own subfolder",
@@ -413,6 +500,7 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'tree.nameExistsFile': { zh: '已存在同名文件', en: 'A file with that name already exists' },
   'tree.nameExistsFolder': { zh: '已存在同名文件夹', en: 'A folder with that name already exists' },
   'tree.targetExists': { zh: '目标已存在', en: 'The target already exists' },
+  'tree.operationFailed': { zh: '操作未完成', en: 'Operation failed' },
   'tree.deleteFolderTitle': { zh: '永久删除文件夹', en: 'Delete Folder Permanently' },
   'tree.deleteFileTitle': { zh: '永久删除文件', en: 'Delete File Permanently' },
   'tree.deleteFolderBody': {
@@ -485,19 +573,37 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'terminal.copy': { zh: '复制', en: 'Copy' },
   'terminal.paste': { zh: '粘贴', en: 'Paste' },
   'terminal.selectAll': { zh: '全选', en: 'Select All' },
-  'terminal.askAiSelection': { zh: '⚡️ 让 AI 诊断/修复选中内容', en: '⚡️ Ask AI to diagnose / fix selection' },
+  'terminal.askAiSelection': {
+    zh: '⚡️ 让 AI 诊断/修复选中内容',
+    en: '⚡️ Ask AI to diagnose / fix selection',
+  },
   'terminal.clearScreen': { zh: '清空屏幕 (Clear)', en: 'Clear Screen' },
   'terminal.askAiDiagnoseErr': { zh: '⚡️ AI 诊断报错', en: '⚡️ AI diagnose error' },
-  'terminal.askAiTitle': { zh: '向 AI 咨询终端输出 / 诊断 (Ask AI)', en: 'Ask AI about terminal output' },
-  'terminal.genCommandTitle': { zh: 'AI 生成并执行命令 (⌘K)', en: 'AI generate & run command (⌘K)' },
+  'terminal.askAiTitle': {
+    zh: '向 AI 咨询终端输出 / 诊断 (Ask AI)',
+    en: 'Ask AI about terminal output',
+  },
+  'terminal.genCommandTitle': {
+    zh: 'AI 生成并执行命令 (⌘K)',
+    en: 'AI generate & run command (⌘K)',
+  },
   'terminal.unsplit': { zh: '关闭分屏 (恢复单屏全宽)', en: 'Close split (back to single pane)' },
   'terminal.split': { zh: '拆分终端协同工作', en: 'Split terminal' },
   'terminal.splitToHorizontal': { zh: '切换为上下拆分', en: 'Switch to vertical split' },
   'terminal.splitToVertical': { zh: '切换为左右拆分', en: 'Switch to horizontal split' },
   'terminal.new': { zh: '新建终端', en: 'New Terminal' },
-  'terminal.wrapOn': { zh: '自动换行: 已启用 (点击切换为单行横向滚动模式)', en: 'Word wrap: on (click for horizontal scrolling)' },
-  'terminal.wrapOff': { zh: '自动换行: 已禁用 (点击启用自适应视口换行)', en: 'Word wrap: off (click to enable)' },
-  'terminal.searchTitle': { zh: '在终端中搜索 (Ctrl+F / ⌘F)', en: 'Search in terminal (Ctrl+F / ⌘F)' },
+  'terminal.wrapOn': {
+    zh: '自动换行: 已启用 (点击切换为单行横向滚动模式)',
+    en: 'Word wrap: on (click for horizontal scrolling)',
+  },
+  'terminal.wrapOff': {
+    zh: '自动换行: 已禁用 (点击启用自适应视口换行)',
+    en: 'Word wrap: off (click to enable)',
+  },
+  'terminal.searchTitle': {
+    zh: '在终端中搜索 (Ctrl+F / ⌘F)',
+    en: 'Search in terminal (Ctrl+F / ⌘F)',
+  },
   'terminal.scrollTop': { zh: '滚动到最上方 (Scroll to Top)', en: 'Scroll to top' },
   'terminal.scrollBottom': { zh: '滚动到最下方 (Scroll to Bottom)', en: 'Scroll to bottom' },
   'terminal.clearTitle': { zh: '清空终端内容 (Clear)', en: 'Clear terminal' },
@@ -517,10 +623,22 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     zh: '这个终端会被销毁：**滚动的历史输出会丢失**，其中正在运行的进程也会被终止，且**无法撤销**。',
     en: 'This terminal will be destroyed: **its scrollback is lost**, any process still running in it is killed, and this **cannot be undone**.',
   },
-  'terminal.portForwardOk': { zh: 'SSH 端口 :{port} 已建立本地隧道转发至 :{localPort}，点击在浏览器中打开', en: 'SSH port :{port} is tunneled to local port :{localPort} — click to open in browser' },
-  'terminal.portForwardOffer': { zh: 'SSH 远程服务监听 :{port}，点击建立本地转发隧道并在浏览器中预览', en: 'SSH service listening on :{port} — click to forward it locally and preview' },
-  'terminal.portLocalOk': { zh: '本地网络服务已在端口 :{port} 监听，点击在浏览器中打开 http://localhost:{port}', en: 'Local service listening on port :{port} — click to open http://localhost:{port}' },
-  'terminal.errorBanner': { zh: '终端命令执行失败 (退出码 {code})，点击向 AI 求助诊断错误', en: 'Command failed (exit code {code}) — click to ask AI for help' },
+  'terminal.portForwardOk': {
+    zh: 'SSH 端口 :{port} 已建立本地隧道转发至 :{localPort}，点击在浏览器中打开',
+    en: 'SSH port :{port} is tunneled to local port :{localPort} — click to open in browser',
+  },
+  'terminal.portForwardOffer': {
+    zh: 'SSH 远程服务监听 :{port}，点击建立本地转发隧道并在浏览器中预览',
+    en: 'SSH service listening on :{port} — click to forward it locally and preview',
+  },
+  'terminal.portLocalOk': {
+    zh: '本地网络服务已在端口 :{port} 监听，点击在浏览器中打开 http://localhost:{port}',
+    en: 'Local service listening on port :{port} — click to open http://localhost:{port}',
+  },
+  'terminal.errorBanner': {
+    zh: '终端命令执行失败 (退出码 {code})，点击向 AI 求助诊断错误',
+    en: 'Command failed (exit code {code}) — click to ask AI for help',
+  },
 
   // 命令面板
   //
@@ -534,12 +652,18 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'cmd.categoryWorkspace': { zh: '工作区', en: 'Workspace' },
   'cmd.categoryRemote': { zh: '远程', en: 'Remote' },
   'cmd.categoryWindow': { zh: '窗口', en: 'Window' },
-  'cmd.openComposer': { zh: 'Composer: 多文件智能重构协同编辑 (⌘I)', en: 'Composer: multi-file refactor editor (⌘I)' },
+  'cmd.openComposer': {
+    zh: 'Composer: 多文件智能重构协同编辑 (⌘I)',
+    en: 'Composer: multi-file refactor editor (⌘I)',
+  },
   'cmd.newChat': { zh: 'AI: 新建对话会话', en: 'AI: New Chat Session' },
   'cmd.toggleSidebar': { zh: '视图: 展开/折叠左侧边栏', en: 'View: Toggle Sidebar' },
   'cmd.toggleAi': { zh: '视图: 展开/折叠 AI 助手', en: 'View: Toggle AI Assistant' },
   'cmd.focusAi': { zh: 'AI: 提问 / 聚焦 AI 助手', en: 'AI: Ask / Focus AI Assistant' },
-  'cmd.openBrowser': { zh: '视图: 打开内置浏览器 (Browser Preview)', en: 'View: Open Built-in Browser (Preview)' },
+  'cmd.openBrowser': {
+    zh: '视图: 打开内置浏览器 (Browser Preview)',
+    en: 'View: Open Built-in Browser (Preview)',
+  },
   'cmd.toggleTerminal': { zh: '终端: 展开/折叠底部控制台', en: 'Terminal: Toggle Bottom Console' },
   'cmd.newTerminal': { zh: '终端: 新建终端标签页', en: 'Terminal: New Terminal Tab' },
   'cmd.gitStatus': { zh: 'Git: 查看源代码版本控制', en: 'Git: Show Source Control' },
@@ -548,23 +672,44 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'cmd.gitDiscard': { zh: 'Git: 放弃工作区所有更改 (Discard All)', en: 'Git: Discard All Changes' },
   'cmd.gitHistory': { zh: 'Git: 查看当前文件提交历史', en: 'Git: File Commit History' },
   'cmd.gitLog': { zh: 'Git: 查看提交历史与图谱 (Commit Graph)', en: 'Git: Commit History & Graph' },
-  'cmd.openSettings': { zh: '首选项: 打开 IDE 设置与多模型管理', en: 'Preferences: Open Settings & Model Management' },
-  'cmd.switchWorkspace': { zh: '工作区: 打开或切换工作区目录', en: 'Workspace: Open or Switch Workspace' },
+  'cmd.openSettings': {
+    zh: '首选项: 打开 IDE 设置与多模型管理',
+    en: 'Preferences: Open Settings & Model Management',
+  },
+  'cmd.switchWorkspace': {
+    zh: '工作区: 打开或切换工作区目录',
+    en: 'Workspace: Open or Switch Workspace',
+  },
   'cmd.sshConnect': { zh: '工作区: 连接远程 SSH 主机', en: 'Workspace: Connect to SSH Host' },
   'cmd.cloneRepo': { zh: 'Git: 从远程 URL 克隆仓库 (Clone)', en: 'Git: Clone from Remote URL' },
   'cmd.reloadWindow': { zh: '窗口: 重载窗口 (Reload Window)', en: 'Window: Reload Window' },
 
   // 工具栏 / 面板标题
-  'app.searchOrCommand': { zh: '搜索动作或文件 (⌘P / ⌘⇧P)', en: 'Search actions or files (⌘P / ⌘⇧P)' },
-  'app.searchOrCommandWin': { zh: '搜索动作或文件 (Ctrl+P / Ctrl+Shift+P)', en: 'Search actions or files (Ctrl+P / Ctrl+Shift+P)' },
+  'app.searchOrCommand': {
+    zh: '搜索动作或文件 (⌘P / ⌘⇧P)',
+    en: 'Search actions or files (⌘P / ⌘⇧P)',
+  },
+  'app.searchOrCommandWin': {
+    zh: '搜索动作或文件 (Ctrl+P / Ctrl+Shift+P)',
+    en: 'Search actions or files (Ctrl+P / Ctrl+Shift+P)',
+  },
   'app.commandSearch': { zh: '命令 / 搜索', en: 'Commands / Search' },
   'app.collapseSidebar': { zh: '折叠左侧边栏 (⌘⇧B)', en: 'Collapse sidebar (⌘⇧B)' },
   'app.expandSidebar': { zh: '展开左侧边栏 (⌘⇧B)', en: 'Expand sidebar (⌘⇧B)' },
-  'app.collapseSidebarWin': { zh: '折叠左侧边栏 (Ctrl+Shift+B)', en: 'Collapse sidebar (Ctrl+Shift+B)' },
-  'app.expandSidebarWin': { zh: '展开左侧边栏 (Ctrl+Shift+B)', en: 'Expand sidebar (Ctrl+Shift+B)' },
+  'app.collapseSidebarWin': {
+    zh: '折叠左侧边栏 (Ctrl+Shift+B)',
+    en: 'Collapse sidebar (Ctrl+Shift+B)',
+  },
+  'app.expandSidebarWin': {
+    zh: '展开左侧边栏 (Ctrl+Shift+B)',
+    en: 'Expand sidebar (Ctrl+Shift+B)',
+  },
   'app.collapseTerminal': { zh: '折叠底部终端 (⌘J)', en: 'Collapse bottom terminal (⌘J)' },
   'app.expandTerminal': { zh: '展开底部终端 (⌘J)', en: 'Expand bottom terminal (⌘J)' },
-  'app.collapseTerminalWin': { zh: '折叠底部终端 (Ctrl+J)', en: 'Collapse bottom terminal (Ctrl+J)' },
+  'app.collapseTerminalWin': {
+    zh: '折叠底部终端 (Ctrl+J)',
+    en: 'Collapse bottom terminal (Ctrl+J)',
+  },
   'app.expandTerminalWin': { zh: '展开底部终端 (Ctrl+J)', en: 'Expand bottom terminal (Ctrl+J)' },
   'app.collapseAi': { zh: '折叠右侧 AI 面板 (⌘B)', en: 'Collapse AI panel (⌘B)' },
   'app.expandAi': { zh: '展开右侧 AI 面板 (⌘B)', en: 'Expand AI panel (⌘B)' },
@@ -621,17 +766,44 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'app.terminalTitle': { zh: '终端: {name}', en: 'Terminal: {name}' },
   'app.runCommand': { zh: '运行命令', en: 'Run Command' },
   'app.debugStartFailed': { zh: '⚠️ 调试启动失败', en: '⚠️ Failed to start debugging' },
-  'app.debugMissingDebugpy': { zh: '⚠️ Python 缺少 debugpy 模块', en: '⚠️ Python is missing the debugpy module' },
+  'app.debugMissingDebugpy': {
+    zh: '⚠️ Python 缺少 debugpy 模块',
+    en: '⚠️ Python is missing the debugpy module',
+  },
   'app.previewImageFailed': { zh: '无法预览图片：{msg}', en: 'Cannot preview image: {msg}' },
-  'app.saveOutsideWorkspace': { zh: '请将文件保存到当前工作区内', en: 'Save the file inside the current workspace' },
-  'app.cannotWriteWorkspace': { zh: '当前无法写入工作区，请先打开文件夹', en: 'Cannot write to the workspace — open a folder first' },
-  'app.openWorkspaceToSave': { zh: '请先打开工作区后再保存未命名文件', en: 'Open a workspace before saving an untitled file' },
+  'app.saveOutsideWorkspace': {
+    zh: '请将文件保存到当前工作区内',
+    en: 'Save the file inside the current workspace',
+  },
+  'app.cannotWriteWorkspace': {
+    zh: '当前无法写入工作区，请先打开文件夹',
+    en: 'Cannot write to the workspace — open a folder first',
+  },
+  'app.openWorkspaceToSave': {
+    zh: '请先打开工作区后再保存未命名文件',
+    en: 'Open a workspace before saving an untitled file',
+  },
   'app.sshWorkspaceSwitched': { zh: '✓ 已切换远程工作区', en: '✓ Remote workspace switched' },
-  'app.sshWorkspaceSwitchFailed': { zh: '✕ 切换远程工作区失败', en: '✕ Failed to switch remote workspace' },
+  'app.sshWorkspaceSwitchFailed': {
+    zh: '✕ 切换远程工作区失败',
+    en: '✕ Failed to switch remote workspace',
+  },
   'app.sshWorkspaceConnected': { zh: '✓ 已连接远程工作区', en: '✓ Remote workspace connected' },
-  'app.sshWorkspaceConnectFailed': { zh: '✕ 连接远程工作区失败', en: '✕ Failed to connect remote workspace' },
+  'app.sshWorkspaceConnectFailed': {
+    zh: '✕ 连接远程工作区失败',
+    en: '✕ Failed to connect remote workspace',
+  },
   'app.debugTerminated': { zh: '调试已终止', en: 'Debugging terminated' },
   'app.openScriptFailed': { zh: '打开脚本失败', en: 'Failed to open script' },
+
+  // 渲染错误兜底页（components/ErrorBoundary.tsx）
+  'errorBoundary.title': { zh: '应用遇到渲染错误', en: 'The app hit a rendering error' },
+  'errorBoundary.panelTitle': { zh: '{name} 无法显示', en: '{name} could not be displayed' },
+  'errorBoundary.hint': {
+    zh: '界面某处渲染失败了。其他面板仍可正常使用；若整块界面都没有反应，请刷新页面。',
+    en: 'Something in the UI failed to render. Other panels still work; if the whole window is unresponsive, reload the page.',
+  },
+  'errorBoundary.reload': { zh: '刷新页面', en: 'Reload page' },
 
   // 通用危险操作确认
   'app.confirmClearRecent': { zh: '确认清空', en: 'Clear' },
@@ -680,7 +852,10 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     en: 'Changes already staged with git add are reverted too.',
   },
   'app.labelScope': { zh: '范围', en: 'Scope' },
-  'app.scopeAllDirty': { zh: '工作区中全部未提交的修改', en: 'All uncommitted changes in the workspace' },
+  'app.scopeAllDirty': {
+    zh: '工作区中全部未提交的修改',
+    en: 'All uncommitted changes in the workspace',
+  },
   'app.scopeFileCount': { zh: '{n} 个文件', en: '{n} files' },
   'app.discardFailed': { zh: '放弃修改失败', en: 'Discard failed' },
   'app.gitRestoreFailed': { zh: 'Git 还原失败', en: 'git restore failed' },
@@ -690,18 +865,30 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'app.diffOriginal': { zh: '最新提交 (HEAD)', en: 'Latest commit (HEAD)' },
   'app.diffModified': { zh: '当前工作区 (未提交更改)', en: 'Working tree (uncommitted)' },
   'app.diffToHead': { zh: 'Git 对比', en: 'Git diff' },
-  'app.diffNoChange': { zh: '当前文件与最新提交 (HEAD) 无差异', en: 'No difference between this file and HEAD' },
+  'app.diffNoChange': {
+    zh: '当前文件与最新提交 (HEAD) 无差异',
+    en: 'No difference between this file and HEAD',
+  },
   'app.diffFailed': { zh: '获取差异失败', en: 'Failed to get diff' },
   'app.diffFailedDetail': { zh: '无法对比该文件', en: 'Cannot diff this file' },
   'app.blameTitle': { zh: 'Git 追溯 (Blame)', en: 'Git Blame' },
   'app.blameOff': { zh: '已关闭代码追溯标注', en: 'Blame annotations turned off' },
   'app.blameOn': { zh: '已开启代码追溯标注栏', en: 'Blame annotation gutter turned on' },
   'app.headSnapshot': { zh: 'Git 当前版本', en: 'Git HEAD revision' },
-  'app.headSnapshotLoaded': { zh: '已载入 {name} 的 HEAD 提交快照 (只读)', en: 'Loaded the HEAD snapshot of {name} (read-only)' },
+  'app.headSnapshotLoaded': {
+    zh: '已载入 {name} 的 HEAD 提交快照 (只读)',
+    en: 'Loaded the HEAD snapshot of {name} (read-only)',
+  },
   'app.headSnapshotFailed': { zh: '无法查看当前版本', en: 'Cannot show the current revision' },
-  'app.headSnapshotFailedDetail': { zh: '版本库中未找到该文件', en: 'The repository does not track this file' },
+  'app.headSnapshotFailedDetail': {
+    zh: '版本库中未找到该文件',
+    en: 'The repository does not track this file',
+  },
   'app.noFileHistory': { zh: '无法查看文件历史', en: 'Cannot show file history' },
-  'app.noFileHistoryDetail': { zh: '请先在编辑器中打开一个文件', en: 'Open a file in the editor first' },
+  'app.noFileHistoryDetail': {
+    zh: '请先在编辑器中打开一个文件',
+    en: 'Open a file in the editor first',
+  },
   'app.deleteScriptTitle': { zh: '删除查询脚本', en: 'Delete Query Script' },
   'app.deleteScriptIntro': {
     zh: '这个脚本文件会从磁盘上删除，且**无法撤销**。',

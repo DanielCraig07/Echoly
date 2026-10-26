@@ -22,7 +22,9 @@ describe('mavenService', () => {
 
       expect(fs.existsSync(path.join(tempDir, 'mvnw'))).toBe(true);
       expect(fs.existsSync(path.join(tempDir, 'mvnw.cmd'))).toBe(true);
-      expect(fs.existsSync(path.join(tempDir, '.mvn', 'wrapper', 'maven-wrapper.properties'))).toBe(true);
+      expect(fs.existsSync(path.join(tempDir, '.mvn', 'wrapper', 'maven-wrapper.properties'))).toBe(
+        true,
+      );
 
       // Now detect in this folder
       const env = await detectMavenEnvironment(tempDir);

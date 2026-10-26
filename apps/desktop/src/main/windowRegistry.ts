@@ -53,14 +53,22 @@ function projectConfigWorkspaceIo(workspace: WorkspaceService) {
       return withRoot((io) => io.readFile(relPath), '', false);
     },
     async writeFile(relPath: string, content: string) {
-      await withRoot(async (io) => {
-        await io.writeFile(relPath, content);
-      }, undefined, true);
+      await withRoot(
+        async (io) => {
+          await io.writeFile(relPath, content);
+        },
+        undefined,
+        true,
+      );
     },
     async mkdir(relPath: string) {
-      await withRoot(async (io) => {
-        await io.mkdir(relPath);
-      }, undefined, true);
+      await withRoot(
+        async (io) => {
+          await io.mkdir(relPath);
+        },
+        undefined,
+        true,
+      );
     },
   };
 }

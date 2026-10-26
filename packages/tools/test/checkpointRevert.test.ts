@@ -16,7 +16,7 @@ function memBackend(files: Record<string, string>, dirs: string[] = []): Workspa
   return {
     kind: 'local',
     root: '/w',
-    async listDir(relPath = '.') {
+    async listDir(relPath: string = '.') {
       const prefix = relPath === '.' ? '' : `${relPath}/`;
       const names = new Set<string>();
       let isDir = false;
@@ -30,7 +30,7 @@ function memBackend(files: Record<string, string>, dirs: string[] = []): Workspa
       if (!isDir) throw new Error('ENOTDIR');
       return [...names].map((name) => ({ name, isDirectory: false }));
     },
-    async readFile(relPath) {
+    async readFile(relPath: string) {
       const v = store.get(relPath);
       if (v === undefined) throw new Error('ENOENT');
       return v;
@@ -38,25 +38,25 @@ function memBackend(files: Record<string, string>, dirs: string[] = []): Workspa
     async readFileLines() {
       throw new Error('unused');
     },
-    async writeFile(relPath, content) {
+    async writeFile(relPath: string, content: string) {
       store.set(relPath, content);
     },
-    async mkdir(relPath) {
+    async mkdir(relPath: string) {
       dirSet.add(relPath);
     },
-    async rename(from, to) {
+    async rename(from: string, to: string) {
       const v = store.get(from);
       if (v === undefined) throw new Error('ENOENT');
       store.delete(from);
       store.set(to, v);
     },
-    async remove(relPath) {
+    async remove(relPath: string) {
       for (const k of [...store.keys()]) {
         if (k === relPath || k.startsWith(`${relPath}/`)) store.delete(k);
       }
     },
     async copy() {},
-    async exists(relPath) {
+    async exists(relPath: string) {
       if (store.has(relPath) || dirSet.has(relPath)) return true;
       // 目录不是 Map 里的键：只要有以它为前缀的文件，它就存在
       const prefix = `${relPath}/`;
@@ -68,14 +68,15 @@ function memBackend(files: Record<string, string>, dirs: string[] = []): Workspa
     async runCommand() {
       return { stdout: '', stderr: '', code: 0 };
     },
-    // 便于断言
-    // @ts-expect-error 测试用的旁路视图
+    // 便于断言：`as unknown as` 已经绕过了类型检查，这里不需要（也不能）再写 @ts-expect-error
     __store: store,
   } as unknown as WorkspaceBackend & { __store: Map<string, string> };
 }
 
-const read = (b: WorkspaceBackend, p: string) => (b as never as { __store: Map<string, string> }).__store.get(p);
-const has = (b: WorkspaceBackend, p: string) => (b as never as { __store: Map<string, string> }).__store.has(p);
+const read = (b: WorkspaceBackend, p: string) =>
+  (b as never as { __store: Map<string, string> }).__store.get(p);
+const has = (b: WorkspaceBackend, p: string) =>
+  (b as never as { __store: Map<string, string> }).__store.has(p);
 
 describe('revertMutations', () => {
   it('restores the earliest content when a file was written several times in one turn', async () => {
@@ -155,9 +156,7 @@ describe('revertMutations', () => {
     const res = await revertMutations(backend, [
       { kind: 'delete', path: 'big.bin', snapshot: null },
     ]);
-    expect(res.skipped).toEqual([
-      { path: 'big.bin', reason: '删除时未能留底，内容无法恢复' },
-    ]);
+    expect(res.skipped).toEqual([{ path: 'big.bin', reason: '删除时未能留底，内容无法恢复' }]);
   });
 
   it('moves a renamed path back to its original location', async () => {

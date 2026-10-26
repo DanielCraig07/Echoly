@@ -161,7 +161,10 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
   'ssh.optional': { zh: '可选', en: 'Optional' },
   'ssh.profileName': { zh: '配置名称', en: 'Profile name' },
   'ssh.profileNamePh': { zh: '显示名称', en: 'Display name' },
-  'ssh.saveProfile': { zh: '保存连接配置（不含密码）', en: 'Save this connection (without the password)' },
+  'ssh.saveProfile': {
+    zh: '保存连接配置（不含密码）',
+    en: 'Save this connection (without the password)',
+  },
   'ssh.openMacSettings': {
     zh: '打开 macOS「系统设置 - 本地网络」',
     en: 'Open macOS System Settings → Local Network',
@@ -341,11 +344,20 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
   },
   'workspace.techSection': { zh: '选择技术栈 (TECHNOLOGY)', en: 'TECHNOLOGY' },
   'workspace.projectNameLabel': { zh: '项目名称 (Project Name)', en: 'Project Name' },
-  'workspace.projectNameHint': { zh: '自动创建同名根目录', en: 'A root folder with the same name is created' },
+  'workspace.projectNameHint': {
+    zh: '自动创建同名根目录',
+    en: 'A root folder with the same name is created',
+  },
   'workspace.projectNamePh': { zh: '例如: my-awesome-project', en: 'e.g. my-awesome-project' },
   'workspace.parentDirLabel': { zh: '存储位置 (Parent Directory)', en: 'Parent Directory' },
-  'workspace.parentDirHint': { zh: '指定父级工程存放目录', en: 'Where the project folder will be created' },
-  'workspace.parentDirPh': { zh: '例如: /Users/username/Projects', en: 'e.g. /Users/username/Projects' },
+  'workspace.parentDirHint': {
+    zh: '指定父级工程存放目录',
+    en: 'Where the project folder will be created',
+  },
+  'workspace.parentDirPh': {
+    zh: '例如: /Users/username/Projects',
+    en: 'e.g. /Users/username/Projects',
+  },
   'workspace.browse': { zh: '📁 浏览…', en: '📁 Browse…' },
   'workspace.willGenerateAt': {
     zh: '即将生成至: {path}',
@@ -355,7 +367,10 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
     zh: '请选择父目录与项目名',
     en: 'Choose a parent directory and a project name',
   },
-  'workspace.scaffoldPreview': { zh: '工程生成结构预览 (Scaffold Preview):', en: 'Scaffold preview:' },
+  'workspace.scaffoldPreview': {
+    zh: '工程生成结构预览 (Scaffold Preview):',
+    en: 'Scaffold preview:',
+  },
   'workspace.fileCount': { zh: '{n} 个文件', en: '{n} files' },
   'workspace.noParentDir': { zh: '[未选择上级目录]', en: '[no parent directory selected]' },
   'workspace.cancel': { zh: '取消', en: 'Cancel' },
@@ -423,16 +438,25 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
     en: "If you don't save, your changes to this file will be lost.",
   },
   'workspace.cancelCloseTitle': { zh: '取消关闭 (Esc)', en: 'Cancel closing (Esc)' },
-  'workspace.cancelCloseHint': { zh: '取消关闭，继续编辑 (Esc)', en: 'Cancel closing and keep editing (Esc)' },
+  'workspace.cancelCloseHint': {
+    zh: '取消关闭，继续编辑 (Esc)',
+    en: 'Cancel closing and keep editing (Esc)',
+  },
   'workspace.dontSave': { zh: '不保存', en: "Don't Save" },
-  'workspace.dontSaveTitle': { zh: '不保存，直接关闭并放弃修改', en: 'Close without saving and discard the changes' },
+  'workspace.dontSaveTitle': {
+    zh: '不保存，直接关闭并放弃修改',
+    en: 'Close without saving and discard the changes',
+  },
   'workspace.saving': { zh: '保存中...', en: 'Saving...' },
-  'workspace.saveTitle': { zh: '保存文件修改并关闭 (Enter)', en: 'Save the file and close (Enter)' },
+  'workspace.saveTitle': {
+    zh: '保存文件修改并关闭 (Enter)',
+    en: 'Save the file and close (Enter)',
+  },
 
   // ══════════════════════════════════════════
   // 内核搜索栏 / 命令面板（TopSearchBar）
   // ══════════════════════════════════════════
-  'search.placeholderLineJump' : {
+  'search.placeholderLineJump': {
     zh: '输入行号快速跳转… (当前文件: {path})',
     en: 'Type a line number to jump… (current file: {path})',
   },
@@ -440,8 +464,14 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
     zh: '输入行号以跳转… (当前未打开活动文件)',
     en: 'Type a line number to jump… (no active file)',
   },
-  'search.placeholderActions': { zh: '输入关键字搜索全局动作与命令…', en: 'Type to search global actions and commands…' },
-  'search.placeholderCode': { zh: '搜索全文代码片段与符号…', en: 'Search code snippets and symbols…' },
+  'search.placeholderActions': {
+    zh: '输入关键字搜索全局动作与命令…',
+    en: 'Type to search global actions and commands…',
+  },
+  'search.placeholderCode': {
+    zh: '搜索全文代码片段与符号…',
+    en: 'Search code snippets and symbols…',
+  },
   'search.placeholderFiles': {
     zh: '搜索文件… (输入 > 搜命令，@ 搜代码，: 跳行，Tab 切换)',
     en: 'Search files… (> for commands, @ for code, : to jump to a line, Tab to switch)',
@@ -491,7 +521,10 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
   // 三方合并（ThreeWayMergeModal）
   // ══════════════════════════════════════════
   'merge.title': { zh: '三方合并编辑器 (3-Way Merge)', en: '3-Way Merge Editor' },
-  'merge.resolvedCount': { zh: '{done}/{total} 冲突已解决', en: '{done}/{total} conflicts resolved' },
+  'merge.resolvedCount': {
+    zh: '{done}/{total} 冲突已解决',
+    en: '{done}/{total} conflicts resolved',
+  },
   'merge.acceptAllCurrentTitle': {
     zh: '全部采纳当前分支修改 (Accept All Current)',
     en: 'Accept all changes from the current branch',
@@ -511,17 +544,26 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
     zh: '当前分支 (Current / Ours - HEAD)',
     en: 'Current branch (Ours - HEAD)',
   },
-  'merge.acceptThisSideTitle': { zh: '为当前冲突采纳此侧', en: 'Take this side for the current conflict' },
+  'merge.acceptThisSideTitle': {
+    zh: '为当前冲突采纳此侧',
+    en: 'Take this side for the current conflict',
+  },
   'merge.acceptThisSide': { zh: '✓ 采纳此侧', en: '✓ Take This Side' },
   'merge.baseBranch': {
     zh: '基底版本 (Base / Common Ancestor)',
     en: 'Base version (common ancestor)',
   },
-  'merge.acceptBaseTitle': { zh: '为当前冲突采纳基底', en: 'Take the base for the current conflict' },
+  'merge.acceptBaseTitle': {
+    zh: '为当前冲突采纳基底',
+    en: 'Take the base for the current conflict',
+  },
   'merge.acceptBase': { zh: '✓ 采纳基底', en: '✓ Take Base' },
   'merge.incomingBranch': { zh: '传入分支 (Incoming / Theirs)', en: 'Incoming branch (Theirs)' },
   'merge.resultTitle': { zh: '最终合并结果 (Result)', en: 'Merged result' },
-  'merge.resultHint': { zh: '可直接在此编辑器中二次手动微调', en: 'You can fine-tune the result right here' },
+  'merge.resultHint': {
+    zh: '可直接在此编辑器中二次手动微调',
+    en: 'You can fine-tune the result right here',
+  },
   'merge.currentChoice': {
     zh: '当前冲突 [{index}/{total}] 抉择：',
     en: 'Conflict [{index}/{total}] choice:',
@@ -574,8 +616,14 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
   'history.commitDesc': { zh: '提交 {hash} - {path}', en: 'Commit {hash} - {path}' },
   'history.parentCommitTitle': { zh: '父提交 ({hash}^)', en: 'Parent commit ({hash}^)' },
   'history.commitTitle': { zh: '提交 {hash}', en: 'Commit {hash}' },
-  'history.diffLoadFailed': { zh: '无法加载该提交的代码差异', en: 'Failed to load the diff for this commit' },
-  'history.diffError': { zh: '获取提交差异发生异常', en: 'An error occurred while fetching the commit diff' },
+  'history.diffLoadFailed': {
+    zh: '无法加载该提交的代码差异',
+    en: 'Failed to load the diff for this commit',
+  },
+  'history.diffError': {
+    zh: '获取提交差异发生异常',
+    en: 'An error occurred while fetching the commit diff',
+  },
   'history.footerHint': {
     zh: '提示：点击任意提交或按 Enter 可直接对比当前版本与该提交的文件 Diff',
     en: 'Tip: click a commit or press Enter to diff it against the working copy',
@@ -618,7 +666,10 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
     zh: '在上方输入要重构的需求，Composer 将跨越多个文件生成差异对比卡片',
     en: 'Describe the refactor above — Composer will produce diff cards across multiple files',
   },
-  'composer.openFileTitle': { zh: '点击在编辑器中打开此文件', en: 'Click to open this file in the editor' },
+  'composer.openFileTitle': {
+    zh: '点击在编辑器中打开此文件',
+    en: 'Click to open this file in the editor',
+  },
   'composer.accepted': { zh: '已采纳', en: 'Accepted' },
   'composer.rejected': { zh: '已放弃', en: 'Rejected' },
   'composer.accept': { zh: '采纳', en: 'Accept' },
@@ -632,7 +683,10 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
   'problems.filterError': { zh: '仅错误', en: 'Errors' },
   'problems.filterWarning': { zh: '仅警告', en: 'Warnings' },
   'problems.filterPh': { zh: '过滤消息或文件...', en: 'Filter messages or files...' },
-  'problems.diagnoseAllTitle': { zh: '一键让 AI 批量诊断修复', en: 'Ask AI to diagnose and fix everything' },
+  'problems.diagnoseAllTitle': {
+    zh: '一键让 AI 批量诊断修复',
+    en: 'Ask AI to diagnose and fix everything',
+  },
   'problems.refreshTitle': { zh: '刷新诊断结果', en: 'Refresh diagnostics' },
   'problems.allGood': {
     zh: '未发现任何错误或警告，代码运行良好！',
@@ -780,7 +834,10 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
   'browser.exitEsc': { zh: '退出 (Esc)', en: 'Exit (Esc)' },
 
   'browser.savePasswordTitle': { zh: '保存此网站的密码？', en: 'Save the password for this site?' },
-  'browser.updatePasswordTitle': { zh: '更新此网站的密码？', en: 'Update the password for this site?' },
+  'browser.updatePasswordTitle': {
+    zh: '更新此网站的密码？',
+    en: 'Update the password for this site?',
+  },
   'browser.closeTitle': { zh: '关闭', en: 'Close' },
   'browser.siteLabel': { zh: '站点：', en: 'Site:' },
   'browser.accountLabel': { zh: '用户名 / 账号', en: 'Username / account' },

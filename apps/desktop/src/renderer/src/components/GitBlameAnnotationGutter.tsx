@@ -16,12 +16,7 @@ interface Props {
   }) => void;
 }
 
-export function GitBlameAnnotationGutter({
-  filePath,
-  editor,
-  onClose,
-  onPreviewDiff,
-}: Props) {
+export function GitBlameAnnotationGutter({ filePath, editor, onClose, onPreviewDiff }: Props) {
   const { t } = useI18n();
   const [entries, setEntries] = useState<GitBlameEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +24,11 @@ export function GitBlameAnnotationGutter({
   const [scrollTop, setScrollTop] = useState(0);
   const [hoveredHash, setHoveredHash] = useState<string | null>(null);
   const [lineHeight, setLineHeight] = useState(19);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: GitBlameEntry } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    entry: GitBlameEntry;
+  } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -154,12 +153,22 @@ export function GitBlameAnnotationGutter({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#38bdf8' }}>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            style={{ color: '#38bdf8' }}
+          >
             <circle cx="12" cy="12" r="4" />
             <line x1="1.05" y1="12" x2="7" y2="12" />
             <line x1="17.01" y1="12" x2="22.96" y2="12" />
           </svg>
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text)' }}>
+          <span
+            style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text)' }}
+          >
             {t('git.blameTitle')}
           </span>
         </div>
@@ -232,7 +241,10 @@ export function GitBlameAnnotationGutter({
                       : isSameCommitAsPrev
                         ? 'transparent'
                         : 'rgba(255, 255, 255, 0.01)',
-                    borderTop: !isSameCommitAsPrev && lineNum > 1 ? '1px solid rgba(255, 255, 255, 0.04)' : 'none',
+                    borderTop:
+                      !isSameCommitAsPrev && lineNum > 1
+                        ? '1px solid rgba(255, 255, 255, 0.04)'
+                        : 'none',
                     color: isUncommitted ? 'var(--muted)' : 'var(--text)',
                     transition: 'background 0.08s ease',
                   }}
@@ -259,7 +271,15 @@ export function GitBlameAnnotationGutter({
                       : t('git.blameLineTipUncommitted', { line: lineNum })
                   }
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      minWidth: 0,
+                      overflow: 'hidden',
+                    }}
+                  >
                     {!isSameCommitAsPrev ? (
                       <>
                         <span

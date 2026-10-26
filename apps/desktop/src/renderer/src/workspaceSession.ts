@@ -87,8 +87,10 @@ export function saveWorkspaceOpenFiles(
     activeLine: activeLine != null && activeLine > 0 ? activeLine : undefined,
     activeCol: activeCol != null && activeCol > 0 ? activeCol : undefined,
     activeScrollTop: activeScrollTop != null && activeScrollTop >= 0 ? activeScrollTop : undefined,
-    activeScrollLeft: activeScrollLeft != null && activeScrollLeft >= 0 ? activeScrollLeft : undefined,
-    virtualTabs: virtualTabs && virtualTabs.length > 0 ? virtualTabs.map((v) => ({ ...v })) : undefined,
+    activeScrollLeft:
+      activeScrollLeft != null && activeScrollLeft >= 0 ? activeScrollLeft : undefined,
+    virtualTabs:
+      virtualTabs && virtualTabs.length > 0 ? virtualTabs.map((v) => ({ ...v })) : undefined,
     updatedAt: Date.now(),
   };
 

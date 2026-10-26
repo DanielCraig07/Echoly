@@ -5,7 +5,12 @@ import { isUntitledPath, untitledTabLabel } from '../src/renderer/src/utils';
 describe('Unsaved Changes & Close Confirmation Logic', () => {
   const sampleTabs: OpenTab[] = [
     { path: 'src/main.ts', content: 'console.log("hello");', language: 'typescript', dirty: false },
-    { path: 'src/app.tsx', content: 'export const App = () => <div>Dirty</div>;', language: 'typescriptreact', dirty: true },
+    {
+      path: 'src/app.tsx',
+      content: 'export const App = () => <div>Dirty</div>;',
+      language: 'typescriptreact',
+      dirty: true,
+    },
     { path: 'untitled:Untitled-1', content: '', language: 'plaintext', dirty: true }, // empty untitled
     { path: 'untitled:Untitled-2', content: 'some notes', language: 'plaintext', dirty: true }, // dirty untitled with content
     { path: 'README.md', content: '# Readme', language: 'markdown', dirty: false },
@@ -69,13 +74,7 @@ describe('Unsaved Changes & Close Confirmation Logic', () => {
     const nonDirtyToClose = others.filter((t) => !shouldPromptUnsaved(t));
     const dirtyToQueue = others.filter((t) => shouldPromptUnsaved(t));
 
-    expect(nonDirtyToClose.map((t) => t.path)).toEqual([
-      'untitled:Untitled-1',
-      'README.md',
-    ]);
-    expect(dirtyToQueue.map((t) => t.path)).toEqual([
-      'src/app.tsx',
-      'untitled:Untitled-2',
-    ]);
+    expect(nonDirtyToClose.map((t) => t.path)).toEqual(['untitled:Untitled-1', 'README.md']);
+    expect(dirtyToQueue.map((t) => t.path)).toEqual(['src/app.tsx', 'untitled:Untitled-2']);
   });
 });

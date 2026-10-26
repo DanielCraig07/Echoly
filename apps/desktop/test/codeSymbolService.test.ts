@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { extractCodeSymbols, findCurrentSymbol } from '../src/renderer/src/services/codeSymbolService';
+import {
+  extractCodeSymbols,
+  findCurrentSymbol,
+} from '../src/renderer/src/services/codeSymbolService';
 
 describe('codeSymbolService', () => {
   it('extracts TypeScript/JavaScript classes, functions, and interfaces', () => {

@@ -262,7 +262,9 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
     if (!isSemanticMode) return;
     void refreshIndexStatus();
     const off = window.ide.onCodebaseProgress?.((p) => {
-      setIndexStatus((prev) => (prev ? { ...prev, isIndexing: p.phase !== 'done', progress: p } : prev));
+      setIndexStatus((prev) =>
+        prev ? { ...prev, isIndexing: p.phase !== 'done', progress: p } : prev,
+      );
       if (p.phase === 'done') void refreshIndexStatus();
     });
     return () => off?.();
@@ -284,27 +286,47 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
   );
 
   // Perform real-time project-wide search
-  const performSearch = useCallback(async (q: string, caseSensitive: boolean) => {
-    if (!q.trim()) {
-      setRawHits([]);
-      setLoading(false);
-      return;
-    }
-    const currentSeq = ++seq.current;
-    setLoading(true);
+  const performSearch = useCallback(
+    async (q: string, caseSensitive: boolean) => {
+      if (!q.trim()) {
+        setRawHits([]);
+        setLoading(false);
+        return;
+      }
+      const currentSeq = ++seq.current;
+      setLoading(true);
 
-    // 自然语言 @codebase 语义搜索模式
-    if (q.startsWith('@codebase ') || isSemanticMode) {
+      // 自然语言 @codebase 语义搜索模式
+      if (q.startsWith('@codebase ') || isSemanticMode) {
+        try {
+          const cleanQuery = q.replace(/^@codebase\s*/, '').trim();
+          const hits = await window.ide.codebaseSearch(cleanQuery, 60);
+          if (currentSeq === seq.current) {
+            const transformed: SearchCodeHit[] = hits.map((h) => ({
+              path: h.filePath,
+              line: h.line,
+              preview: `[${h.kind}] ${h.name}${h.doc ? ` (${h.doc.split('\n')[0]})` : ''}: ${h.content.split('\n')[0]}`,
+            }));
+            setRawHits(transformed);
+            setLoading(false);
+          }
+        } catch {
+          if (currentSeq === seq.current) {
+            setRawHits([]);
+            setLoading(false);
+          }
+        }
+        return;
+      }
+
       try {
-        const cleanQuery = q.replace(/^@codebase\s*/, '').trim();
-        const hits = await window.ide.codebaseSearch(cleanQuery, 60);
+        const hits = await window.ide.searchCode({
+          query: q,
+          caseInsensitive: !caseSensitive,
+          max: 300,
+        });
         if (currentSeq === seq.current) {
-          const transformed: SearchCodeHit[] = hits.map((h) => ({
-            path: h.filePath,
-            line: h.line,
-            preview: `[${h.kind}] ${h.name}${h.doc ? ` (${h.doc.split('\n')[0]})` : ''}: ${h.content.split('\n')[0]}`,
-          }));
-          setRawHits(transformed);
+          setRawHits(hits);
           setLoading(false);
         }
       } catch {
@@ -313,26 +335,9 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           setLoading(false);
         }
       }
-      return;
-    }
-
-    try {
-      const hits = await window.ide.searchCode({
-        query: q,
-        caseInsensitive: !caseSensitive,
-        max: 300,
-      });
-      if (currentSeq === seq.current) {
-        setRawHits(hits);
-        setLoading(false);
-      }
-    } catch {
-      if (currentSeq === seq.current) {
-        setRawHits([]);
-        setLoading(false);
-      }
-    }
-  }, [isSemanticMode]);
+    },
+    [isSemanticMode],
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -826,7 +831,9 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
 
         {showDetails && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('search.filesToInclude')}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              {t('search.filesToInclude')}
+            </span>
             <input
               type="text"
               value={includesPattern}
@@ -834,7 +841,9 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               placeholder="e.g. *.ts, src/**"
               className="search-filter-input"
             />
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('search.filesToExclude')}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              {t('search.filesToExclude')}
+            </span>
             <input
               type="text"
               value={excludesPattern}
@@ -861,7 +870,12 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 return (
                   <span>
                     {p
-                      ? t('search.indexProgress', { scanned: p.scanned, total: p.total, pct, reused: p.reused })
+                      ? t('search.indexProgress', {
+                          scanned: p.scanned,
+                          total: p.total,
+                          pct,
+                          reused: p.reused,
+                        })
                       : t('search.indexing')}
                   </span>
                 );
@@ -870,7 +884,11 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 return (
                   <>
                     <span>{t('search.indexMissing')}</span>
-                    <button type="button" className="panel-action-btn" onClick={() => void buildIndex(false)}>
+                    <button
+                      type="button"
+                      className="panel-action-btn"
+                      onClick={() => void buildIndex(false)}
+                    >
                       {t('common.build')}
                     </button>
                   </>
@@ -880,7 +898,9 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 <>
                   <span>
                     {t('search.indexSummary', { files: s.indexedFiles, symbols: s.totalSymbols })}
-                    {s.lastIndexedTime ? ` · ${new Date(s.lastIndexedTime).toLocaleTimeString()}` : ''}
+                    {s.lastIndexedTime
+                      ? ` · ${new Date(s.lastIndexedTime).toLocaleTimeString()}`
+                      : ''}
                   </span>
                   <button
                     type="button"
@@ -896,10 +916,14 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           </div>
         )}
         {loading && (
-          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>{t('search.searching')}</div>
+          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>
+            {t('search.searching')}
+          </div>
         )}
         {!loading && query && groups.length === 0 && (
-          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>{t('search.noResults')}</div>
+          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>
+            {t('search.noResults')}
+          </div>
         )}
 
         {!loading && groups.length > 0 && (

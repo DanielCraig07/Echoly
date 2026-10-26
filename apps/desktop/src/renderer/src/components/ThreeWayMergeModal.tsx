@@ -22,7 +22,9 @@ export function ThreeWayMergeModal({
   const blocks = useMemo(() => parseConflictBlocks(initialContent), [initialContent]);
 
   // 每个冲突块的选择状态：'current' | 'incoming' | 'both' | 'base' | 'unresolved'
-  const [resolutions, setResolutions] = useState<Record<string, 'current' | 'incoming' | 'both' | 'base'>>(() => {
+  const [resolutions, setResolutions] = useState<
+    Record<string, 'current' | 'incoming' | 'both' | 'base'>
+  >(() => {
     const init: Record<string, 'current' | 'incoming' | 'both' | 'base'> = {};
     return init;
   });
@@ -81,22 +83,28 @@ export function ThreeWayMergeModal({
   const resolvedCount = Object.keys(resolutions).length;
   const totalCount = blocks.length;
 
-  const handleResolve = useCallback((blockId: string, choice: 'current' | 'incoming' | 'both' | 'base') => {
-    setResolutions((prev) => ({
-      ...prev,
-      [blockId]: choice,
-    }));
-    setCustomResultText(null);
-  }, []);
+  const handleResolve = useCallback(
+    (blockId: string, choice: 'current' | 'incoming' | 'both' | 'base') => {
+      setResolutions((prev) => ({
+        ...prev,
+        [blockId]: choice,
+      }));
+      setCustomResultText(null);
+    },
+    [],
+  );
 
-  const handleBatchResolve = useCallback((choice: 'current' | 'incoming' | 'both') => {
-    const next: Record<string, 'current' | 'incoming' | 'both' | 'base'> = {};
-    for (const b of blocks) {
-      next[b.id] = choice;
-    }
-    setResolutions(next);
-    setCustomResultText(null);
-  }, [blocks]);
+  const handleBatchResolve = useCallback(
+    (choice: 'current' | 'incoming' | 'both') => {
+      const next: Record<string, 'current' | 'incoming' | 'both' | 'base'> = {};
+      for (const b of blocks) {
+        next[b.id] = choice;
+      }
+      setResolutions(next);
+      setCustomResultText(null);
+    },
+    [blocks],
+  );
 
   const handleSave = () => {
     onSave(finalResultText);
@@ -150,10 +158,25 @@ export function ThreeWayMergeModal({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text)' }}>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '0.05em',
+                color: 'var(--text)',
+              }}
+            >
               {t('merge.title')}
             </span>
-            <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg-tertiary, #222)', padding: '1px 6px', borderRadius: 4 }}>
+            <span
+              style={{
+                fontSize: 11,
+                color: 'var(--muted)',
+                background: 'var(--bg-tertiary, #222)',
+                padding: '1px 6px',
+                borderRadius: 4,
+              }}
+            >
               {fileName}
             </span>
             <span
@@ -161,7 +184,10 @@ export function ThreeWayMergeModal({
                 fontSize: 11,
                 padding: '1px 6px',
                 borderRadius: 4,
-                background: resolvedCount === totalCount ? 'rgba(52, 211, 153, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                background:
+                  resolvedCount === totalCount
+                    ? 'rgba(52, 211, 153, 0.2)'
+                    : 'rgba(245, 158, 11, 0.2)',
                 color: resolvedCount === totalCount ? '#34d399' : '#f59e0b',
                 fontWeight: 600,
               }}
@@ -203,7 +229,14 @@ export function ThreeWayMergeModal({
               disabled={activeBlockIndex <= 0}
               onClick={() => setActiveBlockIndex((i) => Math.max(0, i - 1))}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polyline points="18 15 12 9 6 15" />
               </svg>
             </button>
@@ -214,7 +247,14 @@ export function ThreeWayMergeModal({
               disabled={activeBlockIndex >= blocks.length - 1}
               onClick={() => setActiveBlockIndex((i) => Math.min(blocks.length - 1, i + 1))}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>
@@ -224,7 +264,15 @@ export function ThreeWayMergeModal({
               title={t('merge.closeTitle')}
               onClick={onClose}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -233,9 +281,24 @@ export function ThreeWayMergeModal({
         </div>
 
         {/* ── 上半区：Current (当前) | Base (基础) | Incoming (传入) 三栏对比 ── */}
-        <div style={{ flex: 1, display: 'flex', borderBottom: '1px solid var(--border)', overflow: 'hidden' }}>
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            borderBottom: '1px solid var(--border)',
+            overflow: 'hidden',
+          }}
+        >
           {/* 左栏：Current / Ours */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)', overflow: 'hidden' }}>
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              borderRight: '1px solid var(--border)',
+              overflow: 'hidden',
+            }}
+          >
             <div
               style={{
                 height: 28,
@@ -281,7 +344,15 @@ export function ThreeWayMergeModal({
           </div>
 
           {/* 中栏：Base (共同基底) */}
-          <div style={{ flex: 0.9, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border)', overflow: 'hidden' }}>
+          <div
+            style={{
+              flex: 0.9,
+              display: 'flex',
+              flexDirection: 'column',
+              borderRight: '1px solid var(--border)',
+              overflow: 'hidden',
+            }}
+          >
             <div
               style={{
                 height: 28,
@@ -388,23 +459,30 @@ export function ThreeWayMergeModal({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontWeight: 700, color: 'var(--text)' }}>{t('merge.resultTitle')}</span>
+              <span style={{ fontWeight: 700, color: 'var(--text)' }}>
+                {t('merge.resultTitle')}
+              </span>
               <span style={{ color: 'var(--muted)', fontSize: 10 }}>{t('merge.resultHint')}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {currentBlock && (
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                   {t('merge.currentChoice', { index: activeBlockIndex + 1, total: totalCount })}
-                  <strong style={{ color: resolutions[currentBlock.id] ? '#34d399' : '#f59e0b', marginLeft: 4 }}>
+                  <strong
+                    style={{
+                      color: resolutions[currentBlock.id] ? '#34d399' : '#f59e0b',
+                      marginLeft: 4,
+                    }}
+                  >
                     {resolutions[currentBlock.id] === 'current'
                       ? t('merge.choiceCurrent')
                       : resolutions[currentBlock.id] === 'incoming'
-                      ? t('merge.choiceIncoming')
-                      : resolutions[currentBlock.id] === 'both'
-                      ? t('merge.choiceBoth')
-                      : resolutions[currentBlock.id] === 'base'
-                      ? t('merge.choiceBase')
-                      : t('merge.choiceUnresolved')}
+                        ? t('merge.choiceIncoming')
+                        : resolutions[currentBlock.id] === 'both'
+                          ? t('merge.choiceBoth')
+                          : resolutions[currentBlock.id] === 'base'
+                            ? t('merge.choiceBase')
+                            : t('merge.choiceUnresolved')}
                   </strong>
                 </span>
               )}
@@ -457,7 +535,13 @@ export function ThreeWayMergeModal({
               type="button"
               className="btn btn-primary"
               onClick={handleSave}
-              style={{ padding: '4px 16px', fontSize: 12, background: 'var(--accent, #6366f1)', color: '#fff', fontWeight: 600 }}
+              style={{
+                padding: '4px 16px',
+                fontSize: 12,
+                background: 'var(--accent, #6366f1)',
+                color: '#fff',
+                fontWeight: 600,
+              }}
             >
               {t('merge.saveAndFinish')}
             </button>

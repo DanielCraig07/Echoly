@@ -20,7 +20,11 @@ import {
   sortDirectionOf,
 } from '../src/renderer/src/services/dbTableQuery';
 
-function col(name: string, type: string, extra: Partial<DatabaseColumnMeta> = {}): DatabaseColumnMeta {
+function col(
+  name: string,
+  type: string,
+  extra: Partial<DatabaseColumnMeta> = {},
+): DatabaseColumnMeta {
   return { cid: 0, name, type, notnull: false, dflt_value: null, pk: false, ...extra };
 }
 
@@ -47,33 +51,45 @@ describe('escapeLikeValue / likeEscapeClause', () => {
 
 describe('buildFilterClause · 单条件', () => {
   it('列名为空视为未完成的条件，返回 null', () => {
-    expect(buildFilterClause('sqlite', columns, { column: '', operator: 'eq', value: 1 })).toBeNull();
+    expect(
+      buildFilterClause('sqlite', columns, { column: '', operator: 'eq', value: 1 }),
+    ).toBeNull();
   });
 
   it('等值：数值列裸写数字，文本列加引号', () => {
     expect(buildFilterClause('sqlite', columns, { column: 'age', operator: 'eq', value: 18 })).toBe(
       '"age" = 18',
     );
-    expect(buildFilterClause('sqlite', columns, { column: 'name', operator: 'eq', value: 'alice' })).toBe(
-      "\"name\" = 'alice'",
-    );
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'name', operator: 'eq', value: 'alice' }),
+    ).toBe('"name" = \'alice\'');
   });
 
   it('等值到 NULL 会退化成 IS NULL（`= NULL` 永远不成立）', () => {
-    expect(buildFilterClause('sqlite', columns, { column: 'age', operator: 'eq', value: null })).toBe(
-      '"age" IS NULL',
-    );
-    expect(buildFilterClause('sqlite', columns, { column: 'age', operator: 'ne', value: null })).toBe(
-      '"age" IS NOT NULL',
-    );
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'age', operator: 'eq', value: null }),
+    ).toBe('"age" IS NULL');
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'age', operator: 'ne', value: null }),
+    ).toBe('"age" IS NOT NULL');
   });
 
   it('不等用 <>，比较运算符按序映射', () => {
-    expect(buildFilterClause('sqlite', columns, { column: 'age', operator: 'ne', value: 1 })).toContain('<> 1');
-    expect(buildFilterClause('sqlite', columns, { column: 'age', operator: 'gt', value: 1 })).toContain('> 1');
-    expect(buildFilterClause('sqlite', columns, { column: 'age', operator: 'gte', value: 1 })).toContain('>= 1');
-    expect(buildFilterClause('sqlite', columns, { column: 'age', operator: 'lt', value: 1 })).toContain('< 1');
-    expect(buildFilterClause('sqlite', columns, { column: 'age', operator: 'lte', value: 1 })).toContain('<= 1');
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'age', operator: 'ne', value: 1 }),
+    ).toContain('<> 1');
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'age', operator: 'gt', value: 1 }),
+    ).toContain('> 1');
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'age', operator: 'gte', value: 1 }),
+    ).toContain('>= 1');
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'age', operator: 'lt', value: 1 }),
+    ).toContain('< 1');
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'age', operator: 'lte', value: 1 }),
+    ).toContain('<= 1');
   });
 
   it('isNull / isNotNull 不取值，也不需要 value', () => {
@@ -88,31 +104,37 @@ describe('buildFilterClause · 单条件', () => {
   });
 
   it('LIKE 系列：三种模式串形态 + 元字符转义', () => {
-    expect(buildFilterClause('sqlite', columns, { column: 'name', operator: 'contains', value: 'li' })).toBe(
-      "\"name\" LIKE '%li%' ESCAPE '\\'",
-    );
-    expect(buildFilterClause('sqlite', columns, { column: 'name', operator: 'startsWith', value: 'li' })).toBe(
-      "\"name\" LIKE 'li%' ESCAPE '\\'",
-    );
-    expect(buildFilterClause('sqlite', columns, { column: 'name', operator: 'endsWith', value: 'li' })).toBe(
-      "\"name\" LIKE '%li' ESCAPE '\\'",
-    );
-    expect(buildFilterClause('sqlite', columns, { column: 'name', operator: 'notContains', value: 'li' })).toBe(
-      "\"name\" NOT LIKE '%li%' ESCAPE '\\'",
-    );
-    expect(buildFilterClause('sqlite', columns, { column: 'name', operator: 'contains', value: '100%' })).toBe(
-      "\"name\" LIKE '%100\\%%' ESCAPE '\\'",
-    );
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'name', operator: 'contains', value: 'li' }),
+    ).toBe("\"name\" LIKE '%li%' ESCAPE '\\'");
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'name', operator: 'startsWith', value: 'li' }),
+    ).toBe("\"name\" LIKE 'li%' ESCAPE '\\'");
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'name', operator: 'endsWith', value: 'li' }),
+    ).toBe("\"name\" LIKE '%li' ESCAPE '\\'");
+    expect(
+      buildFilterClause('sqlite', columns, {
+        column: 'name',
+        operator: 'notContains',
+        value: 'li',
+      }),
+    ).toBe("\"name\" NOT LIKE '%li%' ESCAPE '\\'");
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'name', operator: 'contains', value: '100%' }),
+    ).toBe("\"name\" LIKE '%100\\%%' ESCAPE '\\'");
   });
 
   it('MySQL 的 LIKE 用驱动专属 ESCAPE 写法，且字符串按字面量转义', () => {
-    expect(buildFilterClause('mysql', columns, { column: 'name', operator: 'contains', value: "O'B" })).toBe(
-      "`name` LIKE '%O''B%' ESCAPE '\\\\'",
-    );
+    expect(
+      buildFilterClause('mysql', columns, { column: 'name', operator: 'contains', value: "O'B" }),
+    ).toBe("`name` LIKE '%O''B%' ESCAPE '\\\\'");
   });
 
   it('value 为 undefined（还没填）时返回 null，不生成残缺条件', () => {
-    expect(buildFilterClause('sqlite', columns, { column: 'name', operator: 'contains' })).toBeNull();
+    expect(
+      buildFilterClause('sqlite', columns, { column: 'name', operator: 'contains' }),
+    ).toBeNull();
   });
 });
 
@@ -124,7 +146,9 @@ describe('buildWhereClause / buildOrderByClause', () => {
     ]);
     expect(where).toBe('WHERE "age" > 18 AND "name" LIKE \'%a%\' ESCAPE \'\\\'');
     expect(buildWhereClause('sqlite', columns, [])).toBe('');
-    expect(buildWhereClause('sqlite', columns, [{ column: '', operator: 'eq', value: 1 }])).toBe('');
+    expect(buildWhereClause('sqlite', columns, [{ column: '', operator: 'eq', value: 1 }])).toBe(
+      '',
+    );
   });
 
   it('ORDER BY 按排序栈生成，末尾自动补主键升序做 tiebreak', () => {
@@ -200,10 +224,12 @@ describe('isEmptyViewState · 判断是否还是「未筛选」状态', () => {
     expect(isEmptyViewState(undefined)).toBe(true);
     expect(isEmptyViewState(EMPTY_VIEW_STATE)).toBe(true);
     expect(isEmptyViewState({ filters: [{ column: '', operator: 'eq' }], sorts: [] })).toBe(true);
-    expect(isEmptyViewState({ filters: [{ column: 'age', operator: 'eq', value: 1 }], sorts: [] })).toBe(
+    expect(
+      isEmptyViewState({ filters: [{ column: 'age', operator: 'eq', value: 1 }], sorts: [] }),
+    ).toBe(false);
+    expect(isEmptyViewState({ filters: [], sorts: [{ column: 'age', direction: 'asc' }] })).toBe(
       false,
     );
-    expect(isEmptyViewState({ filters: [], sorts: [{ column: 'age', direction: 'asc' }] })).toBe(false);
   });
 });
 
@@ -259,7 +285,9 @@ describe('排序推进与描述文案', () => {
     const sorts = [{ column: 'age', direction: 'asc' as const }];
     expect(nextSortState(sorts, 'age', false, 'asc')).toEqual([]);
     // 换一个方向则是正常切换，不是取消
-    expect(nextSortState(sorts, 'age', false, 'desc')).toEqual([{ column: 'age', direction: 'desc' }]);
+    expect(nextSortState(sorts, 'age', false, 'desc')).toEqual([
+      { column: 'age', direction: 'desc' },
+    ]);
   });
 
   it('显式方向下取消某列时，其他列的排序保留（多列排序靠菜单逐列取消）', () => {
@@ -268,7 +296,9 @@ describe('排序推进与描述文案', () => {
       { column: 'name', direction: 'desc' as const },
     ];
     // append 为真（列头 Cmd/Ctrl+点击的语义）时，只摘掉 age，name 的排序不受影响
-    expect(nextSortState(sorts, 'age', true, 'asc')).toEqual([{ column: 'name', direction: 'desc' }]);
+    expect(nextSortState(sorts, 'age', true, 'asc')).toEqual([
+      { column: 'name', direction: 'desc' },
+    ]);
   });
 });
 
@@ -281,9 +311,11 @@ describe('筛选 chip 的可读文案（已搬进 i18nParts/db）', () => {
     expect(dbDescribeFilter(zhT, { column: 'age', operator: 'gt', value: 18 }, 'INT')).toBe(
       'age 大于 18',
     );
-    expect(dbDescribeFilter(zhT, { column: 'name', operator: 'contains', value: '张' }, 'VARCHAR(10)')).toBe(
-      'name 包含 "张"',
+    expect(
+      dbDescribeFilter(zhT, { column: 'name', operator: 'contains', value: '张' }, 'VARCHAR(10)'),
+    ).toBe('name 包含 "张"');
+    expect(dbDescribeFilter(zhT, { column: 'age', operator: 'eq', value: null })).toBe(
+      'age 等于 NULL',
     );
-    expect(dbDescribeFilter(zhT, { column: 'age', operator: 'eq', value: null })).toBe('age 等于 NULL');
   });
 });

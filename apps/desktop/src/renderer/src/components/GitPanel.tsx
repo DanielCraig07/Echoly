@@ -25,6 +25,14 @@ import {
   GitOutputModal,
 } from './GitPanelModals';
 import { BranchDiffModal } from './BranchDiffModal';
+import { GitGraphRowSvg, GitGraphExpandSvg } from './GitGraphRow';
+import {
+  analyzeGitGraph,
+  buildGitTree,
+  collectFolderFiles,
+  statusLabel,
+  type GitTreeNode,
+} from '../services/gitGraph';
 import { useI18n } from '../i18n';
 
 interface Props {
@@ -45,111 +53,6 @@ interface Props {
     detail?: string,
     type?: 'success' | 'error' | 'info' | 'warn',
   ) => void;
-}
-
-function statusLabel(entry: GitStatusEntry): string {
-  if (entry.untracked) return 'U';
-  if (entry.staged) return entry.index.trim() || 'S';
-  return entry.workTree.trim() || 'M';
-}
-
-interface GitTreeNode {
-  name: string;
-  path: string;
-  isDirectory: boolean;
-  entry?: GitStatusEntry;
-  children: GitTreeNode[];
-}
-
-function buildGitTree(entries: GitStatusEntry[]): GitTreeNode[] {
-  const rootNodes: GitTreeNode[] = [];
-  const map = new Map<string, GitTreeNode>();
-
-  for (const entry of entries) {
-    const parts = entry.path.split('/');
-    let currentPath = '';
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      currentPath = currentPath ? `${currentPath}/${part}` : part;
-
-      if (!map.has(currentPath)) {
-        const node: GitTreeNode = {
-          name: part,
-          path: currentPath,
-          isDirectory: !isLast,
-          entry: isLast ? entry : undefined,
-          children: [],
-        };
-        map.set(currentPath, node);
-
-        if (i === 0) {
-          rootNodes.push(node);
-        } else {
-          const parentPath = parts.slice(0, i).join('/');
-          const parentNode = map.get(parentPath);
-          if (parentNode) {
-            parentNode.children.push(node);
-          }
-        }
-      }
-    }
-  }
-
-  // 排序：文件夹在前，文件在后，按字母序排列
-  const sortNodes = (nodes: GitTreeNode[]) => {
-    nodes.sort((a, b) => {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-      return a.name.localeCompare(b.name);
-    });
-    for (const n of nodes) {
-      if (n.isDirectory && n.children.length > 0) {
-        sortNodes(n.children);
-      }
-    }
-  };
-  sortNodes(rootNodes);
-
-  // 紧凑目录合并（Compact Folders，如 VS Code）：当目录只有一个子目录且无同级文件时，合并层级为 a / b / c
-  const compactNodes = (nodes: GitTreeNode[]): GitTreeNode[] => {
-    return nodes.map((node) => {
-      if (!node.isDirectory) return node;
-
-      const compactedChildren = compactNodes(node.children);
-      let cur: GitTreeNode = { ...node, children: compactedChildren };
-
-      while (cur.isDirectory && cur.children.length === 1 && cur.children[0].isDirectory) {
-        const onlyChild = cur.children[0];
-        cur = {
-          name: `${cur.name} / ${onlyChild.name}`,
-          path: onlyChild.path,
-          isDirectory: true,
-          entry: undefined,
-          children: onlyChild.children,
-        };
-      }
-
-      return cur;
-    });
-  };
-
-  return compactNodes(rootNodes);
-}
-
-function collectFolderFiles(node: GitTreeNode): string[] {
-  const result: string[] = [];
-  function traverse(n: GitTreeNode) {
-    if (n.entry) {
-      result.push(n.entry.path);
-    }
-    if (n.children) {
-      for (const c of n.children) traverse(c);
-    }
-  }
-  traverse(node);
-  return result;
 }
 
 function GitTreeItemView({
@@ -182,6 +85,14 @@ function GitTreeItemView({
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
   const [isFolderHovered, setIsFolderHovered] = useState(false);
+  /**
+   * 文件节点的悬停态。**必须和上面两个 state 放在一起**：下面 `if (node.isDirectory)`
+   * 那条分支会提前 return，把这个 `useState` 留在它后面的话，「目录节点 → 同位置换成
+   * 文件节点」这一刻 hook 数量会变，React 抛
+   * `Rendered more hooks than during the previous render` 把整个 Git 面板打成错误页。
+   * 目录分支用不到它 —— 一个恒为 false 的 state 不值得为它冒渲染崩溃的险。
+   */
+  const [isHovered, setIsHovered] = useState(false);
 
   if (node.isDirectory) {
     const isFolderSelected = selectedPath === node.path;
@@ -336,7 +247,6 @@ function GitTreeItemView({
   if (!f) return null;
 
   const isSelected = selectedPath === f.path;
-  const [isHovered, setIsHovered] = useState(false);
 
   return (
     <div
@@ -704,369 +614,6 @@ function GitFileListItemView({
   );
 }
 
-const GRAPH_BRANCH_COLORS = [
-  '#f57c00', // Orange (lane 0 - main track)
-  '#00bcd4', // Cyan / Teal (lane 1 - feature branch)
-  '#ab47bc', // Purple (lane 2 - secondary branch)
-  '#42a5f5', // Sky Blue (lane 3)
-  '#66bb6a', // Emerald Green (lane 4)
-  '#ffa726', // Amber (lane 5)
-  '#e91e63', // Magenta / Pink (lane 6)
-];
-
-interface GraphEdge {
-  childRow: number;
-  childLane: number;
-  parentRow: number;
-  parentLane: number;
-  isPrimary: boolean;
-  isDashed: boolean;
-  color: string;
-}
-
-interface GraphAnalysis {
-  commitLanes: Map<string, number>;
-  edges: GraphEdge[];
-  maxLane: number;
-}
-
-function analyzeGitGraph(commits: GitCommitEntry[]): GraphAnalysis {
-  const commitIndices = new Map<string, number>();
-  commits.forEach((c, idx) => commitIndices.set(c.hash, idx));
-
-  const lanes: (string | null)[] = [];
-  const commitLanes = new Map<string, number>();
-
-  for (let r = 0; r < commits.length; r++) {
-    const c = commits[r];
-    let lane = lanes.indexOf(c.hash);
-    if (lane === -1) {
-      lane = lanes.indexOf(null);
-      if (lane === -1) {
-        lane = lanes.length;
-        lanes.push(c.hash);
-      } else {
-        lanes[lane] = c.hash;
-      }
-    }
-    commitLanes.set(c.hash, lane);
-
-    const parents = c.parents || [];
-    if (parents.length === 0) {
-      lanes[lane] = null;
-    } else if (parents.length === 1) {
-      const p = parents[0];
-      if (lanes.includes(p)) {
-        lanes[lane] = null;
-      } else {
-        lanes[lane] = p;
-      }
-    } else {
-      lanes[lane] = parents[0];
-      for (let i = 1; i < parents.length; i++) {
-        const p = parents[i];
-        if (!lanes.includes(p)) {
-          const empty = lanes.indexOf(null);
-          if (empty === -1) {
-            lanes.push(p);
-          } else {
-            lanes[empty] = p;
-          }
-        }
-      }
-    }
-  }
-
-  // 识别属于被合并分支（Merge commit 的次级父提交及其专属祖先提交集合）
-  const dashedCommits = new Set<string>();
-  for (let r = 0; r < commits.length; r++) {
-    const c = commits[r];
-    const parents = c.parents || [];
-    if (parents.length >= 2) {
-      for (let i = 1; i < parents.length; i++) {
-        dashedCommits.add(parents[i]);
-      }
-    }
-  }
-
-  // 向下传播虚线状态（若提交属于被合并支线且其父提交单一，向下延续虚线轨道）
-  for (let r = 0; r < commits.length; r++) {
-    const c = commits[r];
-    if (dashedCommits.has(c.hash)) {
-      const parents = c.parents || [];
-      if (parents.length === 1) {
-        dashedCommits.add(parents[0]);
-      }
-    }
-  }
-
-  const edges: GraphEdge[] = [];
-  for (let r = 0; r < commits.length; r++) {
-    const c = commits[r];
-    const cLane = commitLanes.get(c.hash) ?? 0;
-    const parents = c.parents || [];
-    const isChildDashed = dashedCommits.has(c.hash);
-
-    parents.forEach((pHash, pIdx) => {
-      const pRow = commitIndices.get(pHash);
-      if (pRow !== undefined && pRow > r) {
-        const pLane = commitLanes.get(pHash) ?? cLane;
-        // 如果是合并提交的次级父提交，或是被合并分支上的提交连线，呈现为虚线（如参考截图左下轨道）
-        const isDashed = pIdx > 0 || isChildDashed;
-        edges.push({
-          childRow: r,
-          childLane: cLane,
-          parentRow: pRow,
-          parentLane: pLane,
-          isPrimary: pIdx === 0,
-          isDashed,
-          color: GRAPH_BRANCH_COLORS[(pIdx === 0 ? cLane : pLane) % GRAPH_BRANCH_COLORS.length],
-        });
-      }
-    });
-  }
-
-  const maxLane = Math.max(0, ...Array.from(commitLanes.values()));
-  return { commitLanes, edges, maxLane };
-}
-
-function GitGraphRowSvg({
-  rowIndex,
-  commit,
-  analysis,
-  totalRowHeight,
-  isSelected,
-}: {
-  rowIndex: number;
-  commit: GitCommitEntry;
-  analysis: GraphAnalysis;
-  totalRowHeight: number;
-  isSelected?: boolean;
-}) {
-  const { commitLanes, edges } = analysis;
-  const cLane = commitLanes.get(commit.hash) ?? 0;
-  const cColor = GRAPH_BRANCH_COLORS[cLane % GRAPH_BRANCH_COLORS.length];
-  const LANE_WIDTH = 12;
-  const X_OFFSET = 10;
-  const Y_MID = 13;
-  const cx = X_OFFSET + cLane * LANE_WIDTH;
-  const isMerge = (commit.parents?.length || 0) >= 2;
-
-  const paths: React.ReactNode[] = [];
-
-  // 计算当前行真正涉及的最大轨道编号（包括节点自身轨道，以及当前行所有连线的起点和终点轨道）
-  let rowMaxLane = cLane;
-
-  for (let i = 0; i < edges.length; i++) {
-    const e = edges[i];
-    if (e.childRow <= rowIndex && rowIndex <= e.parentRow) {
-      rowMaxLane = Math.max(rowMaxLane, e.parentLane);
-      if (rowIndex === e.childRow) {
-        rowMaxLane = Math.max(rowMaxLane, e.childLane);
-      }
-
-      const childX = X_OFFSET + e.childLane * LANE_WIDTH;
-      const parentX = X_OFFSET + e.parentLane * LANE_WIDTH;
-      const dash = e.isDashed ? '4 3' : undefined;
-
-      if (rowIndex === e.childRow) {
-        if (e.childLane === e.parentLane) {
-          paths.push(
-            <line
-              key={`c-${i}`}
-              x1={childX}
-              y1={Y_MID}
-              x2={childX}
-              y2={totalRowHeight}
-              stroke={e.color}
-              strokeWidth={2}
-              strokeDasharray={dash}
-            />,
-          );
-        } else {
-          // 分支拐弯：从 child 节点水平向右弯折，以顺滑 90 度圆弧过渡进入目标轨道 parentLane（对齐参考截图）
-          const cpx1 = childX + (parentX - childX) * 0.7;
-          const cpy1 = Y_MID;
-          const cpx2 = parentX;
-          const cpy2 = Y_MID + (totalRowHeight - Y_MID) * 0.3;
-          paths.push(
-            <path
-              key={`c-${i}`}
-              d={`M ${childX} ${Y_MID} C ${cpx1} ${cpy1}, ${cpx2} ${cpy2}, ${parentX} ${totalRowHeight}`}
-              fill="none"
-              stroke={e.color}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeDasharray={dash}
-            />,
-          );
-        }
-      } else if (rowIndex === e.parentRow) {
-        if (e.childLane === e.parentLane) {
-          paths.push(
-            <line
-              key={`p-${i}`}
-              x1={parentX}
-              y1={0}
-              x2={parentX}
-              y2={Y_MID}
-              stroke={e.color}
-              strokeWidth={2}
-              strokeDasharray={dash}
-            />,
-          );
-        } else if (e.parentRow === e.childRow + 1) {
-          paths.push(
-            <line
-              key={`p-${i}`}
-              x1={parentX}
-              y1={0}
-              x2={parentX}
-              y2={Y_MID}
-              stroke={e.color}
-              strokeWidth={2}
-              strokeDasharray={dash}
-            />,
-          );
-        } else {
-          paths.push(
-            <line
-              key={`p-${i}`}
-              x1={parentX}
-              y1={0}
-              x2={parentX}
-              y2={Y_MID}
-              stroke={e.color}
-              strokeWidth={2}
-              strokeDasharray={dash}
-            />,
-          );
-        }
-      } else {
-        // 中间行垂直向下延续轨道
-        paths.push(
-          <line
-            key={`m-${i}`}
-            x1={parentX}
-            y1={0}
-            x2={parentX}
-            y2={totalRowHeight}
-            stroke={e.color}
-            strokeWidth={2}
-            strokeDasharray={dash}
-          />,
-        );
-      }
-    }
-  }
-
-  // 紧凑自适应宽度：由当前行实际涉及的最大轨道决定，消除右侧无效空白，使提交说明紧贴分支轨道
-  const svgWidth = X_OFFSET + rowMaxLane * LANE_WIDTH + 8;
-
-  return (
-    <svg
-      width={svgWidth}
-      height={totalRowHeight}
-      style={{ overflow: 'visible', display: 'block', flexShrink: 0 }}
-    >
-      {paths}
-      {isMerge ? (
-        <g>
-          <circle
-            cx={cx}
-            cy={Y_MID}
-            r={5}
-            fill="var(--bg-panel, #181818)"
-            stroke={cColor}
-            strokeWidth={1.8}
-          />
-          <circle cx={cx} cy={Y_MID} r={2} fill={cColor} />
-          {isSelected && (
-            <circle
-              cx={cx}
-              cy={Y_MID}
-              r={7.5}
-              fill="none"
-              stroke={cColor}
-              strokeWidth={1.2}
-              strokeDasharray="2 2"
-              opacity={0.85}
-            />
-          )}
-        </g>
-      ) : (
-        <g>
-          <circle
-            cx={cx}
-            cy={Y_MID}
-            r={4}
-            fill={cColor}
-            stroke="var(--bg-panel, #181818)"
-            strokeWidth={1.5}
-          />
-          {isSelected && (
-            <circle
-              cx={cx}
-              cy={Y_MID}
-              r={7}
-              fill="none"
-              stroke={cColor}
-              strokeWidth={1.2}
-              strokeDasharray="2 2"
-              opacity={0.85}
-            />
-          )}
-        </g>
-      )}
-    </svg>
-  );
-}
-
-function GitGraphExpandSvg({ rowIndex, analysis }: { rowIndex: number; analysis: GraphAnalysis }) {
-  const { edges } = analysis;
-  const LANE_WIDTH = 12;
-  const X_OFFSET = 10;
-
-  // Active passing edges connecting through between rowIndex and rowIndex + 1
-  const passingEdges = edges.filter((e) => e.childRow <= rowIndex && rowIndex < e.parentRow);
-  const maxActiveLane =
-    passingEdges.length > 0 ? Math.max(...passingEdges.map((e) => e.parentLane)) : 0;
-  const svgWidth = X_OFFSET + maxActiveLane * LANE_WIDTH + 8;
-
-  return (
-    <div style={{ width: svgWidth, flexShrink: 0, position: 'relative', display: 'flex' }}>
-      <svg
-        width={svgWidth}
-        style={{
-          width: svgWidth,
-          height: '100%',
-          display: 'block',
-          overflow: 'visible',
-        }}
-        viewBox={`0 0 ${svgWidth} 100`}
-        preserveAspectRatio="none"
-      >
-        {passingEdges.map((e, idx) => {
-          const x = X_OFFSET + e.parentLane * LANE_WIDTH;
-          return (
-            <line
-              key={`exp-${idx}-${x}`}
-              x1={x}
-              y1={0}
-              x2={x}
-              y2={100}
-              vectorEffect="non-scaling-stroke"
-              stroke={e.color}
-              strokeWidth={2}
-              strokeDasharray={e.isDashed ? '4 3' : undefined}
-            />
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
 interface GitContextMenuState {
   x: number;
   y: number;
@@ -1168,15 +715,16 @@ function GitFileContextMenu({
     return (
       <div className="ctx-menu" ref={ref} role="menu">
         {item(t('git.discardFolderAllChanges'), () => onDiscardFolder?.(folderFiles), true)}
-        {item(
-          staged ? t('git.unstageFolderChanges') : t('git.stageFolderChanges'),
-          () => onToggleStageFolder?.(folderFiles, staged),
+        {item(staged ? t('git.unstageFolderChanges') : t('git.stageFolderChanges'), () =>
+          onToggleStageFolder?.(folderFiles, staged),
         )}
         {item(t('git.addToGitignore'), () =>
           onAddToGitignore(folderNode.path.endsWith('/') ? folderNode.path : `${folderNode.path}/`),
         )}
         {sep('fs1')}
-        {item(isMac ? t('tree.revealInFinder') : t('tree.revealInExplorer'), () => onShowInFolder(folderNode.path))}
+        {item(isMac ? t('tree.revealInFinder') : t('tree.revealInExplorer'), () =>
+          onShowInFolder(folderNode.path),
+        )}
         {item(t('git.revealInExplorerView'), () => onRevealInExplorer(folderNode.path))}
       </div>
     );
@@ -1191,10 +739,14 @@ function GitFileContextMenu({
       {item(t('git.openFileHead'), () => onOpenHeadFile(entry.path))}
       {sep('s1')}
       {item(t('git.discardChanges'), () => onDiscard(entry.path), true)}
-      {item(staged ? t('git.unstageChanges') : t('git.stageChanges'), () => onToggleStage(entry, staged))}
+      {item(staged ? t('git.unstageChanges') : t('git.stageChanges'), () =>
+        onToggleStage(entry, staged),
+      )}
       {item(t('git.addToGitignore'), () => onAddToGitignore(entry.path))}
       {sep('s2')}
-      {item(isMac ? t('tree.revealInFinder') : t('tree.revealInExplorer'), () => onShowInFolder(entry.path))}
+      {item(isMac ? t('tree.revealInFinder') : t('tree.revealInExplorer'), () =>
+        onShowInFolder(entry.path),
+      )}
       {item(t('git.revealInExplorerView'), () => onRevealInExplorer(entry.path))}
       {sep('s3')}
       {item(t('git.compareRevisionMenu'), () => onCompareWithRevision?.(entry.path))}
@@ -1279,7 +831,8 @@ export function GitPanel({
   const [isGraphCollapsed, setIsGraphCollapsed] = useState(false);
   const [fileContextMenu, setFileContextMenu] = useState<GitContextMenuState | null>(null);
   const isMac = useMemo(
-    () => typeof navigator !== 'undefined' && /mac/i.test(navigator.userAgent || navigator.platform),
+    () =>
+      typeof navigator !== 'undefined' && /mac/i.test(navigator.userAgent || navigator.platform),
     [],
   );
 
@@ -1371,7 +924,33 @@ export function GitPanel({
       }
 
       // 2. Commit message
-      const msg = message.trim() || prompt(t('git.commitPrompt')) || 'Update';
+      //
+      // 输入框里已经写了信息就直接用；没写才弹窗追问 —— 走应用内弹窗而不是 `window.prompt`：
+      // Electron 里 `window.prompt` 被禁用，项目里的兜底实现直接返回默认值（空串），
+      // 于是「提交」会用一个空信息提交成功，看起来一切正常但提交记录是空的。
+      let msg = message.trim();
+      if (!msg) {
+        const typed = await confirm.confirm({
+          title: t('git.commitPrompt'),
+          content: buildSqlConfirmMarkdown({
+            t,
+            intro: t('git.commitIntro'),
+            statements: [],
+            notes: [t('git.commitNote')],
+          }),
+          input: {
+            label: t('git.commitMessageLabel'),
+            placeholder: t('git.commitInputPlaceholder'),
+          },
+          confirmLabel: t('git.commitConfirm'),
+        });
+        if (typed === null) return;
+        msg = typed.trim();
+      }
+      if (!msg) {
+        onShowToast?.(t('git.commitNeedMessage'), undefined, 'warn');
+        return;
+      }
 
       // 3. Perform Git Commit
       const res = await window.ide.gitCommit(msg, opts.amend);
@@ -1405,7 +984,11 @@ export function GitPanel({
           onShowToast?.(t('git.pushFailed'), pushRes.detail, 'error');
         }
       } else {
-        onShowToast?.(t('git.commitDone'), t('git.branchLabel', { branch: status?.branch || 'master' }), 'success');
+        onShowToast?.(
+          t('git.commitDone'),
+          t('git.branchLabel', { branch: status?.branch || 'master' }),
+          'success',
+        );
       }
 
       await refresh();
@@ -1437,13 +1020,21 @@ export function GitPanel({
       if (!res) return;
       if (res.cancelled || res.detail === 'cancelled') return;
       if (res.ok) {
-        onShowToast?.(t('git.actionOk', { action: title }), res.detail || successMsg || t('git.actionDone'), 'success');
+        onShowToast?.(
+          t('git.actionOk', { action: title }),
+          res.detail || successMsg || t('git.actionDone'),
+          'success',
+        );
         await refresh();
         if (affectsBranch) {
           onBranchSwitched?.();
         }
       } else {
-        onShowToast?.(t('git.actionFail', { action: title }), res.detail || t('git.actionNotCompleted'), 'error');
+        onShowToast?.(
+          t('git.actionFail', { action: title }),
+          res.detail || t('git.actionNotCompleted'),
+          'error',
+        );
       }
     } catch (err: any) {
       onShowToast?.(t('git.actionError', { action: title }), err.message || String(err), 'error');
@@ -1676,14 +1267,30 @@ export function GitPanel({
   );
 
   const handleStashPush = useCallback(async () => {
-    const msg = window.prompt(
-      t('git.stashPrompt'),
-      t('git.stashDefaultMessage', { time: new Date().toLocaleTimeString() }),
-    );
+    // 暂存说明的输入走应用内弹窗。`window.prompt` 在 Electron 里被禁用，
+    // 项目的 polyfill 会**无声地返回默认值**——用户以为自己在写说明，
+    // 实际每个 stash 都叫同一个默认名字，而 stash 列表也就没法区分了。
+    const defaultMessage = t('git.stashDefaultMessage', { time: new Date().toLocaleTimeString() });
+    const msg = await confirm.confirm({
+      title: t('git.stashPrompt'),
+      content: buildSqlConfirmMarkdown({
+        t,
+        intro: t('git.stashPushIntro'),
+        statements: [],
+        notes: [t('git.stashPushNote')],
+      }),
+      input: {
+        label: t('git.stashMessageLabel'),
+        defaultValue: defaultMessage,
+        placeholder: defaultMessage,
+      },
+      confirmLabel: t('git.stashPushConfirm'),
+    });
     if (msg === null) return;
+    const trimmed = msg.trim() || undefined;
     setLoadingStash(true);
     try {
-      const res = await window.ide.gitStash('push', msg.trim() || undefined);
+      const res = await window.ide.gitStash('push', trimmed);
       if (res.ok) {
         onShowToast?.(t('git.stashPushOk'), res.detail || t('git.stashPushOkDetail'), 'success');
         await refresh();
@@ -1693,7 +1300,7 @@ export function GitPanel({
     } finally {
       setLoadingStash(false);
     }
-  }, [onShowToast, refresh, t]);
+  }, [onShowToast, refresh, t, confirm]);
 
   /**
    * Stash Pop：把改动应用回工作区，同时**把那条 stash 记录删掉**。
@@ -1705,18 +1312,14 @@ export function GitPanel({
   const handleStashPop = useCallback(
     async (index?: number) => {
       const ref = typeof index === 'number' ? `stash@{${index}}` : 'stash@{0}';
-      const entry =
-        typeof index === 'number' ? stashes.find((s) => s.index === index) : stashes[0];
+      const entry = typeof index === 'number' ? stashes.find((s) => s.index === index) : stashes[0];
       const ok = await confirm.confirm({
         title: t('git.stashPopTitle'),
         content: buildSqlConfirmMarkdown({
           t,
           intro: t('git.stashPopIntro'),
           statements: [],
-          notes: [
-            t('git.stashPopNote1'),
-            t('git.stashPopNote2'),
-          ],
+          notes: [t('git.stashPopNote1'), t('git.stashPopNote2')],
         }),
         details: [
           { label: t('git.labelRef'), value: ref },
@@ -1789,7 +1392,11 @@ export function GitPanel({
         const ref = `stash@{${index}}`;
         const res = await window.ide.gitStash('drop', ref);
         if (res.ok) {
-          onShowToast?.(t('git.stashDropOk'), res.detail || t('git.stashDropOkDetail', { ref }), 'success');
+          onShowToast?.(
+            t('git.stashDropOk'),
+            res.detail || t('git.stashDropOkDetail', { ref }),
+            'success',
+          );
           await refresh();
         } else {
           onShowToast?.(t('git.stashDropFailed'), res.detail, 'error');
@@ -1841,7 +1448,9 @@ export function GitPanel({
         path: entry.path,
         original: res.original,
         modified: res.modified,
-        description: staged ? t('git.descStaged', { path: entry.path }) : t('git.descWorking', { path: entry.path }),
+        description: staged
+          ? t('git.descStaged', { path: entry.path })
+          : t('git.descWorking', { path: entry.path }),
       });
     }
   };
@@ -1904,7 +1513,10 @@ export function GitPanel({
         onShowToast?.(t('git.gitignoreExists', { path: relPath }));
         return;
       }
-      const updated = current.endsWith('\n') || current.length === 0 ? `${current}${relPath}\n` : `${current}\n${relPath}\n`;
+      const updated =
+        current.endsWith('\n') || current.length === 0
+          ? `${current}${relPath}\n`
+          : `${current}\n${relPath}\n`;
       await window.ide.writeFile('.gitignore', updated);
       onShowToast?.(t('git.gitignoreAdded', { path: relPath }));
       void refresh();
@@ -2009,7 +1621,7 @@ export function GitPanel({
                 if (res.ok) {
                   await refresh();
                 } else {
-                  alert(res.detail || t('git.initFailed'));
+                  onShowToast?.(t('git.initFailed'), res.detail, 'error');
                 }
               } finally {
                 setBusy(false);
@@ -2207,7 +1819,11 @@ export function GitPanel({
             className="git-more-menu-item"
             onClick={() => setDisplayMode((m) => (m === 'tree' ? 'list' : 'tree'))}
           >
-            <span>{t('git.viewModeSwitch', { mode: displayMode === 'tree' ? t('git.viewModeList') : t('git.viewModeTree') })}</span>
+            <span>
+              {t('git.viewModeSwitch', {
+                mode: displayMode === 'tree' ? t('git.viewModeList') : t('git.viewModeTree'),
+              })}
+            </span>
           </div>
           <div className="git-more-menu-sep" />
 
@@ -2216,7 +1832,9 @@ export function GitPanel({
           {/* 拉取 */}
           <div
             className="git-more-menu-item"
-            onClick={() => void runGitAction(t('git.actionPull'), () => window.ide.gitPull(), undefined, true)}
+            onClick={() =>
+              void runGitAction(t('git.actionPull'), () => window.ide.gitPull(), undefined, true)
+            }
           >
             {t('git.menuPull')}
           </div>
@@ -2233,11 +1851,16 @@ export function GitPanel({
           <div
             className="git-more-menu-item"
             onClick={() =>
-              void runGitAction(t('git.actionSync'), async () => {
-                const p = await window.ide.gitPull();
-                if (!p.ok) return p;
-                return window.ide.gitPush();
-              }, undefined, true)
+              void runGitAction(
+                t('git.actionSync'),
+                async () => {
+                  const p = await window.ide.gitPull();
+                  if (!p.ok) return p;
+                  return window.ide.gitPush();
+                },
+                undefined,
+                true,
+              )
             }
           >
             {t('git.menuPullPush')}
@@ -2247,13 +1870,18 @@ export function GitPanel({
           <div
             className="git-more-menu-item"
             onClick={() =>
-              void runGitAction(t('git.actionFetch'), async () => {
-                const res = await window.ide.gitFetch();
-                if (res.ok) {
-                  onBranchSwitched?.();
-                }
-                return res;
-              }, undefined, true)
+              void runGitAction(
+                t('git.actionFetch'),
+                async () => {
+                  const res = await window.ide.gitFetch();
+                  if (res.ok) {
+                    onBranchSwitched?.();
+                  }
+                  return res;
+                },
+                undefined,
+                true,
+              )
             }
           >
             {t('git.menuFetch')}
@@ -2349,7 +1977,10 @@ export function GitPanel({
                 }
                 const res = await window.ide.gitStash('push', message?.trim() || undefined);
                 if (!res.ok) return res;
-                return { ok: true, detail: t('git.stashSavedCount', { n: res.stashes?.length ?? 0 }) };
+                return {
+                  ok: true,
+                  detail: t('git.stashSavedCount', { n: res.stashes?.length ?? 0 }),
+                };
               })
             }
           >
@@ -2441,7 +2072,10 @@ export function GitPanel({
             }}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder={t('git.commitPlaceholder', { key: isMac ? '⌘Enter' : 'Ctrl+Enter', branch: status?.branch || 'main' })}
+            placeholder={t('git.commitPlaceholder', {
+              key: isMac ? '⌘Enter' : 'Ctrl+Enter',
+              branch: status?.branch || 'main',
+            })}
             disabled={busy}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -2476,7 +2110,10 @@ export function GitPanel({
               strokeLinejoin="round"
             >
               <path d="M11 2C11 6.5 14.5 10 19 10C14.5 10 11 13.5 11 18C11 13.5 7.5 10 3 10C7.5 10 11 6.5 11 2Z" />
-              <path d="M19 15C19 17 20.5 18.5 22.5 18.5C20.5 18.5 19 20 19 22C19 20 17.5 18.5 15.5 18.5C17.5 18.5 19 17 19 15Z" strokeWidth="1.8" />
+              <path
+                d="M19 15C19 17 20.5 18.5 22.5 18.5C20.5 18.5 19 20 19 22C19 20 17.5 18.5 15.5 18.5C17.5 18.5 19 17 19 15Z"
+                strokeWidth="1.8"
+              />
             </svg>
           </button>
         </div>
@@ -2652,7 +2289,14 @@ export function GitPanel({
                   void runOp(() => window.ide.gitUnstage(staged.map((e: GitStatusEntry) => e.path)))
                 }
               >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
               </button>
@@ -2738,7 +2382,14 @@ export function GitPanel({
                     )
                   }
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
@@ -2824,7 +2475,14 @@ export function GitPanel({
                     )
                   }
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
@@ -2913,7 +2571,14 @@ export function GitPanel({
               disabled={loadingStash}
               onClick={() => void handleStashPush()}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
@@ -2926,7 +2591,16 @@ export function GitPanel({
                 disabled={loadingStash}
                 onClick={() => void handleStashPop()}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <polyline points="9 14 4 9 9 4" />
                   <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
                 </svg>
@@ -2939,7 +2613,14 @@ export function GitPanel({
               disabled={loadingStash}
               onClick={() => void refresh()}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <polyline points="23 4 23 10 17 10" />
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
               </svg>
@@ -2985,7 +2666,15 @@ export function GitPanel({
                   }}
                   className="search-result-item"
                 >
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                    }}
+                  >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span
                         style={{
@@ -3022,7 +2711,16 @@ export function GitPanel({
                       disabled={loadingStash}
                       onClick={() => void handleStashPop(s.index)}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <polyline points="9 14 4 9 9 4" />
                         <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
                       </svg>
@@ -3034,7 +2732,16 @@ export function GitPanel({
                       disabled={loadingStash}
                       onClick={() => void handleStashApply(s.index)}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     </button>
@@ -3045,7 +2752,14 @@ export function GitPanel({
                       disabled={loadingStash}
                       onClick={() => void handleStashDrop(s.index)}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                      >
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
                       </svg>
@@ -3092,7 +2806,8 @@ export function GitPanel({
             <PanelChevron expanded={!isGraphCollapsed} size={11} color="var(--muted)" />
             <span style={{ color: 'var(--text)', fontWeight: 600 }}>{t('git.graph')}</span>
             <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
-              ({commits.length}{focusCurrentBranch ? ` · ${status?.branch || t('git.currentBranch')}` : ''})
+              ({commits.length}
+              {focusCurrentBranch ? ` · ${status?.branch || t('git.currentBranch')}` : ''})
             </span>
           </div>
           <div
@@ -3103,11 +2818,7 @@ export function GitPanel({
             <button
               type="button"
               className={`panel-action-btn ${autoSyncEnabled ? 'active' : ''}`}
-              title={
-                autoSyncEnabled
-                  ? t('git.autoSyncOnTip')
-                  : t('git.autoSyncOffTip')
-              }
+              title={autoSyncEnabled ? t('git.autoSyncOnTip') : t('git.autoSyncOffTip')}
               onClick={() => {
                 setAutoSyncEnabled((prev) => {
                   const next = !prev;
@@ -3197,7 +2908,9 @@ export function GitPanel({
             {/* 同步 / 拉取图标 */}
             <button
               type="button"
-              onClick={() => void runGitAction(t('git.pullChanges'), () => window.ide.gitPull(), undefined, true)}
+              onClick={() =>
+                void runGitAction(t('git.pullChanges'), () => window.ide.gitPull(), undefined, true)
+              }
               title={t('git.pullSyncTip')}
               className="panel-action-btn"
             >
@@ -3354,13 +3067,7 @@ export function GitPanel({
                             e.stopPropagation();
                             void handleSelectCommit(c.hash);
                           }}
-                          className="panel-action-btn"
-                          style={{
-                            margin: '0 4px',
-                            minWidth: 20,
-                            height: 20,
-                            padding: 2,
-                          }}
+                          className="panel-action-btn panel-action-btn--compact"
                         >
                           <svg
                             width="13"
@@ -3598,7 +3305,9 @@ export function GitPanel({
                 ) : historyResult && !historyResult.ok && historyResult.detail ? (
                   <>
                     <div style={{ fontSize: 20 }}>⚠️</div>
-                    <div style={{ fontWeight: 600, color: '#f44336' }}>{t('git.historyFailed')}</div>
+                    <div style={{ fontWeight: 600, color: '#f44336' }}>
+                      {t('git.historyFailed')}
+                    </div>
                     <div
                       style={{
                         fontSize: 11,
@@ -3687,7 +3396,11 @@ export function GitPanel({
         onCreate={async (name, checkout) => {
           const res = await window.ide.gitCreateBranch(name, checkout);
           if (res.ok) {
-            onShowToast?.(t('git.branchCreatedOk'), res.detail || t('git.branchCreatedDetail', { name }), 'success');
+            onShowToast?.(
+              t('git.branchCreatedOk'),
+              res.detail || t('git.branchCreatedDetail', { name }),
+              'success',
+            );
             await refresh();
             if (checkout) onBranchSwitched?.();
           }
@@ -3703,7 +3416,11 @@ export function GitPanel({
         onCheckout={async (name) => {
           const res = await window.ide.gitCheckout(name);
           if (res.ok) {
-            onShowToast?.(t('git.branchSwitchedOk'), t('git.branchSwitchedDetail', { name }), 'success');
+            onShowToast?.(
+              t('git.branchSwitchedOk'),
+              t('git.branchSwitchedDetail', { name }),
+              'success',
+            );
             await refresh();
             onBranchSwitched?.();
           }
@@ -3728,7 +3445,11 @@ export function GitPanel({
         onCreateTag={async (name, msg) => {
           const res = await window.ide.gitCreateTag(name, msg);
           if (res.ok) {
-            onShowToast?.(t('git.tagCreatedOk'), res.detail || t('git.tagCreatedDetail', { name }), 'success');
+            onShowToast?.(
+              t('git.tagCreatedOk'),
+              res.detail || t('git.tagCreatedDetail', { name }),
+              'success',
+            );
             await refresh();
           }
           return res;
@@ -3742,10 +3463,7 @@ export function GitPanel({
         onRefresh={refresh}
       />
 
-      <GitOutputModal
-        open={outputModalOpen}
-        onClose={() => setOutputModalOpen(false)}
-      />
+      <GitOutputModal open={outputModalOpen} onClose={() => setOutputModalOpen(false)} />
 
       <BranchDiffModal
         open={branchDiffModalOpen}

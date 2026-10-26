@@ -336,7 +336,11 @@ export class LspService extends EventEmitter {
       const venvDirs = ['.venv', 'venv', 'env'];
       let pythonInterpreter: string | undefined;
       for (const v of venvDirs) {
-        const p = path.join(workspaceRoot, v, process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+        const p = path.join(
+          workspaceRoot,
+          v,
+          process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python',
+        );
         if (fs.existsSync(p)) {
           pythonInterpreter = p;
           break;
@@ -346,7 +350,9 @@ export class LspService extends EventEmitter {
       await connection.sendRequest('initialize', {
         processId: process.pid,
         rootUri,
-        initializationOptions: pythonInterpreter ? { python: { pythonPath: pythonInterpreter } } : undefined,
+        initializationOptions: pythonInterpreter
+          ? { python: { pythonPath: pythonInterpreter } }
+          : undefined,
         capabilities: {
           textDocument: {
             definition: { dynamicRegistration: true, linkSupport: true },
@@ -585,11 +591,7 @@ export class LspService extends EventEmitter {
   /**
    * Request definition for a symbol in a file at the given 1-based line & column.
    */
-  async getDefinition(
-    filePath: string,
-    line: number,
-    column: number,
-  ): Promise<LspLocation[]> {
+  async getDefinition(filePath: string, line: number, column: number): Promise<LspLocation[]> {
     const srv = await this.getServerForFile(filePath);
     if (!srv) return [];
 
@@ -607,15 +609,16 @@ export class LspService extends EventEmitter {
     }
 
     try {
-      const rawRes = await conn.sendRequest<
-        RawLspLocation | RawLspLocation[] | null
-      >('textDocument/definition', {
-        textDocument: { uri },
-        position: {
-          line: Math.max(0, line - 1),
-          character: Math.max(0, column - 1),
+      const rawRes = await conn.sendRequest<RawLspLocation | RawLspLocation[] | null>(
+        'textDocument/definition',
+        {
+          textDocument: { uri },
+          position: {
+            line: Math.max(0, line - 1),
+            character: Math.max(0, column - 1),
+          },
         },
-      });
+      );
 
       if (!rawRes) return [];
 
@@ -683,19 +686,16 @@ export class LspService extends EventEmitter {
       });
 
       if (!rawRes) return [];
-      const items: any[] = Array.isArray(rawRes) ? rawRes : (rawRes.items || []);
+      const items: any[] = Array.isArray(rawRes) ? rawRes : rawRes.items || [];
 
       return items.slice(0, 50).map((it) => ({
         label: typeof it.label === 'string' ? it.label : it.label?.label || '',
         kind: it.kind,
         detail: it.detail,
         documentation:
-          typeof it.documentation === 'string'
-            ? it.documentation
-            : it.documentation?.value,
+          typeof it.documentation === 'string' ? it.documentation : it.documentation?.value,
         insertText:
-          it.insertText ||
-          (typeof it.label === 'string' ? it.label : it.label?.label || ''),
+          it.insertText || (typeof it.label === 'string' ? it.label : it.label?.label || ''),
         sortText: it.sortText,
       }));
     } catch (err) {

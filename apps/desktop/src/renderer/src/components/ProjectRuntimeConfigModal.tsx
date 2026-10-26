@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import {
+  useModalResize,
+  ModalResizeHandle,
+  createSafeOverlayHandlers,
+} from '../hooks/useModalResize';
 import { useI18n } from '../i18n';
 
 export interface ProjectRuntimeConfig {
@@ -64,7 +68,10 @@ export function loadProjectRuntimeConfig(workspace?: string | null): ProjectRunt
   return { ...DEFAULT_RUNTIME_CONFIG };
 }
 
-export function saveProjectRuntimeConfig(cfg: ProjectRuntimeConfig, workspace?: string | null): void {
+export function saveProjectRuntimeConfig(
+  cfg: ProjectRuntimeConfig,
+  workspace?: string | null,
+): void {
   try {
     const key = getRuntimeConfigStorageKey(workspace);
     localStorage.setItem(key, JSON.stringify(cfg));
@@ -85,7 +92,11 @@ interface Props {
   onClose: () => void;
   workspace?: string;
   activePath?: string;
-  onShowToast?: (title: string, detail?: string, type?: 'success' | 'error' | 'info' | 'warn') => void;
+  onShowToast?: (
+    title: string,
+    detail?: string,
+    type?: 'success' | 'error' | 'info' | 'warn',
+  ) => void;
 }
 
 interface DetectedEnvPreset {
@@ -114,12 +125,18 @@ export function inferProjectLanguage(activePath?: string, workspace?: string): R
   if (/\.(ts|tsx|js|jsx|mjs|cjs|json)$/i.test(activeFileName)) return 'node';
 
   const wsLower = (workspace || '').toLowerCase();
-  if (wsLower.includes('test-c') || wsLower.includes('cpp') || wsLower.includes('c-') || wsLower.includes('cmake')) {
+  if (
+    wsLower.includes('test-c') ||
+    wsLower.includes('cpp') ||
+    wsLower.includes('c-') ||
+    wsLower.includes('cmake')
+  ) {
     return 'cpp';
   }
   if (wsLower.includes('python') || wsLower.includes('py-')) return 'python';
   if (wsLower.includes('go') || wsLower.includes('golang')) return 'go';
-  if (wsLower.includes('node') || wsLower.includes('vue') || wsLower.includes('react')) return 'node';
+  if (wsLower.includes('node') || wsLower.includes('vue') || wsLower.includes('react'))
+    return 'node';
 
   return 'java';
 }
@@ -147,7 +164,10 @@ export function ProjectRuntimeConfigModal({
   const addOptionsRef = useRef<HTMLDivElement>(null);
 
   // 语言模式支持根据工程特征自动识别并锁定当前所需配置
-  const inferred = useMemo(() => inferProjectLanguage(activePath, workspace), [activePath, workspace]);
+  const inferred = useMemo(
+    () => inferProjectLanguage(activePath, workspace),
+    [activePath, workspace],
+  );
   const [currentLang, setCurrentLang] = useState<RuntimeLanguage>(inferred);
 
   // 根目录工程特征嗅探以保证即使没有激活打开的文件也能准确推断
@@ -163,16 +183,29 @@ export function ProjectRuntimeConfigModal({
         const files = await window.ide.listDir('.');
         if (canceled || !Array.isArray(files)) return;
         const fileNames = files.map((f) => f.name.toLowerCase());
-        const hasActiveSpecificExt = activePath && /\.(cpp|cc|cxx|c|h|hpp|java|py|go|ts|tsx|js)$/i.test(activePath);
+        const hasActiveSpecificExt =
+          activePath && /\.(cpp|cc|cxx|c|h|hpp|java|py|go|ts|tsx|js)$/i.test(activePath);
         if (hasActiveSpecificExt) return;
 
-        if (fileNames.includes('cmakelists.txt') || fileNames.includes('makefile') || fileNames.some(n => /\.(cpp|cc|cxx)$/.test(n))) {
+        if (
+          fileNames.includes('cmakelists.txt') ||
+          fileNames.includes('makefile') ||
+          fileNames.some((n) => /\.(cpp|cc|cxx)$/.test(n))
+        ) {
           setCurrentLang('cpp');
-        } else if (fileNames.includes('pom.xml') || fileNames.includes('mvnw') || fileNames.includes('build.gradle')) {
+        } else if (
+          fileNames.includes('pom.xml') ||
+          fileNames.includes('mvnw') ||
+          fileNames.includes('build.gradle')
+        ) {
           setCurrentLang('java');
-        } else if (fileNames.includes('requirements.txt') || fileNames.includes('pyproject.toml') || fileNames.some(n => /\.py$/.test(n))) {
+        } else if (
+          fileNames.includes('requirements.txt') ||
+          fileNames.includes('pyproject.toml') ||
+          fileNames.some((n) => /\.py$/.test(n))
+        ) {
           setCurrentLang('python');
-        } else if (fileNames.includes('go.mod') || fileNames.some(n => /\.go$/.test(n))) {
+        } else if (fileNames.includes('go.mod') || fileNames.some((n) => /\.go$/.test(n))) {
           setCurrentLang('go');
         } else if (fileNames.includes('package.json') || fileNames.includes('tsconfig.json')) {
           setCurrentLang('node');
@@ -180,7 +213,9 @@ export function ProjectRuntimeConfigModal({
       } catch {}
     };
     void sniffWorkspace();
-    return () => { canceled = true; };
+    return () => {
+      canceled = true;
+    };
   }, [isOpen, activePath, workspace]);
 
   // ESC 快捷键取消/关闭
@@ -228,12 +263,7 @@ export function ProjectRuntimeConfigModal({
       setScanning(true);
       const presets: DetectedEnvPreset[] = [];
 
-      const candidateDirs = [
-        'src/main/resources/conf',
-        'src/main/resources',
-        'conf',
-        'resources',
-      ];
+      const candidateDirs = ['src/main/resources/conf', 'src/main/resources', 'conf', 'resources'];
 
       for (const dir of candidateDirs) {
         try {
@@ -243,14 +273,19 @@ export function ProjectRuntimeConfigModal({
               const fileName = f.name;
               let envName = '';
               const matchConf = fileName.match(/^([a-zA-Z0-9_-]+)-application\.conf$/i);
-              const matchAppConf = fileName.match(/^application-([a-zA-Z0-9_-]+)\.(ya?ml|properties|conf)$/i);
+              const matchAppConf = fileName.match(
+                /^application-([a-zA-Z0-9_-]+)\.(ya?ml|properties|conf)$/i,
+              );
               const matchSimple = fileName.match(/^([a-zA-Z0-9_-]+)\.conf$/i);
 
               if (matchConf) {
                 envName = matchConf[1];
               } else if (matchAppConf) {
                 envName = matchAppConf[1];
-              } else if (matchSimple && !['application', 'log4j'].includes(matchSimple[1].toLowerCase())) {
+              } else if (
+                matchSimple &&
+                !['application', 'log4j'].includes(matchSimple[1].toLowerCase())
+              ) {
                 envName = matchSimple[1];
               }
 
@@ -293,65 +328,81 @@ export function ProjectRuntimeConfigModal({
   }, [workspace, onShowToast]);
 
   // 可再次点击取消的智能环境预设切换逻辑
-  const handleTogglePreset = useCallback((preset: DetectedEnvPreset) => {
-    const targetFlag = `-Denv=${preset.envKey}`;
-    setConfig((prev) => {
-      const current = prev.vmArgs.trim();
-      const isAlreadyApplied = current.includes(targetFlag);
+  const handleTogglePreset = useCallback(
+    (preset: DetectedEnvPreset) => {
+      const targetFlag = `-Denv=${preset.envKey}`;
+      setConfig((prev) => {
+        const current = prev.vmArgs.trim();
+        const isAlreadyApplied = current.includes(targetFlag);
 
-      if (isAlreadyApplied) {
-        const regex = new RegExp(`(^|\\s)-Denv=${preset.envKey}(?=\\s|$)`, 'g');
-        const updated = current.replace(regex, ' ').replace(/\s+/g, ' ').trim();
-        onShowToast?.(t('rt.envFlagOff', { flag: targetFlag }), undefined, 'info');
-        return { ...prev, vmArgs: updated };
-      } else {
-        const anyEnvRegex = /(^|\s)-Denv=[^\s]+(?=\s|$)/g;
-        let updated: string;
-        if (anyEnvRegex.test(current)) {
-          updated = current.replace(anyEnvRegex, ` ${targetFlag}`).replace(/\s+/g, ' ').trim();
+        if (isAlreadyApplied) {
+          const regex = new RegExp(`(^|\\s)-Denv=${preset.envKey}(?=\\s|$)`, 'g');
+          const updated = current.replace(regex, ' ').replace(/\s+/g, ' ').trim();
+          onShowToast?.(t('rt.envFlagOff', { flag: targetFlag }), undefined, 'info');
+          return { ...prev, vmArgs: updated };
         } else {
-          updated = current ? `${current} ${targetFlag}` : targetFlag;
+          const anyEnvRegex = /(^|\s)-Denv=[^\s]+(?=\s|$)/g;
+          let updated: string;
+          if (anyEnvRegex.test(current)) {
+            updated = current.replace(anyEnvRegex, ` ${targetFlag}`).replace(/\s+/g, ' ').trim();
+          } else {
+            updated = current ? `${current} ${targetFlag}` : targetFlag;
+          }
+          onShowToast?.(
+            t('rt.envFlagOn', { flag: targetFlag }),
+            t('rt.envFlagOnDetail', { file: preset.fullRelPath }),
+            'info',
+          );
+          return { ...prev, vmArgs: updated };
         }
-        onShowToast?.(t('rt.envFlagOn', { flag: targetFlag }), t('rt.envFlagOnDetail', { file: preset.fullRelPath }), 'info');
-        return { ...prev, vmArgs: updated };
-      }
-    });
-  }, [onShowToast]);
+      });
+    },
+    [onShowToast],
+  );
 
   // 快捷填入参数也支持再次点击切换取消
-  const handleToggleVmArg = useCallback((flag: string) => {
-    setConfig((prev) => {
-      const current = prev.vmArgs.trim();
-      if (current.includes(flag)) {
-        const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'g');
-        const updated = current.replace(regex, ' ').replace(/\s+/g, ' ').trim();
-        onShowToast?.(t('rt.argOff', { flag }), undefined, 'info');
-        return { ...prev, vmArgs: updated };
-      } else {
-        const updated = current ? `${current} ${flag}` : flag;
-        onShowToast?.(t('rt.argOn', { flag }), undefined, 'info');
-        return { ...prev, vmArgs: updated };
-      }
-    });
-  }, [onShowToast]);
+  const handleToggleVmArg = useCallback(
+    (flag: string) => {
+      setConfig((prev) => {
+        const current = prev.vmArgs.trim();
+        if (current.includes(flag)) {
+          const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'g');
+          const updated = current.replace(regex, ' ').replace(/\s+/g, ' ').trim();
+          onShowToast?.(t('rt.argOff', { flag }), undefined, 'info');
+          return { ...prev, vmArgs: updated };
+        } else {
+          const updated = current ? `${current} ${flag}` : flag;
+          onShowToast?.(t('rt.argOn', { flag }), undefined, 'info');
+          return { ...prev, vmArgs: updated };
+        }
+      });
+    },
+    [onShowToast],
+  );
 
   // 快捷填入右侧 Profile / Build Type
-  const handleToggleProfile = useCallback((val: string) => {
-    setConfig((prev) => {
-      if (prev.activeProfiles.trim() === val) {
-        onShowToast?.(t('rt.valOff', { val }), undefined, 'info');
-        return { ...prev, activeProfiles: '' };
-      }
-      onShowToast?.(t('rt.valOn', { val }), undefined, 'info');
-      return { ...prev, activeProfiles: val };
-    });
-  }, [onShowToast]);
+  const handleToggleProfile = useCallback(
+    (val: string) => {
+      setConfig((prev) => {
+        if (prev.activeProfiles.trim() === val) {
+          onShowToast?.(t('rt.valOff', { val }), undefined, 'info');
+          return { ...prev, activeProfiles: '' };
+        }
+        onShowToast?.(t('rt.valOn', { val }), undefined, 'info');
+        return { ...prev, activeProfiles: val };
+      });
+    },
+    [onShowToast],
+  );
 
   // 快捷填入环境变量
   const handleToggleEnvVar = useCallback((chip: string) => {
     setConfig((prev) => {
-      const current = prev.envVars.split(',').map((s) => s.trim()).filter(Boolean);
+      const current = prev.envVars
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       const isPresent = current.includes(chip);
       const next = isPresent ? current.filter((c) => c !== chip) : [...current, chip];
       return { ...prev, envVars: next.join(',') };
@@ -359,9 +410,7 @@ export function ProjectRuntimeConfigModal({
   }, []);
 
   // 根据当前语言严格过滤已启用的高级运行选项（非 Java 项目绝对不展示 provided 依赖与缩短命令行）
-  const enabledOptions = useMemo<
-    Array<{ key: keyof ProjectRuntimeConfig; label: string }>
-  >(() => {
+  const enabledOptions = useMemo<Array<{ key: keyof ProjectRuntimeConfig; label: string }>>(() => {
     const all: Array<{ key: keyof ProjectRuntimeConfig; label: string; javaOnly?: boolean }> = [
       { key: 'addProvidedToClasspath', label: t('rt.optProvidedLabel'), javaOnly: true },
       { key: 'skipBuildBeforeRun', label: t('rt.optSkipBuildLabel') },
@@ -502,7 +551,9 @@ export function ProjectRuntimeConfigModal({
   const previewCommand = useMemo(() => {
     const activeFileName = activePath ? activePath.split('/').pop() || '' : '';
     const logRedirect = config.saveConsoleToFile ? ' | tee -a .echoly/logs/run.log' : '';
-    const envPrefix = config.envVars.trim() ? `export ${config.envVars.trim().replace(/,/g, ' ')} && ` : '';
+    const envPrefix = config.envVars.trim()
+      ? `export ${config.envVars.trim().replace(/,/g, ' ')} && `
+      : '';
 
     if (currentLang === 'cpp') {
       const isCpp = /\.(cpp|cc|cxx|hpp|hh)$/i.test(activeFileName);
@@ -541,7 +592,9 @@ export function ProjectRuntimeConfigModal({
     }
 
     // Java
-    const className = activeFileName ? activeFileName.replace(/\.java$/, '') : 'TechnologyTacticsJob';
+    const className = activeFileName
+      ? activeFileName.replace(/\.java$/, '')
+      : 'TechnologyTacticsJob';
     const compilePhase = config.skipBuildBeforeRun ? '' : 'compile ';
     const providedScopeArg = config.addProvidedToClasspath ? ' -Dexec.classpathScope=compile' : '';
 
@@ -603,7 +656,16 @@ export function ProjectRuntimeConfigModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 18 }}>⚡</span>
             <div>
-              <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div
+                style={{
+                  fontWeight: 600,
+                  fontSize: 14,
+                  color: 'var(--text-bright, #fff)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
                 <span>{t('rt.title')}</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -617,7 +679,14 @@ export function ProjectRuntimeConfigModal({
             onClick={onClose}
             title={t('rt.closeTitle')}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -627,12 +696,31 @@ export function ProjectRuntimeConfigModal({
         {/* Body */}
         <div className="runtime-body">
           {/* 项目绑定确认横幅与语言聚焦指示器 */}
-          <div className="runtime-bind-banner" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div
+            className="runtime-bind-banner"
+            style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 8,
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                 <span style={{ fontSize: 14 }}>📁</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>
-                  {t('rt.boundProject')}<strong>{projectName}</strong>
+                <span
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontSize: 12,
+                  }}
+                >
+                  {t('rt.boundProject')}
+                  <strong>{projectName}</strong>
                   {workspace && <span style={{ opacity: 0.7, marginLeft: 6 }}>({workspace})</span>}
                 </span>
                 <span
@@ -651,12 +739,23 @@ export function ProjectRuntimeConfigModal({
                   title={t(RUNTIME_LANG_META[currentLang].desc)}
                 >
                   <span>{RUNTIME_LANG_META[currentLang].icon}</span>
-                  <span>{t('rt.langExclusive', { label: RUNTIME_LANG_META[currentLang].label })}</span>
+                  <span>
+                    {t('rt.langExclusive', { label: RUNTIME_LANG_META[currentLang].label })}
+                  </span>
                 </span>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ fontSize: 11, color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: '#34d399',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    flexShrink: 0,
+                  }}
+                >
                   <span>✓</span> {t('rt.projectActive')}
                 </div>
 
@@ -668,7 +767,11 @@ export function ProjectRuntimeConfigModal({
                     onChange={(e) => {
                       const nextLang = e.target.value as RuntimeLanguage;
                       setCurrentLang(nextLang);
-                      onShowToast?.(t('rt.switchedTo', { label: RUNTIME_LANG_META[nextLang].label }), undefined, 'info');
+                      onShowToast?.(
+                        t('rt.switchedTo', { label: RUNTIME_LANG_META[nextLang].label }),
+                        undefined,
+                        'info',
+                      );
                     }}
                     style={{
                       background: 'rgba(255, 255, 255, 0.08)',
@@ -681,11 +784,36 @@ export function ProjectRuntimeConfigModal({
                       outline: 'none',
                     }}
                   >
-                    <option value="cpp" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>🚀 C / C++</option>
-                    <option value="java" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>☕ Java</option>
-                    <option value="python" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>🐍 Python</option>
-                    <option value="go" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>🐹 Go</option>
-                    <option value="node" style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}>🟢 Node.js</option>
+                    <option
+                      value="cpp"
+                      style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}
+                    >
+                      🚀 C / C++
+                    </option>
+                    <option
+                      value="java"
+                      style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}
+                    >
+                      ☕ Java
+                    </option>
+                    <option
+                      value="python"
+                      style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}
+                    >
+                      🐍 Python
+                    </option>
+                    <option
+                      value="go"
+                      style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}
+                    >
+                      🐹 Go
+                    </option>
+                    <option
+                      value="node"
+                      style={{ background: 'var(--bg-modal, #141414)', color: '#fff' }}
+                    >
+                      🟢 Node.js
+                    </option>
                   </select>
                 </div>
               </div>
@@ -704,7 +832,9 @@ export function ProjectRuntimeConfigModal({
               }}
             >
               {t('rt.smartHintBefore')}
-              <strong>{t('rt.smartHintOnly', { label: RUNTIME_LANG_META[currentLang].label })}</strong>
+              <strong>
+                {t('rt.smartHintOnly', { label: RUNTIME_LANG_META[currentLang].label })}
+              </strong>
               {t('rt.smartHintAfter')}
               {t('rt.supportBefore')}
               <strong>{t('rt.supportList')}</strong>
@@ -715,11 +845,29 @@ export function ProjectRuntimeConfigModal({
           {/* 智能检测到的环境配置文件预设（Java 项目独享） */}
           {currentLang === 'java' && detectedPresets.length > 0 && (
             <div className="runtime-section runtime-preset-section">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--accent-light, #3794ff)' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 8,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--accent-light, #3794ff)',
+                  }}
+                >
                   <span>💡</span> {t('rt.detectedPresets')}
                 </div>
-                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t('rt.autoMatchEnv')}</span>
+                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                  {t('rt.autoMatchEnv')}
+                </span>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {detectedPresets.map((preset) => {
@@ -737,8 +885,12 @@ export function ProjectRuntimeConfigModal({
                         padding: '4px 10px',
                         borderRadius: 4,
                         fontSize: 11.5,
-                        background: isApplied ? 'var(--accent, #007acc)' : 'rgba(255, 255, 255, 0.06)',
-                        border: isApplied ? '1px solid var(--accent-light, #3794ff)' : '1px solid var(--border)',
+                        background: isApplied
+                          ? 'var(--accent, #007acc)'
+                          : 'rgba(255, 255, 255, 0.06)',
+                        border: isApplied
+                          ? '1px solid var(--accent-light, #3794ff)'
+                          : '1px solid var(--border)',
                         color: isApplied ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                         transition: 'all 0.15s ease',
@@ -746,13 +898,18 @@ export function ProjectRuntimeConfigModal({
                       title={
                         isApplied
                           ? t('rt.presetCancelTitle', { key: preset.envKey })
-                          : t('rt.presetApplyTitle', { key: preset.envKey, file: preset.fullRelPath })
+                          : t('rt.presetApplyTitle', {
+                              key: preset.envKey,
+                              file: preset.fullRelPath,
+                            })
                       }
                     >
                       <span style={{ fontSize: 11 }}>⚡</span>
                       <span>{preset.name}</span>
                       {isApplied ? (
-                        <span style={{ fontSize: 11, color: '#34d399', fontWeight: 'bold' }}>✓</span>
+                        <span style={{ fontSize: 11, color: '#34d399', fontWeight: 'bold' }}>
+                          ✓
+                        </span>
                       ) : (
                         <span style={{ fontSize: 10, opacity: 0.4 }}>+</span>
                       )}
@@ -792,12 +949,12 @@ export function ProjectRuntimeConfigModal({
                   currentLang === 'cpp'
                     ? t('rt.vmPhCpp')
                     : currentLang === 'java'
-                    ? t('rt.vmPhJava')
-                    : currentLang === 'python'
-                    ? t('rt.vmPhPython')
-                    : currentLang === 'go'
-                    ? t('rt.vmPhGo')
-                    : t('rt.vmPhNode')
+                      ? t('rt.vmPhJava')
+                      : currentLang === 'python'
+                        ? t('rt.vmPhPython')
+                        : currentLang === 'go'
+                          ? t('rt.vmPhGo')
+                          : t('rt.vmPhNode')
                 }
                 className="runtime-input"
               />
@@ -805,14 +962,32 @@ export function ProjectRuntimeConfigModal({
               <div className="runtime-chip-row">
                 <span className="runtime-field-hint">{t('rt.quickArgs')}</span>
                 {(currentLang === 'cpp'
-                  ? ['-std=c++17', '-std=c++20', '-O2', '-Wall', '-g', '-pthread', '-fsanitize=address']
+                  ? [
+                      '-std=c++17',
+                      '-std=c++20',
+                      '-O2',
+                      '-Wall',
+                      '-g',
+                      '-pthread',
+                      '-fsanitize=address',
+                    ]
                   : currentLang === 'java'
-                  ? ['-Denv=local-dev', '-Dfile.encoding=UTF-8', '-Xmx1024m', '-Dspring.profiles.active=dev']
-                  : currentLang === 'python'
-                  ? ['-u', '-B', '-v', '-O', '-W ignore', '-m pytest']
-                  : currentLang === 'go'
-                  ? ['-race', '-v', '-tags=dev', '-ldflags="-s -w"']
-                  : ['--inspect', '--enable-source-maps', '--trace-warnings', '--max-old-space-size=4096']
+                    ? [
+                        '-Denv=local-dev',
+                        '-Dfile.encoding=UTF-8',
+                        '-Xmx1024m',
+                        '-Dspring.profiles.active=dev',
+                      ]
+                    : currentLang === 'python'
+                      ? ['-u', '-B', '-v', '-O', '-W ignore', '-m pytest']
+                      : currentLang === 'go'
+                        ? ['-race', '-v', '-tags=dev', '-ldflags="-s -w"']
+                        : [
+                            '--inspect',
+                            '--enable-source-maps',
+                            '--trace-warnings',
+                            '--max-old-space-size=4096',
+                          ]
                 ).map((flag) => {
                   const isPresent = config.vmArgs.includes(flag);
                   return (
@@ -825,8 +1000,12 @@ export function ProjectRuntimeConfigModal({
                         fontSize: 10.5,
                         padding: '2px 7px',
                         borderRadius: 3,
-                        background: isPresent ? 'var(--accent, #007acc)' : 'rgba(255, 255, 255, 0.05)',
-                        border: isPresent ? '1px solid var(--accent-light, #3794ff)' : '1px solid rgba(255, 255, 255, 0.1)',
+                        background: isPresent
+                          ? 'var(--accent, #007acc)'
+                          : 'rgba(255, 255, 255, 0.05)',
+                        border: isPresent
+                          ? '1px solid var(--accent-light, #3794ff)'
+                          : '1px solid rgba(255, 255, 255, 0.1)',
                         color: isPresent ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                       }}
@@ -861,7 +1040,9 @@ export function ProjectRuntimeConfigModal({
                     padding: '3px 9px',
                     borderRadius: 4,
                     fontSize: 11,
-                    background: showAddOptionsPopup ? 'var(--bg-hover-strong, #242424)' : 'rgba(255, 255, 255, 0.07)',
+                    background: showAddOptionsPopup
+                      ? 'var(--bg-hover-strong, #242424)'
+                      : 'rgba(255, 255, 255, 0.07)',
                     border: '1px solid var(--border)',
                     color: 'var(--text-bright)',
                     cursor: 'pointer',
@@ -889,7 +1070,8 @@ export function ProjectRuntimeConfigModal({
                       backdropFilter: 'blur(16px)',
                       border: '1px solid var(--border)',
                       borderRadius: 8,
-                      boxShadow: '0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05)',
+                      boxShadow:
+                        '0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05)',
                       padding: 0,
                       fontSize: 12,
                     }}
@@ -910,8 +1092,12 @@ export function ProjectRuntimeConfigModal({
                         justifyContent: 'space-between',
                       }}
                     >
-                      <span>{t('rt.addRunOptionsHeader', { lang: currentLang.toUpperCase() })}</span>
-                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{t('rt.checkToApply')}</span>
+                      <span>
+                        {t('rt.addRunOptionsHeader', { lang: currentLang.toUpperCase() })}
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                        {t('rt.checkToApply')}
+                      </span>
                     </div>
 
                     {optionGroups.map((grp) => (
@@ -946,14 +1132,22 @@ export function ProjectRuntimeConfigModal({
                                 transition: 'background 0.15s ease',
                               }}
                               onMouseEnter={(e) => {
-                                if (!isChecked) e.currentTarget.style.background = 'var(--bg-hover, rgba(255,255,255,0.05))';
+                                if (!isChecked)
+                                  e.currentTarget.style.background =
+                                    'var(--bg-hover, rgba(255,255,255,0.05))';
                               }}
                               onMouseLeave={(e) => {
                                 if (!isChecked) e.currentTarget.style.background = 'transparent';
                               }}
                             >
                               <div style={{ paddingRight: 8 }}>
-                                <div style={{ color: 'var(--text-bright, #fff)', fontSize: 11.5, fontWeight: 500 }}>
+                                <div
+                                  style={{
+                                    color: 'var(--text-bright, #fff)',
+                                    fontSize: 11.5,
+                                    fontWeight: 500,
+                                  }}
+                                >
                                   {item.title}
                                 </div>
                                 <div style={{ fontSize: 10, color: 'var(--muted)' }}>
@@ -963,7 +1157,12 @@ export function ProjectRuntimeConfigModal({
                               <input
                                 type="checkbox"
                                 checked={isChecked}
-                                onChange={(e) => setConfig({ ...config, [item.key]: e.target.checked } as ProjectRuntimeConfig)}
+                                onChange={(e) =>
+                                  setConfig({
+                                    ...config,
+                                    [item.key]: e.target.checked,
+                                  } as ProjectRuntimeConfig)
+                                }
                                 style={{ accentColor: 'var(--accent, #007acc)', cursor: 'pointer' }}
                               />
                             </label>
@@ -979,16 +1178,16 @@ export function ProjectRuntimeConfigModal({
             {/* 已启用的选项摘要：只读展示当前语言下的激活选项 */}
             <div className="runtime-option-summary">
               {enabledOptions.length === 0 ? (
-                <span className="runtime-field-hint">
-                  {t('rt.noOptions')}
-                </span>
+                <span className="runtime-field-hint">{t('rt.noOptions')}</span>
               ) : (
                 enabledOptions.map((opt) => (
                   <button
                     key={opt.key}
                     type="button"
                     className="runtime-preset-chip runtime-option-chip"
-                    onClick={() => setConfig({ ...config, [opt.key]: false } as ProjectRuntimeConfig)}
+                    onClick={() =>
+                      setConfig({ ...config, [opt.key]: false } as ProjectRuntimeConfig)
+                    }
                     title={t('rt.closeOption', { label: opt.label })}
                   >
                     <span className="runtime-option-check">✓</span>
@@ -1020,12 +1219,12 @@ export function ProjectRuntimeConfigModal({
                 currentLang === 'cpp'
                   ? t('rt.paPhCpp')
                   : currentLang === 'java'
-                  ? t('rt.paPhJava')
-                  : currentLang === 'python'
-                  ? t('rt.paPhPython')
-                  : currentLang === 'go'
-                  ? t('rt.paPhGo')
-                  : t('rt.paPhNode')
+                    ? t('rt.paPhJava')
+                    : currentLang === 'python'
+                      ? t('rt.paPhPython')
+                      : currentLang === 'go'
+                        ? t('rt.paPhGo')
+                        : t('rt.paPhNode')
               }
               className="runtime-input"
             />
@@ -1044,12 +1243,12 @@ export function ProjectRuntimeConfigModal({
                   currentLang === 'cpp'
                     ? 'LD_LIBRARY_PATH=.,DYLD_LIBRARY_PATH=.'
                     : currentLang === 'python'
-                    ? 'PYTHONPATH=.,PYTHONUNBUFFERED=1'
-                    : currentLang === 'go'
-                    ? 'CGO_ENABLED=1,GOPROXY=https://goproxy.cn,direct'
-                    : currentLang === 'node'
-                    ? 'NODE_ENV=development,PORT=3000'
-                    : t('rt.envVarsPhFallback')
+                      ? 'PYTHONPATH=.,PYTHONUNBUFFERED=1'
+                      : currentLang === 'go'
+                        ? 'CGO_ENABLED=1,GOPROXY=https://goproxy.cn,direct'
+                        : currentLang === 'node'
+                          ? 'NODE_ENV=development,PORT=3000'
+                          : t('rt.envVarsPhFallback')
                 }
                 className="runtime-input"
               />
@@ -1058,12 +1257,12 @@ export function ProjectRuntimeConfigModal({
                 {(currentLang === 'cpp'
                   ? ['LD_LIBRARY_PATH=.', 'DYLD_LIBRARY_PATH=.', 'DEBUG=1']
                   : currentLang === 'python'
-                  ? ['PYTHONPATH=.', 'PYTHONUNBUFFERED=1', 'FLASK_ENV=development']
-                  : currentLang === 'go'
-                  ? ['CGO_ENABLED=1', 'CGO_ENABLED=0', 'GOPROXY=https://goproxy.cn,direct']
-                  : currentLang === 'node'
-                  ? ['NODE_ENV=development', 'NODE_ENV=production', 'PORT=3000']
-                  : ['SPRING_PROFILES_ACTIVE=dev', 'LOG_LEVEL=DEBUG']
+                    ? ['PYTHONPATH=.', 'PYTHONUNBUFFERED=1', 'FLASK_ENV=development']
+                    : currentLang === 'go'
+                      ? ['CGO_ENABLED=1', 'CGO_ENABLED=0', 'GOPROXY=https://goproxy.cn,direct']
+                      : currentLang === 'node'
+                        ? ['NODE_ENV=development', 'NODE_ENV=production', 'PORT=3000']
+                        : ['SPRING_PROFILES_ACTIVE=dev', 'LOG_LEVEL=DEBUG']
                 ).map((chip) => {
                   const isPresent = config.envVars.includes(chip);
                   return (
@@ -1076,8 +1275,12 @@ export function ProjectRuntimeConfigModal({
                         fontSize: 10,
                         padding: '1px 6px',
                         borderRadius: 3,
-                        background: isPresent ? 'var(--accent, #007acc)' : 'rgba(255, 255, 255, 0.05)',
-                        border: isPresent ? '1px solid var(--accent-light, #3794ff)' : '1px solid rgba(255, 255, 255, 0.1)',
+                        background: isPresent
+                          ? 'var(--accent, #007acc)'
+                          : 'rgba(255, 255, 255, 0.05)',
+                        border: isPresent
+                          ? '1px solid var(--accent-light, #3794ff)'
+                          : '1px solid rgba(255, 255, 255, 0.1)',
                         color: isPresent ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                       }}
@@ -1107,12 +1310,12 @@ export function ProjectRuntimeConfigModal({
                   currentLang === 'cpp'
                     ? t('rt.profilePhCpp')
                     : currentLang === 'java'
-                    ? t('rt.profilePhJava')
-                    : currentLang === 'python'
-                    ? t('rt.profilePhPython')
-                    : currentLang === 'go'
-                    ? t('rt.profilePhGo')
-                    : t('rt.profilePhNode')
+                      ? t('rt.profilePhJava')
+                      : currentLang === 'python'
+                        ? t('rt.profilePhPython')
+                        : currentLang === 'go'
+                          ? t('rt.profilePhGo')
+                          : t('rt.profilePhNode')
                 }
                 className="runtime-input"
               />
@@ -1121,12 +1324,12 @@ export function ProjectRuntimeConfigModal({
                 {(currentLang === 'cpp'
                   ? ['Debug', 'Release', 'RelWithDebInfo']
                   : currentLang === 'java'
-                  ? ['dev', 'test', 'local', 'prod']
-                  : currentLang === 'python'
-                  ? ['script', 'module', 'pytest']
-                  : currentLang === 'go'
-                  ? ['default', 'pie', 'race']
-                  : ['development', 'production', 'test']
+                    ? ['dev', 'test', 'local', 'prod']
+                    : currentLang === 'python'
+                      ? ['script', 'module', 'pytest']
+                      : currentLang === 'go'
+                        ? ['default', 'pie', 'race']
+                        : ['development', 'production', 'test']
                 ).map((preset) => {
                   const isPresent = config.activeProfiles.trim() === preset;
                   return (
@@ -1139,12 +1342,20 @@ export function ProjectRuntimeConfigModal({
                         fontSize: 10,
                         padding: '1px 6px',
                         borderRadius: 3,
-                        background: isPresent ? 'var(--accent, #007acc)' : 'rgba(255, 255, 255, 0.05)',
-                        border: isPresent ? '1px solid var(--accent-light, #3794ff)' : '1px solid rgba(255, 255, 255, 0.1)',
+                        background: isPresent
+                          ? 'var(--accent, #007acc)'
+                          : 'rgba(255, 255, 255, 0.05)',
+                        border: isPresent
+                          ? '1px solid var(--accent-light, #3794ff)'
+                          : '1px solid rgba(255, 255, 255, 0.1)',
                         color: isPresent ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                       }}
-                      title={isPresent ? t('rt.cancelPreset', { preset }) : t('rt.applyPreset', { preset })}
+                      title={
+                        isPresent
+                          ? t('rt.cancelPreset', { preset })
+                          : t('rt.applyPreset', { preset })
+                      }
                     >
                       {isPresent ? `✓ ${preset}` : `+ ${preset}`}
                     </button>
@@ -1208,7 +1419,15 @@ export function ProjectRuntimeConfigModal({
               </button>
             </div>
             <div className="runtime-terminal-content">
-              <span style={{ color: 'var(--accent-light, #3794ff)', marginRight: 8, userSelect: 'none' }}>$</span>
+              <span
+                style={{
+                  color: 'var(--accent-light, #3794ff)',
+                  marginRight: 8,
+                  userSelect: 'none',
+                }}
+              >
+                $
+              </span>
               <span>{previewCommand}</span>
             </div>
           </div>
