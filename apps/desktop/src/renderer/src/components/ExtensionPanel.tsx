@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n } from '../i18n';
 
 export interface ExtensionPanelProps {
   onOpenExtension?: (extensionId: string) => void;
@@ -35,6 +36,7 @@ declare global {
 }
 
 export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
+  const { t } = useI18n();
   const [loading, setLoading] = useState(false);
   const [extensions, setExtensions] = useState<string[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
@@ -91,12 +93,12 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       const result = await window.extensions.installClaudeCode();
       if (result.success) {
         await loadExtensions();
-        setSuccessMsg('Claude Code 官方扩展安装就绪！');
+        setSuccessMsg(t('ext.claudeInstalled'));
       } else {
-        setError(result.error || '安装失败');
+        setError(result.error || t('ext.installFailed'));
       }
     } catch (err: any) {
-      setError(err.message || '安装过程中发生异常');
+      setError(err.message || t('ext.installError'));
     } finally {
       setLoading(false);
       setDownloadProgress(null);
@@ -109,7 +111,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     setSuccessMsg(null);
 
     try {
-      const filePath = await window.ide.pickFile([{ name: 'VSCode 扩展包', extensions: ['vsix'] }]);
+      const filePath = await window.ide.pickFile([{ name: t('ext.vsixFilterName'), extensions: ['vsix'] }]);
       if (!filePath) {
         setLoading(false);
         return;
@@ -118,12 +120,12 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       const result = await window.extensions.loadFromPath(filePath);
       if (result.success) {
         await loadExtensions();
-        setSuccessMsg(`扩展包「${filePath.split(/[/\\\\]/).pop()}」加载成功！`);
+        setSuccessMsg(t('ext.localLoadOk', { name: filePath.split(/[/\\\\]/).pop() ?? '' }));
       } else {
-        setError(result.error || '加载本地扩展包失败');
+        setError(result.error || t('ext.localLoadFailed'));
       }
     } catch (err: any) {
-      setError(err.message || '加载扩展时出错');
+      setError(err.message || t('ext.localLoadError'));
     } finally {
       setLoading(false);
     }
@@ -166,11 +168,11 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
           <div>
             <div className="ext-hero-title-row">
               <span className="ext-hero-title">Claude Code for VS Code</span>
-              <span className="ext-pill ext-pill-official">官方推荐</span>
-              {isClaudeInstalled && <span className="ext-pill ext-pill-active">✓ 已安装</span>}
+              <span className="ext-pill ext-pill-official">{t('ext.official')}</span>
+              {isClaudeInstalled && <span className="ext-pill ext-pill-active">{t('ext.installed')}</span>}
             </div>
             <p className="ext-hero-desc">
-              深度整合 Anthropic 官方 Agent 编程助手，提供终端交互、代码重构与实时工程分析能力
+              {t('ext.heroDesc')}
             </p>
           </div>
         </div>
@@ -182,7 +184,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
               className="panel-standard-btn primary"
               onClick={() => onOpenExtension?.('Anthropic.claude-code')}
             >
-              打开扩展
+              {t('ext.open')}
             </button>
           ) : (
             <button
@@ -191,7 +193,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
               onClick={handleInstallClaudeCode}
               disabled={loading}
             >
-              {loading ? '安装中…' : '一键在线安装'}
+              {loading ? t('ext.installing') : t('ext.installOnline')}
             </button>
           )}
         </div>
@@ -201,7 +203,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       {downloadProgress && (
         <div className="ext-progress-card">
           <div className="ext-progress-header">
-            <span style={{ fontWeight: 600 }}>正在下载扩展组件…</span>
+            <span style={{ fontWeight: 600 }}>{t('ext.downloading')}</span>
             <span className="ext-progress-stat">
               {downloadProgress.percent.toFixed(1)}% (
               {(downloadProgress.downloaded / 1024 / 1024).toFixed(1)}MB /
@@ -220,10 +222,10 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
           <div className="ext-local-icon">📦</div>
           <div>
             <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-bright)' }}>
-              本地安装离线扩展包 (.vsix)
+              {t('ext.localTitle')}
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-              支持直接从磁盘选取已下载的 VSCode 插件安装包导入运行
+              {t('ext.localDesc')}
             </div>
           </div>
         </div>
@@ -233,21 +235,21 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
           onClick={handleLoadFromPath}
           disabled={loading}
         >
-          从路径载入…
+          {t('ext.loadFromPath')}
         </button>
       </div>
 
       {/* 已安装扩展列表 */}
       <div className="ext-section">
         <div className="ext-section-header">
-          <span className="ext-section-title">已安装的扩展</span>
+          <span className="ext-section-title">{t('ext.installedSection')}</span>
           <span className="ext-section-count">({extensions.length})</span>
         </div>
 
         {extensions.length === 0 ? (
           <div className="ext-empty-placeholder">
             <span style={{ fontSize: 26, opacity: 0.5 }}>🧩</span>
-            <span>暂未载入任何第三方扩展包，点击上方按钮即可一键添加</span>
+            <span>{t('ext.empty')}</span>
           </div>
         ) : (
           <div className="ext-grid">
@@ -259,7 +261,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
                     <div className="ext-item-name" title={ext}>{ext}</div>
                     <div className="ext-item-meta">
                       <span className="ext-status-dot" />
-                      <span>已启用</span>
+                      <span>{t('ext.enabled')}</span>
                     </div>
                   </div>
                 </div>
@@ -270,7 +272,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
                     className="panel-standard-btn"
                     onClick={() => onOpenExtension?.(ext)}
                   >
-                    管理
+                    {t('ext.manage')}
                   </button>
                 </div>
               </div>
@@ -287,8 +289,8 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
             className="ext-logs-toggle-btn"
             onClick={() => setShowLogs(!showLogs)}
           >
-            <span>扩展通信日志 ({messages.length})</span>
-            <span>{showLogs ? '▲ 收起' : '▼ 展开'}</span>
+            <span>{t('ext.logs', { n: messages.length })}</span>
+            <span>{showLogs ? t('ext.collapse') : t('ext.expand')}</span>
           </button>
 
           {showLogs && (
@@ -311,6 +313,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
  * 现代模态框封装，支持上下左右全向拖拽调整尺寸与持久化
  */
 export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModalProps) {
+  const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_extension_modal_size',
     defaultWidth: 760,
@@ -355,10 +358,10 @@ export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModa
             <span style={{ fontSize: 18 }}>🧩</span>
             <div>
               <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-bright)' }}>
-                扩展与插件管理 (Extensions)
+                {t('ext.modalTitle')}
               </h2>
               <p className="ide-modal-desc" style={{ marginTop: 2 }}>
-                管理 VSCode 插件生态、Claude AI 扩展及本地 VSIX 安装包
+                {t('ext.modalDesc')}
               </p>
             </div>
           </div>
@@ -366,7 +369,7 @@ export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModa
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭 (Esc)"
+            title={t('ext.closeEsc')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />

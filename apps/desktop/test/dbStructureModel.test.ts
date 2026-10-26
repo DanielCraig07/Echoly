@@ -159,11 +159,13 @@ describe('与 buildAlterTableStatements 串起来 · 端到端', () => {
     expect(res.statements.some((s) => s.includes('`id`'))).toBe(false);
   });
 
-  it('SQLite 下改类型被跳过并给出中文原因', () => {
+  it('SQLite 下改类型被跳过并给出原因码', () => {
     const row: EditableColumn = { ...fromMeta(nameMeta), type: 'TEXT', length: '' };
     const res = buildAlterTableStatements('sqlite', undefined, 't', [buildAlterChange(row)]);
     expect(res.ok).toBe(true);
     expect(res.statements).toHaveLength(0);
-    expect(res.skipped?.join('')).toContain('SQLite 不支持修改列类型');
+    // 这里断言的是**原因码**：`buildAlterTableStatements` 是纯逻辑，拿不到 i18n 上下文，
+    // 返回中文句子就等于把英文环境钉死在中文上。渲染层再用 DB_ALTER_SKIP_KEY 翻。
+    expect(res.skipped?.[0].code).toBe('sqlite-change-type');
   });
 });

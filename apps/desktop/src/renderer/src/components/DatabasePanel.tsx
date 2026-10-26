@@ -16,8 +16,8 @@ import { PanelChevron } from './PanelChevron';
 import {
   DbGroupRow,
   DbObjectRow,
-  EMPTY_GROUP_HINT,
   GroupIcon,
+  emptyGroupHint,
   groupNames,
   OBJECT_GROUPS,
 } from './DbObjectGroups';
@@ -28,11 +28,12 @@ import {
   buildDropDatabaseSql,
   buildDropTableSql,
   buildRenameDatabaseScript,
-  databaseLevelNoun,
   supportsDatabaseLevel,
 } from '../services/dbDdl';
+import { dbLevelNoun } from '../i18nParts/db';
+import { useI18n, type Translate } from '../i18n';
 import { buildRowInsertSql } from '../services/dbMutations';
-import { buildSqlConfirmMarkdown, confirmLabelFor, mdCode } from '../services/dbConfirmContent';
+import { buildSqlConfirmMarkdown, mdCode } from '../services/dbConfirmContent';
 import { NEW_CONSOLE_SQL } from '../services/dbQueryScripts';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import type { DbTableFilterCondition, DbTableViewState } from '../services/dbTableQuery';
@@ -383,11 +384,14 @@ function ProjectScriptsList({
   openPaths,
   onOpen,
   onDelete,
+  t,
 }: {
   scripts: DbProjectScriptEntry[];
   openPaths: string[];
   onOpen?: (script: DbProjectScriptEntry) => void;
   onDelete?: (script: DbProjectScriptEntry) => void;
+  /** 模块级组件不能用 hook，翻译函数由调用方传进来 */
+  t: Translate;
 }) {
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const openSet = new Set(openPaths);
@@ -399,7 +403,7 @@ function ProjectScriptsList({
         // 用 role + tabIndex 而不是 <button>：头里还要放动作按钮，按钮套按钮是非法的
         role="button"
         tabIndex={0}
-        title={collapsed ? '展开项目查询脚本' : '收起项目查询脚本'}
+        title={collapsed ? t('db.expandProjectScripts') : t('db.collapseProjectScripts')}
         onClick={() => setCollapsed((v) => !v)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -410,7 +414,7 @@ function ProjectScriptsList({
       >
         <PanelChevron expanded={!collapsed} size={12} color="var(--text-muted)" />
         <span>
-          项目查询脚本
+          {t('db.projectScripts')}
           {scripts.length > 0 && <span className="db-scripts-count">({scripts.length})</span>}
         </span>
       </div>
@@ -418,9 +422,7 @@ function ProjectScriptsList({
       {!collapsed && (
         <div className="db-scripts-list">
           {scripts.length === 0 ? (
-            <div className="db-scripts-empty">
-              在 SQL 控制台里保存过的脚本会出现在这里；脚本跟项目走，关掉标签也还在。
-            </div>
+            <div className="db-scripts-empty">{t('db.projectScriptsEmpty')}</div>
           ) : (
             scripts.map((s) => (
               <div
@@ -461,7 +463,7 @@ function ProjectScriptsList({
                   <button
                     type="button"
                     className="panel-action-btn"
-                    title="删除这个脚本文件（不可撤销）"
+                    title={t('db.deleteScriptFile')}
                     onClick={(e) => {
                       // 点删除不该顺带把脚本打开
                       e.stopPropagation();
@@ -496,6 +498,7 @@ export function DatabasePanel({
   openScriptPaths,
   onShowToast,
 }: DatabasePanelProps) {
+  const { t } = useI18n();
   const [connections, setConnections] = useState<DbConnectionView[]>([]);  /** connId -> 库 / schema 列表 */
   const [schemasMap, setSchemasMap] = useState<Record<string, DatabaseSchemaInfo[]>>({});
   /** `${connId}:${schema}` -> 表列表 */
@@ -586,7 +589,7 @@ export function DatabasePanel({
       // force 用于「刚刚重连成功、但 connections 状态尚未回流」的调用方。
       const known = connectionsRef.current.find((c) => c.id === connId);
       if (!force && known && !known.connected) {
-        setError(`schemas:${connId}`, '未连接：点击该连接即可用保存的配置重连');
+        setError(`schemas:${connId}`, t('db.notConnectedClickToReconnect'));
         return;
       }
       const key = `schemas:${connId}`;
@@ -598,15 +601,21 @@ export function DatabasePanel({
           setSchemasMap((prev) => ({ ...prev, [connId]: res.schemas }));
           setError(key, null);
         } else {
-          setError(key, res.error || '加载库 / Schema 失败');
+          setError(key, res.error || t('db.loadSchemasFailed'));
         }
       } catch (err: any) {
-        setError(key, `加载库 / Schema 失败: ${err.message || String(err)}`);
+        setError(
+          key,
+          t('db.loadFailedWithDetail', {
+            message: t('db.loadSchemasFailed'),
+            detail: err.message || String(err),
+          }),
+        );
       } finally {
         setLoadingKey(key, false);
       }
     },
-    [setError, setLoadingKey],
+    [setError, setLoadingKey, t],
   );
 
   /** 加载某库 / schema 下的表列表 */
@@ -622,15 +631,21 @@ export function DatabasePanel({
           setTablesMap((prev) => ({ ...prev, [`${connId}:${schemaName}`]: res.tables }));
           setError(key, null);
         } else {
-          setError(key, res.error || '加载数据表失败');
+          setError(key, res.error || t('db.loadTablesFailed'));
         }
       } catch (err: any) {
-        setError(key, `加载数据表失败: ${err.message || String(err)}`);
+        setError(
+          key,
+          t('db.loadFailedWithDetail', {
+            message: t('db.loadTablesFailed'),
+            detail: err.message || String(err),
+          }),
+        );
       } finally {
         setLoadingKey(key, false);
       }
     },
-    [setError, setLoadingKey],
+    [setError, setLoadingKey, t],
   );
 
   /**
@@ -651,15 +666,21 @@ export function DatabasePanel({
           setObjectsMap((prev) => ({ ...prev, [`${connId}:${schemaName}`]: res.objects! }));
           setError(key, null);
         } else {
-          setError(key, res.error || '加载数据库对象失败');
+          setError(key, res.error || t('db.loadObjectsFailed'));
         }
       } catch (err: any) {
-        setError(key, `加载数据库对象失败: ${err.message || String(err)}`);
+        setError(
+          key,
+          t('db.loadFailedWithDetail', {
+            message: t('db.loadObjectsFailed'),
+            detail: err.message || String(err),
+          }),
+        );
       } finally {
         setLoadingKey(key, false);
       }
     },
-    [setError, setLoadingKey],
+    [setError, setLoadingKey, t],
   );
 
   /** 加载单表列字段 */
@@ -676,15 +697,21 @@ export function DatabasePanel({
           setColumnsMap((prev) => ({ ...prev, [mapKey]: res.columns }));
           setError(key, null);
         } else {
-          setError(key, res.error || '加载表字段失败');
+          setError(key, res.error || t('db.loadColumnsFailed'));
         }
       } catch (err: any) {
-        setError(key, `加载表字段失败: ${err.message || String(err)}`);
+        setError(
+          key,
+          t('db.loadFailedWithDetail', {
+            message: t('db.loadColumnsFailed'),
+            detail: err.message || String(err),
+          }),
+        );
       } finally {
         setLoadingKey(key, false);
       }
     },
-    [setError, setLoadingKey],
+    [setError, setLoadingKey, t],
   );
 
   // ── 库 / 表结构变更（新建、删除、重命名、设计表） ─────────────────────────
@@ -704,17 +731,17 @@ export function DatabasePanel({
   /** 逐条执行 DDL；返回第一条失败的信息 */
   const runDdl = useCallback(
     async (connId: string, schemaName: string | undefined, statements: string[]) => {
-      if (!window.ide?.dbQuery) return { ok: false, error: '当前环境不支持执行 SQL' };
+      if (!window.ide?.dbQuery) return { ok: false, error: t('db.sqlUnsupported') };
       for (let i = 0; i < statements.length; i++) {
         const res = await window.ide.dbQuery(connId, statements[i], 1, 50, schemaName);
         if (!res.ok) {
-          const suffix = i > 0 ? `（前 ${i} 条已生效，DDL 无法回滚）` : '';
-          return { ok: false, error: `${res.error || '执行失败'}${suffix}` };
+          const suffix = i > 0 ? t('db.ddlPartialApplied', { n: i }) : '';
+          return { ok: false, error: `${res.error || t('db.stepFailed')}${suffix}` };
         }
       }
       return { ok: true as const };
     },
-    [],
+    [t],
   );
 
   /** 执行一批 DDL 并刷新树上对应节点 */
@@ -733,28 +760,28 @@ export function DatabasePanel({
 
   /** 新建库 / 新建 Schema */
   const handleCreateDatabase = async (connId: string, driver: 'sqlite' | 'mysql' | 'postgres') => {
-    const noun = databaseLevelNoun(driver);
+    const noun = dbLevelNoun(t, driver);
     const name = await dbConfirm.confirm({
-      title: `新建${noun}`,
-      content: `填写名称后将在连接 **${connLabelOf(connId)}** 上创建新的${noun}。`,
-      confirmLabel: '创建',
+      title: t('db.createNoun', { noun }),
+      content: t('db.createDatabaseContent', { conn: connLabelOf(connId), noun }),
+      confirmLabel: t('db.createLabel'),
       input: {
-        label: `新${noun}名称：`,
-        placeholder: `${noun}名`,
+        label: t('db.newNounNameLabel', { noun }),
+        placeholder: t('db.nounNameLabel', { noun }),
       },
     });
     if (name === null || !name.trim()) return;
     const sql = buildCreateDatabaseSql(driver, name.trim(), { ifNotExists: true });
     if (!sql) {
-      onShowToast?.(`该驱动不支持新建${noun}`, undefined, 'warn');
+      onShowToast?.(t('db.driverNoCreateNoun', { noun }), undefined, 'warn');
       return;
     }
     const res = await runDdl(connId, undefined, [sql]);
     if (res.ok) {
-      onShowToast?.(`已创建${noun}`, name.trim(), 'success');
+      onShowToast?.(t('db.nounCreated', { noun }), name.trim(), 'success');
       await loadSchemas(connId, true);
     } else {
-      onShowToast?.(`创建${noun}失败`, res.error, 'error');
+      onShowToast?.(t('db.nounCreateFailed', { noun }), res.error, 'error');
     }
   };
 
@@ -764,20 +791,21 @@ export function DatabasePanel({
     schemaName: string,
     driver: 'sqlite' | 'mysql' | 'postgres',
   ) => {
-    const noun = databaseLevelNoun(driver);
+    const noun = dbLevelNoun(t, driver);
     const sql = buildDropDatabaseSql(driver, schemaName, { ifExists: true });
     if (!sql) {
-      onShowToast?.(`该驱动不支持删除${noun}`, undefined, 'warn');
+      onShowToast?.(t('db.driverNoDropNoun', { noun }), undefined, 'warn');
       return;
     }
     const ok = await dbConfirm.confirm({
-      title: `删除${noun}`,
+      title: t('db.dropNoun', { noun }),
       tone: 'danger',
-      confirmLabel: confirmLabelFor('drop'),
+      confirmLabel: t('db.confirmDropLabel'),
       content: buildSqlConfirmMarkdown({
-        intro: `即将删除${noun} ${mdCode(schemaName)} 及其中的 **全部数据**。`,
+        t,
+        intro: t('db.dropDatabaseIntro', { noun, name: mdCode(schemaName) }),
         statements: [sql],
-        notes: [`删除整个${noun}无法回滚，请确认其中没有还需要的数据。`],
+        notes: [t('db.dropDatabaseNote', { noun })],
         tone: 'danger',
       }),
       requireTyping: schemaName,
@@ -785,7 +813,7 @@ export function DatabasePanel({
     if (ok === null) return;
     const res = await runDdl(connId, undefined, [sql]);
     if (res.ok) {
-      onShowToast?.(`已删除${noun}`, schemaName, 'success');
+      onShowToast?.(t('db.nounDropped', { noun }), schemaName, 'success');
       setExpandedSchemas((prev) => {
         const next = { ...prev };
         delete next[`${connId}:${schemaName}`];
@@ -793,7 +821,7 @@ export function DatabasePanel({
       });
       await loadSchemas(connId, true);
     } else {
-      onShowToast?.(`删除${noun}失败`, res.error, 'error');
+      onShowToast?.(t('db.nounDropFailed', { noun }), res.error, 'error');
     }
   };
 
@@ -803,15 +831,15 @@ export function DatabasePanel({
     schemaName: string,
     driver: 'sqlite' | 'mysql' | 'postgres',
   ) => {
-    const noun = databaseLevelNoun(driver);
+    const noun = dbLevelNoun(t, driver);
     const name = await dbConfirm.confirm({
-      title: `重命名${noun}`,
-      content: `将 ${mdCode(schemaName)} 重命名为新的${noun}。名称需与旧名称不同。`,
-      confirmLabel: '生成脚本',
+      title: t('db.renameNoun', { noun }),
+      content: t('db.renameDatabaseContent', { name: mdCode(schemaName), noun }),
+      confirmLabel: t('db.generateScript'),
       input: {
-        label: `新的${noun}名称：`,
+        label: t('db.newNounNameLabel', { noun }),
         defaultValue: `${schemaName}_new`,
-        placeholder: `${noun}名`,
+        placeholder: t('db.nounNameLabel', { noun }),
       },
     });
     if (name === null || !name.trim() || name.trim() === schemaName) return;
@@ -819,18 +847,27 @@ export function DatabasePanel({
     let tables: string[] = [];
     try {
       const res = await window.ide?.dbListTables?.(connId, schemaName);
-      if (res?.ok) tables = res.tables.map((t) => t.name);
+      if (res?.ok) tables = res.tables.map((tb) => tb.name);
     } catch {
       // 忽略：脚本里已带「未读取到表清单」的说明
     }
-    const script = buildRenameDatabaseScript(driver, schemaName, name.trim(), tables);
+    const script = buildRenameDatabaseScript(driver, schemaName, name.trim(), tables, t);
     if (!script) {
-      onShowToast?.(`该驱动不支持重命名${noun}`, undefined, 'warn');
+      onShowToast?.(t('db.driverNoRenameNoun', { noun }), undefined, 'warn');
       return;
     }
     // 绝不自动执行：这条脚本涉及建库 + 逐表迁移 + 删旧库，必须由用户逐句过目
-    onOpenSqlConsole?.(connId, schemaName, script, `重命名${noun} - ${schemaName}`);
-    onShowToast?.('已生成重命名脚本', '请逐条检查后手动执行；执行前务必备份。', 'info');
+    onOpenSqlConsole?.(
+      connId,
+      schemaName,
+      script,
+      t('db.renameConsoleTitle', { noun, name: schemaName }),
+    );
+    onShowToast?.(
+      t('db.renameScriptGenerated'),
+      t('db.renameScriptGeneratedDetail'),
+      'info',
+    );
   };
 
   /** 删除表（要求手输表名） */
@@ -842,13 +879,14 @@ export function DatabasePanel({
   ) => {
     const sql = buildDropTableSql(driver, schemaName, tableName, { ifExists: true });
     const ok = await dbConfirm.confirm({
-      title: '删除表',
+      title: t('db.dropTableTitle'),
       tone: 'danger',
-      confirmLabel: confirmLabelFor('drop'),
+      confirmLabel: t('db.confirmDropLabel'),
       content: buildSqlConfirmMarkdown({
-        intro: `即将删除表 ${mdCode(tableName)} 及其中的 **全部数据**。`,
+        t,
+        intro: t('db.dropTableIntro', { name: mdCode(tableName) }),
         statements: [sql],
-        notes: ['删除表无法回滚，请确认没有程序仍在依赖它。'],
+        notes: [t('db.dropTableNote')],
         tone: 'danger',
       }),
       requireTyping: tableName,
@@ -856,14 +894,14 @@ export function DatabasePanel({
     if (ok === null) return;
     const res = await executeDdl(connId, schemaName, [sql]);
     if (res.ok) {
-      onShowToast?.(`已删除表 ${tableName}`, undefined, 'success');
+      onShowToast?.(t('db.tableDropped', { table: tableName }), undefined, 'success');
       setExpandedTables((prev) => {
         const next = { ...prev };
         delete next[`${connId}:${schemaName}:${tableName}`];
         return next;
       });
     } else {
-      onShowToast?.('删除表失败', res.error, 'error');
+      onShowToast?.(t('db.dropTableFailed'), res.error, 'error');
     }
   };
 
@@ -871,7 +909,7 @@ export function DatabasePanel({
   const handleStructureExecute = useCallback(
     async (statements: string[]) => {
       const target = structureModal;
-      if (!target) return { ok: false, error: '弹窗状态已失效，请重新打开' };
+      if (!target) return { ok: false, error: t('db.structureModalStale') };
       const res = await runDdl(target.connId, target.schemaName, statements);
       if (res.ok) {
         // 结构变更后，该表的列缓存必须作废，否则树上展开还是旧字段
@@ -887,7 +925,7 @@ export function DatabasePanel({
       }
       return res;
     },
-    [structureModal, runDdl, loadTables, loadSchemas],
+    [structureModal, runDdl, loadTables, loadSchemas, t],
   );
 
   // 刷新连接列表：首次挂载展开第一个**已连接**的连接；手动刷新只重载已展开节点的缓存
@@ -961,12 +999,12 @@ export function DatabasePanel({
         if (connIds.has(connId)) await loadTableSchema(connId, schemaName, tableName);
       }
     } catch (err: any) {
-      onShowToast?.('加载数据库连接失败', err.message || String(err), 'error');
+      onShowToast?.(t('db.loadConnectionsFailed'), err.message || String(err), 'error');
     } finally {
       setLoading(false);
     }
     // expandedSchemas / expandedTables 仅作刷新时的读取快照，避免把展开动作变成重复刷新
-  }, [onShowToast, loadSchemas, loadTables, loadObjects, loadTableSchema]);
+  }, [onShowToast, loadSchemas, loadTables, loadObjects, loadTableSchema, t]);
 
   useEffect(() => {
     void refreshConnections();
@@ -1132,11 +1170,11 @@ export function DatabasePanel({
     if (!window.ide?.dbDisconnect) return;
     try {
       await window.ide.dbDisconnect(connId);
-      onShowToast?.('已断开数据库连接', undefined, 'info');
+      onShowToast?.(t('db.disconnectedOk'), undefined, 'info');
       clearConnectionCache(connId);
       await refreshConnections();
     } catch (err: any) {
-      onShowToast?.('断开失败', err.message || String(err), 'error');
+      onShowToast?.(t('db.disconnectFailed'), err.message || String(err), 'error');
     }
   };
 
@@ -1148,9 +1186,9 @@ export function DatabasePanel({
    */
   const requestDisconnect = async (conn: DbConnectionView) => {
     const ok = await dbConfirm.confirm({
-      title: '断开连接',
-      content: `确定断开连接 ${mdCode(conn.name)} 吗？断开后树上的库 / 表列表需要重新连接才能展开。`,
-      confirmLabel: '断开',
+      title: t('db.disconnectTitle'),
+      content: t('db.disconnectConfirm', { name: mdCode(conn.name) }),
+      confirmLabel: t('db.disconnectLabel'),
     });
     if (ok === null) return;
     await handleDisconnect(conn.id);
@@ -1160,17 +1198,17 @@ export function DatabasePanel({
   const handleConnectSaved = async (connId: string): Promise<boolean> => {
     if (!window.ide?.dbConnectSaved) return false;
     const conn = connections.find((c) => c.id === connId);
-    const label = conn?.name ?? '数据库';
+    const label = conn?.name ?? t('db.databaseFallback');
 
     // 准入判断：没存密码的连接不能拿空密码去撞，否则只会拿到一个看不懂的鉴权错误
     const preflight = checkConnectionPreflight(conn);
 
     if (preflight.action === 'prompt-password') {
-      if (preflight.reason) onShowToast?.('无法直接连接', preflight.reason, 'error');
+      if (preflight.reason) onShowToast?.(t('db.cannotConnectDirectly'), preflight.reason, 'error');
       else
         onShowToast?.(
-          '该连接未保存密码',
-          '请点击「编辑连接…」补上密码后连接',
+          t('db.noSavedPassword'),
+          t('db.noSavedPasswordDetail'),
           'warn',
         );
       // 直接把编辑弹窗打开，省掉用户再找一遍菜单
@@ -1186,11 +1224,15 @@ export function DatabasePanel({
       await refreshConnections();
       const refreshed = connectionsRef.current.find((c) => c.id === connId);
       if (!refreshed) {
-        onShowToast?.('未找到该连接配置', '它可能已从当前项目中被删除', 'error');
+        onShowToast?.(t('db.connConfigNotFound'), t('db.connConfigNotFoundDetail'), 'error');
         return false;
       }
       if (!refreshed.connected) {
-        onShowToast?.('该连接无法直接重连', '请点击「编辑连接…」确认参数后再连接', 'warn');
+        onShowToast?.(
+          t('db.connCannotReconnect'),
+          t('db.connCannotReconnectDetail'),
+          'warn',
+        );
         return false;
       }
       return true;
@@ -1200,7 +1242,7 @@ export function DatabasePanel({
       setLoadingKey(`connect:${connId}`, true);
       const res = await window.ide.dbConnectSaved(connId);
       if (res?.ok) {
-        onShowToast?.(`已连接「${label}」`, undefined, 'success');
+        onShowToast?.(t('db.connectedTo', { name: label }), undefined, 'success');
         await refreshConnections();
         // 连上后自动展开，省去用户再点一次。此时 connections 状态可能还没回流，
         // 故 force 绕过「未连接」短路。
@@ -1208,13 +1250,13 @@ export function DatabasePanel({
         await loadSchemas(connId, true);
         return true;
       }
-      const msg = res?.error || '连接失败';
-      onShowToast?.(`连接「${label}」失败`, msg, 'error');
+      const msg = res?.error || t('db.connectFailed');
+      onShowToast?.(t('db.connectFailedTo', { name: label }), msg, 'error');
       setError(`schemas:${connId}`, msg);
       return false;
     } catch (err: any) {
       const msg = err.message || String(err);
-      onShowToast?.(`连接「${label}」失败`, msg, 'error');
+      onShowToast?.(t('db.connectFailedTo', { name: label }), msg, 'error');
       setError(`schemas:${connId}`, msg);
       return false;
     } finally {
@@ -1228,15 +1270,15 @@ export function DatabasePanel({
     try {
       const res = await window.ide.dbDeleteConnection(connId);
       if (res?.ok) {
-        onShowToast?.('已从项目中删除该连接配置', undefined, 'info');
+        onShowToast?.(t('db.connDeletedOk'), undefined, 'info');
         clearConnectionCache(connId);
         setEditing(null);
         await refreshConnections();
       } else {
-        onShowToast?.('删除连接失败', res?.error, 'error');
+        onShowToast?.(t('db.deleteConnectionFailed'), res?.error, 'error');
       }
     } catch (err: any) {
-      onShowToast?.('删除连接失败', err.message || String(err), 'error');
+      onShowToast?.(t('db.deleteConnectionFailed'), err.message || String(err), 'error');
     }
   };
 
@@ -1300,10 +1342,14 @@ export function DatabasePanel({
   const copyText = useCallback(
     async (text: string, label: string) => {
       const ok = await copyToClipboard(text);
-      onShowToast?.(ok ? `已复制${label}` : `复制${label}失败`, text, ok ? 'success' : 'error');
+      onShowToast?.(
+        ok ? t('db.copiedLabel', { label }) : t('db.copyLabelFailed', { label }),
+        text,
+        ok ? 'success' : 'error',
+      );
       setMenu(null);
     },
-    [onShowToast],
+    [onShowToast, t],
   );
 
   /** 按目标层级决定「全限定名」的拼法 */
@@ -1361,7 +1407,7 @@ export function DatabasePanel({
         <>
           <MenuItem
             icon={<IconMenuData />}
-            label="查看表数据"
+            label={t('db.menuViewTableData')}
             onClick={() => {
               setMenu(null);
               onOpenTableData?.(target.connId, tableName, schemaName);
@@ -1369,7 +1415,7 @@ export function DatabasePanel({
           />
           <MenuItem
             icon={<IconMenuDdl />}
-            label="查看表结构"
+            label={t('db.menuViewTableStructure')}
             onClick={() => {
               setMenu(null);
               onOpenTableStructure?.(target.connId, tableName, schemaName);
@@ -1377,20 +1423,24 @@ export function DatabasePanel({
           />
           <MenuItem
             icon={<IconMenuColumns />}
-            label={expandedTables[`${target.connId}:${schemaName}:${tableName}`] ? '折叠列结构' : '展开列结构'}
+            label={
+              expandedTables[`${target.connId}:${schemaName}:${tableName}`]
+                ? t('db.menuCollapseColumns')
+                : t('db.menuExpandColumns')
+            }
             onClick={() => toggleNode(target)}
           />
           {onOpenSqlConsole && (
             <MenuItem
               icon={<IconBolt />}
-              label="在新 SQL 控制台查询此表"
+              label={t('db.menuQueryInNewConsole')}
               onClick={() => {
                 setMenu(null);
                 onOpenSqlConsole(
                   target.connId,
                   schemaName,
                   buildTableSelectSql(driver, schemaName, tableName, 50),
-                  `查询 - ${tableName}`,
+                  t('db.queryTabTitle', { name: tableName }),
                 );
               }}
             />
@@ -1398,25 +1448,28 @@ export function DatabasePanel({
           <MenuDivider />
           <MenuItem
             icon={<IconMenuCopy />}
-            label="复制表名"
-            onClick={() => void copyText(tableName, '表名')}
+            label={t('db.menuCopyTableName')}
+            onClick={() => void copyText(tableName, t('db.copyObj.tableName'))}
           />
           <MenuItem
             icon={<IconMenuCopy />}
-            label="复制全限定名"
-            onClick={() => void copyText(qualifiedNameOf(target), '全限定名')}
+            label={t('db.menuCopyQualifiedName')}
+            onClick={() => void copyText(qualifiedNameOf(target), t('db.copyObj.qualifiedName'))}
           />
           <MenuItem
             icon={<IconMenuCopy />}
-            label="复制 SELECT 语句"
+            label={t('db.menuCopySelect')}
             onClick={() =>
-              void copyText(buildTableSelectSql(driver, schemaName, tableName, 100), 'SELECT 语句')
+              void copyText(
+                buildTableSelectSql(driver, schemaName, tableName, 100),
+                t('db.copyObj.select'),
+              )
             }
           />
           <MenuDivider />
           <MenuItem
             icon={<IconMenuEdit />}
-            label="设计表…（修改列结构）"
+            label={t('db.menuDesignTable')}
             onClick={() => {
               setMenu(null);
               setStructureModal({
@@ -1430,7 +1483,7 @@ export function DatabasePanel({
           />
           <MenuItem
             icon={<IconPlus />}
-            label="在此库新建表…"
+            label={t('db.menuNewTableHere')}
             onClick={() => {
               setMenu(null);
               setStructureModal({ mode: 'create', connId: target.connId, schemaName });
@@ -1438,32 +1491,36 @@ export function DatabasePanel({
           />
           <MenuItem
             icon={<IconMenuCsv />}
-            label="复制 INSERT 模板"
+            label={t('db.menuCopyInsertTemplate')}
             onClick={() => {
               const cols =
                 columnsMap[`${target.connId}:${schemaName}:${tableName}`] ||
                 [];
               if (cols.length === 0) {
-                onShowToast?.('请先展开列结构', '展开后即可按真实列名生成 INSERT 模板。', 'info');
+                onShowToast?.(
+                  t('db.needExpandColumnsFirst'),
+                  t('db.needExpandColumnsFirstDetail'),
+                  'info',
+                );
                 return;
               }
               const empty: Record<string, any> = {};
               for (const c of cols) empty[c.name] = null;
               void copyText(
                 buildRowInsertSql(driver, schemaName, tableName, cols, empty),
-                'INSERT 模板',
+                t('db.copyObj.insertTemplate'),
               );
             }}
           />
           <MenuDivider />
           <MenuItem
             icon={<IconMenuRefresh />}
-            label="刷新此表"
+            label={t('db.menuRefreshTable')}
             onClick={() => void refreshNode(target)}
           />
           <MenuItem
             icon={<IconTrash />}
-            label="删除表…"
+            label={t('db.menuDropTable')}
             danger
             onClick={() => {
               setMenu(null);
@@ -1491,30 +1548,28 @@ export function DatabasePanel({
         <>
           <MenuItem
             icon={<IconMenuData />}
-            label="按此列升序排列"
+            label={t('db.menuSortByColAsc')}
             onClick={() => openWithView({ sorts: [{ column: columnName, direction: 'asc' }] })}
           />
           <MenuItem
             icon={<IconMenuData />}
-            label="按此列降序排列"
+            label={t('db.menuSortByColDesc')}
             onClick={() => openWithView({ sorts: [{ column: columnName, direction: 'desc' }] })}
           />
           <MenuItem
             icon={<IconMenuColumns />}
-            label="按此列筛选…"
+            label={t('db.menuFilterByCol')}
             onClick={() => {
               setMenu(null);
               void (async () => {
                 // 树上没有输入值的控件，用一个输入弹窗收集条件值 —— 比「先打开数据视图再让用户自己找漏斗」少两步
                 const raw = await dbConfirm.confirm({
-                  title: '按列筛选',
-                  content:
-                    `目标列：${mdCode(fullName)}\n\n` +
-                    '输入要匹配的值（默认按「包含」匹配文本，输入纯数字按「等于」匹配）；确认后将打开表数据视图并按该条件查询。',
-                  confirmLabel: '打开并筛选',
+                  title: t('db.filterByColumnTitle'),
+                  content: t('db.filterByColumnContent', { column: mdCode(fullName) }),
+                  confirmLabel: t('db.openAndFilter'),
                   input: {
-                    label: '要匹配的值：',
-                    placeholder: '例如 alice 或 42',
+                    label: t('db.filterValueLabel'),
+                    placeholder: t('db.filterValueExample'),
                   },
                 });
                 if (raw === null || !raw.trim()) return;
@@ -1533,26 +1588,31 @@ export function DatabasePanel({
           <MenuDivider />
           <MenuItem
             icon={<IconMenuCopy />}
-            label="复制列名"
-            onClick={() => void copyText(columnName, '列名')}
+            label={t('db.menuCopyColumnName')}
+            onClick={() => void copyText(columnName, t('db.copyObj.columnName'))}
           />
           <MenuItem
             icon={<IconMenuCopy />}
-            label="复制全限定列名"
-            onClick={() => void copyText(fullName, '全限定列名')}
+            label={t('db.menuCopyQualifiedColName')}
+            onClick={() => void copyText(fullName, t('db.copyObj.qualifiedColumnName'))}
           />
           <MenuItem
             icon={<IconMenuCopy />}
-            label="复制 WHERE 片段"
-            onClick={() => void copyText(`${quoteIdent(driver, columnName)} = ?`, 'WHERE 片段')}
+            label={t('db.menuCopyWhere')}
+            onClick={() =>
+              void copyText(
+                `${quoteIdent(driver, columnName)} = ?`,
+                t('db.copyObj.whereFragment'),
+              )
+            }
           />
           <MenuItem
             icon={<IconMenuCopy />}
-            label="复制 SELECT 语句（含此列）"
+            label={t('db.menuCopySelectWithCol')}
             onClick={() =>
               void copyText(
                 `SELECT ${quoteIdent(driver, columnName)} FROM ${qualifyIdent(driver, schemaName, tableName)} LIMIT 100;`,
-                'SELECT 语句',
+                t('db.copyObj.select'),
               )
             }
           />
@@ -1561,9 +1621,11 @@ export function DatabasePanel({
               <MenuDivider />
               <MenuItem
                 icon={<IconMenuColumns />}
-                label={`列类型：${meta.type || 'ANY'}${meta.notnull ? ' · NOT NULL' : ''}${
-                  meta.pk ? ' · 主键' : ''
-                }`}
+                label={t('db.menuColumnType', {
+                  type: meta.type || 'ANY',
+                  notnull: meta.notnull ? t('db.notNullSuffix') : '',
+                  pk: meta.pk ? t('db.pkSuffix') : '',
+                })}
                 onClick={() => setMenu(null)}
               />
             </>
@@ -1580,27 +1642,31 @@ export function DatabasePanel({
           {onOpenSqlConsole && (
             <MenuItem
               icon={<IconBolt />}
-              label="在此库新建 SQL 控制台"
+              label={t('db.menuNewSqlConsoleHere')}
               onClick={() => {
                 setMenu(null);
                 onOpenSqlConsole(
                   target.connId,
                   schemaName,
                   NEW_CONSOLE_SQL,
-                  `查询 - ${schemaName}`,
+                  t('db.queryTabTitle', { name: schemaName }),
                 );
               }}
             />
           )}
           <MenuItem
             icon={<IconMenuExpand />}
-            label={expandedSchemas[`${target.connId}:${schemaName}`] ? '折叠此库' : '展开此库'}
+            label={
+              expandedSchemas[`${target.connId}:${schemaName}`]
+                ? t('db.menuCollapseDb')
+                : t('db.menuExpandDb')
+            }
             onClick={() => toggleNode(target)}
           />
           <MenuDivider />
           <MenuItem
             icon={<IconPlus />}
-            label="在此库新建表…"
+            label={t('db.menuNewTableHere')}
             onClick={() => {
               setMenu(null);
               setStructureModal({ mode: 'create', connId: target.connId, schemaName });
@@ -1610,7 +1676,7 @@ export function DatabasePanel({
             <>
               <MenuItem
                 icon={<IconPlus />}
-                label={`新建${databaseLevelNoun(driver)}…`}
+                label={t('db.menuNewDatabase', { noun: dbLevelNoun(t, driver) })}
                 onClick={() => {
                   setMenu(null);
                   void handleCreateDatabase(target.connId, driver);
@@ -1618,7 +1684,7 @@ export function DatabasePanel({
               />
               <MenuItem
                 icon={<IconMenuEdit />}
-                label={`重命名${databaseLevelNoun(driver)}…（生成脚本）`}
+                label={t('db.menuRenameDatabase', { noun: dbLevelNoun(t, driver) })}
                 onClick={() => {
                   setMenu(null);
                   void handleRenameDatabase(target.connId, schemaName, driver);
@@ -1629,29 +1695,29 @@ export function DatabasePanel({
           <MenuDivider />
           <MenuItem
             icon={<IconMenuCopy />}
-            label="复制库 / Schema 名"
-            onClick={() => void copyText(schemaName, '库名')}
+            label={t('db.menuCopyDbName')}
+            onClick={() => void copyText(schemaName, t('db.copyObj.dbName'))}
           />
           <MenuItem
             icon={<IconMenuCopy />}
-            label="复制全部表名"
+            label={t('db.menuCopyAllTableNames')}
             onClick={() =>
               void copyText(
-                tables.map((t) => t.name).join('\n'),
-                `全部表名 (${tables.length} 张)`,
+                tables.map((tb) => tb.name).join('\n'),
+                t('db.copyObj.allTableNames', { n: tables.length }),
               )
             }
           />
           <MenuDivider />
           <MenuItem
             icon={<IconMenuRefresh />}
-            label="刷新此库的表列表"
+            label={t('db.menuRefreshDbTables')}
             onClick={() => void refreshNode(target)}
           />
           {supportsDatabaseLevel(driver) && (
             <MenuItem
               icon={<IconTrash />}
-              label={`删除${databaseLevelNoun(driver)}…`}
+              label={t('db.menuDropDatabase', { noun: dbLevelNoun(t, driver) })}
               danger
               onClick={() => {
                 setMenu(null);
@@ -1675,7 +1741,7 @@ export function DatabasePanel({
         {!isConnected && (
           <MenuItem
             icon={<IconMenuLink />}
-            label="连接"
+            label={t('db.menuConnect')}
             onClick={() => {
               setMenu(null);
               void handleConnectSaved(target.connId);
@@ -1685,27 +1751,27 @@ export function DatabasePanel({
         {onOpenSqlConsole && isConnected && (
           <MenuItem
             icon={<IconBolt />}
-            label="新建 SQL 控制台"
+            label={t('db.newSqlConsole')}
             onClick={() => {
               setMenu(null);
               onOpenSqlConsole(
                 target.connId,
                 undefined,
                 NEW_CONSOLE_SQL,
-                `查询 - ${connTarget?.name ?? '数据库'}`,
+                t('db.queryTabTitle', { name: connTarget?.name ?? t('db.databaseFallback') }),
               );
             }}
           />
         )}
         <MenuItem
           icon={<IconMenuExpand />}
-          label={expandedConns[target.connId] ? '折叠连接' : '展开连接'}
+          label={expandedConns[target.connId] ? t('db.menuCollapseConn') : t('db.menuExpandConn')}
           onClick={() => toggleNode(target)}
         />
         <MenuDivider />
         <MenuItem
           icon={<IconMenuEdit />}
-          label="编辑连接…"
+          label={t('db.menuEditConnection')}
           onClick={() => {
             setMenu(null);
             if (connTarget) {
@@ -1716,31 +1782,33 @@ export function DatabasePanel({
         />
         <MenuItem
           icon={<IconMenuCopy />}
-          label="复制连接名"
-          onClick={() => void copyText(connTarget?.name ?? target.connId, '连接名')}
+          label={t('db.menuCopyConnName')}
+          onClick={() => void copyText(connTarget?.name ?? target.connId, t('db.copyObj.connName'))}
         />
         <MenuItem
           icon={<IconMenuCopy />}
-          label="复制连接地址"
-          onClick={() => void copyText(connDesc, '连接地址')}
+          label={t('db.menuCopyConnAddress')}
+          onClick={() => void copyText(connDesc, t('db.copyObj.connAddress'))}
         />
         <MenuDivider />
         <MenuItem
           icon={<IconMenuRefresh />}
-          label="刷新连接与库列表"
+          label={t('db.menuRefreshConn')}
           onClick={() => void refreshNode(target)}
         />
         {isConnected && (
           <MenuItem
             icon={<IconMenuPlug />}
-            label="断开此连接"
+            label={t('db.menuDisconnectConn')}
             onClick={() => {
               setMenu(null);
               void (async () => {
                 const ok = await dbConfirm.confirm({
-                  title: '断开连接',
-                  content: `确定断开连接 ${mdCode(connTarget?.name ?? target.connId)} 吗？断开后树上的库 / 表列表需要重新连接才能展开。`,
-                  confirmLabel: '断开',
+                  title: t('db.disconnectTitle'),
+                  content: t('db.disconnectConfirm', {
+                    name: mdCode(connTarget?.name ?? target.connId),
+                  }),
+                  confirmLabel: t('db.disconnectLabel'),
                 });
                 if (ok === null) return;
                 void handleDisconnect(target.connId);
@@ -1750,19 +1818,22 @@ export function DatabasePanel({
         )}
         <MenuItem
           icon={<IconTrash />}
-          label="删除此连接"
+          label={t('db.menuDeleteConn')}
           danger
           onClick={() => {
             setMenu(null);
             void (async () => {
               const ok = await dbConfirm.confirm({
-                title: '删除连接',
+                title: t('db.deleteConnectionTitle'),
                 tone: 'danger',
-                confirmLabel: confirmLabelFor('delete'),
+                confirmLabel: t('db.confirmDropLabel'),
                 content:
-                  `确定从当前项目中删除连接 ${mdCode(connTarget?.name ?? target.connId)} 吗？\n\n` +
-                  '> 该连接配置将从本机该项目绑定的配置中移除，已保存的密码一并失效。\n' +
-                  '> 数据库本身不受影响，只删本地配置。',
+                  t('db.deleteConnectionConfirm', {
+                    name: mdCode(connTarget?.name ?? target.connId),
+                  }) +
+                  '\n\n' +
+                  `> ${t('db.deleteConnectionNote1')}\n` +
+                  `> ${t('db.deleteConnectionNote2')}`,
               });
               if (ok === null) return;
               void handleDeleteConnection(target.connId);
@@ -1815,14 +1886,14 @@ export function DatabasePanel({
           }}
         >
           <PanelChevron expanded={true} size={12} />
-          <span>数据库集成</span>
+          <span>{t('db.databaseIntegration')}</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
             type="button"
             className="panel-action-btn"
-            title="刷新连接、库与数据表"
+            title={t('db.refreshConnectionsTitle')}
             onClick={() => void refreshConnections()}
           >
             <IconReload spinning={loading} />
@@ -1830,7 +1901,7 @@ export function DatabasePanel({
           <button
             type="button"
             className="panel-action-btn"
-            title="新建数据库连接 (DBeaver 风格向导)"
+            title={t('db.newConnectionWizardTitle')}
             onClick={() => {
               setEditing(null);
               setIsNewModalOpen(true);
@@ -1842,10 +1913,15 @@ export function DatabasePanel({
             <button
               type="button"
               className="panel-action-btn"
-              title="在主编辑区新建 SQL 控制台"
+              title={t('db.newSqlConsoleInEditorTitle')}
               onClick={() => {
                 const first = connections.find((c) => c.connected)!;
-                onOpenSqlConsole(first.id, undefined, NEW_CONSOLE_SQL, `查询 - ${first.name}`);
+                onOpenSqlConsole(
+                  first.id,
+                  undefined,
+                  NEW_CONSOLE_SQL,
+                  t('db.queryTabTitle', { name: first.name }),
+                );
               }}
             >
               <IconBolt />
@@ -1856,14 +1932,14 @@ export function DatabasePanel({
             <button
               type="button"
               className="panel-action-btn"
-              title="新建数据表（DDL）"
+              title={t('db.newTableDdlTitle')}
               onClick={() => {
                 const conn = connections.find((c) => c.connected)!;
                 const schemas = schemasMap[conn.id] || [];
                 if (schemas.length === 0) {
                   onShowToast?.(
-                    '请先展开一个数据库',
-                    '需要先确定新表建在哪个库 / Schema 下。',
+                    t('db.expandDatabaseFirst'),
+                    t('db.expandDatabaseFirstDetail'),
                     'info',
                   );
                   return;
@@ -1897,6 +1973,7 @@ export function DatabasePanel({
           openPaths={openScriptPaths ?? []}
           onOpen={onOpenScript}
           onDelete={onDeleteScript}
+          t={t}
         />
       )}
 
@@ -1931,10 +2008,10 @@ export function DatabasePanel({
             🗄️
           </div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-            数据库导航器 (Database Navigator)
+            {t('db.navigatorTitle')}
           </div>
           <div style={{ fontSize: 12, lineHeight: 1.5, maxWidth: 260 }}>
-            像 DBeaver 一样直观管理数据库连接、库与表结构。双击表直接在编辑区全屏查看表数据、DDL 语句或执行 SQL。
+            {t('db.navigatorDesc')}
           </div>
           <button
             type="button"
@@ -1957,7 +2034,7 @@ export function DatabasePanel({
             }}
           >
             <IconPlus />
-            新建数据库连接
+            {t('db.newConnection')}
           </button>
         </div>
       ) : (
@@ -1986,10 +2063,15 @@ export function DatabasePanel({
                   onContextMenu={(e) => openMenu(e, { kind: 'conn', connId: conn.id })}
                   title={
                     isConnected
-                      ? `${conn.type.toUpperCase()} · ${conn.host ? `${conn.host}:${conn.port ?? ''}` : conn.path ?? ''}（右键查看更多操作）`
+                      ? t('db.connTitleConnected', {
+                          driver: conn.type.toUpperCase(),
+                          target: conn.host
+                            ? `${conn.host}:${conn.port ?? ''}`
+                            : (conn.path ?? ''),
+                        })
                       : conn.requiresPassword
-                        ? '未连接 · 该连接未保存密码，点击补上密码后连接'
-                        : '未连接 · 点击使用项目保存的配置重连（右键查看更多操作）'
+                        ? t('db.connNotConnectedNoPassword')
+                        : t('db.connNotConnectedClick')
                   }
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -2038,7 +2120,7 @@ export function DatabasePanel({
                           flexShrink: 0,
                         }}
                       >
-                        {isConnecting ? '连接中…' : '未连接'}
+                        {isConnecting ? t('db.connecting') : t('db.notConnected')}
                       </span>
                     )}
                     {isConnected && conn.database && (
@@ -2053,10 +2135,15 @@ export function DatabasePanel({
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title="新建 SQL 控制台"
+                        title={t('db.newSqlConsole')}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onOpenSqlConsole(conn.id, undefined, NEW_CONSOLE_SQL, `查询 - ${conn.name}`);
+                          onOpenSqlConsole(
+                            conn.id,
+                            undefined,
+                            NEW_CONSOLE_SQL,
+                            t('db.queryTabTitle', { name: conn.name }),
+                          );
                         }}
                       >
                         <IconBolt />
@@ -2066,7 +2153,7 @@ export function DatabasePanel({
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title="断开此连接（配置仍保留在项目中）"
+                        title={t('db.disconnectKeepConfig')}
                         onClick={(e) => {
                           e.stopPropagation();
                           // 与右键菜单里的「断开此连接」走同一段确认，两条入口不能一个有确认一个没有
@@ -2079,7 +2166,7 @@ export function DatabasePanel({
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title="连接（使用项目中保存的配置）"
+                        title={t('db.connectWithSaved')}
                         onClick={(e) => {
                           e.stopPropagation();
                           void handleConnectSaved(conn.id);
@@ -2096,7 +2183,7 @@ export function DatabasePanel({
                   <div style={{ paddingLeft: 14, marginTop: 4 }}>
                     {loadingKeys[schemasKey] && schemas.length === 0 && (
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '3px 6px' }}>
-                        加载库 / Schema 中...
+                        {t('db.loadingSchemas')}
                       </div>
                     )}
                     {errorMap[schemasKey] && <TreeError message={errorMap[schemasKey]} />}
@@ -2110,29 +2197,36 @@ export function DatabasePanel({
                       const objectsKey = `objects:${schemaKey}`;
 
                       /** 表 / 视图共用的行节点：两者都有列结构、都能开数据视图，只有图标与文案不同 */
-                      const renderTableNode = (t: DatabaseTableInfo, kind: 'table' | 'view') => {
-                        const mapKey = `${schemaKey}:${t.name}`;
+                      const renderTableNode = (tbl: DatabaseTableInfo, kind: 'table' | 'view') => {
+                        const mapKey = `${schemaKey}:${tbl.name}`;
                         const isTableExpanded = !!expandedTables[mapKey];
                         const columns = columnsMap[mapKey] || [];
                         const columnsKey = `columns:${mapKey}`;
 
                         return (
-                          <div key={t.name}>
+                          <div key={tbl.name}>
                             {/* 表 / 视图节点 */}
                             <div
                               className="db-tree-row"
                               style={{ padding: '3px 6px' }}
-                              onClick={() => toggleTable(conn.id, schema.name, t.name)}
-                              onDoubleClick={() => onOpenTableData?.(conn.id, t.name, schema.name)}
+                              onClick={() => toggleTable(conn.id, schema.name, tbl.name)}
+                              onDoubleClick={() => onOpenTableData?.(conn.id, tbl.name, schema.name)}
                               onContextMenu={(e) =>
                                 openMenu(e, {
                                   kind: 'table',
                                   connId: conn.id,
                                   schemaName: schema.name,
-                                  tableName: t.name,
+                                  tableName: tbl.name,
                                 })
                               }
-                              title={`${t.comment ? `${t.name} — ${t.comment}` : t.name}（双击查看数据 · 右键更多操作）`}
+                              title={
+                                tbl.comment
+                                  ? t('db.tableNodeTitleWithComment', {
+                                      name: tbl.name,
+                                      comment: tbl.comment,
+                                    })
+                                  : t('db.tableNodeTitle', { name: tbl.name })
+                              }
                             >
                               <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
                                 <span style={{ color: 'var(--text-muted)', display: 'flex' }}>
@@ -2148,11 +2242,11 @@ export function DatabasePanel({
                                     textOverflow: 'ellipsis',
                                   }}
                                 >
-                                  {t.name}
+                                  {tbl.name}
                                 </span>
-                                {t.rowCount !== undefined && (
+                                {tbl.rowCount !== undefined && (
                                   <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0 }}>
-                                    ({t.rowCount})
+                                    ({tbl.rowCount})
                                   </span>
                                 )}
                               </div>
@@ -2162,10 +2256,10 @@ export function DatabasePanel({
                                 <button
                                   type="button"
                                   className="panel-action-btn"
-                                  title="在编辑区查看表数据 (Data View)"
+                                  title={t('db.viewTableDataTitle')}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onOpenTableData?.(conn.id, t.name, schema.name);
+                                    onOpenTableData?.(conn.id, tbl.name, schema.name);
                                   }}
                                 >
                                   <span style={{ fontSize: 11 }}>📊</span>
@@ -2173,10 +2267,10 @@ export function DatabasePanel({
                                 <button
                                   type="button"
                                   className="panel-action-btn"
-                                  title="查看表结构（DDL / 列清单可切换）"
+                                  title={t('db.viewTableStructureTitle')}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onOpenTableStructure?.(conn.id, t.name, schema.name);
+                                    onOpenTableStructure?.(conn.id, tbl.name, schema.name);
                                   }}
                                 >
                                   <span style={{ fontSize: 11 }}>📜</span>
@@ -2185,14 +2279,14 @@ export function DatabasePanel({
                                   <button
                                     type="button"
                                     className="panel-action-btn"
-                                    title="查询此表 (SQL Console)"
+                                    title={t('db.queryTableTitle')}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       onOpenSqlConsole(
                                         conn.id,
                                         schema.name,
-                                        buildTableSelectSql(conn.type, schema.name, t.name, 50),
-                                        `查询 - ${t.name}`,
+                                        buildTableSelectSql(conn.type, schema.name, tbl.name, 50),
+                                        t('db.queryTabTitle', { name: tbl.name }),
                                       );
                                     }}
                                   >
@@ -2207,7 +2301,7 @@ export function DatabasePanel({
                               <div style={{ paddingLeft: 22, paddingBottom: 4 }}>
                                 {loadingKeys[columnsKey] && columns.length === 0 && (
                                   <div style={{ fontSize: 10, color: 'var(--text-muted)', padding: '2px 0' }}>
-                                    加载列结构...
+                                    {t('db.loadingColumns')}
                                   </div>
                                 )}
                                 {errorMap[columnsKey] && <TreeError message={errorMap[columnsKey]} />}
@@ -2225,13 +2319,16 @@ export function DatabasePanel({
                                         kind: 'column',
                                         connId: conn.id,
                                         schemaName: schema.name,
-                                        tableName: t.name,
+                                        tableName: tbl.name,
                                         columnName: col.name,
                                       })
                                     }
-                                    title={`${col.name} · ${col.type || 'ANY'}${col.pk ? ' · 主键' : ''}${
-                                      col.notnull ? ' · NOT NULL' : ''
-                                    }（右键：排序 / 筛选 / 复制）`}
+                                    title={t('db.columnNodeTitle', {
+                                      name: col.name,
+                                      type: col.type || 'ANY',
+                                      pk: col.pk ? t('db.pkSuffix') : '',
+                                      notnull: col.notnull ? t('db.notNullSuffix') : '',
+                                    })}
                                   >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                       {col.pk ? <IconKey /> : <IconColumn />}
@@ -2265,7 +2362,7 @@ export function DatabasePanel({
                                 schemaName: schema.name,
                               })
                             }
-                            title={`${schema.name}（右键查看更多操作）`}
+                            title={t('db.schemaNodeTitle', { name: schema.name })}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                               <span style={{ color: 'var(--text-muted)', display: 'flex' }}>
@@ -2295,14 +2392,14 @@ export function DatabasePanel({
                                 <button
                                   type="button"
                                   className="panel-action-btn"
-                                  title={`在此库新建 SQL 控制台 (${schema.name})`}
+                                  title={t('db.newSqlConsoleHereTitle', { name: schema.name })}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     onOpenSqlConsole(
                                       conn.id,
                                       schema.name,
                                       NEW_CONSOLE_SQL,
-                                      `查询 - ${schema.name}`,
+                                      t('db.queryTabTitle', { name: schema.name }),
                                     );
                                   }}
                                 >
@@ -2356,10 +2453,10 @@ export function DatabasePanel({
                                     {count === 0 ? (
                                       // 空分组展开后也要有话说：一片空白会被读成「还没加载」
                                       <div style={{ fontSize: 10, color: 'var(--text-muted)', padding: '2px 0' }}>
-                                        {EMPTY_GROUP_HINT[group]}
+                                        {emptyGroupHint(t, group)}
                                       </div>
                                     ) : kindRows ? (
-                                      kindRows.map((t) => renderTableNode(t, group as 'table' | 'view'))
+                                      kindRows.map((tbl) => renderTableNode(tbl, group as 'table' | 'view'))
                                     ) : (
                                       names.map((name) => (
                                         <DbObjectRow

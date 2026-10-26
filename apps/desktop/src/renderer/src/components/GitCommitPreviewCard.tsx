@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { GitCommitEntry, GitCommitStats } from '@deepseek-ide/shared';
+import { useI18n } from '../i18n';
 
 export interface GitCommitPreviewCardProps {
   commit: GitCommitEntry;
@@ -57,6 +58,7 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
   onSelectCommit,
   onCopyHash,
 }) => {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const [coords, setCoords] = useState<{ top: number; left: number }>({
@@ -110,7 +112,7 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
   const shortHash = commit.shortHash || commit.hash.slice(0, 7);
 
   // 显示的日期信息
-  const relativeDate = commit.relativeDate || '不久前';
+  const relativeDate = commit.relativeDate || t('git.justNow');
   const fullDate = commit.fullDate || commit.date || '';
 
   const cardContent = (
@@ -252,32 +254,32 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
       >
         {loadingStats ? (
           <span style={{ color: 'var(--muted, #888888)', fontSize: 11.5, opacity: 0.85 }}>
-            正在加载文件变更统计...
+            {t('git.loadingStats')}
           </span>
         ) : stats ? (
           <>
             <span style={{ color: 'var(--muted, #888888)' }}>
-              已更改 {stats.filesChanged} 个文件
+              {t('git.changedFiles', { n: stats.filesChanged })}
               {stats.insertions > 0 || stats.deletions > 0 ? ',' : ''}
             </span>
             {stats.insertions > 0 && (
               <span style={{ color: '#4caf50', fontWeight: 500 }}>
-                {stats.insertions} 行插入(+)
+                {t('git.insertions', { n: stats.insertions })}
               </span>
             )}
             {stats.insertions > 0 && stats.deletions > 0 && (
               <span style={{ color: 'var(--muted, #888888)' }}>,</span>
             )}
             {stats.deletions > 0 && (
-              <span style={{ color: '#f44336', fontWeight: 500 }}>{stats.deletions} 行删除(-)</span>
+              <span style={{ color: '#f44336', fontWeight: 500 }}>{t('git.deletions', { n: stats.deletions })}</span>
             )}
             {stats.insertions === 0 && stats.deletions === 0 && stats.filesChanged === 0 && (
-              <span style={{ color: 'var(--muted, #888888)' }}>无内容行增减</span>
+              <span style={{ color: 'var(--muted, #888888)' }}>{t('git.noLineChanges')}</span>
             )}
           </>
         ) : (
           <span style={{ color: 'var(--muted, #888888)', fontSize: 11.5 }}>
-            {commit.parents && commit.parents.length > 1 ? '合并分支提交' : '单次提交'}
+            {commit.parents && commit.parents.length > 1 ? t('git.mergeCommit') : t('git.singleCommit')}
           </span>
         )}
       </div>
@@ -326,7 +328,7 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
         <button
           type="button"
           onClick={handleCopy}
-          title={copied ? '已复制完整哈希' : '复制提交哈希'}
+          title={copied ? t('git.copiedFullHash') : t('git.copyHash')}
           className={`panel-action-btn ${copied ? 'active' : ''}`}
           style={{
             height: 20,
@@ -347,7 +349,7 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
               >
                 <polyline points="20 6 9 17 4 12" />
               </svg>
-              <span>已复制</span>
+              <span>{t('git.copiedShort')}</span>
             </>
           ) : (
             <svg
@@ -382,7 +384,7 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
               color: 'var(--muted, #888888)',
             }}
           >
-            查看文件变更
+            {t('git.viewChanges')}
           </button>
         )}
       </div>

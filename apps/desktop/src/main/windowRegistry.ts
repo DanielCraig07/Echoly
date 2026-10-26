@@ -7,6 +7,8 @@ import { LspService } from './lspService';
 import { DapService } from './dapService';
 import { DatabaseService } from './db/databaseService';
 import { CodebaseService } from './codebaseService';
+import { DiagnosticsStore } from './diagnosticsStore';
+import { CheckpointStore } from './checkpointStore';
 import { PROJECT_META_FILE, buildProjectConfigMeta, projectConfigDir } from './projectConfig';
 
 /**
@@ -78,6 +80,17 @@ export class WindowSession {
    */
   readonly db = new DatabaseService(() => projectConfigWorkspaceIo(this.workspace));
   readonly codebase = new CodebaseService(() => this.workspace);
+  /**
+   * 诊断缓存：`get_diagnostics` 工具在主进程跑，而 TS/JS 的 marker 只在渲染层有，
+   * 所以这里存的是「渲染层上报 + 主进程 LSP 推送」的合并视图（见 DiagnosticsStore）。
+   */
+  readonly diagnostics = new DiagnosticsStore();
+  /**
+   * 「撤销本轮 AI 改动」的写前快照，按 runId 归集。
+   * 与 `diffs` 并列而不是合并：diff 在用户 accept 后即清空，而撤销按钮恰恰要在
+   * accept 之后还能用（那才是用户反悔的时刻）。
+   */
+  readonly checkpoints = new CheckpointStore();
   constructor(readonly webContentsId: number) {}
 
   dispose(): void {
@@ -85,6 +98,8 @@ export class WindowSession {
     this.workspace.dispose();
     this.lsp.dispose();
     this.dap.dispose();
+    // 索引最后一份内存状态要落盘：窗口关了不写，用户下次打开就得重扫整个工作区
+    void this.codebase.dispose();
     void this.db.disconnectAll();
   }
 }
@@ -118,6 +133,13 @@ export class WindowRegistry {
       if (info.root !== lastDbRoot) {
         lastDbRoot = info.root;
         void session.db.disconnectAll();
+        // 诊断同理：新项目不该继承上一个项目文件的报错
+        session.diagnostics.clear();
+        // 检查点绑定的是上一个项目的文件路径，换项目后回放会写到不属于它的地方
+        session.checkpoints.clear();
+        // 索引按路径记文件，跨项目复用会指向不存在的位置：先把旧项目那份存下来再清空，
+        // 下次切回来时能直接从磁盘缓存加载，而不是重新解析整个工作区。
+        session.codebase.onWorkspaceChanged();
       }
       // 这里刻意**不**预先创建配置目录：打开一个文件夹就往用户主目录里落一个目录太粗暴，
       // 而且绝大多数项目根本没用过数据库面板。目录在第一次真正要写配置时才建起来
@@ -139,7 +161,16 @@ export class WindowRegistry {
       );
       if (win) win.webContents.send('dap:event', event);
     });
+    // 索引可能跑几十秒。没有进度推送的话，界面上只能一直转圈，
+    // 用户无法判断它是卡住了还是在正常工作。
+    session.codebase.setProgressListener((progress) => {
+      const win = BrowserWindow.getAllWindows().find(
+        (w) => !w.isDestroyed() && w.webContents.id === id,
+      );
+      if (win) win.webContents.send('codebase:progress', progress);
+    });
     session.lsp.on('diagnostics', (diag) => {
+      session.diagnostics.replaceFromLsp(diag.path, diag.diagnostics ?? []);
       const win = BrowserWindow.getAllWindows().find(
         (w) => !w.isDestroyed() && w.webContents.id === id,
       );

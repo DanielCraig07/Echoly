@@ -4,6 +4,7 @@
  */
 
 import { useState, useRef, useEffect } from 'react';
+import { useI18n } from '../i18n';
 
 interface ClaudeChatPanelProps {
   viewId?: string;
@@ -27,6 +28,7 @@ export function ClaudeChatPanel({
   viewId = 'claudeVSCodeSidebar',
   workspace,
 }: ClaudeChatPanelProps) {
+  const { t } = useI18n();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -83,7 +85,7 @@ export function ClaudeChatPanel({
           {
             id: Date.now().toString(),
             role: 'assistant',
-            content: `错误: ${event.error || '未知错误'}`,
+            content: t('ext.claudeChatError', { msg: event.error || t('ext.claudeUnknownError') }),
             timestamp: Date.now(),
           },
         ]);
@@ -133,7 +135,7 @@ export function ClaudeChatPanel({
         {
           id: Date.now().toString(),
           role: 'assistant',
-          content: `错误: ${err.message || '发送消息失败'}`,
+          content: t('ext.claudeChatError', { msg: err.message || t('ext.claudeChatSendFailed') }),
           timestamp: Date.now(),
         },
       ]);
@@ -155,8 +157,8 @@ export function ClaudeChatPanel({
         {messages.length === 0 && (
           <div className="empty-state">
             <div className="empty-icon">💬</div>
-            <div className="empty-text">开始与 Claude 对话</div>
-            <div className="empty-hint">输入消息开始对话，Claude 将帮助你完成编程任务</div>
+            <div className="empty-text">{t('ext.claudeChatEmptyTitle')}</div>
+            <div className="empty-hint">{t('ext.claudeChatEmptyHint')}</div>
           </div>
         )}
 
@@ -193,7 +195,7 @@ export function ClaudeChatPanel({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"
+          placeholder={t('ext.claudeChatPlaceholder')}
           rows={3}
           disabled={loading}
         />
@@ -202,7 +204,7 @@ export function ClaudeChatPanel({
           onClick={handleSend}
           disabled={!input.trim() || loading}
         >
-          发送
+          {t('ext.claudeChatSend')}
         </button>
       </div>
     </div>

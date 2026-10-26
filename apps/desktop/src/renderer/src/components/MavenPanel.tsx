@@ -3,6 +3,7 @@ import type { WorkspaceInfo, MavenEnvironmentInfo } from '@deepseek-ide/shared';
 import { loadEnvConfig, saveEnvConfig, type EnvConfig } from './EnvironmentSettingsSection';
 import { EnvironmentConfigModal } from './EnvironmentConfigModal';
 import { PanelChevron } from './PanelChevron';
+import { useI18n, type Translate } from '../i18n';
 
 export interface MavenPanelProps {
   workspaceInfo?: WorkspaceInfo | null;
@@ -48,16 +49,16 @@ export interface MavenLifecycleGoal {
   goal: string;
 }
 
-const MAVEN_LIFECYCLE_GOALS: MavenLifecycleGoal[] = [
-  { name: 'clean', goal: 'clean', description: '清理上一次构建生成的文件 (target 目录)' },
-  { name: 'validate', goal: 'validate', description: '验证项目是否正确且所有必要信息可用' },
-  { name: 'compile', goal: 'compile', description: '编译项目的源代码' },
-  { name: 'test', goal: 'test', description: '运行单元测试框架编译与测试' },
-  { name: 'package', goal: 'package', description: '将编译好的代码打包成可分发的格式 (jar/war)' },
-  { name: 'verify', goal: 'verify', description: '运行检查以验证包是否有效且符合质量标准' },
-  { name: 'install', goal: 'install', description: '将包安装到本地 Maven 仓库，供其他项目依赖' },
-  { name: 'site', goal: 'site', description: '生成项目的站点说明文档' },
-  { name: 'deploy', goal: 'deploy', description: '将最终的包复制到远程仓库以共享' },
+const getMavenLifecycleGoals = (t: Translate): MavenLifecycleGoal[] => [
+  { name: 'clean', goal: 'clean', description: t('maven.goalClean') },
+  { name: 'validate', goal: 'validate', description: t('maven.goalValidate') },
+  { name: 'compile', goal: 'compile', description: t('maven.goalCompile') },
+  { name: 'test', goal: 'test', description: t('maven.goalTest') },
+  { name: 'package', goal: 'package', description: t('maven.goalPackage') },
+  { name: 'verify', goal: 'verify', description: t('maven.goalVerify') },
+  { name: 'install', goal: 'install', description: t('maven.goalInstall') },
+  { name: 'site', goal: 'site', description: t('maven.goalSite') },
+  { name: 'deploy', goal: 'deploy', description: t('maven.goalDeploy') },
 ];
 
 
@@ -373,12 +374,12 @@ const DependencyPackageIcon = () => (
 
 // ── PluginItem Component ──────────────────────────────────────────────────────
 
-function PluginItem({ name, version, onClick, color }: { name: string; version?: string; onClick: () => void; color?: string }) {
+function PluginItem({ name, version, onClick, color, t }: { name: string; version?: string; onClick: () => void; color?: string; t: Translate }) {
   return (
     <div
       onClick={onClick}
       className="search-result-item"
-      title={`运行插件: ${name}`}
+      title={t('maven.runPlugin', { name })}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -402,6 +403,8 @@ function PluginItem({ name, version, onClick, color }: { name: string; version?:
 // ── Main MavenPanel Component ─────────────────────────────────────────────────
 
 export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToast, onOpenSettings }: MavenPanelProps) {
+  const { t } = useI18n();
+  const mavenLifecycleGoals = useMemo(() => getMavenLifecycleGoals(t), [t]);
   const workspace = workspaceInfo?.root;
   const [loading, setLoading] = useState(false);
   const [modules, setModules] = useState<MavenModule[]>([]);
@@ -480,7 +483,7 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
       }
     } catch (e) {
       console.error('Failed to scan Maven projects:', e);
-      onShowToast?.('扫描 Maven 项目失败', 'error');
+      onShowToast?.(t('maven.scanFailed'), 'error');
     } finally {
       setLoading(false);
     }
@@ -494,18 +497,18 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
       if (window.ide.mavenInitWrapper) {
         const res = await window.ide.mavenInitWrapper();
         if (res.success) {
-          onShowToast?.(res.message || '已成功生成 Maven Wrapper (mvnw)', 'success');
+          onShowToast?.(res.message || t('maven.wrapperOk'), 'success');
           setHasMvnw(true);
           await scanMavenProjects();
         } else {
-          onShowToast?.(res.message || '生成 Maven Wrapper 失败', 'error');
+          onShowToast?.(res.message || t('maven.wrapperFailed'), 'error');
         }
       } else {
-        onShowToast?.('当前环境不支持自动生成 Wrapper', 'error');
+        onShowToast?.(t('maven.wrapperUnsupported'), 'error');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      onShowToast?.(`生成失败: ${msg}`, 'error');
+      onShowToast?.(t('maven.genFailed', { msg }), 'error');
     } finally {
       setGeneratingWrapper(false);
     }
@@ -568,7 +571,7 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
     setSelectedGoal(goal);
     const { command, cwd } = buildCommand(goal, targetModule);
     onRunCommand(command, cwd, 'mvn', 'Maven');
-    onShowToast?.(`已启动: ${command}`, 'info');
+    onShowToast?.(t('maven.started', { command }), 'info');
   };
 
   const executeSelectedGoal = () => executeGoal(selectedGoal || 'clean compile', currentModule || undefined);
@@ -601,11 +604,11 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
   }, [modules, workspaceInfo]);
 
   const envStatus = useMemo(() => {
-    if (envConfig.customMvnPath) return { label: '自定义 mvn', color: '#60a5fa' };
-    if (hasMvnw || mavenEnv?.type === 'wrapper') return { label: 'mvnw', color: '#34d399' };
-    if (mavenEnv?.available) return { label: '系统 mvn', color: '#a3e635' };
-    return { label: '未配置', color: '#f87171' };
-  }, [envConfig, hasMvnw, mavenEnv]);
+    if (envConfig.customMvnPath) return { label: t('maven.envCustomMvn'), color: '#60a5fa' };
+    if (hasMvnw || mavenEnv?.type === 'wrapper') return { label: t('maven.envWrapper'), color: '#34d399' };
+    if (mavenEnv?.available) return { label: t('maven.envSystemMvn'), color: '#a3e635' };
+    return { label: t('maven.envNotConfigured'), color: '#f87171' };
+  }, [envConfig, hasMvnw, mavenEnv, t]);
 
   return (
     <div className="maven-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: 'var(--bg-panel)', color: 'var(--text)', fontSize: 13, userSelect: 'none', overflow: 'hidden', position: 'relative' }}>
@@ -629,22 +632,22 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button type="button" className="panel-action-btn" title="重新扫描 Maven 项目" onClick={() => void scanMavenProjects()}>
+          <button type="button" className="panel-action-btn" title={t('maven.rescan')} onClick={() => void scanMavenProjects()}>
             <IconReload spinning={loading} />
           </button>
-          <button type="button" className="panel-action-btn" title={`运行目标: ${selectedGoal || 'clean'}`} onClick={executeSelectedGoal}>
+          <button type="button" className="panel-action-btn" title={t('maven.runGoal', { goal: selectedGoal || 'clean' })} onClick={executeSelectedGoal}>
             <IconPlay />
           </button>
-          <button type="button" className={`panel-action-btn${customGoalInputOpen ? ' active' : ''}`} title="执行自定义 Maven 目标" onClick={() => setCustomGoalInputOpen((v) => !v)}>
+          <button type="button" className={`panel-action-btn${customGoalInputOpen ? ' active' : ''}`} title={t('maven.customGoal')} onClick={() => setCustomGoalInputOpen((v) => !v)}>
             <IconTerminal />
           </button>
-          <button type="button" className={`panel-action-btn${skipTests ? ' active' : ''}`} title={skipTests ? '已开启跳过测试 (-DskipTests)' : '跳过测试 (-DskipTests)'} onClick={() => { const n = !skipTests; setSkipTests(n); onShowToast?.(n ? '已开启跳过测试' : '已关闭跳过测试', 'info'); }}>
+          <button type="button" className={`panel-action-btn${skipTests ? ' active' : ''}`} title={skipTests ? t('maven.skipTestsOnTitle') : t('maven.skipTestsOffTitle')} onClick={() => { const n = !skipTests; setSkipTests(n); onShowToast?.(n ? t('maven.skipTestsOn') : t('maven.skipTestsOff'), 'info'); }}>
             <IconSkipTest active={skipTests} />
           </button>
-          <button type="button" className="panel-action-btn" title="全部展开" onClick={expandAll}>
+          <button type="button" className="panel-action-btn" title={t('maven.expandAll')} onClick={expandAll}>
             <IconExpandAll />
           </button>
-          <button type="button" className="panel-action-btn" title="全部折叠" onClick={collapseAll}>
+          <button type="button" className="panel-action-btn" title={t('maven.collapseAll')} onClick={collapseAll}>
             <IconCollapseAll />
           </button>
 
@@ -652,7 +655,7 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
           <button
             type="button"
             className="panel-action-btn"
-            title={`环境配置 (${envStatus.label}${envConfig.selectedJavaLabel ? ` · ${envConfig.selectedJavaLabel}` : ''})`}
+            title={t('maven.envConfigTitle', { label: envStatus.label + (envConfig.selectedJavaLabel ? ` · ${envConfig.selectedJavaLabel}` : '') })}
             onClick={() => {
               if (onOpenSettings) onOpenSettings('environment');
               else setEnvModalOpen(true);
@@ -668,7 +671,7 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
         <div style={{ padding: '6px 8px', background: 'var(--bg-input, #1f1f1f)', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
           <input
             type="text"
-            placeholder="输入 Maven 目标，如: clean package -DskipTests"
+            placeholder={t('maven.customGoalPlaceholder')}
             value={customGoalText}
             onChange={(e) => setCustomGoalText(e.target.value)}
             onKeyDown={(e) => {
@@ -682,7 +685,7 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
             type="button"
             className="panel-action-btn"
             onClick={() => setCustomGoalInputOpen(false)}
-            title="关闭"
+            title={t('common.close')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -697,10 +700,10 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
         <div style={{ margin: '8px 10px 0', padding: '10px 12px', background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.25)', borderRadius: 8, fontSize: 12, lineHeight: 1.5, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#fbbf24', fontWeight: 600, marginBottom: 5 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-            未检测到系统 Maven (mvn)
+            {t('maven.noMavenTitle')}
           </div>
           <div style={{ color: 'var(--text)', fontSize: 11.5, marginBottom: 8 }}>
-            推荐在全局环境配置大弹窗中选择 Java 版本并一键生成项目 mvnw，即可直接免装 Maven 运行。
+            {t('maven.noMavenHint')}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
@@ -712,9 +715,9 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
               }}
               style={{ fontSize: 11.5, padding: '3px 10px' }}
             >
-              ⚙ 打开环境配置
+              {t('maven.openEnvConfig')}
             </button>
-            <button type="button" className="panel-standard-btn primary" onClick={() => void handleInitWrapper()} disabled={generatingWrapper || !mavenEnv.hasJava} style={{ fontSize: 11.5, padding: '3px 10px' }}>{generatingWrapper ? '生成中...' : '⚡ 生成 mvnw'}</button>
+            <button type="button" className="panel-standard-btn primary" onClick={() => void handleInitWrapper()} disabled={generatingWrapper || !mavenEnv.hasJava} style={{ fontSize: 11.5, padding: '3px 10px' }}>{generatingWrapper ? t('maven.generating') : t('maven.genMvnw')}</button>
           </div>
         </div>
       )}
@@ -729,15 +732,15 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
                 <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
               </svg>
             </div>
-            <div style={{ fontWeight: 600, color: 'var(--text-bright)', fontSize: 13 }}>未检测到 Maven 项目</div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>工作区根目录暂无 pom.xml 文件</div>
-            <button type="button" className="panel-standard-btn" onClick={() => void scanMavenProjects()} style={{ marginTop: 14, fontSize: 12 }}>重新扫描</button>
+            <div style={{ fontWeight: 600, color: 'var(--text-bright)', fontSize: 13 }}>{t('maven.noProjectTitle')}</div>
+            <div style={{ fontSize: 12, marginTop: 4 }}>{t('maven.noProjectDesc')}</div>
+            <button type="button" className="panel-standard-btn" onClick={() => void scanMavenProjects()} style={{ marginTop: 14, fontSize: 12 }}>{t('maven.rescanShort')}</button>
           </div>
         ) : (
           <div>
             {modules.length > 1 && (
               <div style={{ padding: '2px 8px 8px 8px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>模块</div>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('maven.module')}</div>
                 <select value={selectedModulePath} onChange={(e) => setSelectedModulePath(e.target.value)} style={{ width: '100%', background: 'var(--bg-input,#222)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4, padding: '4px 6px', fontSize: 12, outline: 'none' }}>
                   {modules.map((m) => <option key={m.pomPath} value={m.pomPath}>{m.isRoot ? `[Root] ${m.artifactId}` : m.artifactId}</option>)}
                 </select>
@@ -745,8 +748,8 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
             )}
 
             <TreeNode label={projectRootName} icon={<ProjectIcon />} badge={hasMvnw ? 'mvnw' : undefined} badgeColor="#34d399" collapsed={collapsedNodes['project']} onToggle={() => toggleNode('project')} depth={0}>
-              <TreeNode label="Lifecycle" icon={<FolderGearIcon />} collapsed={collapsedNodes['lifecycle']} onToggle={() => toggleNode('lifecycle')} depth={1}>
-                {MAVEN_LIFECYCLE_GOALS.map((item) => {
+              <TreeNode label={t('maven.treeLifecycle')} icon={<FolderGearIcon />} collapsed={collapsedNodes['lifecycle']} onToggle={() => toggleNode('lifecycle')} depth={1}>
+                {mavenLifecycleGoals.map((item) => {
                   const isSelected = selectedGoal === item.goal;
                   const isMutedTest = skipTests && item.goal === 'test';
                   return (
@@ -754,7 +757,7 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
                       key={item.goal}
                       onClick={() => setSelectedGoal(item.goal)}
                       onDoubleClick={() => executeGoal(item.goal, currentModule || undefined)}
-                      title={`${item.description}\n单击选中，双击执行`}
+                      title={t('maven.goalTitle', { desc: item.description })}
                       className={`maven-goal-item ${isSelected ? 'selected' : ''}`}
                     >
                       <svg
@@ -785,27 +788,27 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
                       >
                         {item.name}
                       </span>
-                      {isMutedTest && <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>(已跳过)</span>}
+                      {isMutedTest && <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>{t('maven.skipped')}</span>}
                     </div>
                   );
                 })}
               </TreeNode>
 
-              <TreeNode label="Plugins" icon={<FolderGearIcon />} badge={currentModule?.plugins?.length ? `${currentModule.plugins.length}` : undefined} collapsed={collapsedNodes['plugins']} onToggle={() => toggleNode('plugins')} depth={1}>
-                {currentModule?.isSpringBoot && <PluginItem name="spring-boot:run" onClick={() => executeGoal('spring-boot:run', currentModule)} color="#34d399" />}
+              <TreeNode label={t('maven.treePlugins')} icon={<FolderGearIcon />} badge={currentModule?.plugins?.length ? `${currentModule.plugins.length}` : undefined} collapsed={collapsedNodes['plugins']} onToggle={() => toggleNode('plugins')} depth={1}>
+                {currentModule?.isSpringBoot && <PluginItem t={t} name="spring-boot:run" onClick={() => executeGoal('spring-boot:run', currentModule)} color="#34d399" />}
                 {currentModule?.plugins?.map((plug) => (
-                  <PluginItem key={plug.artifactId} name={plug.artifactId} version={plug.version} onClick={() => plug.goals && plug.goals.length > 0 ? executeGoal(`${plug.artifactId}:${plug.goals[0]}`) : executeGoal(`${plug.artifactId}:help`)} />
+                  <PluginItem t={t} key={plug.artifactId} name={plug.artifactId} version={plug.version} onClick={() => plug.goals && plug.goals.length > 0 ? executeGoal(`${plug.artifactId}:${plug.goals[0]}`) : executeGoal(`${plug.artifactId}:help`)} />
                 ))}
               </TreeNode>
 
-              <TreeNode label="Dependencies" icon={<FolderPackageIcon />} badge={currentModule?.dependencies?.length ? `${currentModule.dependencies.length}` : undefined} collapsed={collapsedNodes['dependencies']} onToggle={() => toggleNode('dependencies')} depth={1}>
+              <TreeNode label={t('maven.treeDependencies')} icon={<FolderPackageIcon />} badge={currentModule?.dependencies?.length ? `${currentModule.dependencies.length}` : undefined} collapsed={collapsedNodes['dependencies']} onToggle={() => toggleNode('dependencies')} depth={1}>
                 {currentModule?.dependencies && currentModule.dependencies.length > 0 ? (
                   currentModule.dependencies.map((dep, idx) => (
                     <div
                       key={`${dep.groupId}:${dep.artifactId}-${idx}`}
                       onDoubleClick={() => currentModule && onOpenFile?.(currentModule.pomPath)}
                       className="search-result-item"
-                      title={`${dep.groupId}:${dep.artifactId}${dep.version ? `:${dep.version}` : ''}\n双击定位 pom.xml`}
+                      title={t('maven.depTitle', { dep: `${dep.groupId}:${dep.artifactId}${dep.version ? `:${dep.version}` : ''}` })}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -834,12 +837,12 @@ export function MavenPanel({ workspaceInfo, onOpenFile, onRunCommand, onShowToas
                     </div>
                   ))
                 ) : (
-                  <div style={{ fontSize: 11.5, color: 'var(--muted)', padding: '4px 6px 4px 32px' }}>无直接依赖</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', padding: '4px 6px 4px 32px' }}>{t('maven.noDependencies')}</div>
                 )}
               </TreeNode>
 
               {allProfiles.length > 0 && (
-                <TreeNode label="Profiles" icon={<FolderGearIcon />} collapsed={collapsedNodes['profiles']} onToggle={() => toggleNode('profiles')} depth={1}>
+                <TreeNode label={t('maven.treeProfiles')} icon={<FolderGearIcon />} collapsed={collapsedNodes['profiles']} onToggle={() => toggleNode('profiles')} depth={1}>
                   {allProfiles.map((p) => {
                     const isChecked = activeProfiles.has(p);
                     return (

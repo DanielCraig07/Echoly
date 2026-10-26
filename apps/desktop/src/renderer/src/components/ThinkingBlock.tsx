@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import type { ThinkingBlock as ThinkingBlockType } from '@deepseek-ide/shared';
+import { useI18n } from '../i18n';
 
 interface Props {
   thinking: ThinkingBlockType[];
 }
 
 export function ThinkingBlock({ thinking }: Props) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
 
   if (!thinking?.length) return null;
@@ -23,11 +25,15 @@ export function ThinkingBlock({ thinking }: Props) {
             <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04z" />
           </svg>
         </span>
-        <span className="thinking-title">深度思考过程 (Thinking)</span>
+        <span className="thinking-title">{t('editor.thinkingTitle')}</span>
         <span className="thinking-badge">
-          {thinking.length} 步
+          {t('editor.stepsCount', { n: thinking.length })}
         </span>
-        {hasMore && <button type="button" className="thinking-toggle">{expanded ? '收起' : '展开详情'}</button>}
+        {hasMore && (
+          <button type="button" className="thinking-toggle">
+            {expanded ? t('editor.collapseShort') : t('editor.expandDetails')}
+          </button>
+        )}
       </div>
 
       <div className={`thinking-content ${expanded ? 'expanded' : 'collapsed'}`}>

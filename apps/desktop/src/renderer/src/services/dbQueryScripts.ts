@@ -23,7 +23,15 @@
  */
 export const QUERIES_DIR = 'queries';
 
-/** 新脚本的默认主名，序号后缀由 {@link nextScriptFileName} 补 */
+/**
+ * 新脚本的默认主名，序号后缀由 {@link nextScriptFileName} 补。
+ *
+ * **刻意不进字典**：它不是文案而是**落盘的文件名**。翻成 `Query` 之后，
+ * 老项目里已有的「查询 1.sql」和新项目里的「Query 1.sql」会同时躺在同一个目录里 ——
+ * 用户看到的是一堆对不上号的名字，而没有任何东西出错。
+ * 与 `utils/techStack.ts` 的 `TECH_STYLES` 键同类：标识保持中文，只有渲染出来的
+ * 东西才翻。想改这里的显示形态，得先做一次文件重命名的迁移。
+ */
 const DEFAULT_BASE_NAME = '查询';
 
 /** 脚本名后缀 */
@@ -147,7 +155,14 @@ export function scriptTitleFromFileName(fileName: string): string {
   return base || DEFAULT_BASE_NAME;
 }
 
-/** 新建控制台时预置的语句 */
+/**
+ * 新建控制台时预置的语句。
+ *
+ * 那行 `--` 注释是**与脚本一起落盘**的内容（`dbQueryScripts` 只管路径推导，
+ * 正文由调用方写文件），所以它跟用户自己写的注释没有区别。翻它意味着
+ * 「同一份脚本在两种语言下内容不同」，而文件是同一份 —— 不做。
+ * 真要提示快捷键，应该在控制台的空态里放一行**界面**文字（那才该翻）。
+ */
 export const NEW_CONSOLE_SQL =
   '-- Cmd+Enter 执行选中 / 当前语句，Cmd+Shift+Enter 执行全部\nSELECT 1;';
 

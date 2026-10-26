@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { PanelChevron } from './PanelChevron';
+import { useI18n, type Translate } from '../i18n';
 
 export interface AgentTaskStep {
   id: string;
@@ -148,17 +149,17 @@ function IconCheckAll() {
 
 // ── 格式化工具调用名称 ────────────────────────────────────────────────────────
 
-function formatToolStepTitle(toolName: string, args?: any): { title: string; file?: string } {
+function formatToolStepTitle(t: Translate, toolName: string, args?: any): { title: string; file?: string } {
   let file: string | undefined;
   if (args) {
     if (typeof args === 'object') {
       file = args.path || args.filePath || args.targetFile || args.TargetFile || args.AbsolutePath;
       if (!file && typeof args.CommandLine === 'string') {
         const cmd = args.CommandLine.trim();
-        return { title: `执行命令: ${cmd.length > 32 ? cmd.slice(0, 32) + '…' : cmd}` };
+        return { title: t('task.runCommand', { cmd: cmd.length > 32 ? cmd.slice(0, 32) + '…' : cmd }) };
       }
       if (!file && typeof args.query === 'string') {
-        return { title: `检索代码: ${args.query}` };
+        return { title: t('task.searchCode', { query: args.query }) };
       }
     }
   }
@@ -168,21 +169,21 @@ function formatToolStepTitle(toolName: string, args?: any): { title: string; fil
   switch (toolName) {
     case 'read_file':
     case 'view_file':
-      return { title: baseName ? `读取代码: ${baseName}` : '读取工程文件', file };
+      return { title: baseName ? t('task.readCode', { name: baseName }) : t('task.readProjectFile'), file };
     case 'write_to_file':
-      return { title: baseName ? `新建/重写文件: ${baseName}` : '写入工程文件', file };
+      return { title: baseName ? t('task.writeFile', { name: baseName }) : t('task.writeProjectFile'), file };
     case 'replace_file_content':
     case 'multi_replace_file_content':
-      return { title: baseName ? `修改代码实现: ${baseName}` : '编辑文件内容', file };
+      return { title: baseName ? t('task.editCode', { name: baseName }) : t('task.editFileContent'), file };
     case 'run_command':
     case 'run_terminal':
-      return { title: '执行终端命令与环境构建' };
+      return { title: t('task.runTerminal') };
     case 'grep_search':
-      return { title: '全局符号与关键词检索' };
+      return { title: t('task.globalSearch') };
     case 'list_dir':
-      return { title: '扫描工程文件拓扑' };
+      return { title: t('task.scanProject') };
     default:
-      return { title: `执行工具: ${toolName}`, file };
+      return { title: t('task.runTool', { tool: toolName }), file };
   }
 }
 
@@ -196,6 +197,7 @@ interface StyledSelectProps {
 }
 
 function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const activeTask = tasks.find((t) => t.id === value) || tasks[0];
@@ -249,11 +251,11 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
             boxShadow: activeTask?.status === 'running' ? '0 0 6px rgba(59,130,246,0.6)' : undefined,
           }} />
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontWeight: 500 }}>
-            {activeTask?.goal || '选择任务目标...'}
+            {activeTask?.goal || t('task.selectGoal')}
           </span>
           {activeTask && (
             <span style={{ fontSize: 10, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>
-              {activeTask.steps.length} 步
+              {t('task.steps', { n: activeTask.steps.length })}
             </span>
           )}
         </div>
@@ -281,8 +283,8 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
           flexDirection: 'column',
         }}>
           <div style={{ padding: '6px 10px', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>任务历史 ({tasks.length})</span>
-            <span style={{ fontSize: 10, opacity: 0.7 }}>点击切换</span>
+            <span>{t('task.history', { n: tasks.length })}</span>
+            <span style={{ fontSize: 10, opacity: 0.7 }}>{t('task.clickToSwitch')}</span>
           </div>
 
           <div style={{ overflowY: 'auto', flex: 1, padding: 4 }}>
@@ -317,9 +319,9 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
                       {task.goal}
                     </div>
                     <div style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.7, marginTop: 1, display: 'flex', gap: 6 }}>
-                      <span>{task.steps.length} 个步骤</span>
+                      <span>{t('task.stepsCount', { n: task.steps.length })}</span>
                       <span>•</span>
-                      <span>{isDone ? '已完成' : isRun ? '执行中' : '规划中'}</span>
+                      <span>{isDone ? taskStatus(t, 'completed') : isRun ? taskStatus(t, 'running') : taskStatus(t, 'planning')}</span>
                       {task.updatedAt && (
                         <>
                           <span>•</span>
@@ -353,7 +355,7 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
                 fontWeight: 500,
               }}
             >
-              <IconPlus /> 新建目标任务
+              <IconPlus /> {t('task.newTask')}
             </button>
           </div>
         </div>
@@ -364,14 +366,18 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
 
 // ── AgentTaskPanel 组件 ────────────────────────────────────────────────────────
 
-/** 任务状态的中文名（与左侧列表里那枚状态点用同一套说法） */
-const TASK_STATUS_LABELS: Record<AgentTask['status'], string> = {
-  planning: '规划中',
-  running: '执行中',
-  paused: '已暂停',
-  completed: '已完成',
-  failed: '失败',
+/** 任务状态名（与左侧列表里那枚状态点用同一套说法） */
+const TASK_STATUS_KEYS: Record<AgentTask['status'], string> = {
+  planning: 'task.statusPlanning',
+  running: 'task.statusRunning',
+  paused: 'task.statusPaused',
+  completed: 'task.statusCompleted',
+  failed: 'task.statusFailed',
 };
+
+function taskStatus(t: Translate, status: AgentTask['status']): string {
+  return t(TASK_STATUS_KEYS[status] ?? 'task.statusPlanning');
+}
 
 export function AgentTaskPanel({
   workspaceRoot,
@@ -391,12 +397,13 @@ export function AgentTaskPanel({
   // 删除确认走应用内弹窗：系统 `window.confirm` 在 Electron 里不是应用主题色，
   // 也摆不出「删的是哪条任务、有多少步」这种可核对的键值行
   const confirm = useDbConfirm();
+  const { t } = useI18n();
 
   const projectName = useMemo(() => {
-    if (!workspaceRoot) return '默认工程';
+    if (!workspaceRoot) return t('task.defaultProject');
     const norm = workspaceRoot.replace(/\\/g, '/').replace(/\/+$/, '');
-    return norm.split('/').filter(Boolean).pop() || '当前工程';
-  }, [workspaceRoot]);
+    return norm.split('/').filter(Boolean).pop() || t('task.currentProject');
+  }, [workspaceRoot, t]);
 
   // 严格隔离各工程任务存储
   const storageKey = useMemo(() => {
@@ -464,14 +471,14 @@ export function AgentTaskPanel({
         steps: [
           {
             id: `step_${ts}_1`,
-            title: '理解需求意图与工程上下文',
+            title: t('task.stepUnderstand'),
             status: 'completed',
             description: prompt,
             timestamp: nowStr,
           },
           {
             id: `step_${ts}_2`,
-            title: '执行自主 Agent 规划与代码落地',
+            title: t('task.stepExecute'),
             status: 'running',
             timestamp: nowStr,
           },
@@ -488,7 +495,7 @@ export function AgentTaskPanel({
       const detail = (e as CustomEvent<{ toolName?: string; toolArgs?: any; id?: string }>).detail;
       if (!detail?.toolName) return;
 
-      const { title, file } = formatToolStepTitle(detail.toolName, detail.toolArgs);
+      const { title, file } = formatToolStepTitle(t, detail.toolName, detail.toolArgs);
       const cur = tasksRef.current;
       if (cur.length === 0) return;
 
@@ -582,7 +589,7 @@ export function AgentTaskPanel({
           ...completedSteps,
           {
             id: `step_done_${Date.now()}`,
-            title: `任务执行完成`,
+            title: t('task.stepCompleted'),
             description: detail.summary.length > 80 ? detail.summary.slice(0, 80) + '…' : detail.summary,
             status: 'completed' as const,
             timestamp: new Date().toLocaleTimeString(),
@@ -632,7 +639,7 @@ export function AgentTaskPanel({
       window.removeEventListener('echoly:agent-task-completed', handleTaskCompleted);
       window.removeEventListener('echoly:agent-task-failed', handleTaskFailed);
     };
-  }, [saveTasks]);
+  }, [saveTasks, t]);
 
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId) || tasks[0] || null,
@@ -653,12 +660,12 @@ export function AgentTaskPanel({
       };
     });
     saveTasks(updated);
-    onShowToast?.('当前任务及所有步骤已标记为完成', 'success');
+    onShowToast?.(t('task.markedCompleted'), 'success');
   };
 
   const handleCreateTask = () => {
     if (!newGoalInput.trim()) {
-      onShowToast?.('请输入目标任务描述', 'error');
+      onShowToast?.(t('task.enterGoal'), 'error');
       return;
     }
     const ts = Date.now();
@@ -672,14 +679,14 @@ export function AgentTaskPanel({
       steps: [
         {
           id: `step_${ts}_1`,
-          title: `解析目标与工程「${projectName}」结构`,
+          title: t('task.stepParseGoal', { project: projectName }),
           status: 'completed',
-          description: '分析工程模块拓扑与调用链',
+          description: t('task.stepParseGoalDesc'),
           timestamp: nowStr,
         },
         {
           id: `step_${ts}_2`,
-          title: '拆解具体执行方案并执行代码实施',
+          title: t('task.stepImplement'),
           status: 'running',
           timestamp: nowStr,
         },
@@ -689,25 +696,26 @@ export function AgentTaskPanel({
     setActiveTaskId(newTask.id);
     setNewGoalInput('');
     setIsCreating(false);
-    onShowToast?.('已开启新 AI Agent 任务目标', 'success');
-    onSendToChat?.(`目标任务：${newTask.goal}。请规划具体步骤并开始实施。`);
+    onShowToast?.(t('task.taskCreated'), 'success');
+    onSendToChat?.(t('task.sendToChat', { goal: newTask.goal }));
   };
 
   const handleDeleteTask = async (taskId: string) => {
     const target = tasks.find((t) => t.id === taskId);
     const ok = await confirm.confirm({
-      title: '删除任务',
+      title: t('task.deleteTask'),
       content: buildSqlConfirmMarkdown({
-        intro: '这条任务的**目标、全部步骤与执行记录**都会被删除，且无法撤销。',
+        t,
+        intro: t('task.deleteIntro'),
         statements: [],
       }),
       details: [
-        { label: '目标', value: target?.goal || '（无标题任务）' },
-        { label: '状态', value: TASK_STATUS_LABELS[target?.status ?? 'planning'] ?? '' },
-        { label: '步骤', value: `${target?.steps.length ?? 0} 步` },
+        { label: t('task.goal'), value: target?.goal || t('task.untitledTask') },
+        { label: t('task.status'), value: taskStatus(t, target?.status ?? 'planning') },
+        { label: t('task.stepsLabel'), value: t('task.steps', { n: target?.steps.length ?? 0 }) },
       ],
       tone: 'danger',
-      confirmLabel: '确认删除',
+      confirmLabel: t('task.confirmDelete'),
     });
     if (ok === null) return;
     const nextList = tasks.filter((t) => t.id !== taskId);
@@ -715,7 +723,7 @@ export function AgentTaskPanel({
     if (activeTaskId === taskId) {
       setActiveTaskId(nextList.length > 0 ? nextList[0].id : null);
     }
-    onShowToast?.('已移除该任务', 'info');
+    onShowToast?.(t('task.taskRemoved'), 'info');
   };
 
   const cycleStepStatus = (taskId: string, stepId: string) => {
@@ -805,13 +813,13 @@ export function AgentTaskPanel({
           }}
         >
           <PanelChevron expanded={true} size={12} />
-          <span>AI 任务看板</span>
+          <span>{t('task.boardTitle')}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
             type="button"
             className="panel-action-btn"
-            title="刷新看板状态"
+            title={t('task.refreshBoard')}
             onClick={() => {
               setLoading(true);
               setTimeout(() => setLoading(false), 300);
@@ -822,7 +830,7 @@ export function AgentTaskPanel({
           <button
             type="button"
             className="panel-action-btn"
-            title="新建 AI 目标任务"
+            title={t('task.newAiTask')}
             onClick={() => setIsCreating((v) => !v)}
           >
             <IconPlus />
@@ -833,7 +841,7 @@ export function AgentTaskPanel({
                 <button
                   type="button"
                   className="panel-action-btn"
-                  title="一键标记当前任务为已完成"
+                  title={t('task.markCompletedTitle')}
                   onClick={handleMarkAllCompleted}
                 >
                   <IconCheckAll />
@@ -842,7 +850,7 @@ export function AgentTaskPanel({
               <button
                 type="button"
                 className="panel-action-btn"
-                title="手动添加步骤"
+                title={t('task.addStepManually')}
                 onClick={() => setAddingStep((v) => !v)}
               >
                 <IconEdit />
@@ -850,7 +858,7 @@ export function AgentTaskPanel({
               <button
                 type="button"
                 className="panel-action-btn"
-                title="删除当前任务"
+                title={t('task.deleteCurrent')}
                 onClick={() => void handleDeleteTask(activeTask.id)}
               >
                 <IconTrash />
@@ -874,7 +882,7 @@ export function AgentTaskPanel({
           }}
         >
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>
-            设定「{projectName}」AI 任务目标
+            {t('task.setGoal', { project: projectName })}
           </div>
           <input
             type="text"
@@ -884,7 +892,7 @@ export function AgentTaskPanel({
               if (e.key === 'Enter') handleCreateTask();
               if (e.key === 'Escape') setIsCreating(false);
             }}
-            placeholder="例如：重构用户登录模块并接入 JWT 验证..."
+            placeholder={t('task.goalPlaceholder')}
             style={{
               background: 'var(--bg-editor, #141414)',
               color: 'var(--text)',
@@ -910,7 +918,7 @@ export function AgentTaskPanel({
                 cursor: 'pointer',
               }}
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -926,7 +934,7 @@ export function AgentTaskPanel({
                 fontWeight: 500,
               }}
             >
-              开始规划
+              {t('task.startPlanning')}
             </button>
           </div>
         </div>
@@ -987,10 +995,10 @@ export function AgentTaskPanel({
             <IconBot />
           </div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-            「{projectName}」任务看板
+            {t('task.boardOf', { project: projectName })}
           </div>
           <div style={{ fontSize: 12, lineHeight: 1.5, maxWidth: 260 }}>
-            当前工程尚未创建 AI 规划任务。支持将复杂研发目标拆解为多步骤、可观测的自主 Agent 任务流。
+            {t('task.emptyBoardDesc')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
             <button
@@ -1011,12 +1019,12 @@ export function AgentTaskPanel({
                 fontWeight: 500,
               }}
             >
-              <IconPlus /> 新建目标任务
+              <IconPlus /> {t('task.newTask')}
             </button>
             <button
               type="button"
               onClick={() => {
-                const autoGoal = `为工程「${projectName}」优化代码架构并规划核心测试`;
+                const autoGoal = t('task.autoGoal', { project: projectName });
                 const ts = Date.now();
                 const nowStr = new Date().toLocaleTimeString();
                 const newTask: AgentTask = {
@@ -1028,24 +1036,24 @@ export function AgentTaskPanel({
                   steps: [
                     {
                       id: `step_${ts}_1`,
-                      title: `分析「${projectName}」工程依赖与核心调用链`,
+                      title: t('task.autoStep1', { project: projectName }),
                       status: 'completed',
-                      description: '扫描工程结构、配置文件与技术栈拓扑',
+                      description: t('task.autoStep1Desc'),
                       timestamp: nowStr,
                     },
                     {
                       id: `step_${ts}_2`,
-                      title: '制定模块优化方案与执行边界',
+                      title: t('task.autoStep2'),
                       status: 'running',
-                      description: '准备实施代码重构与逻辑增强',
+                      description: t('task.autoStep2Desc'),
                       timestamp: nowStr,
                     },
                   ],
                 };
                 saveTasks([newTask]);
                 setActiveTaskId(newTask.id);
-                onShowToast?.(`已为「${projectName}」开启专属 AI 目标规划`, 'success');
-                onSendToChat?.(`目标任务：${autoGoal}。请结合「${projectName}」工程目录结构制定实施计划。`);
+                onShowToast?.(t('task.autoPlanEnabled', { project: projectName }), 'success');
+                onSendToChat?.(t('task.autoSendToChat', { goal: autoGoal, project: projectName }));
               }}
               style={{
                 display: 'inline-flex',
@@ -1061,7 +1069,7 @@ export function AgentTaskPanel({
                 cursor: 'pointer',
               }}
             >
-              一键生成初始任务规划
+              {t('task.generateInitialPlan')}
             </button>
           </div>
         </div>
@@ -1109,15 +1117,15 @@ export function AgentTaskPanel({
                 }}
               >
                 {activeTask.status === 'completed'
-                  ? '已完成'
+                  ? taskStatus(t, 'completed')
                   : activeTask.status === 'running'
-                    ? '执行中'
-                    : '规划中'}
+                    ? taskStatus(t, 'running')
+                    : taskStatus(t, 'planning')}
               </span>
-              <span>{activeTask.steps.length} 个分解步骤</span>
-              {activeTask.totalFilesChanged ? <span>• 变动 {activeTask.totalFilesChanged} 个文件</span> : null}
+              <span>{t('task.subSteps', { n: activeTask.steps.length })}</span>
+              {activeTask.totalFilesChanged ? <span>{t('task.filesChanged', { n: activeTask.totalFilesChanged })}</span> : null}
               <span style={{ marginLeft: 'auto', opacity: 0.6, fontSize: 10 }}>
-                更新 {activeTask.updatedAt}
+                {t('task.updatedAt', { time: activeTask.updatedAt })}
               </span>
             </div>
           </div>
@@ -1143,7 +1151,7 @@ export function AgentTaskPanel({
                   if (e.key === 'Enter') handleAddStep();
                   if (e.key === 'Escape') setAddingStep(false);
                 }}
-                placeholder="描述步骤内容..."
+                placeholder={t('task.stepPlaceholder')}
                 style={{
                   flex: 1,
                   background: 'var(--bg-editor, #141414)',
@@ -1170,7 +1178,7 @@ export function AgentTaskPanel({
                   fontWeight: 500,
                 }}
               >
-                添加
+                {t('task.add')}
               </button>
               <button
                 type="button"
@@ -1206,9 +1214,9 @@ export function AgentTaskPanel({
                 justifyContent: 'space-between',
               }}
             >
-              <span>步骤进展</span>
+              <span>{t('task.stepProgress')}</span>
               <span style={{ opacity: 0.5, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>
-                点击状态图标切换
+                {t('task.clickIconToToggle')}
               </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -1261,7 +1269,7 @@ export function AgentTaskPanel({
                     >
                       <div
                         style={{ marginTop: 2, flexShrink: 0, cursor: 'pointer' }}
-                        title="点击切换步骤状态"
+                        title={t('task.toggleStepStatus')}
                         onClick={(e) => {
                           e.stopPropagation();
                           cycleStepStatus(activeTask.id, step.id);
@@ -1299,7 +1307,7 @@ export function AgentTaskPanel({
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title={isExpanded ? '折叠' : '展开'}
+                        title={isExpanded ? t('task.collapse') : t('task.expand')}
                         onClick={(e) => {
                           e.stopPropagation();
                           toggleStep(step.id);
@@ -1344,7 +1352,7 @@ export function AgentTaskPanel({
                         {step.affectedFiles && step.affectedFiles.length > 0 && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                             <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>
-                              涉及文件：
+                              {t('task.affectedFiles')}
                             </div>
                             {step.affectedFiles.map((f) => (
                               <div

@@ -3,6 +3,7 @@ import fsSync from 'node:fs';
 import path from 'node:path';
 import electronLog from 'electron-log';
 import type { FileTreeNode, WorkspaceInfo, WorkspaceKind } from '@deepseek-ide/shared';
+import { NO_WORKSPACE_LABEL } from '@deepseek-ide/shared';
 import { LocalFsBackend, type WorkspaceBackend } from '@deepseek-ide/tools';
 import { projectConfigChildPath, projectConfigDir } from './projectConfig';
 
@@ -26,7 +27,7 @@ function mimeFromPath(relPath: string): string {
 export class WorkspaceService {
   private backend: WorkspaceBackend | null = null;
   private kind: WorkspaceKind = 'local';
-  private label = '未打开工作区';
+  private label = NO_WORKSPACE_LABEL;
   private onChange: ((info: WorkspaceInfo) => void) | null = null;
   private onFsChange: ((data: { type: string; path?: string }) => void) | null = null;
   private watcher: fsSync.FSWatcher | null = null;
@@ -198,7 +199,7 @@ export class WorkspaceService {
     this.stopWatcher();
     this.backend = null;
     this.kind = 'local';
-    this.label = '未打开工作区';
+    this.label = NO_WORKSPACE_LABEL;
     this.emit();
   }
 

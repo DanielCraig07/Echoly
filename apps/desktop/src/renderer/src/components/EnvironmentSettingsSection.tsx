@@ -12,6 +12,7 @@ import {
   saveProjectRuntimeConfig,
   type ProjectRuntimeConfig,
 } from './ProjectRuntimeConfigModal';
+import { useI18n } from '../i18n';
 
 export interface EnvConfig {
   customMvnPath: string;
@@ -72,6 +73,7 @@ interface EnvironmentSettingsSectionProps {
 }
 
 export function EnvironmentSettingsSection({ workspace, onShowToast }: EnvironmentSettingsSectionProps) {
+  const { t } = useI18n();
   const initialLang = useMemo(() => inferEnvWorkspaceLang(workspace), [workspace]);
   const [detectedLang, setDetectedLang] = useState<DetectedEnvLang>(initialLang);
   const [viewAllEnvironments, setViewAllEnvironments] = useState(false);
@@ -282,11 +284,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
   const handleInstallJdk = async (jdk: OnlineJdkInfo) => {
     if (installingId) return;
     setInstallingId(jdk.id);
-    onShowToast?.(`开始下载并安装 ${jdk.name}...`, undefined, 'info');
+    onShowToast?.(t('envs.startDownload', { name: jdk.name }), undefined, 'info');
     try {
       const res = await window.ide.javaInstallOnlineJdk(jdk.id);
       if (res.success && res.javaHome) {
-        onShowToast?.(`已成功安装 ${jdk.name}`, res.javaHome, 'success');
+        onShowToast?.(t('envs.installSuccess', { name: jdk.name }), res.javaHome, 'success');
         updateConfig((prev) => ({
           ...prev,
           selectedJavaHome: res.javaHome!,
@@ -294,10 +296,10 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
         }));
         await loadJdks();
       } else {
-        onShowToast?.('安装 JDK 失败', res.message || '请检查网络连接', 'error');
+        onShowToast?.(t('envs.installJdkFailed'), res.message || t('envs.checkNetwork'), 'error');
       }
     } catch (err: any) {
-      onShowToast?.('安装异常', err?.message || String(err), 'error');
+      onShowToast?.(t('envs.installException'), err?.message || String(err), 'error');
     } finally {
       setInstallingId(null);
     }
@@ -311,9 +313,9 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
         updateConfig((prev) => ({
           ...prev,
           selectedJavaHome: picked,
-          selectedJavaLabel: `自定义: ${picked}`,
+          selectedJavaLabel: t('envs.customPrefix', { path: picked }),
         }));
-        onShowToast?.('已更新 JAVA_HOME', picked, 'success');
+        onShowToast?.(t('envs.javaHomeUpdated'), picked, 'success');
       }
     } catch {}
   };
@@ -327,7 +329,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
           ...prev,
           customMvnPath: picked,
         }));
-        onShowToast?.('已指定 Maven 执行路径', picked, 'success');
+        onShowToast?.(t('envs.mavenPathSet'), picked, 'success');
       }
     } catch {}
   };
@@ -341,7 +343,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
           ...prev,
           customSettingsPath: picked,
         }));
-        onShowToast?.('已指定 Maven settings.xml 路径', picked, 'success');
+        onShowToast?.(t('envs.settingsPathSet'), picked, 'success');
       }
     } catch {}
   };
@@ -353,13 +355,13 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
     try {
       const res = await window.ide.mavenInitWrapper();
       if (res.success) {
-        onShowToast?.('Maven Wrapper 就绪', res.message, 'success');
+        onShowToast?.(t('envs.wrapperReady'), res.message, 'success');
         await detectMaven();
       } else {
-        onShowToast?.('生成 Wrapper 失败', res.message, 'error');
+        onShowToast?.(t('envs.wrapperFailed'), res.message, 'error');
       }
     } catch (err: any) {
-      onShowToast?.('生成失败', err?.message || String(err), 'error');
+      onShowToast?.(t('envs.generateFailed'), err?.message || String(err), 'error');
     } finally {
       setGeneratingWrapper(false);
     }
@@ -373,7 +375,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
       if (typeof window.ide?.mavenInitSettings === 'function') {
         const res = await window.ide.mavenInitSettings();
         if (res.success) {
-          onShowToast?.('settings.xml 初始化成功', res.message, 'success');
+          onShowToast?.(t('envs.settingsInitOk'), res.message, 'success');
           setHasProjectSettingsXml(true);
           if (!config.customSettingsPath) {
             updateConfig((prev) => ({
@@ -428,12 +430,12 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
         }));
       }
       onShowToast?.(
-        'settings.xml 初始化成功',
-        '已成功在当前工作区生成 .mvn/settings.xml（预配置阿里云镜像源加速）！',
+        t('envs.settingsInitOk'),
+        t('envs.settingsInitOkDetail'),
         'success',
       );
     } catch (err: any) {
-      onShowToast?.('操作异常', err?.message || String(err), 'error');
+      onShowToast?.(t('envs.operationException'), err?.message || String(err), 'error');
     } finally {
       setGeneratingSettings(false);
     }
@@ -443,8 +445,8 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
   const activeJavaDisplay = config.selectedJavaHome
     ? config.selectedJavaLabel || config.selectedJavaHome
     : mavenEnv?.hasJava
-    ? '系统默认 Java (自动探测就绪)'
-    : '未配置 Java 环境';
+    ? t('envs.systemDefaultJava')
+    : t('envs.noJavaEnv');
 
   return (
     <div className="settings-panel-section" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -452,7 +454,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
       <div className="panel-title-bar">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h3 className="panel-h3" style={{ margin: 0 }}>开发与构建环境配置</h3>
+            <h3 className="panel-h3" style={{ margin: 0 }}>{t('envs.title')}</h3>
             <span
               style={{
                 fontSize: 11,
@@ -468,7 +470,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
             </span>
           </div>
           <p className="panel-sub" style={{ marginTop: 4, marginBottom: 0 }}>
-            管理项目 Java (JDK) 版本与在线安装，配置 Maven 运行模式、Wrapper 与 settings.xml 配置文件
+            {t('envs.subtitle')}
           </p>
         </div>
       </div>
@@ -491,12 +493,12 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span>📁</span>
             <span>
-              当前环境与构建配置已绑定至项目: <strong>{workspace.split('/').pop()}</strong>
+              {t('envs.boundToProject')}<strong>{workspace.split('/').pop()}</strong>
               <span style={{ opacity: 0.75, marginLeft: 6 }}>({workspace})</span>
             </span>
           </div>
           <div style={{ fontSize: 11, color: '#34d399', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span>✓</span> 独立项目级配置生效中
+            <span>✓</span> {t('envs.projectLevelActive')}
           </div>
         </div>
       ) : (
@@ -510,7 +512,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
             color: 'var(--muted)',
           }}
         >
-          🌐 当前为全局默认环境配置（未打开特定项目工作区）
+          {t('envs.globalDefaultActive')}
         </div>
       )}
 
@@ -532,26 +534,27 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 14 }}>🎯</span>
           <span style={{ color: 'var(--text-bright, #fff)' }}>
-            当前工程自动识别为:{' '}
+            {t('envs.detectedAs')}{' '}
             <strong style={{ color: '#38bdf8' }}>
               {detectedLang === 'cpp' && 'C / C++ (Clang / CMake)'}
               {detectedLang === 'java' && 'Java (Maven / JDK)'}
               {detectedLang === 'python' && 'Python (3.x)'}
               {detectedLang === 'go' && 'Go (Module)'}
               {detectedLang === 'node' && 'Node.js / TypeScript'}
-              {detectedLang === 'generic' && '通用工程'}
+              {detectedLang === 'generic' && t('envs.langGeneric')}
             </strong>
           </span>
           {!viewAllEnvironments && detectedLang !== 'generic' && (
             <span style={{ color: 'var(--muted)', fontSize: 11 }}>
-              (已按当前项目所需配置自动精简 Tab)
+              {t('envs.tabsSimplified')}
             </span>
           )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            💡 Echoly 原生环境中心全面支持: <strong>Java (JDK 8~25 / Maven)、C/C++ (Clang / GCC / CMake)、Python 3、Go、Node.js</strong>
+            {t('envs.supportedStackBefore')}
+            <strong>{t('envs.supportedStackList')}</strong>
           </span>
           <button
             type="button"
@@ -567,9 +570,9 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               cursor: 'pointer',
               whiteSpace: 'nowrap',
             }}
-            title={viewAllEnvironments ? '精简为仅显示当前项目环境' : '查看全部编程语言环境配置'}
+            title={viewAllEnvironments ? t('envs.simplifyTitle') : t('envs.viewAllTitle')}
           >
-            {viewAllEnvironments ? '仅当前项目' : '查看全部环境 ▾'}
+            {viewAllEnvironments ? t('envs.onlyCurrent') : t('envs.viewAll')}
           </button>
         </div>
       </div>
@@ -591,20 +594,20 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
         {(
           [
             { key: 'java', icon: '☕', label: 'Java (JDK)' },
-            { key: 'maven', icon: '🛠️', label: 'Maven 构建' },
+            { key: 'maven', icon: '🛠️', label: t('envs.tabMaven') },
             { key: 'cpp', icon: '🚀', label: 'C / C++' },
             { key: 'python', icon: '🐍', label: 'Python' },
             { key: 'go', icon: '🐹', label: 'Go' },
             { key: 'node', icon: '🟢', label: 'Node.js / TS' },
-            { key: 'runtime', icon: '⚡', label: '运行参数 (VM Options)' },
+            { key: 'runtime', icon: '⚡', label: t('envs.tabRuntime') },
           ] as const
         )
-          .filter((t) => (allowedTabs as readonly string[]).includes(t.key))
-          .map((t) => (
+          .filter((tab) => (allowedTabs as readonly string[]).includes(tab.key))
+          .map((tab) => (
             <button
-              key={t.key}
+              key={tab.key}
               type="button"
-              onClick={() => setSubTab(t.key)}
+              onClick={() => setSubTab(tab.key)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -612,19 +615,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 padding: '6px 13px',
                 borderRadius: 6,
                 border: '1px solid',
-                borderColor: subTab === t.key ? 'var(--accent, #3b82f6)' : 'transparent',
-                background: subTab === t.key ? 'var(--bg-hover, rgba(59, 130, 246, 0.16))' : 'transparent',
-                color: subTab === t.key ? 'var(--text-bright, #fff)' : 'var(--muted, #a1a1aa)',
+                borderColor: subTab === tab.key ? 'var(--accent, #3b82f6)' : 'transparent',
+                background: subTab === tab.key ? 'var(--bg-hover, rgba(59, 130, 246, 0.16))' : 'transparent',
+                color: subTab === tab.key ? 'var(--text-bright, #fff)' : 'var(--muted, #a1a1aa)',
                 fontSize: 12,
-                fontWeight: subTab === t.key ? 600 : 400,
+                fontWeight: subTab === tab.key ? 600 : 400,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 flexShrink: 0,
                 transition: 'all 0.15s ease',
               }}
             >
-              <span>{t.icon}</span>
-              <span>{t.label}</span>
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
             </button>
           ))}
       </div>
@@ -656,7 +659,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   }}
                 />
                 <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  当前选定执行的 JAVA (JDK)
+                  {t('envs.currentJava')}
                 </span>
               </div>
               <div
@@ -669,7 +672,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   whiteSpace: 'nowrap',
                   maxWidth: 500,
                 }}
-                title={config.selectedJavaHome || '系统默认'}
+                title={config.selectedJavaHome || t('envs.systemDefault')}
               >
                 {activeJavaDisplay}
               </div>
@@ -686,11 +689,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 className="panel-standard-btn"
                 onClick={() => {
                   updateConfig((prev) => ({ ...prev, selectedJavaHome: '', selectedJavaLabel: '' }));
-                  onShowToast?.('已切换回系统默认 Java 环境', undefined, 'info');
+                  onShowToast?.(t('envs.switchedToSystemDefault'), undefined, 'info');
                 }}
                 style={{ padding: '4px 10px', fontSize: 11.5 }}
               >
-                恢复为系统默认
+                {t('envs.restoreSystemDefault')}
               </button>
             )}
           </div>
@@ -722,10 +725,10 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span>🌐</span>
                       <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-bright)' }}>
-                        官方主流 Java (JDK) 在线一键安装
+                        {t('envs.onlineInstallTitle')}
                       </span>
                       <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                        (下载官方发行包并解压至用户专属目录 ~/.echoly/jdks)
+                        {t('envs.onlineInstallDesc')}
                       </span>
                     </div>
 
@@ -748,9 +751,9 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                               : undefined,
                             borderColor: showMoreJdkMenu ? 'var(--accent)' : undefined,
                           }}
-                          title="选择更多主流 Java 发行版 (Amazon Corretto, Azul Zulu, GraalVM, Java 22 等)"
+                          title={t('envs.moreJdkTitle')}
                         >
-                          <span>更多主流版本 ({moreJdks.length})</span>
+                          <span>{t('envs.moreVersions', { n: moreJdks.length })}</span>
                           <span style={{ fontSize: 10, opacity: 0.7 }}>{showMoreJdkMenu ? '▲' : '▼'}</span>
                         </button>
                       )}
@@ -786,13 +789,13 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                             }}
                           >
                             <span style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-bright)' }}>
-                              可选的更多官方主流 JDK
+                              {t('envs.moreJdkSection')}
                             </span>
                             <button
                               type="button"
                               className="panel-action-btn"
                               onClick={() => setShowMoreJdkMenu(false)}
-                              title="关闭"
+                              title={t('common.close')}
                               style={{ width: 20, height: 20, fontSize: 12 }}
                             >
                               ×
@@ -835,10 +838,10 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                                   <div>
                                     {isInstallingThis ? (
                                       <span style={{ fontSize: 11, color: 'var(--accent)' }}>
-                                        {prog?.status === 'extracting' ? '解压中...' : `${prog?.percent || 0}%`}
+                                        {prog?.status === 'extracting' ? t('envs.extracting') : `${prog?.percent || 0}%`}
                                       </span>
                                     ) : isSelected ? (
-                                      <span style={{ fontSize: 11, color: '#10b981', fontWeight: 600 }}>使用中</span>
+                                      <span style={{ fontSize: 11, color: '#10b981', fontWeight: 600 }}>{t('envs.inUse')}</span>
                                     ) : isInstalled ? (
                                       <button
                                         type="button"
@@ -855,12 +858,12 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                                               selectedJavaHome: targetPath,
                                               selectedJavaLabel: jdk.name,
                                             }));
-                                            onShowToast?.(`已选定使用 ${jdk.name}`, targetPath, 'success');
+                                            onShowToast?.(t('envs.selectedToUse', { name: jdk.name }), targetPath, 'success');
                                             setShowMoreJdkMenu(false);
                                           }
                                         }}
                                       >
-                                        切换
+                                        {t('envs.switchAction')}
                                       </button>
                                     ) : (
                                       <button
@@ -870,7 +873,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                                         disabled={Boolean(installingId)}
                                         onClick={() => void handleInstallJdk(jdk)}
                                       >
-                                        一键安装
+                                        {t('envs.installOneClick')}
                                       </button>
                                     )}
                                   </div>
@@ -898,7 +901,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                                 setShowMoreJdkMenu(false);
                               }}
                             >
-                              {showAllJdks ? '恢复精简展示 (仅核心4款)' : '平铺展示全部版本卡片'}
+                              {showAllJdks ? t('envs.restoreCompact') : t('envs.showAllVersions')}
                             </button>
                           </div>
                         </div>
@@ -963,7 +966,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                                       fontWeight: 600,
                                     }}
                                   >
-                                    推荐
+                                    {t('envs.recommended')}
                                   </span>
                                 )}
                               </div>
@@ -1006,7 +1009,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                                   marginTop: 3,
                                 }}
                               >
-                                <span>下载中... {prog.percent}%</span>
+                                <span>{t('envs.downloadingPct', { pct: prog.percent })}</span>
                                 {prog.downloadedBytes && prog.totalBytes && (
                                   <span>
                                     {(prog.downloadedBytes / 1024 / 1024).toFixed(1)} /{' '}
@@ -1019,7 +1022,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
 
                           {isInstallingThis && prog && prog.status === 'extracting' && (
                             <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2 }}>
-                              📦 正在解压并配置环境变量...
+                              {t('envs.extractingEnv')}
                             </div>
                           )}
 
@@ -1047,7 +1050,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                                     padding: '4px 8px',
                                   }}
                                 >
-                                  ✓ 当前执行版本
+                                  {t('envs.currentVersion')}
                                 </span>
                               ) : (
                                 <button
@@ -1063,11 +1066,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                                       selectedJavaHome: targetPath,
                                       selectedJavaLabel: `${jdk.name}`,
                                     }));
-                                    onShowToast?.(`已选定使用 ${jdk.name}`, targetPath, 'success');
+                                    onShowToast?.(t('envs.selectedToUse', { name: jdk.name }), targetPath, 'success');
                                   }}
                                   style={{ padding: '3px 10px', fontSize: 11.5 }}
                                 >
-                                  选择此版本执行
+                                  {t('envs.selectThisVersion')}
                                 </button>
                               )
                             ) : (
@@ -1078,7 +1081,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                                 onClick={() => void handleInstallJdk(jdk)}
                                 style={{ padding: '4px 12px', fontSize: 11.5 }}
                               >
-                                {isInstallingThis ? '正在安装...' : '⚡ 一键在线安装'}
+                                {isInstallingThis ? t('envs.installing') : t('envs.installOnline')}
                               </button>
                             )}
                           </div>
@@ -1097,7 +1100,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span>💻</span>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-bright)' }}>
-                  本机已检测到的 JDK ({installedJdks.length})
+                  {t('envs.detectedJdks', { n: installedJdks.length })}
                 </span>
               </div>
               <button
@@ -1107,7 +1110,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 disabled={loadingJdks}
                 style={{ fontSize: 11.5 }}
               >
-                {loadingJdks ? '扫描中...' : '重新扫描'}
+                {loadingJdks ? t('envs.scanning') : t('envs.rescan')}
               </button>
             </div>
 
@@ -1122,7 +1125,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
             >
               {installedJdks.length === 0 ? (
                 <div style={{ padding: '16px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
-                  暂未扫描到系统其他 JDK。可通过上方一键在线安装，或在下方手动指定目录。
+                  {t('envs.noOtherJdks')}
                 </div>
               ) : (
                 installedJdks.map((jdk) => {
@@ -1186,11 +1189,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                             selectedJavaHome: jdk.path,
                             selectedJavaLabel: `${jdk.vendor} Java ${jdk.majorVersion || jdk.version}`,
                           }));
-                          onShowToast?.(`已选定 Java ${jdk.majorVersion || jdk.version}`, jdk.path, 'success');
+                          onShowToast?.(t('envs.selectedJavaVersion', { version: jdk.majorVersion || jdk.version }), jdk.path, 'success');
                         }}
                         style={{ padding: '3px 10px', fontSize: 11.5, flexShrink: 0 }}
                       >
-                        {isSelected ? '● 已选定' : '选择使用'}
+                        {isSelected ? t('envs.selected') : t('envs.useThis')}
                       </button>
                     </div>
                   );
@@ -1202,7 +1205,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
           {/* Custom JAVA_HOME Picker */}
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
-              自定义 JAVA_HOME 路径 <span style={{ fontSize: 11, color: 'var(--muted)' }}>(如已有其他 JDK 目录)</span>
+              {t('envs.customJavaHome')} <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('envs.customJavaHomeHint')}</span>
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
@@ -1212,7 +1215,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   updateConfig((prev) => ({
                     ...prev,
                     selectedJavaHome: e.target.value,
-                    selectedJavaLabel: e.target.value ? `自定义: ${e.target.value}` : '',
+                    selectedJavaLabel: e.target.value ? t('envs.customPrefix', { path: e.target.value }) : '',
                   }))
                 }
                 placeholder="/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home"
@@ -1234,7 +1237,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 onClick={handlePickJavaHome}
                 style={{ padding: '6px 14px', fontSize: 12 }}
               >
-                📁 浏览目录...
+                {t('envs.browseDir')}
               </button>
             </div>
           </div>
@@ -1268,17 +1271,17 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   }}
                 />
                 <span style={{ fontSize: 11.5, fontWeight: 600, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  当前 Maven 运行方式
+                  {t('envs.currentMavenMode')}
                 </span>
               </div>
               <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-bright)' }}>
                 {config.customMvnPath
-                  ? `自定义可执行程序 (${config.customMvnPath})`
+                  ? t('envs.modeCustom', { path: config.customMvnPath })
                   : hasMvnw || mavenEnv?.type === 'wrapper'
-                  ? '项目内置 Maven Wrapper (./mvnw) · 免装全局 Maven'
+                  ? t('envs.modeWrapper')
                   : mavenEnv?.available
-                  ? `系统全局 Maven (${mavenEnv.executablePath || 'mvn'})`
-                  : '未检测到 Maven (推荐在下方一键生成 mvnw 包装器)'}
+                  ? t('envs.modeSystem', { path: mavenEnv.executablePath || 'mvn' })
+                  : t('envs.modeNotFound')}
               </div>
             </div>
 
@@ -1289,7 +1292,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               disabled={detectingMaven}
               style={{ padding: '4px 10px', fontSize: 11.5 }}
             >
-              {detectingMaven ? '检测中...' : '🔄 重新检测'}
+              {detectingMaven ? t('envs.detecting') : t('envs.redetect')}
             </button>
           </div>
 
@@ -1305,20 +1308,20 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <span style={{ fontSize: 16 }}>⚡</span>
               <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-bright)' }}>
-                项目 Maven Wrapper (mvnw) 包装器
+                {t('envs.wrapperTitle')}
               </span>
               {hasMvnw ? (
                 <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', fontWeight: 600 }}>
-                  当前项目已具备
+                  {t('envs.wrapperPresent')}
                 </span>
               ) : (
                 <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(234, 179, 8, 0.2)', color: '#fbbf24', fontWeight: 600 }}>
-                  未生成
+                  {t('envs.wrapperAbsent')}
                 </span>
               )}
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 12 }}>
-              Maven Wrapper 是官方推荐的标准构建配置。生成后团队成员和自动化构建无需预先安装全局 Maven，只需具备 Java 即可运行编译与打包。
+              {t('envs.wrapperDesc')}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1329,10 +1332,10 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 onClick={() => void handleInitWrapper()}
                 style={{ padding: '5px 14px', fontSize: 12 }}
               >
-                {generatingWrapper ? '正在生成 mvnw 包装器...' : hasMvnw ? '重新生成 / 修复 mvnw' : '⚡ 一键生成 mvnw 包装器'}
+                {generatingWrapper ? t('envs.generatingWrapper') : hasMvnw ? t('envs.regenerateWrapper') : t('envs.generateWrapper')}
               </button>
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                生成的 mvnw 与 .mvn 目录放置于项目根目录
+                {t('envs.wrapperLocation')}
               </span>
             </div>
           </div>
@@ -1350,39 +1353,41 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 16 }}>📄</span>
                 <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-bright)' }}>
-                  Maven settings.xml 配置文件
+                  {t('envs.settingsTitle')}
                 </span>
                 {config.customSettingsPath ? (
                   <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(59, 130, 246, 0.2)', color: 'var(--accent)', fontWeight: 600 }}>
-                    已指定配置文件
+                    {t('envs.settingsSpecified')}
                   </span>
                 ) : hasProjectSettingsXml ? (
                   <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', fontWeight: 600 }}>
-                    项目级 .mvn/settings.xml 已生效
+                    {t('envs.settingsProjectActive')}
                   </span>
                 ) : (
                   <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(255, 255, 255, 0.08)', color: 'var(--muted)', fontWeight: 500 }}>
-                    使用系统默认
+                    {t('envs.settingsSystemDefault')}
                   </span>
                 )}
               </div>
             </div>
 
             <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 12 }}>
-              在执行打包或编译时，通过传入指定的 <code style={{ background: 'var(--bg-input)', padding: '1px 5px', borderRadius: 4, fontFamily: 'monospace' }}>-s &lt;settings.xml&gt;</code> 解决公司私有仓库鉴权或国内依赖下载超时的问题。
+              {t('envs.settingsDescBefore')}
+              <code style={{ background: 'var(--bg-input)', padding: '1px 5px', borderRadius: 4, fontFamily: 'monospace' }}>-s &lt;settings.xml&gt;</code>
+              {t('envs.settingsDescAfter')}
             </div>
 
             {/* Path input */}
             <div style={{ marginBottom: 12 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
-                自定义 settings.xml 路径 <span style={{ fontSize: 11, color: 'var(--muted)' }}>(留空则自动检测项目 .mvn/settings.xml 或系统默认)</span>
+                {t('envs.customSettingsPath')} <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('envs.customSettingsPathHint')}</span>
               </label>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   type="text"
                   value={config.customSettingsPath || ''}
                   onChange={(e) => updateConfig((prev) => ({ ...prev, customSettingsPath: e.target.value }))}
-                  placeholder="~/.m2/settings.xml 或 /path/to/project/.mvn/settings.xml"
+                  placeholder={t('envs.settingsPathPlaceholder')}
                   style={{
                     flex: 1,
                     background: 'var(--bg-input, rgba(0,0,0,0.2))',
@@ -1401,7 +1406,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   onClick={handlePickSettingsPath}
                   style={{ padding: '6px 14px', fontSize: 12 }}
                 >
-                  📁 浏览文件...
+                  {t('envs.browseFile')}
                 </button>
                 {config.customSettingsPath && (
                   <button
@@ -1409,10 +1414,10 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     className="panel-standard-btn"
                     onClick={() => {
                       updateConfig((prev) => ({ ...prev, customSettingsPath: '' }));
-                      onShowToast?.('已清除自定义 settings.xml 路径', undefined, 'info');
+                      onShowToast?.(t('envs.clearedSettingsPath'), undefined, 'info');
                     }}
                     style={{ padding: '6px 10px', fontSize: 12 }}
-                    title="清除自定义路径"
+                    title={t('envs.clearCustomPath')}
                   >
                     ✕
                   </button>
@@ -1429,10 +1434,10 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 onClick={() => void handleInitSettingsXml()}
                 style={{ padding: '5px 14px', fontSize: 12 }}
               >
-                {generatingSettings ? '生成中...' : '⚡ 一键在当前工程生成 .mvn/settings.xml (阿里云镜像加速)'}
+                {generatingSettings ? t('envs.generating') : t('envs.generateSettingsXml')}
               </button>
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                自动配置 central 镜像指向国内阿里云公共仓库，极大加快依赖下载速度
+                {t('envs.settingsMirrorDesc')}
               </span>
             </div>
           </div>
@@ -1440,14 +1445,14 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
           {/* Custom mvn Path */}
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
-              自定义 mvn 执行程序路径 <span style={{ fontSize: 11, color: 'var(--muted)' }}>(留空则优先使用 Wrapper 或系统 PATH)</span>
+              {t('envs.customMvnPath')} <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('envs.customMvnPathHint')}</span>
             </label>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="text"
                 value={config.customMvnPath}
                 onChange={(e) => updateConfig((prev) => ({ ...prev, customMvnPath: e.target.value }))}
-                placeholder="/usr/local/bin/mvn 或 /opt/homebrew/bin/mvn"
+                placeholder={t('envs.mvnPathPlaceholder')}
                 style={{
                   flex: 1,
                   background: 'var(--bg-input, rgba(0,0,0,0.2))',
@@ -1466,7 +1471,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 onClick={handlePickMvnPath}
                 style={{ padding: '6px 14px', fontSize: 12 }}
               >
-                📄 浏览文件...
+                {t('envs.browseFileDoc')}
               </button>
               {config.customMvnPath && (
                 <button
@@ -1474,10 +1479,10 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   className="panel-standard-btn"
                   onClick={() => {
                     updateConfig((prev) => ({ ...prev, customMvnPath: '' }));
-                    onShowToast?.('已清除自定义 Maven 路径', undefined, 'info');
+                    onShowToast?.(t('envs.clearedMavenPath'), undefined, 'info');
                   }}
                   style={{ padding: '6px 10px', fontSize: 12 }}
-                  title="清除自定义路径"
+                  title={t('envs.clearCustomPathTitle')}
                 >
                   ✕
                 </button>
@@ -1496,18 +1501,18 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               lineHeight: 1.7,
             }}
           >
-            <div style={{ fontWeight: 600, color: 'var(--text-bright)', marginBottom: 4 }}>系统自动探测诊断</div>
+            <div style={{ fontWeight: 600, color: 'var(--text-bright)', marginBottom: 4 }}>{t('envs.detectDiagTitle')}</div>
             <div style={{ color: 'var(--muted)' }}>
-              可执行路径：<span style={{ color: 'var(--accent)', fontFamily: 'monospace' }}>{mavenEnv?.executablePath || '未检测到'}</span>
+              {t('envs.executablePath')}<span style={{ color: 'var(--accent)', fontFamily: 'monospace' }}>{mavenEnv?.executablePath || t('envs.notDetected')}</span>
             </div>
             {mavenEnv?.mavenVersion && (
               <div style={{ color: 'var(--muted)' }}>
-                Maven 版本：<span style={{ color: 'var(--text-bright)' }}>{mavenEnv.mavenVersion}</span>
+                {t('envs.mavenVersion')}<span style={{ color: 'var(--text-bright)' }}>{mavenEnv.mavenVersion}</span>
               </div>
             )}
             {mavenEnv?.detail && (
               <div style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 2 }}>
-                说明：{mavenEnv.detail}
+                {t('envs.detailLabel')}{mavenEnv.detail}
               </div>
             )}
           </div>
@@ -1528,11 +1533,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <span style={{ fontSize: 16 }}>⚡</span>
               <span style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-bright)' }}>
-                全局运行时参数配置 (VM Options &amp; 启动参数)
+                {t('envs.runtimeTitle')}
               </span>
             </div>
             <p style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 16px 0', lineHeight: 1.5 }}>
-              配置在运行 Java 类、Maven 目标及脚本时默认附加的 JVM 虚拟机系统属性 (-D)、主类程序参数及系统环境变量。
+              {t('envs.runtimeDesc')}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1540,15 +1545,15 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
-                    ☕ JVM 虚拟机参数 (VM Options)
+                    {t('envs.vmOptions')}
                   </label>
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>传递给 System.getProperty()</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('envs.vmOptionsHint')}</span>
                 </div>
                 <input
                   type="text"
                   value={runtimeConfig.vmArgs}
                   onChange={(e) => setRuntimeConfig({ ...runtimeConfig, vmArgs: e.target.value })}
-                  placeholder="例如: -Denv=local-dev -Dfile.encoding=UTF-8 -Xms256m -Xmx1024m"
+                  placeholder={t('envs.vmOptionsPlaceholder')}
                   style={{
                     width: '100%',
                     boxSizing: 'border-box',
@@ -1563,7 +1568,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   }}
                 />
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>常用示例:</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('envs.commonExamples')}</span>
                   {[
                     '-Denv=local-dev',
                     '-Dfile.encoding=UTF-8',
@@ -1598,15 +1603,15 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
                   <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
-                    📦 程序启动参数 (Program Arguments)
+                    {t('envs.programArgs')}
                   </label>
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>传递给 main(String[] args) 入口参数</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('envs.programArgsHint')}</span>
                 </div>
                 <input
                   type="text"
                   value={runtimeConfig.programArgs}
                   onChange={(e) => setRuntimeConfig({ ...runtimeConfig, programArgs: e.target.value })}
-                  placeholder="例如: --server.port=8080 --mode=standalone"
+                  placeholder={t('envs.programArgsPlaceholder')}
                   style={{
                     width: '100%',
                     boxSizing: 'border-box',
@@ -1626,13 +1631,13 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-bright)', marginBottom: 5 }}>
-                    🌐 系统环境变量 (Environment Variables)
+                    {t('envs.envVars')}
                   </label>
                   <input
                     type="text"
                     value={runtimeConfig.envVars}
                     onChange={(e) => setRuntimeConfig({ ...runtimeConfig, envVars: e.target.value })}
-                    placeholder="KEY=VALUE (逗号分隔)"
+                    placeholder={t('envs.envVarsPlaceholder')}
                     style={{
                       width: '100%',
                       boxSizing: 'border-box',
@@ -1650,13 +1655,13 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
 
                 <div>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-bright)', marginBottom: 5 }}>
-                    🏷️ Maven 激活 Profile (-P)
+                    {t('envs.activeProfile')}
                   </label>
                   <input
                     type="text"
                     value={runtimeConfig.activeProfiles}
                     onChange={(e) => setRuntimeConfig({ ...runtimeConfig, activeProfiles: e.target.value })}
-                    placeholder="例如: dev, local"
+                    placeholder={t('envs.activeProfilePlaceholder')}
                     style={{
                       width: '100%',
                       boxSizing: 'border-box',
@@ -1686,7 +1691,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 }}
               >
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-bright)' }}>
-                  ⚙️ 运行与类路径高级选项 (Run Options)
+                  {t('envs.runOptions')}
                 </div>
 
                 {/* 核心选项：Add dependencies with "provided" scope to classpath */}
@@ -1707,11 +1712,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     />
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#fca5a5' }}>
-                        <span>将 "provided" 作用域依赖添加到类路径 (Add dependencies with "provided" scope to classpath)</span>
-                        <span style={{ fontSize: 10, background: '#ef4444', color: '#fff', padding: '1px 5px', borderRadius: 3 }}>推荐开启</span>
+                        <span>{t('envs.providedScope')}</span>
+                        <span style={{ fontSize: 10, background: '#ef4444', color: '#fff', padding: '1px 5px', borderRadius: 3 }}>{t('envs.recommendedOn')}</span>
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                        在运行主类时包含 Flink, Spark, Lombok, Servlet-API 等 provided 范围依赖 (-Dexec.classpathScope=compile)，解决 NoClassDefFoundError。
+                        {t('envs.providedScopeDesc')}
                       </div>
                     </div>
                   </label>
@@ -1737,8 +1742,8 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                       onChange={(e) => setRuntimeConfig({ ...runtimeConfig, skipBuildBeforeRun: e.target.checked })}
                     />
                     <div>
-                      <div style={{ color: 'var(--text-bright)' }}>运行前不编译 (Do not build)</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>跳过 compile，直接执行已有 class</div>
+                      <div style={{ color: 'var(--text-bright)' }}>{t('envs.skipBuild')}</div>
+                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{t('envs.skipBuildDesc')}</div>
                     </div>
                   </label>
 
@@ -1761,8 +1766,8 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                       onChange={(e) => setRuntimeConfig({ ...runtimeConfig, allowMultipleInstances: e.target.checked })}
                     />
                     <div>
-                      <div style={{ color: 'var(--text-bright)' }}>允许并发运行多实例</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>不中断前序已启动的会话</div>
+                      <div style={{ color: 'var(--text-bright)' }}>{t('envs.allowMulti')}</div>
+                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{t('envs.allowMultiDesc')}</div>
                     </div>
                   </label>
 
@@ -1785,8 +1790,8 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                       onChange={(e) => setRuntimeConfig({ ...runtimeConfig, saveConsoleToFile: e.target.checked })}
                     />
                     <div>
-                      <div style={{ color: 'var(--text-bright)' }}>控制台日志保存到文件</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>保存至 .echoly/logs/run.log</div>
+                      <div style={{ color: 'var(--text-bright)' }}>{t('envs.saveConsole')}</div>
+                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{t('envs.saveConsoleDesc')}</div>
                     </div>
                   </label>
 
@@ -1809,8 +1814,8 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                       onChange={(e) => setRuntimeConfig({ ...runtimeConfig, showSettingsBeforeRun: e.target.checked })}
                     />
                     <div>
-                      <div style={{ color: 'var(--text-bright)' }}>每次启动前显示运行配置</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>运行前弹出配置窗口供确认</div>
+                      <div style={{ color: 'var(--text-bright)' }}>{t('envs.showBeforeRun')}</div>
+                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{t('envs.showBeforeRunDesc')}</div>
                     </div>
                   </label>
                 </div>
@@ -1823,11 +1828,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                   className="panel-standard-btn primary"
                   onClick={() => {
                     saveProjectRuntimeConfig(runtimeConfig, workspace);
-                    onShowToast?.('运行时参数已保存', '当前项目级配置已生效', 'success');
+                    onShowToast?.(t('envs.runtimeSaved'), t('envs.runtimeSavedDetail'), 'success');
                   }}
                   style={{ fontSize: 12, padding: '6px 18px', background: '#22c55e', borderColor: '#22c55e', color: '#fff' }}
                 >
-                  保存运行时参数
+                  {t('envs.saveRuntimeArgs')}
                 </button>
               </div>
             </div>
@@ -1854,11 +1859,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 16 }}>🚀</span>
                 <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)' }}>
-                  C / C++ 现代开发工具链与 LLDB-DAP 调试引擎
+                  {t('envs.cppTitle')}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
-                Echoly 已原生接入 Clangd LSP 语言服务、LLDB-DAP 调试协议与 CMake 自动化套件，实现开箱即用的 C/C++ 代码补全、跳转定义、Alt+O 头源切换、断点调试与构建运行。
+                {t('envs.cppDesc')}
               </div>
             </div>
 
@@ -1870,7 +1875,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 disabled={detectingMulti}
                 style={{ fontSize: 12, padding: '6px 14px' }}
               >
-                {detectingMulti ? '检测中...' : '重新体检'}
+                {detectingMulti ? t('envs.detecting') : t('envs.rediagnose')}
               </button>
             </div>
           </div>
@@ -1892,7 +1897,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>⚙️</span>
-                  <span>C/C++ 编译器 (Compiler)</span>
+                  <span>{t('envs.cppCompiler')}</span>
                 </div>
                 <span
                   style={{
@@ -1905,19 +1910,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: cppToolchain?.compiler.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {cppToolchain?.compiler.installed ? '已就绪' : '未安装'}
+                  {cppToolchain?.compiler.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {cppToolchain?.compiler.command || 'clang++ / g++'}
+                {t('envs.cmdLabel')}{cppToolchain?.compiler.command || 'clang++ / g++'}
               </div>
               {cppToolchain?.compiler.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {cppToolchain.compiler.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.compiler.path}>路径: {cppToolchain.compiler.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{cppToolchain.compiler.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.compiler.path}>{t('envs.pathLabel')}{cppToolchain.compiler.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {cppToolchain?.compiler.installGuide || 'xcode-select --install'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.recommendInstallLabel')}{cppToolchain?.compiler.installGuide || 'xcode-select --install'}</div>
               )}
             </div>
 
@@ -1936,7 +1941,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🧠</span>
-                  <span>Clangd 语言服务器 (LSP)</span>
+                  <span>{t('envs.clangd')}</span>
                 </div>
                 <span
                   style={{
@@ -1949,19 +1954,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: cppToolchain?.clangd.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {cppToolchain?.clangd.installed ? '已就绪' : '未安装'}
+                  {cppToolchain?.clangd.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {cppToolchain?.clangd.command || 'clangd'}
+                {t('envs.cmdLabel')}{cppToolchain?.clangd.command || 'clangd'}
               </div>
               {cppToolchain?.clangd.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {cppToolchain.clangd.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.clangd.path}>路径: {cppToolchain.clangd.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{cppToolchain.clangd.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.clangd.path}>{t('envs.pathLabel')}{cppToolchain.clangd.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {cppToolchain?.clangd.installGuide || 'brew install llvm'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.recommendInstallLabel')}{cppToolchain?.clangd.installGuide || 'brew install llvm'}</div>
               )}
             </div>
 
@@ -1980,7 +1985,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🪲</span>
-                  <span>LLDB-DAP 调试引擎</span>
+                  <span>{t('envs.lldbDap')}</span>
                 </div>
                 <span
                   style={{
@@ -1993,19 +1998,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: cppToolchain?.debugger.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {cppToolchain?.debugger.installed ? '已就绪' : '未安装'}
+                  {cppToolchain?.debugger.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {cppToolchain?.debugger.command || 'lldb-dap'}
+                {t('envs.cmdLabel')}{cppToolchain?.debugger.command || 'lldb-dap'}
               </div>
               {cppToolchain?.debugger.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {cppToolchain.debugger.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.debugger.path}>路径: {cppToolchain.debugger.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{cppToolchain.debugger.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.debugger.path}>{t('envs.pathLabel')}{cppToolchain.debugger.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {cppToolchain?.debugger.installGuide || 'xcode-select --install'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.recommendInstallLabel')}{cppToolchain?.debugger.installGuide || 'xcode-select --install'}</div>
               )}
             </div>
 
@@ -2024,7 +2029,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🏗️</span>
-                  <span>CMake 构建系统</span>
+                  <span>{t('envs.cmake')}</span>
                 </div>
                 <span
                   style={{
@@ -2037,19 +2042,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: cppToolchain?.cmake.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {cppToolchain?.cmake.installed ? '已就绪' : '未安装'}
+                  {cppToolchain?.cmake.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {cppToolchain?.cmake.command || 'cmake'}
+                {t('envs.cmdLabel')}{cppToolchain?.cmake.command || 'cmake'}
               </div>
               {cppToolchain?.cmake.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {cppToolchain.cmake.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.cmake.path}>路径: {cppToolchain.cmake.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{cppToolchain.cmake.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={cppToolchain.cmake.path}>{t('envs.pathLabel')}{cppToolchain.cmake.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {cppToolchain?.cmake.installGuide || 'brew install cmake'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.recommendInstallLabel')}{cppToolchain?.cmake.installGuide || 'brew install cmake'}</div>
               )}
             </div>
           </div>
@@ -2064,25 +2069,25 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
             }}
           >
             <div style={{ fontWeight: 600, fontSize: 13, color: '#fff', marginBottom: 10 }}>
-              💡 Echoly C/C++ 快捷开发指引
+              {t('envs.cppGuideTitle')}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#93c5fd', marginBottom: 4 }}>⌨️ 快捷键 Alt+O</div>
+                <div style={{ fontWeight: 600, color: '#93c5fd', marginBottom: 4 }}>{t('envs.cppGuideShortcut')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  在编辑器中按 Alt+O (Option+O)，可在头文件 (.h / .hpp) 与源文件 (.cpp) 之间秒级跳转互切。
+                  {t('envs.cppGuideShortcutDesc')}
                 </div>
               </div>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>🔴 边距断点交互</div>
+                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>{t('envs.cppGuideBreakpoint')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  鼠标直接点击代码行号左侧的字形边距槽，即可自由添加或移除断点红点，与 LLDB 引擎实时同步。
+                  {t('envs.cppGuideBreakpointDesc')}
                 </div>
               </div>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>⚡ CMake 自动感知</div>
+                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>{t('envs.cppGuideCmake')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  只要根目录存在 CMakeLists.txt，顶部运行部件即自动解析 Targets，支持一键 Build、Run 与 CTest。
+                  {t('envs.cppGuideCmakeDesc')}
                 </div>
               </div>
             </div>
@@ -2108,11 +2113,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 16 }}>🐍</span>
                 <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)' }}>
-                  Python 现代开发工具链与 debugpy 调试环境
+                  {t('envs.pyTitle')}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
-                Echoly 已深度集成 Pyright 语言服务器、debugpy DAP 调试通道与虚拟环境 (.venv) 自动感知，支持智能断点调试、变量悬停求值与单元测试。
+                {t('envs.pyDesc')}
               </div>
             </div>
 
@@ -2124,7 +2129,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 disabled={detectingMulti}
                 style={{ fontSize: 12, padding: '6px 14px' }}
               >
-                {detectingMulti ? '检测中...' : '重新体检'}
+                {detectingMulti ? t('envs.detecting') : t('envs.rediagnose')}
               </button>
             </div>
           </div>
@@ -2146,7 +2151,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>⚙️</span>
-                  <span>Python 解释器</span>
+                  <span>{t('envs.pyInterpreter')}</span>
                 </div>
                 <span
                   style={{
@@ -2159,19 +2164,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: multiToolchain?.python.interpreter.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {multiToolchain?.python.interpreter.installed ? '已就绪' : '未安装'}
+                  {multiToolchain?.python.interpreter.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {multiToolchain?.python.interpreter.command || 'python3'}
+                {t('envs.cmdLabel')}{multiToolchain?.python.interpreter.command || 'python3'}
               </div>
               {multiToolchain?.python.interpreter.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.python.interpreter.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.python.interpreter.path}>路径: {multiToolchain.python.interpreter.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{multiToolchain.python.interpreter.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.python.interpreter.path}>{t('envs.pathLabel')}{multiToolchain.python.interpreter.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {multiToolchain?.python.interpreter.installGuide || 'brew install python'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.recommendInstallLabel')}{multiToolchain?.python.interpreter.installGuide || 'brew install python'}</div>
               )}
             </div>
 
@@ -2190,7 +2195,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🐞</span>
-                  <span>debugpy 调试引擎</span>
+                  <span>{t('envs.pyDebugpy')}</span>
                 </div>
                 <span
                   style={{
@@ -2203,19 +2208,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: multiToolchain?.python.debugpy.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {multiToolchain?.python.debugpy.installed ? '已就绪' : '推荐安装'}
+                  {multiToolchain?.python.debugpy.installed ? t('envs.ready') : t('envs.recommendInstall')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                模块: python3 -m debugpy (Port: 5678)
+                {t('envs.moduleLabel')}python3 -m debugpy (Port: 5678)
               </div>
               {multiToolchain?.python.debugpy.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>状态: 已就绪 (支持 DAP TCP 会话)</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.python.debugpy.path}>路径: {multiToolchain.python.debugpy.path || '模块级加载'}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.statusLabel')}{t('envs.statusReadyDap')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.python.debugpy.path}>{t('envs.pathLabel')}{multiToolchain.python.debugpy.path || t('envs.moduleLevelLoad')}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>安装命令: {multiToolchain?.python.debugpy.installGuide || 'python3 -m pip install debugpy'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.installCmdLabel')}{multiToolchain?.python.debugpy.installGuide || 'python3 -m pip install debugpy'}</div>
               )}
             </div>
 
@@ -2234,7 +2239,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>📦</span>
-                  <span>Pip 包管理器</span>
+                  <span>{t('envs.pip')}</span>
                 </div>
                 <span
                   style={{
@@ -2247,19 +2252,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: multiToolchain?.python.pip.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {multiToolchain?.python.pip.installed ? '已就绪' : '未安装'}
+                  {multiToolchain?.python.pip.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {multiToolchain?.python.pip.command || 'pip3'}
+                {t('envs.cmdLabel')}{multiToolchain?.python.pip.command || 'pip3'}
               </div>
               {multiToolchain?.python.pip.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.python.pip.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.python.pip.path}>路径: {multiToolchain.python.pip.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{multiToolchain.python.pip.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.python.pip.path}>{t('envs.pathLabel')}{multiToolchain.python.pip.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐引导: {multiToolchain?.python.pip.installGuide}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.recommendGuideLabel')}{multiToolchain?.python.pip.installGuide}</div>
               )}
             </div>
           </div>
@@ -2274,25 +2279,25 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
             }}
           >
             <div style={{ fontWeight: 600, fontSize: 13, color: '#fff', marginBottom: 10 }}>
-              💡 Python 开发与调试指引
+              {t('envs.pyGuideTitle')}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>🌱 虚拟环境自动加载</div>
+                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>{t('envs.pyGuideVenv')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  工作区根目录下的 .venv / venv 会被 Pyright 与调试器自动识别，无需手动切换系统环境变量。
+                  {t('envs.pyGuideVenvDesc')}
                 </div>
               </div>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>🎯 断点单步求值</div>
+                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>{t('envs.pyGuideBreakpoint')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  在 Python 文件行号处点击添加断点，点击顶部 Debug 图标即可触发 debugpy 监听并无缝断点命中。
+                  {t('envs.pyGuideBreakpointDesc')}
                 </div>
               </div>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#93c5fd', marginBottom: 4 }}>🧪 自动化测试套件</div>
+                <div style={{ fontWeight: 600, color: '#93c5fd', marginBottom: 4 }}>{t('envs.pyGuideTests')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  工程模板预置 pytest 支持，在顶部运行下拉框可直接选择运行或调试单元测试。
+                  {t('envs.pyGuideTestsDesc')}
                 </div>
               </div>
             </div>
@@ -2318,11 +2323,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 16 }}>🐹</span>
                 <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)' }}>
-                  Go 现代开发工具链与 Delve DAP 调试引擎
+                  {t('envs.goTitle')}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
-                Echoly 已全面接入 Go 官方 Gopls 语言服务器与 Delve (dlv dap) 调试协议，支持 Go Module 依赖解析、秒级编译运行与原生断点单步调试。
+                {t('envs.goDesc')}
               </div>
             </div>
 
@@ -2334,7 +2339,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 disabled={detectingMulti}
                 style={{ fontSize: 12, padding: '6px 14px' }}
               >
-                {detectingMulti ? '检测中...' : '重新体检'}
+                {detectingMulti ? t('envs.detecting') : t('envs.rediagnose')}
               </button>
             </div>
           </div>
@@ -2356,7 +2361,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>⚙️</span>
-                  <span>Go 编译器 (go)</span>
+                  <span>{t('envs.goCompiler')}</span>
                 </div>
                 <span
                   style={{
@@ -2369,19 +2374,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: multiToolchain?.go.go.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {multiToolchain?.go.go.installed ? '已就绪' : '未安装'}
+                  {multiToolchain?.go.go.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {multiToolchain?.go.go.command || 'go'}
+                {t('envs.cmdLabel')}{multiToolchain?.go.go.command || 'go'}
               </div>
               {multiToolchain?.go.go.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.go.go.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.go.go.path}>路径: {multiToolchain.go.go.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{multiToolchain.go.go.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.go.go.path}>{t('envs.pathLabel')}{multiToolchain.go.go.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {multiToolchain?.go.go.installGuide || 'brew install go'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.recommendInstallLabel')}{multiToolchain?.go.go.installGuide || 'brew install go'}</div>
               )}
             </div>
 
@@ -2400,7 +2405,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🐞</span>
-                  <span>Delve 调试器 (dlv dap)</span>
+                  <span>{t('envs.delve')}</span>
                 </div>
                 <span
                   style={{
@@ -2413,19 +2418,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: multiToolchain?.go.delve.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {multiToolchain?.go.delve.installed ? '已就绪' : '未安装'}
+                  {multiToolchain?.go.delve.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: dlv dap (Port: 2345)
+                {t('envs.cmdLabel')}dlv dap (Port: 2345)
               </div>
               {multiToolchain?.go.delve.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.go.delve.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.go.delve.path}>路径: {multiToolchain.go.delve.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{multiToolchain.go.delve.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.go.delve.path}>{t('envs.pathLabel')}{multiToolchain.go.delve.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>安装命令: {multiToolchain?.go.delve.installGuide}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.installCmdLabel')}{multiToolchain?.go.delve.installGuide}</div>
               )}
             </div>
 
@@ -2444,7 +2449,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🧠</span>
-                  <span>Gopls 语言服务器</span>
+                  <span>{t('envs.gopls')}</span>
                 </div>
                 <span
                   style={{
@@ -2457,19 +2462,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: multiToolchain?.go.gopls.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {multiToolchain?.go.gopls.installed ? '已就绪' : '推荐安装'}
+                  {multiToolchain?.go.gopls.installed ? t('envs.ready') : t('envs.recommendInstall')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {multiToolchain?.go.gopls.command || 'gopls'}
+                {t('envs.cmdLabel')}{multiToolchain?.go.gopls.command || 'gopls'}
               </div>
               {multiToolchain?.go.gopls.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.go.gopls.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.go.gopls.path}>路径: {multiToolchain.go.gopls.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{multiToolchain.go.gopls.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.go.gopls.path}>{t('envs.pathLabel')}{multiToolchain.go.gopls.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>安装命令: {multiToolchain?.go.gopls.installGuide}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.installCmdLabel')}{multiToolchain?.go.gopls.installGuide}</div>
               )}
             </div>
           </div>
@@ -2484,25 +2489,25 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
             }}
           >
             <div style={{ fontWeight: 600, fontSize: 13, color: '#fff', marginBottom: 10 }}>
-              💡 Go 开发与调试指引
+              {t('envs.goGuideTitle')}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#06b6d4', marginBottom: 4 }}>📦 Go Modules 管理</div>
+                <div style={{ fontWeight: 600, color: '#06b6d4', marginBottom: 4 }}>{t('envs.goGuideModules')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  自动感知 go.mod，保存文件时支持自动整理依赖与智能代码补全。
+                  {t('envs.goGuideModulesDesc')}
                 </div>
               </div>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>⚡ Delve DAP 调试</div>
+                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>{t('envs.goGuideDelve')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  使用 Go 官方推荐的 dlv dap 协议模式，支持变量实时展开与 Goroutine 线程调用栈回溯。
+                  {t('envs.goGuideDelveDesc')}
                 </div>
               </div>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>🚀 一键运行与测试</div>
+                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>{t('envs.goGuideRun')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  顶部快捷运行面板自动检测当前激活的 main.go 与 _test.go 文件，点击即可秒级执行。
+                  {t('envs.goGuideRunDesc')}
                 </div>
               </div>
             </div>
@@ -2528,11 +2533,11 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <span style={{ fontSize: 16 }}>🟢</span>
                 <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)' }}>
-                  Node.js / TypeScript 现代全栈运行环境
+                  {t('envs.nodeTitle')}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
-                支持 package.json 脚本自动嗅探、tsx 原生免编译极速执行与 V8 Inspector 9229 调试端口连接。
+                {t('envs.nodeDesc')}
               </div>
             </div>
 
@@ -2544,7 +2549,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                 disabled={detectingMulti}
                 style={{ fontSize: 12, padding: '6px 14px' }}
               >
-                {detectingMulti ? '检测中...' : '重新体检'}
+                {detectingMulti ? t('envs.detecting') : t('envs.rediagnose')}
               </button>
             </div>
           </div>
@@ -2566,7 +2571,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>⚙️</span>
-                  <span>Node.js 运行时</span>
+                  <span>{t('envs.nodeRuntime')}</span>
                 </div>
                 <span
                   style={{
@@ -2579,19 +2584,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: multiToolchain?.node.node.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {multiToolchain?.node.node.installed ? '已就绪' : '未安装'}
+                  {multiToolchain?.node.node.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {multiToolchain?.node.node.command || 'node'}
+                {t('envs.cmdLabel')}{multiToolchain?.node.node.command || 'node'}
               </div>
               {multiToolchain?.node.node.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.node.node.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.node.node.path}>路径: {multiToolchain.node.node.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{multiToolchain.node.node.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.node.node.path}>{t('envs.pathLabel')}{multiToolchain.node.node.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {multiToolchain?.node.node.installGuide || 'brew install node'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.recommendInstallLabel')}{multiToolchain?.node.node.installGuide || 'brew install node'}</div>
               )}
             </div>
 
@@ -2610,7 +2615,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>📦</span>
-                  <span>NPM 包管理器</span>
+                  <span>{t('envs.npm')}</span>
                 </div>
                 <span
                   style={{
@@ -2623,19 +2628,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: multiToolchain?.node.npm.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {multiToolchain?.node.npm.installed ? '已就绪' : '未安装'}
+                  {multiToolchain?.node.npm.installed ? t('envs.ready') : t('envs.notInstalled')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {multiToolchain?.node.npm.command || 'npm'}
+                {t('envs.cmdLabel')}{multiToolchain?.node.npm.command || 'npm'}
               </div>
               {multiToolchain?.node.npm.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.node.npm.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.node.npm.path}>路径: {multiToolchain.node.npm.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{multiToolchain.node.npm.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.node.npm.path}>{t('envs.pathLabel')}{multiToolchain.node.npm.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>推荐安装: {multiToolchain?.node.npm.installGuide}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.recommendInstallLabel')}{multiToolchain?.node.npm.installGuide}</div>
               )}
             </div>
 
@@ -2654,7 +2659,7 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <span>🔷</span>
-                  <span>TypeScript 编译器 (tsc)</span>
+                  <span>{t('envs.tsc')}</span>
                 </div>
                 <span
                   style={{
@@ -2667,19 +2672,19 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
                     color: multiToolchain?.node.typescript.installed ? '#4ade80' : '#f87171',
                   }}
                 >
-                  {multiToolchain?.node.typescript.installed ? '已就绪' : '推荐全局安装'}
+                  {multiToolchain?.node.typescript.installed ? t('envs.ready') : t('envs.recommendGlobalInstall')}
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                命令: {multiToolchain?.node.typescript.command || 'tsc'}
+                {t('envs.cmdLabel')}{multiToolchain?.node.typescript.command || 'tsc'}
               </div>
               {multiToolchain?.node.typescript.installed ? (
                 <>
-                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>版本: {multiToolchain.node.typescript.version}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.node.typescript.path}>路径: {multiToolchain.node.typescript.path}</div>
+                  <div style={{ fontSize: 11.5, color: '#d4d4d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.versionLabel')}{multiToolchain.node.typescript.version}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={multiToolchain.node.typescript.path}>{t('envs.pathLabel')}{multiToolchain.node.typescript.path}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>安装命令: {multiToolchain?.node.typescript.installGuide || 'npm install -g typescript tsx'}</div>
+                <div style={{ fontSize: 11, color: '#f87171', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('envs.installCmdLabel')}{multiToolchain?.node.typescript.installGuide || 'npm install -g typescript tsx'}</div>
               )}
             </div>
           </div>
@@ -2694,25 +2699,25 @@ export function EnvironmentSettingsSection({ workspace, onShowToast }: Environme
             }}
           >
             <div style={{ fontWeight: 600, fontSize: 13, color: '#fff', marginBottom: 10 }}>
-              💡 Node.js / TypeScript 开发与调试指引
+              {t('envs.nodeGuideTitle')}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>⚡ tsx 免构建执行</div>
+                <div style={{ fontWeight: 600, color: '#86efac', marginBottom: 4 }}>{t('envs.nodeGuideTsx')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  无需执行 tsc 编译，直接在编辑器中秒级运行 TypeScript 文件并支持 ES 模块。
+                  {t('envs.nodeGuideTsxDesc')}
                 </div>
               </div>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#93c5fd', marginBottom: 4 }}>🔍 V8 Inspector 调试</div>
+                <div style={{ fontWeight: 600, color: '#93c5fd', marginBottom: 4 }}>{t('envs.nodeGuideInspector')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  支持通过 --inspect=9229 端口接入，断点命中时精准捕获异常堆栈与异步作用域。
+                  {t('envs.nodeGuideInspectorDesc')}
                 </div>
               </div>
               <div style={{ padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 6 }}>
-                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>📜 NPM Scripts 联动</div>
+                <div style={{ fontWeight: 600, color: '#fde047', marginBottom: 4 }}>{t('envs.nodeGuideScripts')}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  顶部运行部件实时读取 package.json 中的 scripts，一键启动 dev、build 或 test。
+                  {t('envs.nodeGuideScriptsDesc')}
                 </div>
               </div>
             </div>

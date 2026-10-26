@@ -3,6 +3,7 @@ import type { DatabaseColumnMeta, DbConnectionView } from '@deepseek-ide/shared'
 import { DbDdlView } from './DbDdlView';
 import { DbColumnsView } from './DbColumnsView';
 import { loadStructureViewMode, saveStructureViewMode, type StructureViewMode } from '../services/structureViewMode';
+import { useI18n } from '../i18n';
 import type { DbDriverType } from '../services/dbIdentifiers';
 
 export interface DbStructureViewProps {
@@ -48,6 +49,7 @@ export function DbStructureView({
   onRenamed,
   onShowToast,
 }: DbStructureViewProps) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<StructureViewMode>(() => loadStructureViewMode());
   const [columns, setColumns] = useState<DatabaseColumnMeta[]>([]);
   const [ddl, setDdl] = useState<string>('');
@@ -85,7 +87,7 @@ export function DbStructureView({
       setTableComment(entry?.comment ?? null);
       // DDL 拿不到不算致命（权限受限的库很常见）：列视图照常可用，只在 DDL 视图里说明
       const errs = [schemaRes.ok ? null : schemaRes.error, ddlRes.ok ? null : ddlRes.error].filter(Boolean);
-      if (errs.length > 0) setError(errs.join('；'));
+      if (errs.length > 0) setError(errs.join(t('db.errorSeparator')));
       setNonce((n) => n + 1);
     } catch (err: any) {
       setError(err?.message || String(err));
@@ -95,7 +97,7 @@ export function DbStructureView({
     } finally {
       setLoading(false);
     }
-  }, [connectionId, tableName, schemaName, driver]);
+  }, [connectionId, tableName, schemaName, driver, t]);
 
   useEffect(() => {
     void load();
@@ -120,30 +122,32 @@ export function DbStructureView({
             {tableName}
           </span>
           {/* 分段切换：DDL 原文 / 可编辑列清单 */}
-          <div className="db-segmented" role="group" aria-label="表结构展示形态">
+          <div className="db-segmented" role="group" aria-label={t('db.structureViewMode')}>
             <button
               type="button"
               className={`db-segmented-btn${mode === 'columns' ? ' active' : ''}`}
-              title="以列清单展示，可直接修改并应用"
+              title={t('db.showColumnsMode')}
               onClick={() => switchMode('columns')}
             >
-              列
+              {t('db.columnsLabel')}
             </button>
             <button
               type="button"
               className={`db-segmented-btn${mode === 'ddl' ? ' active' : ''}`}
-              title="查看建表语句原文"
+              title={t('db.viewDdlOriginal')}
               onClick={() => switchMode('ddl')}
             >
               DDL
             </button>
           </div>
-          {columnCount !== undefined && <span className="db-structure-count">{columnCount} 列</span>}
+          {columnCount !== undefined && (
+            <span className="db-structure-count">{t('db.columnCount', { n: columnCount })}</span>
+          )}
         </div>
         <button
           type="button"
           className="panel-action-btn"
-          title="重新读取表结构"
+          title={t('db.reloadStructure')}
           disabled={loading}
           onClick={() => void load()}
         >
@@ -156,13 +160,13 @@ export function DbStructureView({
       </div>
 
       {loading ? (
-        <div className="db-structure-placeholder">正在读取表结构…</div>
+        <div className="db-structure-placeholder">{t('db.loadingStructure')}</div>
       ) : mode === 'ddl' ? (
         ddl ? (
           <DbDdlView key={`ddl-${nonce}`} ddl={ddl} theme={theme} />
         ) : (
           <div className="db-structure-placeholder">
-            {error ? `无法读取建表语句：${error}` : '这张表没有可展示的建表语句。'}
+            {error ? t('db.ddlReadFailed', { error }) : t('db.noDdlToShow')}
           </div>
         )
       ) : (

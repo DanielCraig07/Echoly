@@ -30,6 +30,14 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'skills',
+          root: 'packages/skills',
+          include: ['test/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
           name: 'desktop',
           root: 'apps/desktop',
           include: ['test/**/*.test.ts'],

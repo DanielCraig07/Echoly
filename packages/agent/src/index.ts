@@ -11,6 +11,9 @@ import type {
   PlanProposal,
   PlanTodo,
   ProviderConfig,
+  QueuedUserMessage,
+  ChatMessageMetrics,
+  ToolDefinition,
 } from '@deepseek-ide/shared';
 import { syncPermissionBooleans, DEFAULT_LLM_MODEL } from '@deepseek-ide/shared';
 import {
@@ -24,9 +27,16 @@ import {
   executeTool,
   toolsForMode,
   type ToolContext,
+  type ToolResult,
   type WorkspaceBackend,
   LocalFsBackend,
 } from '@deepseek-ide/tools';
+import {
+  clampSummary,
+  formatCompactionNotice,
+  splitForCompaction,
+  summarizeCompaction,
+} from './contextCompaction.js';
 
 /**
  * 判断 baseUrl 是否指向本地或局域网私有 GPU 推理节点。
@@ -84,10 +94,50 @@ export interface AgentRunOptions {
   requestContinue?: () => Promise<boolean>;
   signal?: AbortSignal;
   client?: any;
+  /**
+   * 编辑后自检用的诊断来源。宿主注入（主进程从 LSP 缓存 / 渲染层从 Monaco markers 取），
+   * 未注入时 get_diagnostics 工具会向模型明确报「不可用」，而不是返回空的「一切正常」。
+   */
+  getDiagnostics?: ToolContext['getDiagnostics'];
+  /** 代码库语义检索，宿主注入；未注入时 codebase_search 工具会明确报不可用。 */
+  codebaseSearch?: ToolContext['codebaseSearch'];
+  /**
+   * 文件系统副作用的写前记录，宿主注入用于「撤销本轮 AI 改动」。
+   * 未注入时工具照常工作，只是这一轮不可撤销。
+   */
+  onFileMutation?: ToolContext['onFileMutation'];
+  /**
+   * 运行中追加的消息。
+   *
+   * 主进程持有队列（用户随时可能提交），Agent 在每个「步骤边界」取空它 —— 也就是
+   * 一次模型调用与它的工具执行全部结束之后。刻意不在工具执行中途插入：那样会让
+   * 模型看到「调用了工具但还没看到结果，就先收到新要求」，它通常会放弃核对结果。
+   */
+  drainQueuedMessages?: () => QueuedUserMessage[];
+  /** 取走队列时同步通知宿主，用于把界面上的「排队中」气泡标成已送达。 */
+  onQueuedMessagesConsumed?: (ids: string[]) => void;
+  /**
+   * 宿主接入的 MCP 工具。
+   *
+   * 定义与执行分开传：定义是快照（本轮开始时的工具清单），执行是活的
+   * （中途服务器可能掉线，那时应当如实报错而不是让模型一直调一个死工具）。
+   * `readonlyNames` 决定 Ask / Plan 模式下哪些 MCP 工具可见且免确认。
+   */
+  mcp?: {
+    definitions: ToolDefinition[];
+    readonlyNames: Iterable<string>;
+    call: (name: string, args: Record<string, unknown>) => Promise<ToolResult>;
+    /**
+     * 暴露名 → 归属信息，仅用于生成 prompt 里的说明块。
+     *
+     * 为什么不从 `definitions[].description` 里解析服务器名：那是给人看的自由文本，
+     * 解析它对每个 MCP 服务器都要写一套正则，而这张表在 Manager 里本来就是现成的。
+     */
+    meta?: Record<string, { serverName: string; readonly: boolean }>;
+  };
 }
 
-const MAX_OPEN_FILE_CHARS = 12_000;
-const MAX_LINES_PER_FILE = 200;
+const MAX_OPEN_FILE_CHARS = 12_000;const MAX_LINES_PER_FILE = 200;
 /** 光标附近上下文：前后各 N 行，控制在几 KB 内，避免整文件占满 context */
 const CURSOR_LINES_BEFORE = 30;
 const CURSOR_LINES_AFTER = 30;
@@ -131,6 +181,42 @@ function formatOpenFilesBlock(openFiles?: AgentRunOptions['openFiles']): string 
   return `Open files (paths):\n${paths}\n\nOpen file contents (active first; truncated):\n${bodies.join('\n\n') || '(none)'}`;
 }
 
+export interface McpPromptTool {
+  exposedName: string;
+  description: string;
+  serverName: string;
+  readonly: boolean;
+}
+
+/**
+ * 生成 MCP 工具的 prompt 说明块。
+ *
+ * 为什么不只依赖原生的 `tools` 参数：MCP 工具是**外部系统**的入口，模型需要知道
+ * 两件 `tools` 参数表达不了的事 —— 哪些服务器是只读的（可以放心先试探），
+ * 以及工具名里的 `<serverId>__` 前缀意味着什么（否则模型会把前缀当成名字的一部分，
+ * 在参数里重复传服务器名）。
+ *
+ * 爆炸半径也要说清：这些工具连的是用户的生产系统，一个「顺手清理一下」的调用
+ * 可能就是不可逆的外部副作用。因此这里明确要求先确认再动手。
+ */
+export function formatMcpToolsForPrompt(tools: McpPromptTool[]): string {
+  if (tools.length === 0) return '';
+  const lines = tools.map(
+    (t) =>
+      `- \`${t.exposedName}\`（${t.serverName}${t.readonly ? '，只读' : '，**可写**'}）：${t.description}`,
+  );
+  return [
+    '以下工具来自外部 MCP 服务器（名字形如 `<服务器>__<工具>`，前缀已包含服务器信息，不要再作为参数传入）：',
+    ...lines,
+    '',
+    '调用这些工具前请注意：',
+    '- 它们操作的是**外部系统**，不是当前工作区，改动可能不可逆，也可能影响他人。',
+    '- 标记为「可写」的工具在动手前必须先向用户说明你打算做什么、影响范围是什么。',
+    '- 只有当任务确实需要访问对应外部系统时才调用；不要为了「多收集点信息」而试探性调用。',
+    '- 调用失败时如实报告错误原文，不要假定外部系统已经成功而继续往下做。',
+  ].join('\n');
+}
+
 function buildSystemPrompt(options: {
   workspaceRoot: string;
   mode: AgentMode;
@@ -139,6 +225,8 @@ function buildSystemPrompt(options: {
   cursor?: AgentRunOptions['cursor'];
   skillsText?: string;
   rulesText?: string;
+  /** MCP 工具的说明块。工具清单本身走原生 tools 参数，这里只补模型需要知道的用法约束。 */
+  mcpToolsText?: string;
   planContext?: PlanContext;
   backendKind?: string;
 }): string {
@@ -150,6 +238,7 @@ function buildSystemPrompt(options: {
     cursor,
     skillsText,
     rulesText,
+    mcpToolsText,
     planContext,
     backendKind,
   } = options;
@@ -159,7 +248,9 @@ function buildSystemPrompt(options: {
 
   const sharedRules = `## Behavior
 - Reply in the same language the user uses (default Chinese if unclear).
-- Explore before editing: prefer search_code / glob_files / read_file / list_dir, then apply_patch or write_file.
+- Explore before editing: prefer search_code / search_symbols / glob_files / read_file / list_dir, then apply_patch or write_file.
+- When you do not know which file declares something, search_symbols finds the declaration; codebase_search (if available) is for "where is this behavior implemented" questions rather than exact strings.
+- After editing files, verify the change: call get_diagnostics and fix any ERROR it reports for the files you touched. If get_diagnostics is unavailable, run the project's build/typecheck/lint command via run_terminal instead. Do not claim a task is complete while errors you introduced are still outstanding.
 - STRICTLY FORBIDDEN: Calling the same tool with identical arguments repeatedly. Once a file is read or a query is searched, analyze the information already in context.
 - If a file's content was truncated, do NOT re-read the whole file with read_file; use read_file_lines with specific line offsets, or use search_code.
 - Keep tool arguments valid JSON. On tool failure, read the error and retry or change strategy.
@@ -192,7 +283,8 @@ At the end of your final message you MUST include a fenced plan block exactly li
 Todos should be concrete, ordered steps.`
         : `You are a coding agent inside an IDE connected to an intranet Deepseek model.
 You can explore and modify the workspace with tools.
-Use apply_patch for surgical edits; write_file for new files or full rewrites.
+Use apply_patch for surgical edits: pass an \`edits\` array to make several independent replacements in one call. Each old_text must match the file exactly and be unique — if it is not unique the patch is rejected, so include surrounding context or set replace_all: true. Use write_file for new files or full rewrites.
+Use delete_path / move_path for file-level changes rather than shelling out to rm/mv.
 ${sharedRules}
 ## Reasoning discipline
 ${reasoningRules}`;
@@ -213,10 +305,12 @@ ${planContext.todos.map((t) => `- [${t.status}] ${t.id}: ${t.content}`).join('\n
 
   const skillsBlock = skillsText ? `\n## Skills\n${skillsText}\n` : '';
 
+  const mcpBlock = mcpToolsText ? `\n## MCP Tools\n${mcpToolsText}\n` : '';
+
   return `${modeBlock}
 Workspace root: ${workspaceRoot} (${backendKind ?? 'local'})
 ${rulesBlock}${formatOpenFilesBlock(openFiles)}
-${formatCursorContext(cursor)}${selectionBlock}${planExecBlock}${skillsBlock}`;
+${formatCursorContext(cursor)}${selectionBlock}${planExecBlock}${skillsBlock}${mcpBlock}`;
 }
 
 /**
@@ -276,9 +370,32 @@ export function parsePlanProposal(content: string): PlanProposal | null {
   }
 }
 
+/**
+ * 追加消息在上下文里的包装。
+ *
+ * 必须显式标注「这是用户在你执行途中追加的」，否则模型会把它当成一次新的独立提问 ——
+ * 于是丢掉手上没做完的活，或者反过来把已经做完的步骤再做一遍。
+ * 同时明确要求**不要**重头开始，把「继续」这件事写进指令而不是指望模型自己推断。
+ */
+export function formatQueuedMessageBlock(
+  content: string,
+  attachmentBlocks: string,
+): string {
+  return [
+    '[系统说明：以下是用户在本次任务执行过程中追加的消息。]',
+    '请把它当作对当前任务的**补充要求**：先完成你手上正在进行的步骤，再据此调整后续做法。',
+    '不要从头重做已经完成的步骤，也不要因此向用户重复确认原始需求。',
+    '--- 用户追加的消息 ---',
+    content,
+    attachmentBlocks,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export async function runAgent(
   options: AgentRunOptions,
-): Promise<{ finalText: string; diffs: PendingDiff[] }> {
+): Promise<{ finalText: string; diffs: PendingDiff[]; metrics?: ChatMessageMetrics }> {
   const {
     prompt,
     workspaceRoot,
@@ -383,17 +500,43 @@ export async function runAgent(
       if (options.applyImmediately !== undefined) return options.applyImmediately;
       return true;
     },
+    getDiagnostics: options.getDiagnostics,
+    codebaseSearch: options.codebaseSearch,
+    onFileMutation: options.onFileMutation,
+    mcp: options.mcp
+      ? {
+          toolNames: new Set(options.mcp.definitions.map((d) => d.function.name)),
+          readonlyNames: new Set(options.mcp.readonlyNames),
+          call: options.mcp.call,
+        }
+      : undefined,
   };
 
-  const tools = toolsForMode(mode);
+  const tools = toolsForMode(
+    mode,
+    options.mcp
+      ? { definitions: options.mcp.definitions, readonlyNames: options.mcp.readonlyNames }
+      : undefined,
+  );
 
-  let userPrompt = prompt;
-  const images: Array<{ dataUrl: string; mediaType: string }> = [];
-  const documents: Array<{ dataUrl: string; mediaType: string; name?: string }> = [];
+  type ImagePart = { dataUrl: string; mediaType: string };
+  type DocumentPart = { dataUrl: string; mediaType: string; name?: string };
 
-  if (attachments && attachments.length > 0) {
+  /**
+   * 把附件摊成两样东西：给模型看的文本块，以及走多模态通道的图片/文档。
+   *
+   * 抽成函数是因为它被用在两个地方：本轮的初始提问，以及运行中追加的消息。
+   * 追加消息带附件是常见需求（「顺便看一下这张报错截图」），
+   * 若只在初始提问里处理，追加上来的截图会被静默丢掉。
+   */
+  const collectAttachments = (
+    list: ChatAttachment[] | undefined,
+    images: ImagePart[],
+    documents: DocumentPart[],
+  ): string => {
+    if (!list || list.length === 0) return '';
     const fileBlocks: string[] = [];
-    for (const att of attachments) {
+    for (const att of list) {
       const isBrowserRef = att.type === 'browser-element' || att.type === 'browser-page';
       const isImage =
         !isBrowserRef &&
@@ -486,14 +629,14 @@ ${el.outerHtml || att.content || ''}
         });
       }
     }
-    if (fileBlocks.length > 0) {
-      userPrompt = `${prompt}${fileBlocks.join('')}`;
-    }
-  }
+    return fileBlocks.join('');
+  };
 
+  const images: ImagePart[] = [];
+  const documents: DocumentPart[] = [];
   const userMessage: ChatMessage = {
     role: 'user',
-    content: userPrompt,
+    content: `${prompt}${collectAttachments(attachments, images, documents)}`,
     images: images.length > 0 ? images : undefined,
     documents: documents.length > 0 ? documents : undefined,
   };
@@ -509,6 +652,19 @@ ${el.outerHtml || att.content || ''}
         cursor: options.cursor,
         skillsText,
         rulesText: options.rulesText,
+        mcpToolsText: options.mcp
+          ? formatMcpToolsForPrompt(
+              options.mcp.definitions.map((d) => {
+                const info = options.mcp?.meta?.[d.function.name];
+                return {
+                  exposedName: d.function.name,
+                  description: d.function.description,
+                  serverName: info?.serverName ?? 'MCP',
+                  readonly: info?.readonly ?? false,
+                };
+              }),
+            )
+          : undefined,
         planContext,
         backendKind: backend.kind,
       }),
@@ -526,6 +682,45 @@ ${el.outerHtml || att.content || ''}
   const toolCallKeyHistory: string[] = [];
   let lastIntermediateContent = '';
   let consecutiveStuckSteps = 0;
+  /**
+   * 整轮对话只做一次摘要压缩。每超一次预算就调一次模型的话，
+   * 长任务里光是「压缩」本身的开销就会盖过它省下的 token。
+   */
+  let summarizedOnce = false;
+
+  const runStartTime = Date.now();
+  let firstTokenGlobalTime: number | null = null;
+  let totalCompletionTokens = 0;
+  let lastPromptTokens: number | undefined;
+  let totalToolCallsCount = 0;
+  let lastFinishReason: string | undefined;
+
+  const buildCurrentMetrics = (): ChatMessageMetrics => {
+    const now = Date.now();
+    const durationMs = Math.max(0, now - runStartTime);
+    const ttftMs =
+      firstTokenGlobalTime !== null
+        ? Math.max(0, firstTokenGlobalTime - runStartTime)
+        : undefined;
+    const tokensPerSecond =
+      durationMs > 0 && totalCompletionTokens > 0
+        ? Number(((totalCompletionTokens / durationMs) * 1000).toFixed(1))
+        : undefined;
+    const promptTokens = lastPromptTokens ?? estimateTokensFromMessages(messages);
+    const totalTokens = promptTokens + totalCompletionTokens;
+
+    return {
+      model: providerConfig.model || DEFAULT_LLM_MODEL,
+      durationMs,
+      ttftMs,
+      tokensPerSecond,
+      promptTokens,
+      completionTokens: totalCompletionTokens,
+      totalTokens,
+      toolCallsCount: totalToolCallsCount,
+      finishReason: lastFinishReason,
+    };
+  };
 
   const emitContextUsage = (usedTokens: number, source: 'api' | 'estimate') => {
     onEvent({
@@ -544,7 +739,29 @@ ${el.outerHtml || att.content || ''}
           throw new Error('cancelled');
         }
 
-        // Context Compaction: If tool history gets too large, compress older tool results to prevent model server stalling
+        // 步骤边界：把用户在本轮运行途中追加的消息并进上下文。
+        // 放在循环顶部（上一次的模型调用与工具执行都已结束）而不是中途，
+        // 是为了让模型永远看到「工具调用 + 它的结果」成对出现。
+        const queued = options.drainQueuedMessages?.() ?? [];
+        if (queued.length > 0) {
+          for (const q of queued) {
+            // 每条追加消息用自己的图片/文档数组：把上一轮追加的截图挂到这一条上，
+            // 会让模型以为用户又发了一遍。
+            const qImages: ImagePart[] = [];
+            const qDocuments: DocumentPart[] = [];
+            const blocks = collectAttachments(q.attachments, qImages, qDocuments);
+            messages.push({
+              role: 'user',
+              content: formatQueuedMessageBlock(q.content, blocks),
+              images: qImages.length > 0 ? qImages : undefined,
+              documents: qDocuments.length > 0 ? qDocuments : undefined,
+            });
+          }
+          options.onQueuedMessagesConsumed?.(queued.map((q) => q.id));
+        }
+
+        // Context Compaction：先免费截断，仍超预算才请模型写一份进展摘要。
+        // 详细的分层理由见 contextCompaction.ts。
         let estimated = estimateTokensFromMessages(messages);
         const isLocalNode = isLocalOrPrivateNetworkUrl(providerConfig.baseUrl);
         const defaultLocalBudget = 22000;
@@ -587,37 +804,58 @@ ${el.outerHtml || att.content || ''}
             estimated = estimateTokensFromMessages(messages);
           }
 
-          // Stage 3: If still over budget, slide the middle window keeping system (0), current task user turn, and recent messages
+          // Stage 3: 滑动窗口。与旧实现的区别在于中间段落不再直接丢弃，
+          // 而是先尝试交给模型归档成一份进展记录，丢了什么由模型自己判断。
           const stage3Threshold = isLocalNode ? 10 : 18;
           const stage3RecentCount = isLocalNode ? 8 : 14;
           if (estimated > maxPromptBudget && messages.length > stage3Threshold) {
-            const recentMessages = messages.slice(-stage3RecentCount);
-            let firstCleanIdx = 0;
-            while (
-              firstCleanIdx < recentMessages.length &&
-              recentMessages[firstCleanIdx].role === 'tool'
-            ) {
-              firstCleanIdx++;
+            // 保留 [0]（system）为前缀；userMessage 在下面显式拼回，所以它不参与 tail，
+            // 否则同一份（可能带上附件正文的）用户消息会被塞两次。
+            const split = splitForCompaction(messages, 1, stage3RecentCount);
+            // 尾部可能以 tool 结果开头，其发起方被切在 middle 里 ——
+            // 孤立的 tool 结果会让多数网关直接 400，这里整段丢掉这几条。
+            let tail = split.keepTail.filter((m) => m !== userMessage);
+            let orphanCount = 0;
+            while (tail.length > 0 && tail[0].role === 'tool') {
+              tail = tail.slice(1);
+              orphanCount++;
             }
-            const cleanRecent = recentMessages.slice(firstCleanIdx);
-            const compactionNotice = [
-              `[系统说明：当前执行步数较多，早期的中间调用细节已归档压缩。]`,
-              `【当前任务的原始诉求】:`,
-              `"""`,
-              prompt.trim(),
-              `"""`,
-              `请直接基于上述原始诉求、当前工作区最新状态及最近的工具调用结果，继续完成任务并直接向用户给出最终结论。`,
-              `【特别注意】：若当前改动已完整且测试已通过，请直接总结任务成果并回复用户，切勿因中间历史被压缩而向用户询问重复确认原始诉求。`,
-            ].join('\n');
+
+            let notice: string | null = null;
+            if (!summarizedOnce) {
+              summarizedOnce = true;
+              onEvent({ type: 'status', status: 'thinking' });
+              const summary = await summarizeCompaction(client, {
+                middle: split.middle,
+                originalPrompt: prompt,
+                droppedFromTruncation: orphanCount,
+                signal,
+              });
+              if (summary) {
+                notice = formatCompactionNotice(clampSummary(summary), prompt);
+              }
+            }
+            if (!notice) {
+              // 摘要不可用（失败 / 已做过一次 / 没有可压缩内容）：退回原来的一行说明
+              notice = [
+                `[系统说明：当前执行步数较多，早期的中间调用细节已归档压缩。]`,
+                `【当前任务的原始诉求】:`,
+                `"""`,
+                prompt.trim(),
+                `"""`,
+                `请直接基于上述原始诉求、当前工作区最新状态及最近的工具调用结果，继续完成任务并直接向用户给出最终结论。`,
+                `【特别注意】：若当前改动已完整且测试已通过，请直接总结任务成果并回复用户，切勿因中间历史被压缩而向用户询问重复确认原始诉求。`,
+              ].join('\n');
+            }
 
             messages = [
               messages[0],
               userMessage,
               {
                 role: 'system',
-                content: compactionNotice,
+                content: notice,
               },
-              ...cleanRecent,
+              ...tail,
             ];
           }
         }
@@ -640,6 +878,7 @@ ${el.outerHtml || att.content || ''}
 
         while (true) {
           try {
+            let callFirstTokenTime: number | null = null;
             const result = await client.chatStreamCollect(
               {
                 messages,
@@ -648,11 +887,33 @@ ${el.outerHtml || att.content || ''}
                 frequencyPenalty: samplingOverride?.frequencyPenalty,
                 presencePenalty: samplingOverride?.presencePenalty,
               },
-              (token: string) => onEvent({ type: 'token', text: token }),
-              (thinking: string) => onEvent({ type: 'thinking_token', text: thinking }),
+              (token: string) => {
+                const now = Date.now();
+                if (callFirstTokenTime === null) callFirstTokenTime = now;
+                if (firstTokenGlobalTime === null) firstTokenGlobalTime = now;
+                onEvent({ type: 'token', text: token });
+              },
+              (thinking: string) => {
+                const now = Date.now();
+                if (callFirstTokenTime === null) callFirstTokenTime = now;
+                if (firstTokenGlobalTime === null) firstTokenGlobalTime = now;
+                onEvent({ type: 'thinking_token', text: thinking });
+              },
             );
             assistant = result.message;
             finishReason = result.finishReason;
+            lastFinishReason = finishReason;
+
+            if (result.usage?.promptTokens != null) {
+              lastPromptTokens = result.usage.promptTokens;
+            }
+            if (result.usage?.completionTokens != null) {
+              totalCompletionTokens += result.usage.completionTokens;
+            } else {
+              const generatedText = (assistant.content || '') + (assistant.reasoning_content || '');
+              totalCompletionTokens += Math.max(1, Math.round(generatedText.length / 3));
+            }
+
             if (result.usage?.totalTokens != null) {
               emitContextUsage(result.usage.totalTokens, 'api');
             } else if (result.usage?.promptTokens != null) {
@@ -744,10 +1005,13 @@ ${el.outerHtml || att.content || ''}
               finalText = recovered
                 ? `${recovered}\n\n> ${loopNotice}`
                 : `模型在思考阶段陷入重复循环，未能产出有效内容。请重试，或换用更简明的提问方式。\n\n> ${loopNotice}`;
+              const metrics = buildCurrentMetrics();
               onEvent({ type: 'assistant_message', content: finalText });
               onEvent({ type: 'status', status: 'done' });
-              onEvent({ type: 'done', finalText });
-              return { finalText, diffs };
+              // 带显式标志位而不是让渲染层去比对那句话：渲染层要拿它决定「这条熔断消息
+              // 不回灌上下文」（否则会诱导模型接着复读），比对文案的话改一次措辞就失效。
+              onEvent({ type: 'done', finalText, metrics, circuitBroken: true });
+              return { finalText, diffs, metrics };
             }
 
             // Watchdog Timeout Protection & Auto-healing Retry:
@@ -866,8 +1130,9 @@ ${el.outerHtml || att.content || ''}
             onEvent({ type: 'plan_proposal', plan });
           }
           onEvent({ type: 'status', status: 'done' });
-          onEvent({ type: 'done', finalText });
-          return { finalText, diffs };
+          const metrics = buildCurrentMetrics();
+          onEvent({ type: 'done', finalText, metrics });
+          return { finalText, diffs, metrics };
         }
 
         // Persist intermediate reasoning before tools so UI does not lose streaming text.
@@ -893,6 +1158,8 @@ ${el.outerHtml || att.content || ''}
             }
           }
         }
+
+        totalToolCallsCount += toolCalls.length;
 
         for (const call of toolCalls) {
           if (signal?.aborted) throw new Error('cancelled');
@@ -1038,11 +1305,28 @@ ${el.outerHtml || att.content || ''}
       /aborted|abort/i.test(message);
     if (aborted) {
       onEvent({ type: 'status', status: 'cancelled' });
-      onEvent({ type: 'done', finalText: '(cancelled)' });
-      return { finalText: '(cancelled)', diffs };
+      const metrics = buildCurrentMetrics();
+      onEvent({ type: 'done', finalText: '(cancelled)', metrics });
+      return { finalText: '(cancelled)', diffs, metrics };
     }
     onEvent({ type: 'error', message });
     onEvent({ type: 'status', status: 'error' });
     throw err;
   }
 }
+
+/**
+ * MCP 客户端。与 `@deepseek-ide/tools` 的关系是：那里定义工具与权限门控，
+ * 这里负责说 MCP 协议并把子进程管起来。放在 agent 包是因为它依赖的东西
+ * （spawn、JSON-RPC）与 Agent 循环同属「执行侧」，而 tools 包要保持可在
+ * 无子进程环境下被纯逻辑单测。
+ */
+export { McpManager, MAX_TOOLS_PER_SERVER } from './mcp/manager.js';
+export type { McpServerConfig, McpToolInfo, McpServerStatus } from './mcp/manager.js';
+export { StdioMcpTransport, McpTransportClosedError } from './mcp/transport.js';
+export {
+  LineJsonRpcDecoder,
+  flattenMcpContent,
+  mcpToolName,
+  MCP_PROTOCOL_VERSION,
+} from './mcp/protocol.js';

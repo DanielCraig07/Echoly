@@ -12,6 +12,7 @@ import { AgentService } from './agentService';
 import { TerminalService } from './terminal';
 import { GitService } from './gitService';
 import { SearchService } from './searchService';
+import { McpService } from './mcpService';
 import { SshSessionManager } from './ssh/SshSessionManager';
 import { WindowRegistry } from './windowRegistry';
 import { initializeExtensionManager, disposeExtensionManager } from './extensionManager';
@@ -89,6 +90,15 @@ if (!gotSingleInstanceLock) {
 }
 
 let mainWindow: ElectronBrowserWindow | null = null;
+
+/**
+ * MCP 宿主的模块级引用，专供 `before-quit` 使用。
+ *
+ * 实例本身在 `app.whenReady()` 里创建（进程级单例，多窗口共享一份连接），
+ * 但那个作用域在 `before-quit` 里够不着 —— 钩子注册在模块顶层。
+ * 若不做这一步，退出时就没有句柄去收掉子进程，它们会变成孤儿。
+ */
+let mcpServiceRef: McpService | null = null;
 const windowRegistry = new WindowRegistry();
 
 function getActiveWindow(): ElectronBrowserWindow | null {
@@ -567,10 +577,13 @@ app.whenReady().then(async () => {
   terminals.setCwdResolver((rel) => resolveWorkspace().resolveAbsolute(rel ?? '.'));
   const git = new GitService(resolveWorkspace, () => getActiveWindow(), ssh);
   const search = new SearchService(resolveWorkspace);
+  const mcpService = new McpService(settings);
+  mcpServiceRef = mcpService;
   const agents = new AgentService({
     settings,
     registry: windowRegistry,
     getWindow: () => getActiveWindow(),
+    mcp: mcpService,
   });
 
   registerIpc({
@@ -584,10 +597,14 @@ app.whenReady().then(async () => {
     git,
     search,
     ssh,
+    mcp: mcpService,
     getWindow: () => getActiveWindow(),
     popupAppMenu,
     onSettingsChanged: () => {
       agents.onPermissionModeChanged(settings.get().permissionMode);
+      // 设置保存后按新配置调整 MCP 连接。apply 内部会跳过没变的服务器，
+      // 因此这里不需要判断「这次改动是否与 MCP 有关」。
+      void mcpService.reload().catch(() => undefined);
       if (process.platform === 'darwin') {
         Menu.setApplicationMenu(buildAppMenu());
       }
@@ -612,6 +629,9 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   // 清理扩展管理器
   await disposeExtensionManager();
+  // MCP 子进程必须显式收掉：它们是独立的操作系统进程，不随 Electron 退出而消失。
+  // 留着的话下次启动会连到一批孤儿进程，或更糟 —— 与它们抢同一个文件锁/端口。
+  await mcpServiceRef?.disposeAll().catch(() => undefined);
 });
 
 export { randomUUID };

@@ -9,16 +9,17 @@ import type {
   ModelProviderType,
   ReasoningEffort,
   UpdateFeedConfig,
+  McpServerConfig,
+  McpServerStatus,
 } from '@deepseek-ide/shared';
 import {
-  PERMISSION_MODE_LABELS,
   AI_PROVIDER_LABELS,
   DEFAULT_PROVIDERS,
   DEFAULT_MODELS,
   REASONING_EFFORT_LABELS,
   APP_VERSION,
 } from '@deepseek-ide/shared';
-import { useI18n } from '../i18n';
+import { translateSegments, useI18n } from '../i18n';
 import { EnvironmentSettingsSection } from './EnvironmentSettingsSection';
 import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 import echolyAppIcon from '../assets/echoly-icon.png';
@@ -33,17 +34,45 @@ interface Props {
     detail?: string,
     type?: 'success' | 'error' | 'info' | 'warn',
   ) => void;
-  initialTab?: 'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'update' | 'about';
+  initialTab?: 'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'mcp' | 'update' | 'about';
   workspace?: string | null;
 }
 
 const PERMISSION_ORDER: PermissionMode[] = ['allow_all_extreme', 'allow_all', 'ask', 'deny_all'];
 
-const PERMISSION_HINTS: Record<PermissionMode, string> = {
-  allow_all_extreme: '写操作与终端自动放行，ask_user 也不弹窗。',
-  allow_all: '写操作与终端自动放行，ask_user 仍会询问。',
-  ask: '写操作与非只读终端需要确认后才会执行。',
-  deny_all: '拦截全部工具调用，仅可查看不可修改。',
+/**
+ * 权限档位文案。存 key 而不是文案：这张表是模块级常量，
+ * 直接存文案的话语言切换后不会重建，只能用最初始的语言。
+ * （`packages/shared` 里的 `PERMISSION_MODE_LABELS` 只有中文，不能直接用。）
+ */
+const PERMISSION_LABEL_KEYS: Record<PermissionMode, string> = {
+  allow_all_extreme: 'settings.permLabel.allow_all_extreme',
+  allow_all: 'settings.permLabel.allow_all',
+  ask: 'settings.permLabel.ask',
+  deny_all: 'settings.permLabel.deny_all',
+};
+
+const PERMISSION_HINT_KEYS: Record<PermissionMode, string> = {
+  allow_all_extreme: 'settings.permHint.allow_all_extreme',
+  allow_all: 'settings.permHint.allow_all',
+  ask: 'settings.permHint.ask',
+  deny_all: 'settings.permHint.deny_all',
+};
+
+/** 协议类型与思考档位同理：共享包里是中文常量，这里只存 key。 */
+const PROVIDER_LABEL_KEYS: Record<ModelProviderType, string> = {
+  deepseek: 'settings.providerLabel.deepseek',
+  openai: 'settings.providerLabel.openai',
+  anthropic: 'settings.providerLabel.anthropic',
+  custom: 'settings.providerLabel.custom',
+};
+
+const EFFORT_LABEL_KEYS: Record<ReasoningEffort, string> = {
+  none: 'settings.effortLabel.none',
+  low: 'settings.effortLabel.low',
+  high: 'settings.effortLabel.high',
+  xhigh: 'settings.effortLabel.xhigh',
+  max: 'settings.effortLabel.max',
 };
 
 export function SettingsModal({
@@ -67,6 +96,13 @@ export function SettingsModal({
   const [probing, setProbing] = useState(false);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [skillsDir, setSkillsDir] = useState<string>('');
+  // MCP 服务器：状态由主进程持有（子进程在那里），这里只做展示与配置编辑
+  const [mcpStatuses, setMcpStatuses] = useState<McpServerStatus[]>([]);
+  const [mcpReloading, setMcpReloading] = useState(false);
+  /** 正在编辑的服务器草稿。null 表示没有展开任何一条。 */
+  const [editingMcpId, setEditingMcpId] = useState<string | null>(null);
+  /** 待确认删除的 MCP 服务器 id。 */
+  const [pendingMcpDelete, setPendingMcpDelete] = useState<string | null>(null);
   // Multi-model management state
   const [editingModel, setEditingModel] = useState<ModelProfile | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
@@ -103,9 +139,10 @@ export function SettingsModal({
   }, []);
 
   const MODEL_PRESETS: Array<{
-    label: string;
+    /** 预设名与模型显示别名的字典 key —— 表是模块内的，存 key 才能在切语言后跟着变。 */
+    labelKey: string;
+    nameKey: string;
     provider: ModelProviderType;
-    name: string;
     baseUrl: string;
     model: string;
     enableThinking?: boolean;
@@ -115,78 +152,78 @@ export function SettingsModal({
     thinkingTokenBudget?: number;
   }> = [
     {
-      label: 'DeepSeek V4.1 (内网 vLLM 直连)',
+      labelKey: 'settings.preset.deepseekVllm',
+      nameKey: 'settings.preset.deepseekVllmName',
       provider: 'deepseek',
-      name: 'DeepSeek V4.1 (内网)',
       baseUrl: 'http://192.168.10.241:8002',
       model: 'deepseek-v4.1-flash',
       reasoningEffort: 'low',
     },
     {
-      label: 'DeepSeek V4.1 (内网网关 1333)',
+      labelKey: 'settings.preset.deepseekGateway',
+      nameKey: 'settings.preset.deepseekGatewayName',
       provider: 'deepseek',
-      name: 'DeepSeek V4.1 (网关)',
       baseUrl: 'http://192.168.10.241:1333',
       model: 'deepseek-v4.1-flash',
       reasoningEffort: 'low',
     },
     {
-      label: 'DeepSeek (官方 API)',
+      labelKey: 'settings.preset.deepseekOfficial',
+      nameKey: 'settings.preset.deepseekOfficialName',
       provider: 'deepseek',
-      name: 'DeepSeek Chat (官方)',
       baseUrl: 'https://api.deepseek.com',
       model: 'deepseek-chat',
     },
     {
-      label: 'DeepSeek Reasoner (R1 推理)',
+      labelKey: 'settings.preset.deepseekReasoner',
+      nameKey: 'settings.preset.deepseekReasonerName',
       provider: 'deepseek',
-      name: 'DeepSeek R1 (推理)',
       baseUrl: 'https://api.deepseek.com',
       model: 'deepseek-reasoner',
     },
     {
-      label: 'OpenAI (GPT-4o)',
+      labelKey: 'settings.preset.openaiGpt4o',
+      nameKey: 'settings.preset.openaiGpt4oName',
       provider: 'openai',
-      name: 'GPT-4o',
       baseUrl: 'https://api.openai.com',
       model: 'gpt-4o',
     },
     {
-      label: 'OpenAI (GPT-4o-mini 极速)',
+      labelKey: 'settings.preset.openaiGpt4oMini',
+      nameKey: 'settings.preset.openaiGpt4oMiniName',
       provider: 'openai',
-      name: 'GPT-4o-mini',
       baseUrl: 'https://api.openai.com',
       model: 'gpt-4o-mini',
     },
     {
-      label: 'Claude 3.7 Sonnet (Anthropic)',
+      labelKey: 'settings.preset.claude37Sonnet',
+      nameKey: 'settings.preset.claude37SonnetName',
       provider: 'anthropic',
-      name: 'Claude 3.7 Sonnet',
       baseUrl: 'https://api.anthropic.com',
       model: 'claude-3-7-sonnet-20250219',
       enableThinking: true,
       thinkingTokens: 8000,
     },
     {
-      label: 'Claude 3.5 Haiku',
+      labelKey: 'settings.preset.claude35Haiku',
+      nameKey: 'settings.preset.claude35HaikuName',
       provider: 'anthropic',
-      name: 'Claude 3.5 Haiku',
       baseUrl: 'https://api.anthropic.com',
       model: 'claude-3-5-haiku-20241022',
     },
     {
-      label: 'AgentRouter (Claude 协议代理 / glm-5.3)',
+      labelKey: 'settings.preset.agentRouter',
+      nameKey: 'settings.preset.agentRouterName',
       provider: 'anthropic',
-      name: 'Claude 3.7 (AgentRouter)',
       baseUrl: 'https://agentrouter.org',
       model: 'glm-5.3',
       enableThinking: true,
       thinkingTokens: 8000,
     },
     {
-      label: '自定义 (OpenAI 兼容接口 / 本地 Ollama)',
+      labelKey: 'settings.preset.customOllama',
+      nameKey: 'settings.preset.customOllamaName',
       provider: 'custom',
-      name: '本地 Ollama 模型',
       baseUrl: 'http://localhost:11434/v1',
       model: 'llama3',
     },
@@ -195,13 +232,14 @@ export function SettingsModal({
   // Tab state — 持久化到 localStorage，下次打开时恢复上次停留位置
   const SETTINGS_TAB_KEY = 'echoly_settings_last_tab';
   type SettingsTab =
-    'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'update' | 'about';
+    'models' | 'runtime' | 'environment' | 'general' | 'skills' | 'mcp' | 'update' | 'about';
   const ALL_TABS: SettingsTab[] = [
     'models',
     'runtime',
     'environment',
     'general',
     'skills',
+    'mcp',
     'update',
     'about',
   ];
@@ -408,6 +446,10 @@ export function SettingsModal({
           setDeletingModel(null);
           return;
         }
+        if (pendingMcpDelete) {
+          setPendingMcpDelete(null);
+          return;
+        }
         if (pendingUpdate && !downloading) {
           setPendingUpdate(null);
           return;
@@ -417,7 +459,7 @@ export function SettingsModal({
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [open, onClose, deletingModel, pendingUpdate, downloading]);
+  }, [open, onClose, deletingModel, pendingMcpDelete, pendingUpdate, downloading]);
 
   if (!open || !settings) return null;
 
@@ -444,6 +486,96 @@ export function SettingsModal({
     setSkillsDir(dir);
     setSkills(await window.ide.listSkills());
   }
+
+  // ---- MCP 服务器 ----
+
+  /**
+   * 拉取各服务器状态。
+   *
+   * 状态由主进程持有（子进程在那里），渲染层只做展示。因此每次进入 MCP 页都重新拉一遍 ——
+   * 组件里缓存的状态会过期，而「显示绿灯但实际已经掉线」是这里最坏的失败方式：
+   * 用户会以为工具能用，直到它真的被调用。
+   */
+  async function refreshMcpStatus(): Promise<void> {
+    try {
+      setMcpStatuses(await window.ide.mcpStatus());
+    } catch {
+      setMcpStatuses([]);
+    }
+  }
+
+  /** 保存配置并让主进程按新配置重连。 */
+  async function saveMcpServers(
+    servers: McpServerConfig[],
+    nextTab?: SettingsTab,
+  ): Promise<void> {
+    if (!settings) return;
+    await persistSettings({ ...settings, mcpServers: servers });
+    setMcpReloading(true);
+    try {
+      // 重连可能很慢（npx 冷启动），但不该阻塞界面 —— 先把「正在连接」显示出来，
+      // 否则用户点保存后没有任何反馈，会以为没生效而反复点击。
+      setMcpStatuses(await window.ide.mcpReload());
+    } catch (err) {
+      setMcpStatuses([]);
+      console.error('MCP reload failed', err);
+    } finally {
+      setMcpReloading(false);
+      if (nextTab) setActiveTab(nextTab);
+    }
+  }
+
+  function handleAddMcpServer(): void {
+    if (!settings) return;
+    const servers = settings.mcpServers ?? [];
+    // id 必须唯一且稳定 —— 它是工具名前缀，改动 id 等价于换一个服务器
+    let n = servers.length + 1;
+    const existing = new Set(servers.map((s) => s.id));
+    while (existing.has(`server-${n}`)) n++;
+    const draft: McpServerConfig = {
+      id: `server-${n}`,
+      name: t('settings.mcp.newServerName', { n }),
+      enabled: false,
+      command: '',
+      args: [],
+      access: 'write',
+    };
+    setSettings({ ...settings, mcpServers: [...servers, draft] });
+    setEditingMcpId(draft.id);
+  }
+
+  /**
+   * 就地改配置，**不落盘**。
+   *
+   * 保存推迟到用户点「保存并连接」：每敲一个字符就写设置并重连一次，
+   * 会让用户在半成品的命令上反复 spawn 子进程（且必然失败），既慢又刷屏错误。
+   */
+  function patchMcpServer(id: string, patch: Partial<McpServerConfig>): void {
+    if (!settings) return;
+    const servers = (settings.mcpServers ?? []).map((s) =>
+      s.id === id ? { ...s, ...patch } : s,
+    );
+    setSettings({ ...settings, mcpServers: servers });
+  }
+
+  async function handleDeleteMcpServer(id: string): Promise<void> {
+    if (!settings) return;
+    const servers = (settings.mcpServers ?? []).filter((s) => s.id !== id);
+    setPendingMcpDelete(null);
+    setEditingMcpId(null);
+    await saveMcpServers(servers);
+  }
+
+  /** 把主进程报回的状态与本地配置按 id 对齐，取 id 的并集。 */
+  const mcpRows = (settings?.mcpServers ?? []).map((cfg) => ({
+    cfg,
+    status: mcpStatuses.find((s) => s.id === cfg.id),
+  }));
+
+  // 进入 MCP 页时刷新一次状态
+  useEffect(() => {
+    if (open && activeTab === 'mcp') void refreshMcpStatus();
+  }, [open, activeTab]);
 
   async function checkUpdateNow(): Promise<void> {
     if (!settings || checking) return;
@@ -483,7 +615,7 @@ export function SettingsModal({
     setPendingUpdate(null);
     const res = await window.ide.downloadUpdate();
     if (!res.ok) {
-      setUpdateMsg({ type: 'error', text: res.detail || '下载失败' });
+      setUpdateMsg({ type: 'error', text: res.detail || t('settings.update.downloadFailed') });
       setDownloading(false);
     }
     // 成功时主进程会退出应用，无需处理
@@ -509,11 +641,15 @@ export function SettingsModal({
       await navigator.clipboard.writeText(info);
       onShowToast?.(
         t('settings.about.copied'),
-        `Echoly v${APP_VERSION} 诊断与环境信息已成功复制到剪贴板`,
+        t('settings.about.copiedDetail', { version: APP_VERSION }),
         'success',
       );
     } catch {
-      onShowToast?.('复制失败', '请手动选中文本复制', 'error');
+      onShowToast?.(
+        t('settings.about.copyFailedTitle'),
+        t('settings.about.copyFailedDetail'),
+        'error',
+      );
     }
   }
 
@@ -542,7 +678,7 @@ export function SettingsModal({
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title={t('common.close') || '关闭 (Esc)'}
+            title={t('settings.closeEsc')}
           >
             <svg
               width="14"
@@ -593,8 +729,8 @@ export function SettingsModal({
             >
               <span className="nav-icon">⚙️</span>
               <div className="nav-text">
-                <span className="nav-title">构建与运行环境</span>
-                <span className="nav-sub">Java (JDK) / Maven 配置</span>
+                <span className="nav-title">{t('settings.nav.buildEnv')}</span>
+                <span className="nav-sub">{t('settings.nav.buildEnvDesc')}</span>
               </div>
             </button>
 
@@ -617,8 +753,20 @@ export function SettingsModal({
             >
               <span className="nav-icon">🧩</span>
               <div className="nav-text">
-                <span className="nav-title">Skills 技能库</span>
-                <span className="nav-sub">Cursor / 本地技能</span>
+                <span className="nav-title">{t('settings.nav.skills')}</span>
+                <span className="nav-sub">{t('settings.nav.skillsDesc')}</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              className={`settings-nav-item ${activeTab === 'mcp' ? 'active' : ''}`}
+              onClick={() => setActiveTab('mcp')}
+            >
+              <span className="nav-icon">🔌</span>
+              <div className="nav-text">
+                <span className="nav-title">{t('settings.nav.mcp')}</span>
+                <span className="nav-sub">{t('settings.nav.mcpDesc')}</span>
               </div>
             </button>
 
@@ -654,11 +802,8 @@ export function SettingsModal({
               <div className="settings-panel-section">
                 <div className="panel-title-bar">
                   <div>
-                    <h3 className="panel-h3">AI 模型管理与端点</h3>
-                    <p className="panel-desc">
-                      支持 DeepSeek、Claude、OpenAI (GPT) 及本地 Ollama
-                      兼容端点，随时在聊天中按需切换。
-                    </p>
+                    <h3 className="panel-h3">{t('settings.models.title')}</h3>
+                    <p className="panel-desc">{t('settings.models.desc')}</p>
                   </div>
                   <button
                     type="button"
@@ -666,7 +811,7 @@ export function SettingsModal({
                     onClick={() => {
                       setEditingModel({
                         id: `model_${Date.now()}`,
-                        name: '新模型',
+                        name: t('settings.models.newModelName'),
                         provider: 'deepseek',
                         baseUrl: 'http://192.168.10.241:1333',
                         model: 'deepseek-v4.1-flash',
@@ -675,7 +820,7 @@ export function SettingsModal({
                       setIsCreatingNew(true);
                     }}
                   >
-                    + 添加新模型
+                    {t('settings.models.add')}
                   </button>
                 </div>
 
@@ -689,29 +834,34 @@ export function SettingsModal({
                           <div className="edit-title">
                             <span className="edit-dot" />
                             <strong>
-                              {isNew ? '配置新 AI 模型' : `编辑模型: ${editingModel.name}`}
+                              {isNew
+                                ? t('settings.models.newTitle')
+                                : t('settings.models.editTitle', { name: editingModel.name })}
                             </strong>
                             {(modelProbeResults[editingModel.id]?.ok ||
                               (!modelProbeResults[editingModel.id] &&
                                 editingModel.lastProbeOk)) && (
-                              <span className="connected-pill" title="端点连通性测试正常">
-                                <span className="status-dot" /> 连通正常
+                              <span
+                                className="connected-pill"
+                                title={t('settings.models.probeOkTitle')}
+                              >
+                                <span className="status-dot" /> {t('settings.models.connected')}
                               </span>
                             )}
                           </div>
                           <div className="preset-quick-select">
-                            <span className="preset-label">快速套用预设:</span>
+                            <span className="preset-label">{t('settings.models.quickPreset')}</span>
                             <select
                               className="preset-select"
                               onChange={(e) => {
                                 const preset = MODEL_PRESETS.find(
-                                  (p) => p.label === e.target.value,
+                                  (p) => t(p.labelKey) === e.target.value,
                                 );
                                 if (preset) {
                                   setEditingModel({
                                     ...editingModel,
                                     provider: preset.provider,
-                                    name: preset.name,
+                                    name: t(preset.nameKey),
                                     baseUrl: preset.baseUrl,
                                     model: preset.model,
                                     enableThinking: preset.enableThinking,
@@ -725,11 +875,11 @@ export function SettingsModal({
                               defaultValue=""
                             >
                               <option value="" disabled>
-                                选择预设模板填充…
+                                {t('settings.models.presetPlaceholder')}
                               </option>
                               {MODEL_PRESETS.map((p) => (
-                                <option key={p.label} value={p.label}>
-                                  {p.label}
+                                <option key={p.labelKey} value={t(p.labelKey)}>
+                                  {t(p.labelKey)}
                                 </option>
                               ))}
                             </select>
@@ -740,11 +890,11 @@ export function SettingsModal({
                         <div className="edit-section">
                           <div className="edit-section-title">
                             <span className="edit-section-bar" />
-                            基础信息
+                            {t('settings.models.basicInfo')}
                           </div>
                           <div className="settings-grid-2">
                             <div className="settings-row">
-                              <label>协议类型 (Provider)</label>
+                              <label>{t('settings.models.provider')}</label>
                               <select
                                 className="modern-select"
                                 value={editingModel.provider}
@@ -756,18 +906,18 @@ export function SettingsModal({
                                 {(Object.keys(AI_PROVIDER_LABELS) as ModelProviderType[]).map(
                                   (k) => (
                                     <option key={k} value={k}>
-                                      {AI_PROVIDER_LABELS[k]}
+                                      {t(PROVIDER_LABEL_KEYS[k])}
                                     </option>
                                   ),
                                 )}
                               </select>
                             </div>
                             <div className="settings-row">
-                              <label>显示别名 (Display Name)</label>
+                              <label>{t('settings.models.displayName')}</label>
                               <input
                                 className="modern-input"
                                 value={editingModel.name}
-                                placeholder="例如：DeepSeek (内网) 或 GPT-4o"
+                                placeholder={t('settings.models.displayNamePh')}
                                 onChange={(e) =>
                                   setEditingModel({ ...editingModel, name: e.target.value })
                                 }
@@ -780,14 +930,14 @@ export function SettingsModal({
                         <div className="edit-section">
                           <div className="edit-section-title">
                             <span className="edit-section-bar" />
-                            端点与鉴权
+                            {t('settings.models.endpointSection')}
                           </div>
                           <div className="settings-row">
-                            <label>API 接口地址 (Base URL)</label>
+                            <label>{t('settings.models.baseUrl')}</label>
                             <input
                               className="modern-input mono-font"
                               value={editingModel.baseUrl}
-                              placeholder="例如：https://api.deepseek.com 或 http://192.168.10.241:8002"
+                              placeholder={t('settings.models.baseUrlPh')}
                               onChange={(e) =>
                                 setEditingModel({ ...editingModel, baseUrl: e.target.value })
                               }
@@ -795,11 +945,11 @@ export function SettingsModal({
                           </div>
                           <div className="settings-grid-2">
                             <div className="settings-row">
-                              <label>模型标识 (Model ID)</label>
+                              <label>{t('settings.models.modelId')}</label>
                               <input
                                 className="modern-input mono-font"
                                 value={editingModel.model}
-                                placeholder="如 deepseek-v4.1-flash, gpt-4o"
+                                placeholder={t('settings.models.modelIdPh')}
                                 onChange={(e) =>
                                   setEditingModel({ ...editingModel, model: e.target.value })
                                 }
@@ -813,7 +963,9 @@ export function SettingsModal({
                                   className="toggle-eye-btn"
                                   onClick={() => setShowApiKey(!showApiKey)}
                                 >
-                                  {showApiKey ? '隐藏 Key' : '显示 Key'}
+                                  {showApiKey
+                                    ? t('settings.models.hideKey')
+                                    : t('settings.models.showKey')}
                                 </button>
                               </div>
                               <input
@@ -822,8 +974,8 @@ export function SettingsModal({
                                 value={editingModel.apiKey || ''}
                                 placeholder={
                                   editingModel.provider === 'deepseek'
-                                    ? '内网可留空，官方 API 必填'
-                                    : '填入对应的 API Key（留空即免鉴权）'
+                                    ? t('settings.models.keyPhInternal')
+                                    : t('settings.models.keyPhGeneric')
                                 }
                                 onChange={(e) =>
                                   setEditingModel({ ...editingModel, apiKey: e.target.value })
@@ -837,7 +989,7 @@ export function SettingsModal({
                         <div className="edit-section">
                           <div className="edit-section-title">
                             <span className="edit-section-bar" />
-                            思考深度
+                            {t('settings.models.thinkingSection')}
                           </div>
 
                           {editingModel.provider === 'anthropic' ? (
@@ -845,7 +997,7 @@ export function SettingsModal({
                                档位字段不是一回事，因此两套控件互斥出现，不再并排误导。 */
                             <div className="settings-grid-2">
                               <div className="settings-row">
-                                <label>深度思考模式 (Extended Thinking)</label>
+                                <label>{t('settings.models.extendedThinking')}</label>
                                 <label className="modern-checkbox-label" style={{ marginTop: 4 }}>
                                   <input
                                     type="checkbox"
@@ -858,12 +1010,12 @@ export function SettingsModal({
                                       })
                                     }
                                   />
-                                  <span>启用推理思考过程输出</span>
+                                  <span>{t('settings.models.enableThinkingOutput')}</span>
                                 </label>
                               </div>
                               {editingModel.enableThinking && (
                                 <div className="settings-row">
-                                  <label>Thinking Tokens 预算</label>
+                                  <label>{t('settings.models.thinkingTokens')}</label>
                                   <input
                                     type="number"
                                     className="modern-input mono-font"
@@ -885,7 +1037,7 @@ export function SettingsModal({
                             <>
                               <div className="settings-grid-2">
                                 <div className="settings-row">
-                                  <label>思考档位 (Reasoning Effort)</label>
+                                  <label>{t('settings.models.reasoningEffort')}</label>
                                   <select
                                     className="modern-select"
                                     value={editingModel.reasoningEffort ?? ''}
@@ -897,20 +1049,22 @@ export function SettingsModal({
                                       })
                                     }
                                   >
-                                    <option value="">默认（不发送，沿用服务端档位）</option>
+                                    <option value="">{t('settings.models.reasoningDefault')}</option>
                                     {(
                                       Object.keys(REASONING_EFFORT_LABELS) as ReasoningEffort[]
                                     ).map((k) => (
                                       <option key={k} value={k}>
-                                        {REASONING_EFFORT_LABELS[k]}
+                                        {t(EFFORT_LABEL_KEYS[k])}
                                       </option>
                                     ))}
                                   </select>
                                 </div>
                                 <div className="settings-row">
                                   <label>
-                                    细粒度档位
-                                    <span className="label-hint">1–100，留空则不启用</span>
+                                    {t('settings.models.fineEffort')}
+                                    <span className="label-hint">
+                                      {t('settings.models.fineEffortHint')}
+                                    </span>
                                   </label>
                                   <input
                                     type="number"
@@ -918,7 +1072,7 @@ export function SettingsModal({
                                     min="1"
                                     max="100"
                                     step="1"
-                                    placeholder="留空"
+                                    placeholder={t('settings.models.leaveEmpty')}
                                     value={editingModel.reasoningEffortFine ?? ''}
                                     onChange={(e) => {
                                       const v = e.target.value.trim();
@@ -936,8 +1090,10 @@ export function SettingsModal({
                               <div className="settings-grid-2">
                                 <div className="settings-row">
                                   <label>
-                                    思考 Token 硬上限
-                                    <span className="label-hint">截断而非缩放，0 = 不限制</span>
+                                    {t('settings.models.thinkingBudget')}
+                                    <span className="label-hint">
+                                      {t('settings.models.thinkingBudgetHint')}
+                                    </span>
                                   </label>
                                   <input
                                     type="number"
@@ -958,15 +1114,14 @@ export function SettingsModal({
                                   />
                                 </div>
                                 <div className="settings-row">
-                                  <label>档位说明</label>
+                                  <label>{t('settings.models.effortNote')}</label>
                                   <div className="edit-inline-note">
-                                    内网 DeepSeek-V4.1 只认 none / low / high / xhigh / max
+                                    {t('settings.models.effortNoteText')}
                                   </div>
                                 </div>
                               </div>
                               <p className="edit-section-hint">
-                                细粒度档位与上面的档位是同一个旋钮，填了就优先用它（走
-                                chat_template_kwargs）；硬上限则是独立的截断阀门，可与两者共存。
+                                {t('settings.models.fineEffortDesc')}
                               </p>
                             </>
                           )}
@@ -1007,11 +1162,19 @@ export function SettingsModal({
                             </span>
                             <span className="probe-text" style={{ wordBreak: 'break-all' }}>
                               {modelProbingId === editingModel.id
-                                ? '正在进行端点连通性探测，请稍候…'
+                                ? t('settings.models.probingEndpoint')
                                 : (modelProbeResults[editingModel.id]?.ok ??
                                     editingModel.lastProbeOk)
-                                  ? `连通性正常: ${modelProbeResults[editingModel.id]?.detail || '端点连接畅通'}`
-                                  : `连通性异常: ${modelProbeResults[editingModel.id]?.detail || '连接失败'}`}
+                                  ? t('settings.models.probeOkDetail', {
+                                      detail:
+                                        modelProbeResults[editingModel.id]?.detail ||
+                                        t('settings.models.probeOkDefault'),
+                                    })
+                                  : t('settings.models.probeFailDetail', {
+                                      detail:
+                                        modelProbeResults[editingModel.id]?.detail ||
+                                        t('settings.models.probeFailDefault'),
+                                    })}
                             </span>
                           </div>
                         )}
@@ -1028,7 +1191,7 @@ export function SettingsModal({
                                 setEditingModel({ ...editingModel, isDefault: e.target.checked })
                               }
                             />
-                            <span>设为当前默认优先模型</span>
+                            <span>{t('settings.models.setAsDefaultCheckbox')}</span>
                           </label>
                           <div className="edit-btn-group">
                             <button
@@ -1038,8 +1201,8 @@ export function SettingsModal({
                               onClick={() => void probeSingleModel(editingModel)}
                             >
                               {modelProbingId === editingModel.id
-                                ? '正在连接测试…'
-                                : '⚡ 连通性测试'}
+                                ? t('settings.models.testing')
+                                : t('settings.models.testConnectivity')}
                             </button>
                             <button
                               type="button"
@@ -1049,14 +1212,14 @@ export function SettingsModal({
                                 setIsCreatingNew(false);
                               }}
                             >
-                              取消
+                              {t('common.cancel')}
                             </button>
                             <button
                               type="button"
                               className="primary save-model-btn"
                               onClick={() => handleSaveEditingModel(editingModel)}
                             >
-                              保存配置
+                              {t('settings.models.saveConfig')}
                             </button>
                           </div>
                         </div>
@@ -1092,7 +1255,7 @@ export function SettingsModal({
                                       ? 'DeepSeek'
                                       : m.provider === 'openai'
                                         ? 'OpenAI'
-                                        : 'Ollama / 自定义'}
+                                        : t('settings.models.providerCustom')}
                                 </div>
                                 <div className="model-info-block">
                                   <div className="model-name-line">
@@ -1100,35 +1263,49 @@ export function SettingsModal({
                                       {m.name}
                                     </span>
                                     {isActive && (
-                                      <span className="active-glow-pill">★ 默认选中</span>
+                                      <span className="active-glow-pill">
+                                        {t('settings.models.activeSelected')}
+                                      </span>
                                     )}
                                     {((probeRes && probeRes.ok) ||
                                       (!probeRes && m.lastProbeOk)) && (
-                                      <span className="connected-pill" title="端点连通性测试正常">
-                                        <span className="status-dot" /> 连通正常
+                                      <span
+                                        className="connected-pill"
+                                        title={t('settings.models.probeOkTitle')}
+                                      >
+                                        <span className="status-dot" />{' '}
+                                        {t('settings.models.connected')}
                                       </span>
                                     )}
                                     {probeRes && !probeRes.ok && (
                                       <span
                                         className="probe-fail-pill"
-                                        title={`探测异常: ${probeRes.detail || '端点连接失败'}`}
+                                        title={t('settings.models.probeErrorTitle', {
+                                          detail:
+                                            probeRes.detail ||
+                                            t('settings.models.probeErrorDefault'),
+                                        })}
                                       >
-                                        ✕ 连通异常
+                                        {t('settings.models.connectAbnormal')}
                                       </span>
                                     )}
                                     {m.enableThinking && (
-                                      <span className="thinking-pill">⚡ 深度思考</span>
+                                      <span className="thinking-pill">
+                                        {t('settings.models.deepThinking')}
+                                      </span>
                                     )}
                                     {m.provider !== 'anthropic' &&
                                       (m.reasoningEffortFine != null || m.reasoningEffort) && (
                                         <span
                                           className="thinking-pill"
-                                          title="思考深度档位（reasoning_effort）"
+                                          title={t('settings.models.effortTitle')}
                                         >
                                           🧠{' '}
                                           {m.reasoningEffortFine != null
-                                            ? `细粒度 ${m.reasoningEffortFine}`
-                                            : REASONING_EFFORT_LABELS[m.reasoningEffort!]}
+                                            ? t('settings.models.fineEffortValue', {
+                                                n: m.reasoningEffortFine,
+                                              })
+                                            : t(EFFORT_LABEL_KEYS[m.reasoningEffort!])}
                                         </span>
                                       )}
                                   </div>
@@ -1140,9 +1317,13 @@ export function SettingsModal({
                                     </span>
                                     <span className="meta-sep">•</span>
                                     {m.apiKey ? (
-                                      <span className="key-state has-key">已配置密钥</span>
+                                      <span className="key-state has-key">
+                                        {t('settings.models.keyConfigured')}
+                                      </span>
                                     ) : (
-                                      <span className="key-state no-key">免密钥/未配置</span>
+                                      <span className="key-state no-key">
+                                        {t('settings.models.keyNone')}
+                                      </span>
                                     )}
                                   </div>
                                 </div>
@@ -1153,14 +1334,20 @@ export function SettingsModal({
                                 <div className="model-card-top-right">
                                   <label
                                     className={`model-default-switch ${isActive ? 'is-active' : ''}`}
-                                    title={isActive ? '当前默认优先模型' : '点击设为默认模型'}
+                                    title={
+                                      isActive
+                                        ? t('settings.models.currentDefault')
+                                        : t('settings.models.clickSetDefault')
+                                    }
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (!isActive) handleSetDefaultModel(m.id);
                                     }}
                                   >
                                     <span className="switch-text">
-                                      {isActive ? '默认模型' : '设为默认'}
+                                      {isActive
+                                        ? t('settings.models.defaultModel')
+                                        : t('settings.models.setDefault')}
                                     </span>
                                     <span className={`switch-pill ${isActive ? 'checked' : ''}`}>
                                       <span className="switch-thumb" />
@@ -1173,7 +1360,7 @@ export function SettingsModal({
                                   <button
                                     type="button"
                                     className="card-action-btn move-btn"
-                                    title="上移排序"
+                                    title={t('settings.models.moveUp')}
                                     disabled={mIdx === 0}
                                     onClick={() => handleMoveModel(m.id, 'up')}
                                   >
@@ -1182,7 +1369,7 @@ export function SettingsModal({
                                   <button
                                     type="button"
                                     className="card-action-btn move-btn"
-                                    title="下移排序"
+                                    title={t('settings.models.moveDown')}
                                     disabled={mIdx === (settings.models?.length || 0) - 1}
                                     onClick={() => handleMoveModel(m.id, 'down')}
                                   >
@@ -1192,28 +1379,28 @@ export function SettingsModal({
                                   <button
                                     type="button"
                                     className="card-action-btn probe-btn"
-                                    title="连通性探测"
+                                    title={t('settings.models.probeConnectivity')}
                                     disabled={isProbing}
                                     onClick={() => void probeSingleModel(m)}
                                   >
-                                    {isProbing ? '探测中…' : '⚡ 探测'}
+                                    {isProbing ? t('common.probing') : t('settings.models.probe')}
                                   </button>
                                   <button
                                     type="button"
                                     className="card-action-btn edit-btn"
-                                    title="编辑此模型参数"
+                                    title={t('settings.models.editModelParams')}
                                     onClick={() => {
                                       setEditingModel({ ...m });
                                       setIsCreatingNew(false);
                                     }}
                                   >
-                                    ✎ 编辑
+                                    {t('settings.models.edit')}
                                   </button>
                                   {(settings.models?.length || 0) > 1 && (
                                     <button
                                       type="button"
                                       className="card-action-btn delete-btn"
-                                      title="删除此模型"
+                                      title={t('settings.models.deleteModelTitle')}
                                       onClick={() => setDeletingModel(m)}
                                     >
                                       🗑
@@ -1236,22 +1423,18 @@ export function SettingsModal({
               <div className="settings-panel-section">
                 <div className="panel-title-bar">
                   <div>
-                    <h3 className="panel-h3">运行与推理参数</h3>
-                    <p className="panel-desc">
-                      精细调节模型生成多样性、Agent 自主执行深度及上下文记忆容量。
-                    </p>
+                    <h3 className="panel-h3">{t('settings.runtime.title')}</h3>
+                    <p className="panel-desc">{t('settings.runtime.desc')}</p>
                   </div>
                 </div>
 
                 <div className="modern-card-group">
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>采样温度 (Temperature)</strong>
+                      <strong>{t('settings.runtime.temperature')}</strong>
                       <span className="card-current-val">{settings.temperature}</span>
                     </div>
-                    <p className="setting-card-desc">
-                      控制输出的随机性。数值越小越精确严谨（建议编程设为 0.0 - 0.2）。
-                    </p>
+                    <p className="setting-card-desc">{t('settings.runtime.temperatureDesc')}</p>
                     <input
                       type="range"
                       min="0"
@@ -1267,12 +1450,12 @@ export function SettingsModal({
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>Max Agent Steps (自主执行步数上限)</strong>
-                      <span className="card-current-val">{settings.maxAgentSteps} 步</span>
+                      <strong>{t('settings.runtime.maxSteps')}</strong>
+                      <span className="card-current-val">
+                        {t('settings.runtime.steps', { n: settings.maxAgentSteps })}
+                      </span>
                     </div>
-                    <p className="setting-card-desc">
-                      单次任务中 AI 连续执行工具（读写文件、运行命令）的最大循环次数。
-                    </p>
+                    <p className="setting-card-desc">{t('settings.runtime.maxStepsDesc')}</p>
                     <input
                       type="number"
                       min="5"
@@ -1287,14 +1470,12 @@ export function SettingsModal({
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>上下文窗口容量 (Context Window Tokens)</strong>
+                      <strong>{t('settings.runtime.contextWindow')}</strong>
                       <span className="card-current-val">
                         {settings.contextWindowTokens.toLocaleString()} tokens
                       </span>
                     </div>
-                    <p className="setting-card-desc">
-                      超出此限制将自动进行会话历史精简压缩，防止请求超出模型容量限制。
-                    </p>
+                    <p className="setting-card-desc">{t('settings.runtime.contextWindowDesc')}</p>
                     <input
                       type="number"
                       min="4000"
@@ -1312,16 +1493,12 @@ export function SettingsModal({
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>输出长度上限 (Max Output Tokens)</strong>
+                      <strong>{t('settings.runtime.maxOutput')}</strong>
                       <span className="card-current-val">
                         {(settings.maxOutputTokens ?? 32768).toLocaleString()} tokens
                       </span>
                     </div>
-                    <p className="setting-card-desc">
-                      单次生成的 token 上界，含推理模型的思考 token。当模型陷入「重复同一句话」时，
-                      这是最终兜底；主要防线是下面的重复熔断。填入 0
-                      表示不发送该字段（部分网关不识别）。
-                    </p>
+                    <p className="setting-card-desc">{t('settings.runtime.maxOutputDesc')}</p>
                     <input
                       type="number"
                       min="0"
@@ -1336,16 +1513,14 @@ export function SettingsModal({
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>重复熔断保护 (Repetition Guard)</strong>
+                      <strong>{t('settings.runtime.repetitionGuard')}</strong>
                       <span className="card-current-val">
-                        {settings.repetitionGuard === false ? '已关闭' : '已开启'}
+                        {settings.repetitionGuard === false
+                          ? t('settings.runtime.off')
+                          : t('settings.runtime.on')}
                       </span>
                     </div>
-                    <p className="setting-card-desc">
-                      实时监测思考与正文是否出现周期性重复（同一句话或同几句话反复输出）。
-                      一旦命中立即中止该次生成并保留已产出的内容，避免无限复读卡死。 周期上限 1200
-                      字符，重复 5–6 遍即判定；这是网关吞掉服务端检测时唯一生效的一层。
-                    </p>
+                    <p className="setting-card-desc">{t('settings.runtime.repetitionGuardDesc')}</p>
                     <label
                       className="modern-checkbox-label"
                       style={{ fontSize: 13, fontWeight: 500 }}
@@ -1357,25 +1532,28 @@ export function SettingsModal({
                           setSettings({ ...settings, repetitionGuard: e.target.checked })
                         }
                       />
-                      <span>{settings.repetitionGuard === false ? '关闭中' : '开启中'}</span>
+                      <span>
+                        {settings.repetitionGuard === false
+                          ? t('settings.runtime.disabling')
+                          : t('settings.runtime.enabling')}
+                      </span>
                     </label>
                   </div>
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>服务端原生重复检测 (Server-side Repetition Detection)</strong>
+                      <strong>{t('settings.runtime.serverDetection')}</strong>
                       <span className="card-current-val">
-                        {settings.serverRepetitionDetection === false ? '已关闭' : '已开启'}
+                        {settings.serverRepetitionDetection === false
+                          ? t('settings.runtime.off')
+                          : t('settings.runtime.on')}
                       </span>
                     </div>
                     <p className="setting-card-desc">
-                      请求推理引擎（vLLM）在生成过程中自行掐断重复片段，命中时 finish_reason 变为
-                      repetition。它比客户端熔断更早生效 —— 退化 token
-                      根本不会产生，省下的是真实算力。
+                      {t('settings.runtime.serverDetectionDesc')}
                       <br />
-                      <strong>注意：</strong>该字段只有直连 vLLM（如 8002）时才有效。经 New API
-                      一类网关转发（如 1333）时字段会被网关按白名单丢掉，开了也不生效 ——
-                      不会报错，只是静默无效。此时防护仍由下面的客户端熔断承担。
+                      <strong>{t('settings.runtime.noteLabel')}</strong>
+                      {t('settings.runtime.serverDetectionNote')}
                     </p>
                     <label
                       className="modern-checkbox-label"
@@ -1389,21 +1567,22 @@ export function SettingsModal({
                         }
                       />
                       <span>
-                        {settings.serverRepetitionDetection === false ? '关闭中' : '开启中'}
+                        {settings.serverRepetitionDetection === false
+                          ? t('settings.runtime.disabling')
+                          : t('settings.runtime.enabling')}
                       </span>
                     </label>
                   </div>
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>频率惩罚 (Frequency Penalty)</strong>
+                      <strong>{t('settings.runtime.frequencyPenalty')}</strong>
                       <span className="card-current-val">
                         {(settings.frequencyPenalty ?? 0.3).toFixed(2)}
                       </span>
                     </div>
                     <p className="setting-card-desc">
-                      按 token 出现频次施加惩罚，从采样层面降低逐字复读概率。建议 0.2 - 0.5； 设为 0
-                      表示不发送该字段。
+                      {t('settings.runtime.frequencyPenaltyDesc')}
                     </p>
                     <input
                       type="range"
@@ -1420,14 +1599,13 @@ export function SettingsModal({
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>存在惩罚 (Presence Penalty)</strong>
+                      <strong>{t('settings.runtime.presencePenalty')}</strong>
                       <span className="card-current-val">
                         {(settings.presencePenalty ?? 0.3).toFixed(2)}
                       </span>
                     </div>
                     <p className="setting-card-desc">
-                      按 token 是否已经出现过施加惩罚，抑制反复复述同一段内容。建议 0.2 - 0.5； 设为
-                      0 表示不发送该字段。
+                      {t('settings.runtime.presencePenaltyDesc')}
                     </p>
                     <input
                       type="range"
@@ -1450,10 +1628,8 @@ export function SettingsModal({
               <div className="settings-panel-section">
                 <div className="panel-title-bar">
                   <div>
-                    <h3 className="panel-h3">外观与工作流权限</h3>
-                    <p className="panel-desc">
-                      设置 IDE 视觉主题、自动保存以及 AI 工具调用执行时的授权安全策略。
-                    </p>
+                    <h3 className="panel-h3">{t('settings.general.title')}</h3>
+                    <p className="panel-desc">{t('settings.appearanceDesc')}</p>
                   </div>
                 </div>
 
@@ -1474,11 +1650,9 @@ export function SettingsModal({
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>工具执行安全策略 (Permission Mode)</strong>
+                      <strong>{t('settings.permission')}</strong>
                     </div>
-                    <p className="setting-card-desc">
-                      控制 AI 在尝试修改本地代码或在终端执行命令时的放行准则。
-                    </p>
+                    <p className="setting-card-desc">{t('settings.permissionDesc')}</p>
                     <select
                       className="modern-select"
                       value={settings.permissionMode}
@@ -1491,23 +1665,20 @@ export function SettingsModal({
                     >
                       {PERMISSION_ORDER.map((m) => (
                         <option key={m} value={m}>
-                          {PERMISSION_MODE_LABELS[m]}
+                          {t(PERMISSION_LABEL_KEYS[m])}
                         </option>
                       ))}
                     </select>
                     <div className="perm-hint-bubble">
-                      ℹ️ {PERMISSION_HINTS[settings.permissionMode]}
+                      ℹ️ {t(PERMISSION_HINT_KEYS[settings.permissionMode])}
                     </div>
                   </div>
 
                   <div className="setting-card">
                     <div className="setting-card-title">
-                      <strong>快捷键操作习惯 (Keymap Preset)</strong>
+                      <strong>{t('settings.general.keymap')}</strong>
                     </div>
-                    <p className="setting-card-desc">
-                      选择您习惯的 IDE 键位方案。支持 VS Code 模式与 IntelliJ IDEA 模式（双击 Shift
-                      全局搜索、Cmd/Ctrl+Alt+L 代码格式化、Alt+F12 切换终端等）。
-                    </p>
+                    <p className="setting-card-desc">{t('settings.general.keymapDesc')}</p>
                     <select
                       className="modern-select"
                       value={settings.keymapPreset || 'vscode'}
@@ -1518,12 +1689,8 @@ export function SettingsModal({
                         })
                       }
                     >
-                      <option value="vscode">
-                        VS Code 风格 (默认 - ⌘P 快速文件，⌘⇧P 命令面板)
-                      </option>
-                      <option value="intellij">
-                        IntelliJ IDEA 风格 (双击 Shift 全局搜索，⌘⌥L 格式化)
-                      </option>
+                      <option value="vscode">{t('settings.general.keymapVscode')}</option>
+                      <option value="intellij">{t('settings.general.keymapIntellij')}</option>
                     </select>
                   </div>
 
@@ -1537,7 +1704,7 @@ export function SettingsModal({
                         checked={settings.autoSave === true}
                         onChange={(e) => setSettings({ ...settings, autoSave: e.target.checked })}
                       />
-                      <span>代码编辑自动保存到磁盘 (编辑停止约 0.8 秒后写入)</span>
+                      <span>{t('settings.general.autosaveFull')}</span>
                     </label>
                   </div>
                   <div className="setting-card" style={{ marginTop: 12 }}>
@@ -1552,7 +1719,7 @@ export function SettingsModal({
                           setSettings({ ...settings, formatOnSave: e.target.checked })
                         }
                       />
-                      <span>保存时自动格式化 (Format on Save) — 触发保存时自动规范代码排版</span>
+                      <span>{t('settings.general.formatOnSave')}</span>
                     </label>
                   </div>
                   <div className="setting-control-group" style={{ marginTop: 12 }}>
@@ -1567,7 +1734,7 @@ export function SettingsModal({
                           setSettings({ ...settings, gitBlameInline: e.target.checked })
                         }
                       />
-                      <span>光标所在行常驻显示 Git Blame (提交人、时间与提交摘要)</span>
+                      <span>{t('settings.general.blameInline')}</span>
                     </label>
                   </div>
 
@@ -1589,7 +1756,9 @@ export function SettingsModal({
                           setSettings({ ...settings, hoverDelay: val });
                         }}
                       />
-                      <span style={{ fontSize: 13, color: 'var(--muted)' }}>毫秒 (ms)</span>
+                      <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+                        {t('settings.general.msUnit')}
+                      </span>
                     </div>
                   </div>
 
@@ -1625,12 +1794,9 @@ export function SettingsModal({
 
                   <div className="setting-card" style={{ marginTop: 12 }}>
                     <div className="setting-card-title">
-                      <strong>终端缓存条数上限 (Scrollback Lines)</strong>
+                      <strong>{t('settings.general.scrollback')}</strong>
                     </div>
-                    <p className="setting-card-desc">
-                      控制每个终端窗口在内存中保留的历史运行日志行数上限。增加上限可回滚查看更多历史日志，默认
-                      10,000 行。
-                    </p>
+                    <p className="setting-card-desc">{t('settings.general.scrollbackDesc')}</p>
                     <div
                       style={{
                         display: 'flex',
@@ -1656,7 +1822,9 @@ export function SettingsModal({
                           setSettings({ ...settings, terminalScrollback: val });
                         }}
                       />
-                      <span style={{ fontSize: 13, color: 'var(--muted)' }}>行</span>
+                      <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+                        {t('settings.general.linesUnit')}
+                      </span>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {[5000, 10000, 20000, 50000].map((preset) => {
                           const selected = (settings.terminalScrollback ?? 10000) === preset;
@@ -1680,7 +1848,7 @@ export function SettingsModal({
                                 setSettings({ ...settings, terminalScrollback: preset })
                               }
                             >
-                              {preset.toLocaleString()} 行
+                              {t('settings.general.linesValue', { n: preset.toLocaleString() })}
                             </button>
                           );
                         })}
@@ -1729,23 +1897,21 @@ export function SettingsModal({
               <div className="settings-panel-section">
                 <div className="panel-title-bar">
                   <div>
-                    <h3 className="panel-h3">Skills 技能扩展库</h3>
-                    <p className="panel-desc">
-                      兼容 Cursor frontmatter 技能协议，赋予 AI 专属的代码生成与工程工作流能力。
-                    </p>
+                    <h3 className="panel-h3">{t('settings.skills.title')}</h3>
+                    <p className="panel-desc">{t('settings.skills.desc')}</p>
                   </div>
                   <button
                     type="button"
                     className="open-skills-btn"
                     onClick={() => void openSkills()}
                   >
-                    📂 打开用户 Skills 目录
+                    {t('settings.skills.openDir')}
                   </button>
                 </div>
 
                 {skillsDir && (
                   <div className="skills-dir-badge">
-                    <span>用户技能路径:</span>
+                    <span>{t('settings.skills.userPath')}</span>
                     <code>{skillsDir}</code>
                   </div>
                 )}
@@ -1753,10 +1919,14 @@ export function SettingsModal({
                 {skills.length === 0 ? (
                   <div className="skills-empty-state">
                     <span className="empty-icon">🧩</span>
-                    <p>当前未发现已安装的 Skills</p>
+                    <p>{t('settings.skills.empty')}</p>
                     <span className="empty-sub">
-                      可将技能放置在 <code>.cursor/skills/*/SKILL.md</code> 或{' '}
-                      <code>.deepseek/skills/*/SKILL.md</code>
+                      {translateSegments('settings.skills.placeHint', locale, {
+                        cursorPath: '.cursor/skills/*/SKILL.md',
+                        deepseekPath: '.deepseek/skills/*/SKILL.md',
+                      }).map((seg, i) =>
+                        seg.emphasis ? <code key={i}>{seg.text}</code> : <span key={i}>{seg.text}</span>,
+                      )}
                     </span>
                   </div>
                 ) : (
@@ -1770,6 +1940,244 @@ export function SettingsModal({
                         <p className="skill-card-desc">{s.description || s.path}</p>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* MCP 服务器 */}
+            {activeTab === 'mcp' && (
+              <div className="settings-panel-section">
+                <div className="panel-title-bar">
+                  <div>
+                    <h3 className="panel-h3">{t('settings.mcp.title')}</h3>
+                    <p className="panel-desc">{t('settings.mcp.desc')}</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="open-skills-btn"
+                      disabled={mcpReloading}
+                      onClick={() => {
+                        setMcpReloading(true);
+                        void window.ide
+                          .mcpReload()
+                          .then(setMcpStatuses)
+                          .catch(() => setMcpStatuses([]))
+                          .finally(() => setMcpReloading(false));
+                      }}
+                    >
+                      {mcpReloading ? t('settings.mcp.connecting') : t('settings.mcp.reconnect')}
+                    </button>
+                    <button type="button" className="open-skills-btn" onClick={handleAddMcpServer}>
+                      {t('settings.mcp.addServer')}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mcp-security-note">
+                  <strong>{t('settings.mcp.secLabel')}</strong>
+                  {translateSegments('settings.mcp.secBody', locale, {
+                    outside: t('settings.mcp.secOutside'),
+                    never: t('settings.mcp.secNever'),
+                  }).map((seg, i) =>
+                    seg.emphasis ? <b key={i}>{seg.text}</b> : <span key={i}>{seg.text}</span>,
+                  )}
+                </div>
+
+                {mcpRows.length === 0 ? (
+                  <div className="skills-empty-state">
+                    <span className="empty-icon">🔌</span>
+                    <p>{t('settings.mcp.empty')}</p>
+                    <span className="empty-sub">
+                      {t('settings.mcp.exampleLabel')}
+                      <code>npx -y @modelcontextprotocol/server-filesystem /path</code>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mcp-server-list">
+                    {mcpRows.map(({ cfg, status }) => {
+                      const expanded = editingMcpId === cfg.id;
+                      return (
+                        <div key={cfg.id} className="mcp-server-card">
+                          <div className="mcp-server-head">
+                            <button
+                              type="button"
+                              className="mcp-server-toggle"
+                              onClick={() => setEditingMcpId(expanded ? null : cfg.id)}
+                            >
+                              <span className={`mcp-dot ${status?.state ?? 'idle'}`} />
+                              <strong>{cfg.name || cfg.id}</strong>
+                              {status && status.state === 'ready' && (
+                                <span className="mcp-pill ok">
+                                  {t('settings.mcp.toolCount', { n: status.toolCount })}
+                                </span>
+                              )}
+                              {status && status.truncated > 0 && (
+                                <span className="mcp-pill warn">
+                                  {t('settings.mcp.truncatedMore', { n: status.truncated })}
+                                </span>
+                              )}
+                              <span className={`mcp-pill ${cfg.access === 'readonly' ? 'ok' : 'warn'}`}>
+                                {cfg.access === 'readonly'
+                                  ? t('settings.mcp.readonly')
+                                  : t('settings.mcp.writable')}
+                              </span>
+                              <span className="mcp-caret">{expanded ? '▾' : '▸'}</span>
+                            </button>
+                            <div className="mcp-server-actions">
+                              <label className="mcp-enable-label">
+                                <input
+                                  type="checkbox"
+                                  checked={cfg.enabled}
+                                  onChange={(e) => {
+                                    patchMcpServer(cfg.id, { enabled: e.target.checked });
+                                    // 启用/停用是一个完整的动作，立刻生效才有意义
+                                    void saveMcpServers(
+                                      (settings?.mcpServers ?? []).map((s) =>
+                                        s.id === cfg.id ? { ...s, enabled: e.target.checked } : s,
+                                      ),
+                                    );
+                                  }}
+                                />
+                                {t('settings.mcp.enable')}
+                              </label>
+                              <button
+                                type="button"
+                                className="mcp-danger-btn"
+                                onClick={() => setPendingMcpDelete(cfg.id)}
+                              >
+                                {t('settings.mcp.delete')}
+                              </button>
+                            </div>
+                          </div>
+
+                          {status?.state === 'error' && (
+                            <div className="mcp-error-box">
+                              <div className="mcp-error-title">{t('settings.mcp.connectFailed')}</div>
+                              <div className="mcp-error-msg">{status.error}</div>
+                              {status.stderr && <pre className="mcp-stderr">{status.stderr}</pre>}
+                            </div>
+                          )}
+
+                          {expanded && (
+                            <div className="mcp-editor">
+                              <label className="mcp-field">
+                                <span>{t('settings.mcp.fieldId')}</span>
+                                <input
+                                  value={cfg.id}
+                                  onChange={(e) =>
+                                    patchMcpServer(cfg.id, {
+                                      id: e.target.value.replace(/[^a-zA-Z0-9_-]/g, '-'),
+                                    })
+                                  }
+                                />
+                                <em>
+                                  {translateSegments('settings.mcp.fieldIdHint', locale, {
+                                    prefix: `${cfg.id || 'id'}__${t('settings.mcp.toolNameSuffix')}`,
+                                  }).map((seg, i) =>
+                                    seg.emphasis ? (
+                                      <code key={i}>{seg.text}</code>
+                                    ) : (
+                                      <span key={i}>{seg.text}</span>
+                                    ),
+                                  )}
+                                </em>
+                              </label>
+                              <label className="mcp-field">
+                                <span>{t('settings.mcp.fieldName')}</span>
+                                <input
+                                  value={cfg.name}
+                                  onChange={(e) => patchMcpServer(cfg.id, { name: e.target.value })}
+                                />
+                              </label>
+                              <label className="mcp-field">
+                                <span>{t('settings.mcp.fieldCommand')}</span>
+                                <input
+                                  value={cfg.command}
+                                  placeholder="npx"
+                                  onChange={(e) =>
+                                    patchMcpServer(cfg.id, { command: e.target.value })
+                                  }
+                                />
+                              </label>
+                              <label className="mcp-field">
+                                <span>{t('settings.mcp.fieldArgs')}</span>
+                                <textarea
+                                  rows={3}
+                                  value={(cfg.args ?? []).join('\n')}
+                                  placeholder={'-y\n@modelcontextprotocol/server-filesystem\n/path'}
+                                  onChange={(e) =>
+                                    patchMcpServer(cfg.id, {
+                                      args: e.target.value
+                                        .split('\n')
+                                        .map((s) => s.trim())
+                                        .filter(Boolean),
+                                    })
+                                  }
+                                />
+                              </label>
+                              <label className="mcp-field">
+                                <span>{t('settings.mcp.fieldCwd')}</span>
+                                <input
+                                  value={cfg.cwd ?? ''}
+                                  onChange={(e) =>
+                                    patchMcpServer(cfg.id, { cwd: e.target.value || undefined })
+                                  }
+                                />
+                              </label>
+                              <label className="mcp-field">
+                                <span>{t('settings.mcp.fieldEnv')}</span>
+                                <textarea
+                                  rows={2}
+                                  value={Object.entries(cfg.env ?? {})
+                                    .map(([k, v]) => `${k}=${v}`)
+                                    .join('\n')}
+                                  onChange={(e) => {
+                                    const env: Record<string, string> = {};
+                                    for (const line of e.target.value.split('\n')) {
+                                      const i = line.indexOf('=');
+                                      if (i <= 0) continue;
+                                      env[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+                                    }
+                                    patchMcpServer(cfg.id, { env });
+                                  }}
+                                />
+                                <em>{t('settings.mcp.fieldEnvHint')}</em>
+                              </label>
+                              <label className="mcp-field">
+                                <span>{t('settings.mcp.fieldAccess')}</span>
+                                <select
+                                  value={cfg.access ?? 'write'}
+                                  onChange={(e) =>
+                                    patchMcpServer(cfg.id, {
+                                      access: e.target.value as 'readonly' | 'write',
+                                    })
+                                  }
+                                >
+                                  <option value="write">{t('settings.mcp.accessWrite')}</option>
+                                  <option value="readonly">{t('settings.mcp.accessReadonly')}</option>
+                                </select>
+                                <em>{t('settings.mcp.fieldAccessHint')}</em>
+                              </label>
+                              <div className="mcp-editor-footer">
+                                <button
+                                  type="button"
+                                  className="mcp-save-btn"
+                                  onClick={() => {
+                                    void saveMcpServers(settings?.mcpServers ?? []).then(() => {
+                                      setEditingMcpId(null);
+                                    });
+                                  }}
+                                >
+                                  {t('settings.mcp.saveConnect')}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1803,7 +2211,7 @@ export function SettingsModal({
                       }
                     >
                       <option value="github">GitHub Releases</option>
-                      <option value="generic">自建服务器 (Generic)</option>
+                      <option value="generic">{t('settings.update.providerGeneric')}</option>
                     </select>
                   </div>
 
@@ -1930,7 +2338,7 @@ export function SettingsModal({
                       <div className="about-hero-title-row">
                         <h2 className="about-app-name">Echoly</h2>
                         <span className="about-version-tag">v{APP_VERSION}</span>
-                        <span className="about-badge-status">Latest Release</span>
+                        <span className="about-badge-status">{t('settings.about.releaseBadge')}</span>
                       </div>
                       <p className="about-tagline">{t('settings.about.desc')}</p>
                     </div>
@@ -2047,15 +2455,15 @@ export function SettingsModal({
                   </div>
                   <div className="about-info-table">
                     <div className="about-info-row">
-                      <span className="about-info-k">Echoly Version</span>
+                      <span className="about-info-k">{t('settings.about.runtimeVersion')}</span>
                       <span className="about-info-v font-mono">v{APP_VERSION} (Production)</span>
                     </div>
                     <div className="about-info-row">
-                      <span className="about-info-k">Target Architecture</span>
+                      <span className="about-info-k">{t('settings.about.runtimeArch')}</span>
                       <span className="about-info-v font-mono">Darwin arm64 (Apple Silicon)</span>
                     </div>
                     <div className="about-info-row">
-                      <span className="about-info-k">Runtime Stack</span>
+                      <span className="about-info-k">{t('settings.about.runtimeStack')}</span>
                       <span className="about-info-v font-mono">
                         Electron 35.7.5 · React 18 · TypeScript
                       </span>
@@ -2145,7 +2553,9 @@ export function SettingsModal({
               </div>
 
               <div className="confirm-update-body">
-                <div className="confirm-update-notes-title">更新说明 (Release Notes)</div>
+                <div className="confirm-update-notes-title">
+                  {t('settings.update.notesTitle')}
+                </div>
                 {pendingUpdate.notes ? (
                   <div className="confirm-update-notes-box">{pendingUpdate.notes}</div>
                 ) : (
@@ -2205,9 +2615,11 @@ export function SettingsModal({
                   </svg>
                 </div>
                 <div className="confirm-delete-title-wrap">
-                  <h3 className="confirm-delete-title">确认删除此模型配置？</h3>
+                  <h3 className="confirm-delete-title">
+                    {t('settings.models.confirmDeleteTitle')}
+                  </h3>
                   <p className="confirm-delete-desc">
-                    删除后该模型将无法在对话中继续使用，此操作无法撤销。
+                    {t('settings.models.confirmDeleteDesc')}
                   </p>
                 </div>
               </div>
@@ -2220,14 +2632,14 @@ export function SettingsModal({
                 <div className="confirm-delete-endpoint">{deletingModel.baseUrl}</div>
                 {(deletingModel.id === settings?.activeModelId || deletingModel.isDefault) && (
                   <div className="confirm-delete-warning">
-                    ⚠️ 当前模型为默认优先模型，删除后将自动将其他模型设为默认。
+                    {t('settings.models.confirmDeleteDefaultWarning')}
                   </div>
                 )}
               </div>
 
               <div className="confirm-delete-actions">
                 <button type="button" className="cancel-btn" onClick={() => setDeletingModel(null)}>
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="button"
@@ -2237,7 +2649,64 @@ export function SettingsModal({
                     setDeletingModel(null);
                   }}
                 >
-                  确认删除
+                  {t('settings.models.confirmDeleteBtn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* MCP 服务器删除确认 */}
+        {pendingMcpDelete && (
+          <div className="confirm-delete-overlay" onClick={() => setPendingMcpDelete(null)}>
+            <div className="confirm-delete-dialog" onClick={(e) => e.stopPropagation()}>
+              <div className="confirm-delete-header">
+                <div className="confirm-delete-icon">
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 6h18" />
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                  </svg>
+                </div>
+                <div className="confirm-delete-title-wrap">
+                  <h3 className="confirm-delete-title">
+                    {t('settings.mcp.confirmDeleteTitle')}
+                  </h3>
+                  <p className="confirm-delete-desc">
+                    {t('settings.mcp.confirmDeleteDesc')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="confirm-delete-card">
+                <div className="confirm-delete-model-name">
+                  <strong>
+                    {(settings?.mcpServers ?? []).find((s) => s.id === pendingMcpDelete)?.name}
+                  </strong>
+                  <code className="model-id-code">{pendingMcpDelete}</code>
+                </div>
+                <div className="confirm-delete-endpoint">
+                  {(settings?.mcpServers ?? []).find((s) => s.id === pendingMcpDelete)?.command}
+                </div>
+              </div>
+
+              <div className="confirm-delete-actions">
+                <button type="button" className="cancel-btn" onClick={() => setPendingMcpDelete(null)}>
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="danger-confirm-btn"
+                  onClick={() => void handleDeleteMcpServer(pendingMcpDelete)}
+                >
+                  {t('settings.mcp.confirmDeleteBtn')}
                 </button>
               </div>
             </div>

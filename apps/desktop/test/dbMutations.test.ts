@@ -275,7 +275,8 @@ describe('validateStagedInserts · 提交前的必填校验', () => {
   it('非空且无默认值的列未填 → 报出缺项', () => {
     const problems = validateStagedInserts(usersColumns, [{ tempId: 't1', cells: { age: 20 } }]);
     expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain('username');
+    expect(problems[0].code).toBe('missing-required');
+    expect(problems[0].columns).toContain('username');
   });
 
   it('自增主键未填不算缺项', () => {
@@ -313,13 +314,13 @@ describe('buildCommitStatements · 批次汇总', () => {
     expect(res.statements[2]).toContain('INSERT INTO');
   });
 
-  it('无主键表有改 / 删时直接拒绝，并给出可操作的中文说明', () => {
+  it('无主键表有改 / 删时直接拒绝，并给出可操作的原因码', () => {
     const noPk = [col('username', 'TEXT'), col('age', 'INT')];
     const changes = { ...emptyStagedChanges(), deletes: ['__idx_0'] };
     const res = buildCommitStatements(changes, 'sqlite', undefined, 't', noPk, {});
     expect(res.ok).toBe(false);
     if (res.ok) return;
-    expect(res.error).toContain('没有主键');
+    expect(res.errorCode).toBe('no-primary-key');
   });
 
   it('无主键表仅新增行时允许提交', () => {
@@ -337,7 +338,9 @@ describe('buildCommitStatements · 批次汇总', () => {
     const res = buildCommitStatements(changes, 'sqlite', undefined, 'users', usersColumns, originalRows);
     expect(res.ok).toBe(false);
     if (res.ok) return;
-    expect(res.error).toContain('刷新');
+    expect(res.errorCode).toBe('delete-row-missing');
+    // 定位失败要把 rowKey 带出来，渲染层才好告诉用户是哪一行
+    expect(res.params?.rowKey).toBe('pk:999');
   });
 
   it('没有任何改动时拒绝提交', () => {

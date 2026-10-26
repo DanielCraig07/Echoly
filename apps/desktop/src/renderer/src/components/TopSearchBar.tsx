@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { SearchCodeHit, SearchFileHit } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, isModalResizing } from '../hooks/useModalResize';
+import { useI18n } from '../i18n';
 
 export type SearchMode = 'files' | 'actions' | 'code';
 
@@ -48,6 +49,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
   { enabled, actions = [], onOpenFile, activePath },
   ref,
 ) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<SearchMode>('files');
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -348,16 +350,18 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
 
   const placeholderText = useMemo(() => {
     if (isLineJump) {
-      return activePath ? `输入行号快速跳转… (当前文件: ${activePath})` : '输入行号以跳转… (当前未打开活动文件)';
+      return activePath
+        ? t('search.placeholderLineJump', { path: activePath })
+        : t('search.placeholderLineJumpNoFile');
     }
     if (mode === 'actions') {
-      return '输入关键字搜索全局动作与命令…';
+      return t('search.placeholderActions');
     }
     if (mode === 'code') {
-      return '搜索全文代码片段与符号…';
+      return t('search.placeholderCode');
     }
-    return '搜索文件… (输入 > 搜命令，@ 搜代码，: 跳行，Tab 切换)';
-  }, [isLineJump, activePath, mode]);
+    return t('search.placeholderFiles');
+  }, [isLineJump, activePath, mode, t]);
 
   return (
     <>
@@ -457,7 +461,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                   <button
                     type="button"
                     className="cmd-input-clear-btn"
-                    title="清空搜索"
+                    title={t('search.clearTitle')}
                     onClick={() => {
                       setQuery('');
                       setActiveIndex(0);
@@ -490,7 +494,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                     inputRef.current?.focus();
                   }}
                 >
-                  动作
+                  {t('search.tabActions')}
                 </button>
                 <button
                   type="button"
@@ -502,7 +506,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                   }}
                   disabled={!enabled}
                 >
-                  文件
+                  {t('search.tabFiles')}
                 </button>
                 <button
                   type="button"
@@ -514,13 +518,13 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                   }}
                   disabled={!enabled}
                 >
-                  代码
+                  {t('search.tabCode')}
                 </button>
               </div>
               <button
                 type="button"
                 className="cmd-palette-close-btn"
-                title="关闭 (Esc)"
+                title={t('common.closeEsc')}
                 onClick={() => {
                   setOpen(false);
                   setQuery('');
@@ -535,7 +539,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
               {loading && hitsCount === 0 && (
                 <div className="cmd-palette-state">
                   <div className="cmd-spinner" />
-                  <span>正在全力搜索中…</span>
+                  <span>{t('search.searchingAll')}</span>
                 </div>
               )}
 
@@ -553,22 +557,24 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                     >
                       <div className="cmd-item-left">
                         <span className="cmd-category-tag cat-navigation">
-                          跳转
+                          {t('search.tagJump')}
                         </span>
                         <span className="cmd-item-title">
-                          {jumpLine ? `跳转至第 ${jumpLine} 行` : '输入目标行号并按回车… (例如 :42)'}
+                          {jumpLine
+                            ? t('search.jumpToLineN', { n: jumpLine })
+                            : t('search.jumpHint')}
                         </span>
                         <span className="cmd-item-path" style={{ marginLeft: 8, opacity: 0.65, fontSize: 12 }}>
                           {activePath}
                         </span>
                       </div>
                       <div className="cmd-item-right">
-                        <kbd className="cmd-kbd">↵ 跳转</kbd>
+                        <kbd className="cmd-kbd">{t('search.kbdJump')}</kbd>
                       </div>
                     </div>
                   ) : (
                     <div className="cmd-palette-state">
-                      <span className="cmd-state-hint">当前未打开任何编辑文件，无法按行跳转</span>
+                      <span className="cmd-state-hint">{t('search.noActiveFile')}</span>
                     </div>
                   )}
                 </div>
@@ -576,13 +582,13 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
 
               {!isLineJump && !loading && !query.trim() && mode !== 'actions' && (
                 <div className="cmd-palette-state">
-                  <span className="cmd-state-hint">键入文件名或路径片段快速定位文件</span>
+                  <span className="cmd-state-hint">{t('search.typeToFindFile')}</span>
                 </div>
               )}
 
               {!isLineJump && !loading && hitsCount === 0 && query.trim() && (
                 <div className="cmd-palette-state">
-                  <span className="cmd-state-hint">未找到匹配的结果</span>
+                  <span className="cmd-state-hint">{t('search.noMatch')}</span>
                 </div>
               )}
 
@@ -662,7 +668,7 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                       <div
                         className="cmd-code-group-header"
                         onClick={() => selectFile(group.path, group.items[0]?.hit.line)}
-                        title={`打开文件 ${group.path}`}
+                        title={t('search.openFileTitle', { path: group.path })}
                       >
                         <div className="cmd-code-group-info">
                           <svg
@@ -680,7 +686,9 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                           <span className="cmd-code-group-filename">{group.fileName}</span>
                           {group.dirName && <span className="cmd-code-group-dir">{group.dirName}</span>}
                         </div>
-                        <span className="cmd-code-group-badge">{group.items.length} 处匹配</span>
+                        <span className="cmd-code-group-badge">
+                          {t('search.matchesInFile', { n: group.items.length })}
+                        </span>
                       </div>
                       <div className="cmd-code-group-items">
                         {group.items.map(({ hit, flatIndex }) => {
@@ -712,40 +720,43 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
               <div className="cmd-footer-shortcuts">
                 <span className="cmd-shortcut-tip">
                   <kbd className="cmd-mini-kbd">↑</kbd>
-                  <kbd className="cmd-mini-kbd">↓</kbd> 选择
+                  <kbd className="cmd-mini-kbd">↓</kbd> {t('search.kbdSelect')}
                 </span>
                 <span className="cmd-shortcut-tip">
-                  <kbd className="cmd-mini-kbd">↵</kbd> 执行
+                  <kbd className="cmd-mini-kbd">↵</kbd> {t('search.kbdRun')}
                 </span>
                 <span className="cmd-shortcut-tip">
-                  <kbd className="cmd-mini-kbd">Tab</kbd> 模式切换
+                  <kbd className="cmd-mini-kbd">Tab</kbd> {t('search.kbdSwitchMode')}
                 </span>
-                <span className="cmd-shortcut-tip" title="输入 > 搜索全局命令">
-                  <kbd className="cmd-mini-kbd">&gt;</kbd> 命令
+                <span className="cmd-shortcut-tip" title={t('search.kbdCommandTip')}>
+                  <kbd className="cmd-mini-kbd">&gt;</kbd> {t('search.kbdCommand')}
                 </span>
-                <span className="cmd-shortcut-tip" title="输入 @ 搜索代码符号">
-                  <kbd className="cmd-mini-kbd">@</kbd> 代码
+                <span className="cmd-shortcut-tip" title={t('search.kbdCodeTip')}>
+                  <kbd className="cmd-mini-kbd">@</kbd> {t('search.kbdCode')}
                 </span>
-                <span className="cmd-shortcut-tip" title="输入 : 行号跳转">
-                  <kbd className="cmd-mini-kbd">:</kbd> 跳行
+                <span className="cmd-shortcut-tip" title={t('search.kbdLineTip')}>
+                  <kbd className="cmd-mini-kbd">:</kbd> {t('search.kbdLine')}
                 </span>
                 <span className="cmd-shortcut-tip">
-                  <kbd className="cmd-mini-kbd">Esc</kbd> 退出
+                  <kbd className="cmd-mini-kbd">Esc</kbd> {t('search.kbdExit')}
                 </span>
               </div>
               <div className="cmd-footer-count">
                 {isLineJump
-                  ? '行号直达模式'
+                  ? t('search.modeLineJump')
                   : mode === 'actions'
-                    ? `${actionHits.length} 个动作指令`
+                    ? t('search.footerActions', { n: actionHits.length })
                     : mode === 'files'
-                      ? `${fileHits.length} 个文件匹配`
-                      : `${groupedCodeHits.length} 个文件 · ${codeHits.length} 处匹配代码`}
+                      ? t('search.footerFiles', { n: fileHits.length })
+                      : t('search.footerCode', {
+                          n: groupedCodeHits.length,
+                          m: codeHits.length,
+                        })}
               </div>
               <ModalResizeHandle
                 onMouseDown={handleResizeStart}
                 className="cmd-resize-handle"
-                title="拖动右下角调整大小 (支持上下左右)"
+                title={t('common.resizeHandle')}
               />
             </div>
           </div>

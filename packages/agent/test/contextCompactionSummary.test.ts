@@ -1,0 +1,153 @@
+import { describe, expect, it, vi } from 'vitest';
+import type { ChatMessage } from '@deepseek-ide/shared';
+import {
+  clampSummary,
+  formatCompactionNotice,
+  renderForSummary,
+  splitForCompaction,
+  summarizeCompaction,
+} from '../src/contextCompaction';
+
+function msg(role: ChatMessage['role'], content: string, extra: Partial<ChatMessage> = {}): ChatMessage {
+  return { role, content, ...extra };
+}
+
+describe('splitForCompaction', () => {
+  it('splits into head / middle / tail without losing or duplicating messages', () => {
+    const messages = Array.from({ length: 10 }, (_, i) => msg('assistant', `m${i}`));
+    const { keepHead, middle, keepTail } = splitForCompaction(messages, 2, 3);
+    expect(keepHead.map((m) => m.content)).toEqual(['m0', 'm1']);
+    expect(keepTail.map((m) => m.content)).toEqual(['m7', 'm8', 'm9']);
+    expect(middle.map((m) => m.content)).toEqual(['m2', 'm3', 'm4', 'm5', 'm6']);
+    expect([...keepHead, ...middle, ...keepTail]).toHaveLength(messages.length);
+  });
+
+  it('does not double-count when head+tail exceed the array length', () => {
+    const messages = Array.from({ length: 3 }, (_, i) => msg('assistant', `m${i}`));
+    const { keepHead, middle, keepTail } = splitForCompaction(messages, 2, 10);
+    expect(middle).toHaveLength(0);
+    expect(keepHead).toHaveLength(2);
+    expect(keepTail).toHaveLength(1);
+  });
+});
+
+describe('renderForSummary', () => {
+  it('includes tool call arguments so the replay shows what was attempted', () => {
+    const middle = [
+      msg('assistant', '', {
+        tool_calls: [
+          {
+            id: 'c1',
+            type: 'function',
+            function: { name: 'apply_patch', arguments: '{"path":"a.ts"}' },
+          },
+        ],
+      }),
+      msg('tool', 'patched ok', { name: 'apply_patch', tool_call_id: 'c1' }),
+    ];
+    const text = renderForSummary(middle, '修复登录');
+    expect(text).toContain('修复登录');
+    expect(text).toContain('apply_patch({"path":"a.ts"})');
+    expect(text).toContain('工具结果(apply_patch)');
+    expect(text).toContain('patched ok');
+  });
+
+  it('clips individual long messages instead of dropping the whole block', () => {
+    const huge = 'x'.repeat(10_000);
+    const text = renderForSummary([msg('tool', huge)], 'p');
+    expect(text).toContain('[已截断]');
+    expect(text.length).toBeLessThan(6_000);
+  });
+
+  it('stops adding blocks once the input budget is exhausted', () => {
+    const big = 'y'.repeat(6_000);
+    const middle = Array.from({ length: 30 }, () => msg('tool', big));
+    const text = renderForSummary(middle, 'p');
+    expect(text).toContain('剩余内容未包含在摘要输入中');
+    expect(text.length).toBeLessThan(30_000);
+  });
+
+  it('mentions boundary-folded messages when present', () => {
+    const text = renderForSummary([msg('assistant', 'a')], 'p', 2);
+    expect(text).toContain('2 条消息因边界对齐被一并折叠');
+  });
+});
+
+describe('summarizeCompaction', () => {
+  it('returns the trimmed summary on success', async () => {
+    const chat = vi.fn(async () => msg('assistant', '  ## 任务目标\n完成 X  '));
+    const out = await summarizeCompaction({ chat } as never, {
+      middle: [msg('assistant', 'did stuff')],
+      originalPrompt: 'do X',
+    });
+    expect(out).toBe('## 任务目标\n完成 X');
+    expect(chat).toHaveBeenCalledTimes(1);
+    // 摘要请求不能带工具，否则又变成一次 Agent 循环
+    expect((chat.mock.calls[0] as unknown[])[0]).not.toHaveProperty('tools');
+  });
+
+  it('returns null instead of throwing when the call fails', async () => {
+    const chat = vi.fn(async () => {
+      throw new Error('ECONNREFUSED');
+    });
+    const out = await summarizeCompaction({ chat } as never, {
+      middle: [msg('assistant', 'did stuff')],
+      originalPrompt: 'do X',
+    });
+    expect(out).toBeNull();
+  });
+
+  it('returns null for an empty middle segment', async () => {
+    const chat = vi.fn();
+    expect(await summarizeCompaction({ chat } as never, { middle: [], originalPrompt: 'x' })).toBeNull();
+    expect(chat).not.toHaveBeenCalled();
+  });
+
+  it('returns null when the model answers with an empty string', async () => {
+    const chat = vi.fn(async () => msg('assistant', '   '));
+    const out = await summarizeCompaction({ chat } as never, {
+      middle: [msg('assistant', 'x')],
+      originalPrompt: 'p',
+    });
+    expect(out).toBeNull();
+  });
+
+  it('propagates an external abort to the summary call', async () => {
+    const controller = new AbortController();
+    const chat = vi.fn(
+      async (params: { signal?: AbortSignal }) =>
+        await new Promise<ChatMessage>((resolve, reject) => {
+          params.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          });
+          setTimeout(() => resolve(msg('assistant', 'late')), 1_000);
+        }),
+    );
+    const promise = summarizeCompaction({ chat } as never, {
+      middle: [msg('assistant', 'x')],
+      originalPrompt: 'p',
+      signal: controller.signal,
+    });
+    controller.abort();
+    expect(await promise).toBeNull();
+  });
+});
+
+describe('formatCompactionNotice / clampSummary', () => {
+  it('tells the model not to re-ask the user and keeps the original prompt for reference', () => {
+    const notice = formatCompactionNotice('## 已完成\n- 改了 a.ts', '修复登录按钮');
+    expect(notice).toContain('不要**因此再次向用户确认需求');
+    expect(notice).toContain('改了 a.ts');
+    expect(notice).toContain('修复登录按钮');
+  });
+
+  it('clamps an over-long summary', () => {
+    const out = clampSummary('z'.repeat(10_000), 100);
+    expect(out.length).toBeLessThan(200);
+    expect(out).toContain('[进展记录过长已截断]');
+  });
+
+  it('leaves a short summary untouched', () => {
+    expect(clampSummary('short', 100)).toBe('short');
+  });
+});

@@ -6,11 +6,14 @@ import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import {
   COLUMN_TYPES,
   buildAlterTableStatements,
+  DB_ALTER_SKIP_KEY,
+  DB_DDL_ERROR_KEY,
   buildRenameTableStatement,
   buildTableOptionsSql,
   typeAcceptsLength,
   validateIdentifier,
   validateLength,
+  type DbAlterSkip,
   type DbColumnChange,
   type DbTableOptionChange,
 } from '../services/dbDdl';
@@ -24,6 +27,7 @@ import {
 import { parseTableOptions, type DbTableOptions } from '../services/dbSqlPreview';
 import { columnCategoryBadge } from '../services/dbColumnType';
 import { applyStatements, describeApplyResult } from '../services/dbStructureApply';
+import { useI18n } from '../i18n';
 import type { DbDriverType } from '../services/dbIdentifiers';
 
 export interface DbColumnsViewProps {
@@ -111,6 +115,7 @@ export function DbColumnsView({
   onRenamed,
   onShowToast,
 }: DbColumnsViewProps) {
+  const { t } = useI18n();
   /** 界面上的行；随 `columns` 重建（外层每次应用完都会重新拉一份元数据） */
   const [rows, setRows] = useState<EditableColumn[]>([]);
   const [executing, setExecuting] = useState(false);
@@ -228,9 +233,23 @@ export function DbColumnsView({
     for (const r of rows) {
       if (r.drop) continue;
       const err = validateIdentifier(r.name);
-      if (err) problems.push(`列名「${r.name.trim() || '未命名'}」：${err}`);
+      if (err) {
+        problems.push(
+          t('db.columnNameProblem', {
+            name: r.name.trim() || t('db.unnamed'),
+            error: t(DB_DDL_ERROR_KEY[err]),
+          }),
+        );
+      }
       const lenErr = typeAcceptsLength(r.type) ? validateLength(r.length) : null;
-      if (lenErr) problems.push(`列「${r.name.trim() || '未命名'}」长度：${lenErr}`);
+      if (lenErr) {
+        problems.push(
+          t('db.columnLengthProblem', {
+            name: r.name.trim() || t('db.unnamed'),
+            error: t(DB_DDL_ERROR_KEY[lenErr]),
+          }),
+        );
+      }
     }
 
     const originalByName = new Map(columns.map((c) => [c.name, c]));
@@ -242,12 +261,12 @@ export function DbColumnsView({
       )
       .map(buildAlterChange);
 
-    const empty = { statements: [] as string[], problems, skipped: [] as string[] };
+    const empty = { statements: [] as string[], problems, skipped: [] as DbAlterSkip[] };
     if (changes.length === 0 || problems.length > 0) return empty;
 
     const res = buildAlterTableStatements(driver, schemaName, tableName, changes);
     return { statements: res.statements, problems, skipped: res.skipped ?? [] };
-  }, [rows, columns, driver, schemaName, tableName]);
+  }, [rows, columns, driver, schemaName, tableName, t]);
 
   const columnCount = built.statements.length;
   const renameStatements = renamedTo && rename.ok && rename.sql ? [rename.sql] : [];
@@ -278,15 +297,14 @@ export function DbColumnsView({
     if (!canApply) return;
     setConfirmContent(
       buildSqlConfirmMarkdown({
+        t,
         intro: renamedTo
-          ? `即将修改表「${tableName}」的结构，并把它**重命名为「${renamedTo}」**。`
-          : `即将修改表「${tableName}」的结构。`,
+          ? t('db.confirmRenameIntro', { table: tableName, newName: renamedTo })
+          : t('db.confirmModifyIntro', { table: tableName }),
         statements: pendingStatements,
         notes: [
-          'DDL 逐条执行且**无法回滚**：若中途失败，前面的语句已经生效。',
-          ...(renamedTo
-            ? [`改名排在最后一条：它前面的语句仍打在旧表名「${tableName}」上。`]
-            : []),
+          t('db.ddlNoRollbackNote'),
+          ...(renamedTo ? [t('db.renameLastNote', { table: tableName })] : []),
         ],
         tone: 'danger',
       }),
@@ -299,7 +317,7 @@ export function DbColumnsView({
       const outcome = await applyStatements(pendingStatements, (sql) =>
         window.ide.dbQuery(connectionId, sql, undefined, undefined, schemaName),
       );
-      const msg = describeApplyResult(driver, tableName, outcome, pendingStatements.length);
+      const msg = describeApplyResult(driver, tableName, outcome, pendingStatements.length, t);
       onShowToast?.(msg.title, msg.detail, msg.type);
       // 只有全部成功才重新拉元数据：部分生效时重拉会把「哪些已经改成了」这件事从屏幕上抹掉，
       // 而用户正需要它来决定怎么收拾残局
@@ -324,12 +342,12 @@ export function DbColumnsView({
       <div className="db-meta-list">
         {/* 表名：可改的是**表名本身**，所属库不在这里（它在标签标题里）。
             把限定名塞进一个可编辑框里，用户很容易连着库名一起改掉。 */}
-        <MetaRow label="表名">
+        <MetaRow label={t('db.metaTableName')}>
           <input
             type="text"
             className="db-meta-input"
             value={nameDraft ?? tableName}
-            title="点击可重命名这张表"
+            title={t('db.renameTableTitle')}
             spellCheck={false}
             onChange={(e) => setNameDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -345,24 +363,28 @@ export function DbColumnsView({
         {renamedTo && (
           <div className="db-meta-dirty">
             <span className={`db-meta-dirty-text${rename.ok ? '' : ' invalid'}`}>
-              {rename.ok ? `表将重命名为「${renamedTo}」` : `表名不合法：${rename.error ?? ''}`}
+              {rename.ok
+                ? t('db.tableWillBeRenamed', { name: renamedTo })
+                : t('db.invalidTableName', {
+                    error: rename.errorCode ? t(DB_DDL_ERROR_KEY[rename.errorCode]) : '',
+                  })}
             </span>
           </div>
         )}
-        <MetaRow label="驱动" value={driver.toUpperCase()} />
-        <MetaRow label="列数" value={String(columns.length)} />
+        <MetaRow label={t('db.metaDriver')} value={driver.toUpperCase()} />
+        <MetaRow label={t('db.metaColumnCount')} value={String(columns.length)} />
 
         {/* 注释：MySQL / PG 可改；SQLite 根本没有这个概念，如实说明而不是给个改不动的框 */}
-        <MetaRow label="注释">
+        <MetaRow label={t('db.metaComment')}>
           {driver === 'sqlite' ? (
-            <span className="db-meta-value empty">SQLite 不支持表注释</span>
+            <span className="db-meta-value empty">{t('db.sqliteNoTableComment')}</span>
           ) : (
             <input
               type="text"
               className="db-meta-input"
               value={optValue('comment')}
-              title="点击可修改表注释"
-              placeholder="点击添加注释"
+              title={t('db.editCommentTitle')}
+              placeholder={t('db.addCommentPlaceholder')}
               spellCheck={false}
               onChange={(e) => patchOpt('comment', e.target.value)}
             />
@@ -374,32 +396,32 @@ export function DbColumnsView({
             同一列里几行长得不一样，会让人以为难改的那几项「不能随便动」。 */}
         {driver === 'mysql' ? (
           <>
-            <MetaRow label="引擎">
+            <MetaRow label={t('db.metaEngine')}>
               <input
                 type="text"
                 className="db-meta-input"
                 value={optValue('engine')}
-                placeholder="如 InnoDB"
+                placeholder={t('db.enginePlaceholder')}
                 spellCheck={false}
                 onChange={(e) => patchOpt('engine', e.target.value)}
               />
             </MetaRow>
-            <MetaRow label="字符集">
+            <MetaRow label={t('db.metaCharset')}>
               <input
                 type="text"
                 className="db-meta-input"
                 value={optValue('charset')}
-                placeholder="如 utf8mb4"
+                placeholder={t('db.charsetPlaceholder')}
                 spellCheck={false}
                 onChange={(e) => patchOpt('charset', e.target.value)}
               />
             </MetaRow>
-            <MetaRow label="排序规则">
+            <MetaRow label={t('db.metaCollation')}>
               <input
                 type="text"
                 className="db-meta-input"
                 value={optValue('collation')}
-                placeholder="如 utf8mb4_general_ci"
+                placeholder={t('db.collationPlaceholder')}
                 spellCheck={false}
                 onChange={(e) => patchOpt('collation', e.target.value)}
               />
@@ -409,12 +431,12 @@ export function DbColumnsView({
           // PG 没有字符集概念，也不像 MySQL 那样能直接从建表语句里读到排序规则
           // （要看 pg_collation）。因此这里只给「改」的入口、原值留空：
           // 留空 = 不生成语句，而不是把猜来的值写下去。
-          <MetaRow label="排序规则">
+          <MetaRow label={t('db.metaCollation')}>
             <input
               type="text"
               className="db-meta-input"
               value={optValue('collation')}
-              placeholder="留空则不改，需填库中已存在的 collation"
+              placeholder={t('db.collationPlaceholderPg')}
               spellCheck={false}
               onChange={(e) => patchOpt('collation', e.target.value)}
             />
@@ -423,7 +445,9 @@ export function DbColumnsView({
 
         {optDirtyCount > 0 && (
           <div className="db-meta-dirty">
-            <span className="db-meta-dirty-text">表选项有 {optDirtyCount} 项改动待应用</span>
+            <span className="db-meta-dirty-text">
+              {t('db.pendingTableOptions', { n: optDirtyCount })}
+            </span>
           </div>
         )}
       </div>
@@ -434,14 +458,14 @@ export function DbColumnsView({
           <thead>
             <tr>
               <th style={{ width: 34 }} />
-              <th style={{ width: 180 }}>列名</th>
-              <th style={{ width: 132 }}>数据类型</th>
-              <th style={{ width: 76 }}>长度</th>
-              <th style={{ width: 42 }}>非空</th>
-              <th style={{ width: 42 }}>自增</th>
-              <th style={{ width: 42 }}>键</th>
-              <th>默认值</th>
-              <th style={{ width: 74 }}>额外</th>
+              <th style={{ width: 180 }}>{t('db.headerColumnName')}</th>
+              <th style={{ width: 132 }}>{t('db.headerDataType')}</th>
+              <th style={{ width: 76 }}>{t('db.headerLength')}</th>
+              <th style={{ width: 42 }}>{t('db.headerNotNull')}</th>
+              <th style={{ width: 42 }}>{t('db.headerAutoIncrement')}</th>
+              <th style={{ width: 42 }}>{t('db.headerKey')}</th>
+              <th>{t('db.headerDefaultValue')}</th>
+              <th style={{ width: 74 }}>{t('db.headerExtra')}</th>
               <th style={{ width: 40 }} />
             </tr>
           </thead>
@@ -479,7 +503,7 @@ export function DbColumnsView({
                       className="db-structure-select"
                       value={r.type}
                       disabled={r.drop}
-                      title={r.drop ? '该列已标记删除' : '列类型'}
+                      title={r.drop ? t('db.columnDropped') : t('db.columnType')}
                       onChange={(next) => patchRow(r.key, { type: next })}
                       options={COLUMN_TYPES[driver].map((t) => ({ value: t, label: t }))}
                     />
@@ -490,7 +514,7 @@ export function DbColumnsView({
                       className="db-structure-input"
                       value={r.length}
                       disabled={r.drop || !typeAcceptsLength(r.type)}
-                      placeholder={typeAcceptsLength(r.type) ? '如 255' : '—'}
+                      placeholder={typeAcceptsLength(r.type) ? t('db.lengthPlaceholder') : '—'}
                       onChange={(e) => patchRow(r.key, { length: e.target.value })}
                     />
                   </td>
@@ -511,17 +535,17 @@ export function DbColumnsView({
                       disabled={r.drop || driver !== 'mysql' || !r.originalName}
                       title={
                         !r.originalName
-                          ? '新增列的自增请在建表时指定'
+                          ? t('db.autoIncOnNewColumn')
                           : driver !== 'mysql'
-                            ? '自增仅 MySQL 支持；PostgreSQL 请用 SERIAL 类型'
-                            : '自增'
+                            ? t('db.autoIncMysqlOnly')
+                            : t('db.autoIncrement')
                       }
                       onChange={(e) => patchRow(r.key, { autoIncrement: e.target.checked })}
                     />
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     {r.pk || meta?.pk ? (
-                      <span className="db-col-key" title="主键列">
+                      <span className="db-col-key" title={t('db.primaryKeyColumn')}>
                         🔑
                       </span>
                     ) : null}
@@ -532,7 +556,7 @@ export function DbColumnsView({
                       className="db-structure-input"
                       value={r.defaultValue}
                       disabled={r.drop}
-                      placeholder="留空为无默认值"
+                      placeholder={t('db.defaultValuePlaceholder')}
                       onChange={(e) => patchRow(r.key, { defaultValue: e.target.value })}
                     />
                   </td>
@@ -547,7 +571,7 @@ export function DbColumnsView({
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title={r.drop ? '取消删除' : '标记删除此列'}
+                        title={r.drop ? t('db.undoDelete') : t('db.markColumnDelete')}
                         onClick={() => patchRow(r.key, { drop: !r.drop })}
                       >
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={r.drop ? '#f59e0b' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -560,7 +584,7 @@ export function DbColumnsView({
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title="移除这一行"
+                        title={t('db.removeRow')}
                         onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}
                       >
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -580,7 +604,7 @@ export function DbColumnsView({
           className="db-structure-add"
           onClick={() => setRows((prev) => [...prev, emptyColumn(driver)])}
         >
-          ＋ 新增字段
+          {t('db.addColumn')}
         </button>
       </div>
 
@@ -595,42 +619,44 @@ export function DbColumnsView({
       {built.problems.length === 0 && built.skipped.length > 0 && (
         <div className="db-structure-skipped">
           {built.skipped.map((s, i) => (
-            <div key={i}>ⓘ {s}</div>
+            <div key={i}>ⓘ {t(DB_ALTER_SKIP_KEY[s.code], { name: s.name })}</div>
           ))}
         </div>
       )}
       {built.problems.length === 0 && built.skipped.length === 0 && dirtyCount === 0 && (
-        <div className="db-columns-idle">
-          改动会先暂存在这里，点「应用」才生成 ALTER。表注释与表选项也在同一批里。
-        </div>
+        <div className="db-columns-idle">{t('db.columnsIdleHint')}</div>
       )}
 
       {/* 底部操作栏（Maven 二级栏规范） */}
       <div className="db-columns-foot">
         <span className="db-columns-foot-hint">
           {dirtyCount > 0
-            ? `${dirtyCount} 条变更待应用`
-            : `共 ${columns.length} 列`}
+            ? t('db.pendingChangesCount', { n: dirtyCount })
+            : t('db.totalColumnsCount', { n: columns.length })}
         </span>
         <div className="db-columns-foot-actions">
           <button
             type="button"
             className="panel-action-btn"
-            title="放弃全部未应用的改动"
+            title={t('db.discardAllChanges')}
             disabled={dirtyCount === 0 || executing}
             onClick={resetRows}
           >
-            <span className="db-columns-foot-label">撤销</span>
+            <span className="db-columns-foot-label">{t('db.undo')}</span>
           </button>
           <button
             type="button"
             className="panel-action-btn"
-            title={canApply ? '生成 ALTER，二次确认后逐条执行' : '没有可应用的改动'}
+            title={canApply ? t('db.generateAlterTitle') : t('db.nothingToApply')}
             disabled={!canApply}
             onClick={handleApply}
           >
             <span className="db-columns-foot-label primary">
-              {executing ? '执行中…' : `应用${dirtyCount > 0 ? `（${dirtyCount}）` : ''}`}
+              {executing
+                ? t('db.executing')
+                : dirtyCount > 0
+                  ? t('db.applyWithCount', { n: dirtyCount })
+                  : t('db.apply')}
             </span>
           </button>
         </div>
@@ -638,10 +664,9 @@ export function DbColumnsView({
 
       <DbConfirmModal
         isOpen={confirmContent !== null}
-        title={`确认修改表结构 · ${tableName}`}
+        title={t('db.confirmModifyStructure', { table: tableName })}
         content={confirmContent ?? ''}
         tone="danger"
-        confirmLabel="确认执行"
         onConfirm={() => {
           setConfirmContent(null);
           void runApply();

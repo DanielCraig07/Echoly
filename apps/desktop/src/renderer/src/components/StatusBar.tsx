@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { APP_VERSION, type GitCommitEntry, type GitStatusResult } from '@deepseek-ide/shared';
+import { useI18n } from '../i18n';
 
 interface Props {
   branch?: string;
@@ -70,6 +71,7 @@ export function StatusBar({
   onOpenAbout,
   onShowToast,
 }: Props) {
+  const { t } = useI18n();
   const hasChanges = Boolean(gitStatus?.entries?.length);
   const [activePopover, setActivePopover] = useState<
     'lang' | 'goto' | 'indent' | 'encoding' | 'eol' | 'stats' | null
@@ -101,12 +103,12 @@ export function StatusBar({
     try {
       const res = await window.ide?.checkUpdate?.();
       if (res?.hasUpdate && res?.version) {
-        onShowToast?.(`发现新版本 v${res.version}`, '点击设置关于页面可下载更新', 'info');
+        onShowToast?.(`${t('status.newVersion')}${res.version}`, t('status.newVersionHint'), 'info');
       } else {
-        onShowToast?.(`当前已是最新版本 (v${APP_VERSION})`, undefined, 'success');
+        onShowToast?.(`${t('status.upToDate')}v${APP_VERSION})`, undefined, 'success');
       }
     } catch {
-      onShowToast?.(`当前版本 v${APP_VERSION}`, '无法连接更新服务器', 'info');
+      onShowToast?.(`v${APP_VERSION}`, t('status.updateUnreachable'), 'info');
     } finally {
       setCheckingUpdate(false);
     }
@@ -168,9 +170,9 @@ export function StatusBar({
       if (onSyncGit) {
         await onSyncGit();
       }
-      onShowToast?.('Git 状态已同步', undefined, 'info');
+      onShowToast?.(t('status.syncOk'), undefined, 'info');
     } catch {
-      onShowToast?.('Git 同步失败', undefined, 'error');
+      onShowToast?.(t('status.syncFail'), undefined, 'error');
     } finally {
       setTimeout(() => setIsSyncing(false), 450);
     }
@@ -194,7 +196,7 @@ export function StatusBar({
         <button
           type="button"
           className="status-item status-remote"
-          title="远程连接与主机环境 · 点击连接 SSH 主机或配置服务器"
+          title={t('status.remote')}
           onClick={onOpenRemote}
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" style={{ display: 'inline-block' }}>
@@ -207,7 +209,7 @@ export function StatusBar({
           <button
             type="button"
             className="status-item status-branch-btn"
-            title={`当前 Git 分支: ${branch}${hasChanges ? ' (有未提交改动)' : ''} · 点击切换分支或标签`}
+            title={t(hasChanges ? 'status.branchLineDirty' : 'status.branchLine', { branch })}
             onClick={onOpenBranchSwitcher}
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
@@ -217,14 +219,14 @@ export function StatusBar({
               />
             </svg>
             <span style={{ fontWeight: 500 }}>{branch}</span>
-            {hasChanges && <span className="status-git-dirty-dot" title="有未提交改动" />}
+            {hasChanges && <span className="status-git-dirty-dot" title={t('status.dirty')} />}
             {Boolean(gitStatus?.ahead) && (
-              <span className="status-sync-pill ahead" title={`${gitStatus?.ahead} 个未推送提交`}>
+              <span className="status-sync-pill ahead" title={t('status.ahead', { n: gitStatus?.ahead ?? 0 })}>
                 ↑{gitStatus?.ahead}
               </span>
             )}
             {Boolean(gitStatus?.behind) && (
-              <span className="status-sync-pill behind" title={`${gitStatus?.behind} 个未拉取提交`}>
+              <span className="status-sync-pill behind" title={t('status.behind', { n: gitStatus?.behind ?? 0 })}>
                 ↓{gitStatus?.behind}
               </span>
             )}
@@ -235,7 +237,7 @@ export function StatusBar({
         <button
           type="button"
           className={`status-item status-sync-btn${isSyncing ? ' is-syncing' : ''}`}
-          title="Git 仓库状态 · 点击立即刷新同步"
+          title={t('status.sync')}
           onClick={handleSyncClick}
         >
           <svg
@@ -262,7 +264,7 @@ export function StatusBar({
         <button
           type="button"
           className="status-item status-errors"
-          title="错误与警告 · 点击展开或折叠底部控制台与终端面板"
+          title={t('status.problems')}
           onClick={onToggleBottomPanel}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -290,7 +292,7 @@ export function StatusBar({
       <div className="status-bar-right">
         {/* 最新提交信息 */}
         {latestCommit && (
-          <span className="status-item" title={`最近提交: ${latestCommit.message} (${latestCommit.date})`}>
+          <span className="status-item" title={`${t('status.lastCommit')} ${latestCommit.message} (${latestCommit.date})`}>
             {latestCommit.author} ({latestCommit.relativeDate || latestCommit.date})
           </span>
         )}
@@ -300,16 +302,16 @@ export function StatusBar({
           <button
             type="button"
             className={`status-item status-pos-btn${activePopover === 'goto' ? ' is-active' : ''}`}
-            title="光标所在行与列 · 点击输入行号精准跳转"
+            title={t('status.cursor')}
             onClick={() => setActivePopover((v) => (v === 'goto' ? null : 'goto'))}
           >
-            行 {cursorPos?.line ?? 1}, 列 {cursorPos?.col ?? 1}
+            {t('status.line')} {cursorPos?.line ?? 1}, {t('status.col')} {cursorPos?.col ?? 1}
           </button>
           {activePopover === 'goto' && (
             <div className="status-popover">
               <div className="status-popover-header">
-                <span>跳转到指定行</span>
-                <span className="status-popover-desc">范围 1 - {Math.max(1, docStats?.lineCount ?? 1)}</span>
+                <span>{t('status.goto')}</span>
+                <span className="status-popover-desc">{t('status.gotoRange')}{Math.max(1, docStats?.lineCount ?? 1)}</span>
               </div>
               <div className="status-goto-box">
                 <input
@@ -324,7 +326,7 @@ export function StatusBar({
                     if (e.key === 'Escape') setActivePopover(null);
                   }}
                   className="status-goto-input"
-                  placeholder="输入行号..."
+                  placeholder={t('status.gotoPh')}
                 />
                 <div className="status-goto-actions">
                   <button
@@ -332,14 +334,14 @@ export function StatusBar({
                     className="status-goto-cancel-btn"
                     onClick={() => setActivePopover(null)}
                   >
-                    取消
+                    {t('common.cancel')}
                   </button>
                   <button
                     type="button"
                     className="status-goto-btn"
                     onClick={handleGoToLineSubmit}
                   >
-                    跳转
+                    {t('status.jump')}
                   </button>
                 </div>
               </div>
@@ -352,20 +354,20 @@ export function StatusBar({
           <button
             type="button"
             className={`status-item status-indent-btn${activePopover === 'indent' ? ' is-active' : ''}`}
-            title="缩进设置 · 点击更改缩进大小"
+            title={t('status.indent')}
             onClick={() => setActivePopover((v) => (v === 'indent' ? null : 'indent'))}
           >
-            空格: {currentTabSize}
+            {t('status.indentLabel')} {currentTabSize}
           </button>
           {activePopover === 'indent' && (
             <div className="status-popover">
               <div className="status-popover-header">
-                <span>缩进设置</span>
+                <span>{t('status.indent')}</span>
               </div>
               {[
-                { size: 2, label: '2 个空格 (推荐)' },
-                { size: 4, label: '4 个空格' },
-                { size: 8, label: '8 个空格' },
+                { size: 2, label: `2${t('status.spacesRecommended')}` },
+                { size: 4, label: `4${t('status.spaces')}` },
+                { size: 8, label: `8${t('status.spaces')}` },
               ].map((item) => (
                 <div
                   key={item.size}
@@ -374,7 +376,7 @@ export function StatusBar({
                     setCurrentTabSize(item.size);
                     onSelectTabSize?.(item.size);
                     setActivePopover(null);
-                    onShowToast?.(`缩进已更改为 ${item.size} 个空格`, undefined, 'info');
+                    onShowToast?.(`${t('status.indentChanged')} ${item.size}${t('status.spaces')}`, undefined, 'info');
                   }}
                 >
                   <span>{item.label}</span>
@@ -390,7 +392,7 @@ export function StatusBar({
           <button
             type="button"
             className={`status-item status-encoding-btn${activePopover === 'encoding' ? ' is-active' : ''}`}
-            title="字符编码 · 点击切换当前编码"
+            title={t('status.encoding')}
             onClick={() => setActivePopover((v) => (v === 'encoding' ? null : 'encoding'))}
           >
             {currentEncoding}
@@ -398,12 +400,12 @@ export function StatusBar({
           {activePopover === 'encoding' && (
             <div className="status-popover">
               <div className="status-popover-header">
-                <span>字符编码</span>
+                <span>{t('status.encodingTitle')}</span>
               </div>
               {[
-                { id: 'UTF-8', label: 'UTF-8 (推荐)' },
+                { id: 'UTF-8', label: t('status.encodingUtf8') },
                 { id: 'UTF-16 LE', label: 'UTF-16 LE' },
-                { id: 'GBK', label: 'GBK (简体中文 / Windows)' },
+                { id: 'GBK', label: t('status.encodingGbk') },
                 { id: 'ASCII', label: 'ASCII' },
               ].map((item) => (
                 <div
@@ -413,7 +415,7 @@ export function StatusBar({
                     setCurrentEncoding(item.id);
                     onSelectEncoding?.(item.id);
                     setActivePopover(null);
-                    onShowToast?.(`编码已选择为 ${item.id}`, undefined, 'info');
+                    onShowToast?.(`${t('status.encodingChanged')} ${item.id}`, undefined, 'info');
                   }}
                 >
                   <span>{item.label}</span>
@@ -429,12 +431,12 @@ export function StatusBar({
           <button
             type="button"
             className={`status-item status-eol-btn${activePopover === 'eol' ? ' is-active' : ''}`}
-            title="行尾换行序列 · 点击在 LF 与 CRLF 间快速切换"
+            title={t('status.eol')}
             onClick={() => {
               const nextEol = currentEol === 'LF' ? 'CRLF' : 'LF';
               setCurrentEol(nextEol);
               onToggleEol?.(nextEol);
-              onShowToast?.(`行尾序列已切换为 ${nextEol}`, undefined, 'info');
+              onShowToast?.(`${t('status.eolChanged')} ${nextEol}`, undefined, 'info');
             }}
           >
             {currentEol}
@@ -450,7 +452,7 @@ export function StatusBar({
               setActivePopover((v) => (v === 'lang' ? null : 'lang'));
               setLangSearch('');
             }}
-            title="文件语言模式 · 点击切换语法模式与高亮"
+            title={t('status.language')}
           >
             {'{ }'} {language || 'SQL'}
           </button>
@@ -461,7 +463,7 @@ export function StatusBar({
                 <input
                   type="text"
                   autoFocus
-                  placeholder="搜索语言模式..."
+                  placeholder={t('status.languagePh')}
                   value={langSearch}
                   onChange={(e) => setLangSearch(e.target.value)}
                   className="status-lang-picker-input"
@@ -492,26 +494,26 @@ export function StatusBar({
           <button
             type="button"
             className={`status-item status-stats-btn${activePopover === 'stats' ? ' is-active' : ''}`}
-            title="文档统计数据 · 点击查看字数与行数统计详情"
+            title={t('status.stats')}
             onClick={() => setActivePopover((v) => (v === 'stats' ? null : 'stats'))}
           >
-            行 {docStats?.lineCount ?? 0} 字数 {docStats?.charCount ?? 0}
+            {t('status.statsLines')} {docStats?.lineCount ?? 0} {t('status.statsChars')} {docStats?.charCount ?? 0}
           </button>
           {activePopover === 'stats' && (
             <div className="status-popover" style={{ minWidth: 220 }}>
               <div className="status-popover-header">
-                <span>文档统计详情</span>
+                <span>{t('status.statsTitle')}</span>
               </div>
               <div className="status-stats-grid">
-                <span className="status-stats-label">总行数:</span>
-                <span className="status-stats-val">{docStats?.lineCount ?? 0} 行</span>
-                <span className="status-stats-label">总字符数:</span>
-                <span className="status-stats-val">{docStats?.charCount ?? 0} 字符</span>
-                <span className="status-stats-label">当前光标:</span>
+                <span className="status-stats-label">{t('status.statsTotalLines')}</span>
+                <span className="status-stats-val">{docStats?.lineCount ?? 0}{t('status.statsLine')}</span>
+                <span className="status-stats-label">{t('status.statsTotalChars')}</span>
+                <span className="status-stats-val">{docStats?.charCount ?? 0}{t('status.statsChar')}</span>
+                <span className="status-stats-label">{t('status.statsCursor')}</span>
                 <span className="status-stats-val">
-                  第 {cursorPos?.line ?? 1} 行, 第 {cursorPos?.col ?? 1} 列
+                  {t('status.statsAtLine')}{cursorPos?.line ?? 1}{t('status.statsAtCol')}{cursorPos?.col ?? 1}{t('status.statsAtColEnd')}
                 </span>
-                <span className="status-stats-label">文件路径:</span>
+                <span className="status-stats-label">{t('status.statsPath')}</span>
                 <span
                   className="status-stats-val"
                   style={{
@@ -521,9 +523,9 @@ export function StatusBar({
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                   }}
-                  title={activePath || '未命名'}
+                  title={activePath || t('status.untitled')}
                 >
-                  {activePath ? activePath.split('/').pop() : '未命名'}
+                  {activePath ? activePath.split('/').pop() : t('status.untitled')}
                 </span>
               </div>
               <div style={{ padding: '4px 8px 6px', display: 'flex', justifyContent: 'flex-end' }}>
@@ -533,7 +535,7 @@ export function StatusBar({
                   style={{ width: '100%' }}
                   onClick={() => setActivePopover('goto')}
                 >
-                  跳转到指定行...
+                  {t('status.gotoEllipsis')}
                 </button>
               </div>
             </div>
@@ -547,14 +549,14 @@ export function StatusBar({
           onClick={() => {
             const next = !copilotEnabled;
             setCopilotEnabled(next);
-            onShowToast?.(next ? 'AI 行内代码补全已启用' : 'AI 行内代码补全已暂停', undefined, 'info');
+            onShowToast?.(next ? t('status.copilotOn') : t('status.copilotOff'), undefined, 'info');
           }}
           title={
             copilotEnabled
               ? copilotActive
-                ? 'AI Copilot 正在生成行内代码补全建议...'
-                : 'AI Copilot 行内补全: 已就绪 (Tab 键采纳建议)'
-              : 'AI Copilot 行内补全: 已暂停 (点击启用)'
+                ? t('status.copilotGenerating')
+                : t('status.copilotReady')
+              : t('status.copilotPaused')
           }
           style={{
             display: 'inline-flex',
@@ -574,7 +576,7 @@ export function StatusBar({
           type="button"
           className="status-item status-version-badge"
           onClick={() => void handleCheckUpdate()}
-          title={`Echoly v${APP_VERSION} · 点击检查版本更新`}
+          title={`Echoly v${APP_VERSION}${t('status.versionClick')}`}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
         >
           <span>v{APP_VERSION}</span>
@@ -585,7 +587,7 @@ export function StatusBar({
           type="button"
           className="status-item status-dev-badge"
           onClick={onOpenAbout}
-          title={`Echoly by Daniel (v${APP_VERSION}) · 点击查看关于作者与系统设置`}
+          title={`Echoly by Daniel (v${APP_VERSION})${t('status.devClick')}`}
         >
           <span className="status-dev-icon">⚡</span>
           <span className="status-dev-name">Daniel</span>

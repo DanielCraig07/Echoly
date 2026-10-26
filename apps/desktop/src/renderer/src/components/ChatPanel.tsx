@@ -5,8 +5,10 @@ import type {
   AgentMode,
   AgentRunStatus,
   ChatAttachment,
+  ChatMessageMetrics,
   ChatSession,
   ChatSessionMessage,
+  CheckpointSummary,
   ConfirmRequest,
   ModelProfile,
   PermissionMode,
@@ -15,30 +17,39 @@ import type {
   WorkspaceInfo,
   RecentWorkspaceItem,
   BrowserElementRef,
+  SlashCommandInfo,
 } from '@deepseek-ide/shared';
-import { PERMISSION_MODE_LABELS } from '@deepseek-ide/shared';
-import { buildSessionWorkspaceMeta, uid } from '../utils';
+import { renderCommand } from '@deepseek-ide/shared';
+import { buildSessionWorkspaceMeta, isCustomSessionTitle, uid } from '../utils';
 import { buildAgentHistory } from '../chatHistory';
 import { MarkdownMessage } from './MarkdownMessage';
 import { PlanPanel } from './PlanPanel';
 import { SessionModal } from './SessionModal';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { resolveSpecialMentions } from '../services/specialMentions';
+import { translateSegments, useI18n, type Translate } from '../i18n';
+import { expandCommandSelection, matchMentionTrigger, matchSlashTrigger } from '../services/slashTrigger';
 import { ThinkingBlock } from './ThinkingBlock';
 import { WorkedForGroup } from './chat/WorkedForGroup';
 import { CollapsibleUserContent } from './chat/CollapsibleUserContent';
 import { InputCodeRefOverlay, type InputCodeRefOverlayHandle } from './chat/InputCodeRefOverlay';
 import { FileLanguageIcon } from './chat/CodeRefPill';
+import { ModelMetricsBadge } from './chat/ModelMetricsBadge';
 import { PanelChevron } from './PanelChevron';
 import echolyAppIcon from '../assets/echoly-icon.png';
 
 interface MentionItem {
   id: string;
-  type: 'special' | 'file';
+  type: 'special' | 'file' | 'command';
   title: string;
   desc: string;
   path?: string;
   insertText: string;
+  /** 命令项专用：展开后的正文。选中时替换掉 `/name` 而不是插入名字。 */
+  commandBody?: string;
+  /** 命令项的来源标记（工作区 / 用户）。 */
+  badge?: string;
 }
 
 interface Props {
@@ -57,6 +68,8 @@ interface Props {
   diffs?: PendingDiff[];
   onAcceptAllDiffs?: () => void;
   onRejectAllDiffs?: () => void;
+  /** 撤销完成后同步宿主状态：参数是实际被还原的文件路径。 */
+  onRevertTurn?: (revertedPaths: string[]) => void | Promise<void>;
   onSelectDiff?: (id: string) => void;
   onOpenFile?: (path: string, line?: number, endLine?: number) => void;
   onOpenSettings?: () => void;
@@ -108,12 +121,10 @@ const MODE_LABEL: Record<AgentMode, string> = {
 
 const PERMISSION_ORDER: PermissionMode[] = ['allow_all_extreme', 'allow_all', 'ask', 'deny_all'];
 
-const PERMISSION_SHORT_LABELS: Record<PermissionMode, string> = {
-  allow_all_extreme: '全放行·极',
-  allow_all: '全自动',
-  ask: '需确认',
-  deny_all: '只读',
-};
+/** 权限短标签走动态 key（`chat.permShort.*`），由调用方传入 t 渲染。 */
+function permissionShortLabel(t: Translate, mode: PermissionMode): string {
+  return t(`chat.permShort.${mode}`);
+}
 
 /**
  * 与模型选择按钮同款外观的下拉控件。用于「模式 / 权限」等选项，
@@ -233,6 +244,13 @@ function formatFileSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** 特殊引用（@Git / @Terminal / @Problems）附件在气泡里的图标与配色。 */
+const SPECIAL_MENTION_STYLE: Record<string, { icon: string; color: string; border: string; bg: string }> = {
+  '@Git': { icon: '🌳', color: '#4ade80', border: 'rgba(74, 222, 128, 0.4)', bg: 'rgba(74, 222, 128, 0.08)' },
+  '@Terminal': { icon: '▶', color: '#fbbf24', border: 'rgba(251, 191, 36, 0.4)', bg: 'rgba(251, 191, 36, 0.08)' },
+  '@Problems': { icon: '⚠', color: '#f87171', border: 'rgba(248, 113, 113, 0.4)', bg: 'rgba(248, 113, 113, 0.08)' },
+};
+
 function getProviderBadge(provider?: string) {
   switch (provider) {
     case 'deepseek':
@@ -317,6 +335,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     diffs,
     onAcceptAllDiffs,
     onRejectAllDiffs,
+    onRevertTurn,
     onSelectDiff,
     onOpenFile,
     onOpenSettings,
@@ -326,6 +345,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     onActiveModelChange,
     recentWorkspaces,
   } = props;
+  // 面板里有大量中文注释与日志（不翻译），这里只接用户可见文案
+  const { t, locale } = useI18n();
   // Manage multiple active session tabs
   const [tabs, setTabs] = useState<SessionTab[]>(() => {
     const initial = createEmptyTab();
@@ -337,6 +358,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     return [initial];
   });
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
+  /**
+   * runId → 该轮文件改动的写前记录摘要。
+   *
+   * 主进程存的是真正可回放的数据，这里只缓存「有没有、几个、是否可完整撤销」，
+   * 用来决定每轮气泡下那个「撤销本轮改动」按钮出不出现。
+   * `null` 表示查过了：这一轮没有可撤销的改动（例如纯问答），按钮不显示。
+   */
+  const [checkpoints, setCheckpoints] = useState<Record<string, CheckpointSummary | null>>({});
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   // 清空对话等不可逆操作走应用内确认框（系统 window.confirm 不是应用主题色，也没法列出影响范围）
   const confirm = useDbConfirm();
@@ -465,13 +494,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         if (updated.messages.length > 0) {
           const firstUserMsg = updated.messages.find((m) => m.role === 'user');
           const firstUserSnippet = firstUserMsg ? firstUserMsg.content.slice(0, 40) : '';
-          const isCustom =
-            updated.customTitle === true ||
-            (!!updated.title &&
-              updated.title !== 'New Chat' &&
-              updated.title !== '当前对话' &&
-              updated.title !== '对话' &&
-              (!firstUserSnippet || updated.title !== firstUserSnippet));
+          // 判定收在 utils.isCustomSessionTitle 里（原先这段在 5 处各抄一遍，
+          // 而它比较的 `'当前对话'` 是哨兵值，漏改一处就会静默失灵）
+          const isCustom = isCustomSessionTitle(updated.title, firstUserSnippet, updated.customTitle);
 
           const title = isCustom ? updated.title : (firstUserSnippet || updated.title);
           const meta = buildSessionWorkspaceMeta(workspaceInfoRef.current);
@@ -507,18 +532,21 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       const hasRunning = Boolean(targetTab?.runId);
       if (droppedCount > 0 || hasRunning) {
         const ok = await confirm.confirm({
-          title: '回退到此消息',
+          title: t('chat.rollbackTitle'),
           content: buildSqlConfirmMarkdown({
-            intro: '这条消息之后的**全部对话内容都会被丢弃**（含 AI 回复与思考过程），且**无法撤销**。',
+            t,
+            intro: t('chat.rollbackIntro'),
             statements: [],
-            notes: ['消息正文会被放回输入框，改完可以直接重新发送。'],
+            notes: [t('chat.rollbackNote')],
           }),
           details: [
-            { label: '丢弃', value: `${droppedCount} 条消息` },
-            ...(hasRunning ? [{ label: '进行中', value: '有 AI 任务正在执行，会被中断' }] : []),
+            { label: t('chat.rollbackDropped'), value: t('chat.rollbackDroppedValue', { n: droppedCount }) },
+            ...(hasRunning
+              ? [{ label: t('chat.rollbackRunning'), value: t('chat.rollbackRunningValue') }]
+              : []),
           ],
           tone: 'danger',
-          confirmLabel: '确认回退',
+          confirmLabel: t('chat.rollbackConfirm'),
         });
         if (ok === null) return;
       }
@@ -543,7 +571,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       });
       textareaRef.current?.focus();
     },
-    [updateTab, confirm],
+    [updateTab, confirm, t],
   );
 
   const processFiles = useCallback(
@@ -559,7 +587,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
         if (isImage || isPdf) {
           if (file.size > 20 * 1024 * 1024) {
-            alert(`文件 ${file.name} 超过 20MB 限制`);
+            alert(t('chat.fileTooLarge20', { name: file.name }));
             continue;
           }
           try {
@@ -582,7 +610,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           }
         } else {
           if (file.size > 5 * 1024 * 1024) {
-            alert(`文件 ${file.name} 超过 5MB 限制`);
+            alert(t('chat.fileTooLarge5', { name: file.name }));
             continue;
           }
           try {
@@ -608,7 +636,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         }));
       }
     },
-    [updateTab],
+    [updateTab, t],
   );
 
   const handleRemoveAttachment = useCallback(
@@ -667,7 +695,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       if (duplicated) {
         window.dispatchEvent(
           new CustomEvent('echoly:toast', {
-            detail: { message: '该元素已在输入框中，无需重复引用', type: 'info' },
+            detail: { message: t('chat.elementExists'), type: 'info' },
           }),
         );
       }
@@ -680,7 +708,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         }
       }, 50);
     },
-    [updateTab],
+    [updateTab, t],
   );
 
   /** 把整个浏览器页面引用追加到当前会话（同一页面地址不重复引用） */
@@ -715,7 +743,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       if (duplicated) {
         window.dispatchEvent(
           new CustomEvent('echoly:toast', {
-            detail: { message: '该页面已在输入框中，无需重复引用', type: 'info' },
+            detail: { message: t('chat.pageExists'), type: 'info' },
           }),
         );
       }
@@ -728,7 +756,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         }
       }, 50);
     },
-    [updateTab],
+    [updateTab, t],
   );
 
   const handlePaste = useCallback(
@@ -834,6 +862,47 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const mentionPopoverRef = useRef<HTMLDivElement>(null);
   const isKeyboardNavRef = useRef(false);
 
+  /**
+   * `/` 命令状态。
+   *
+   * 与 `@` 分开一个 state，而不是给 mentionState 加一个 `trigger` 字段：
+   * 两者的**插入行为不同**（`@` 插入引用文本，`/` 用模板正文替换掉命令名），
+   * 混在一起后每处用到的地方都要多一次判断，而这些判断迟早会漏。
+   */
+  const [commandState, setCommandState] = useState<{
+    isOpen: boolean;
+    query: string;
+    cursorIndex: number;
+    selectedIndex: number;
+  }>({ isOpen: false, query: '', cursorIndex: 0, selectedIndex: 0 });
+  const commandListRef = useRef<HTMLDivElement>(null);
+  const commandPopoverRef = useRef<HTMLDivElement>(null);
+  const [commands, setCommands] = useState<SlashCommandInfo[]>([]);
+
+  // 命令是纯文本文件，每次都重新扫一遍：读盘成本远低于「新建了命令却要重启才看到」的困惑。
+  const refreshCommands = useCallback(async () => {
+    try {
+      const list = await window.ide.listCommands();
+      setCommands(list ?? []);
+      return list ?? [];
+    } catch {
+      setCommands([]);
+      return [];
+    }
+  }, []);
+
+  // 挂载时拉一次，切换工作区后再拉一次 —— 命令是跟着工作区走的
+  useEffect(() => {
+    void refreshCommands();
+  }, [refreshCommands, props.workspace]);
+
+  // 弹窗打开的瞬间再扫一次盘：用户往往是「刚写完命令文件就切回来试」，
+  // 只靠挂载时那一次会让人以为没生效。
+  useEffect(() => {
+    if (commandState.isOpen) void refreshCommands();
+    // 只在「刚打开」这一刻触发，query 变化不必重扫
+  }, [commandState.isOpen, refreshCommands]);
+
   // 已删除文件的路径集合：openFiles 来源于打开的编辑器标签，文件被删除后标签仍在，
   // 会导致 @ 弹窗继续列出已失效的引用。此处对所有文件路径做一次磁盘存在性校验。
   const [missingPaths, setMissingPaths] = useState<Set<string>>(() => new Set());
@@ -893,17 +962,19 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
   // 点击弹窗之外的任意位置即关闭（原先只有 AI 区域内的 Esc 能取消）
   useEffect(() => {
-    if (!mentionState.isOpen) return;
+    if (!mentionState.isOpen && !commandState.isOpen) return;
     const onPointerDown = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (!target) return;
       if (mentionPopoverRef.current?.contains(target)) return;
+      if (commandPopoverRef.current?.contains(target)) return;
       if (textareaRef.current?.contains(target)) return;
       setMentionState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+      setCommandState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
     };
     document.addEventListener('mousedown', onPointerDown, true);
     return () => document.removeEventListener('mousedown', onPointerDown, true);
-  }, [mentionState.isOpen]);
+  }, [mentionState.isOpen, commandState.isOpen]);
 
   // 文件系统变更（新增/删除/重命名）后重新校验，保证弹窗列表实时有效
   useEffect(() => {
@@ -944,7 +1015,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         id: `current-file:${currentPath}`,
         type: 'file',
         title: `@${name}`,
-        desc: `当前文件 · ${currentPath}`,
+        desc: t('chat.currentFileDesc', { path: currentPath }),
         path: currentPath,
         insertText: `@${currentPath} `,
       });
@@ -971,27 +1042,27 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         id: 'special:git',
         type: 'special',
         title: '@Git',
-        desc: '引用当前工作区 Git 变更与状态',
+        desc: t('chat.mentionGitDesc'),
         insertText: '@Git ',
       },
       {
         id: 'special:terminal',
         type: 'special',
         title: '@Terminal',
-        desc: '引用终端最近执行输出与报错',
+        desc: t('chat.mentionTerminalDesc'),
         insertText: '@Terminal ',
       },
       {
         id: 'special:problems',
         type: 'special',
         title: '@Problems',
-        desc: '引用当前代码报错与诊断信息',
+        desc: t('chat.mentionProblemsDesc'),
         insertText: '@Problems ',
       },
     );
 
     return list;
-  }, [cursor?.path, openFiles, missingPaths]);
+  }, [cursor?.path, openFiles, missingPaths, t]);
 
   const filteredMentions = useMemo(() => {
     if (!mentionState.isOpen) return [];
@@ -1010,34 +1081,154 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       const input = activeTab?.input ?? '';
       const textBefore = input.slice(0, mentionState.cursorIndex);
       const textAfter = input.slice(mentionState.cursorIndex);
-      const atIdx = textBefore.lastIndexOf('@');
-      if (atIdx >= 0) {
-        const nextInput = textBefore.slice(0, atIdx) + item.insertText + textAfter;
-        updateTab(activeTab.id, (t) => ({ ...t, input: nextInput }));
-        setMentionState({ isOpen: false, query: '', cursorIndex: 0, selectedIndex: 0 });
-        setTimeout(() => {
-          if (textareaRef.current) {
-            const newPos = atIdx + item.insertText.length;
-            textareaRef.current.focus();
-            textareaRef.current.setSelectionRange(newPos, newPos);
-          }
-        }, 20);
-      }
+      const trigger = matchMentionTrigger(textBefore);
+      if (!trigger) return;
+      const atIdx = trigger.start;
+      const nextInput = textBefore.slice(0, atIdx) + item.insertText + textAfter;
+      updateTab(activeTab.id, (t) => ({ ...t, input: nextInput }));
+      setMentionState({ isOpen: false, query: '', cursorIndex: 0, selectedIndex: 0 });
+      setTimeout(() => {
+        if (textareaRef.current) {
+          const newPos = atIdx + item.insertText.length;
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newPos, newPos);
+        }
+      }, 20);
     },
     [activeTab?.id, activeTab?.input, mentionState.cursorIndex],
   );
 
+  /**
+   * 命令候选项。
+   *
+   * 与 `@` 的文件项不同，这里**不做存在性校验** —— 命令来自刚扫过的磁盘，
+   * 少了它只意味着下拉里少一行，不会让已插入的引用变成死链接。
+   */
+  const commandCandidates = useMemo<MentionItem[]>(
+    () =>
+      commands.map((c) => ({
+        id: `command:${c.source}:${c.name}`,
+        type: 'command',
+        title: `/${c.name}`,
+        desc: c.description,
+        insertText: `/${c.name} `,
+        commandBody: c.body,
+        badge: c.source === 'workspace' ? t('chat.commandBadgeWorkspace') : t('chat.commandBadgeUser'),
+      })),
+    [commands, t],
+  );
+
+  const filteredCommands = useMemo(() => {
+    if (!commandState.isOpen) return [];
+    const q = commandState.query.toLowerCase().trim();
+    if (!q) return commandCandidates;
+    // 同时匹配名字与描述：模板的描述往往比名字更能说明它是干什么的
+    return commandCandidates.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q),
+    );
+  }, [commandState.isOpen, commandState.query, commandCandidates]);
+
+  /**
+   * 选中命令：用模板正文**替换掉** `/name` 与游标到行尾的这段输入。
+   *
+   * 参数提取用的是命令名之后、`/name` 所在行的剩余文本。之所以按行而不是按整段输入：
+   * 用户常常先写一句需求，再另起一行敲 `/review src/a.ts`，此时前面那句不该被当成参数。
+   */
+  const handleSelectCommand = useCallback(
+    (item: MentionItem) => {
+      const input = activeTab?.input ?? '';
+      if (!item.commandBody) {
+        setCommandState({ isOpen: false, query: '', cursorIndex: 0, selectedIndex: 0 });
+        return;
+      }
+      const trigger = matchSlashTrigger(input.slice(0, commandState.cursorIndex));
+      if (!trigger) {
+        setCommandState({ isOpen: false, query: '', cursorIndex: 0, selectedIndex: 0 });
+        return;
+      }
+      // 参数是命令名之后、同一行的剩余文本
+      const textAfter = input.slice(commandState.cursorIndex);
+      const newlineAt = textAfter.indexOf('\n');
+      const rawArgs = newlineAt < 0 ? textAfter : textAfter.slice(0, newlineAt);
+      const expanded = renderCommand({ body: item.commandBody }, rawArgs);
+      const { next, cursor } = expandCommandSelection({
+        input,
+        cursorIndex: commandState.cursorIndex,
+        expanded,
+      });
+      updateTab(activeTab.id, (t) => ({ ...t, input: next }));
+      setCommandState({ isOpen: false, query: '', cursorIndex: 0, selectedIndex: 0 });
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(cursor, cursor);
+        }
+      }, 20);
+    },
+    [activeTab?.id, activeTab?.input, commandState.cursorIndex],
+  );
+
+  /**
+   * 两个弹窗（`@` 与 `/`）共用一套「候选列表」语义。
+   *
+   * 键盘导航、高亮滚动、点击采纳这三件事在两处是完全一样的，各写一遍迟早会分叉
+   * （比如只给其中一个加了 Tab 采纳）。这里收敛成一份：同一时刻至多有一个弹窗是开的，
+   * 渲染与按键处理都只认下面这几个派生值。
+   *
+   * 命令优先，且**哪怕一个命令都没有也要开**：空列表时弹出的引导文案是用户
+   * 发现这个功能的唯一途径，静默什么都不显示等于功能不存在。
+   */
+  const suggestMode: 'mention' | 'command' | null =
+    commandState.isOpen
+      ? 'command'
+      : mentionState.isOpen && filteredMentions.length > 0
+        ? 'mention'
+        : null;
+  const suggestItems =
+    suggestMode === 'command'
+      ? filteredCommands
+      : suggestMode === 'mention'
+        ? filteredMentions
+        : [];
+  const suggestIndex = suggestMode === 'command' ? commandState.selectedIndex : mentionState.selectedIndex;
+  const suggestListRef = suggestMode === 'command' ? commandListRef : mentionListRef;
+
+  const setSuggestIndex = useCallback(
+    (idx: number) => {
+      if (suggestMode === 'command') {
+        setCommandState((prev) => (prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx }));
+      } else if (suggestMode === 'mention') {
+        setMentionState((prev) => (prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx }));
+      }
+    },
+    [suggestMode],
+  );
+
+  const closeSuggest = useCallback(() => {
+    setMentionState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+    setCommandState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+  }, []);
+
+  const handleSelectSuggest = useCallback(
+    (item: MentionItem) => {
+      if (suggestMode === 'command') handleSelectCommand(item);
+      else handleSelectMention(item);
+    },
+    [suggestMode, handleSelectCommand, handleSelectMention],
+  );
+
   // 当上下键切换或弹窗打开时，自动滚动将当前高亮项保持在可视范围内
   useEffect(() => {
-    if (mentionState.isOpen && mentionListRef.current) {
-      const activeEl = mentionListRef.current.querySelector(
+    if (suggestMode && suggestListRef.current) {
+      const activeEl = suggestListRef.current.querySelector(
         '.chat-mention-item.active',
       ) as HTMLElement | null;
       if (activeEl) {
         activeEl.scrollIntoView({ block: 'nearest' });
       }
     }
-  }, [mentionState.selectedIndex, mentionState.isOpen]);
+  }, [suggestIndex, suggestMode, suggestListRef]);
 
   useEffect(() => {
     if (lastUserMsgId && lastUserMsgId !== prevLastUserMsgIdRef.current) {
@@ -1386,13 +1577,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const sessionToTab = useCallback((session: ChatSession): SessionTab => {
     const firstUser = session.messages?.find((m) => m.role === 'user');
     const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
-    const isCustom =
-      session.customTitle === true ||
-      (!!session.title &&
-        session.title !== 'New Chat' &&
-        session.title !== '当前对话' &&
-        session.title !== '对话' &&
-        (!firstUserSnippet || session.title !== firstUserSnippet));
+    const isCustom = isCustomSessionTitle(session.title, firstUserSnippet, session.customTitle);
 
     return {
       id: session.id,
@@ -1442,6 +1627,51 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     prevWorkspaceRef.current = workspace;
   }, [workspace, workspaceInfo?.root, workspaceInfo?.label, sessionToTab]);
 
+  /**
+   * 刷新某轮（或全部已知轮次）的撤销可用性。
+   *
+   * 只在「一轮结束」和「撤销完成后」这两个时点查：checkpoint 的 status 在主进程里
+   * 随写入变化，但按钮的可用状态只在用户能看到结果之后才有意义，逐次工具调用去轮询
+   * 只会给每条 tool_result 增加一次 IPC 往返。
+   */
+  const refreshCheckpoints = useCallback(async (runIds: string[]) => {
+    if (runIds.length === 0) return;
+    const entries = await Promise.all(
+      runIds.map(async (id) => {
+        try {
+          return [id, await window.ide.getCheckpointSummary(id)] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }),
+    );
+    setCheckpoints((prev) => {
+      const next = { ...prev };
+      for (const [id, summary] of entries) next[id] = summary;
+      return next;
+    });
+  }, []);
+
+  /** 当前标签页里所有带 runId 的轮次。 */
+  const knownRunIds = useCallback(
+    (tab: SessionTab | undefined): string[] =>
+      (tab?.messages ?? [])
+        .map((m) => m.runId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    [],
+  );
+
+  /**
+   * 切换标签页 / 工作区后补齐尚未查询过的轮次。
+   *
+   * 只查 `checkpoints` 里还没有键的那些，且结果是 `null` 也是一种「已查过」的记录 ——
+   * 否则每次切换标签页都会把所有历史轮次重问一遍，而绝大多数轮次根本没有改动。
+   */
+  useEffect(() => {
+    const pending = knownRunIds(activeTab).filter((id) => !(id in checkpoints));
+    if (pending.length > 0) void refreshCheckpoints(pending);
+  }, [activeTab, checkpoints, knownRunIds, refreshCheckpoints]);
+
   // 流式输出节流缓冲池：避免高频单 token 触发过密 React 重渲染与长文 Markdown AST 全量反复解析
   const streamingBufferRef = useRef<Map<string, { streaming: string; thinking: string }>>(new Map());
   const streamingRafRef = useRef<number | null>(null);
@@ -1476,6 +1706,26 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   // Global Agent Event Listener (Routes events to matching runId session)
   useEffect(() => {
     const unsub = window.ide.onAgentEvent((event) => {
+      // 未送达回执不能按 runId 找 Tab：用户点「停止」时渲染层会**乐观地**立刻清掉 runId，
+      // 而主进程的中止与回执是之后才到的 —— 那时按 runId 已经找不到归属，气泡会永远停在
+      // 「排队中」。所以这里按消息 id 反查，不依赖 runId 是否还在。
+      if (event.type === 'queued_message_undelivered') {
+        const ids = new Set(event.ids);
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.messages.some((m) => ids.has(m.id))
+              ? {
+                  ...t,
+                  messages: t.messages.map((m) =>
+                    ids.has(m.id) ? { ...m, delivery: 'undelivered' as const } : m,
+                  ),
+                }
+              : t,
+          ),
+        );
+        return;
+      }
+
       // Find matching session tab for this runId
       const targetTab = tabsRef.current.find((t) => t.runId === event.runId);
       if (!targetTab) return;
@@ -1509,8 +1759,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       // 非流式微块事件到达时，立即先刷出当前累积的文本缓冲区
       flushStreamingBuffer();
 
-      updateTab(targetTab.id, (t) => {
-        const next = { ...t };
+      updateTab(targetTab.id, (tab) => {
+        const next = { ...tab };
         switch (event.type) {
           case 'status':
             next.status = event.status;
@@ -1560,6 +1810,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               source: event.source,
             };
             break;
+          case 'queued_message_consumed':
+            // 气泡从「排队中」转为普通用户消息：模型已经看到它了
+            next.messages = next.messages.map((m) =>
+              m.id === event.id ? { ...m, delivery: 'consumed' as const } : m,
+            );
+            break;
+          // 注：queued_message_undelivered 在上面的监听入口就按消息 id 处理掉了，
+          // 走不到这里（它到得比 runId 被清空更晚，没法按 runId 找 Tab）。
           case 'tool_start': {
             next.streaming = '';
             next.thinkingStreaming = '';
@@ -1682,6 +1940,18 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             }
             break;
           }
+          case 'metrics': {
+            if (event.metrics && next.messages.length > 0) {
+              const lastIdx = next.messages.length - 1;
+              const last = next.messages[lastIdx];
+              if (last && last.role === 'assistant') {
+                const msgs = [...next.messages];
+                msgs[lastIdx] = { ...last, metrics: event.metrics };
+                next.messages = msgs;
+              }
+            }
+            break;
+          }
           case 'done': {
             next.streaming = '';
             next.thinkingStreaming = '';
@@ -1691,7 +1961,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             const textToDisplay =
               event.finalText ||
               (next.messages.some((m) => m.role === 'tool')
-                ? '已完成执行，详细操作步骤已收折在上方「Worked for」面板中，点击即可展开查看。'
+                ? t('chat.workedFoldHint')
                 : '');
             const finalizedId = targetTab.streamingMsgId || uid();
             next.streamingMsgId = undefined;
@@ -1704,11 +1974,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               // the same answer to be appended twice.
               if (last && last.role === 'assistant' && last.isIntermediate) {
                 const msgs = [...next.messages];
-                msgs[lastIdx] = { ...last, id: finalizedId, content: textToDisplay, isIntermediate: false };
+                msgs[lastIdx] = { ...last, id: finalizedId, content: textToDisplay, isIntermediate: false, metrics: event.metrics, circuitBroken: event.circuitBroken };
                 next.messages = msgs;
               } else if (last && last.role === 'assistant' && last.content === textToDisplay) {
                 const msgs = [...next.messages];
-                msgs[lastIdx] = { ...last, isIntermediate: false };
+                msgs[lastIdx] = { ...last, isIntermediate: false, metrics: event.metrics, circuitBroken: event.circuitBroken };
                 next.messages = msgs;
               } else {
                 next.messages = [
@@ -1719,6 +1989,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     content: textToDisplay,
                     isIntermediate: false,
                     createdAt: Date.now(),
+                    metrics: event.metrics,
+                    circuitBroken: event.circuitBroken,
                   },
                 ];
               }
@@ -1727,7 +1999,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               const last = next.messages[lastIdx];
               if (last && last.role === 'assistant' && last.isIntermediate) {
                 const msgs = [...next.messages];
-                msgs[lastIdx] = { ...last, isIntermediate: false };
+                msgs[lastIdx] = { ...last, isIntermediate: false, metrics: event.metrics, circuitBroken: event.circuitBroken };
                 next.messages = msgs;
               }
             }
@@ -1737,7 +2009,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               window.dispatchEvent(
                 new CustomEvent('echoly:agent-task-completed', {
                   detail: {
-                    summary: textToDisplay || '任务已全部执行完成',
+                    summary: textToDisplay || t('chat.taskCompleted'),
                   },
                 }),
               );
@@ -1747,8 +2019,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           case 'error': {
             const isConnErr = /econnrefused|fetch failed|timeout|network|connect|enotfound|offline|abort/i.test(event.message);
             const errContent = isConnErr
-              ? `⚠️ **模型连通性异常**：连接大语言模型服务失败 (${event.message})。\n\n> **诊断与恢复指引**：\n> 1. 若使用本地自建模型（如 Ollama / LM Studio），请检查服务是否运行或端口是否正确监听；\n> 2. 若在离线局域网环境，请检查网络路由与内网代理是否正常；\n> 3. 建议在顶部模型下拉框中，一键切换至当前标记为绿色的备用可用模型。`
-              : `错误：${event.message}`;
+              ? t('chat.modelConnWarning', { msg: event.message })
+              : t('chat.errorPrefix', { msg: event.message });
             next.messages = [
               ...next.messages,
               {
@@ -1778,12 +2050,18 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         }
         return next;
       });
+
+      // 一轮结束才去问「这轮有没有可撤销的改动」：运行中文件还在被陆续改写，
+      // 中途问到的数量立刻过期，按钮也会一闪一闪。
+      if (event.type === 'done' || event.type === 'error') {
+        void refreshCheckpoints(knownRunIds(targetTab));
+      }
     });
     return () => {
       unsub();
       flushStreamingBuffer();
     };
-  }, [updateTab, flushStreamingBuffer]);
+  }, [updateTab, flushStreamingBuffer, refreshCheckpoints, knownRunIds]);
 
   async function send(
     overridePrompt?: string,
@@ -1791,7 +2069,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     planForRun?: PlanProposal | null,
   ): Promise<void> {
     if (!workspace) {
-      alert('请先打开工作区');
+      alert(t('chat.needWorkspace'));
       return;
     }
     if (!activeTab) return;
@@ -1800,8 +2078,56 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     if (!rawPrompt && currentAttachments.length === 0) return;
     const prompt =
       rawPrompt ||
-      (currentAttachments.some((a) => a.type === 'image') ? '请分析图片' : '请分析附件');
+      (currentAttachments.some((a) => a.type === 'image')
+        ? t('chat.analyzeImage')
+        : t('chat.analyzeAttachment'));
     const runMode = overrideMode ?? activeTab.mode;
+
+    // 展开 @Git / @Terminal / @Problems：这三个引用描述的是「此刻的状态」，
+    // 所以快照必须在提交这一刻取，而不是用户敲下 @ 的那一刻。
+    const mentionAttachments = await resolveSpecialMentions(prompt, {
+      getWorkspaceRoot: () => workspace,
+    });
+    const attachmentsForRun = [...currentAttachments, ...mentionAttachments];
+
+    // 本轮还在跑：不新起一轮，而是把消息追加给它。
+    // 为什么不在渲染层直接排队等结束后再发：那样消息要么在用户以为已经提交之后被迟迟不发，
+    // 要么与一轮的收尾抢时序。交给主进程的队列，Agent 会在下一个步骤边界取走它，
+    // 于是模型在**同一条上下文**里看到这条补充要求，知道它刚才改到哪。
+    if (activeTab.runId) {
+      const queuedId = uid();
+      const queuedMsg: ChatSessionMessage = {
+        id: queuedId,
+        role: 'user',
+        content: prompt,
+        attachments: attachmentsForRun.length > 0 ? attachmentsForRun : undefined,
+        createdAt: Date.now(),
+        delivery: 'queued',
+      };
+      updateTab(activeTab.id, (t) => ({
+        ...t,
+        input: overridePrompt ? t.input : '',
+        attachments: overridePrompt ? t.attachments : [],
+        messages: [...t.messages, queuedMsg],
+      }));
+      const accepted = await window.ide.queueAgentMessage(activeTab.runId, {
+        id: queuedId,
+        content: prompt,
+        attachments: attachmentsForRun.length > 0 ? attachmentsForRun : undefined,
+      });
+      scrollToUserMsg(queuedId);
+      if (!accepted) {
+        // 主进程说这一轮已经结束了（收尾与提交撞在一起）：把气泡退回输入框，
+        // 而不是让它永远挂在「排队中」—— 用户看到的状态必须和真实送达情况一致。
+        updateTab(activeTab.id, (t) => ({
+          ...t,
+          messages: t.messages.map((m) =>
+            m.id === queuedId ? { ...m, delivery: 'undelivered' as const } : m,
+          ),
+        }));
+      }
+      return;
+    }
 
     try {
       window.dispatchEvent(
@@ -1818,20 +2144,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       id: uid(),
       role: 'user',
       content: prompt,
-      attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+      attachments: attachmentsForRun.length > 0 ? attachmentsForRun : undefined,
       createdAt: Date.now(),
     };
 
     const newMessages = [...activeTab.messages, userMsg];
     const firstUser = activeTab.messages.find((m) => m.role === 'user');
     const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
-    const isCustom =
-      activeTab.customTitle === true ||
-      (!!activeTab.title &&
-        activeTab.title !== 'New Chat' &&
-        activeTab.title !== '当前对话' &&
-        activeTab.title !== '对话' &&
-        (!firstUserSnippet || activeTab.title !== firstUserSnippet));
+    const isCustom = isCustomSessionTitle(activeTab.title, firstUserSnippet, activeTab.customTitle);
 
     const newTitle = isCustom
       ? activeTab.title
@@ -1884,13 +2204,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       selection: selection?.trim() || undefined,
       cursor,
       history,
-      attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+      attachments: attachmentsForRun.length > 0 ? attachmentsForRun : undefined,
     });
 
     updateTab(activeTab.id, (t) => ({
       ...t,
       runId: id,
       pendingPlanContext: planContext ? null : t.pendingPlanContext,
+      // 把 runId 钉在发起这一轮的用户消息上：撤销按钮要能找到「这一轮」对应的写前记录，
+      // 而消息列表会在会话里持久化，重开应用后仍能对上。
+      messages: t.messages.map((m) => (m.id === userMsg.id ? { ...m, runId: id } : m)),
     }));
   }
 
@@ -1911,6 +2234,74 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       status: 'cancelled',
     }));
     await window.ide.cancelAgent(runId);
+    // 中止的一轮同样可能已经改过文件，撤销入口要跟着出现
+    void refreshCheckpoints(knownRunIds(tab));
+  }
+
+  /**
+   * 撤销某一轮 AI 的全部文件改动。
+   *
+   * 冲突（本轮之后该文件又被改过）与「未能留底」都不能当成成功静默略过 ——
+   * 用户点这个按钮的动机是「我不信任这批改动，想让工作区回到动手之前」，
+   * 所以结果必须逐条说清楚：还原了哪些、哪些没动、为什么。
+   */
+  async function revertTurn(runId: string): Promise<void> {
+    const summary = checkpoints[runId];
+    if (summary?.incomplete) {
+      // 已知不可完整撤销：与其还原一半，不如让用户走 Git
+      window.alert(
+        t('chat.revertIncompleteAlert', {
+          reason: summary.incompleteReason ?? t('chat.unknownReason'),
+        }),
+      );
+      return;
+    }
+    const ok = await confirm.confirm({
+      title: t('chat.revertTitle'),
+      content: buildSqlConfirmMarkdown({
+        t,
+        intro: t('chat.revertIntro'),
+        statements: [],
+        notes: [t('chat.revertNote1'), t('chat.revertNote2')],
+      }),
+      details: [
+        {
+          label: t('chat.revertDetailLabel'),
+          value: t('chat.revertDetailValue', { n: summary?.mutations ?? 0 }),
+        },
+      ],
+      tone: 'danger',
+      confirmLabel: t('chat.revertConfirm'),
+    });
+    if (ok === null) return;
+
+    const res = await window.ide.revertCheckpoint(runId);
+    if ('error' in res) {
+      window.alert(res.error);
+      return;
+    }
+
+    // 主进程已把磁盘改回写前状态；这里同步内存中的 diff 列表与打开的文件内容，
+    // 否则编辑器仍显示 AI 改过的版本，用户会以为撤销没生效。
+    await onRevertTurn?.(res.reverted);
+    setCheckpoints((prev) => ({ ...prev, [runId]: null }));
+
+    const lines = [t('chat.revertResult', { n: res.reverted.length })];
+    if (res.conflicts.length > 0) {
+      lines.push(
+        t('chat.revertConflicts', {
+          list: res.conflicts.map((p) => `  · ${p}`).join('\n'),
+        }),
+      );
+    }
+    if (res.skipped.length > 0) {
+      lines.push(
+        t('chat.revertSkipped', {
+          list: res.skipped.map((sk) => `  · ${sk.path}（${sk.reason}）`).join('\n'),
+        }),
+      );
+    }
+    window.alert(lines.join('\n'));
   }
 
   async function answerConfirm(approved: boolean, answer?: string): Promise<void> {
@@ -1971,17 +2362,18 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const tabToClose = tabs.find((t) => t.id === id);
     if (tabToClose?.runId) {
       const ok = await confirm.confirm({
-        title: '关闭对话标签',
+        title: t('chat.closeTabTitle'),
         content: buildSqlConfirmMarkdown({
-          intro: '这个标签下**正在运行的 AI 任务会被中断**，且**无法续跑**（对话记录本身会保留在历史会话里）。',
+          t,
+          intro: t('chat.closeTabIntro'),
           statements: [],
         }),
         details: [
-          { label: '标题', value: tabToClose.title?.trim() || '（无标题）' },
-          { label: '状态', value: '执行中' },
+          { label: t('chat.labelTitle'), value: tabToClose.title?.trim() || t('chat.untitled') },
+          { label: t('chat.labelStatus'), value: t('chat.statusRunning') },
         ],
         tone: 'danger',
-        confirmLabel: '确认关闭',
+        confirmLabel: t('chat.closeTabConfirm'),
       });
       if (ok === null) return;
       void window.ide.cancelAgent(tabToClose.runId);
@@ -2003,13 +2395,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     // 直接在当前聊天面板中打开该历史会话，不再触发切换工作区弹窗
     const firstUser = session.messages?.find((m) => m.role === 'user');
     const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
-    const isCustom =
-      session.customTitle === true ||
-      (!!session.title &&
-        session.title !== 'New Chat' &&
-        session.title !== '当前对话' &&
-        session.title !== '对话' &&
-        (!firstUserSnippet || session.title !== firstUserSnippet));
+    const isCustom = isCustomSessionTitle(session.title, firstUserSnippet, session.customTitle);
 
     const existing = tabs.find((t) => t.id === session.id);
     if (existing) {
@@ -2027,6 +2413,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         ),
       );
       setActiveTabId(existing.id);
+      void refreshCheckpoints(knownRunIds(existing));
       return;
     }
 
@@ -2039,6 +2426,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       return [...prev, tab];
     });
     setActiveTabId(tab.id);
+    void refreshCheckpoints(knownRunIds(tab));
   };
 
   const handleRenameSession = (id: string, newTitle: string) => {
@@ -2050,8 +2438,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const handleExportSessionMarkdown = useCallback(() => {
     if (!activeTab || activeTab.messages.length === 0) return;
     const dateStr = new Date(activeTab.updatedAt || Date.now()).toLocaleString();
-    let md = `# ${activeTab.title || 'AI 对话记录'}\n\n`;
-    md += `> 导出时间：${dateStr} | 模式：${MODE_LABEL[activeTab.mode] || activeTab.mode}\n\n---\n\n`;
+    let md = `# ${activeTab.title || t('chat.exportDefaultTitle')}\n\n`;
+    md += `${t('chat.exportMeta', { date: dateStr, mode: MODE_LABEL[activeTab.mode] || activeTab.mode })}\n\n---\n\n`;
 
     for (const msg of activeTab.messages) {
       if (msg.role === 'user') {
@@ -2059,7 +2447,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       } else if (msg.role === 'assistant') {
         md += `### 🤖 Assistant\n\n`;
         if ((msg as any).thinking) {
-          md += `<details>\n<summary>💭 思考过程 (Thinking)</summary>\n\n${(msg as any).thinking}\n\n</details>\n\n`;
+          md += `<details>\n<summary>${t('chat.exportThinking')}</summary>\n\n${(msg as any).thinking}\n\n</details>\n\n`;
         }
         md += `${msg.content}\n\n`;
       }
@@ -2082,22 +2470,26 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       setExported(true);
       setTimeout(() => setExported(false), 2000);
     }
-  }, [activeTab]);
+  }, [activeTab, t]);
 
   const handleClearCurrentSession = useCallback(async () => {
     if (!activeTab || activeTab.messages.length === 0) return;
     const ok = await confirm.confirm({
-      title: '清空当前对话记录',
+      title: t('chat.clearTitle'),
       content: buildSqlConfirmMarkdown({
-        intro: '当前 Tab 里的全部消息、思考链与计划都会被清除，且**无法撤销**（历史会话列表里若已保存过副本则不受影响）。',
+        t,
+        intro: t('chat.clearIntro'),
         statements: [],
       }),
       details: [
-        { label: '消息', value: `${activeTab.messages.length} 条` },
-        { label: '标题', value: activeTab.title?.trim() || '（无标题）' },
+        {
+          label: t('chat.labelMessages'),
+          value: t('chat.clearMessagesValue', { n: activeTab.messages.length }),
+        },
+        { label: t('chat.labelTitle'), value: activeTab.title?.trim() || t('chat.untitled') },
       ],
       tone: 'danger',
-      confirmLabel: '确认清空',
+      confirmLabel: t('chat.clearConfirm'),
     });
     if (ok === null) return;
     updateTab(activeTab.id, (t) => ({
@@ -2110,8 +2502,15 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       plan: null,
       pendingPlanContext: null,
     }));
-  }, [activeTab, updateTab, confirm]);
+  }, [activeTab, updateTab, confirm, t]);
 
+  /**
+   * 快捷提问按钮：把一段**中文指令**填进输入框（用户可改后再发）。
+   *
+   * 这些指令刻意不进字典 —— 它们最终是送给模型的 prompt，不是界面文案，
+   * 与 `services/specialMentions.ts` / EditorPane 的 `handleQuickPrompt` 同类。
+   * 按钮上显示的短标签（「解释代码」/「Explain」）走 `chat.quick*`，那个是翻的。
+   */
   const handleQuickPrompt = useCallback(
     (type: 'explain' | 'optimize' | 'test' | 'bug') => {
       if (!activeTab) return;
@@ -2176,23 +2575,27 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       {/* Title Bar Header with Tabs */}
       <div className="panel-title chat-title-row">
         <div className="chat-tabs-bar">
-          {tabs.map((t) => {
+          {tabs.map((tb) => {
             const isRunning =
-              t.status !== 'idle' &&
-              t.status !== 'done' &&
-              t.status !== 'error' &&
-              t.status !== 'cancelled';
-            const isActive = t.id === activeTabId;
+              tb.status !== 'idle' &&
+              tb.status !== 'done' &&
+              tb.status !== 'error' &&
+              tb.status !== 'cancelled';
+            const isActive = tb.id === activeTabId;
             return (
               <div
-                key={t.id}
+                key={tb.id}
                 className={`chat-tab-item${isActive ? ' active' : ''}`}
-                onClick={() => setActiveTabId(t.id)}
-                title={isActive ? (t.title || '当前对话') : `${t.title || '对话'} (点击切换)`}
+                onClick={() => setActiveTabId(tb.id)}
+                title={
+                  isActive
+                    ? tb.title || t('chat.titleCurrent')
+                    : t('chat.tabInactiveTitle', { title: tb.title || t('chat.titleDefault') })
+                }
               >
                 <span className="chat-tab-icon" aria-hidden="true">
                   {isRunning ? (
-                    <span className="chat-tab-running-dot" title="运行中…" />
+                    <span className="chat-tab-running-dot" title={t('chat.tabRunning')} />
                   ) : (
                     <svg
                       width="12"
@@ -2209,14 +2612,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   )}
                 </span>
                 <span className="chat-tab-title">
-                  {t.title || 'New Chat'}
+                  {tb.title || 'New Chat'}
                 </span>
                 {tabs.length > 1 && (
                   <button
                     type="button"
                     className="chat-tab-close"
-                    onClick={(e) => void handleCloseTab(t.id, e)}
-                    title="关闭 Tab"
+                    onClick={(e) => void handleCloseTab(tb.id, e)}
+                    title={t('chat.tabClose')}
                   >
                     <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor">
                       <path d="M1.293 1.293a1 1 0 0 1 1.414 0L8 6.586l5.293-5.293a1 1 0 1 1 1.414 1.414L9.414 8l5.293 5.293a1 1 0 0 1-1.414 1.414L8 9.414l-5.293 5.293a1 1 0 0 1-1.414-1.414L6.586 8 1.293 2.707a1 1 0 0 1 0-1.414z" />
@@ -2232,7 +2635,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           <button
             type="button"
             className={`icon-btn ${exported ? 'active' : ''}`}
-            title={exported ? '已导出 Markdown' : '导出当前会话为 Markdown 文件'}
+            title={exported ? t('chat.exported') : t('chat.exportTip')}
             onClick={handleExportSessionMarkdown}
             disabled={!activeTab || activeTab.messages.length === 0}
             style={{ opacity: !activeTab || activeTab.messages.length === 0 ? 0.35 : 1 }}
@@ -2270,7 +2673,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           <button
             type="button"
             className="icon-btn"
-            title="清空当前对话记录"
+            title={t('chat.clearChat')}
             onClick={handleClearCurrentSession}
             disabled={!activeTab || activeTab.messages.length === 0}
             style={{ opacity: !activeTab || activeTab.messages.length === 0 ? 0.35 : 1 }}
@@ -2289,7 +2692,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             </svg>
           </button>
-          <button type="button" className="icon-btn" title="新建对话" onClick={handleNewTab}>
+          <button type="button" className="icon-btn" title={t('chat.newChat')} onClick={handleNewTab}>
             <svg
               width="17"
               height="17"
@@ -2306,7 +2709,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           <button
             type="button"
             className="icon-btn"
-            title="历史会话"
+            title={t('chat.history')}
             onClick={() => setShowHistoryModal(true)}
           >
             <svg
@@ -2368,7 +2771,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                           key={att.id}
                           className="chat-msg-attachment-img-card"
                           onClick={() => setPreviewImage(att.dataUrl || null)}
-                          title={`${att.name} (${formatFileSize(att.size)}) - 点击放大`}
+                          title={t('chat.attachmentImgTip', {
+                            name: att.name,
+                            size: formatFileSize(att.size),
+                          })}
                         >
                           <img src={att.dataUrl} alt={att.name} />
                           <span className="chat-msg-attachment-img-name">{att.name}</span>
@@ -2377,7 +2783,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         <div
                           key={att.id}
                           className="chat-msg-attachment-file-pill"
-                          title={`网页元素: ${att.name}\n页面: ${att.browserElement?.url || ''}\n选择器: ${att.browserElement?.selectorPath || ''}\n\n点击复制 outerHTML`}
+                          title={t('chat.elementRefTip', {
+                            name: att.name,
+                            url: att.browserElement?.url || '',
+                            selector: att.browserElement?.selectorPath || '',
+                          })}
                           onClick={() => {
                             if (att.content) {
                               navigator.clipboard?.writeText(att.content).catch(() => {});
@@ -2402,23 +2812,54 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                             <span className="file-pill-icon">🎯</span>
                           )}
                           <span className="file-pill-name" style={{ color: '#60a5fa', fontWeight: 600 }}>{att.name}</span>
-                          <span className="file-pill-size" style={{ color: '#93c5fd' }}>DOM 元素</span>
+                          <span className="file-pill-size" style={{ color: '#93c5fd' }}>{t('chat.domElement')}</span>
                         </div>
                       ) : att.type === 'browser-page' ? (
                         <div
                           key={att.id}
                           className="chat-msg-attachment-file-pill"
-                          title={`网页页面: ${att.browserPage?.title || att.name}\n${att.browserPage?.url || ''}${
-                            att.browserPage?.errors?.length
-                              ? `\n\n引用时的控制台报错 (${att.browserPage.errors.length} 条):\n${att.browserPage.errors.join('\n')}`
-                              : ''
-                          }`}
+                          title={t('chat.pageRefTip', {
+                            title: att.browserPage?.title || att.name,
+                            url: att.browserPage?.url || '',
+                            errors: att.browserPage?.errors?.length
+                              ? t('chat.pageRefErrors', {
+                                  n: att.browserPage.errors.length,
+                                  list: att.browserPage.errors.join('\n'),
+                                })
+                              : '',
+                          })}
                           style={{ borderColor: 'rgba(147, 51, 234, 0.4)', background: 'rgba(147, 51, 234, 0.08)' }}
                         >
                           <span className="file-pill-icon">🌐</span>
                           <span className="file-pill-name" style={{ color: '#c084fc', fontWeight: 600 }}>{att.name}</span>
                           <span className="file-pill-size" style={{ color: '#d8b4fe' }}>
-                            {att.browserPage?.errors?.length ? `页面 · ${att.browserPage.errors.length} 报错` : '页面'}
+                            {att.browserPage?.errors?.length
+                              ? t('chat.pageErrorsBadge', { n: att.browserPage.errors.length })
+                              : t('chat.pageBadge')}
+                          </span>
+                        </div>
+                      ) : SPECIAL_MENTION_STYLE[att.name] ? (
+                        <div
+                          key={att.id}
+                          className="chat-msg-attachment-file-pill"
+                          title={t('chat.mentionSnapshotTip', {
+                            name: att.name,
+                            content: (att.content || '').slice(0, 600),
+                          })}
+                          style={{
+                            borderColor: SPECIAL_MENTION_STYLE[att.name].border,
+                            background: SPECIAL_MENTION_STYLE[att.name].bg,
+                          }}
+                        >
+                          <span className="file-pill-icon">{SPECIAL_MENTION_STYLE[att.name].icon}</span>
+                          <span
+                            className="file-pill-name"
+                            style={{ color: SPECIAL_MENTION_STYLE[att.name].color, fontWeight: 600 }}
+                          >
+                            {att.name}
+                          </span>
+                          <span className="file-pill-size" style={{ color: SPECIAL_MENTION_STYLE[att.name].color, opacity: 0.8 }}>
+                            {t('chat.contextBadge')}
                           </span>
                         </div>
                       ) : (
@@ -2436,11 +2877,30 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   </div>
                 )}
                 <CollapsibleUserContent content={m.content} onOpenFile={onOpenFile} />
+                {/*
+                  运行中追加的消息状态。不显示「已送达」——那是默认预期，
+                  只有「还没到步骤边界」和「本轮已结束、没送到」两种异常状态才值得占位。
+                */}
+                {m.delivery === 'queued' && (
+                  <div className="msg-delivery-badge queued" title={t('chat.deliveryQueuedTip')}>
+                    <span className="msg-delivery-dot" />
+                    {t('chat.deliveryQueued')}
+                  </div>
+                )}
+                {m.delivery === 'undelivered' && (
+                  <div
+                    className="msg-delivery-badge undelivered"
+                    title={t('chat.deliveryUndeliveredTip')}
+                  >
+                    <span className="msg-delivery-dot" />
+                    {t('chat.deliveryUndelivered')}
+                  </div>
+                )}
                 <div className={`msg-actions msg-actions-corner ${copiedId === m.id ? 'has-active' : ''}`}>
                   <button
                     type="button"
                     className={`msg-action-btn ${copiedId === m.id ? 'copied' : ''}`}
-                    title={copiedId === m.id ? '已复制' : '复制消息内容'}
+                    title={copiedId === m.id ? t('editor.copied') : t('chat.copyMsg')}
                     onClick={() => handleCopyMessage(m.content, m.id)}
                   >
                     {copiedId === m.id ? (
@@ -2457,7 +2917,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         >
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
-                        <span>已复制</span>
+                        <span>{t('editor.copied')}</span>
                       </>
                     ) : (
                       <svg
@@ -2478,7 +2938,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   <button
                     type="button"
                     className="msg-action-btn"
-                    title="回退到此消息（清除此后的 AI 回复）"
+                    title={t('chat.rollbackTip')}
                     onClick={() => void handleRollbackUserMessage(m)}
                   >
                     <svg
@@ -2507,13 +2967,19 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 <MarkdownMessage content={m.content} onOpenFile={onOpenFile} />
                 <div
                   className="msg-footer"
-                  style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: m.metrics ? 'space-between' : 'flex-end',
+                    marginTop: 4,
+                  }}
                 >
+                  {m.metrics && <ModelMetricsBadge metrics={m.metrics} />}
                   <div className={`msg-actions ${copiedId === m.id ? 'has-active' : ''}`}>
                     <button
                       type="button"
                       className={`msg-action-btn ${copiedId === m.id ? 'copied' : ''}`}
-                      title={copiedId === m.id ? '已复制' : '复制消息内容'}
+                      title={copiedId === m.id ? t('editor.copied') : t('chat.copyMsg')}
                       onClick={() => handleCopyMessage(m.content, m.id)}
                     >
                       {copiedId === m.id ? (
@@ -2530,7 +2996,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                           >
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
-                          <span>已复制</span>
+                          <span>{t('editor.copied')}</span>
                         </>
                       ) : (
                         <svg
@@ -2627,6 +3093,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             const turnNodes = turns.map((turn, turnIdx) => {
               const turnKey = turn.user?.id ?? `orphan-${turnIdx}`;
               const isLastTurn = turnIdx === turns.length - 1;
+              const turnRunId = turn.user?.runId;
+              const checkpoint = turnRunId ? checkpoints[turnRunId] : undefined;
               return (
                 <div key={turnKey} className="chat-turn">
                   {turn.user && (
@@ -2636,6 +3104,40 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   )}
                   <div className="chat-turn-files">
                     {renderTurnBody(turn.body, turnKey, isLastTurn)}
+                    {/* 只在「这一轮确实改过文件」时出现：纯问答轮次不该多一个按不动的按钮 */}
+                    {checkpoint && (
+                      <div className="chat-turn-actions">
+                        <button
+                          type="button"
+                          className="chat-turn-revert-btn"
+                          onClick={() => void revertTurn(checkpoint.runId)}
+                          disabled={checkpoint.incomplete}
+                          title={
+                            checkpoint.incomplete
+                              ? t('chat.revertIncompleteTip', {
+                                  reason: checkpoint.incompleteReason ?? t('chat.unknownReason'),
+                                })
+                              : t('chat.revertTurnTip', { n: checkpoint.mutations })
+                          }
+                        >
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M3 7v6h6" />
+                            <path d="M3 13a9 9 0 1 0 3-7.7L3 8" />
+                          </svg>
+                          <span>{t('chat.revertTurn')}</span>
+                          <span className="chat-turn-revert-count">{checkpoint.mutations}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -2652,10 +3154,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         className="chat-empty-app-icon"
                       />
                     </div>
-                    <div className="chat-empty-title">Echoly AI 编程助手</div>
-                    <div className="chat-empty-subtitle">
-                      随时提问，或点击下方快捷指令针对当前代码上下文开展分析
-                    </div>
+                    <div className="chat-empty-title">{t('chat.emptyTitle')}</div>
+                    <div className="chat-empty-subtitle">{t('chat.emptySubtitle')}</div>
                     <div className="chat-prompt-pills">
                       <button
                         type="button"
@@ -2664,7 +3164,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                       >
                         <span className="chat-prompt-pill-icon">🔍</span>
                         <span className="chat-prompt-pill-text">
-                          {selection?.trim() ? '解释选中的代码' : '解释当前代码逻辑'}
+                          {selection?.trim() ? t('chat.quickExplainSelection') : t('chat.quickExplain')}
                         </span>
                         <span className="chat-prompt-pill-arrow">→</span>
                       </button>
@@ -2674,7 +3174,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         onClick={() => handleQuickPrompt('optimize')}
                       >
                         <span className="chat-prompt-pill-icon">⚡</span>
-                        <span className="chat-prompt-pill-text">审查与优化执行性能</span>
+                        <span className="chat-prompt-pill-text">{t('chat.quickOptimize')}</span>
                         <span className="chat-prompt-pill-arrow">→</span>
                       </button>
                       <button
@@ -2683,7 +3183,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         onClick={() => handleQuickPrompt('test')}
                       >
                         <span className="chat-prompt-pill-icon">🧪</span>
-                        <span className="chat-prompt-pill-text">生成全面单元测试</span>
+                        <span className="chat-prompt-pill-text">{t('chat.quickTest')}</span>
                         <span className="chat-prompt-pill-arrow">→</span>
                       </button>
                       <button
@@ -2692,7 +3192,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         onClick={() => handleQuickPrompt('bug')}
                       >
                         <span className="chat-prompt-pill-icon">🛠️</span>
-                        <span className="chat-prompt-pill-text">排查潜在 Bug 与安全隐患</span>
+                        <span className="chat-prompt-pill-text">{t('chat.quickBug')}</span>
                         <span className="chat-prompt-pill-arrow">→</span>
                       </button>
                     </div>
@@ -2712,7 +3212,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         </div>
         {showJumpLatest && (
           <button type="button" className="jump-latest-btn" onClick={jumpToLatest}>
-            ↓ 回到最新
+            {t('chat.jumpLatest')}
           </button>
         )}
       </div>
@@ -2730,7 +3230,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   key={d.id}
                   className="chat-diff-file-item"
                   onClick={() => onSelectDiff?.(d.id)}
-                  title={`点击查看 ${d.path} 差异`}
+                  title={t('chat.diffViewTip', { path: d.path })}
                 >
                   <svg
                     width="12"
@@ -2790,14 +3290,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
                 <polyline points="14 2 14 8 20 8" />
               </svg>
-              <span className="count-text">{diffs.length} Files With Changes</span>
+              <span className="count-text">{t('chat.diffFilesWithChanges', { n: diffs.length })}</span>
             </div>
             <div className="chat-diff-action-right">
               <button type="button" className="btn-reject-all" onClick={onRejectAllDiffs}>
-                Reject all
+                {t('chat.diffRejectAll')}
               </button>
               <button type="button" className="btn-accept-all" onClick={onAcceptAllDiffs}>
-                Accept all
+                {t('chat.diffAcceptAll')}
                 <svg
                   width="12"
                   height="12"
@@ -2842,7 +3342,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               <input
                 className="chat-ask-input"
                 value={confirmAnswer}
-                placeholder="输入回答后提交…"
+                placeholder={t('chat.askAnswerPh')}
                 onChange={(e) => setConfirmAnswer(e.target.value)}
                 onCompositionStart={() => {
                   isComposingRef.current = true;
@@ -2870,33 +3370,35 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 disabled={!confirmAnswer.trim()}
                 onClick={() => void answerConfirm(true, confirmAnswer)}
               >
-                提交
+                {t('chat.submit')}
               </button>
             </div>
           )}
           <div className="chat-ask-popup-actions">
             <button type="button" className="primary" onClick={() => void answerConfirm(true)}>
-              允许
+              {t('chat.allow')}
             </button>
             <button type="button" className="danger" onClick={() => void answerConfirm(false)}>
-              拒绝
+              {t('chat.deny')}
             </button>
           </div>
         </div>
       )}
       {activeTab?.awaitingContinue && activeTab.continueInfo && (
         <div className="chat-ask-popup continue">
-          <div className="chat-ask-popup-title">已达步数上限</div>
+          <div className="chat-ask-popup-title">{t('chat.maxStepsTitle')}</div>
           <div className="chat-ask-popup-detail">
-            已完成 {activeTab.continueInfo.completedSteps} 步，尚未给出最终答案。可再继续{' '}
-            {activeTab.continueInfo.chunkSize} 步。
+            {t('chat.maxStepsDetail', {
+              done: activeTab.continueInfo.completedSteps,
+              chunk: activeTab.continueInfo.chunkSize,
+            })}
           </div>
           <div className="chat-ask-popup-actions">
             <button type="button" className="primary" onClick={() => void continueRun()}>
-              继续
+              {t('chat.continueBtn')}
             </button>
             <button type="button" className="danger" onClick={() => void stopContinue()}>
-              停止
+              {t('chat.stopBtn')}
             </button>
           </div>
         </div>
@@ -2945,7 +3447,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                       alt={att.name}
                       className="staged-img-thumb"
                       onClick={() => setPreviewImage(att.dataUrl || null)}
-                      title="点击放大"
+                      title={t('chat.zoomTip')}
                     />
                   ) : att.type === 'browser-element' ? (
                     att.browserElement?.screenshotDataUrl ? (
@@ -2954,7 +3456,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         alt={att.name}
                         className="staged-img-thumb"
                         onClick={() => setPreviewImage(att.browserElement?.screenshotDataUrl || null)}
-                        title="点击放大元素截图"
+                        title={t('chat.zoomElementTip')}
                       />
                     ) : (
                       <span className="staged-file-icon" style={{ fontSize: 13 }}>🎯</span>
@@ -2980,10 +3482,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     >
                       {att.type === 'browser-element'
                         ? att.browserElement?.screenshotDataUrl
-                          ? 'DOM 元素 · 含截图'
-                          : 'DOM 元素'
+                          ? t('chat.domElementWithShot')
+                          : t('chat.domElement')
                         : att.type === 'browser-page'
-                          ? '网页页面'
+                          ? t('chat.webPage')
                           : formatFileSize(att.size)}
                     </span>
                   </div>
@@ -2991,7 +3493,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     type="button"
                     className="staged-remove-btn"
                     onClick={() => handleRemoveAttachment(att.id)}
-                    title="移除附件"
+                    title={t('chat.removeAttachment')}
                   >
                     ×
                   </button>
@@ -3000,41 +3502,66 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             </div>
           )}
 
-          {mentionState.isOpen && filteredMentions.length > 0 && (
-            <div className="chat-mention-popover" ref={mentionPopoverRef}>
+          {suggestMode && (
+            <div
+              className="chat-mention-popover"
+              ref={suggestMode === 'command' ? commandPopoverRef : mentionPopoverRef}
+            >
               <div className="chat-mention-header">
-                <span>上下文引用与文件关联 (@)</span>
-                <span className="chat-mention-tip">↑↓ 切换 · ↵ / Tab 采纳 · Esc 取消</span>
+                <span>
+                  {suggestMode === 'command' ? t('chat.commandHeader') : t('chat.mentionHeader')}
+                </span>
+                <span className="chat-mention-tip">{t('chat.suggestTip')}</span>
               </div>
               <div
-                ref={mentionListRef}
+                ref={suggestListRef}
                 className="chat-mention-list"
                 onMouseMove={() => {
                   isKeyboardNavRef.current = false;
                 }}
               >
-                {filteredMentions.map((item, idx) => {
-                  const isSelected = idx === mentionState.selectedIndex;
+                {suggestItems.length === 0 && suggestMode === 'command' && (
+                  <div className="chat-mention-empty">
+                    {translateSegments('chat.commandEmpty', locale, { fileName: 'name.md' }).map(
+                      (seg, i) =>
+                        seg.emphasis ? <code key={i}>{seg.text}</code> : <span key={i}>{seg.text}</span>,
+                    )}
+                  </div>
+                )}
+                {suggestItems.map((item, idx) => {
+                  const isSelected = idx === suggestIndex;
                   return (
                     <div
                       key={item.id}
                       className={`chat-mention-item${isSelected ? ' active' : ''}`}
                       onMouseEnter={() => {
-                        if (!isKeyboardNavRef.current) {
-                          setMentionState((prev) => (prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx }));
-                        }
+                        if (!isKeyboardNavRef.current) setSuggestIndex(idx);
                       }}
                       onMouseMove={() => {
                         isKeyboardNavRef.current = false;
-                        setMentionState((prev) => (prev.selectedIndex === idx ? prev : { ...prev, selectedIndex: idx }));
+                        setSuggestIndex(idx);
                       }}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        handleSelectMention(item);
+                        handleSelectSuggest(item);
                       }}
                     >
                       <div className="chat-mention-icon">
-                        {item.type === 'special' ? (
+                        {item.type === 'command' ? (
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <polyline points="4 17 10 11 4 5" />
+                            <line x1="12" y1="19" x2="20" y2="19" />
+                          </svg>
+                        ) : item.type === 'special' ? (
                           <svg
                             width="12"
                             height="12"
@@ -3050,13 +3577,29 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         )}
                       </div>
                       <div className="chat-mention-info">
-                        <span className="chat-mention-title">{item.title}</span>
+                        <span className="chat-mention-title">
+                          {item.title}
+                          {item.badge && <span className="chat-mention-badge">{item.badge}</span>}
+                        </span>
                         <span className="chat-mention-desc">{item.desc}</span>
                       </div>
                     </div>
                   );
                 })}
               </div>
+              {suggestMode === 'command' && (
+                <div className="chat-mention-footer">
+                  {translateSegments('chat.commandFooter', locale, {
+                    wsDir: '.echoly/commands/',
+                    cursorDir: '.cursor/commands/',
+                    deepseekDir: '.deepseek/commands/',
+                    fileName: 'name.md',
+                    args: '$ARGUMENTS',
+                  }).map((seg, i) =>
+                    seg.emphasis ? <code key={i}>{seg.text}</code> : <span key={i}>{seg.text}</span>,
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -3074,24 +3617,43 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             }}
             onOpenFile={onOpenFile}
             placeholder={
-              activeTab?.mode === 'ask'
-                ? '提问关于代码的问题…（输入 @ 引用上下文，Enter 发送）'
-                : activeTab?.mode === 'plan'
-                  ? '描述目标，生成可执行计划…（输入 @ 引用上下文，Enter 发送）'
-                  : '描述任务…（输入 @ 引用上下文，Enter 发送）'
+              // 运行中把「Enter 发送」改成「Enter 追加」：这两件事的行为不同（一个是新起一轮，
+              // 一个是插进当前这轮），占位文案是用户唯一能提前知道的途径。
+              activeTab?.runId
+                ? t('chat.placeholderRunning')
+                : activeTab?.mode === 'ask'
+                  ? t('chat.placeholderAsk')
+                  : activeTab?.mode === 'plan'
+                    ? t('chat.placeholderPlan')
+                    : t('chat.placeholderAgent')
             }
             onChange={(val) => {
               updateTab(activeTab.id, (t) => ({ ...t, input: val }));
 
-              // 检测 @ mention 触发
+              // 检测 @ / 两个触发符
               // 从末尾反向找光标位置（onChange 中无法直接获取 selectionStart，取全长近似）
               const cursor = val.length;
               const textBefore = val.slice(0, cursor);
-              const match = textBefore.match(/(?:^|\s)@([^\s@]*)$/);
+
+              // `/` 只认行首；`@` 允许行内但要求前面是空白（见 slashTrigger.ts 里的说明）
+              const slashMatch = matchSlashTrigger(textBefore);
+              if (slashMatch) {
+                setCommandState({
+                  isOpen: true,
+                  query: slashMatch.query,
+                  cursorIndex: cursor,
+                  selectedIndex: 0,
+                });
+                setMentionState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+                return;
+              }
+              setCommandState((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+
+              const match = matchMentionTrigger(textBefore);
               if (match) {
                 setMentionState({
                   isOpen: true,
-                  query: match[1],
+                  query: match.query,
                   cursorIndex: cursor,
                   selectedIndex: 0,
                 });
@@ -3107,37 +3669,30 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             }}
             onPaste={handlePaste}
             onKeyDown={(e) => {
-              if (mentionState.isOpen && filteredMentions.length > 0) {
+              if (suggestMode && suggestItems.length > 0) {
                 if (e.key === 'ArrowDown') {
                   e.preventDefault();
                   isKeyboardNavRef.current = true;
-                  setMentionState((prev) => ({
-                    ...prev,
-                    selectedIndex: (prev.selectedIndex + 1) % filteredMentions.length,
-                  }));
+                  setSuggestIndex((suggestIndex + 1) % suggestItems.length);
                   return;
                 }
                 if (e.key === 'ArrowUp') {
                   e.preventDefault();
                   isKeyboardNavRef.current = true;
-                  setMentionState((prev) => ({
-                    ...prev,
-                    selectedIndex:
-                      (prev.selectedIndex - 1 + filteredMentions.length) % filteredMentions.length,
-                  }));
+                  setSuggestIndex((suggestIndex - 1 + suggestItems.length) % suggestItems.length);
                   return;
                 }
                 if (e.key === 'Enter' || e.key === 'Tab') {
                   e.preventDefault();
-                  const item = filteredMentions[mentionState.selectedIndex] || filteredMentions[0];
+                  const item = suggestItems[suggestIndex] || suggestItems[0];
                   if (item) {
-                    handleSelectMention(item);
+                    handleSelectSuggest(item);
                   }
                   return;
                 }
                 if (e.key === 'Escape') {
                   e.preventDefault();
-                  setMentionState((prev) => ({ ...prev, isOpen: false }));
+                  closeSuggest();
                   return;
                 }
               }
@@ -3191,7 +3746,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               <button
                 type="button"
                 className="chat-attach-btn"
-                title="添加附件（图片/文件）"
+                title={t('chat.addAttachment')}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <svg
@@ -3242,7 +3797,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                         type="button"
                         className="chat-model-selector-btn"
                         onClick={() => setModelDropdownOpen((v) => !v)}
-                        title={`当前模型: ${currentModel?.name || currentModelId} (${currentModel?.model || ''})${isCurrentHealthy ? ' [连通正常]' : ' [未通过连通测试]'}`}
+                        title={t('chat.modelCurrentTip', {
+                          name: currentModel?.name || currentModelId,
+                          model: currentModel?.model || '',
+                          status: isCurrentHealthy
+                            ? t('chat.modelStatusHealthy')
+                            : t('chat.modelStatusUntested'),
+                        })}
                       >
                         <span className="chat-model-dot" style={{ backgroundColor: badge.color }} />
                         <span className="chat-model-name">
@@ -3254,7 +3815,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                       {modelDropdownOpen && (
                         <div className="chat-model-dropdown-menu">
                           <div className="chat-model-dropdown-header">
-                            <span>选择大模型</span>
+                            <span>{t('chat.selectModel')}</span>
                             <button
                               type="button"
                               className="chat-model-settings-link"
@@ -3263,12 +3824,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                                 onOpenSettings?.();
                               }}
                             >
-                              ⚙ 管理模型
+                              {t('chat.manageModels')}
                             </button>
                           </div>
                           {!hasConnectedModels && (
                             <div className="chat-model-dropdown-alert">
-                              ⚠️ 暂无连通正常的模型，请点击右上角【管理模型】测试连通性。
+                              {t('chat.noHealthyModel')}
                             </div>
                           )}
                           <div className="chat-model-dropdown-list">
@@ -3287,16 +3848,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                                 <React.Fragment key={m.id}>
                                   {showDivider && (
                                     <div className="chat-model-dropdown-divider">
-                                      <span>未通过连通测试 (不可选)</span>
+                                      <span>{t('chat.untestedDivider')}</span>
                                     </div>
                                   )}
                                   <div
                                     className={`chat-model-dropdown-item${isSelected ? ' selected' : ''}${isDisabled ? ' disabled' : ''}`}
                                     title={
                                       isDisabled
-                                        ? '该模型未通过连通测试，不可选择。请前往【管理模型】测试通过后再使用。'
+                                        ? t('chat.modelUntestedTip')
                                         : isHealthy
-                                          ? '连通测试正常，可选用'
+                                          ? t('chat.modelHealthyTip')
                                           : undefined
                                     }
                                     onClick={() => {
@@ -3327,18 +3888,18 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                                           </span>
                                         </div>
                                         <div className="chat-model-item-sub">
-                                          {m.model} {m.enableThinking ? '· 思考模式' : ''}
+                                          {m.model} {m.enableThinking ? t('chat.thinkingMode') : ''}
                                         </div>
                                       </div>
                                     </div>
                                     <div className="chat-model-status-group">
                                       {isHealthy ? (
                                         <span className="chat-model-connected-badge">
-                                          ● 正常
+                                          {t('chat.modelHealthyBadge')}
                                         </span>
                                       ) : (
                                         <span className="chat-model-untested-badge">
-                                          未连通·不可选
+                                          {t('chat.modelUntestedBadge')}
                                         </span>
                                       )}
                                       {isSelected && <span className="chat-model-check">✓</span>}
@@ -3359,7 +3920,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               <ChatToolbarPill
                 value={activeTab?.mode || 'agent'}
                 disabled={!!activeTab?.runId}
-                title={`模式: ${MODE_LABEL[activeTab?.mode || 'agent']}`}
+                title={t('chat.modeTip', { mode: MODE_LABEL[activeTab?.mode || 'agent'] })}
                 options={[
                   { value: 'agent', label: 'Agent' },
                   { value: 'ask', label: 'Ask' },
@@ -3371,10 +3932,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               {/* Permission Selector（自定义下拉，与模型选择同款外观） */}
               <ChatToolbarPill
                 value={permissionMode}
-                title={`权限: ${PERMISSION_MODE_LABELS[permissionMode]}`}
+                title={t('chat.permTip', { perm: t(`chat.permFull.${permissionMode}`) })}
                 options={PERMISSION_ORDER.map((m) => ({
                   value: m,
-                  label: PERMISSION_SHORT_LABELS[m],
+                  label: permissionShortLabel(t, m),
                 }))}
                 onChange={(m) => onPermissionModeChange(m)}
               />
@@ -3383,11 +3944,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               <button
                 type="button"
                 className="chat-pill-btn echolyrules-pill"
-                title={
-                  hasRules
-                    ? '项目规则 (.echolyrules): 已生效，点击打开编辑'
-                    : '项目规则: 未设置，点击创建 .echolyrules 项目规则文件'
-                }
+                title={hasRules ? t('chat.rulesActiveTip') : t('chat.rulesInactiveTip')}
                 onClick={() => void handleOpenOrInitRules()}
                 style={{
                   display: 'inline-flex',
@@ -3424,7 +3981,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               {/* Context progress circle */}
               {windowTokens > 0 && (
                 <div
-                  title={`上下文使用率: ${usagePct.toFixed(0)}% (${formatTokens(usedTokens)} / ${formatTokens(windowTokens)})`}
+                  title={t('chat.contextUsageTip', {
+                    pct: usagePct.toFixed(0),
+                    used: formatTokens(usedTokens),
+                    window: formatTokens(windowTokens),
+                  })}
                   style={{
                     position: 'relative',
                     width: 14,
@@ -3456,22 +4017,51 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               )}
               {/* Send / Stop */}
               {activeTab?.runId ? (
-                <button
-                  type="button"
-                  className="chat-action-circle-btn stop"
-                  onClick={() => void cancel()}
-                  title="停止"
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="6" y="6" width="12" height="12" rx="2" ry="2" />
-                  </svg>
-                </button>
+                <div className="chat-action-btn-group">
+                  {/*
+                    运行中且有内容时并排给出「追加」按钮。只靠 Enter 是不够的：
+                    停止按钮此刻占着原来的发送位，用户看不到任何「可以继续输入」的视觉线索，
+                    于是会以为输入框已经不可用而干等。
+                  */}
+                  {(activeTab.input ?? '').trim().length > 0 && (
+                    <button
+                      type="button"
+                      className="chat-action-circle-btn send"
+                      onClick={() => void send()}
+                      title={t('chat.appendTip')}
+                    >
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <line x1="12" y1="19" x2="12" y2="5" />
+                        <polyline points="5 12 12 5 19 12" />
+                      </svg>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="chat-action-circle-btn stop"
+                    onClick={() => void cancel()}
+                    title={t('chat.stopBtn')}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="6" width="12" height="12" rx="2" ry="2" />
+                    </svg>
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"
                   className="chat-action-circle-btn send"
                   onClick={() => void send()}
-                  title="发送"
+                  title={t('chat.send')}
                 >
                   <svg
                     width="13"
@@ -3517,7 +4107,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 type="button"
                 className="chat-image-lightbox-close"
                 onClick={() => setPreviewImage(null)}
-                title="关闭"
+                title={t('chat.close')}
               >
                 ×
               </button>

@@ -5,6 +5,7 @@ import type { DatabaseQueryResult, DbConnectionView } from '@deepseek-ide/shared
 import { resolveExecutableSql, splitSqlStatements } from '../services/sqlStatements';
 import { formatCellValue } from '../services/dbCellDisplay';
 import { PanelSelect } from './PanelSelect';
+import { useI18n } from '../i18n';
 import {
   provideSqlCompletions,
   getOrFetchTables,
@@ -84,6 +85,7 @@ export function DbConsoleView({
   onRetarget,
   onShowToast,
 }: DbConsoleViewProps) {
+  const { t } = useI18n();
   const [sql, setSql] = useState<string>(initialSql);
   const [runs, setRuns] = useState<StatementRun[]>([]);
   const [activeRunIndex, setActiveRunIndex] = useState<number>(0);
@@ -183,12 +185,25 @@ export function DbConsoleView({
     }
   }, [activeConnId, activeSchema]);
 
-  // 注册 Monaco SQL 智能补全器（库、表、字段、别名、关键字）
+  /**
+   * 注册 Monaco SQL 智能补全器（库、表、字段、别名、关键字）。
+   *
+   * 这里用 ref 取 `t` 而不是直接闭包：注册是**挂载期一次性的**，
+   * 依赖数组为空，直接引用 `t` 会让全部补全说明锁死在首次语言上。
+   */
+  const tRef = useRef(t);
+  tRef.current = t;
+
   useEffect(() => {
     const disposable = monaco.languages.registerCompletionItemProvider('sql', {
       triggerCharacters: ['.', ' '],
       provideCompletionItems(model, position) {
-        return provideSqlCompletions(model, position, metadataProviderRef.current);
+        return provideSqlCompletions(
+          model,
+          position,
+          metadataProviderRef.current,
+          tRef.current,
+        );
       },
     });
     return () => {
@@ -235,7 +250,7 @@ export function DbConsoleView({
 
       const target = connections.find((c) => c.id === nextId);
       const fail = (detail?: string) => {
-        onShowToast?.(`连接「${target?.name ?? nextId}」失败`, detail, 'error');
+        onShowToast?.(t('db.sqlConnectFailedTo', { name: target?.name ?? nextId }), detail, 'error');
         // 切不过去就退回原样，别把一个连不上的连接挂在控制台上
         setActiveConnId(prevConnId);
         setActiveSchema(prevSchema);
@@ -274,7 +289,7 @@ export function DbConsoleView({
       onRetarget?.({ connectionId: nextId, schemaName: nextSchema }, 'connection');
       setOpenSelect(names.length > 1 ? 'schema' : null);
     },
-    [activeConnId, connections, activeSchema, onRetarget, onShowToast],
+    [activeConnId, connections, activeSchema, onRetarget, onShowToast, t],
   );
 
   /** 选库：只换执行目标，不动标签路径 —— 脚本是同一段，换库不该换一页 */
@@ -343,14 +358,14 @@ export function DbConsoleView({
       }
 
       if (!targetSql.trim()) {
-        onShowToast?.('请输入要执行的 SQL 语句', undefined, 'error');
+        onShowToast?.(t('db.sqlNeedSql'), undefined, 'error');
         return;
       }
 
       // 多语句脚本逐条执行，单条失败不阻断后续语句（便于 `show databases; use x; show tables;` 这类脚本）
       const statements = splitSqlStatements(targetSql);
       if (statements.length === 0) {
-        onShowToast?.('没有可执行的 SQL 语句', undefined, 'error');
+        onShowToast?.(t('db.sqlNoExecutable'), undefined, 'error');
         return;
       }
 
@@ -394,34 +409,40 @@ export function DbConsoleView({
         if (failed.length === 0) {
           onShowToast?.(
             statements.length > 1
-              ? `执行完成：${statements.length} 条语句 · ${Math.round(totalMs)}ms`
-              : `执行完成 (${Math.round(totalMs)}ms)`,
+              ? t('db.sqlDoneStatements', {
+                  n: statements.length,
+                  ms: Math.round(totalMs),
+                })
+              : t('db.sqlDonePlain', { ms: Math.round(totalMs) }),
             undefined,
             'success',
           );
         } else {
           onShowToast?.(
-            `执行完成：${statements.length - failed.length} 条成功 / ${failed.length} 条失败`,
+            t('db.sqlDoneMixed', {
+              ok: statements.length - failed.length,
+              fail: failed.length,
+            }),
             failed[0].result.error,
             'error',
           );
         }
       } catch (err: any) {
-        onShowToast?.('执行异常', err?.message || String(err), 'error');
+        onShowToast?.(t('db.sqlExecException'), err?.message || String(err), 'error');
       } finally {
         setExecuting(false);
       }
     },
-    [sql, activeConnId, activeSchema, onShowToast],
+    [sql, activeConnId, activeSchema, onShowToast, t],
   );
 
   const handleSaveFavorite = useCallback(() => {
     if (!sql.trim()) {
-      onShowToast?.('当前编辑器为空，无法收藏', undefined, 'warn');
+      onShowToast?.(t('db.sqlEmptyCannotFavorite'), undefined, 'warn');
       return;
     }
     const defaultTitle = summarizeSql(sql, 28);
-    const title = window.prompt('请输入收藏名称：', defaultTitle) || defaultTitle;
+    const title = window.prompt(t('db.sqlFavoritePrompt'), defaultTitle) || defaultTitle;
     const item: SqlFavoriteItem = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       title: title.trim(),
@@ -436,8 +457,8 @@ export function DbConsoleView({
       } catch {}
       return next;
     });
-    onShowToast?.('已加入常用 SQL 收藏夹', title, 'success');
-  }, [sql, onShowToast]);
+    onShowToast?.(t('db.sqlFavorited'), title, 'success');
+  }, [sql, onShowToast, t]);
 
   const handleDeleteFavorite = useCallback((id: string) => {
     setFavoritesList((prev) => {
@@ -454,8 +475,8 @@ export function DbConsoleView({
     try {
       localStorage.removeItem('echoly:db_sql_history');
     } catch {}
-    onShowToast?.('已清空 SQL 执行历史', undefined, 'info');
-  }, [onShowToast]);
+    onShowToast?.(t('db.sqlHistoryCleared'), undefined, 'info');
+  }, [onShowToast, t]);
 
   const handleApplySqlToEditor = useCallback(
     (targetSqlText: string, append = false) => {
@@ -467,9 +488,9 @@ export function DbConsoleView({
       }
       setShowHistoryModal(false);
       setShowFavoriteModal(false);
-      onShowToast?.('已填入 SQL 编辑器', undefined, 'success');
+      onShowToast?.(t('db.sqlFilledEditor'), undefined, 'success');
     },
-    [sql, handleEditorChange, onShowToast],
+    [sql, handleEditorChange, onShowToast, t],
   );
 
   const formatSql = () => {
@@ -492,9 +513,9 @@ export function DbConsoleView({
       });
       setSql(formatted);
       onChangeContent?.(formatted);
-      onShowToast?.('SQL 语句已格式化', undefined, 'success');
+      onShowToast?.(t('db.sqlFormatted'), undefined, 'success');
     } catch {
-      onShowToast?.('格式化失败', undefined, 'error');
+      onShowToast?.(t('db.sqlFormatFailed'), undefined, 'error');
     }
   };
 
@@ -566,7 +587,7 @@ export function DbConsoleView({
             type="button"
             onClick={() => void execute('auto')}
             disabled={executing}
-            title="执行光标所在语句或选中内容 (Cmd+Enter)"
+            title={t('db.sqlRunSelectionTitle')}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -588,14 +609,14 @@ export function DbConsoleView({
             <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
-            <span>{executing ? '执行中' : '运行'}</span>
+            <span>{executing ? t('db.sqlRunning') : t('db.sqlRun')}</span>
           </button>
 
           <button
             type="button"
             onClick={() => void execute('all')}
             disabled={executing}
-            title="按分号切分执行全部语句 (Cmd+Shift+Enter)"
+            title={t('db.sqlRunAllTitle')}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -618,13 +639,13 @@ export function DbConsoleView({
               <polygon points="5 3 19 12 5 21 5 3" />
               <line x1="22" y1="5" x2="22" y2="19" />
             </svg>
-            <span>全部</span>
+            <span>{t('db.sqlAll')}</span>
           </button>
 
           <button
             type="button"
             className="panel-action-btn"
-            title="美化/格式化 SQL 语句"
+            title={t('db.sqlFormatTitle')}
             onClick={formatSql}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -638,7 +659,7 @@ export function DbConsoleView({
           <button
             type="button"
             className="panel-action-btn"
-            title="收藏当前 SQL 语句"
+            title={t('db.sqlFavoriteTitle')}
             onClick={handleSaveFavorite}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -649,7 +670,7 @@ export function DbConsoleView({
           <button
             type="button"
             className={`panel-action-btn${showFavoriteModal ? ' active' : ''}`}
-            title={`常用 SQL 收藏夹 (${favoritesList.length})`}
+            title={t('db.sqlFavoritesDrawerTitle', { n: favoritesList.length })}
             onClick={() => {
               setShowFavoriteModal((v) => !v);
               setShowHistoryModal(false);
@@ -663,7 +684,7 @@ export function DbConsoleView({
           <button
             type="button"
             className={`panel-action-btn${showHistoryModal ? ' active' : ''}`}
-            title={`SQL 执行历史记录 (${historyList.length})`}
+            title={t('db.sqlHistoryDrawerTitle', { n: historyList.length })}
             onClick={() => {
               setShowHistoryModal((v) => !v);
               setShowFavoriteModal(false);
@@ -682,7 +703,7 @@ export function DbConsoleView({
             className="db-console-target-select"
             value={activeConnId}
             disabled={connections.length === 0}
-            title="切换执行本控制台的连接（未连接的会在选中的同时自动连上）"
+            title={t('db.sqlSwitchConnTitle')}
             options={connOptions}
             open={openSelect === 'conn'}
             onOpenChange={(next) => setOpenSelect(next ? 'conn' : null)}
@@ -693,7 +714,7 @@ export function DbConsoleView({
             className="db-console-target-select"
             value={activeSchema ?? ''}
             disabled={loadingSchemas || schemaOptions.length === 0}
-            title="切换本控制台执行时打在哪个库 / Schema（只改执行目标，不影响这个标签里的 SQL）"
+            title={t('db.sqlSwitchSchemaTitle')}
             options={schemaOptions}
             open={openSelect === 'schema'}
             onOpenChange={(next) => setOpenSelect(next ? 'schema' : null)}
@@ -724,8 +745,14 @@ export function DbConsoleView({
               }}
             >
               {result.ok
-                ? `✓ 成功 (${result.executionTimeMs}ms) · ${result.affectedRows !== undefined ? `${result.affectedRows} 行受影响` : `${result.rows.length} 条记录`}`
-                : `✕ 错误: ${result.error}`}
+                ? t('db.sqlSuccessStatus', {
+                    ms: result.executionTimeMs,
+                    detail:
+                      result.affectedRows !== undefined
+                        ? t('db.sqlRowsAffected', { n: result.affectedRows })
+                        : t('db.sqlRecordCount', { n: result.rows.length }),
+                  })
+                : t('db.sqlErrorStatus', { error: result.error ?? '' })}
             </span>
           )}
         </div>
@@ -761,7 +788,7 @@ export function DbConsoleView({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12 }}>
-              <span>🕒 SQL 执行历史</span>
+              <span>{t('db.sqlHistoryPanelTitle')}</span>
               <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>({historyList.length})</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -778,7 +805,7 @@ export function DbConsoleView({
                     padding: '2px 6px',
                   }}
                 >
-                  清空历史
+                  {t('db.sqlClearHistory')}
                 </button>
               )}
               <button
@@ -801,7 +828,7 @@ export function DbConsoleView({
           <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
             <input
               type="text"
-              placeholder="搜索历史 SQL..."
+              placeholder={t('db.sqlHistorySearchPlaceholder')}
               value={historySearch}
               onChange={(e) => setHistorySearch(e.target.value)}
               style={{
@@ -822,7 +849,7 @@ export function DbConsoleView({
               historySearch ? item.sql.toLowerCase().includes(historySearch.toLowerCase()) : true,
             ).length === 0 ? (
               <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
-                暂无历史执行记录
+                {t('db.sqlNoHistory')}
               </div>
             ) : (
               historyList
@@ -842,7 +869,7 @@ export function DbConsoleView({
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: 10, color: item.ok ? '#34d399' : '#f87171' }}>
-                        {item.ok ? '✓ 执行成功' : '✕ 执行失败'} · {new Date(item.time).toLocaleTimeString()}
+                        {item.ok ? t('db.sqlRunOk') : t('db.sqlRunFail')} · {new Date(item.time).toLocaleTimeString()}
                       </span>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button
@@ -858,7 +885,7 @@ export function DbConsoleView({
                             cursor: 'pointer',
                           }}
                         >
-                          填入
+                          {t('db.sqlFill')}
                         </button>
                         <button
                           type="button"
@@ -873,7 +900,7 @@ export function DbConsoleView({
                             cursor: 'pointer',
                           }}
                         >
-                          追加
+                          {t('db.sqlAppend')}
                         </button>
                       </div>
                     </div>
@@ -929,7 +956,7 @@ export function DbConsoleView({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 12 }}>
-              <span>⭐ 常用 SQL 收藏夹</span>
+              <span>{t('db.sqlFavoritesPanelTitle')}</span>
               <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>({favoritesList.length})</span>
             </div>
             <button
@@ -951,7 +978,7 @@ export function DbConsoleView({
           <div style={{ padding: '6px 10px', borderBottom: '1px solid var(--border)' }}>
             <input
               type="text"
-              placeholder="搜索收藏 SQL..."
+              placeholder={t('db.sqlFavoritesSearchPlaceholder')}
               value={favoriteSearch}
               onChange={(e) => setFavoriteSearch(e.target.value)}
               style={{
@@ -975,7 +1002,7 @@ export function DbConsoleView({
                 item.sql.toLowerCase().includes(favoriteSearch.toLowerCase()),
             ).length === 0 ? (
               <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
-                暂无收藏项（点击工具栏书签图标收藏当前 SQL）
+                {t('db.sqlNoFavorites')}
               </div>
             ) : (
               favoritesList
@@ -1012,7 +1039,7 @@ export function DbConsoleView({
                             cursor: 'pointer',
                           }}
                         >
-                          填入
+                          {t('db.sqlFill')}
                         </button>
                         <button
                           type="button"
@@ -1027,7 +1054,7 @@ export function DbConsoleView({
                             cursor: 'pointer',
                           }}
                         >
-                          追加
+                          {t('db.sqlAppend')}
                         </button>
                         <button
                           type="button"
@@ -1040,7 +1067,7 @@ export function DbConsoleView({
                             cursor: 'pointer',
                             padding: '0 2px',
                           }}
-                          title="删除收藏"
+                          title={t('db.sqlDeleteFavorite')}
                         >
                           🗑
                         </button>
@@ -1082,14 +1109,18 @@ export function DbConsoleView({
           }}
         >
           <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            语句执行日志 ({runs.length})：
+            {t('db.sqlRunLog', { n: runs.length })}
           </span>
           {runs.map((run) => (
             <button
               key={run.index}
               type="button"
               onClick={() => setActiveRunIndex(run.index)}
-              title={`${run.sql}\n\n${run.result.ok ? `成功 · ${run.result.executionTimeMs}ms` : `失败 · ${run.result.error}`}`}
+              title={`${run.sql}\n\n${
+                run.result.ok
+                  ? t('db.sqlRunLogOk', { ms: run.result.executionTimeMs })
+                  : t('db.sqlRunLogFail', { error: run.result.error ?? '' })
+              }`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1277,13 +1308,13 @@ export function DbConsoleView({
           <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
             {result.ok
               ? result.columns.length > 0
-                ? '语句执行成功，本页无数据行'
-                : '语句执行成功，无返回行数据集'
-              : `执行错误: ${result.error}`}
+                ? t('db.sqlOkNoRows')
+                : t('db.sqlOkNoResultSet')
+              : t('db.sqlExecError', { error: result.error ?? '' })}
           </div>
         ) : (
           <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-            编写 SQL 并点击「运行」或按下 Cmd+Enter 执行查询
+            {t('db.sqlWriteAndRun')}
           </div>
         )}
       </div>

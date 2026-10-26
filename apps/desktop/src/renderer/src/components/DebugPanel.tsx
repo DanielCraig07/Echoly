@@ -8,6 +8,7 @@ import type {
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { PanelChevron } from './PanelChevron';
+import { useI18n } from '../i18n';
 
 interface DebugPanelProps {
   workspace?: string | null;
@@ -42,6 +43,7 @@ export function DebugPanel({
 }: DebugPanelProps) {
   // 清除全部断点走应用内确认框（断点存在 localStorage 里，清掉就没了）
   const confirm = useDbConfirm();
+  const { t } = useI18n();
   // ── 折叠状态 ──
   const [collapsed, setCollapsed] = useState<{ [key: string]: boolean }>({
     variables: false,
@@ -132,19 +134,23 @@ export function DebugPanel({
       const detail = (ev as CustomEvent).detail;
       if (detail) {
         setDebugSessionInfo(detail);
-        const portInfo = detail.port ? ` (监听端口: ${detail.port})` : '';
+        const portInfo = detail.port ? t('debug.listeningPort', { port: detail.port }) : '';
         setConsoleLogs((prev) => [
           ...prev,
           {
             category: 'status',
-            text: `🚀 [Debug] 已启动 ${detail.language ? detail.language.toUpperCase() : ''} 调试会话: ${detail.name || ''}${portInfo}`,
+            text: t('debug.sessionStarted', {
+              language: detail.language ? detail.language.toUpperCase() : '',
+              name: detail.name || '',
+              port: portInfo,
+            }),
           },
         ]);
       }
     };
     window.addEventListener('echoly:startDebug', handleStart);
     return () => window.removeEventListener('echoly:startDebug', handleStart);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!isDebugging) {
@@ -167,7 +173,7 @@ export function DebugPanel({
       } else if (ev.type === 'stopped') {
         setConsoleLogs((prev) => [
           ...prev,
-          { category: 'status', text: `⏸ 程序停顿在断点 (线程 ID: ${ev.threadId || 1})` },
+          { category: 'status', text: t('debug.pausedAtBreakpoint', { id: ev.threadId || 1 }) },
         ]);
         // 自动拉取调用堆栈
         try {
@@ -197,7 +203,7 @@ export function DebugPanel({
       } else if (ev.type === 'terminated' || ev.type === 'exited') {
         setConsoleLogs((prev) => [
           ...prev,
-          { category: 'status', text: `⏹ 调试会话结束 (退出代码: ${ev.exitCode ?? 0})` },
+          { category: 'status', text: t('debug.sessionEnded', { code: ev.exitCode ?? 0 }) },
         ]);
         setFrames([]);
         setScopes([]);
@@ -206,7 +212,7 @@ export function DebugPanel({
     });
 
     return () => unlisten();
-  }, [onOpenFile]);
+  }, [onOpenFile, t]);
 
   // 添加监视表达式
   const handleAddWatch = async () => {
@@ -216,7 +222,7 @@ export function DebugPanel({
       return;
     }
 
-    let val = '未运行';
+    let val = t('debug.notRunning');
     let type: string | undefined;
     if (isDebugging && window.ide?.dapEvaluate) {
       try {
@@ -224,7 +230,7 @@ export function DebugPanel({
         val = res.result;
         type = res.type;
       } catch (err: any) {
-        val = `错误: ${err?.message || String(err)}`;
+        val = t('debug.errorPrefix', { msg: err?.message || String(err) });
       }
     }
 
@@ -252,13 +258,13 @@ export function DebugPanel({
       } catch (err: any) {
         setConsoleLogs((prev) => [
           ...prev,
-          { category: 'stderr', text: `错误: ${err?.message || String(err)}` },
+          { category: 'stderr', text: t('debug.errorPrefix', { msg: err?.message || String(err) }) },
         ]);
       }
     } else {
       setConsoleLogs((prev) => [
         ...prev,
-        { category: 'stderr', text: '当前无正在运行的调试会话' },
+        { category: 'stderr', text: t('debug.noActiveSession') },
       ]);
     }
   };
@@ -338,7 +344,7 @@ export function DebugPanel({
                   type="button"
                   className="panel-action-btn"
                   onClick={onContinue}
-                  title="继续执行 (F5)"
+                  title={t('debug.continue')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                     <polygon points="5 3 19 12 5 21 5 3" />
@@ -349,7 +355,7 @@ export function DebugPanel({
                   type="button"
                   className="panel-action-btn"
                   onClick={onPause}
-                  title="暂停执行 (F6)"
+                  title={t('debug.pause')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                     <rect x="6" y="4" width="4" height="16" />
@@ -361,7 +367,7 @@ export function DebugPanel({
                 type="button"
                 className="panel-action-btn"
                 onClick={onStepOver}
-                title="单步跳过 (F10)"
+                title={t('debug.stepOver')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="12" y1="5" x2="12" y2="19" />
@@ -372,7 +378,7 @@ export function DebugPanel({
                 type="button"
                 className="panel-action-btn"
                 onClick={onStepInto}
-                title="单步步入 (F11)"
+                title={t('debug.stepInto')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="7 13 12 18 17 13" />
@@ -383,7 +389,7 @@ export function DebugPanel({
                 type="button"
                 className="panel-action-btn"
                 onClick={onStepOut}
-                title="单步步出 (Shift+F11)"
+                title={t('debug.stepOut')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="7 11 12 6 17 11" />
@@ -394,7 +400,7 @@ export function DebugPanel({
                 type="button"
                 className="panel-action-btn"
                 onClick={onStop}
-                title="停止调试 (Shift+F5)"
+                title={t('debug.stop')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="#ef4444">
                   <rect x="4" y="4" width="16" height="16" rx="2" />
@@ -406,7 +412,7 @@ export function DebugPanel({
             type="button"
             className="panel-action-btn"
             onClick={() => setConsoleLogs([])}
-            title="清空调试控制台日志"
+            title={t('debug.clearLogs')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="3 6 5 6 21 6" />
@@ -432,13 +438,13 @@ export function DebugPanel({
           <div className="debug-section">
             <div className="debug-section-header" onClick={() => toggleSection('variables')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <PanelChevron expanded={!collapsed.variables} size={11} color="var(--muted)" />
-              <span>变量 (VARIABLES)</span>
+              <span>{t('debug.variables')}</span>
             </div>
             {!collapsed.variables && (
               <div className="debug-section-content">
                 {Object.keys(variables).length === 0 ? (
                   <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>
-                    {isDebugging ? '暂无可用变量或未命中断点' : '启动调试后显示局部与全局变量'}
+                    {isDebugging ? t('debug.noVariablesPaused') : t('debug.noVariablesIdle')}
                   </div>
                 ) : (
                   Object.entries(variables).map(([scope, vars]) => (
@@ -472,13 +478,13 @@ export function DebugPanel({
           <div className="debug-section">
             <div className="debug-section-header" onClick={() => toggleSection('callStack')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <PanelChevron expanded={!collapsed.callStack} size={11} color="var(--muted)" />
-              <span>调用堆栈 (CALL STACK)</span>
+              <span>{t('debug.callStack')}</span>
             </div>
             {!collapsed.callStack && (
               <div className="debug-section-content">
                 {frames.length === 0 ? (
                   <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>
-                    {isDebugging ? '未暂停' : '调试未运行'}
+                    {isDebugging ? t('debug.notPaused') : t('debug.notRunning')}
                   </div>
                 ) : (
                   frames.map((f) => (
@@ -515,7 +521,7 @@ export function DebugPanel({
             >
               <span onClick={() => toggleSection('watch')} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                 <PanelChevron expanded={!collapsed.watch} size={11} color="var(--muted)" />
-                <span>监视表达式 (WATCH)</span>
+                <span>{t('debug.watch')}</span>
               </span>
               <button
                 type="button"
@@ -524,7 +530,7 @@ export function DebugPanel({
                   e.stopPropagation();
                   setIsAddingWatch(true);
                 }}
-                title="添加监视表达式"
+                title={t('debug.addWatch')}
               >
                 +
               </button>
@@ -536,7 +542,7 @@ export function DebugPanel({
                     <input
                       type="text"
                       autoFocus
-                      placeholder="输入变量或表达式并回车..."
+                      placeholder={t('debug.watchPlaceholder')}
                       value={newWatchInput}
                       onChange={(e) => setNewWatchInput(e.target.value)}
                       onKeyDown={(e) => {
@@ -556,7 +562,7 @@ export function DebugPanel({
                   </div>
                 )}
                 {watchExpressions.length === 0 && !isAddingWatch ? (
-                  <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>点击 + 添加表达式</div>
+                  <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>{t('debug.watchEmpty')}</div>
                 ) : (
                   watchExpressions.map((w, idx) => (
                     <div
@@ -574,7 +580,7 @@ export function DebugPanel({
                         onClick={() =>
                           setWatchExpressions((prev) => prev.filter((_, i) => i !== idx))
                         }
-                        title="删除表达式"
+                        title={t('debug.deleteExpression')}
                       >
                         ✕
                       </button>
@@ -593,7 +599,7 @@ export function DebugPanel({
             >
               <span onClick={() => toggleSection('breakpoints')} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                 <PanelChevron expanded={!collapsed.breakpoints} size={11} color="var(--muted)" />
-                <span>断点列表 (BREAKPOINTS - {breakpoints.length})</span>
+                <span>{t('debug.breakpoints', { n: breakpoints.length })}</span>
               </span>
               {breakpoints.length > 0 && (
                 <button
@@ -602,30 +608,31 @@ export function DebugPanel({
                   onClick={async (e) => {
                     e.stopPropagation();
                     const ok = await confirm.confirm({
-                      title: '清除全部断点',
+                      title: t('debug.clearAllBreakpoints'),
                       content: buildSqlConfirmMarkdown({
-                        intro: `当前工作区的 ${breakpoints.length} 个断点都会被清除，且**无法撤销**。`,
+                        t,
+                        intro: t('debug.clearAllIntro', { n: breakpoints.length }),
                         statements: [],
                       }),
                       details: [
-                        { label: '数量', value: `${breakpoints.length} 个断点` },
+                        { label: t('debug.count'), value: t('debug.countBreakpoints', { n: breakpoints.length }) },
                         ...breakpoints
                           .slice(0, 8)
                           .map((bp, i) => ({
-                            label: i === 0 ? '位置' : '',
+                            label: i === 0 ? t('debug.location') : '',
                             value: `${bp.path}:${bp.line}`,
                           })),
                         ...(breakpoints.length > 8
-                          ? [{ label: '', value: `…另有 ${breakpoints.length - 8} 个` }]
+                          ? [{ label: '', value: t('debug.moreBreakpoints', { n: breakpoints.length - 8 }) }]
                           : []),
                       ],
                       tone: 'danger',
-                      confirmLabel: '确认清除',
+                      confirmLabel: t('debug.confirmClear'),
                     });
                     if (ok === null) return;
                     onClearBreakpoints();
                   }}
-                  title="清除全部断点"
+                  title={t('debug.clearAllBreakpoints')}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="3 6 5 6 21 6" />
@@ -638,7 +645,7 @@ export function DebugPanel({
               <div className="debug-section-content">
                 {breakpoints.length === 0 ? (
                   <div style={{ padding: '8px 12px', color: 'var(--muted)' }}>
-                    点击代码行号左侧区域即可添加断点
+                    {t('debug.breakpointHint')}
                   </div>
                 ) : (
                   breakpoints.map((bp) => (
@@ -693,7 +700,7 @@ export function DebugPanel({
                           e.stopPropagation();
                           onToggleBreakpoint(bp.path, bp.line);
                         }}
-                        title="删除断点"
+                        title={t('debug.deleteBreakpoint')}
                       >
                         ✕
                       </button>
@@ -709,7 +716,7 @@ export function DebugPanel({
       <div
         className="splitter splitter-v"
         onMouseDown={startResizeLeft}
-        title="左右拖拽调整调试工作台面板宽度"
+        title={t('debug.resizeSplitter')}
         style={{
           width: 5,
           cursor: 'col-resize',
@@ -736,7 +743,7 @@ export function DebugPanel({
           >
             {consoleLogs.length === 0 ? (
               <div style={{ color: 'var(--muted)', marginTop: 8 }}>
-                调试控制台就绪。启动调试后，此处将输出 LLDB 引擎日志、程序 stdout/stderr，并支持在下方输入表达式求值。
+                {t('debug.consoleReady')}
               </div>
             ) : (
               consoleLogs.map((l, i) => (
@@ -780,7 +787,7 @@ export function DebugPanel({
               type="text"
               value={replInput}
               onChange={(e) => setReplInput(e.target.value)}
-              placeholder="对变量求值或执行 LLDB 表达式 (例如: myVar, p 1+1, frame var)..."
+              placeholder={t('debug.replPlaceholder')}
               style={{
                 flex: 1,
                 background: 'transparent',
@@ -794,7 +801,7 @@ export function DebugPanel({
             <button
               type="submit"
               className="panel-action-btn"
-              title="执行表达式"
+              title={t('debug.evalExpression')}
             >
               ↵
             </button>

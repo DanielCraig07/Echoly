@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n, translateSegments } from '../i18n';
 
 export interface SwitchWorkspaceTarget {
   path: string;
@@ -25,6 +26,7 @@ export function SwitchWorkspaceModal({
   onOpenCurrentWindow,
   onOpenNewWindow,
 }: Props) {
+  const { t, locale } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_switch_workspace_modal_size',
     defaultWidth: 500,
@@ -114,9 +116,18 @@ export function SwitchWorkspaceModal({
                 </svg>
               </div>
               <div>
-                <h3>打开工作区</h3>
+                <h3>{t('workspace.switchTitle')}</h3>
                 <p className="switch-workspace-subtitle">
-                  选择打开「<span className="switch-workspace-target-name">{folderName}</span>」的方式
+                  {translateSegments('workspace.switchSubtitle', locale, { name: folderName }).map(
+                    (seg, i) =>
+                      seg.emphasis ? (
+                        <span key={i} className="switch-workspace-target-name">
+                          {seg.text}
+                        </span>
+                      ) : (
+                        <span key={i}>{seg.text}</span>
+                      ),
+                  )}
                 </p>
               </div>
             </div>
@@ -124,7 +135,7 @@ export function SwitchWorkspaceModal({
               type="button"
               className="panel-action-btn"
               onClick={onClose}
-              title="关闭 (Esc)"
+              title={t('common.closeEsc')}
             >
               <svg
                 width="14"
@@ -207,10 +218,10 @@ export function SwitchWorkspaceModal({
               </div>
               <div className="switch-workspace-option-content">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="switch-workspace-option-title">在当前窗口打开</span>
+                  <span className="switch-workspace-option-title">{t('workspace.openHereOption')}</span>
                   <kbd className="cmd-mini-kbd" style={{ fontSize: 10 }}>↵ Enter</kbd>
                 </div>
-                <div className="switch-workspace-option-desc">切换并替换当前工作区</div>
+                <div className="switch-workspace-option-desc">{t('workspace.openHereOptionDesc')}</div>
               </div>
               <div className="switch-workspace-option-arrow">
                 <svg
@@ -253,10 +264,10 @@ export function SwitchWorkspaceModal({
               </div>
               <div className="switch-workspace-option-content">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="switch-workspace-option-title">在新窗口打开</span>
+                  <span className="switch-workspace-option-title">{t('workspace.openNewOption')}</span>
                   <kbd className="cmd-mini-kbd" style={{ fontSize: 10 }}>⌘/Ctrl + ↵</kbd>
                 </div>
-                <div className="switch-workspace-option-desc">保留当前工程，在新窗口独立打开</div>
+                <div className="switch-workspace-option-desc">{t('workspace.openNewOptionDesc')}</div>
               </div>
               <div className="switch-workspace-option-arrow">
                 <svg
@@ -279,7 +290,7 @@ export function SwitchWorkspaceModal({
         {/* Footer */}
         <div className="switch-workspace-footer" style={{ marginTop: 16 }}>
           <button type="button" className="switch-workspace-cancel-btn" onClick={onClose}>
-            取消
+            {t('workspace.cancel')}
           </button>
         </div>
 

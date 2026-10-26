@@ -44,6 +44,7 @@ import 'prismjs/components/prism-yaml';
 
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { useI18n } from '../i18n';
 
 /** Split content into think blocks and main text. */
 function parseThinkBlocks(text: string): { thinkContent: string; mainContent: string } {
@@ -108,6 +109,7 @@ function initMermaid() {
 let mermaidCounter = 0;
 
 function MermaidBlock({ chart }: { chart: string }) {
+  const { t } = useI18n();
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -127,7 +129,7 @@ function MermaidBlock({ chart }: { chart: string }) {
         }
       } catch (err: any) {
         if (!cancelled) {
-          setError(err?.message || 'Mermaid 渲染失败');
+          setError(err?.message || t('editor.mermaidRenderFailed'));
         }
       }
     };
@@ -135,7 +137,7 @@ function MermaidBlock({ chart }: { chart: string }) {
     return () => {
       cancelled = true;
     };
-  }, [chart]);
+  }, [chart, t]);
 
   if (error) {
     return (
@@ -150,7 +152,7 @@ function MermaidBlock({ chart }: { chart: string }) {
         }}
       >
         <div style={{ color: '#f44336', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>
-          Mermaid 图表解析错误
+          {t('editor.mermaidParseError')}
         </div>
         <pre style={{ margin: 0, fontSize: 11, color: 'var(--muted)' }}>
           <code>{chart}</code>
@@ -162,7 +164,7 @@ function MermaidBlock({ chart }: { chart: string }) {
   if (!svg) {
     return (
       <div style={{ padding: '8px 0', color: 'var(--muted)', fontSize: 12 }}>
-        正在渲染 Mermaid 图表...
+        {t('editor.mermaidRendering')}
       </div>
     );
   }
@@ -258,6 +260,7 @@ function CodeBlock({
   onOpenFile?: (path: string, line?: number, endLine?: number) => void;
 }) {
   const contextOnOpenFile = React.useContext(MarkdownOpenFileContext);
+  const { t } = useI18n();
   const effectiveOnOpenFile = onOpenFile || contextOnOpenFile;
   const [copied, setCopied] = useState(false);
   const [ranInTerm, setRanInTerm] = useState(false);
@@ -320,14 +323,14 @@ function CodeBlock({
               type="button"
               className={`md-code-action-btn ${ranInTerm ? 'active' : ''}`}
               onClick={handleRunInTerminal}
-              title={ranInTerm ? '已发送至终端执行' : '在集成终端中运行此命令'}
+              title={ranInTerm ? t('editor.sentToTerminal') : t('editor.runInTerminalTip')}
             >
               {ranInTerm ? (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  <span>已运行</span>
+                  <span>{t('editor.ran')}</span>
                 </>
               ) : (
                 <>
@@ -335,7 +338,7 @@ function CodeBlock({
                     <polyline points="4 17 10 11 4 5" />
                     <line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
-                  <span>运行</span>
+                  <span>{t('editor.run')}</span>
                 </>
               )}
             </button>
@@ -346,21 +349,21 @@ function CodeBlock({
               type="button"
               className={`md-code-action-btn ${inserted ? 'active' : ''}`}
               onClick={handleInsertToEditor}
-              title={inserted ? '已插入到当前光标处' : '插入到当前编辑器光标处'}
+              title={inserted ? t('editor.insertedAtCursor') : t('editor.insertAtCursorTip')}
             >
               {inserted ? (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  <span>已插入</span>
+                  <span>{t('editor.inserted')}</span>
                 </>
               ) : (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 5v14M5 12h14" />
                   </svg>
-                  <span>插入</span>
+                  <span>{t('editor.insert')}</span>
                 </>
               )}
             </button>
@@ -371,14 +374,14 @@ function CodeBlock({
               type="button"
               className={`md-code-action-btn ${applied ? 'active' : ''}`}
               onClick={handleApplyToFile}
-              title={applied ? '已完整应用到文件' : `应用并更新到 ${fileRef.path}`}
+              title={applied ? t('editor.appliedToFile') : t('editor.applyToFileTip', { path: fileRef.path })}
             >
               {applied ? (
                 <>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  <span>已应用</span>
+                  <span>{t('editor.applied')}</span>
                 </>
               ) : (
                 <>
@@ -388,7 +391,7 @@ function CodeBlock({
                     <line x1="12" y1="18" x2="12" y2="12" />
                     <line x1="9" y1="15" x2="15" y2="15" />
                   </svg>
-                  <span>应用</span>
+                  <span>{t('editor.apply')}</span>
                 </>
               )}
             </button>
@@ -398,7 +401,7 @@ function CodeBlock({
             type="button"
             className={`md-code-copy-btn ${copied ? 'copied' : ''}`}
             onClick={handleCopy}
-            title={copied ? '已复制代码' : '复制代码'}
+            title={copied ? t('editor.codeCopied') : t('editor.copyCodeTip')}
           >
             {copied ? (
               <>
@@ -414,7 +417,7 @@ function CodeBlock({
                 >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                <span>已复制</span>
+                <span>{t('editor.copied')}</span>
               </>
             ) : (
               <svg
@@ -762,6 +765,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   streaming?: boolean;
   onOpenFile?: (path: string, line?: number, endLine?: number) => void;
 }) {
+  const { t } = useI18n();
   const [thinkExpanded, setThinkExpanded] = useState(false);
 
   const { thinkContent, mainContent } = parseThinkBlocks(content);
@@ -779,7 +783,9 @@ export const MarkdownMessage = memo(function MarkdownMessage({
               type="button"
             >
               <span className="think-icon reasoning-step-dot">●</span>
-              <span>{streaming && !content.includes('</think>') ? '思考中…' : '思考过程'}</span>
+              <span>
+                {streaming && !content.includes('</think>') ? t('editor.thinking') : t('editor.thinkingProcess')}
+              </span>
               <span className="think-chevron">{thinkExpanded ? '▲' : '▼'}</span>
             </button>
             {thinkExpanded && (

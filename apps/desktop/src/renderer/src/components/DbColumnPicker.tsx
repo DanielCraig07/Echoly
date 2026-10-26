@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
 import { isOnlyOneColumnVisible } from '../services/dbColumnLayout';
+import { useI18n } from '../i18n';
 
 export interface DbColumnPickerProps {
   /** 结果集里的列（顺序即表头顺序） */
@@ -33,6 +34,7 @@ export function DbColumnPicker({
   onResetWidths,
   onClose,
 }: DbColumnPickerProps) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement | null>(null);
   const [keyword, setKeyword] = useState<string>('');
 
@@ -84,7 +86,7 @@ export function DbColumnPicker({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="db-column-picker-head">
-        <span className="db-column-picker-title">显示的字段</span>
+        <span className="db-column-picker-title">{t('db.visibleColumns')}</span>
         <span className="db-column-menu-hint">
           {visibleCount} / {columns.length}
         </span>
@@ -92,14 +94,14 @@ export function DbColumnPicker({
       <input
         type="text"
         className="db-column-picker-search"
-        placeholder="搜索字段名…"
+        placeholder={t('db.searchColumnPlaceholder')}
         value={keyword}
         autoFocus
         onChange={(e) => setKeyword(e.target.value)}
       />
       <div className="db-column-picker-actions">
         <button type="button" className="db-column-picker-link" onClick={() => onSetAll(false)}>
-          全选
+          {t('db.selectAllColumns')}
         </button>
         <button
           type="button"
@@ -108,15 +110,17 @@ export function DbColumnPicker({
           disabled={isOnlyOneColumnVisible(columns, hidden)}
           onClick={() => onSetAll(true)}
         >
-          全不选
+          {t('db.selectNoColumns')}
         </button>
         <button type="button" className="db-column-picker-link" onClick={onResetWidths}>
-          重置列宽
+          {t('db.resetColumnWidths')}
         </button>
       </div>
       <div className="menu-divider" />
       <div className="db-column-picker-list">
-        {shown.length === 0 && <div className="db-column-picker-empty">没有匹配的字段</div>}
+        {shown.length === 0 && (
+          <div className="db-column-picker-empty">{t('db.noMatchingColumns')}</div>
+        )}
         {shown.map((col) => {
           const meta = metaOf(col);
           const checked = !hiddenSet.has(col);

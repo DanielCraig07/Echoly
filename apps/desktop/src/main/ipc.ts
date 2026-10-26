@@ -7,6 +7,7 @@ import type {
   ChatSession,
   DevToolsViewLayout,
   GitCloneRequest,
+  QueuedUserMessage,
   SearchCodeRequest,
   SshConnectRequest,
   TerminalCreateOptions,
@@ -18,7 +19,9 @@ import type { TerminalService } from './terminal';
 import type { GitService } from './gitService';
 import type { SearchService } from './searchService';
 import type { SshSessionManager } from './ssh/SshSessionManager';
+import type { McpService } from './mcpService';
 import type { WindowRegistry } from './windowRegistry';
+import type { DiagnosticsEntry } from './diagnosticsStore';
 import { detectMavenEnvironment, initMavenWrapper, initMavenSettings } from './mavenService';
 import { detectInstalledJdks, getAvailableOnlineJdks, installOnlineJdk } from './javaService';
 import { detectCppToolchain, detectMultiLangToolchain } from './cppToolchainService';
@@ -66,6 +69,8 @@ export function registerIpc(deps: {
   git: GitService;
   search: SearchService;
   ssh: SshSessionManager;
+  /** 进程级单例的 MCP 宿主。未接入时 `mcp:*` handler 返回空状态。 */
+  mcp?: McpService;
   getWindow: () => BrowserWindow | null;
   popupAppMenu: (id: AppMenuId, win: BrowserWindow) => void;
   onSettingsChanged?: () => void;
@@ -81,6 +86,7 @@ export function registerIpc(deps: {
     git,
     search,
     ssh,
+    mcp,
     getWindow,
     popupAppMenu,
     onSettingsChanged,
@@ -306,6 +312,9 @@ export function registerIpc(deps: {
 
   ipcMain.handle('agent:start', (e, payload) => run(e, () => agents.start(payload, e.sender)));
   ipcMain.handle('agent:cancel', (_e, runId: string) => agents.cancel(runId));
+  ipcMain.handle('agent:queueMessage', (_e, runId: string, message: QueuedUserMessage) =>
+    agents.queueMessage(runId, message),
+  );
   ipcMain.handle(
     'agent:respondConfirm',
     (_e, requestId: string, approved: boolean, answer?: string) =>
@@ -320,6 +329,23 @@ export function registerIpc(deps: {
     fs.mkdirSync(dir, { recursive: true });
     await shell.openPath(dir);
     return dir;
+  });
+  ipcMain.handle('commands:list', (e) => run(e, () => agents.listCommands()));
+
+  /**
+   * MCP 服务器管理。
+   *
+   * `mcp:reload` 是设置页保存后的唯一入口：它读的是**刚落盘**的设置，
+   * 而不是渲染层传来的配置副本 —— 那样等于让界面决定主进程连什么，
+   * 而多窗口下另一个窗口保存的内容会被这份副本盖掉。
+   */
+  ipcMain.handle('mcp:reload', async () => {
+    if (!mcp) return [];
+    return await mcp.reload();
+  });
+  ipcMain.handle('mcp:status', async () => {
+    if (!mcp) return [];
+    return await mcp.status();
   });
   ipcMain.handle('shell:showItemInFolder', (_e, fullPath: string) => {
     shell.showItemInFolder(fullPath);
@@ -437,6 +463,28 @@ ${payload.suffix.slice(0, 1000)}
   );
   ipcMain.handle('diff:rejectAll', (e) => run(e, () => registry.current().diffs.rejectAll()));
   ipcMain.handle('diff:acceptAll', (e) => run(e, () => registry.current().diffs.acceptAll()));
+
+  ipcMain.handle('checkpoint:summary', (e, runId?: string) =>
+    run(e, () => registry.current().checkpoints.summary(runId)),
+  );
+  ipcMain.handle('checkpoint:revert', (e, runId?: string) =>
+    run(e, async () => {
+      const session = registry.current();
+      const backend = session.workspace.getBackend();
+      if (!backend) return { error: '未打开工作区，无法撤销。' } as const;
+      const outcome = await session.checkpoints.revert(backend, runId);
+      if ('error' in outcome) return outcome;
+      // 撤销把文件改回了写前状态，内存里的 pending diff 已经不再对应当前磁盘内容：
+      // 留着它们会让用户对着「已经不存在」的改动点 Accept。整批丢弃，由文件树刷新兜底。
+      // 必须用 discard（只清记录）而不是 accept/reject —— 后两者都会往磁盘写，
+      // 正好把刚刚完成的撤销覆盖掉。
+      for (const diff of session.diffs.list()) {
+        if (outcome.result.reverted.includes(diff.path)) session.diffs.discard(diff.id);
+      }
+      session.workspace.notifyFsChange('agent');
+      return { runId: outcome.runId, ...outcome.result };
+    }),
+  );
 
   ipcMain.handle('session:list', () => sessions.list());
   ipcMain.handle('session:get', (_e, id: string) => sessions.get(id));
@@ -666,14 +714,24 @@ ${payload.suffix.slice(0, 1000)}
   );
 
   // ── Codebase Indexing & Semantic Search ──
-  ipcMain.handle('codebase:index', (e) =>
-    run(e, () => registry.current().codebase.buildIndex()),
+  ipcMain.handle('codebase:index', (e, force?: boolean) =>
+    run(e, () => registry.current().codebase.buildIndex({ force: force === true })),
   );
   ipcMain.handle('codebase:search', (e, query: string, limit?: number) =>
     run(e, () => registry.current().codebase.search(query, limit)),
   );
   ipcMain.handle('codebase:status', (e) =>
     run(e, () => registry.current().codebase.getStatus()),
+  );
+
+  // ── 工作区诊断上报 ──
+  // TS/JS 的 marker 只存在于渲染层的 Monaco 里，Agent 的 get_diagnostics 工具却跑在主进程，
+  // 因此需要渲染层在上报时把 marker 推过来（主进程 LSP 的推送由 windowRegistry 直接入缓存）。
+  ipcMain.handle('diagnostics:report', (e, entries: DiagnosticsEntry[]) =>
+    run(e, () => {
+      registry.current().diagnostics.replaceFromRenderer(entries ?? []);
+      return true;
+    }),
   );
 
   // ── C/C++ & Multi-Language Toolchain & DAP Debugger ──

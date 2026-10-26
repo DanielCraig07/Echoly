@@ -52,6 +52,17 @@ export class DiffStore {
       await this.reject(id);
     }
   }
+
+  /**
+   * 丢弃一条 diff，**不碰磁盘**。
+   *
+   * 与 accept/reject 的区别正是它的用途：撤销本轮改动时，磁盘已经被写回写前状态，
+   * 此时再走 accept 会把 modified 又写回去、走 reject 会写 original（对新建文件是空文件）。
+   * 两者都会破坏刚做完的撤销，所以必须有一条「只清记录」的路径。
+   */
+  discard(id: string): void {
+    this.diffs.delete(id);
+  }
 }
 
 const ensuredTraceDirs = new Set<string>();

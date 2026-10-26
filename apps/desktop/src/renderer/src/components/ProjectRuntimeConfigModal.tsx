@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n } from '../i18n';
 
 export interface ProjectRuntimeConfig {
   vmArgs: string; // 编译器标志 / JVM 参数 / 解释器参数
@@ -97,11 +98,11 @@ export const RUNTIME_LANG_META: Record<
   RuntimeLanguage,
   { label: string; tag: string; desc: string; icon: string }
 > = {
-  cpp: { label: 'C / C++', tag: 'Clang / CMake', desc: 'Clang/CMake 构建参数与二进制启动配置', icon: '🚀' },
-  java: { label: 'Java', tag: 'Maven / Exec', desc: 'JVM 虚拟机参数与 Maven 构建 Profiles', icon: '☕' },
-  python: { label: 'Python', tag: 'Python 3', desc: 'Python 解释器参数、环境变量与脚本启动', icon: '🐍' },
-  go: { label: 'Go', tag: 'Go Module', desc: 'Go Run 启动参数与编译 Flags', icon: '🐹' },
-  node: { label: 'Node.js', tag: 'TS / Vite', desc: 'Node / TS 运行时参数与执行环境', icon: '🟢' },
+  cpp: { label: 'C / C++', tag: 'Clang / CMake', desc: 'rt.descCpp', icon: '🚀' },
+  java: { label: 'Java', tag: 'Maven / Exec', desc: 'rt.descJava', icon: '☕' },
+  python: { label: 'Python', tag: 'Python 3', desc: 'rt.descPython', icon: '🐍' },
+  go: { label: 'Go', tag: 'Go Module', desc: 'rt.descGo', icon: '🐹' },
+  node: { label: 'Node.js', tag: 'TS / Vite', desc: 'rt.descNode', icon: '🟢' },
 };
 
 export function inferProjectLanguage(activePath?: string, workspace?: string): RuntimeLanguage {
@@ -130,6 +131,7 @@ export function ProjectRuntimeConfigModal({
   activePath,
   onShowToast,
 }: Props) {
+  const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_runtime_config_modal_size',
     defaultWidth: 760,
@@ -280,14 +282,14 @@ export function ProjectRuntimeConfigModal({
 
   const handleSave = useCallback(() => {
     saveProjectRuntimeConfig(config, workspace);
-    onShowToast?.('运行时参数已保存', '当前项目级参数与高级运行选项已保存并生效', 'success');
+    onShowToast?.(t('rt.saved'), t('rt.savedDetail'), 'success');
     onClose();
   }, [config, workspace, onShowToast, onClose]);
 
   const handleReset = useCallback(() => {
     setConfig({ ...DEFAULT_RUNTIME_CONFIG });
     saveProjectRuntimeConfig(DEFAULT_RUNTIME_CONFIG, workspace);
-    onShowToast?.('已清空运行参数', '已恢复为默认配置状态', 'info');
+    onShowToast?.(t('rt.resetToast'), t('rt.resetToastDetail'), 'info');
   }, [workspace, onShowToast]);
 
   // 可再次点击取消的智能环境预设切换逻辑
@@ -300,7 +302,7 @@ export function ProjectRuntimeConfigModal({
       if (isAlreadyApplied) {
         const regex = new RegExp(`(^|\\s)-Denv=${preset.envKey}(?=\\s|$)`, 'g');
         const updated = current.replace(regex, ' ').replace(/\s+/g, ' ').trim();
-        onShowToast?.(`已取消环境参数: ${targetFlag}`, undefined, 'info');
+        onShowToast?.(t('rt.envFlagOff', { flag: targetFlag }), undefined, 'info');
         return { ...prev, vmArgs: updated };
       } else {
         const anyEnvRegex = /(^|\s)-Denv=[^\s]+(?=\s|$)/g;
@@ -310,7 +312,7 @@ export function ProjectRuntimeConfigModal({
         } else {
           updated = current ? `${current} ${targetFlag}` : targetFlag;
         }
-        onShowToast?.(`已切换环境参数为: ${targetFlag}`, `对应配置文件: ${preset.fullRelPath}`, 'info');
+        onShowToast?.(t('rt.envFlagOn', { flag: targetFlag }), t('rt.envFlagOnDetail', { file: preset.fullRelPath }), 'info');
         return { ...prev, vmArgs: updated };
       }
     });
@@ -324,11 +326,11 @@ export function ProjectRuntimeConfigModal({
         const escaped = flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(`(^|\\s)${escaped}(?=\\s|$)`, 'g');
         const updated = current.replace(regex, ' ').replace(/\s+/g, ' ').trim();
-        onShowToast?.(`已取消参数: ${flag}`, undefined, 'info');
+        onShowToast?.(t('rt.argOff', { flag }), undefined, 'info');
         return { ...prev, vmArgs: updated };
       } else {
         const updated = current ? `${current} ${flag}` : flag;
-        onShowToast?.(`已添加参数: ${flag}`, undefined, 'info');
+        onShowToast?.(t('rt.argOn', { flag }), undefined, 'info');
         return { ...prev, vmArgs: updated };
       }
     });
@@ -338,10 +340,10 @@ export function ProjectRuntimeConfigModal({
   const handleToggleProfile = useCallback((val: string) => {
     setConfig((prev) => {
       if (prev.activeProfiles.trim() === val) {
-        onShowToast?.(`已取消: ${val}`, undefined, 'info');
+        onShowToast?.(t('rt.valOff', { val }), undefined, 'info');
         return { ...prev, activeProfiles: '' };
       }
-      onShowToast?.(`已设定: ${val}`, undefined, 'info');
+      onShowToast?.(t('rt.valOn', { val }), undefined, 'info');
       return { ...prev, activeProfiles: val };
     });
   }, [onShowToast]);
@@ -361,64 +363,64 @@ export function ProjectRuntimeConfigModal({
     Array<{ key: keyof ProjectRuntimeConfig; label: string }>
   >(() => {
     const all: Array<{ key: keyof ProjectRuntimeConfig; label: string; javaOnly?: boolean }> = [
-      { key: 'addProvidedToClasspath', label: 'provided 依赖加入类路径', javaOnly: true },
-      { key: 'skipBuildBeforeRun', label: '运行前不编译' },
-      { key: 'shortenCommandLine', label: '缩短命令行', javaOnly: true },
-      { key: 'allowMultipleInstances', label: '允许并发多实例' },
-      { key: 'saveConsoleToFile', label: '控制台日志存文件' },
-      { key: 'showSettingsBeforeRun', label: '启动前显示配置' },
+      { key: 'addProvidedToClasspath', label: t('rt.optProvidedLabel'), javaOnly: true },
+      { key: 'skipBuildBeforeRun', label: t('rt.optSkipBuildLabel') },
+      { key: 'shortenCommandLine', label: t('rt.optShortenCmdLabel'), javaOnly: true },
+      { key: 'allowMultipleInstances', label: t('rt.optMultiLabel') },
+      { key: 'saveConsoleToFile', label: t('rt.optSaveConsoleLabel') },
+      { key: 'showSettingsBeforeRun', label: t('rt.optShowSettingsLabel') },
     ];
     return all.filter((o) => {
       if (o.javaOnly && currentLang !== 'java') return false;
       return config[o.key] === true;
     });
-  }, [config, currentLang]);
+  }, [config, currentLang, t]);
 
   // 选项弹层中按语言区分的选项组
   const optionGroups = useMemo(() => {
     if (currentLang === 'java') {
       return [
         {
-          group: 'Java 与类路径',
+          group: t('rt.groupJavaCp'),
           items: [
             {
               key: 'addProvidedToClasspath' as const,
-              title: '将 "provided" 作用域依赖添加到类路径',
+              title: t('rt.optProvidedTitle'),
               desc: 'Add dependencies with "provided" scope to classpath',
             },
             {
               key: 'skipBuildBeforeRun' as const,
-              title: '运行前不执行编译 (秒级直接启动)',
+              title: t('rt.optSkipBuildTitle'),
               desc: 'Do not build before run',
             },
             {
               key: 'shortenCommandLine' as const,
-              title: '缩短超长命令行 (优化类路径)',
+              title: t('rt.optShortenCmdTitle'),
               desc: 'Shorten command line',
             },
           ],
         },
         {
-          group: '操作系统与进程',
+          group: t('rt.groupOsProc'),
           items: [
             {
               key: 'allowMultipleInstances' as const,
-              title: '允许并发运行多个实例',
+              title: t('rt.optMultiTitle'),
               desc: 'Allow multiple instances',
             },
           ],
         },
         {
-          group: '日志与启动控制',
+          group: t('rt.groupLogStart'),
           items: [
             {
               key: 'saveConsoleToFile' as const,
-              title: '将控制台输出保存到文件',
+              title: t('rt.optSaveConsoleTitle'),
               desc: 'Save console output to file (.echoly/logs/run.log)',
             },
             {
               key: 'showSettingsBeforeRun' as const,
-              title: '每次启动前显示此运行配置',
+              title: t('rt.optShowSettingsTitle'),
               desc: 'Show settings before start',
             },
           ],
@@ -429,31 +431,31 @@ export function ProjectRuntimeConfigModal({
     if (currentLang === 'cpp') {
       return [
         {
-          group: 'C / C++ 构建与执行',
+          group: t('rt.groupCppBuild'),
           items: [
             {
               key: 'skipBuildBeforeRun' as const,
-              title: '运行前跳过重新编译 (直接执行已有二进制)',
+              title: t('rt.optSkipRecompileTitle'),
               desc: 'Do not build before run',
             },
           ],
         },
         {
-          group: '进程与调试控制',
+          group: t('rt.groupProcDebug'),
           items: [
             {
               key: 'allowMultipleInstances' as const,
-              title: '允许并发运行多个实例',
+              title: t('rt.optMultiTitle'),
               desc: 'Allow multiple instances',
             },
             {
               key: 'saveConsoleToFile' as const,
-              title: '将控制台输出保存到文件',
+              title: t('rt.optSaveConsoleTitle'),
               desc: 'Save console output to file (.echoly/logs/run.log)',
             },
             {
               key: 'showSettingsBeforeRun' as const,
-              title: '每次启动前显示此运行配置',
+              title: t('rt.optShowSettingsTitle'),
               desc: 'Show settings before start',
             },
           ],
@@ -464,37 +466,37 @@ export function ProjectRuntimeConfigModal({
     // Python / Go / Node.js
     return [
       {
-        group: '执行准备',
+        group: t('rt.groupPrep'),
         items: [
           {
             key: 'skipBuildBeforeRun' as const,
-            title: '运行前跳过构建/检查阶段',
+            title: t('rt.optSkipBuildPhaseTitle'),
             desc: 'Do not build before run',
           },
         ],
       },
       {
-        group: '进程与日志控制',
+        group: t('rt.groupProcLog'),
         items: [
           {
             key: 'allowMultipleInstances' as const,
-            title: '允许并发运行多个实例',
+            title: t('rt.optMultiTitle'),
             desc: 'Allow multiple instances',
           },
           {
             key: 'saveConsoleToFile' as const,
-            title: '将控制台输出保存到文件',
+            title: t('rt.optSaveConsoleTitle'),
             desc: 'Save console output to file (.echoly/logs/run.log)',
           },
           {
             key: 'showSettingsBeforeRun' as const,
-            title: '每次启动前显示此运行配置',
+            title: t('rt.optShowSettingsTitle'),
             desc: 'Show settings before start',
           },
         ],
       },
     ];
-  }, [currentLang]);
+  }, [currentLang, t]);
 
   // 计算多语言命令实时预览
   const previewCommand = useMemo(() => {
@@ -561,13 +563,13 @@ export function ProjectRuntimeConfigModal({
   const handleCopyCommand = useCallback(() => {
     void navigator.clipboard.writeText(previewCommand);
     setCopied(true);
-    onShowToast?.('命令已复制到剪贴板', previewCommand, 'success');
+    onShowToast?.(t('rt.copiedToast'), previewCommand, 'success');
     setTimeout(() => setCopied(false), 2000);
   }, [previewCommand, onShowToast]);
 
   if (!isOpen || typeof document === 'undefined') return null;
 
-  const projectName = workspace ? workspace.split('/').pop() : '全局';
+  const projectName = workspace ? workspace.split('/').pop() : t('rt.global');
   const safeOverlay = createSafeOverlayHandlers(onClose);
 
   return createPortal(
@@ -602,10 +604,10 @@ export function ProjectRuntimeConfigModal({
             <span style={{ fontSize: 18 }}>⚡</span>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-bright, #fff)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>项目全局运行参数配置 (Run / Debug Configuration)</span>
+                <span>{t('rt.title')}</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                针对不同编程语言智能提供定制参数、环境变量、独立构建变体与高级进程调试选项
+                {t('rt.subtitle')}
               </div>
             </div>
           </div>
@@ -613,7 +615,7 @@ export function ProjectRuntimeConfigModal({
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭 (Esc)"
+            title={t('rt.closeTitle')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -630,7 +632,7 @@ export function ProjectRuntimeConfigModal({
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                 <span style={{ fontSize: 14 }}>📁</span>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>
-                  配置绑定项目: <strong>{projectName}</strong>
+                  {t('rt.boundProject')}<strong>{projectName}</strong>
                   {workspace && <span style={{ opacity: 0.7, marginLeft: 6 }}>({workspace})</span>}
                 </span>
                 <span
@@ -646,27 +648,27 @@ export function ProjectRuntimeConfigModal({
                     fontSize: 11,
                     fontWeight: 600,
                   }}
-                  title={RUNTIME_LANG_META[currentLang].desc}
+                  title={t(RUNTIME_LANG_META[currentLang].desc)}
                 >
                   <span>{RUNTIME_LANG_META[currentLang].icon}</span>
-                  <span>{RUNTIME_LANG_META[currentLang].label} 专属配置</span>
+                  <span>{t('rt.langExclusive', { label: RUNTIME_LANG_META[currentLang].label })}</span>
                 </span>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ fontSize: 11, color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                  <span>✓</span> 项目级生效
+                  <span>✓</span> {t('rt.projectActive')}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>切换技术栈:</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('rt.switchStack')}</span>
                   <select
                     className="runtime-lang-select"
                     value={currentLang}
                     onChange={(e) => {
                       const nextLang = e.target.value as RuntimeLanguage;
                       setCurrentLang(nextLang);
-                      onShowToast?.(`已切换至 ${RUNTIME_LANG_META[nextLang].label} 配置模式`, undefined, 'info');
+                      onShowToast?.(t('rt.switchedTo', { label: RUNTIME_LANG_META[nextLang].label }), undefined, 'info');
                     }}
                     style={{
                       background: 'rgba(255, 255, 255, 0.08)',
@@ -701,8 +703,12 @@ export function ProjectRuntimeConfigModal({
                 lineHeight: 1.5,
               }}
             >
-              💡 已自动识别当前项目类型，<strong>仅呈现 {RUNTIME_LANG_META[currentLang].label} 所需配置</strong>（其他类型配置已过滤隐藏）。
-              Echoly 运行配置亦原生支持: <strong>Java (Maven)、C/C++、Python、Go、Node.js</strong> 项目配置。
+              {t('rt.smartHintBefore')}
+              <strong>{t('rt.smartHintOnly', { label: RUNTIME_LANG_META[currentLang].label })}</strong>
+              {t('rt.smartHintAfter')}
+              {t('rt.supportBefore')}
+              <strong>{t('rt.supportList')}</strong>
+              {t('rt.supportAfter')}
             </div>
           </div>
 
@@ -711,9 +717,9 @@ export function ProjectRuntimeConfigModal({
             <div className="runtime-section runtime-preset-section">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--accent-light, #3794ff)' }}>
-                  <span>💡</span> 检测到项目中存在的环境配置 (点击单选/再次点击取消):
+                  <span>💡</span> {t('rt.detectedPresets')}
                 </div>
-                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>自动匹配 -Denv=...</span>
+                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t('rt.autoMatchEnv')}</span>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {detectedPresets.map((preset) => {
@@ -737,7 +743,11 @@ export function ProjectRuntimeConfigModal({
                         cursor: 'pointer',
                         transition: 'all 0.15s ease',
                       }}
-                      title={isApplied ? `点击取消 -Denv=${preset.envKey}` : `点击应用 -Denv=${preset.envKey} (对应文件: ${preset.fullRelPath})`}
+                      title={
+                        isApplied
+                          ? t('rt.presetCancelTitle', { key: preset.envKey })
+                          : t('rt.presetApplyTitle', { key: preset.envKey, file: preset.fullRelPath })
+                      }
                     >
                       <span style={{ fontSize: 11 }}>⚡</span>
                       <span>{preset.name}</span>
@@ -755,23 +765,23 @@ export function ProjectRuntimeConfigModal({
 
           {/* 启动参数 / 编译器标志 */}
           <div className="runtime-section">
-            <div className="runtime-section-label">启动参数与运行选项</div>
+            <div className="runtime-section-label">{t('rt.sectionStartArgs')}</div>
 
             <div className="runtime-field">
               <div className="runtime-field-head">
                 <label className="runtime-field-title">
-                  {currentLang === 'cpp' && '⚙️ C/C++ 编译器标志 (Compiler Flags / CFLAGS / CXXFLAGS)'}
-                  {currentLang === 'java' && '☕ JVM 虚拟机参数 (VM Options)'}
-                  {currentLang === 'python' && '🐍 Python 解释器参数 (Python Options)'}
-                  {currentLang === 'go' && '🐹 Go 构建与运行标志 (Go Build / Run Flags)'}
-                  {currentLang === 'node' && '🟢 Node.js 运行时参数 (Node Options)'}
+                  {currentLang === 'cpp' && t('rt.vmTitleCpp')}
+                  {currentLang === 'java' && t('rt.vmTitleJava')}
+                  {currentLang === 'python' && t('rt.vmTitlePython')}
+                  {currentLang === 'go' && t('rt.vmTitleGo')}
+                  {currentLang === 'node' && t('rt.vmTitleNode')}
                 </label>
                 <span className="runtime-field-hint">
-                  {currentLang === 'cpp' && '传递给 clang++ / g++ 编译选项'}
-                  {currentLang === 'java' && '传递给 System.getProperty() 或 JVM 堆栈'}
-                  {currentLang === 'python' && '传递给 python3 命令行选项'}
-                  {currentLang === 'go' && '传递给 go run / go build 标志'}
-                  {currentLang === 'node' && '传递给 node / tsx 进程标志'}
+                  {currentLang === 'cpp' && t('rt.vmHintCpp')}
+                  {currentLang === 'java' && t('rt.vmHintJava')}
+                  {currentLang === 'python' && t('rt.vmHintPython')}
+                  {currentLang === 'go' && t('rt.vmHintGo')}
+                  {currentLang === 'node' && t('rt.vmHintNode')}
                 </span>
               </div>
               <input
@@ -780,20 +790,20 @@ export function ProjectRuntimeConfigModal({
                 onChange={(e) => setConfig({ ...config, vmArgs: e.target.value })}
                 placeholder={
                   currentLang === 'cpp'
-                    ? '例如: -std=c++17 -O2 -Wall -g -pthread'
+                    ? t('rt.vmPhCpp')
                     : currentLang === 'java'
-                    ? '例如: -Denv=local-dev -Dfile.encoding=UTF-8 -Xms256m -Xmx1024m'
+                    ? t('rt.vmPhJava')
                     : currentLang === 'python'
-                    ? '例如: -u -B -W ignore'
+                    ? t('rt.vmPhPython')
                     : currentLang === 'go'
-                    ? '例如: -race -v -tags=dev'
-                    : '例如: --inspect --enable-source-maps --max-old-space-size=4096'
+                    ? t('rt.vmPhGo')
+                    : t('rt.vmPhNode')
                 }
                 className="runtime-input"
               />
               {/* 常用快捷标记（支持点击添加/取消） */}
               <div className="runtime-chip-row">
-                <span className="runtime-field-hint">快捷参数:</span>
+                <span className="runtime-field-hint">{t('rt.quickArgs')}</span>
                 {(currentLang === 'cpp'
                   ? ['-std=c++17', '-std=c++20', '-O2', '-Wall', '-g', '-pthread', '-fsanitize=address']
                   : currentLang === 'java'
@@ -820,7 +830,7 @@ export function ProjectRuntimeConfigModal({
                         color: isPresent ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                       }}
-                      title={isPresent ? `点击移除 ${flag}` : `点击添加 ${flag}`}
+                      title={isPresent ? t('rt.removeFlag', { flag }) : t('rt.addFlag', { flag })}
                     >
                       {isPresent ? `✓ ${flag}` : `+ ${flag}`}
                     </button>
@@ -836,7 +846,7 @@ export function ProjectRuntimeConfigModal({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 13 }}>⚙️</span>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-bright)' }}>
-                  运行与进程高级选项 (Run Options)
+                  {t('rt.runOptions')}
                 </span>
               </div>
               <div style={{ position: 'relative' }} ref={addOptionsRef}>
@@ -857,7 +867,7 @@ export function ProjectRuntimeConfigModal({
                     cursor: 'pointer',
                   }}
                 >
-                  <span>+ 添加运行选项 (Add Run Options)...</span>
+                  <span>{t('rt.addRunOptions')}</span>
                   <span style={{ fontSize: 9 }}>▼</span>
                 </button>
 
@@ -900,8 +910,8 @@ export function ProjectRuntimeConfigModal({
                         justifyContent: 'space-between',
                       }}
                     >
-                      <span>Add Run Options ({currentLang.toUpperCase()})</span>
-                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>勾选即可生效</span>
+                      <span>{t('rt.addRunOptionsHeader', { lang: currentLang.toUpperCase() })}</span>
+                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{t('rt.checkToApply')}</span>
                     </div>
 
                     {optionGroups.map((grp) => (
@@ -970,7 +980,7 @@ export function ProjectRuntimeConfigModal({
             <div className="runtime-option-summary">
               {enabledOptions.length === 0 ? (
                 <span className="runtime-field-hint">
-                  当前语言下暂未开启额外运行选项，可点击右上角「+ 添加运行选项」进行定制。
+                  {t('rt.noOptions')}
                 </span>
               ) : (
                 enabledOptions.map((opt) => (
@@ -979,7 +989,7 @@ export function ProjectRuntimeConfigModal({
                     type="button"
                     className="runtime-preset-chip runtime-option-chip"
                     onClick={() => setConfig({ ...config, [opt.key]: false } as ProjectRuntimeConfig)}
-                    title={`点击关闭「${opt.label}」`}
+                    title={t('rt.closeOption', { label: opt.label })}
                   >
                     <span className="runtime-option-check">✓</span>
                     <span>{opt.label}</span>
@@ -993,13 +1003,13 @@ export function ProjectRuntimeConfigModal({
           {/* 程序启动参数 (Program Arguments) */}
           <div className="runtime-field">
             <div className="runtime-field-head">
-              <label className="runtime-field-title">📦 程序启动实参 (Program Arguments)</label>
+              <label className="runtime-field-title">{t('rt.programArgsTitle')}</label>
               <span className="runtime-field-hint">
-                {currentLang === 'cpp' && '传递给 main(int argc, char** argv)'}
-                {currentLang === 'java' && '传递给 main(String[] args) 入口参数'}
-                {currentLang === 'python' && '传递给 sys.argv 命令行实参'}
-                {currentLang === 'go' && '传递给 os.Args 命令行切片'}
-                {currentLang === 'node' && '传递给 process.argv 进程实参'}
+                {currentLang === 'cpp' && t('rt.paHintCpp')}
+                {currentLang === 'java' && t('rt.paHintJava')}
+                {currentLang === 'python' && t('rt.paHintPython')}
+                {currentLang === 'go' && t('rt.paHintGo')}
+                {currentLang === 'node' && t('rt.paHintNode')}
               </span>
             </div>
             <input
@@ -1008,14 +1018,14 @@ export function ProjectRuntimeConfigModal({
               onChange={(e) => setConfig({ ...config, programArgs: e.target.value })}
               placeholder={
                 currentLang === 'cpp'
-                  ? '例如: --config=app.json -v --threads=4'
+                  ? t('rt.paPhCpp')
                   : currentLang === 'java'
-                  ? '例如: --server.port=8080 --mode=standalone'
+                  ? t('rt.paPhJava')
                   : currentLang === 'python'
-                  ? '例如: --port=8000 --reload --workers=4'
+                  ? t('rt.paPhPython')
                   : currentLang === 'go'
-                  ? '例如: --config=config.yaml -port=9000'
-                  : '例如: --port=3000 --env=development'
+                  ? t('rt.paPhGo')
+                  : t('rt.paPhNode')
               }
               className="runtime-input"
             />
@@ -1025,7 +1035,7 @@ export function ProjectRuntimeConfigModal({
           <div className="runtime-field-grid">
             {/* 左列：环境变量 */}
             <div className="runtime-field">
-              <label className="runtime-field-title">🌐 系统环境变量 (Environment Variables)</label>
+              <label className="runtime-field-title">{t('rt.envVarsTitle')}</label>
               <input
                 type="text"
                 value={config.envVars}
@@ -1039,12 +1049,12 @@ export function ProjectRuntimeConfigModal({
                     ? 'CGO_ENABLED=1,GOPROXY=https://goproxy.cn,direct'
                     : currentLang === 'node'
                     ? 'NODE_ENV=development,PORT=3000'
-                    : 'KEY=VALUE (逗号分隔)'
+                    : t('rt.envVarsPhFallback')
                 }
                 className="runtime-input"
               />
               <div className="runtime-chip-row" style={{ marginTop: 4 }}>
-                <span className="runtime-field-hint">快捷环境变量:</span>
+                <span className="runtime-field-hint">{t('rt.quickEnvVars')}</span>
                 {(currentLang === 'cpp'
                   ? ['LD_LIBRARY_PATH=.', 'DYLD_LIBRARY_PATH=.', 'DEBUG=1']
                   : currentLang === 'python'
@@ -1071,7 +1081,7 @@ export function ProjectRuntimeConfigModal({
                         color: isPresent ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                       }}
-                      title={isPresent ? `点击移除 ${chip}` : `点击添加 ${chip}`}
+                      title={isPresent ? t('rt.removeChip', { chip }) : t('rt.addChip', { chip })}
                     >
                       {isPresent ? `✓ ${chip}` : `+ ${chip}`}
                     </button>
@@ -1083,11 +1093,11 @@ export function ProjectRuntimeConfigModal({
             {/* 右列：构建类型 / 模式 (高度与左列完全对称) */}
             <div className="runtime-field">
               <label className="runtime-field-title">
-                {currentLang === 'cpp' && '🏷️ 构建类型 / 变体 (Build Type)'}
-                {currentLang === 'java' && '🏷️ Maven 激活 Profile (-P)'}
-                {currentLang === 'python' && '🏷️ 运行模式 / 环境 (Mode)'}
-                {currentLang === 'go' && '🏷️ 构建模式 (Build Mode)'}
-                {currentLang === 'node' && '🏷️ 执行环境 (Target Mode)'}
+                {currentLang === 'cpp' && t('rt.profileTitleCpp')}
+                {currentLang === 'java' && t('rt.profileTitleJava')}
+                {currentLang === 'python' && t('rt.profileTitlePython')}
+                {currentLang === 'go' && t('rt.profileTitleGo')}
+                {currentLang === 'node' && t('rt.profileTitleNode')}
               </label>
               <input
                 type="text"
@@ -1095,19 +1105,19 @@ export function ProjectRuntimeConfigModal({
                 onChange={(e) => setConfig({ ...config, activeProfiles: e.target.value })}
                 placeholder={
                   currentLang === 'cpp'
-                    ? '例如: Debug 或 Release'
+                    ? t('rt.profilePhCpp')
                     : currentLang === 'java'
-                    ? '例如: dev, test, local'
+                    ? t('rt.profilePhJava')
                     : currentLang === 'python'
-                    ? '例如: script, module, pytest'
+                    ? t('rt.profilePhPython')
                     : currentLang === 'go'
-                    ? '例如: default, pie, race'
-                    : '例如: development, production'
+                    ? t('rt.profilePhGo')
+                    : t('rt.profilePhNode')
                 }
                 className="runtime-input"
               />
               <div className="runtime-chip-row" style={{ marginTop: 4 }}>
-                <span className="runtime-field-hint">常用预设:</span>
+                <span className="runtime-field-hint">{t('rt.commonPresets')}</span>
                 {(currentLang === 'cpp'
                   ? ['Debug', 'Release', 'RelWithDebInfo']
                   : currentLang === 'java'
@@ -1134,7 +1144,7 @@ export function ProjectRuntimeConfigModal({
                         color: isPresent ? '#fff' : 'var(--text)',
                         cursor: 'pointer',
                       }}
-                      title={isPresent ? `点击取消 ${preset}` : `点击应用 ${preset}`}
+                      title={isPresent ? t('rt.cancelPreset', { preset }) : t('rt.applyPreset', { preset })}
                     >
                       {isPresent ? `✓ ${preset}` : `+ ${preset}`}
                     </button>
@@ -1152,14 +1162,14 @@ export function ProjectRuntimeConfigModal({
                 <span className="runtime-terminal-dot yellow" />
                 <span className="runtime-terminal-dot green" />
                 <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8, fontWeight: 500 }}>
-                  Terminal · 运行命令实时预览 ({currentLang.toUpperCase()})
+                  {t('rt.terminalPreview', { lang: currentLang.toUpperCase() })}
                 </span>
               </div>
               <button
                 type="button"
                 className="runtime-terminal-copy-btn"
                 onClick={handleCopyCommand}
-                title="复制完整运行命令到剪贴板"
+                title={t('rt.copyCmdTitle')}
               >
                 {copied ? (
                   <>
@@ -1175,7 +1185,7 @@ export function ProjectRuntimeConfigModal({
                     >
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
-                    <span>已复制</span>
+                    <span>{t('rt.copied')}</span>
                   </>
                 ) : (
                   <>
@@ -1192,7 +1202,7 @@ export function ProjectRuntimeConfigModal({
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                     </svg>
-                    <span>复制完整命令</span>
+                    <span>{t('rt.copyCmd')}</span>
                   </>
                 )}
               </button>
@@ -1207,7 +1217,7 @@ export function ProjectRuntimeConfigModal({
         {/* Footer Actions */}
         <div className="runtime-modal-footer">
           <button type="button" className="runtime-reset-btn" onClick={handleReset}>
-            重置当前参数
+            {t('rt.reset')}
           </button>
 
           <div style={{ display: 'flex', gap: 8 }}>
@@ -1217,14 +1227,14 @@ export function ProjectRuntimeConfigModal({
               onClick={onClose}
               style={{ fontSize: 12, padding: '5px 14px' }}
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="button"
               className="panel-standard-btn runtime-save-btn"
               onClick={handleSave}
             >
-              保存并应用
+              {t('rt.save')}
             </button>
           </div>
         </div>

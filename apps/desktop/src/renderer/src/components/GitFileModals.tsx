@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { GitBranchInfo, GitCommitEntry, GitDiffResult, PendingDiff } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n, translateSegments } from '../i18n';
 
 // ── 1. 与历史版本对比弹窗 (CompareWithRevisionModal) ──
 interface CompareWithRevisionModalProps {
@@ -17,6 +18,7 @@ export function CompareWithRevisionModal({
   onClose,
   onPreviewDiff,
 }: CompareWithRevisionModalProps) {
+  const { t, locale } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_git_compare_revision_modal_size',
     defaultWidth: 840,
@@ -55,10 +57,10 @@ export function CompareWithRevisionModal({
       if (res.ok) {
         setCommits(res.commits || []);
         if (!res.commits || res.commits.length === 0) {
-          setError('该文件暂无已提交的 Git 历史版本');
+          setError(t('git.noFileHistory'));
         }
       } else {
-        setError(res.detail || '获取提交历史失败');
+        setError(res.detail || t('git.loadHistoryFailed'));
         setCommits([]);
       }
     });
@@ -66,6 +68,7 @@ export function CompareWithRevisionModal({
     requestAnimationFrame(() => {
       searchInputRef.current?.focus();
     });
+    // t 只用于填充错误文案，不加进依赖：切换语言不该触发重新拉取提交历史
   }, [open, filePath]);
 
   useEffect(() => {
@@ -151,9 +154,9 @@ export function CompareWithRevisionModal({
       path: filePath,
       original: diffResult?.original ?? '',
       modified,
-      description: `提交 ${commit.shortHash} (${commit.author}) ↔ 本地当前版本`,
-      originalTitle: `历史提交: ${commit.shortHash}`,
-      modifiedTitle: '当前工作区 (本地版本)',
+      description: t('git.descRevision', { hash: commit.shortHash, author: commit.author }),
+      originalTitle: t('git.revisionOriginalTitle', { hash: commit.shortHash }),
+      modifiedTitle: t('git.workingVersionTitle'),
     });
     onClose();
   };
@@ -216,7 +219,7 @@ export function CompareWithRevisionModal({
               <rect x="8.5" y="2" width="5.5" height="12" rx="1.5" stroke="var(--accent, #007acc)" strokeWidth="1.5" />
             </svg>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-              与历史版本对比 (Compare with Revision)
+              {t('git.compareRevisionTitle')}
             </span>
             <span
               style={{
@@ -235,7 +238,7 @@ export function CompareWithRevisionModal({
               {fileName}
             </span>
           </div>
-          <button type="button" className="panel-action-btn" title="关闭 (Esc)" onClick={onClose}>
+          <button type="button" className="panel-action-btn" title={t('git.closeEsc')} onClick={onClose}>
             ✕
           </button>
         </div>
@@ -247,7 +250,7 @@ export function CompareWithRevisionModal({
             type="text"
             className="git-modal-input"
             value={query}
-            placeholder="搜索提交信息、作者或 Commit Hash..."
+            placeholder={t('git.searchCommitsPlaceholder')}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
           />
@@ -270,7 +273,7 @@ export function CompareWithRevisionModal({
           >
             {loading && (
               <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
-                正在加载提交历史...
+                {t('git.loadingHistory')}
               </div>
             )}
             {!loading && error && (
@@ -280,7 +283,7 @@ export function CompareWithRevisionModal({
             )}
             {!loading && !error && filteredCommits.length === 0 && (
               <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
-                无匹配的历史提交
+                {t('git.noMatchingCommits')}
               </div>
             )}
             {!loading &&
@@ -355,7 +358,21 @@ export function CompareWithRevisionModal({
                 >
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
-                      对比: 提交 <span style={{ color: 'var(--accent-light, #3794ff)', fontFamily: 'monospace' }}>{selectedCommit.shortHash}</span> ↔ 本地工作区版本
+                      {/* 提交哈希要显示成等宽强调：用 translateSegments 让占位符位置随语言变化 */}
+                      {translateSegments('git.comparingRevision', locale, {
+                        hash: selectedCommit.shortHash,
+                      }).map((seg, i) =>
+                        seg.emphasis ? (
+                          <span
+                            key={i}
+                            style={{ color: 'var(--accent-light, #3794ff)', fontFamily: 'monospace' }}
+                          >
+                            {seg.text}
+                          </span>
+                        ) : (
+                          <React.Fragment key={i}>{seg.text}</React.Fragment>
+                        ),
+                      )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                       {selectedCommit.author} • {selectedCommit.relativeDate || selectedCommit.date} • {selectedCommit.message}
@@ -368,24 +385,27 @@ export function CompareWithRevisionModal({
                     disabled={diffLoading || !diffResult}
                     style={{ flexShrink: 0 }}
                   >
-                    在主编辑器中对比 (Enter)
+                    {t('git.compareInEditor')}
                   </button>
                 </div>
 
                 <div style={{ flex: 1, minHeight: 0, padding: 14, overflow: 'auto', fontFamily: 'monospace', fontSize: 12 }}>
                   {diffLoading ? (
-                    <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>正在生成差异对比...</div>
+                    <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>{t('git.generatingDiff')}</div>
                   ) : diffResult ? (
                     diffResult.original === diffResult.modified ? (
                       <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>
-                        ✓ 当前本地文件与选中的历史版本内容完全一致，无差异。
+                        {t('git.revisionIdentical')}
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                          左侧: 提交 {selectedCommit.shortHash} 历史代码 ({diffResult.original.split('\n').length} 行)
+                          {t('git.leftRevision', {
+                            hash: selectedCommit.shortHash,
+                            n: diffResult.original.split('\n').length,
+                          })}
                           <br />
-                          右侧: 当前工作区本地代码 ({diffResult.modified.split('\n').length} 行)
+                          {t('git.rightWorking', { n: diffResult.modified.split('\n').length })}
                         </div>
                         <div
                           style={{
@@ -401,20 +421,20 @@ export function CompareWithRevisionModal({
                           }}
                         >
                           {diffResult.original.slice(0, 1000)}
-                          {diffResult.original.length > 1000 ? '\n... (更多内容可在主编辑器查看)' : ''}
+                          {diffResult.original.length > 1000 ? `\n${t('git.moreInEditor')}` : ''}
                         </div>
                       </div>
                     )
                   ) : (
                     <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)' }}>
-                      未能加载差异对比
+                      {t('git.diffLoadFailed')}
                     </div>
                   )}
                 </div>
               </>
             ) : (
               <div style={{ padding: 48, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
-                请在左侧选择一个历史提交以查看对比
+                {t('git.selectCommitHint')}
               </div>
             )}
           </div>
@@ -435,9 +455,9 @@ export function CompareWithRevisionModal({
             color: 'var(--muted)',
           }}
         >
-          <span>按 ↑ ↓ 切换选中提交，双击或回车即可在主编辑器中全屏对比</span>
+          <span>{t('git.compareFooterHint')}</span>
           <button type="button" className="git-modal-btn secondary" onClick={onClose}>
-            关闭
+            {t('common.close')}
           </button>
         </div>
 
@@ -462,6 +482,7 @@ export function CompareWithBranchOrTagModal({
   onClose,
   onPreviewDiff,
 }: CompareWithBranchOrTagModalProps) {
+  const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_git_compare_branch_tag_modal_size',
     defaultWidth: 720,
@@ -539,7 +560,7 @@ export function CompareWithBranchOrTagModal({
 
   const filteredTags = useMemo(() => {
     if (!q) return tags;
-    return tags.filter((t) => t.toLowerCase().includes(q));
+    return tags.filter((tag) => tag.toLowerCase().includes(q));
   }, [tags, q]);
 
   // 搜索或选项卡切换时，如当前选中项不在列表中，自动聚焦第一项
@@ -580,16 +601,18 @@ export function CompareWithBranchOrTagModal({
           path: filePath,
           original: res.original,
           modified,
-          description: `「${targetRef}」↔ 本地当前版本 (${filePath})`,
-          originalTitle: isRemote ? `远程: ${targetRef}` : `分支: ${targetRef}`,
-          modifiedTitle: '当前工作区 (本地版本)',
+          description: t('git.descRef', { ref: targetRef, path: filePath }),
+          originalTitle: isRemote
+            ? t('git.refOriginalRemote', { ref: targetRef })
+            : t('git.refOriginalBranch', { ref: targetRef }),
+          modifiedTitle: t('git.workingVersionTitle'),
         });
         onClose();
       } else {
-        setError(res.detail || `在「${targetRef}」中无法获取该文件差异`);
+        setError(res.detail || t('git.refDiffFailed', { ref: targetRef }));
       }
     } catch (err: any) {
-      setError(err?.message || '对比失败');
+      setError(err?.message || t('git.compareFailed'));
     } finally {
       setComparing(false);
     }
@@ -640,7 +663,7 @@ export function CompareWithBranchOrTagModal({
               <path d="M18 9a9 9 0 0 1-9 9" />
             </svg>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-              与分支或标签对比 (Compare with Branch or Tag)
+              {t('git.compareBranchTitle')}
             </span>
             <span
               style={{
@@ -659,7 +682,7 @@ export function CompareWithBranchOrTagModal({
               {fileName}
             </span>
           </div>
-          <button type="button" className="panel-action-btn" title="关闭 (Esc)" onClick={onClose}>
+          <button type="button" className="panel-action-btn" title={t('git.closeEsc')} onClick={onClose}>
             ✕
           </button>
         </div>
@@ -686,7 +709,7 @@ export function CompareWithBranchOrTagModal({
                 }
               }}
             >
-              分支 ({branches.length})
+              {t('git.tabBranches', { n: branches.length })}
             </button>
             <button
               type="button"
@@ -698,7 +721,7 @@ export function CompareWithBranchOrTagModal({
                 }
               }}
             >
-              标签 ({tags.length})
+              {t('git.tabTags', { n: tags.length })}
             </button>
           </div>
 
@@ -708,7 +731,7 @@ export function CompareWithBranchOrTagModal({
               type="text"
               className="git-modal-input"
               value={query}
-              placeholder={tab === 'branches' ? '搜索分支名称 (支持 ↑↓ 选择)...' : '搜索标签名称 (支持 ↑↓ 选择)...'}
+              placeholder={tab === 'branches' ? t('git.searchBranchNamesPlaceholder') : t('git.searchTagNamesPlaceholder')}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 const list = tab === 'branches' ? filteredBranches.map((b) => b.name) : filteredTags;
@@ -739,7 +762,7 @@ export function CompareWithBranchOrTagModal({
         <div ref={listRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8 }}>
           {loading && (
             <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
-              正在加载分支与标签...
+              {t('git.loadingBranches')}
             </div>
           )}
           {!loading && error && (
@@ -752,7 +775,7 @@ export function CompareWithBranchOrTagModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {filteredBranches.length === 0 ? (
                 <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
-                  无匹配的分支
+                  {t('git.noMatchingBranch')}
                 </div>
               ) : (
                 filteredBranches.map((b) => {
@@ -805,7 +828,7 @@ export function CompareWithBranchOrTagModal({
                               color: '#4ade80',
                             }}
                           >
-                            当前 HEAD
+                            {t('git.currentHead')}
                           </span>
                         )}
                         {b.remote && (
@@ -819,7 +842,7 @@ export function CompareWithBranchOrTagModal({
                               color: '#c084fc',
                             }}
                           >
-                            远程
+                            {t('git.remoteTag')}
                           </span>
                         )}
                       </div>
@@ -834,18 +857,18 @@ export function CompareWithBranchOrTagModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {filteredTags.length === 0 ? (
                 <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
-                  无匹配的标签
+                  {t('git.noMatchingTag')}
                 </div>
               ) : (
-                filteredTags.map((t) => {
-                  const isSelected = selectedRef === t;
+                filteredTags.map((tag) => {
+                  const isSelected = selectedRef === tag;
                   return (
                     <div
-                      key={t}
-                      data-ref={t}
+                      key={tag}
+                      data-ref={tag}
                       className={`git-modal-list-item ${isSelected ? 'selected' : ''}`}
-                      onClick={() => setSelectedRef(t)}
-                      onDoubleClick={() => void handleCompare(t)}
+                      onClick={() => setSelectedRef(tag)}
+                      onDoubleClick={() => void handleCompare(tag)}
                       style={{
                         padding: '8px 12px',
                         display: 'flex',
@@ -869,7 +892,7 @@ export function CompareWithBranchOrTagModal({
                           <line x1="7" y1="7" x2="7.01" y2="7" />
                         </svg>
                         <span className="git-item-title" style={{ fontSize: 12.5, color: 'var(--text)' }}>
-                          {t}
+                          {tag}
                         </span>
                       </div>
                     </div>
@@ -894,11 +917,11 @@ export function CompareWithBranchOrTagModal({
           }}
         >
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            {selectedRef ? `已选中: ${selectedRef}` : '请选择分支或标签'}
+            {selectedRef ? t('git.selectedRef', { ref: selectedRef }) : t('git.selectBranchOrTag')}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="button" className="git-modal-btn secondary" onClick={onClose} disabled={comparing}>
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="button"
@@ -906,7 +929,7 @@ export function CompareWithBranchOrTagModal({
               onClick={() => selectedRef && void handleCompare(selectedRef)}
               disabled={comparing || !selectedRef}
             >
-              {comparing ? '正在加载对比...' : '在主编辑器中对比 (Enter)'}
+              {comparing ? t('git.comparing') : t('git.compareInEditor')}
             </button>
           </div>
         </div>
@@ -932,6 +955,7 @@ export function RollbackFileModal({
   onClose,
   onConfirm,
 }: RollbackFileModalProps) {
+  const { t } = useI18n();
   const [submitting, setSubmitting] = useState(false);
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
   const cancelBtnRef = useRef<HTMLButtonElement>(null);
@@ -1017,10 +1041,10 @@ export function RollbackFileModal({
           </div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
-              回滚文件修改 (Rollback Changes)
+              {t('git.rollbackTitle')}
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-              放弃本地工作区改动并恢复至 Git 最新提交 (HEAD)
+              {t('git.rollbackDesc')}
             </div>
           </div>
         </div>
@@ -1034,7 +1058,7 @@ export function RollbackFileModal({
             marginBottom: 16,
           }}
         >
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>目标文件:</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{t('git.targetFile')}</div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', wordBreak: 'break-all' }}>
             {fileName}
           </div>
@@ -1044,7 +1068,7 @@ export function RollbackFileModal({
         </div>
 
         <div style={{ fontSize: 12, color: '#f87171', lineHeight: 1.5, marginBottom: 20 }}>
-          ⚠️ 警告：此操作将丢弃该文件所有未暂存和未提交的修改，文件内容将不可逆地恢复至版本库状态。
+          {t('git.rollbackWarning')}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -1054,9 +1078,9 @@ export function RollbackFileModal({
             className="git-modal-btn secondary"
             onClick={onClose}
             disabled={submitting}
-            title="取消 (Esc)"
+            title={t('git.cancelEsc')}
           >
-            取消
+            {t('common.cancel')}
           </button>
           <button
             ref={confirmBtnRef}
@@ -1064,14 +1088,14 @@ export function RollbackFileModal({
             className="git-modal-btn"
             onClick={handleRollback}
             disabled={submitting}
-            title="确认回滚 (Enter)"
+            title={t('git.rollbackConfirmTip')}
             style={{
               background: '#ef4444',
               color: '#ffffff',
               fontWeight: 600,
             }}
           >
-            {submitting ? '正在回滚...' : '确认回滚 (Rollback)'}
+            {submitting ? t('git.rollingBack') : t('git.rollbackConfirm')}
           </button>
         </div>
       </div>

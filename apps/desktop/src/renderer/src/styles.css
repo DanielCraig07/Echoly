@@ -3572,6 +3572,307 @@ span.keybinding {
   border-color: rgba(16, 185, 129, 0.25);
 }
 
+/* ==========================================================================
+   Model Metrics Badge & Latency Transparency Popover
+   ========================================================================== */
+.msg-metrics-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: var(--bg-surface-2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  transition: all 0.16s ease;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  user-select: none;
+}
+
+.msg-metrics-badge:hover,
+.msg-metrics-badge.active {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  border-color: var(--border, rgba(255, 255, 255, 0.2));
+  color: var(--text-main, #f1f5f9);
+}
+
+.metrics-pill-icon {
+  color: #eab308;
+  font-size: 10px;
+}
+
+.metrics-pill-tps {
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.metrics-pill-sep {
+  opacity: 0.4;
+  margin: 0 1px;
+}
+
+.metrics-pill-chevron {
+  transition: transform 0.2s ease;
+  opacity: 0.6;
+  margin-left: 1px;
+}
+
+.metrics-pill-chevron.rotate {
+  transform: rotate(180deg);
+  opacity: 1;
+}
+
+@keyframes metricsPopoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.model-metrics-popover {
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  background: var(--bg-surface, #1e1e24);
+  border: 1px solid var(--border, #33333e);
+  border-radius: 12px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25);
+  padding: 14px 16px;
+  backdrop-filter: blur(16px);
+  color: var(--text-main, #e2e8f0);
+  font-size: 12px;
+  animation: metricsPopoverFadeIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+
+.model-metrics-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.model-metrics-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-metrics-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fg, #f8fafc);
+}
+
+.model-metrics-icon {
+  color: #eab308;
+}
+
+.model-metrics-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-metrics-model-badge {
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-surface-3, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  max-width: 130px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text-muted, #94a3b8);
+}
+
+.model-metrics-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.model-metrics-close-btn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--fg, #f8fafc);
+}
+
+.model-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.model-metrics-card {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-surface-2, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.model-metrics-card-label {
+  font-size: 10px;
+  color: var(--text-muted, #94a3b8);
+  margin-bottom: 4px;
+}
+
+.model-metrics-card-value {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: var(--fg, #f8fafc);
+  line-height: 1.2;
+}
+
+.model-metrics-card-value.highlight-speed {
+  color: #38bdf8;
+}
+
+.model-metrics-card-value .unit {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted, #94a3b8);
+  margin-left: 2px;
+}
+
+.model-metrics-card-sub {
+  font-size: 10px;
+  color: var(--text-secondary, #94a3b8);
+  margin-top: 3px;
+}
+
+.model-metrics-ratio-section {
+  margin-bottom: 12px;
+}
+
+.model-metrics-ratio-bar {
+  height: 6px;
+  border-radius: 3px;
+  display: flex;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.model-metrics-bar-prompt {
+  background: #3b82f6;
+  transition: width 0.3s ease;
+}
+
+.model-metrics-bar-completion {
+  background: #a855f7;
+  transition: width 0.3s ease;
+}
+
+.model-metrics-ratio-legend {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted, #94a3b8);
+  margin-top: 4px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+
+.prompt-dot {
+  background: #3b82f6;
+}
+
+.completion-dot {
+  background: #a855f7;
+}
+
+.model-metrics-details-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-surface-2, rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+  font-size: 11px;
+}
+
+.model-metrics-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.model-metrics-row .row-key {
+  color: var(--text-muted, #94a3b8);
+}
+
+.model-metrics-row .row-val {
+  color: var(--fg, #e2e8f0);
+  font-weight: 500;
+}
+
+.model-metrics-row .code-val {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  max-width: 200px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.model-metrics-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.model-metrics-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  background: var(--bg-surface-3, rgba(255, 255, 255, 0.06));
+  color: var(--fg, #e2e8f0);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.model-metrics-copy-btn:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.12));
+  border-color: var(--accent, #38bdf8);
+  color: #fff;
+}
+
 .md-body {
   font-size: var(--ui-font-size, 14px);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -6941,6 +7242,19 @@ span.keybinding {
   transform: translateY(-0.5px);
 }
 
+/* 语义搜索的索引状态条：没有它，「索引没建」和「关键词没命中」在界面上长得一模一样 */
+.search-index-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-hover);
+}
+
 .chat-mention-popover {
   position: absolute;
   bottom: calc(100% + 6px);
@@ -7040,6 +7354,21 @@ span.keybinding {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 命令来源标记（工作区 / 用户）：同名命令在两个来源里内容可能不同，得能一眼分辨 */
+.chat-mention-badge {
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 3px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  flex-shrink: 0;
 }
 
 .chat-mention-desc {
@@ -7048,6 +7377,33 @@ span.keybinding {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.chat-mention-footer {
+  padding: 6px 12px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  background: var(--bg-hover);
+}
+
+/* 一个命令都没有时的引导：功能存在与否全靠这一句 */
+.chat-mention-empty {
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.chat-mention-empty code,
+.chat-mention-footer code {
+  font-family: var(--mono-font, monospace);
+  font-size: 10px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  color: var(--text);
 }
 
 .terminal-action-btn {
@@ -15955,6 +16311,100 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: var(--accent-2);
 }
 
+/*
+ * 「撤销本轮改动」——挂在每轮回复末尾。
+ *
+ * 刻意做成低调的幽灵按钮而不是显眼的主色按钮：它在绝大多数轮次里都不该被点，
+ * 一旦做成主色，用户会习惯性地点它，而这是个会**删除本轮新建文件**的操作。
+ * 靠左对齐、小字号、hover 才点亮，危险感来自确认弹窗而不是按钮本身。
+ */
+.chat-turn-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.chat-turn-revert-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.chat-turn-revert-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-color: var(--muted);
+}
+
+.chat-turn-revert-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-turn-revert-count {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 运行中追加消息的送达状态。
+ *
+ * 用低饱和的灰做底色而不是绿色/红色：这两种状态都只是「暂时不能当它已经生效」，
+ * 不是成功也不是失败。绿色会让用户以为已经送达，红色会让用户以为出了问题。
+ */
+.msg-delivery-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.msg-delivery-badge .msg-delivery-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.msg-delivery-badge.queued .msg-delivery-dot {
+  animation: msg-delivery-pulse 1.2s ease-in-out infinite;
+}
+
+.msg-delivery-badge.undelivered {
+  color: var(--warn);
+}
+
+@keyframes msg-delivery-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* 插件按钮 - 使用与布局按钮相同的样式 */
 .layout-toggle-btn.plugin-btn {
   margin-left: 12px;
@@ -17605,6 +18055,13 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 .chat-action-circle-btn.stop:hover {
   background: #ef4444;
   transform: scale(1.06);
+}
+
+/* 运行中「追加 + 停止」并排：两个圆形按钮之间留一点缝，避免看起来像一个异形按钮 */
+.chat-action-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .chat-model-dropdown-menu {

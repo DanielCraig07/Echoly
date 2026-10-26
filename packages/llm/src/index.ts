@@ -12,6 +12,13 @@ import type {
 import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from '@deepseek-ide/shared';
 import { AnthropicClient, formatLlmErrorMessage } from './anthropic';
 import {
+  Semaphore,
+  defaultRequestGate,
+  isRetryableNetworkError,
+  isRetryableStatus,
+  withRetry,
+} from './requestControl';
+import {
   CONTENT_GUARD_OPTIONS,
   REASONING_GUARD_OPTIONS,
   SERVER_TRIM_OPTIONS,
@@ -99,6 +106,10 @@ export interface LlmClientOptions {
   thinkingTokenBudget?: number;
   /** 是否请求服务端原生重复检测（vLLM `repetition_detection`）。默认 false。 */
   serverRepetitionDetection?: boolean;
+  /** 可重试失败的重试次数上限（不含首次请求）。默认 2。 */
+  maxRetries?: number;
+  /** 并发闸门：同时允许在途的请求数上限。默认继承全局闸门。 */
+  maxConcurrency?: number;
 }
 
 export interface ChatParams {
@@ -268,6 +279,10 @@ export class LlmClient {
   readonly reasoningEffortFine?: number;
   readonly thinkingTokenBudget: number;
   readonly serverRepetitionDetection: boolean;
+  /** 可重试失败的重试次数上限（不含首次请求）。 */
+  readonly maxRetries: number;
+  /** 在途请求并发闸门；同进程内多个 client 可共享同一个实例。 */
+  readonly requestGate: Semaphore;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: LlmClientOptions = {}) {
@@ -285,6 +300,10 @@ export class LlmClient {
     this.reasoningEffortFine = options.reasoningEffortFine;
     this.thinkingTokenBudget = options.thinkingTokenBudget ?? 0;
     this.serverRepetitionDetection = options.serverRepetitionDetection ?? false;
+    this.maxRetries = options.maxRetries ?? 1;
+    this.requestGate = options.maxConcurrency
+      ? new Semaphore(options.maxConcurrency)
+      : defaultRequestGate;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -305,6 +324,8 @@ export class LlmClient {
       thinkingTokenBudget: partial.thinkingTokenBudget ?? this.thinkingTokenBudget,
       serverRepetitionDetection:
         partial.serverRepetitionDetection ?? this.serverRepetitionDetection,
+      maxRetries: partial.maxRetries ?? this.maxRetries,
+      maxConcurrency: partial.maxConcurrency,
       fetchImpl: partial.fetchImpl ?? this.fetchImpl,
     });
   }
@@ -404,6 +425,15 @@ export class LlmClient {
    * 分两轮降级是有意的：思考深度字段（reasoning_effort / chat_template_kwargs）比采样加固
    * 更容易被其他推理后端拒绝，一次全摘掉会连带放弃复读防护。只在报错确实指向这些字段时
    * 才降级，无关的 400 照常抛出，免得把真正的参数错误掩盖成「字段不兼容」。
+   *
+   * 重试只包住「拿到响应头」这一步。两条边界：
+   * - 400 不重试：那是参数问题，重发同样的 body 只会再得到同样的 400。
+   * - 已经在流式读 body 的状态（`res.ok` 且 stream=true）也不重试：此时响应体归调用方所有，
+   *   在这里重发会让调用方拿到第二个响应而第一个的 body 悬空。
+   * 所以这里只对「非 ok 且状态码可重试」和「网络层异常」两类失败重发。
+   *
+   * 并发闸门不在这里，而在 `chat` / `chatStream` 的最外层：流式响应的真正耗时在读取 body，
+   * 若只圈住「拿到响应头」这一段，闸门几乎等于没有（SSE 响应头是立刻返回的）。
    */
   private async postChat(
     params: ChatParams,
@@ -418,7 +448,22 @@ export class LlmClient {
         signal,
       });
 
-    const res = await send(true, true);
+    const outcome = await withRetry(
+      () => send(true, true),
+      (res, err) => {
+        if (err) return isRetryableNetworkError(err);
+        if (!res) return false;
+        return isRetryableStatus(res.status);
+      },
+      { maxAttempts: this.maxRetries, signal },
+    );
+
+    const res = outcome.ok
+      ? outcome.value
+      : (() => {
+          throw outcome.lastError;
+        })();
+
     if (res.ok || res.status !== 400) return res;
 
     const text = await res.text();
@@ -430,12 +475,23 @@ export class LlmClient {
     const blamesSampling =
       /max_tokens|frequency_penalty|presence_penalty|repetition_detection/i.test(text);
 
-    if (blamesReasoning && !blamesSampling) return send(true, false);
-    if (blamesSampling && !blamesReasoning) return send(false, true);
-    if (blamesReasoning || blamesSampling || genericUnknownField) return send(false, false);
+    let retry: () => Promise<Response>;
+    if (blamesReasoning && !blamesSampling) retry = () => send(true, false);
+    else if (blamesSampling && !blamesReasoning) retry = () => send(false, true);
+    else if (blamesReasoning || blamesSampling || genericUnknownField) retry = () => send(false, false);
+    else {
+      // body 已被消费，重新包一个等价响应交回调用方去报错
+      return new Response(text, { status: res.status, statusText: res.statusText });
+    }
 
-    // body 已被消费，重新包一个等价响应交回调用方去报错
-    return new Response(text, { status: res.status, statusText: res.statusText });
+    // 降级重发同样值得重试一次网络层抖动
+    const degraded = await withRetry(
+      retry,
+      (r, err) => (err ? isRetryableNetworkError(err) : !!r && isRetryableStatus(r.status)),
+      { maxAttempts: this.maxRetries, signal },
+    );
+    if (degraded.ok) return degraded.value;
+    throw degraded.lastError;
   }
 
   async listModels(signal?: AbortSignal): Promise<string[]> {
@@ -452,7 +508,20 @@ export class LlmClient {
     return (data.data ?? []).map((m) => m.id);
   }
 
+  /**
+   * 非流式请求。并发闸门圈住整个生命周期（包含读 body），
+   * 流式版本见 `chatStream`——那里的闸门必须跨过整个生成过程才有意义。
+   */
   async chat(params: ChatParams): Promise<ChatMessage> {
+    const release = await this.requestGate.acquire();
+    try {
+      return await this.chatInner(params);
+    } finally {
+      release();
+    }
+  }
+
+  private async chatInner(params: ChatParams): Promise<ChatMessage> {
     const firstTokenTimeout = params.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs;
     const abortController = new AbortController();
     let timedOutError: LlmTimeoutError | null = null;
@@ -534,7 +603,25 @@ export class LlmClient {
     };
   }
 
+  /**
+   * 流式请求。并发闸门包住整个生成过程——SSE 的响应头是立刻返回的，只圈住
+   * 「拿到响应头」等于没有闸门，真正占着推理节点的是后面读取 body 的几十秒。
+   *
+   * 用包装生成器而不是在 chatStream 内部 acquire：`for await` 提前 break 时 JS 会对
+   * 生成器调用 `return()`，`finally` 因而会执行，名额不会泄漏。
+   */
   async *chatStream(params: ChatParams): AsyncGenerator<StreamChunk, ChatStreamResult, void> {
+    const release = await this.requestGate.acquire();
+    try {
+      return yield* this.chatStreamInner(params);
+    } finally {
+      release();
+    }
+  }
+
+  private async *chatStreamInner(
+    params: ChatParams,
+  ): AsyncGenerator<StreamChunk, ChatStreamResult, void> {
     const firstTokenTimeout = params.firstTokenTimeoutMs ?? this.firstTokenTimeoutMs;
     const streamStallTimeout = params.streamStallTimeoutMs ?? this.streamStallTimeoutMs;
 

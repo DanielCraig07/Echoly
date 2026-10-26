@@ -2,6 +2,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { SkillInfo } from '@deepseek-ide/shared';
 
+export {
+  discoverCommands,
+  normalizeCommandName,
+  renderCommand,
+} from './commands.js';
+
 export interface LoadedSkill extends SkillInfo {
   body: string;
 }

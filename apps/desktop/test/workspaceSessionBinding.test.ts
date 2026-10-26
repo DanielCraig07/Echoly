@@ -5,6 +5,17 @@ import {
   isSessionMatchingProject,
   collectAvailableProjects,
 } from '../src/renderer/src/components/SessionModal';
+import {
+  AUTO_SESSION_TITLE_FALLBACK,
+  DEFAULT_SESSION_TITLE,
+  isCustomSessionTitle,
+} from '../src/renderer/src/utils';
+import { DICT, translate, translateWith, type Translate } from '../src/renderer/src/i18n';
+
+// collectAvailableProjects 的 t 是必填的（两个兜底项目名会直接显示在下拉里），
+// 测试自己带一份 zh 的 t，不依赖语言环境
+const t: Translate = (key, params) =>
+  params ? translateWith(key, 'zh', params) : translate(key, 'zh');
 
 describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () => {
   const currentLocalWs: WorkspaceInfo = {
@@ -130,7 +141,7 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
       { path: '/Users/danielcraig/Documents/Claude-demo/AnotherEmptyProject', name: 'AnotherEmptyProject', lastOpened: 3 },
     ];
 
-    const projects = collectAvailableProjects(currentLocalWs, mockRecents, mockSessions);
+    const projects = collectAvailableProjects(currentLocalWs, mockRecents, mockSessions, t);
 
     // Current project is top
     expect(projects[0].name).toBe('Echoly');
@@ -210,7 +221,7 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
       },
     ];
 
-    const projects = collectAvailableProjects(mockRemoteWs, mockRecents, mockSessions);
+    const projects = collectAvailableProjects(mockRemoteWs, mockRecents, mockSessions, t);
 
     // 检查项目名称列表，确保没有任何重复名称
     const names = projects.map((p) => p.name);
@@ -243,28 +254,15 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
       const firstUserSnippet = 'Can you help me diagnose App.tsx';
       const customTitle = '修复 App.tsx 错误';
 
-      const isCustom =
-        !!customTitle &&
-        customTitle !== 'New Chat' &&
-        customTitle !== '当前对话' &&
-        customTitle !== '对话' &&
-        (!firstUserSnippet || customTitle !== firstUserSnippet);
-
-      expect(isCustom).toBe(true);
+      // 走真实实现（原先这里把判定逻辑抄了一遍，改实现时测试不会跟着变）
+      expect(isCustomSessionTitle(customTitle, firstUserSnippet)).toBe(true);
     });
 
     it('infers isCustom = false when title is exactly first user message snippet', () => {
       const firstUserSnippet = 'Can you help me diagnose App.tsx';
       const autoTitle = 'Can you help me diagnose App.tsx';
 
-      const isCustom =
-        !!autoTitle &&
-        autoTitle !== 'New Chat' &&
-        autoTitle !== '当前对话' &&
-        autoTitle !== '对话' &&
-        (!firstUserSnippet || autoTitle !== firstUserSnippet);
-
-      expect(isCustom).toBe(false);
+      expect(isCustomSessionTitle(autoTitle, firstUserSnippet)).toBe(false);
     });
 
     it('preserves custom title and does not overwrite with prompt on subsequent user questions', () => {
@@ -278,13 +276,11 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
 
       const firstUser = activeTab.messages.find((m) => m.role === 'user');
       const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
-      const isCustom =
-        activeTab.customTitle === true ||
-        (!!activeTab.title &&
-          activeTab.title !== 'New Chat' &&
-          activeTab.title !== '当前对话' &&
-          activeTab.title !== '对话' &&
-          (!firstUserSnippet || activeTab.title !== firstUserSnippet));
+      const isCustom = isCustomSessionTitle(
+        activeTab.title,
+        firstUserSnippet,
+        activeTab.customTitle,
+      );
 
       const newTitle = isCustom
         ? activeTab.title
@@ -294,6 +290,24 @@ describe('AI Chat Session Workspace Binding (isSessionMatchingWorkspace)', () =>
 
       expect(isCustom).toBe(true);
       expect(newTitle).toBe('我的重构计划');
+    });
+
+    it('历史默认标题被认成「自动标题」——它们是落盘哨兵，不是文案', () => {
+      // 这三个值会随会话落盘，跨版本跨语言都还在。它们一旦被当成文案翻掉，
+      // 存量会话的 isCustom 判定会全部翻成「用户改过的」，表现是标题不再自动更新。
+      for (const auto of ['New Chat', '当前对话', '对话']) {
+        expect(isCustomSessionTitle(auto, '随便一句用户消息')).toBe(false);
+      }
+      // 反过来：用户真写了别的标题就得认出来，别把判定做成恒假
+      expect(isCustomSessionTitle('我自己的标题', '随便一句用户消息')).toBe(true);
+    });
+
+    it('哨兵值与字典里的展示文案保持一致', () => {
+      // 这条是**耦合声明**：字典里的 chat.titleCurrent / chat.titleDefault 是同一批
+      // 中文的展示形态，哨兵是它们的落盘形态。刻意让它们相等，是为了让「顺手把
+      // 中文改成英文」这个改动在测试里立刻炸掉，而不是安静地推翻存量数据。
+      expect(DEFAULT_SESSION_TITLE).toBe(DICT['chat.titleCurrent'].zh);
+      expect(AUTO_SESSION_TITLE_FALLBACK).toBe(DICT['chat.titleDefault'].zh);
     });
   });
 });

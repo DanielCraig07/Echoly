@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { parseConflictBlocks, type ConflictBlock } from '../services/mergeConflictResolver';
+import { useI18n } from '../i18n';
 
 export interface ThreeWayMergeModalProps {
   filePath: string;
@@ -17,6 +18,7 @@ export function ThreeWayMergeModal({
   onSave,
   onClose,
 }: ThreeWayMergeModalProps) {
+  const { t } = useI18n();
   const blocks = useMemo(() => parseConflictBlocks(initialContent), [initialContent]);
 
   // 每个冲突块的选择状态：'current' | 'incoming' | 'both' | 'base' | 'unresolved'
@@ -149,7 +151,7 @@ export function ThreeWayMergeModal({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text)' }}>
-              三方合并编辑器 (3-Way Merge)
+              {t('merge.title')}
             </span>
             <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg-tertiary, #222)', padding: '1px 6px', borderRadius: 4 }}>
               {fileName}
@@ -164,7 +166,7 @@ export function ThreeWayMergeModal({
                 fontWeight: 600,
               }}
             >
-              {resolvedCount}/{totalCount} 冲突已解决
+              {t('merge.resolvedCount', { done: resolvedCount, total: totalCount })}
             </span>
           </div>
 
@@ -172,32 +174,32 @@ export function ThreeWayMergeModal({
             <button
               type="button"
               className="panel-action-btn"
-              title="全部采纳当前分支修改 (Accept All Current)"
+              title={t('merge.acceptAllCurrentTitle')}
               onClick={() => handleBatchResolve('current')}
             >
-              <span style={{ fontSize: 11 }}>全部采纳当前</span>
+              <span style={{ fontSize: 11 }}>{t('merge.acceptAllCurrent')}</span>
             </button>
             <button
               type="button"
               className="panel-action-btn"
-              title="全部采纳传入分支修改 (Accept All Incoming)"
+              title={t('merge.acceptAllIncomingTitle')}
               onClick={() => handleBatchResolve('incoming')}
             >
-              <span style={{ fontSize: 11 }}>全部采纳传入</span>
+              <span style={{ fontSize: 11 }}>{t('merge.acceptAllIncoming')}</span>
             </button>
             <button
               type="button"
               className="panel-action-btn"
-              title="全部保留双方修改"
+              title={t('merge.keepBothTitle')}
               onClick={() => handleBatchResolve('both')}
             >
-              <span style={{ fontSize: 11 }}>保留双方</span>
+              <span style={{ fontSize: 11 }}>{t('merge.keepBoth')}</span>
             </button>
             <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 4px' }} />
             <button
               type="button"
               className="panel-action-btn"
-              title="上一处冲突"
+              title={t('merge.prevConflict')}
               disabled={activeBlockIndex <= 0}
               onClick={() => setActiveBlockIndex((i) => Math.max(0, i - 1))}
             >
@@ -208,7 +210,7 @@ export function ThreeWayMergeModal({
             <button
               type="button"
               className="panel-action-btn"
-              title="下一处冲突"
+              title={t('merge.nextConflict')}
               disabled={activeBlockIndex >= blocks.length - 1}
               onClick={() => setActiveBlockIndex((i) => Math.min(blocks.length - 1, i + 1))}
             >
@@ -219,7 +221,7 @@ export function ThreeWayMergeModal({
             <button
               type="button"
               className="panel-action-btn"
-              title="关闭三方合并视图"
+              title={t('merge.closeTitle')}
               onClick={onClose}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -248,22 +250,22 @@ export function ThreeWayMergeModal({
                 fontWeight: 600,
               }}
             >
-              <span>当前分支 (Current / Ours - HEAD)</span>
+              <span>{t('merge.currentBranch')}</span>
               {currentBlock && (
                 <button
                   type="button"
                   className="panel-action-btn"
-                  title="为当前冲突采纳此侧"
+                  title={t('merge.acceptThisSideTitle')}
                   onClick={() => handleResolve(currentBlock.id, 'current')}
                   style={{ color: '#60a5fa' }}
                 >
-                  <span>✓ 采纳此侧</span>
+                  <span>{t('merge.acceptThisSide')}</span>
                 </button>
               )}
             </div>
             <div style={{ flex: 1, position: 'relative' }}>
               <Editor
-                value={currentBlock?.currentText || '// 当前冲突块无内容'}
+                value={currentBlock?.currentText || t('merge.noCurrentText')}
                 language="plaintext"
                 theme={theme}
                 options={{
@@ -294,22 +296,22 @@ export function ThreeWayMergeModal({
                 fontWeight: 600,
               }}
             >
-              <span>基底版本 (Base / Common Ancestor)</span>
+              <span>{t('merge.baseBranch')}</span>
               {currentBlock && currentBlock.hasBase && (
                 <button
                   type="button"
                   className="panel-action-btn"
-                  title="为当前冲突采纳基底"
+                  title={t('merge.acceptBaseTitle')}
                   onClick={() => handleResolve(currentBlock.id, 'base')}
                   style={{ color: '#9ca3af' }}
                 >
-                  <span>✓ 采纳基底</span>
+                  <span>{t('merge.acceptBase')}</span>
                 </button>
               )}
             </div>
             <div style={{ flex: 1, position: 'relative' }}>
               <Editor
-                value={currentBlock?.baseText || '// 共同祖先基底无文本差异或未启用 diff3'}
+                value={currentBlock?.baseText || t('merge.noBaseText')}
                 language="plaintext"
                 theme={theme}
                 options={{
@@ -340,22 +342,22 @@ export function ThreeWayMergeModal({
                 fontWeight: 600,
               }}
             >
-              <span>传入分支 (Incoming / Theirs)</span>
+              <span>{t('merge.incomingBranch')}</span>
               {currentBlock && (
                 <button
                   type="button"
                   className="panel-action-btn"
-                  title="为当前冲突采纳此侧"
+                  title={t('merge.acceptThisSideTitle')}
                   onClick={() => handleResolve(currentBlock.id, 'incoming')}
                   style={{ color: '#34d399' }}
                 >
-                  <span>✓ 采纳此侧</span>
+                  <span>{t('merge.acceptThisSide')}</span>
                 </button>
               )}
             </div>
             <div style={{ flex: 1, position: 'relative' }}>
               <Editor
-                value={currentBlock?.incomingText || '// 传入冲突块无内容'}
+                value={currentBlock?.incomingText || t('merge.noIncomingText')}
                 language="plaintext"
                 theme={theme}
                 options={{
@@ -386,23 +388,23 @@ export function ThreeWayMergeModal({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontWeight: 700, color: 'var(--text)' }}>最终合并结果 (Result)</span>
-              <span style={{ color: 'var(--muted)', fontSize: 10 }}>可直接在此编辑器中二次手动微调</span>
+              <span style={{ fontWeight: 700, color: 'var(--text)' }}>{t('merge.resultTitle')}</span>
+              <span style={{ color: 'var(--muted)', fontSize: 10 }}>{t('merge.resultHint')}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {currentBlock && (
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                  当前冲突 [{activeBlockIndex + 1}/{totalCount}] 抉择：
+                  {t('merge.currentChoice', { index: activeBlockIndex + 1, total: totalCount })}
                   <strong style={{ color: resolutions[currentBlock.id] ? '#34d399' : '#f59e0b', marginLeft: 4 }}>
                     {resolutions[currentBlock.id] === 'current'
-                      ? '已选当前'
+                      ? t('merge.choiceCurrent')
                       : resolutions[currentBlock.id] === 'incoming'
-                      ? '已选传入'
+                      ? t('merge.choiceIncoming')
                       : resolutions[currentBlock.id] === 'both'
-                      ? '保留双方'
+                      ? t('merge.choiceBoth')
                       : resolutions[currentBlock.id] === 'base'
-                      ? '已选基底'
-                      : '未抉择'}
+                      ? t('merge.choiceBase')
+                      : t('merge.choiceUnresolved')}
                   </strong>
                 </span>
               )}
@@ -439,8 +441,8 @@ export function ThreeWayMergeModal({
         >
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
             {resolvedCount < totalCount
-              ? `⚠️ 尚有 ${totalCount - resolvedCount} 处冲突未做选择，未选择处将保留原有冲突标记`
-              : '✓ 所有冲突已全部完成抉择，可以安全写回文件'}
+              ? t('merge.pendingNote', { n: totalCount - resolvedCount })
+              : t('merge.allResolved')}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button
@@ -449,7 +451,7 @@ export function ThreeWayMergeModal({
               onClick={onClose}
               style={{ padding: '4px 12px', fontSize: 12 }}
             >
-              取消
+              {t('merge.cancel')}
             </button>
             <button
               type="button"
@@ -457,7 +459,7 @@ export function ThreeWayMergeModal({
               onClick={handleSave}
               style={{ padding: '4px 16px', fontSize: 12, background: 'var(--accent, #6366f1)', color: '#fff', fontWeight: 600 }}
             >
-              完成合并并保存文件
+              {t('merge.saveAndFinish')}
             </button>
           </div>
         </div>

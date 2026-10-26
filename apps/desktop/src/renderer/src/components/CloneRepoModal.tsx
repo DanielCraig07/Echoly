@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n } from '../i18n';
 
 interface Props {
   open: boolean;
@@ -31,6 +32,7 @@ export function detectGitProtocol(url: string): 'HTTPS' | 'SSH' | 'Git' | null {
 }
 
 export function CloneRepoModal({ open, onClose, onCloned }: Props) {
+  const { t } = useI18n();
   const [url, setUrl] = useState('');
   const [branch, setBranch] = useState('');
   const [parentDir, setParentDir] = useState(() => {
@@ -110,9 +112,9 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
         } catch {}
       }
     } catch (err: any) {
-      setError(`选择目录失败: ${err?.message || String(err)}`);
+      setError(t('clone.pickDirFailed', { msg: err?.message || String(err) }));
     }
-  }, []);
+  }, [t]);
 
   // 粘贴剪贴板 URL 快捷助手
   const handlePasteClipboard = useCallback(async () => {
@@ -138,7 +140,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
       });
       setBusy(false);
       if (!result.ok) {
-        setError(result.detail || 'Git 克隆发生错误，请检查仓库地址与访问权限');
+        setError(result.detail || t('clone.errorDetail'));
         return;
       }
       if (result.path) {
@@ -150,9 +152,9 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
       onClose();
     } catch (err: any) {
       setBusy(false);
-      setError(err?.message || '克隆操作遇到异常');
+      setError(err?.message || t('clone.errorException'));
     }
-  }, [url, branch, parentDir, busy, onCloned, onClose]);
+  }, [url, branch, parentDir, busy, onCloned, onClose, t]);
 
   if (!open || typeof document === 'undefined') return null;
 
@@ -196,7 +198,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
             </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-bright, #fff)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>Clone 远程仓库</span>
+                <span>{t('clone.title')}</span>
                 <span
                   style={{
                     fontSize: 10.5,
@@ -212,7 +214,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 </span>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                从 GitHub、GitLab、Gitee 或私有 Git 仓库克隆至本地，并立即打开为项目工作区
+                {t('clone.subtitle')}
               </div>
             </div>
           </div>
@@ -221,7 +223,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
             className="panel-action-btn"
             onClick={onClose}
             disabled={busy}
-            title="关闭 (Esc)"
+            title={t('common.closeEsc')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -236,7 +238,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
           <div className="clone-repo-field">
             <div className="clone-repo-field-label-row">
               <label className="clone-repo-field-label" htmlFor="clone-input-url">
-                <span>仓库 URL (Repository URL)</span>
+                <span>{t('clone.urlLabel')}</span>
                 {protocol && (
                   <span
                     style={{
@@ -257,9 +259,9 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 type="button"
                 className="clone-repo-chip-btn"
                 onClick={handlePasteClipboard}
-                title="尝试从系统剪贴板快速填入 URL"
+                title={t('clone.pasteTitle')}
               >
-                <span>📋</span> 从剪贴板粘贴
+                <span>📋</span> {t('clone.pasteFromClipboard')}
               </button>
             </div>
 
@@ -276,7 +278,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 type="text"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="例如: https://github.com/owner/repo.git 或 git@github.com:..."
+                placeholder={t('clone.urlPh')}
                 disabled={busy}
                 autoFocus
               />
@@ -284,7 +286,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
 
             {/* 常用托管平台辅助快捷前缀 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>快捷填入:</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('clone.presetHint')}</span>
               <button
                 type="button"
                 className="clone-repo-chip-btn"
@@ -299,7 +301,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 onClick={() => setUrl('https://gitee.com/')}
                 disabled={busy}
               >
-                Gitee (码云)
+                {t('clone.presetGitee')}
               </button>
               <button
                 type="button"
@@ -311,7 +313,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
               </button>
               {repoName && (
                 <span style={{ fontSize: 11, color: '#38bdf8', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span>✓</span> 项目名: <strong>{repoName}</strong>
+                  <span>✓</span> {t('clone.projectNameLabel')} <strong>{repoName}</strong>
                 </span>
               )}
             </div>
@@ -321,9 +323,11 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
           <div className="clone-repo-field">
             <div className="clone-repo-field-label-row">
               <label className="clone-repo-field-label" htmlFor="clone-input-dir">
-                <span>目标存储文件夹 (Parent Directory)</span>
+                <span>{t('clone.parentDirLabel')}</span>
               </label>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>将在该目录下自动创建项目文件夹</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                {t('clone.parentDirHint')}
+              </span>
             </div>
 
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -339,7 +343,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                   type="text"
                   value={parentDir}
                   onChange={(e) => setParentDir(e.target.value)}
-                  placeholder="点击右侧按钮选择或手动输入父目录"
+                  placeholder={t('clone.parentDirPh')}
                   disabled={busy}
                 />
               </div>
@@ -368,7 +372,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg>
-                浏览…
+                {t('clone.browse')}
               </button>
             </div>
 
@@ -376,8 +380,8 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
             {resolvedTargetPath && (
               <div className="clone-repo-preview-card" style={{ marginTop: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#38bdf8', fontWeight: 600 }}>📁 克隆后工作区路径预览:</span>
-                  <span style={{ fontSize: 10.5, color: '#34d399' }}>✓ 自动生成新目录</span>
+                  <span style={{ color: '#38bdf8', fontWeight: 600 }}>{t('clone.previewTitle')}</span>
+                  <span style={{ fontSize: 10.5, color: '#34d399' }}>{t('clone.previewAuto')}</span>
                 </div>
                 <div style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-bright, #fff)', wordBreak: 'break-all' }}>
                   {resolvedTargetPath}
@@ -390,9 +394,9 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
           <div className="clone-repo-field">
             <div className="clone-repo-field-label-row">
               <label className="clone-repo-field-label" htmlFor="clone-input-branch">
-                <span>检出分支 / 标签 (Branch / Tag - 可选)</span>
+                <span>{t('clone.branchLabel')}</span>
               </label>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>留空默认拉取远程 HEAD 默认分支</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('clone.branchHint')}</span>
             </div>
 
             <div className="clone-repo-input-wrapper">
@@ -410,14 +414,14 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 type="text"
                 value={branch}
                 onChange={(e) => setBranch(e.target.value)}
-                placeholder="例如: main 或 master (留空自动拉取远程默认分支)"
+                placeholder={t('clone.branchPh')}
                 disabled={busy}
               />
             </div>
 
             {/* 常用分支快捷按钮 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>常用分支:</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('clone.branchPresetHint')}</span>
               {['main', 'master', 'dev', 'release'].map((b) => (
                 <button
                   key={b}
@@ -437,7 +441,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                   onClick={() => setBranch('')}
                   disabled={busy}
                 >
-                  清除
+                  {t('clone.clear')}
                 </button>
               )}
             </div>
@@ -461,10 +465,10 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
             >
               <span style={{ fontSize: 14, flexShrink: 0 }}>⚠️</span>
               <div style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
-                <div style={{ fontWeight: 600, marginBottom: 2 }}>克隆失败</div>
+                <div style={{ fontWeight: 600, marginBottom: 2 }}>{t('clone.failed')}</div>
                 <div>{error}</div>
                 <div style={{ fontSize: 11, opacity: 0.85, marginTop: 4 }}>
-                  建议：请检查仓库 URL 是否正确、网络环境与代理配置，以及私有仓库的 SSH 密钥或访问权限。
+                  {t('clone.suggest')}
                 </div>
               </div>
             </div>
@@ -479,7 +483,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                   <span className="runtime-terminal-dot yellow" />
                   <span className="runtime-terminal-dot green" />
                   <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>Terminal · Git Clone 进度与实时日志</span>
+                    <span>{t('clone.terminalTitle')}</span>
                     {busy && (
                       <span
                         style={{
@@ -496,7 +500,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 </div>
                 {busy && (
                   <span style={{ fontSize: 10.5, color: '#38bdf8', fontWeight: 500 }}>
-                    正在克隆中…
+                    {t('clone.cloningStatus')}
                   </span>
                 )}
               </div>
@@ -516,7 +520,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                   wordBreak: 'break-all',
                 }}
               >
-                {log || '$ git clone --progress ...\n正在连接远程主机并检索仓库元数据...'}
+                {log || t('clone.logPlaceholder')}
               </div>
             </div>
           )}
@@ -525,16 +529,16 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
         {/* ── 底部操作栏 ── */}
         <div className="clone-repo-footer">
           <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>💡 快捷键:</span>
+            <span>{t('clone.hotkey')}</span>
             <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)', fontSize: 10 }}>
               Esc
             </kbd>
-            <span>取消</span>
+            <span>{t('clone.cancel')}</span>
             <span style={{ opacity: 0.5 }}>·</span>
             <kbd style={{ padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', border: '1px solid var(--border)', fontSize: 10 }}>
               ↵ Enter
             </kbd>
-            <span>克隆</span>
+            <span>{t('clone.cloneAction')}</span>
           </div>
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -553,7 +557,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 transition: 'all 0.15s ease',
               }}
             >
-              取消
+              {t('clone.cancel')}
             </button>
 
             <button
@@ -591,7 +595,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                     <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
                     <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
                   </svg>
-                  <span>正在克隆…</span>
+                  <span>{t('clone.cloning')}</span>
                 </>
               ) : (
                 <>
@@ -600,7 +604,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                     <path d="m8 11 4 4 4-4" />
                     <path d="M5 19h14" />
                   </svg>
-                  <span>开始克隆 (Clone)</span>
+                  <span>{t('clone.start')}</span>
                 </>
               )}
             </button>

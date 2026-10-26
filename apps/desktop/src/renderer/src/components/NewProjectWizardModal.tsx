@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { PROJECT_TEMPLATE_LIST, type ProjectTemplate } from '../utils/projectTemplates';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n, translateSegments } from '../i18n';
 
 interface Props {
   isOpen: boolean;
@@ -28,6 +29,7 @@ export function NewProjectWizardModal({
   onOpenWorkspace,
   onShowToast,
 }: Props) {
+  const { t, locale } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_new_project_wizard_size',
     defaultWidth: 780,
@@ -101,31 +103,39 @@ export function NewProjectWizardModal({
         setParentDir(picked);
       }
     } catch (err: any) {
-      onShowToast?.('选择目录失败', err?.message || String(err), 'error');
+      onShowToast?.(t('workspace.pickDirFailed'), err?.message || String(err), 'error');
     }
   };
 
   // 计算完整目标路径
   const fullTargetPath = useMemo(() => {
-    if (!parentDir.trim()) return projectName.trim() ? `[未选择上级目录]/${projectName.trim()}` : '';
+    if (!parentDir.trim()) {
+      return projectName.trim()
+        ? `${t('workspace.noParentDir')}/${projectName.trim()}`
+        : '';
+    }
     const cleanParent = parentDir.trim().replace(/[/\\]+$/, '');
     const cleanName = projectName.trim();
     return cleanName ? `${cleanParent}/${cleanName}` : cleanParent;
-  }, [parentDir, projectName]);
+  }, [parentDir, projectName, t]);
 
   // 执行创建并打开
   const handleCreateAndOpen = async (openInNewWindow: boolean) => {
     if (!parentDir.trim()) {
-      onShowToast?.('请选择存储目录', '请指定工程将要创建的上级位置', 'warn');
+      onShowToast?.(t('workspace.needParentDir'), t('workspace.needParentDirDetail'), 'warn');
       return;
     }
     const cleanName = projectName.trim();
     if (!cleanName) {
-      onShowToast?.('请输入项目名称', '项目名称不能为空', 'warn');
+      onShowToast?.(t('workspace.needProjectName'), t('workspace.needProjectNameDetail'), 'warn');
       return;
     }
     if (/[/\\:*?"<>|]/.test(cleanName)) {
-      onShowToast?.('项目名称不合法', '项目名称包含非法字符，请勿包含斜杠或特殊符号', 'error');
+      onShowToast?.(
+        t('workspace.invalidProjectName'),
+        t('workspace.invalidProjectNameDetail'),
+        'error',
+      );
       return;
     }
 
@@ -138,18 +148,18 @@ export function NewProjectWizardModal({
       });
 
       if (!res.ok || !res.targetPath) {
-        throw new Error(res.error || '创建工程失败');
+        throw new Error(res.error || t('workspace.createFailed'));
       }
 
       onShowToast?.(
-        `${activeTemplate.name} 工程创建成功`,
-        `已生成在: ${res.targetPath}`,
+        t('workspace.createOk', { name: activeTemplate.name }),
+        t('workspace.createOkDetail', { path: res.targetPath }),
         'success',
       );
       onClose();
       onOpenWorkspace(res.targetPath, openInNewWindow, res.entryFile);
     } catch (err: any) {
-      onShowToast?.('创建工程失败', err?.message || String(err), 'error');
+      onShowToast?.(t('workspace.createFailed'), err?.message || String(err), 'error');
     } finally {
       setIsCreating(false);
     }
@@ -207,10 +217,10 @@ export function NewProjectWizardModal({
             <span style={{ fontSize: 18 }}>🚀</span>
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-bright, #fff)' }}>
-                新建工程模板向导 (New Project Wizard)
+                {t('workspace.wizardTitle')}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                选择技术栈、定义项目名称与存储位置，一键生成现代化工程标准模板
+                {t('workspace.wizardDesc')}
               </div>
             </div>
           </div>
@@ -218,7 +228,7 @@ export function NewProjectWizardModal({
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭 (Esc)"
+            title={t('common.closeEsc')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -232,7 +242,7 @@ export function NewProjectWizardModal({
           {/* 左侧技术栈列表 (使用 PROJECT_TEMPLATE_LIST 保证无任何重复项) */}
           <div style={{ width: 230, display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, overflowY: 'auto', paddingRight: 4 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginBottom: 2, flexShrink: 0 }}>
-              选择技术栈 (TECHNOLOGY)
+              {t('workspace.techSection')}
             </div>
             {PROJECT_TEMPLATE_LIST.map((tpl) => {
               const isSelected = tpl.id === selectedTemplateId;
@@ -323,16 +333,18 @@ export function NewProjectWizardModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
-                  项目名称 (Project Name)
+                  {t('workspace.projectNameLabel')}
                 </label>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>自动创建同名根目录</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  {t('workspace.projectNameHint')}
+                </span>
               </div>
               <input
                 type="text"
                 className="wizard-form-input"
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
-                placeholder="例如: my-awesome-project"
+                placeholder={t('workspace.projectNamePh')}
                 style={{
                   width: '100%',
                 }}
@@ -343,9 +355,11 @@ export function NewProjectWizardModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
-                  存储位置 (Parent Directory)
+                  {t('workspace.parentDirLabel')}
                 </label>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>指定父级工程存放目录</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  {t('workspace.parentDirHint')}
+                </span>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
@@ -353,7 +367,7 @@ export function NewProjectWizardModal({
                   className="wizard-form-input"
                   value={parentDir}
                   onChange={(e) => setParentDir(e.target.value)}
-                  placeholder="例如: /Users/username/Projects"
+                  placeholder={t('workspace.parentDirPh')}
                   style={{
                     flex: 1,
                   }}
@@ -364,7 +378,7 @@ export function NewProjectWizardModal({
                   onClick={handlePickParentDir}
                   style={{ fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}
                 >
-                  📁 浏览…
+                  {t('workspace.browse')}
                 </button>
               </div>
             </div>
@@ -386,7 +400,20 @@ export function NewProjectWizardModal({
             >
               <span style={{ flexShrink: 0 }}>📍</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fullTargetPath}>
-                即将生成至: <strong style={{ color: 'var(--accent-light, #3794ff)', fontFamily: 'var(--font-mono)' }}>{fullTargetPath || '请选择父目录与项目名'}</strong>
+                {translateSegments('workspace.willGenerateAt', locale, {
+                  path: fullTargetPath || t('workspace.pickParentAndName'),
+                }).map((seg, i) =>
+                  seg.emphasis ? (
+                    <strong
+                      key={i}
+                      style={{ color: 'var(--accent-light, #3794ff)', fontFamily: 'var(--font-mono)' }}
+                    >
+                      {seg.text}
+                    </strong>
+                  ) : (
+                    <span key={i}>{seg.text}</span>
+                  ),
+                )}
               </span>
             </div>
 
@@ -421,7 +448,7 @@ export function NewProjectWizardModal({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>📦</span>
-                  <span>工程生成结构预览 (Scaffold Preview):</span>
+                  <span>{t('workspace.scaffoldPreview')}</span>
                 </div>
                 <span
                   style={{
@@ -432,7 +459,7 @@ export function NewProjectWizardModal({
                     color: 'var(--muted)',
                   }}
                 >
-                  {activeTemplate.files.length} 个文件
+                  {t('workspace.fileCount', { n: activeTemplate.files.length })}
                 </span>
               </div>
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, paddingRight: 4 }}>
@@ -483,7 +510,7 @@ export function NewProjectWizardModal({
             onClick={onClose}
             style={{ fontSize: 12, padding: '6px 14px' }}
           >
-            取消
+            {t('workspace.cancel')}
           </button>
 
           <div style={{ display: 'flex', gap: 10 }}>
@@ -493,9 +520,9 @@ export function NewProjectWizardModal({
               onClick={() => handleCreateAndOpen(false)}
               disabled={isCreating || !parentDir.trim() || !projectName.trim()}
               style={{ fontSize: 12, padding: '6px 14px' }}
-              title="生成并在当前 IDE 窗口切换至该工程"
+              title={t('workspace.openHereTitle')}
             >
-              {isCreating ? '生成中...' : '在当前窗口打开'}
+              {isCreating ? t('workspace.creating') : t('workspace.openHere')}
             </button>
             <button
               type="button"
@@ -511,9 +538,9 @@ export function NewProjectWizardModal({
                 fontWeight: 600,
                 boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)',
               }}
-              title="生成并在全新的 IDE 独立窗口中打开"
+              title={t('workspace.openNewTitle')}
             >
-              {isCreating ? '生成中...' : '在新窗口打开'}
+              {isCreating ? t('workspace.creating') : t('workspace.openNew')}
             </button>
           </div>
         </div>

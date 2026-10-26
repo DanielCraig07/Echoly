@@ -18,11 +18,36 @@ export interface DbConnectionForm {
   username: string;
 }
 
+/**
+ * 校验失败的原因。
+ *
+ * 返回**码**而不是中文句子：这里没有 i18n 上下文（纯逻辑模块，vitest 直接单测），
+ * 返回文案就等于把英文环境钉死在中文上。调用点在渲染层，那里把码翻成字典 key。
+ */
+export type DbFormErrorCode =
+  | 'sqlite-path-required'
+  | 'host-required'
+  | 'port-not-number'
+  | 'port-out-of-range'
+  | 'username-required'
+  | 'database-required';
+
 export interface DbConnectionValidation {
   ok: boolean;
-  /** 第一个阻断性问题，可直接作为中文提示展示 */
-  error?: string;
+  /** 第一个阻断性问题的原因码 */
+  errorCode?: DbFormErrorCode;
+  /** 原因码对应的插值参数（目前只有 host-required 需要驱动名） */
+  params?: Record<string, string>;
 }
+
+export const DB_FORM_ERROR_KEY: Record<DbFormErrorCode, string> = {
+  'sqlite-path-required': 'db.formErrSqlitePath',
+  'host-required': 'db.formErrHost',
+  'port-not-number': 'db.formErrPortNumber',
+  'port-out-of-range': 'db.formErrPortRange',
+  'username-required': 'db.formErrUsername',
+  'database-required': 'db.formErrDatabase',
+};
 
 /**
  * 驱动对应的默认端口文本，用于**预填输入框**（不是占位符）。
@@ -47,32 +72,36 @@ export function resolvePort(driver: DbDriverType, port: string): number {
 export function validateDbConnection(form: DbConnectionForm): DbConnectionValidation {
   if (form.driver === 'sqlite') {
     if (!form.sqlitePath.trim()) {
-      return { ok: false, error: '请指定 SQLite 数据库文件路径' };
+      return { ok: false, errorCode: 'sqlite-path-required' };
     }
     return { ok: true };
   }
 
   if (!form.host.trim()) {
-    return { ok: false, error: `请填写 ${form.driver === 'postgres' ? 'PostgreSQL' : 'MySQL'} 主机地址` };
+    return {
+      ok: false,
+      errorCode: 'host-required',
+      params: { driver: form.driver === 'postgres' ? 'PostgreSQL' : 'MySQL' },
+    };
   }
 
   const portText = form.port.trim();
   if (portText) {
     if (!/^\d+$/.test(portText)) {
-      return { ok: false, error: '端口必须是数字（留空则使用默认端口）' };
+      return { ok: false, errorCode: 'port-not-number' };
     }
     const portNum = Number(portText);
     if (portNum < 1 || portNum > 65535) {
-      return { ok: false, error: '端口取值范围为 1 - 65535' };
+      return { ok: false, errorCode: 'port-out-of-range' };
     }
   }
 
   if (!form.username.trim()) {
-    return { ok: false, error: '请填写用户名' };
+    return { ok: false, errorCode: 'username-required' };
   }
 
   if (form.driver === 'postgres' && !form.database.trim()) {
-    return { ok: false, error: 'PostgreSQL 必须指定数据库名（Database）' };
+    return { ok: false, errorCode: 'database-required' };
   }
 
   return { ok: true };

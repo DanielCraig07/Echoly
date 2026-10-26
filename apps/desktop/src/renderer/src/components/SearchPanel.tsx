@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { SearchCodeHit } from '@deepseek-ide/shared';
+import type { CodebaseIndexStatus, SearchCodeHit } from '@deepseek-ide/shared';
 import { RenderFileTreeIcon } from './FileTree';
 import { PanelChevron } from './PanelChevron';
+import { useI18n } from '../i18n';
 
 interface Props {
   onOpenFile: (path: string, line?: number) => void;
@@ -235,7 +236,52 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
   const [collapsedFiles, setCollapsedFiles] = useState<Record<string, boolean>>({});
   const [allCollapsed, setAllCollapsed] = useState(false);
 
+  /**
+   * 索引状态与进度。
+   *
+   * 之前语义搜索在「索引还没建」时只是安静地返回空列表，用户看到的和「关键词不对」
+   * 完全一样 —— 一个功能没生效，却长得像功能生效了但没结果。所以这里必须把
+   * 「有没有索引、建到哪了、能重建」这三件事显式摆出来。
+   */
+  const [indexStatus, setIndexStatus] = useState<CodebaseIndexStatus | null>(null);
+  const [indexBuilding, setIndexBuilding] = useState(false);
+
   const seq = useRef(0);
+  const { t } = useI18n();
+
+  const refreshIndexStatus = useCallback(async () => {
+    try {
+      setIndexStatus(await window.ide.codebaseStatus());
+    } catch {
+      setIndexStatus(null);
+    }
+  }, []);
+
+  // 打开语义模式时读一次状态，并订阅索引进度
+  useEffect(() => {
+    if (!isSemanticMode) return;
+    void refreshIndexStatus();
+    const off = window.ide.onCodebaseProgress?.((p) => {
+      setIndexStatus((prev) => (prev ? { ...prev, isIndexing: p.phase !== 'done', progress: p } : prev));
+      if (p.phase === 'done') void refreshIndexStatus();
+    });
+    return () => off?.();
+  }, [isSemanticMode, refreshIndexStatus]);
+
+  const buildIndex = useCallback(
+    async (force: boolean) => {
+      setIndexBuilding(true);
+      try {
+        setIndexStatus(await window.ide.codebaseIndex(force));
+      } catch {
+        // 索引失败时状态接口仍可读，这里不额外弹错：下面那行状态提示会显示「未建立」
+      } finally {
+        setIndexBuilding(false);
+        void refreshIndexStatus();
+      }
+    },
+    [refreshIndexStatus],
+  );
 
   // Perform real-time project-wide search
   const performSearch = useCallback(async (q: string, caseSensitive: boolean) => {
@@ -483,22 +529,22 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           }}
         >
           <PanelChevron expanded={true} size={12} />
-          <span>搜索</span>
+          <span>{t('search.title')}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           <button
             type="button"
             className={`panel-action-btn${isSemanticMode ? ' active' : ''}`}
-            title={isSemanticMode ? '语义搜索模式已启用 (基于 AST 符号与倒排特征分析)' : '开启 @codebase 自然语言语义搜索'}
+            title={isSemanticMode ? t('search.semanticOn') : t('search.semanticOff')}
             onClick={() => setIsSemanticMode((v) => !v)}
             style={{ color: isSemanticMode ? 'var(--accent, #6366f1)' : undefined }}
           >
-            <span style={{ fontSize: 11, fontWeight: 600 }}>✦ 语义</span>
+            <span style={{ fontSize: 11, fontWeight: 600 }}>✦ BM25</span>
           </button>
           <button
             type="button"
             className="panel-action-btn"
-            title="刷新搜索"
+            title={t('search.refresh')}
             onClick={() => void performSearch(query, isCaseSensitive)}
           >
             <svg
@@ -518,7 +564,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           <button
             type="button"
             className="panel-action-btn"
-            title="清空搜索结果"
+            title={t('search.clear')}
             onClick={handleClear}
           >
             <svg
@@ -538,7 +584,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           <button
             type="button"
             className={`panel-action-btn ${displayMode === 'tree' ? 'active' : ''}`}
-            title={displayMode === 'list' ? '按树结构显示' : '按列表显示'}
+            title={displayMode === 'list' ? t('search.viewTree') : t('search.viewList')}
             onClick={() => setDisplayMode((m) => (m === 'list' ? 'tree' : 'list'))}
           >
             {displayMode === 'tree' ? (
@@ -577,7 +623,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           <button
             type="button"
             className="panel-action-btn"
-            title={allCollapsed ? '全部展开' : '全部折叠'}
+            title={allCollapsed ? t('search.expandAll') : t('search.collapseAll')}
             onClick={toggleAllCollapse}
           >
             <svg
@@ -615,7 +661,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
             type="button"
             className={`panel-action-btn ${showReplace ? 'active' : ''}`}
             onClick={() => setShowReplace((v) => !v)}
-            title={showReplace ? '隐藏替换' : '显示替换'}
+            title={showReplace ? t('search.hideReplace') : t('search.toggleReplace')}
             style={{
               transition: 'transform 0.15s ease, background 0.15s ease',
             }}
@@ -642,8 +688,8 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索 (↑↓ 历史)"
-              title="搜索 (使用 ↑↓ 查看历史记录)"
+              placeholder={t('search.searchPlaceholder')}
+              title={t('search.searchPlaceholderTitle')}
               style={{
                 width: '100%',
                 padding: '6px 8px',
@@ -668,7 +714,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               <button
                 type="button"
                 className={`input-toggle-btn ${isCaseSensitive ? 'active' : ''}`}
-                title="区分大小写 (Alt+C)"
+                title={t('search.caseSensitive')}
                 onClick={() => setIsCaseSensitive((v) => !v)}
                 style={{ fontFamily: 'monospace' }}
               >
@@ -677,7 +723,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               <button
                 type="button"
                 className={`input-toggle-btn ${isWholeWord ? 'active' : ''}`}
-                title="全字匹配 (Alt+W)"
+                title={t('search.wholeWord')}
                 onClick={() => setIsWholeWord((v) => !v)}
                 style={{
                   fontFamily: 'monospace',
@@ -689,7 +735,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               <button
                 type="button"
                 className={`input-toggle-btn ${isRegex ? 'active' : ''}`}
-                title="使用正则表达式 (Alt+R)"
+                title={t('search.useRegex')}
                 onClick={() => setIsRegex((v) => !v)}
                 style={{ fontFamily: 'monospace' }}
               >
@@ -707,7 +753,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 type="text"
                 value={replaceQuery}
                 onChange={(e) => setReplaceQuery(e.target.value)}
-                placeholder="替换"
+                placeholder={t('search.replacePlaceholder')}
                 style={{
                   width: '100%',
                   padding: '6px 8px',
@@ -731,7 +777,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 <button
                   type="button"
                   className={`input-toggle-btn ${preserveCase ? 'active' : ''}`}
-                  title="保留大小写"
+                  title={t('search.preserveCase')}
                   onClick={() => setPreserveCase((v) => !v)}
                 >
                   AB
@@ -739,7 +785,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 <button
                   type="button"
                   className="panel-action-btn"
-                  title="全部替换 (Alt+Enter)"
+                  title={t('search.replaceAll')}
                   onClick={() => void handleReplaceAll()}
                 >
                   <svg
@@ -774,13 +820,13 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               borderRadius: 4,
             }}
           >
-            {showDetails ? '隐藏过滤选项 ▲' : '包含 / 排除的文件... ▼'}
+            {showDetails ? t('search.hideFilters') : t('search.showFilters')}
           </button>
         </div>
 
         {showDetails && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>包含的文件</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('search.filesToInclude')}</span>
             <input
               type="text"
               value={includesPattern}
@@ -788,7 +834,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
               placeholder="e.g. *.ts, src/**"
               className="search-filter-input"
             />
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>排除的文件</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('search.filesToExclude')}</span>
             <input
               type="text"
               value={excludesPattern}
@@ -805,11 +851,55 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
         className="search-results-scroll"
         style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0, minWidth: 0 }}
       >
+        {isSemanticMode && (
+          <div className="search-index-status">
+            {(() => {
+              const s = indexStatus;
+              if (indexBuilding || s?.isIndexing) {
+                const p = s?.progress;
+                const pct = p && p.total > 0 ? Math.round((p.scanned / p.total) * 100) : 0;
+                return (
+                  <span>
+                    {p
+                      ? t('search.indexProgress', { scanned: p.scanned, total: p.total, pct, reused: p.reused })
+                      : t('search.indexing')}
+                  </span>
+                );
+              }
+              if (!s || s.totalSymbols === 0) {
+                return (
+                  <>
+                    <span>{t('search.indexMissing')}</span>
+                    <button type="button" className="panel-action-btn" onClick={() => void buildIndex(false)}>
+                      {t('common.build')}
+                    </button>
+                  </>
+                );
+              }
+              return (
+                <>
+                  <span>
+                    {t('search.indexSummary', { files: s.indexedFiles, symbols: s.totalSymbols })}
+                    {s.lastIndexedTime ? ` · ${new Date(s.lastIndexedTime).toLocaleTimeString()}` : ''}
+                  </span>
+                  <button
+                    type="button"
+                    className="panel-action-btn"
+                    title={t('search.rebuildTitle')}
+                    onClick={() => void buildIndex(true)}
+                  >
+                    {t('common.rebuild')}
+                  </button>
+                </>
+              );
+            })()}
+          </div>
+        )}
         {loading && (
-          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>Searching...</div>
+          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>{t('search.searching')}</div>
         )}
         {!loading && query && groups.length === 0 && (
-          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>未找到匹配的结果</div>
+          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>{t('search.noResults')}</div>
         )}
 
         {!loading && groups.length > 0 && (
@@ -822,8 +912,11 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 borderBottom: '1px solid var(--border)',
               }}
             >
-              在 {totalFiles} 个文件中找到了 {totalMatches} 个结果 (
-              {displayMode === 'tree' ? '树结构' : '列表模式'})
+              {t('search.resultsSummary', {
+                files: totalFiles,
+                matches: totalMatches,
+                mode: displayMode === 'tree' ? t('search.modeTree') : t('search.modeList'),
+              })}
             </div>
 
             {displayMode === 'tree' ? (

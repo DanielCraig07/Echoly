@@ -4,6 +4,12 @@ import path from 'node:path';
 import os from 'node:os';
 import { detectWorkspaceTechFromDisk } from '../src/main/workspaceDetector';
 import { heuristicDetectTech, detectTechBadge } from '../src/renderer/src/utils/techStack';
+import { translate, translateWith, type Translate } from '../src/renderer/src/i18n';
+
+// `detectTechBadge` 现在要求显式传 `t`（徽章 label 会直接渲染，也参与 tooltip 插值）。
+// 测试自带锁定中文的翻译器：下面的断言按中文写，组件那边传的是实时 hook，互不干扰。
+const zhT: Translate = (key, params) =>
+  params ? translateWith(key, 'zh', params) : translate(key, 'zh');
 
 describe('Workspace Tech Stack Accurate Detection', () => {
   it('accurately identifies tsingtec_data_center as Java from pom.xml and does NOT misidentify as Node', () => {
@@ -16,7 +22,7 @@ describe('Workspace Tech Stack Accurate Detection', () => {
       expect(detected).toBe('Java');
 
       // Check badge styling
-      const badge = detectTechBadge('tsingtec_data_center', tmpDir, detected);
+      const badge = detectTechBadge('tsingtec_data_center', tmpDir, zhT, detected);
       expect(badge.label).toBe('Java');
       expect(badge.color).toBe('#fb923c'); // Java orange
     } finally {
@@ -34,7 +40,7 @@ describe('Workspace Tech Stack Accurate Detection', () => {
       const detected = detectWorkspaceTechFromDisk(tmpDir);
       expect(detected).toBe('Node');
 
-      const badge = detectTechBadge('catering-mini-app', tmpDir, detected);
+      const badge = detectTechBadge('catering-mini-app', tmpDir, zhT, detected);
       expect(badge.label).toBe('Node');
       expect(badge.color).toBe('#4ade80'); // Node green
     } finally {
@@ -95,7 +101,7 @@ describe('Workspace Tech Stack Accurate Detection', () => {
       expect(detected).toBe('Python');
       expect(detected).not.toBe('Git');
 
-      const badge = detectTechBadge('my-python-tool', tmpDir, detected);
+      const badge = detectTechBadge('my-python-tool', tmpDir, zhT, detected);
       expect(badge.label).toBe('Python');
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -112,7 +118,7 @@ describe('Workspace Tech Stack Accurate Detection', () => {
       expect(detected).toBe('通用');
       expect(detected).not.toBe('Git');
 
-      const badge = detectTechBadge('random-notes', tmpDir, detected);
+      const badge = detectTechBadge('random-notes', tmpDir, zhT, detected);
       expect(badge.label).toBe('通用');
       expect(badge.label).not.toBe('Git');
     } finally {

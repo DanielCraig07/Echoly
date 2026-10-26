@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { DiffEditor } from '@monaco-editor/react';
 import type { GitBranchInfo, GitDiffResult } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n } from '../i18n';
 
 interface Props {
   open: boolean;
@@ -16,6 +17,7 @@ interface ChangedFile {
 }
 
 export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
+  const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_branch_diff_modal_size',
     defaultWidth: 840,
@@ -81,7 +83,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
           setSelectedFile(res.files[0].path);
         }
       } else {
-        setError(res.detail || '获取分支对比失败');
+        setError(res.detail || t('git.compareBranchesFailed'));
       }
     });
   }, [open, baseBranch, targetBranch]);
@@ -178,7 +180,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
               <line x1="6" y1="9" x2="6" y2="21" />
             </svg>
             <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
-              Git 分支差异对比 (Branch Diff)
+              {t('git.branchDiffTitle')}
             </span>
           </div>
 
@@ -186,7 +188,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭 (Esc)"
+            title={t('git.closeEsc')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -209,7 +211,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>基准分支:</span>
+            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>{t('git.baseBranchLabel')}</span>
             <select
               value={baseBranch}
               onChange={(e) => setBaseBranch(e.target.value)}
@@ -225,7 +227,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             >
               {branches.map((b) => (
                 <option key={b.name} value={b.name}>
-                  {b.name} {b.remote ? '(远程)' : ''}
+                  {b.name} {b.remote ? t('git.remoteSuffix') : ''}
                 </option>
               ))}
             </select>
@@ -235,7 +237,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             type="button"
             className="panel-action-btn"
             onClick={swapBranches}
-            title="互换对比基准与目标分支"
+            title={t('git.swapBranchesTip')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="17 1 21 5 17 9" />
@@ -246,7 +248,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>目标分支:</span>
+            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>{t('git.targetBranchLabel')}</span>
             <select
               value={targetBranch}
               onChange={(e) => setTargetBranch(e.target.value)}
@@ -263,7 +265,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             >
               {branches.map((b) => (
                 <option key={b.name} value={b.name}>
-                  {b.name} {b.remote ? '(远程)' : ''}
+                  {b.name} {b.remote ? t('git.remoteSuffix') : ''}
                 </option>
               ))}
             </select>
@@ -281,9 +283,9 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 border: '1px solid rgba(16, 185, 129, 0.3)',
                 fontWeight: 600,
               }}
-              title="目标分支领先的提交数"
+              title={t('git.aheadTip')}
             >
-              ↑ 领先 {ahead}
+              {t('git.ahead', { n: ahead })}
             </span>
             <span
               style={{
@@ -295,12 +297,12 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 border: '1px solid rgba(239, 68, 68, 0.3)',
                 fontWeight: 600,
               }}
-              title="目标分支落后的提交数"
+              title={t('git.behindTip')}
             >
-              ↓ 落后 {behind}
+              {t('git.behind', { n: behind })}
             </span>
             <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>
-              变动文件: <b style={{ color: '#fff' }}>{files.length}</b>
+              {t('git.changedFilesLabel', { n: files.length })}
             </span>
           </div>
         </div>
@@ -342,16 +344,16 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 borderBottom: '1px solid rgba(255,255,255,0.04)',
               }}
             >
-              变更文件 ({files.length})
+              {t('git.changedFilesCount', { n: files.length })}
             </div>
             {loading && (
               <div style={{ padding: 20, textAlign: 'center', fontSize: 11, color: 'var(--muted, #888)' }}>
-                正在计算分支差异...
+                {t('git.calculatingDiff')}
               </div>
             )}
             {!loading && files.length === 0 && (
               <div style={{ padding: 24, textAlign: 'center', fontSize: 12, color: 'var(--muted, #888)' }}>
-                两分支代码完全一致，无文件变更
+                {t('git.noBranchChanges')}
               </div>
             )}
             {!loading &&
@@ -416,11 +418,12 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 }}
               >
                 <span style={{ color: 'var(--muted, #888)' }}>
-                  对比文件: <span style={{ color: '#fff', fontFamily: 'monospace' }}>{selectedFile}</span>
+                  {t('git.compareFileLabel')}{' '}
+                  <span style={{ color: '#fff', fontFamily: 'monospace' }}>{selectedFile}</span>
                 </span>
                 <span style={{ color: 'var(--muted, #888)' }}>
-                  左: <span style={{ color: '#aaa' }}>{baseBranch}</span> | 右:{' '}
-                  <span style={{ color: '#38bdf8' }}>{targetBranch}</span>
+                  {t('git.leftLabel')} <span style={{ color: '#aaa' }}>{baseBranch}</span> |{' '}
+                  {t('git.rightLabel')} <span style={{ color: '#38bdf8' }}>{targetBranch}</span>
                 </span>
               </div>
             )}
@@ -440,7 +443,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                     zIndex: 2,
                   }}
                 >
-                  正在载入代码对比...
+                  {t('git.loadingDiff')}
                 </div>
               )}
               {diffData ? (
@@ -480,7 +483,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                     fontSize: 12,
                   }}
                 >
-                  选择左侧文件查看代码差异
+                  {t('git.selectFileHint')}
                 </div>
               )}
             </div>

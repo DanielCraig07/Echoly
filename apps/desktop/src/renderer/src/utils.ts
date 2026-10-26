@@ -1,4 +1,6 @@
 import type { ChatSession, WorkspaceInfo, WorkspaceKind } from '@deepseek-ide/shared';
+import { NO_WORKSPACE_LABEL } from '@deepseek-ide/shared';
+import type { Translate } from './i18n';
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'svg', 'avif']);
 
@@ -297,6 +299,50 @@ export function uid(): string {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * 会话标题的**自动标题**（没见过用户消息时用的占总位符）。
+ *
+ * 它是哨兵不是文案：`isCustomSessionTitle` 靠几个历史默认标题的**字面量**判断
+ * 「用户有没有自己改过标题」。这些值会随会话落盘，跨版本、跨语言都还在 ——
+ * 所以它们必须永远保持下面这几个字符串，**不能进字典**。
+ */
+const AUTO_SESSION_TITLES = new Set(['New Chat', '当前对话', '对话']);
+
+/**
+ * 判断一条会话的标题是「自动生成的」还是「用户改过的」。
+ *
+ * 为什么收成一个函数：这段判定原先在 ChatPanel 里抄了 4 份、SessionDrawer 里 1 份、
+ * 测试里又抄了 3 份，任何一处改了另几处都不会跟着变。而它同时又是个**哨兵比较**：
+ * 一旦哪天有人把 `'当前对话'` 顺手翻成 `'Current chat'` 并让这个新值落盘，
+ * 老会话的标题就再也匹配不上这个集合，判定全部翻成「用户改过的」——
+ * 表现是标题在某轮对话之后**不再自动更新**，不报错、不崩，只是看起来「卡住了」。
+ *
+ * `customTitle === true` 是显式标志（新数据走这条）；下面的字面量比较是给
+ * 存量数据兜底的。
+ */
+export function isCustomSessionTitle(
+  title: string | undefined,
+  firstUserSnippet: string,
+  customTitle?: boolean,
+): boolean {
+  if (customTitle === true) return true;
+  if (!title) return false;
+  if (AUTO_SESSION_TITLES.has(title)) return false;
+  return !firstUserSnippet || title !== firstUserSnippet;
+}
+
+/** 新会话的默认标题（**哨兵值**，故意不进字典，理由见 isCustomSessionTitle） */
+export const DEFAULT_SESSION_TITLE = '当前对话';
+
+/**
+ * 自动标题兜底用的短标题（`'对话'`）。
+ *
+ * 同样是哨兵：它会被写进 `saveSession` 落盘，之后 `isCustomSessionTitle` 要靠认出
+ * 这个字面量才判定得出「这条标题不是用户写的」。翻了它，存量会话的判定就崩了。
+ */
+export const AUTO_SESSION_TITLE_FALLBACK = '对话';
+
+
 export function folderNameFromPath(p: string): string {
   const cleaned = p.replace(/^ssh:\/\//i, '').replace(/^ssh\s+/i, '');
   const pathPart =
@@ -313,7 +359,7 @@ export function buildSessionWorkspaceMeta(
   if (!info?.root) return {};
   if (info.kind === 'ssh') {
     // Prefer label so reopen can recover host (root alone is ambiguous).
-    const key = info.label && info.label !== '未打开工作区' ? info.label : info.root;
+    const key = info.label && info.label !== NO_WORKSPACE_LABEL ? info.label : info.root;
     return {
       workspaceKind: 'ssh',
       workspacePath: key,
@@ -348,7 +394,10 @@ export function sessionWorkspaceHost(session: ChatSession): string | null {
 }
 
 /** History list subtitle: badge + project (+ host for SSH). */
-export function formatSessionWorkspaceLine(session: ChatSession): {
+export function formatSessionWorkspaceLine(
+  session: ChatSession,
+  t: Translate,
+): {
   kind: WorkspaceKind | null;
   badge: string;
   text: string;
@@ -359,23 +408,24 @@ export function formatSessionWorkspaceLine(session: ChatSession): {
   const project = session.projectName || (path ? folderNameFromPath(path) : '');
 
   if (!kind && !project && !path) {
-    return { kind: null, badge: '', text: '未绑定工作区', title: '' };
+    return { kind: null, badge: '', text: t('session.wsUnbound'), title: '' };
   }
 
   if (kind === 'ssh') {
     const host = sessionWorkspaceHost(session);
+    const fallback = t('session.wsRemoteProject');
     return {
       kind: 'ssh',
       badge: 'SSH',
-      text: host ? `${host} · ${project || '远程项目'}` : project || '远程项目',
+      text: host ? `${host} · ${project || fallback}` : project || fallback,
       title: path || project,
     };
   }
 
   return {
     kind: 'local',
-    badge: '本地',
-    text: project || path || '本地项目',
+    badge: t('workspace.kindLocal'),
+    text: project || path || t('session.wsLocalProject'),
     title: path || project,
   };
 }

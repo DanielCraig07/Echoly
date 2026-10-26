@@ -8,10 +8,18 @@
  * 无 React 依赖，vitest 直接单测。
  */
 
+import type { Translate } from '../i18n';
+
 /** 危险等级：决定弹窗配色与按钮文案 */
 export type DbConfirmTone = 'normal' | 'danger';
 
 export interface DbConfirmContentOptions {
+  /**
+   * 取文案用。**必填**：这个函数拼出来的正文会直接渲染进确认弹窗，
+   * 里面的「⚠️ 危险操作」「共 N 条语句，将按顺序执行」都是用户要读的字。
+   * 做成可选带默认值，等于把「英文环境下弹一句中文」藏进类型系统看不见的地方。
+   */
+  t: Translate;
   /** 一句话说明这次要做什么（支持行内 Markdown） */
   intro: string;
   /** 要执行的语句，每条单独一个代码块 */
@@ -52,6 +60,7 @@ function fenceFor(text: string): string {
 }
 
 export function buildSqlConfirmMarkdown({
+  t,
   intro,
   statements,
   notes = [],
@@ -60,7 +69,7 @@ export function buildSqlConfirmMarkdown({
   const parts: string[] = [];
 
   if (tone === 'danger') {
-    parts.push(`> ⚠️ **危险操作**：${intro}`);
+    parts.push(`> ${t('db.confirmDangerBanner', { intro })}`);
   } else {
     parts.push(intro);
   }
@@ -68,9 +77,9 @@ export function buildSqlConfirmMarkdown({
   // 语句为空时不要留下一句「共 0 条」的废话 —— 那种弹窗本身就是调用方的 bug
   if (statements.length > 0) {
     if (statements.length > 1) {
-      parts.push(`共 **${statements.length}** 条语句，将按顺序执行：`);
+      parts.push(t('db.confirmMultiStatements', { n: statements.length }));
     } else {
-      parts.push('将执行以下语句：');
+      parts.push(t('db.confirmSingleStatement'));
     }
     for (const sql of statements) {
       const fence = fenceFor(sql);
@@ -93,16 +102,24 @@ export function isTypingConfirmed(expected: string, typed: string): boolean {
   return typed.trim() === expected.trim();
 }
 
-/** 确认按钮上该写什么（每种操作的动词不一样，别让用户去读正文猜） */
-export function confirmLabelFor(action: 'execute' | 'drop' | 'truncate' | 'delete'): string {
+/**
+ * 确认按钮上该写什么（每种操作的动词不一样，别让用户去读正文猜）。
+ *
+ * 返回的是**字典 key**，不是文案 —— 调用点在渲染层，那里才有 `t`。
+ * 这里返回中文串的话，英文环境下按钮永远是中文，而且因为它是函数返回值、
+ * 不是 JSX 里的字面量，扫「源码里的中文字符串」那类检查也扫不到它。
+ */
+export function confirmLabelKey(
+  action: 'execute' | 'drop' | 'truncate' | 'delete',
+): string {
   switch (action) {
     case 'drop':
-      return '确认删除';
+      return 'db.confirmDropLabel';
     case 'truncate':
-      return '确认清空';
+      return 'db.confirmTruncateLabel';
     case 'delete':
-      return '确认删除';
+      return 'db.confirmDeleteLabel';
     default:
-      return '确认执行';
+      return 'db.confirmExecuteLabel';
   }
 }

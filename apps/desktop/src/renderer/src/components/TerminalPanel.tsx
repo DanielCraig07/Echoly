@@ -11,6 +11,11 @@ import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { colorizeTerminalLogs } from '../utils/terminalLogColorizer';
 import { measureContentColumns } from '../utils/terminalWidth';
+import {
+  registerTerminalLogReader,
+  setFocusedTerminalId,
+} from '../services/specialMentions';
+import { useI18n, type Translate } from '../i18n';
 export { colorizeTerminalLogs };
 
 /**
@@ -87,17 +92,23 @@ function makeTab(
   return { clientId: uid(), index, cwd, initialCommand, terminalType, customTitle };
 }
 
-function tabLabel(kind: 'local' | 'ssh', index: number): string {
-  return kind === 'ssh' ? `SSH ${index}` : `本地 ${index}`;
+/**
+ * 终端标签的默认名字。
+ *
+ * 取名要 t 而不是自己拼中文：「本地 3」和 "Local 3" 之间差的不是词，是空格规则
+ * （中文数字前不加空格），拼接写法必然有一边多出一个空格。
+ */
+function tabLabel(kind: 'local' | 'ssh', index: number, t: Translate): string {
+  return kind === 'ssh' ? t('terminal.tabLabelSsh', { n: index }) : t('terminal.tabLabelLocal', { n: index });
 }
 
-function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh') {
+function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh', t: Translate) {
   const type = (tab.terminalType || '').toLowerCase();
   const title = (tab.customTitle || '').toLowerCase();
 
   if (type === 'mvn' || title.includes('mvn') || title.includes('maven')) {
     return (
-      <span className="terminal-tab-icon maven" title="Maven 构建">
+      <span className="terminal-tab-icon maven" title={t('terminal.iconMaven')}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
           <line x1="16" y1="8" x2="2" y2="22" />
@@ -108,7 +119,7 @@ function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh') {
   }
   if (type === 'java' || title.includes('java')) {
     return (
-      <span className="terminal-tab-icon java" title="Java 运行环境">
+      <span className="terminal-tab-icon java" title={t('terminal.iconJava')}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 8h1a4 4 0 0 1 0 8h-1" />
           <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z" />
@@ -120,7 +131,7 @@ function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh') {
   }
   if (terminalKind === 'ssh' || type === 'ssh') {
     return (
-      <span className="terminal-tab-icon ssh" title="SSH 远程主机">
+      <span className="terminal-tab-icon ssh" title={t('terminal.iconSsh')}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="2" y="3" width="20" height="7" rx="2" />
           <rect x="2" y="14" width="20" height="7" rx="2" />
@@ -131,7 +142,7 @@ function renderTabIcon(tab: TermTab, terminalKind: 'local' | 'ssh') {
     );
   }
   return (
-    <span className="terminal-tab-icon shell" title="终端会话">
+    <span className="terminal-tab-icon shell" title={t('terminal.iconShell')}>
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="4 17 10 11 4 5" />
         <line x1="12" y1="19" x2="20" y2="19" />
@@ -341,6 +352,7 @@ function TerminalSearchBar({
   onClose,
   focusNonce,
 }: TerminalSearchBarProps) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -389,13 +401,13 @@ function TerminalSearchBar({
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="在终端中查找..."
+          placeholder={t('terminal.findPh')}
         />
         <div style={{ position: 'absolute', right: 4, display: 'flex', gap: 2, alignItems: 'center' }}>
           <button
             type="button"
             className={`input-toggle-btn${caseSensitive ? ' active' : ''}`}
-            title="区分大小写 (Alt+C)"
+            title={t('terminal.findCase')}
             onClick={onToggleCaseSensitive}
             style={{ fontFamily: 'monospace' }}
           >
@@ -404,7 +416,7 @@ function TerminalSearchBar({
           <button
             type="button"
             className={`input-toggle-btn${wholeWord ? ' active' : ''}`}
-            title="全字匹配 (Alt+W)"
+            title={t('terminal.findWord')}
             onClick={onToggleWholeWord}
             style={{
               fontFamily: 'monospace',
@@ -416,7 +428,7 @@ function TerminalSearchBar({
           <button
             type="button"
             className={`input-toggle-btn${regex ? ' active' : ''}`}
-            title="使用正则表达式 (Alt+R)"
+            title={t('terminal.findRegex')}
             onClick={onToggleRegex}
             style={{ fontFamily: 'monospace' }}
           >
@@ -428,10 +440,10 @@ function TerminalSearchBar({
       {query && (
         <span className={`terminal-search-badge${resultCount === 0 ? ' no-results' : ''}`}>
           {resultCount === 0
-            ? '无结果'
+            ? t('terminal.findNoResult')
             : resultIndex >= 0
               ? `${resultIndex + 1}/${resultCount}`
-              : `${resultCount} 项`}
+              : t('terminal.findCount', { n: resultCount })}
         </span>
       )}
 
@@ -439,7 +451,7 @@ function TerminalSearchBar({
         <button
           type="button"
           className="panel-action-btn"
-          title="上一个匹配项 (Shift+Enter)"
+          title={t('terminal.findPrev')}
           onClick={onFindPrevious}
         >
           <svg
@@ -458,7 +470,7 @@ function TerminalSearchBar({
         <button
           type="button"
           className="panel-action-btn"
-          title="下一个匹配项 (Enter)"
+          title={t('terminal.findNext')}
           onClick={onFindNext}
         >
           <svg
@@ -477,7 +489,7 @@ function TerminalSearchBar({
         <button
           type="button"
           className="panel-action-btn"
-          title="关闭搜索 (Esc)"
+          title={t('terminal.findClose')}
           onClick={onClose}
         >
           <svg
@@ -671,6 +683,7 @@ function TerminalSession({
   style,
   onOpenFile,
 }: SessionProps) {
+  const { t } = useI18n();
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -958,6 +971,7 @@ function TerminalSession({
     let unreg: (() => void) | undefined = undefined;
     let unregRaw: (() => void) | undefined = undefined;
     let unregExtract: (() => void) | undefined = undefined;
+    let unregMentionLog: (() => void) | undefined = undefined;
     let unregFocus: (() => void) | undefined = undefined;
     // 初始列数固定 80：两种模式都会在挂载后由 applyTerminalSize 校准到视口宽度，
     // 不换行模式不再预展开超宽列，避免刚打开就出现巨大的横向滚动区间。
@@ -1162,13 +1176,13 @@ function TerminalSession({
         }
 
         if (data.includes('No module named debugpy')) {
-          term.writeln('\r\n\x1b[1;33m⚠️  [Echoly 调试诊断] 当前 Python 环境未安装 debugpy 调试模块。\x1b[0m');
-          term.writeln('\x1b[36m💡 提示: 请在下方终端执行命令安装依赖后重试: pip3 install debugpy (或 python3 -m pip install debugpy)\x1b[0m\r\n');
+          term.writeln('\r\n\x1b[1;33m' + t('terminal.debugpyMissing') + '\x1b[0m');
+          term.writeln('\x1b[36m' + t('terminal.debugpyHint') + '\x1b[0m\r\n');
           window.dispatchEvent(
             new CustomEvent('echoly:debugError', {
               detail: {
                 language: 'python',
-                message: '当前 Python 环境缺少 debugpy 模块。请在终端执行: pip3 install debugpy',
+                message: t('terminal.debugpyMissingDetail'),
               },
             }),
           );
@@ -1272,6 +1286,8 @@ function TerminalSession({
         return result.join('\n').trim();
       };
       unregExtract = onRegisterExtractLog?.(clientId, getRecentLines);
+      // 同一份读取函数也注册进模块级注册表，供聊天框的 `@Terminal` 引用取当前聚焦终端的输出
+      unregMentionLog = registerTerminalLogReader(clientId, getRecentLines);
 
       const focusTerm = () => {
         termRef.current?.focus();
@@ -1335,6 +1351,7 @@ function TerminalSession({
       unreg?.();
       unregRaw?.();
       unregExtract?.();
+      unregMentionLog?.();
       unregFocus?.();
       if (observerRef.current) {
         observerRef.current.disconnect();
@@ -1646,6 +1663,11 @@ function TerminalSession({
     termRef.current?.focus();
   };
 
+  /**
+   * 以下几处拼的都是**送给模型的 prompt**（经 `echoly:askAi` 自动提交），不是界面文案：
+   * 与 `services/specialMentions.ts` / `ProblemsPanel` 同类，故不进字典。
+   * 终端面板上给用户看的那些文案（右键菜单项、空态、状态条）才是翻的。
+   */
   const handleAskAiSelection = () => {
     const sel = termRef.current?.getSelection()?.trim();
     if (sel) {
@@ -1742,11 +1764,11 @@ function TerminalSession({
             disabled={!hasSelection}
             style={{ opacity: hasSelection ? 1 : 0.45, cursor: hasSelection ? 'pointer' : 'default' }}
           >
-            <span>复制</span>
+            <span>{t('terminal.copy')}</span>
             <kbd className="shortcut-badge">{isMac ? '⌘C' : 'Ctrl+Shift+C'}</kbd>
           </button>
           <button type="button" className="ctx-item" onClick={() => void handlePaste()}>
-            <span>粘贴</span>
+            <span>{t('terminal.paste')}</span>
             <kbd className="shortcut-badge">{isMac ? '⌘V' : 'Ctrl+Shift+V'}</kbd>
           </button>
           {hasSelection && (
@@ -1758,18 +1780,18 @@ function TerminalSession({
                 onClick={handleAskAiSelection}
                 style={{ color: 'var(--accent, #6366f1)' }}
               >
-                <span>⚡️ 让 AI 诊断/修复选中内容</span>
+                <span>{t('terminal.askAiSelection')}</span>
                 <kbd className="shortcut-badge">Ask AI</kbd>
               </button>
             </>
           )}
           <div className="ctx-sep" />
           <button type="button" className="ctx-item" onClick={handleSelectAll}>
-            <span>全选</span>
+            <span>{t('terminal.selectAll')}</span>
             <kbd className="shortcut-badge">{isMac ? '⌘A' : 'Ctrl+A'}</kbd>
           </button>
           <button type="button" className="ctx-item" onClick={handleClearFromMenu}>
-            <span>清空屏幕 (Clear)</span>
+            <span>{t('terminal.clearScreen')}</span>
             <kbd className="shortcut-badge">{isMac ? '⌘K' : 'Ctrl+L'}</kbd>
           </button>
         </div>
@@ -1825,6 +1847,7 @@ export function TerminalPanel({
 }: Props) {
   // 关闭有内容的终端标签前确认（系统 window.confirm 不是应用主题色，也没法说明会丢什么）
   const confirm = useDbConfirm();
+  const { t } = useI18n();
   const seqRef = useRef(1);
   const bootRef = useRef<TermTab | null>(null);
   if (!bootRef.current) bootRef.current = makeTab(1);
@@ -1836,6 +1859,13 @@ export function TerminalPanel({
   const [splitActiveId, setSplitActiveId] = useState<string | null>(null);
   // 当前接受键盘输入与操作的聚焦终端 clientId
   const [focusedTabId, setFocusedTabId] = useState(bootRef.current.clientId);
+
+  // 把「哪个终端是聚焦的」同步给模块级注册表，聊天框的 @Terminal 引用才知道该读哪一路输出。
+  // 面板整体卸载时清空，避免读到一个已经销毁的 xterm 实例。
+  useEffect(() => {
+    setFocusedTerminalId(focusedTabId);
+    return () => setFocusedTerminalId(null);
+  }, [focusedTabId]);
 
   // 左右/上下分屏宽度比例与拖拽状态 (0.18 ~ 0.82)
   const [splitRatio, setSplitRatio] = useState<number>(0.5);
@@ -2292,17 +2322,21 @@ export function TerminalPanel({
         const tab = tabsRef.current.find((t) => t.clientId === clientId);
         if (tab && tabHasContent(everWroteRef.current, clientId)) {
           const ok = await confirm.confirm({
-            title: '关闭终端标签',
+            title: t('terminal.closeTabTitle'),
             content: buildSqlConfirmMarkdown({
-              intro: '这个终端会被销毁：**滚动的历史输出会丢失**，其中正在运行的进程也会被终止，且**无法撤销**。',
+              t,
+              intro: t('terminal.closeTabBody'),
               statements: [],
             }),
             details: [
-              { label: '标签', value: tab.customTitle || tabLabel(terminalKind, tab.index) },
-              { label: '类型', value: terminalKind === 'ssh' ? 'SSH 远程' : '本地' },
+              { label: t('terminal.labelTab'), value: tab.customTitle || tabLabel(terminalKind, tab.index, t) },
+              {
+                label: t('terminal.labelKind'),
+                value: terminalKind === 'ssh' ? t('terminal.kindSsh') : t('terminal.kindLocal'),
+              },
             ],
             tone: 'danger',
-            confirmLabel: '确认关闭',
+            confirmLabel: t('terminal.confirmCloseTab'),
           });
           if (ok === null) return;
         }
@@ -2375,7 +2409,7 @@ export function TerminalPanel({
     [terminalKind, forwardedSshPorts],
   );
 
-  const kindLabel = terminalKind === 'ssh' ? 'SSH 远程' : '本地';
+  const kindLabel = terminalKind === 'ssh' ? t('terminal.kindSsh') : t('terminal.kindLocal');
 
   return (
     <div
@@ -2406,7 +2440,7 @@ export function TerminalPanel({
               <polyline points="4 17 10 11 4 5" />
               <line x1="12" y1="19" x2="20" y2="19" />
             </svg>
-            <span className="terminal-brand-text">终端</span>
+            <span className="terminal-brand-text">{t('terminal.brand')}</span>
           </div>
 
           <span className={`terminal-kind-pill ${terminalKind === 'ssh' ? 'ssh' : 'local'}`}>
@@ -2422,7 +2456,7 @@ export function TerminalPanel({
               const isLeft = tab.clientId === leftTabId;
               const isRight = splitActiveId !== null && tab.clientId === splitActiveId;
               const isVisibleInSplit = isLeft || isRight;
-              const label = tab.customTitle || tabLabel(terminalKind, tab.index);
+              const label = tab.customTitle || tabLabel(terminalKind, tab.index, t);
               return (
                 <button
                   key={tab.clientId}
@@ -2435,7 +2469,7 @@ export function TerminalPanel({
                     switchOrFocusTab(tab.clientId);
                   }}
                 >
-                  {renderTabIcon(tab, terminalKind)}
+                  {renderTabIcon(tab, terminalKind, t)}
                   <span className="terminal-tab-label">{label}</span>
                   {splitActiveId && isVisibleInSplit && (
                     <span
@@ -2448,16 +2482,16 @@ export function TerminalPanel({
                     >
                       {splitDirection === 'vertical'
                         ? isLeft
-                          ? '(上)'
-                          : '(下)'
+                          ? t('terminal.tipUp')
+                          : t('terminal.tipDown')
                         : isLeft
-                          ? '(左)'
-                          : '(右)'}
+                          ? t('terminal.tipLeft')
+                          : t('terminal.tipRight')}
                     </span>
                   )}
                   <span
                     className="terminal-tab-close"
-                    title="删除终端标签"
+                    title={t('terminal.removeTab')}
                     role="button"
                     tabIndex={-1}
                     onClick={(e) => {
@@ -2480,9 +2514,9 @@ export function TerminalPanel({
                 const tooltip =
                   terminalKind === 'ssh'
                     ? isForwarded
-                      ? `SSH 端口 :${port} 已建立本地隧道转发至 :${localPort}，点击在浏览器中打开`
-                      : `SSH 远程服务监听 :${port}，点击建立本地转发隧道并在浏览器中预览`
-                    : `本地网络服务已在端口 :${port} 监听，点击在浏览器中打开 http://localhost:${port}`;
+                      ? t('terminal.portForwardOk', { port, localPort: localPort ?? '' })
+                      : t('terminal.portForwardOffer', { port })
+                    : t('terminal.portLocalOk', { port });
 
                 return (
                   <button
@@ -2523,19 +2557,19 @@ export function TerminalPanel({
             <button
               type="button"
               className="terminal-ai-diagnose-btn"
-              title={`终端命令执行失败 (退出码 ${activeTabError.exitCode})，点击向 AI 求助诊断错误`}
+              title={t('terminal.errorBanner', { code: activeTabError.exitCode ?? '' })}
               onClick={handleDiagnoseActiveError}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
-              <span>⚡️ AI 诊断报错</span>
+              <span>{t('terminal.askAiDiagnoseErr')}</span>
             </button>
           )}
           <button
             type="button"
             className="panel-action-btn"
-            title="向 AI 咨询终端输出 / 诊断 (Ask AI)"
+            title={t('terminal.askAiTitle')}
             onClick={handleAskAiGeneral}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -2545,7 +2579,7 @@ export function TerminalPanel({
           <button
             type="button"
             className={`panel-action-btn${showAiK ? ' active' : ''}`}
-            title="AI 生成并执行命令 (⌘K)"
+            title={t('terminal.genCommandTitle')}
             onClick={() => setShowAiK((v) => !v)}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2555,7 +2589,7 @@ export function TerminalPanel({
           <button
             type="button"
             className={`panel-action-btn${splitActiveId ? ' active' : ''}`}
-            title={splitActiveId ? '关闭分屏 (恢复单屏全宽)' : '拆分终端协同工作'}
+            title={splitActiveId ? t('terminal.unsplit') : t('terminal.split')}
             onClick={handleToggleSplit}
           >
             <IconSplit size={14} />
@@ -2564,7 +2598,7 @@ export function TerminalPanel({
             <button
               type="button"
               className="panel-action-btn"
-              title={splitDirection === 'horizontal' ? '切换为上下拆分' : '切换为左右拆分'}
+              title={splitDirection === 'horizontal' ? t('terminal.splitToHorizontal') : t('terminal.splitToVertical')}
               onClick={() => setSplitDirection((d) => (d === 'horizontal' ? 'vertical' : 'horizontal'))}
             >
               {splitDirection === 'horizontal' ? (
@@ -2583,7 +2617,7 @@ export function TerminalPanel({
           <button
             type="button"
             className="panel-action-btn"
-            title="新建终端"
+            title={t('terminal.new')}
             onClick={() => addTerminal()}
           >
             <IconPlus size={16} />
@@ -2593,8 +2627,8 @@ export function TerminalPanel({
             className={`panel-action-btn${wordWrap ? ' active' : ''}`}
             title={
               wordWrap
-                ? '自动换行: 已启用 (点击切换为单行横向滚动模式)'
-                : '自动换行: 已禁用 (点击启用自适应视口换行)'
+                ? t('terminal.wrapOn')
+                : t('terminal.wrapOff')
             }
             onClick={toggleWordWrap}
           >
@@ -2603,7 +2637,7 @@ export function TerminalPanel({
           <button
             type="button"
             className={`panel-action-btn${isSearchOpen ? ' active' : ''}`}
-            title="在终端中搜索 (Ctrl+F / ⌘F)"
+            title={t('terminal.searchTitle')}
             onClick={() => {
               if (isSearchOpen) {
                 setSearchFocusNonce((n) => n + 1);
@@ -2617,7 +2651,7 @@ export function TerminalPanel({
           <button
             type="button"
             className="panel-action-btn"
-            title="滚动到最上方 (Scroll to Top)"
+            title={t('terminal.scrollTop')}
             onClick={handleScrollToTop}
           >
             <IconScrollToTop size={16} />
@@ -2625,7 +2659,7 @@ export function TerminalPanel({
           <button
             type="button"
             className="panel-action-btn"
-            title="滚动到最下方 (Scroll to Bottom)"
+            title={t('terminal.scrollBottom')}
             onClick={handleScrollToBottom}
           >
             <IconScrollToBottom size={16} />
@@ -2633,7 +2667,7 @@ export function TerminalPanel({
           <button
             type="button"
             className="panel-action-btn"
-            title="清空终端内容 (Clear)"
+            title={t('terminal.clearTitle')}
             onClick={handleClearTerminal}
           >
             <IconClear size={16} />
@@ -2641,7 +2675,7 @@ export function TerminalPanel({
           <button
             type="button"
             className="panel-action-btn"
-            title="删除当前终端标签 (Kill)"
+            title={t('terminal.killTab')}
             onClick={() => closeTerminal(focusedTabId)}
           >
             <IconTrash size={16} />
@@ -2651,7 +2685,7 @@ export function TerminalPanel({
               type="button"
               className="panel-action-btn"
               onClick={onCollapse}
-              title="折叠终端"
+              title={t('terminal.collapse')}
             >
               <svg
                 width="16"
@@ -2693,7 +2727,7 @@ export function TerminalPanel({
             className={`terminal-split-resizer ${splitDirection}${isDraggingSplit ? ' dragging' : ''}`}
             style={{ order: 2 }}
             onMouseDown={handleSplitResizeMouseDown}
-            title={splitDirection === 'horizontal' ? '左右拖动调整分屏比例' : '上下拖动调整分屏比例'}
+            title={t('terminal.dragSplitRatio')}
           >
             <div className="terminal-split-resizer-line" />
           </div>

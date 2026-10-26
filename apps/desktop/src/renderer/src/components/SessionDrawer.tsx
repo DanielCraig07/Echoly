@@ -1,8 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { ChatSession, ChatSessionMessage, WorkspaceInfo } from '@deepseek-ide/shared';
-import { buildSessionWorkspaceMeta, formatSessionWorkspaceLine } from '../utils';
+import {
+  AUTO_SESSION_TITLE_FALLBACK,
+  buildSessionWorkspaceMeta,
+  formatSessionWorkspaceLine,
+  isCustomSessionTitle,
+} from '../utils';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { useI18n, type Translate } from '../i18n';
 
 interface Props {
   currentSessionId: string;
@@ -31,9 +37,9 @@ function formatTime(ts: number): string {
   });
 }
 
-function sessionPreview(messages: ChatSessionMessage[]): string {
+function sessionPreview(messages: ChatSessionMessage[], t: Translate): string {
   const first = messages.find((m) => m.role === 'user');
-  if (!first) return '（空对话）';
+  if (!first) return t('session.emptyConversation');
   return first.content.slice(0, 60) + (first.content.length > 60 ? '…' : '');
 }
 
@@ -45,6 +51,7 @@ export function SessionDrawer({
   onNewSession,
   onClose,
 }: Props) {
+  const { t } = useI18n();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -90,18 +97,19 @@ export function SessionDrawer({
     e.stopPropagation();
     const target = sessions.find((s) => s.id === id);
     const ok = await confirm.confirm({
-      title: '删除历史会话',
+      title: t('session.deleteTitle'),
       content: buildSqlConfirmMarkdown({
-        intro: '这条会话的全部对话记录将被永久删除，且**无法撤销**。',
+        t,
+        intro: t('session.deleteIntro'),
         statements: [],
       }),
       details: [
-        { label: '标题', value: target?.title?.trim() || '（无标题）' },
-        { label: '时间', value: target ? formatTime(target.updatedAt) : '未知' },
-        { label: '轮次', value: `${target?.messages?.length ?? 0} 轮` },
+        { label: t('session.labelTitle'), value: target?.title?.trim() || t('session.untitled') },
+        { label: t('session.labelTime'), value: target ? formatTime(target.updatedAt) : t('session.unknown') },
+        { label: t('session.labelTurns'), value: t('session.turnsCount', { n: target?.messages?.length ?? 0 }) },
       ],
       tone: 'danger',
-      confirmLabel: '确认删除',
+      confirmLabel: t('session.confirmDelete'),
     });
     if (ok === null) return;
     setDeleting(id);
@@ -122,15 +130,9 @@ export function SessionDrawer({
       const firstUser = currentMessages.find((m) => m.role === 'user');
       const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
       const existing = sessions.find((s) => s.id === currentSessionId);
-      const isCustom =
-        existing?.customTitle === true ||
-        (!!existing?.title &&
-          existing.title !== 'New Chat' &&
-          existing.title !== '当前对话' &&
-          existing.title !== '对话' &&
-          (!firstUserSnippet || existing.title !== firstUserSnippet));
+      const isCustom = isCustomSessionTitle(existing?.title, firstUserSnippet, existing?.customTitle);
 
-      const title = isCustom && existing?.title ? existing.title : (firstUserSnippet || '对话');
+      const title = isCustom && existing?.title ? existing.title : firstUserSnippet || AUTO_SESSION_TITLE_FALLBACK;
       const meta = buildSessionWorkspaceMeta(workspaceInfo);
       await window.ide.saveSession({
         id: currentSessionId,
@@ -149,20 +151,20 @@ export function SessionDrawer({
       <div className="session-drawer-backdrop" onClick={onClose} />
       <div className="session-drawer">
         <div className="session-drawer-header">
-          <span>历史会话</span>
-          <button type="button" className="session-drawer-close" onClick={onClose} title="关闭">
+          <span>{t('session.historyTitle')}</span>
+          <button type="button" className="session-drawer-close" onClick={onClose} title={t('session.close')}>
             ✕
           </button>
         </div>
 
         <div className="session-drawer-list">
           {loading ? (
-            <div className="session-drawer-empty">加载中…</div>
+            <div className="session-drawer-empty">{t('session.loading')}</div>
           ) : sessions.length === 0 ? (
-            <div className="session-drawer-empty">暂无历史会话</div>
+            <div className="session-drawer-empty">{t('session.empty')}</div>
           ) : (
             sessions.map((s) => {
-              const ws = formatSessionWorkspaceLine(s);
+              const ws = formatSessionWorkspaceLine(s, t);
               return (
                 <div
                   key={s.id}
@@ -182,16 +184,18 @@ export function SessionDrawer({
                   <div className="session-item-meta">
                     <span className="session-item-time">{formatTime(s.updatedAt)}</span>
                     <span className="session-item-count">
-                      {s.messages.filter((m) => m.role !== 'tool').length} 条
+                      {t('session.countBadge', {
+                        n: s.messages.filter((m) => m.role !== 'tool').length,
+                      })}
                     </span>
                   </div>
-                  <div className="session-item-preview">{sessionPreview(s.messages)}</div>
+                  <div className="session-item-preview">{sessionPreview(s.messages, t)}</div>
                   <button
                     type="button"
                     className="session-item-delete"
                     disabled={deleting === s.id}
                     onClick={(e) => void handleDelete(s.id, e)}
-                    title="删除"
+                    title={t('session.delete')}
                   >
                     ✕
                   </button>

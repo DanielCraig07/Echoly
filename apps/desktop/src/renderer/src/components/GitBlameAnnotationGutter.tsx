@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import type * as monaco from 'monaco-editor';
 import type { GitBlameEntry } from '@deepseek-ide/shared';
+import { useI18n } from '../i18n';
 
 interface Props {
   filePath: string;
@@ -21,6 +22,7 @@ export function GitBlameAnnotationGutter({
   onClose,
   onPreviewDiff,
 }: Props) {
+  const { t } = useI18n();
   const [entries, setEntries] = useState<GitBlameEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export function GitBlameAnnotationGutter({
       if (res.ok && res.entries) {
         setEntries(res.entries);
       } else {
-        setError(res.detail || '暂无 Git 追溯信息');
+        setError(res.detail || t('git.noBlame'));
       }
     });
 
@@ -107,7 +109,11 @@ export function GitBlameAnnotationGutter({
           path: filePath,
           original: res.original,
           modified: res.modified,
-          description: `提交 ${entry.shortHash} (${entry.author}) - ${filePath}`,
+          description: t('git.descBlame', {
+            hash: entry.shortHash,
+            author: entry.author,
+            path: filePath,
+          }),
         });
       }
     } catch {
@@ -154,14 +160,14 @@ export function GitBlameAnnotationGutter({
             <line x1="17.01" y1="12" x2="22.96" y2="12" />
           </svg>
           <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text)' }}>
-            Git 追溯 (Blame)
+            {t('git.blameTitle')}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
             type="button"
             className="panel-action-btn"
-            title="关闭追溯标注"
+            title={t('git.closeBlame')}
             onClick={onClose}
           >
             ✕
@@ -181,7 +187,7 @@ export function GitBlameAnnotationGutter({
       >
         {loading && (
           <div style={{ padding: 16, fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>
-            正在分析提交历史...
+            {t('git.analyzingHistory')}
           </div>
         )}
         {!loading && error && (
@@ -242,8 +248,15 @@ export function GitBlameAnnotationGutter({
                   }}
                   title={
                     entry
-                      ? `第 ${lineNum} 行:\n提交: ${entry.shortHash} (${entry.author})\n日期: ${entry.date || entry.relativeDate}\n信息: ${entry.message}\n${isUncommitted ? '' : '点击在主编辑器中对比此提交差异'}`
-                      : `第 ${lineNum} 行: 未提交修改`
+                      ? t('git.blameLineTip', {
+                          line: lineNum,
+                          hash: entry.shortHash,
+                          author: entry.author,
+                          date: entry.date || entry.relativeDate,
+                          message: entry.message,
+                          hint: isUncommitted ? '' : t('git.compareHint'),
+                        })
+                      : t('git.blameLineTipUncommitted', { line: lineNum })
                   }
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
@@ -256,7 +269,7 @@ export function GitBlameAnnotationGutter({
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {entry?.relativeDate || '未提交'}
+                          {entry?.relativeDate || t('git.uncommitted')}
                         </span>
                         <span
                           style={{
@@ -268,7 +281,7 @@ export function GitBlameAnnotationGutter({
                             maxWidth: 70,
                           }}
                         >
-                          {entry?.author || 'You'}
+                          {entry?.author || t('git.you')}
                         </span>
                       </>
                     ) : (
@@ -317,7 +330,7 @@ export function GitBlameAnnotationGutter({
                   setContextMenu(null);
                 }}
               >
-                查看此提交差异 ({contextMenu.entry.shortHash})
+                {t('git.viewCommitDiff', { hash: contextMenu.entry.shortHash })}
               </button>
               <button
                 type="button"
@@ -327,7 +340,7 @@ export function GitBlameAnnotationGutter({
                   setContextMenu(null);
                 }}
               >
-                复制 Commit Hash
+                {t('git.copyCommitHash')}
               </button>
               <div className="ctx-sep" />
             </>
@@ -340,7 +353,7 @@ export function GitBlameAnnotationGutter({
               setContextMenu(null);
             }}
           >
-            关闭追溯标注
+            {t('git.closeBlame')}
           </button>
         </div>
       )}

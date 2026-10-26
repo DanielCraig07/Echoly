@@ -7,6 +7,7 @@ import {
   projectConfigDir,
   projectConfigKey,
   projectConfigsRoot,
+  projectIndexDir,
 } from '../src/main/projectConfig';
 
 /**
@@ -114,6 +115,27 @@ describe('projectConfigChildPath · 相对路径的映射与围栏', () => {
     const root = '/Users/tester/proj';
     expect(projectConfigChildPath(root, '..', HOME)).toBe(projectConfigDir(root, HOME));
     expect(projectConfigChildPath(root, '../../..', HOME)).toBe(projectConfigDir(root, HOME));
+  });
+});
+
+describe('projectIndexDir · 派生数据与配置分开放', () => {
+  it('索引目录形如 ~/.echoly/indexes/<key>', () => {
+    const root = '/Users/tester/proj';
+    expect(projectIndexDir(root, HOME)).toBe(
+      path.join(HOME, '.echoly', 'indexes', projectConfigKey(root)),
+    );
+  });
+
+  it('与配置目录共用同一个 key —— 否则会出现「配置认得项目、索引不认得」', () => {
+    const root = '/Users/tester/proj';
+    expect(path.basename(projectIndexDir(root, HOME))).toBe(
+      path.basename(projectConfigDir(root, HOME)),
+    );
+  });
+
+  it('索引不落在配置目录里：用户要能整个删掉索引而不碰到配置', () => {
+    const root = '/Users/tester/proj';
+    expect(projectIndexDir(root, HOME).startsWith(projectConfigsRoot(HOME))).toBe(false);
   });
 });
 

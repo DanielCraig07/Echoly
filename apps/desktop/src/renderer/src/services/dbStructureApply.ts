@@ -14,6 +14,7 @@
  */
 
 import type { DbDriverType } from './dbIdentifiers';
+import type { Translate } from '../i18n';
 
 export interface DbApplyOutcome {
   ok: boolean;
@@ -21,6 +22,11 @@ export interface DbApplyOutcome {
   applied: number;
   /** 出错的那一条（失败时才有） */
   failedSql?: string;
+  /**
+   * 驱动报回来的原始错误文本。**可能为空** —— 通道没带原因时留空，
+   * 不要在这里塞一句中文兜底：这个模块是纯逻辑（vitest 直接单测），
+   * 兜底文案由渲染层用 `t('db.unknownReason')` 补。
+   */
   error?: string;
 }
 
@@ -44,7 +50,7 @@ export async function applyStatements(
       res = { ok: false, error: err?.message || String(err) };
     }
     if (!res.ok) {
-      return { ok: false, applied, failedSql: sql, error: res.error || '未知原因' };
+      return { ok: false, applied, failedSql: sql, error: res.error };
     }
     applied += 1;
   }
@@ -56,30 +62,40 @@ export async function applyStatements(
  *
  * 三种情形分开说：全部成功 / 第一条就失败 / 中途失败（部分生效）。
  * 「部分生效」尤其不能混进「失败」—— 用户据此判断要不要手工收拾残局。
+ *
+ * `t` 必填：三条 title 与两条 detail 都会直接弹给用户，做成可选带中文兜底
+ * 就等于把「英文环境显示中文」藏进类型系统看不见的地方。
  */
 export function describeApplyResult(
   driver: DbDriverType,
   table: string,
   outcome: DbApplyOutcome,
   total: number,
+  t: Translate,
 ): { title: string; detail?: string; type: 'success' | 'error' } {
   if (outcome.ok) {
     return {
-      title: `已更新表 ${table} 的结构`,
-      detail: total > 1 ? `共执行 ${total} 条语句` : undefined,
+      title: t('db.tableUpdated', { table }),
+      detail: total > 1 ? t('db.applyStatementCount', { n: total }) : undefined,
       type: 'success',
     };
   }
+  const reason = outcome.error || t('db.unknownReason');
   if (outcome.applied === 0) {
     return {
-      title: `表 ${table} 结构变更失败`,
-      detail: `${driver.toUpperCase()}：${outcome.error}`,
+      title: t('db.structureChangeFailedFor', { table }),
+      detail: t('db.applyDriverReason', { driver: driver.toUpperCase(), reason }),
       type: 'error',
     };
   }
   return {
-    title: `表 ${table} 结构变更部分生效`,
-    detail: `已执行 ${outcome.applied} / ${total} 条，第 ${outcome.applied + 1} 条出错：${outcome.error}`,
+    title: t('db.structureChangePartial', { table }),
+    detail: t('db.applyPartialDetail', {
+      applied: outcome.applied,
+      total,
+      failed: outcome.applied + 1,
+      reason,
+    }),
     type: 'error',
   };
 }

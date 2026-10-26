@@ -25,6 +25,7 @@ import {
   GitOutputModal,
 } from './GitPanelModals';
 import { BranchDiffModal } from './BranchDiffModal';
+import { useI18n } from '../i18n';
 
 interface Props {
   workspaceInfo: WorkspaceInfo | null;
@@ -178,6 +179,7 @@ function GitTreeItemView({
   onContextMenu?: (e: React.MouseEvent, entry: GitStatusEntry, staged: boolean) => void;
   onFolderContextMenu?: (e: React.MouseEvent, node: GitTreeNode, staged: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
   const [isFolderHovered, setIsFolderHovered] = useState(false);
 
@@ -241,7 +243,7 @@ function GitTreeItemView({
               {!staged && (
                 <button
                   type="button"
-                  title="放弃文件夹下所有更改"
+                  title={t('git.discardFolderAllChanges')}
                   onClick={() => {
                     onSelectPath?.(node.path);
                     onDiscard(node.path);
@@ -264,7 +266,7 @@ function GitTreeItemView({
               {!staged ? (
                 <button
                   type="button"
-                  title="暂存文件夹下所有更改"
+                  title={t('git.stageFolderAllChanges')}
                   onClick={() => {
                     onSelectPath?.(node.path);
                     onStage?.(node.path);
@@ -286,7 +288,7 @@ function GitTreeItemView({
               ) : (
                 <button
                   type="button"
-                  title="取消暂存文件夹下所有更改"
+                  title={t('git.unstageFolderAllChanges')}
                   onClick={() => {
                     onSelectPath?.(node.path);
                     onUnstage?.(node.path);
@@ -393,7 +395,7 @@ function GitTreeItemView({
           {onOpenFile && (
             <button
               type="button"
-              title="打开文件"
+              title={t('git.openFile')}
               onClick={() => {
                 onSelectPath?.(f.path);
                 onOpenFile(f.path);
@@ -417,7 +419,7 @@ function GitTreeItemView({
           {!staged && (
             <button
               type="button"
-              title="放弃更改"
+              title={t('git.discardChanges')}
               onClick={() => {
                 onSelectPath?.(f.path);
                 onDiscard(f.path);
@@ -441,7 +443,7 @@ function GitTreeItemView({
           {!staged ? (
             <button
               type="button"
-              title="暂存更改"
+              title={t('git.stageChanges')}
               onClick={() => {
                 onSelectPath?.(f.path);
                 onStage?.(f.path);
@@ -463,7 +465,7 @@ function GitTreeItemView({
           ) : (
             <button
               type="button"
-              title="取消暂存"
+              title={t('git.unstageShort')}
               onClick={() => {
                 onSelectPath?.(f.path);
                 onUnstage?.(f.path);
@@ -524,6 +526,7 @@ function GitFileListItemView({
   onOpenFile?: (path: string) => void;
   onContextMenu?: (e: React.MouseEvent, entry: GitStatusEntry, staged: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [isHovered, setIsHovered] = useState(false);
   const isSelected = selectedPath === entry.path;
   const fileName = entry.path.split('/').pop() || entry.path;
@@ -593,7 +596,7 @@ function GitFileListItemView({
           {onOpenFile && (
             <button
               type="button"
-              title="打开文件"
+              title={t('git.openFile')}
               onClick={() => {
                 onSelectPath?.(entry.path);
                 onOpenFile(entry.path);
@@ -617,7 +620,7 @@ function GitFileListItemView({
           {!staged && (
             <button
               type="button"
-              title="放弃更改"
+              title={t('git.discardChanges')}
               onClick={() => {
                 onSelectPath?.(entry.path);
                 onDiscard(entry.path);
@@ -641,7 +644,7 @@ function GitFileListItemView({
           {!staged ? (
             <button
               type="button"
-              title="暂存更改"
+              title={t('git.stageChanges')}
               onClick={() => {
                 onSelectPath?.(entry.path);
                 onStage?.(entry.path);
@@ -663,7 +666,7 @@ function GitFileListItemView({
           ) : (
             <button
               type="button"
-              title="取消暂存"
+              title={t('git.unstageShort')}
               onClick={() => {
                 onSelectPath?.(entry.path);
                 onUnstage?.(entry.path);
@@ -1108,6 +1111,7 @@ function GitFileContextMenu({
   onCompareWithBranchOrTag?: (path: string) => void;
   onAnnotateGitBlame?: (path: string) => void;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const { entry, folderNode, isFolder, staged } = state;
 
@@ -1163,17 +1167,17 @@ function GitFileContextMenu({
     const folderFiles = collectFolderFiles(folderNode);
     return (
       <div className="ctx-menu" ref={ref} role="menu">
-        {item('放弃文件夹下所有更改', () => onDiscardFolder?.(folderFiles), true)}
+        {item(t('git.discardFolderAllChanges'), () => onDiscardFolder?.(folderFiles), true)}
         {item(
-          staged ? '取消暂存文件夹内更改' : '暂存文件夹内更改',
+          staged ? t('git.unstageFolderChanges') : t('git.stageFolderChanges'),
           () => onToggleStageFolder?.(folderFiles, staged),
         )}
-        {item('添加到 .gitignore', () =>
+        {item(t('git.addToGitignore'), () =>
           onAddToGitignore(folderNode.path.endsWith('/') ? folderNode.path : `${folderNode.path}/`),
         )}
         {sep('fs1')}
-        {item(isMac ? '在访达中显示' : '在资源管理器中显示', () => onShowInFolder(folderNode.path))}
-        {item('在资源管理器视图中显示', () => onRevealInExplorer(folderNode.path))}
+        {item(isMac ? t('tree.revealInFinder') : t('tree.revealInExplorer'), () => onShowInFolder(folderNode.path))}
+        {item(t('git.revealInExplorerView'), () => onRevealInExplorer(folderNode.path))}
       </div>
     );
   }
@@ -1182,21 +1186,21 @@ function GitFileContextMenu({
 
   return (
     <div className="ctx-menu" ref={ref} role="menu">
-      {item('打开更改', () => onOpenDiff(entry, staged))}
-      {item('打开文件', () => onOpenFile(entry.path))}
-      {item('打开文件 (HEAD)', () => onOpenHeadFile(entry.path))}
+      {item(t('git.openChanges'), () => onOpenDiff(entry, staged))}
+      {item(t('git.openFile'), () => onOpenFile(entry.path))}
+      {item(t('git.openFileHead'), () => onOpenHeadFile(entry.path))}
       {sep('s1')}
-      {item('放弃更改', () => onDiscard(entry.path), true)}
-      {item(staged ? '取消暂存更改' : '暂存更改', () => onToggleStage(entry, staged))}
-      {item('添加到 .gitignore', () => onAddToGitignore(entry.path))}
+      {item(t('git.discardChanges'), () => onDiscard(entry.path), true)}
+      {item(staged ? t('git.unstageChanges') : t('git.stageChanges'), () => onToggleStage(entry, staged))}
+      {item(t('git.addToGitignore'), () => onAddToGitignore(entry.path))}
       {sep('s2')}
-      {item(isMac ? '在访达中显示' : '在资源管理器中显示', () => onShowInFolder(entry.path))}
-      {item('在资源管理器视图中显示', () => onRevealInExplorer(entry.path))}
+      {item(isMac ? t('tree.revealInFinder') : t('tree.revealInExplorer'), () => onShowInFolder(entry.path))}
+      {item(t('git.revealInExplorerView'), () => onRevealInExplorer(entry.path))}
       {sep('s3')}
-      {item('与历史版本对比 (Compare with Revision)', () => onCompareWithRevision?.(entry.path))}
-      {item('与分支或标签对比 (Compare with Branch or Tag)', () => onCompareWithBranchOrTag?.(entry.path))}
-      {item('查看文件历史 (Show History)', () => onViewFileHistory(entry.path))}
-      {item('Git 追溯 (Annotate / Git Blame)', () => onAnnotateGitBlame?.(entry.path))}
+      {item(t('git.compareRevisionMenu'), () => onCompareWithRevision?.(entry.path))}
+      {item(t('git.compareBranchTagMenu'), () => onCompareWithBranchOrTag?.(entry.path))}
+      {item(t('git.showHistoryMenu'), () => onViewFileHistory(entry.path))}
+      {item(t('git.annotateBlameMenu'), () => onAnnotateGitBlame?.(entry.path))}
     </div>
   );
 }
@@ -1216,6 +1220,7 @@ export function GitPanel({
   refreshNonce,
   onShowToast,
 }: Props) {
+  const { t } = useI18n();
   // 放弃更改 / 删除暂存这类不可逆操作统一走应用内确认框：
   // 系统 window.confirm 在 Electron 里不是应用主题色，也没法把「要放弃哪几个文件」列出来核对
   const confirm = useDbConfirm();
@@ -1296,7 +1301,7 @@ export function GitPanel({
   const handleAutoGenerateCommit = useCallback(async () => {
     const allEntries = status?.entries || [];
     if (allEntries.length === 0) {
-      onShowToast?.('当前没有检测到工作区改动', '工作区非常干净，无需生成提交信息', 'info');
+      onShowToast?.(t('git.noWorkspaceChanges'), t('git.workspaceCleanDetail'), 'info');
       return;
     }
     setIsGeneratingCommit(true);
@@ -1304,16 +1309,16 @@ export function GitPanel({
       const res = await window.ide.gitGenerateCommitMessage();
       if (res && res.ok && res.message) {
         setMessage(res.message);
-        onShowToast?.('✓ 已根据实际代码改动生成提交说明', res.message, 'success');
+        onShowToast?.(t('git.commitMessageGenerated'), res.message, 'success');
       } else {
-        onShowToast?.(res?.detail || '智能生成提交说明失败', undefined, 'warn');
+        onShowToast?.(res?.detail || t('git.generateCommitFailed'), undefined, 'warn');
       }
     } catch (err: any) {
-      onShowToast?.('生成提交说明发生异常', err?.message, 'error');
+      onShowToast?.(t('git.generateCommitError'), err?.message, 'error');
     } finally {
       setIsGeneratingCommit(false);
     }
-  }, [status?.entries, onShowToast]);
+  }, [status?.entries, onShowToast, t]);
 
   useEffect(() => {
     const handleDocumentClick = (e: MouseEvent) => {
@@ -1350,12 +1355,12 @@ export function GitPanel({
     setShowCommitDropdown(false);
     const hasChanges = (status?.entries.length || 0) > 0;
     if (!hasChanges) {
-      onShowToast?.('没有需要提交的修改', '工作区非常干净', 'info');
+      onShowToast?.(t('git.nothingToCommit'), t('git.workspaceClean'), 'info');
       return;
     }
 
     setBusy(true);
-    onShowToast?.('正在处理 Git 提交...', undefined, 'info');
+    onShowToast?.(t('git.committing'), undefined, 'info');
 
     try {
       // 1. Auto stage if nothing is staged yet
@@ -1366,12 +1371,12 @@ export function GitPanel({
       }
 
       // 2. Commit message
-      const msg = message.trim() || prompt('请输入提交信息 (Commit Message):') || 'Update';
+      const msg = message.trim() || prompt(t('git.commitPrompt')) || 'Update';
 
       // 3. Perform Git Commit
       const res = await window.ide.gitCommit(msg, opts.amend);
       if (!res.ok) {
-        onShowToast?.('✕ 提交失败', res.detail || 'Git commit 发生错误', 'error');
+        onShowToast?.(t('git.commitFailed'), res.detail || t('git.commitErrorDetail'), 'error');
         return;
       }
 
@@ -1380,76 +1385,68 @@ export function GitPanel({
 
       // 4. Perform Push or Sync if requested
       if (opts.sync) {
-        onShowToast?.('✓ 提交成功，正在同步 (Pull & Push)...', undefined, 'info');
+        onShowToast?.(t('git.commitSyncing'), undefined, 'info');
         const p = await window.ide.gitPull();
         if (!p.ok) {
-          onShowToast?.('⚠️ 拉取最新代码失败', p.detail, 'warn');
+          onShowToast?.(t('git.pullFailed'), p.detail, 'warn');
         }
         const pushRes = await window.ide.gitPush();
         if (pushRes.ok) {
-          onShowToast?.('✓ 提交和同步完成', '代码已与远程仓库同步', 'success');
+          onShowToast?.(t('git.commitSyncDone'), t('git.commitSyncDoneDetail'), 'success');
         } else {
-          onShowToast?.('✕ 同步推送失败', pushRes.detail, 'error');
+          onShowToast?.(t('git.syncPushFailed'), pushRes.detail, 'error');
         }
       } else if (opts.push) {
-        onShowToast?.('✓ 提交成功，正在推送...', undefined, 'info');
+        onShowToast?.(t('git.commitPushing'), undefined, 'info');
         const pushRes = await window.ide.gitPush();
         if (pushRes.ok) {
-          onShowToast?.('✓ 提交和推送完成', '代码已成功推送至远程仓库', 'success');
+          onShowToast?.(t('git.commitPushDone'), t('git.commitPushDoneDetail'), 'success');
         } else {
-          onShowToast?.('✕ 推送失败', pushRes.detail, 'error');
+          onShowToast?.(t('git.pushFailed'), pushRes.detail, 'error');
         }
       } else {
-        onShowToast?.('✓ 提交成功', `分支: ${status?.branch || 'master'}`, 'success');
+        onShowToast?.(t('git.commitDone'), t('git.branchLabel', { branch: status?.branch || 'master' }), 'success');
       }
 
       await refresh();
     } catch (err: any) {
-      onShowToast?.('✕ 提交异常', err.message || String(err), 'error');
+      onShowToast?.(t('git.commitException'), err.message || String(err), 'error');
     } finally {
       setBusy(false);
     }
   };
 
+  // affectsBranch 用来决定成功后是否刷新分支相关 UI。
+  // 原先靠 `title.includes('分支')/('Pull')/('Fetch')` 判断，但 title 现在是翻译过的文案，
+  // 英文下 'Pull' 之类会随语种变化，判定会静默失效 —— 改成显式传参。
   const runGitAction = async (
     title: string,
     action: () => Promise<{ ok: boolean; detail?: string; cancelled?: boolean } | null | void>,
     successMsg?: string,
+    affectsBranch = false,
   ) => {
     setShowMoreMenu(false);
     setBusy(true);
     try {
       const res = await action();
-      if (!res) {
-        // 用户主动取消输入或未执行
-        return;
-      }
-      if (
-        res.cancelled ||
-        res.detail === 'cancelled' ||
-        res.detail === '取消输入' ||
-        res.detail === '取消放弃修改'
-      ) {
-        return;
-      }
+      // 用户取消的信号是「什么都没返回」：确认框取消时调用方（如 App 的 handleDiscardPath）
+      // 直接 `return`，这里就拿到 undefined。原先还比对了 '取消输入' / '取消放弃修改'
+      // 两个中文字面量，但全仓库没有任何地方产出这两个 detail（git log 追到 v0.0.28 的旧
+      // App.tsx，那个产出点早已删掉），纯属死比较。翻译铺开后这类比较更危险：一旦有人
+      // 真的把它接上，中文能命中、英文永远命中不了。
+      if (!res) return;
+      if (res.cancelled || res.detail === 'cancelled') return;
       if (res.ok) {
-        onShowToast?.(`✓ ${title}成功`, res.detail || successMsg || '操作已完成', 'success');
+        onShowToast?.(t('git.actionOk', { action: title }), res.detail || successMsg || t('git.actionDone'), 'success');
         await refresh();
-        if (
-          title.includes('分支') ||
-          title.includes('签出') ||
-          title.includes('Pull') ||
-          title.includes('拉取') ||
-          title.includes('Fetch') ||
-          title.includes('抓取')
-        ) {
+        if (affectsBranch) {
           onBranchSwitched?.();
         }
       } else {
-        onShowToast?.(`✕ ${title}失败`, res.detail || '操作未能完成', 'error');
+        onShowToast?.(t('git.actionFail', { action: title }), res.detail || t('git.actionNotCompleted'), 'error');
       }
     } catch (err: any) {
-      onShowToast?.(`✕ ${title}异常`, err.message || String(err), 'error');
+      onShowToast?.(t('git.actionError', { action: title }), err.message || String(err), 'error');
     } finally {
       setBusy(false);
     }
@@ -1477,10 +1474,10 @@ export function GitPanel({
             : [target];
         await window.ide.gitDiscard(paths);
       }
-      onShowToast?.('✓ 已放弃更改', '已还原选定的修改', 'success');
+      onShowToast?.(t('git.discardedOk'), t('git.discardedOkDetail'), 'success');
       await refresh();
     } catch (err: any) {
-      onShowToast?.('✕ 放弃更改失败', err.message || String(err), 'error');
+      onShowToast?.(t('git.discardFailed'), err.message || String(err), 'error');
     } finally {
       setBusy(false);
     }
@@ -1626,7 +1623,7 @@ export function GitPanel({
         path: res.path,
         original: res.original,
         modified: res.modified,
-        description: `Commit ${hash.slice(0, 7)}`,
+        description: t('git.descCommit', { hash: hash.slice(0, 7) }),
       });
     }
   };
@@ -1680,23 +1677,23 @@ export function GitPanel({
 
   const handleStashPush = useCallback(async () => {
     const msg = window.prompt(
-      '请输入暂存说明 (可选):',
-      `暂存修改 - ${new Date().toLocaleTimeString()}`,
+      t('git.stashPrompt'),
+      t('git.stashDefaultMessage', { time: new Date().toLocaleTimeString() }),
     );
     if (msg === null) return;
     setLoadingStash(true);
     try {
       const res = await window.ide.gitStash('push', msg.trim() || undefined);
       if (res.ok) {
-        onShowToast?.('✓ 暂存成功', res.detail || '已将当前修改存入 Stash', 'success');
+        onShowToast?.(t('git.stashPushOk'), res.detail || t('git.stashPushOkDetail'), 'success');
         await refresh();
       } else {
-        onShowToast?.('暂存失败', res.detail, 'error');
+        onShowToast?.(t('git.stashPushFailed'), res.detail, 'error');
       }
     } finally {
       setLoadingStash(false);
     }
-  }, [onShowToast, refresh]);
+  }, [onShowToast, refresh, t]);
 
   /**
    * Stash Pop：把改动应用回工作区，同时**把那条 stash 记录删掉**。
@@ -1711,37 +1708,38 @@ export function GitPanel({
       const entry =
         typeof index === 'number' ? stashes.find((s) => s.index === index) : stashes[0];
       const ok = await confirm.confirm({
-        title: '弹出暂存 (Pop)',
+        title: t('git.stashPopTitle'),
         content: buildSqlConfirmMarkdown({
-          intro: '改动会应用到工作区，同时**这条 stash 记录会被删除**，且**无法撤销**。',
+          t,
+          intro: t('git.stashPopIntro'),
           statements: [],
           notes: [
-            '若工作区已有冲突改动，git 可能只应用一部分就删掉记录 —— 建议先提交或暂存当前改动。',
-            '只想保留记录，请改用「应用 (Apply) 不删除」。',
+            t('git.stashPopNote1'),
+            t('git.stashPopNote2'),
           ],
         }),
         details: [
-          { label: '记录', value: ref },
-          ...(entry?.message ? [{ label: '说明', value: entry.message }] : []),
+          { label: t('git.labelRef'), value: ref },
+          ...(entry?.message ? [{ label: t('git.labelMessage'), value: entry.message }] : []),
         ],
         tone: 'danger',
-        confirmLabel: '确认弹出',
+        confirmLabel: t('git.confirmStashPop'),
       });
       if (ok === null) return;
       setLoadingStash(true);
       try {
         const res = await window.ide.gitStash('pop', ref);
         if (res.ok) {
-          onShowToast?.('✓ 恢复暂存成功', res.detail || '已恢复修改并移出 Stash', 'success');
+          onShowToast?.(t('git.stashPopOk'), res.detail || t('git.stashPopOkDetail'), 'success');
           await refresh();
         } else {
-          onShowToast?.('恢复暂存失败', res.detail, 'error');
+          onShowToast?.(t('git.stashPopFailed'), res.detail, 'error');
         }
       } finally {
         setLoadingStash(false);
       }
     },
-    [onShowToast, refresh, confirm, stashes],
+    [onShowToast, refresh, confirm, stashes, t],
   );
 
   const handleStashApply = useCallback(
@@ -1752,37 +1750,38 @@ export function GitPanel({
         const res = await window.ide.gitStash('apply', ref);
         if (res.ok) {
           onShowToast?.(
-            '✓ 应用暂存成功',
-            res.detail || '已将暂存修改应用至工作区 (保留在 Stash 中)',
+            t('git.stashApplyOk'),
+            res.detail || t('git.stashApplyOkDetail'),
             'success',
           );
           await refresh();
         } else {
-          onShowToast?.('应用暂存失败', res.detail, 'error');
+          onShowToast?.(t('git.stashApplyFailed'), res.detail, 'error');
         }
       } finally {
         setLoadingStash(false);
       }
     },
-    [onShowToast, refresh],
+    [onShowToast, refresh, t],
   );
 
   const handleStashDrop = useCallback(
     async (index: number) => {
       const entry = stashes.find((s) => s.index === index);
       const ok = await confirm.confirm({
-        title: '删除暂存记录',
+        title: t('git.stashDropTitle'),
         content: buildSqlConfirmMarkdown({
-          intro: '这条 stash 记录会从栈里移除，且**无法撤销**（Drop 不会把改动还原回工作区）。',
+          t,
+          intro: t('git.stashDropIntro'),
           statements: [],
-          notes: ['只想恢复改动、不想丢记录，请改用「弹出 / 应用 (Pop)」。'],
+          notes: [t('git.stashDropNote')],
         }),
         details: [
-          { label: '记录', value: `stash@{${index}}` },
-          ...(entry?.message ? [{ label: '说明', value: entry.message }] : []),
+          { label: t('git.labelRef'), value: `stash@{${index}}` },
+          ...(entry?.message ? [{ label: t('git.labelMessage'), value: entry.message }] : []),
         ],
         tone: 'danger',
-        confirmLabel: '确认删除',
+        confirmLabel: t('git.confirmDrop'),
       });
       if (ok === null) return;
       setLoadingStash(true);
@@ -1790,16 +1789,16 @@ export function GitPanel({
         const ref = `stash@{${index}}`;
         const res = await window.ide.gitStash('drop', ref);
         if (res.ok) {
-          onShowToast?.('✓ 删除暂存成功', res.detail || `已删除 stash@{${index}}`, 'success');
+          onShowToast?.(t('git.stashDropOk'), res.detail || t('git.stashDropOkDetail', { ref }), 'success');
           await refresh();
         } else {
-          onShowToast?.('删除暂存失败', res.detail, 'error');
+          onShowToast?.(t('git.stashDropFailed'), res.detail, 'error');
         }
       } finally {
         setLoadingStash(false);
       }
     },
-    [onShowToast, refresh, confirm, stashes],
+    [onShowToast, refresh, confirm, stashes, t],
   );
 
   useEffect(() => {
@@ -1842,7 +1841,7 @@ export function GitPanel({
         path: entry.path,
         original: res.original,
         modified: res.modified,
-        description: `${staged ? 'Staged' : 'Working'} — ${entry.path}`,
+        description: staged ? t('git.descStaged', { path: entry.path }) : t('git.descWorking', { path: entry.path }),
       });
     }
   };
@@ -1882,13 +1881,13 @@ export function GitPanel({
           path,
           original: res.original,
           modified: res.original,
-          description: `${path} (HEAD)`,
+          description: t('git.descHead', { path }),
         });
       } else {
-        onShowToast?.(`无法读取 HEAD 版本: ${res.detail || '未知错误'}`);
+        onShowToast?.(t('git.headReadFailed', { msg: res.detail || t('git.unknownError') }));
       }
     } catch (err: any) {
-      onShowToast?.(`读取 HEAD 版本失败: ${err?.message || String(err)}`);
+      onShowToast?.(t('git.headReadError', { msg: err?.message || String(err) }));
     }
   };
 
@@ -1902,15 +1901,15 @@ export function GitPanel({
       }
       const lines = current.split(/\r?\n/).map((l) => l.trim());
       if (lines.includes(relPath)) {
-        onShowToast?.(`${relPath} 已存在于 .gitignore 中`);
+        onShowToast?.(t('git.gitignoreExists', { path: relPath }));
         return;
       }
       const updated = current.endsWith('\n') || current.length === 0 ? `${current}${relPath}\n` : `${current}\n${relPath}\n`;
       await window.ide.writeFile('.gitignore', updated);
-      onShowToast?.(`已将 ${relPath} 添加到 .gitignore`);
+      onShowToast?.(t('git.gitignoreAdded', { path: relPath }));
       void refresh();
     } catch (err: any) {
-      onShowToast?.(`添加 .gitignore 失败: ${err?.message || String(err)}`);
+      onShowToast?.(t('git.gitignoreFailed', { msg: err?.message || String(err) }));
     }
   };
 
@@ -1919,12 +1918,12 @@ export function GitPanel({
       const absPath = await window.ide.resolveAbsolutePath(relPath);
       await window.ide.showItemInFolder(absPath);
     } catch (err: any) {
-      onShowToast?.(`在资源管理器中显示失败: ${err?.message || String(err)}`);
+      onShowToast?.(t('git.revealFailed', { msg: err?.message || String(err) }));
     }
   };
 
   if (!workspaceInfo?.root) {
-    return <div className="git-panel-empty">打开工作区以使用 Source Control</div>;
+    return <div className="git-panel-empty">{t('git.openWorkspaceHint')}</div>;
   }
 
   if (status && !status.isRepo) {
@@ -1974,7 +1973,7 @@ export function GitPanel({
 
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>
-            {status.detail ? 'Git 访问或仓库检测异常' : '尚未启用 Git 版本控制'}
+            {status.detail ? t('git.repoErrorTitle') : t('git.notRepoTitle')}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, maxWidth: 260 }}>
             {status.detail ? (
@@ -1992,7 +1991,7 @@ export function GitPanel({
                 {status.detail}
               </div>
             ) : (
-              '当前工作区不是 Git 仓库。初始化仓库后即可享受版本回滚、差异比对、分支管理等全部功能。'
+              t('git.notRepoDesc')
             )}
           </div>
         </div>
@@ -2010,7 +2009,7 @@ export function GitPanel({
                 if (res.ok) {
                   await refresh();
                 } else {
-                  alert(res.detail || '初始化仓库失败');
+                  alert(res.detail || t('git.initFailed'));
                 }
               } finally {
                 setBusy(false);
@@ -2031,7 +2030,7 @@ export function GitPanel({
             onMouseEnter={(e) => (e.currentTarget.style.filter = 'brightness(1.15)')}
             onMouseLeave={(e) => (e.currentTarget.style.filter = 'none')}
           >
-            {busy ? '正在初始化…' : '初始化 Git 仓库'}
+            {busy ? t('git.initializing') : t('git.initRepo')}
           </button>
 
           <button
@@ -2056,7 +2055,7 @@ export function GitPanel({
               e.currentTarget.style.borderColor = 'var(--border)';
             }}
           >
-            重新检查状态
+            {t('git.recheckStatus')}
           </button>
         </div>
       </div>
@@ -2105,7 +2104,7 @@ export function GitPanel({
           }}
         >
           <PanelChevron expanded={true} size={12} />
-          <span>源代码</span>
+          <span>{t('git.sourceControl')}</span>
         </div>
 
         {/* Header Actions: 1. Tree structure toggle, 2. Refresh, 3. More (...) dropdown */}
@@ -2113,7 +2112,7 @@ export function GitPanel({
           <button
             type="button"
             className={`panel-action-btn ${displayMode === 'tree' ? 'active' : ''}`}
-            title={displayMode === 'list' ? '按树结构显示' : '按列表显示'}
+            title={displayMode === 'list' ? t('git.viewTreeMode') : t('git.viewListMode')}
             onClick={() => setDisplayMode((m) => (m === 'list' ? 'tree' : 'list'))}
           >
             {displayMode === 'tree' ? (
@@ -2152,7 +2151,7 @@ export function GitPanel({
           <button
             type="button"
             className="panel-action-btn"
-            title="刷新"
+            title={t('git.refresh')}
             onClick={() => void refresh()}
           >
             <svg
@@ -2170,7 +2169,7 @@ export function GitPanel({
           <button
             type="button"
             className="panel-action-btn"
-            title="分支间差异对比 (Branch Diff)"
+            title={t('git.branchDiff')}
             onClick={() => setBranchDiffModalOpen(true)}
           >
             <svg
@@ -2191,7 +2190,7 @@ export function GitPanel({
             ref={moreMenuBtnRef}
             type="button"
             className={`panel-action-btn ${showMoreMenu ? 'active' : ''}`}
-            title="更多操作"
+            title={t('git.moreActions')}
             onClick={() => setShowMoreMenu((v) => !v)}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -2208,61 +2207,61 @@ export function GitPanel({
             className="git-more-menu-item"
             onClick={() => setDisplayMode((m) => (m === 'tree' ? 'list' : 'tree'))}
           >
-            <span>视图模式：切换为{displayMode === 'tree' ? '列表视图' : '树状视图'}</span>
+            <span>{t('git.viewModeSwitch', { mode: displayMode === 'tree' ? t('git.viewModeList') : t('git.viewModeTree') })}</span>
           </div>
           <div className="git-more-menu-sep" />
 
-          <div className="git-more-menu-heading">同步</div>
+          <div className="git-more-menu-heading">{t('git.sectionSync')}</div>
 
           {/* 拉取 */}
           <div
             className="git-more-menu-item"
-            onClick={() => void runGitAction('Git 拉取 (Pull)', () => window.ide.gitPull())}
+            onClick={() => void runGitAction(t('git.actionPull'), () => window.ide.gitPull(), undefined, true)}
           >
-            拉取 (Pull)
+            {t('git.menuPull')}
           </div>
 
           {/* 推送 */}
           <div
             className="git-more-menu-item"
-            onClick={() => void runGitAction('Git 推送 (Push)', () => window.ide.gitPush())}
+            onClick={() => void runGitAction(t('git.actionPush'), () => window.ide.gitPush())}
           >
-            推送 (Push)
+            {t('git.menuPush')}
           </div>
 
           {/* 拉取并推送 */}
           <div
             className="git-more-menu-item"
             onClick={() =>
-              void runGitAction('Git 同步 (Pull & Push)', async () => {
+              void runGitAction(t('git.actionSync'), async () => {
                 const p = await window.ide.gitPull();
                 if (!p.ok) return p;
                 return window.ide.gitPush();
-              })
+              }, undefined, true)
             }
           >
-            拉取并推送 (Sync)
+            {t('git.menuPullPush')}
           </div>
 
           {/* 刷新 / 抓取远程分支 (Fetch) */}
           <div
             className="git-more-menu-item"
             onClick={() =>
-              void runGitAction('刷新远程分支 (Fetch)', async () => {
+              void runGitAction(t('git.actionFetch'), async () => {
                 const res = await window.ide.gitFetch();
                 if (res.ok) {
                   onBranchSwitched?.();
                 }
                 return res;
-              })
+              }, undefined, true)
             }
           >
-            刷新远程分支 (Fetch)
+            {t('git.menuFetch')}
           </div>
 
           <div className="git-more-menu-sep" />
 
-          <div className="git-more-menu-heading">仓库</div>
+          <div className="git-more-menu-heading">{t('git.sectionRepo')}</div>
 
           {/* 克隆 */}
           <div
@@ -2272,7 +2271,7 @@ export function GitPanel({
               onOpenCloneModal?.();
             }}
           >
-            克隆仓库 (Clone)...
+            {t('git.menuClone')}
           </div>
 
           {/* 远程 */}
@@ -2283,7 +2282,7 @@ export function GitPanel({
               setRemotesModalOpen(true);
             }}
           >
-            查看远程仓库 (Remotes)
+            {t('git.menuRemotes')}
           </div>
 
           {/* 分支 */}
@@ -2294,7 +2293,7 @@ export function GitPanel({
               setCreateBranchModalOpen(true);
             }}
           >
-            新建分支...
+            {t('git.menuNewBranch')}
           </div>
 
           {/* 签出到... */}
@@ -2305,7 +2304,7 @@ export function GitPanel({
               setCheckoutModalOpen(true);
             }}
           >
-            切换分支 (Checkout)...
+            {t('git.menuCheckout')}
           </div>
 
           {/* 标记 */}
@@ -2316,12 +2315,12 @@ export function GitPanel({
               setCreateTagModalOpen(true);
             }}
           >
-            创建标签 (Tag)...
+            {t('git.menuCreateTag')}
           </div>
 
           <div className="git-more-menu-sep" />
 
-          <div className="git-more-menu-heading">本地变更</div>
+          <div className="git-more-menu-heading">{t('git.sectionLocalChanges')}</div>
 
           {/* 提交 */}
           <div
@@ -2330,44 +2329,44 @@ export function GitPanel({
               setShowMoreMenu(false);
               const msg = message.trim();
               if (!msg) {
-                onShowToast?.('请先在上方输入提交信息', undefined, 'warn');
+                onShowToast?.(t('git.needCommitMessage'), undefined, 'warn');
                 return;
               }
-              void runGitAction('Git 提交', () => window.ide.gitCommit(msg));
+              void runGitAction(t('git.actionCommit'), () => window.ide.gitCommit(msg));
             }}
           >
-            提交更改 (Commit)
+            {t('git.menuCommit')}
           </div>
 
           {/* 暂存 */}
           <div
             className="git-more-menu-item"
             onClick={() =>
-              void runGitAction('暂存修改 (Stash Push)', async () => {
+              void runGitAction(t('git.actionStash'), async () => {
                 const entries = status?.entries || [];
                 if (entries.length === 0) {
-                  return { ok: true, detail: '工作区干净，没有需要暂存的修改' };
+                  return { ok: true, detail: t('git.stashNothingToDo') };
                 }
                 const res = await window.ide.gitStash('push', message?.trim() || undefined);
                 if (!res.ok) return res;
-                return { ok: true, detail: `已存入暂存区 (${res.stashes?.length ?? 0} 个暂存项)` };
+                return { ok: true, detail: t('git.stashSavedCount', { n: res.stashes?.length ?? 0 }) };
               })
             }
           >
-            暂存修改 (Stash Push)
+            {t('git.menuStash')}
           </div>
 
           {/* 弹出暂存 */}
           <div
             className="git-more-menu-item"
             onClick={() =>
-              void runGitAction('恢复暂存 (Stash Pop)', async () => {
+              void runGitAction(t('git.actionStashPop'), async () => {
                 const res = await window.ide.gitStash('pop');
                 return res;
               })
             }
           >
-            弹出最新暂存 (Stash Pop)
+            {t('git.menuStashPop')}
           </div>
 
           {/* 放弃更改 */}
@@ -2376,17 +2375,17 @@ export function GitPanel({
             onClick={() => {
               setShowMoreMenu(false);
               // 确认由 App 的 handleDiscardPath 统一负责（那里是全应用放弃修改的收口点）
-              void runGitAction('放弃全部修改', async () => {
+              void runGitAction(t('git.actionDiscardAll'), async () => {
                 if (onDiscardPath) {
                   await onDiscardPath('');
                 } else {
                   await window.ide.gitDiscard(['.']);
                 }
-                return { ok: true, detail: '已放弃所有本地修改' };
+                return { ok: true, detail: t('git.discardedAllLocal') };
               });
             }}
           >
-            放弃所有修改...
+            {t('git.menuDiscardAll')}
           </div>
 
           {/* 工作树 */}
@@ -2397,7 +2396,7 @@ export function GitPanel({
               setStatusModalOpen(true);
             }}
           >
-            工作树状态
+            {t('git.menuWorkingTree')}
           </div>
 
           <div className="git-more-menu-sep" />
@@ -2410,7 +2409,7 @@ export function GitPanel({
               setOutputModalOpen(true);
             }}
           >
-            显示 GIT 执行日志
+            {t('git.menuShowOutput')}
           </div>
         </div>
       )}
@@ -2442,7 +2441,7 @@ export function GitPanel({
             }}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder={`消息(${isMac ? '⌘Enter' : 'Ctrl+Enter'} 在“${status?.branch || 'main'}”提交)`}
+            placeholder={t('git.commitPlaceholder', { key: isMac ? '⌘Enter' : 'Ctrl+Enter', branch: status?.branch || 'main' })}
             disabled={busy}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -2460,11 +2459,11 @@ export function GitPanel({
           <button
             type="button"
             className={`git-ai-commit-btn${isGeneratingCommit ? ' is-generating' : ''}`}
-            title="根据当前代码改动（Diff）AI 智能生成实际可用的提交说明"
+            title={t('git.generateCommitTip')}
             onClick={() => void handleAutoGenerateCommit()}
             disabled={isGeneratingCommit}
           >
-            <span>{isGeneratingCommit ? '生成中…' : 'Generate'}</span>
+            <span>{isGeneratingCommit ? t('git.generating') : t('git.generate')}</span>
             <svg
               className={`git-ai-commit-icon${isGeneratingCommit ? ' spinning' : ''}`}
               width="14"
@@ -2518,13 +2517,13 @@ export function GitPanel({
             >
               <polyline points="20 6 9 17 4 12" />
             </svg>
-            <span>提交</span>
+            <span>{t('git.commit')}</span>
           </button>
           <button
             ref={commitDropdownBtnRef}
             type="button"
             className="git-commit-dropdown-btn"
-            title="更多提交选项"
+            title={t('git.moreCommitOptions')}
             onClick={(e) => {
               e.stopPropagation();
               setShowCommitDropdown((v) => !v);
@@ -2581,14 +2580,14 @@ export function GitPanel({
                 className="git-commit-dropdown-item"
                 onClick={() => void handleCommitAction({})}
               >
-                提交
+                {t('git.commit')}
               </button>
               <button
                 type="button"
                 className="git-commit-dropdown-item"
                 onClick={() => void handleCommitAction({ amend: true })}
               >
-                提交 (修改)
+                {t('git.commitAmend')}
               </button>
               <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
               <button
@@ -2596,14 +2595,14 @@ export function GitPanel({
                 className="git-commit-dropdown-item"
                 onClick={() => void handleCommitAction({ push: true })}
               >
-                提交和推送
+                {t('git.commitAndPush')}
               </button>
               <button
                 type="button"
                 className="git-commit-dropdown-item"
                 onClick={() => void handleCommitAction({ sync: true })}
               >
-                提交和同步
+                {t('git.commitAndSync')}
               </button>
             </div>
           )}
@@ -2642,13 +2641,13 @@ export function GitPanel({
               }}
             >
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>已暂存的更改</span>
+                <span>{t('git.stagedChanges')}</span>
                 <span className="git-count-badge staged">{staged.length}</span>
               </span>
               <button
                 type="button"
                 className="panel-action-btn"
-                title="取消暂存当前所有更改"
+                title={t('git.unstageAll')}
                 onClick={() =>
                   void runOp(() => window.ide.gitUnstage(staged.map((e: GitStatusEntry) => e.path)))
                 }
@@ -2707,13 +2706,13 @@ export function GitPanel({
               }}
             >
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>更改</span>
+                <span>{t('git.changes')}</span>
                 <span className="git-count-badge working">{working.length}</span>
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button
                   type="button"
-                  title="放弃所有更改"
+                  title={t('git.discardAll')}
                   onClick={() => void handleDiscard(working.map((e: GitStatusEntry) => e.path))}
                   className="panel-action-btn"
                 >
@@ -2732,7 +2731,7 @@ export function GitPanel({
                 <button
                   type="button"
                   className="panel-action-btn"
-                  title="暂存当前所有更改"
+                  title={t('git.stageAll')}
                   onClick={() =>
                     void runOp(() =>
                       window.ide.gitStage(working.map((e: GitStatusEntry) => e.path)),
@@ -2795,11 +2794,11 @@ export function GitPanel({
                 alignItems: 'center',
               }}
             >
-              <span>未跟踪的文件 ({untracked.length})</span>
+              <span>{t('git.untrackedFiles', { n: untracked.length })}</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button
                   type="button"
-                  title="放弃所有未跟踪更改"
+                  title={t('git.discardAllUntracked')}
                   onClick={() => void handleDiscard(untracked.map((e: GitStatusEntry) => e.path))}
                   className="panel-action-btn"
                 >
@@ -2818,7 +2817,7 @@ export function GitPanel({
                 <button
                   type="button"
                   className="panel-action-btn"
-                  title="暂存所有未跟踪文件"
+                  title={t('git.stageAllUntracked')}
                   onClick={() =>
                     void runOp(() =>
                       window.ide.gitStage(untracked.map((e: GitStatusEntry) => e.path)),
@@ -2872,7 +2871,7 @@ export function GitPanel({
         className="splitter splitter-h"
         onMouseDown={handleGraphResizeStart}
         style={{ cursor: 'row-resize', height: 4, margin: 0, minHeight: 4 }}
-        title="上下拖动调整图形高度"
+        title={t('git.resizeGraph')}
       />
 
       {/* 5.5 Stash 暂存管理 Section */}
@@ -2898,7 +2897,7 @@ export function GitPanel({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <PanelChevron expanded={!isStashesCollapsed} size={11} color="var(--muted)" />
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>暂存区 (Stash)</span>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>{t('git.stashSection')}</span>
             <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
               ({stashes.length})
             </span>
@@ -2910,7 +2909,7 @@ export function GitPanel({
             <button
               type="button"
               className="panel-action-btn"
-              title="暂存当前修改 (Stash Push)"
+              title={t('git.stashPushTip')}
               disabled={loadingStash}
               onClick={() => void handleStashPush()}
             >
@@ -2923,7 +2922,7 @@ export function GitPanel({
               <button
                 type="button"
                 className="panel-action-btn"
-                title="恢复最新暂存并删除 (Stash Pop)"
+                title={t('git.stashPopTip')}
                 disabled={loadingStash}
                 onClick={() => void handleStashPop()}
               >
@@ -2936,7 +2935,7 @@ export function GitPanel({
             <button
               type="button"
               className="panel-action-btn"
-              title="刷新暂存列表"
+              title={t('git.refreshStash')}
               disabled={loadingStash}
               onClick={() => void refresh()}
             >
@@ -2967,7 +2966,7 @@ export function GitPanel({
                   textAlign: 'center',
                 }}
               >
-                暂无暂存记录
+                {t('git.noStashes')}
               </div>
             ) : (
               stashes.map((s) => (
@@ -3019,7 +3018,7 @@ export function GitPanel({
                     <button
                       type="button"
                       className="panel-action-btn"
-                      title="恢复并从暂存区移除 (Pop)"
+                      title={t('git.stashPopOne')}
                       disabled={loadingStash}
                       onClick={() => void handleStashPop(s.index)}
                     >
@@ -3031,7 +3030,7 @@ export function GitPanel({
                     <button
                       type="button"
                       className="panel-action-btn"
-                      title="应用暂存但保留记录 (Apply)"
+                      title={t('git.stashApplyOne')}
                       disabled={loadingStash}
                       onClick={() => void handleStashApply(s.index)}
                     >
@@ -3042,7 +3041,7 @@ export function GitPanel({
                     <button
                       type="button"
                       className="panel-action-btn"
-                      title="删除该暂存记录 (Drop)"
+                      title={t('git.stashDropOne')}
                       disabled={loadingStash}
                       onClick={() => void handleStashDrop(s.index)}
                     >
@@ -3091,9 +3090,9 @@ export function GitPanel({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <PanelChevron expanded={!isGraphCollapsed} size={11} color="var(--muted)" />
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>图形</span>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>{t('git.graph')}</span>
             <span style={{ fontSize: 10, color: 'var(--muted)', opacity: 0.8 }}>
-              ({commits.length}{focusCurrentBranch ? ` · ${status?.branch || '当前分支'}` : ''})
+              ({commits.length}{focusCurrentBranch ? ` · ${status?.branch || t('git.currentBranch')}` : ''})
             </span>
           </div>
           <div
@@ -3106,15 +3105,15 @@ export function GitPanel({
               className={`panel-action-btn ${autoSyncEnabled ? 'active' : ''}`}
               title={
                 autoSyncEnabled
-                  ? '自动同步已开启 (点击暂停自动同步)'
-                  : '自动同步已暂停 (点击开启自动同步)'
+                  ? t('git.autoSyncOnTip')
+                  : t('git.autoSyncOffTip')
               }
               onClick={() => {
                 setAutoSyncEnabled((prev) => {
                   const next = !prev;
                   onShowToast?.(
-                    next ? '开启自动同步' : '已暂停自动同步',
-                    next ? '已开启后台 Git 状态自动轮询 (每 8 秒)' : '已暂停后台 Git 状态自动轮询',
+                    next ? t('git.autoSyncOn') : t('git.autoSyncOff'),
+                    next ? t('git.autoSyncOnDetail') : t('git.autoSyncOffDetail'),
                     'info',
                   );
                   if (next) void refresh();
@@ -3144,17 +3143,17 @@ export function GitPanel({
                 setIsGraphCollapsed(false);
                 void refresh({ focusBranch: next });
                 onShowToast?.(
-                  next ? '聚焦当前分支' : '显示全部分支',
+                  next ? t('git.focusBranchOn') : t('git.focusBranchOff'),
                   next
-                    ? `已过滤提交历史，仅显示当前分支 [${status?.branch || 'HEAD'}]`
-                    : '已恢复显示全部分支提交记录',
+                    ? t('git.focusBranchOnDetail', { branch: status?.branch || 'HEAD' })
+                    : t('git.focusBranchOffDetail'),
                   'info',
                 );
               }}
               title={
                 focusCurrentBranch
-                  ? `已聚焦当前分支 [${status?.branch || 'HEAD'}] (点击显示全部分支)`
-                  : '聚焦当前分支 (仅显示当前分支提交)'
+                  ? t('git.focusBranchOnTip', { branch: status?.branch || 'HEAD' })
+                  : t('git.focusBranchOffTip')
               }
               className={`panel-action-btn ${focusCurrentBranch ? 'active' : ''}`}
             >
@@ -3175,7 +3174,7 @@ export function GitPanel({
             <button
               type="button"
               onClick={() => setCreateBranchModalOpen(true)}
-              title="新建分支"
+              title={t('git.createBranch')}
               className="panel-action-btn"
             >
               <svg
@@ -3198,8 +3197,8 @@ export function GitPanel({
             {/* 同步 / 拉取图标 */}
             <button
               type="button"
-              onClick={() => void runGitAction('拉取更改 (Pull)', () => window.ide.gitPull())}
-              title="拉取与同步 (Pull)"
+              onClick={() => void runGitAction(t('git.pullChanges'), () => window.ide.gitPull(), undefined, true)}
+              title={t('git.pullSyncTip')}
               className="panel-action-btn"
             >
               <svg
@@ -3221,7 +3220,7 @@ export function GitPanel({
             <button
               type="button"
               onClick={() => void refresh()}
-              title="刷新提交图谱"
+              title={t('git.refreshGraph')}
               className="panel-action-btn"
             >
               <svg
@@ -3245,7 +3244,7 @@ export function GitPanel({
                 e.stopPropagation();
                 setShowMoreMenu((v) => !v);
               }}
-              title="更多操作..."
+              title={t('git.moreActionsEllipsis')}
               className={`panel-action-btn ${showMoreMenu ? 'active' : ''}`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -3350,7 +3349,7 @@ export function GitPanel({
                       {(isHovered || isSelected) && (
                         <button
                           type="button"
-                          title="查看文件变更明细"
+                          title={t('git.viewFileChanges')}
                           onClick={(e) => {
                             e.stopPropagation();
                             void handleSelectCommit(c.hash);
@@ -3435,7 +3434,7 @@ export function GitPanel({
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>
-                                提交的文件变更明细
+                                {t('git.commitFiles')}
                               </span>
                               <span
                                 style={{
@@ -3473,7 +3472,7 @@ export function GitPanel({
                                   textAlign: 'center',
                                 }}
                               >
-                                加载文件明细中...
+                                {t('git.loadingFileDetails')}
                               </div>
                             ) : selectedCommitFiles.length === 0 ? (
                               <div
@@ -3484,7 +3483,7 @@ export function GitPanel({
                                   textAlign: 'center',
                                 }}
                               >
-                                暂无文件变更
+                                {t('git.noFileChanges')}
                               </div>
                             ) : (
                               selectedCommitFiles.map((f: GitCommitFileChange) => {
@@ -3511,7 +3510,7 @@ export function GitPanel({
                                       transition: 'background 0.1s ease',
                                     }}
                                     className="search-result-item"
-                                    title="点击查看对比 Diff"
+                                    title={t('git.clickToDiff')}
                                   >
                                     <RenderFileTreeIcon name={fileName} isDirectory={false} />
                                     <span
@@ -3590,17 +3589,16 @@ export function GitPanel({
                   <>
                     <div style={{ fontSize: 20 }}>🌱</div>
                     <div style={{ fontWeight: 600, color: 'var(--text)' }}>
-                      仓库已初始化，暂无提交记录
+                      {t('git.emptyRepoTitle')}
                     </div>
                     <div style={{ fontSize: 11, lineHeight: 1.5, opacity: 0.8, maxWidth: 260 }}>
-                      当前分支尚未创建任何 commit。完成首次提交后，此处将自动展示完整的 Git
-                      提交历史与分支图谱。
+                      {t('git.emptyRepoDesc')}
                     </div>
                   </>
                 ) : historyResult && !historyResult.ok && historyResult.detail ? (
                   <>
                     <div style={{ fontSize: 20 }}>⚠️</div>
-                    <div style={{ fontWeight: 600, color: '#f44336' }}>获取 Git 历史失败</div>
+                    <div style={{ fontWeight: 600, color: '#f44336' }}>{t('git.historyFailed')}</div>
                     <div
                       style={{
                         fontSize: 11,
@@ -3619,7 +3617,7 @@ export function GitPanel({
                     </div>
                   </>
                 ) : (
-                  <div>暂无提交记录</div>
+                  <div>{t('git.noCommits')}</div>
                 )}
               </div>
             )}
@@ -3641,7 +3639,7 @@ export function GitPanel({
           onMouseLeave={handleCardMouseLeave}
           onSelectCommit={(hash) => void handleSelectCommit(hash)}
           onCopyHash={(hash) => {
-            onShowToast?.('已复制提交哈希', hash.slice(0, 8), 'success');
+            onShowToast?.(t('git.hashCopied'), hash.slice(0, 8), 'success');
           }}
         />
       )}
@@ -3689,7 +3687,7 @@ export function GitPanel({
         onCreate={async (name, checkout) => {
           const res = await window.ide.gitCreateBranch(name, checkout);
           if (res.ok) {
-            onShowToast?.('✓ 新建分支成功', res.detail || `已创建分支 ${name}`, 'success');
+            onShowToast?.(t('git.branchCreatedOk'), res.detail || t('git.branchCreatedDetail', { name }), 'success');
             await refresh();
             if (checkout) onBranchSwitched?.();
           }
@@ -3705,7 +3703,7 @@ export function GitPanel({
         onCheckout={async (name) => {
           const res = await window.ide.gitCheckout(name);
           if (res.ok) {
-            onShowToast?.('✓ 切换分支成功', `已切换至分支 ${name}`, 'success');
+            onShowToast?.(t('git.branchSwitchedOk'), t('git.branchSwitchedDetail', { name }), 'success');
             await refresh();
             onBranchSwitched?.();
           }
@@ -3730,7 +3728,7 @@ export function GitPanel({
         onCreateTag={async (name, msg) => {
           const res = await window.ide.gitCreateTag(name, msg);
           if (res.ok) {
-            onShowToast?.('✓ 创建标签成功', res.detail || `已创建 Tag: ${name}`, 'success');
+            onShowToast?.(t('git.tagCreatedOk'), res.detail || t('git.tagCreatedDetail', { name }), 'success');
             await refresh();
           }
           return res;

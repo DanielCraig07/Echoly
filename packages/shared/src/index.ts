@@ -255,6 +255,13 @@ export interface AppSettings {
   formatOnSave?: boolean;
   /** 大文件安全保护阈值大小（字节）。默认 2MB (2 * 1024 * 1024)。 */
   largeFileThresholdBytes?: number;
+  /**
+   * 用户配置的 MCP 服务器。默认空数组 —— 不预置任何服务器。
+   *
+   * 预置示例服务器看似友好，实则危险：用户升级后会在毫不知情的情况下
+   * 启动一个能访问外部系统的子进程。这类能力必须由用户显式添加。
+   */
+  mcpServers?: McpServerConfig[];
 }
 
 export interface UpdateFeedConfig {
@@ -317,7 +324,103 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keymapPreset: 'vscode',
   formatOnSave: false,
   largeFileThresholdBytes: 2 * 1024 * 1024,
+  mcpServers: [],
 };
+
+/**
+ * 一个 MCP 服务器的配置。
+ *
+ * 定义在 shared 而不是 agent 包，是因为三个地方都要用它，且它们的依赖方向不允许：
+ * 设置界面（渲染层）要读写它，主进程要持久化它，agent/tools 包要据此判断工具只读性。
+ * 若放在 agent 包里，渲染层就得反向依赖 agent —— 而渲染层是不知道 Agent 循环的。
+ *
+ * 与 `packages/agent/src/mcp/manager.ts` 的 `McpServerConfig` 保持一致（那边是执行侧视图）。
+ */
+export interface McpServerConfig {
+  /** 稳定标识，用于工具名前缀与去重。 */
+  id: string;
+  name: string;
+  enabled: boolean;
+  command: string;
+  args?: string[];
+  cwd?: string;
+  /** 额外环境变量。密钥放这里，不要放 args —— args 会出现在进程列表里。 */
+  env?: Record<string, string>;
+  /** Windows 下启动 npx/uvx 这类 `.cmd` 包装器需要开。默认 false。 */
+  shell?: boolean;
+  requestTimeoutMs?: number;
+  /**
+   * 启动后等待 initialize 响应的上限（毫秒）。
+   *
+   * 与 `requestTimeoutMs` 分开：冷启动可能要等 `npx` 下载整个包，比任何单次工具调用都慢得多。
+   * 默认取 `max(requestTimeoutMs, 60000)`；只有在明确知道服务器启动很快时才该调小。
+   */
+  connectTimeoutMs?: number;
+  /**
+   * 该服务器工具的影响面，默认 'write'。
+   *
+   * 只读的服务器其工具才会出现在 Ask / Plan 模式下。默认值必须是保守的：
+   * MCP 协议里没有任何字段能告诉我们一个工具会不会改数据，
+   * 声明错了的代价是 Agent 在「只读模式」里拿到了写权限。
+   */
+  access?: 'readonly' | 'write';
+}
+
+/** 单个 MCP 服务器的运行时状态，供设置页展示。 */
+export interface McpServerStatus {
+  id: string;
+  name: string;
+  enabled: boolean;
+  state: 'idle' | 'connecting' | 'ready' | 'error';
+  toolCount: number;
+  /** 因超出单服务器工具数上限而未暴露的数量。 */
+  truncated: number;
+  error?: string;
+  /** 最近的服务端 stderr，供用户自查（连不上时最有用）。 */
+  stderr?: string;
+}
+
+/**
+ * 一条自定义 slash 命令。
+ *
+ * `source` 决定它在设置页里的分组与优先级：工作区内的命令会覆盖同名的用户级命令 ——
+ * 项目自带的命令必须能盖过个人全局偏好，否则同一个 `/review` 在不同仓库里
+ * 行为不一致，而用户无从知道当前生效的是哪一份。
+ */
+export interface SlashCommandInfo {
+  name: string;
+  description: string;
+  body: string;
+  source: 'workspace' | 'user';
+  path: string;
+  /** 工作区相对路径或绝对路径：写入 prompt 时告诉模型命令来自哪里。 */
+  origin: string;
+}
+
+/**
+ * 把一条命令渲染成实际发给模型的内容。
+ *
+ * 放在 shared 而非 skills 包里，是因为**渲染方在渲染进程**：ChatPanel 要在用户
+ * 选中命令的瞬间把正文填进输入框。skills 包依赖 node:fs / node:path，
+ * 引入渲染进程会把 Node 内置模块打进 renderer bundle。
+ *
+ * `$ARGUMENTS` 占位符是刻意的选择：命令模板里几乎总有一处需要用户补具体对象
+ * （改哪个文件、查哪个表），而把它放开头还是结尾取决于模板本身的语序。
+ * 没有占位符时把参数追加到末尾，比丢弃参数好 —— 用户敲了字却什么都没发生，
+ * 是最让人困惑的失败方式。
+ */
+export function renderCommand(
+  command: Pick<SlashCommandInfo, 'body'>,
+  args: string,
+): string {
+  const body = command.body.trim();
+  const trimmedArgs = args.trim();
+  if (!body) return trimmedArgs;
+  if (/\$ARGUMENTS\b/.test(body)) {
+    return body.replace(/\$ARGUMENTS\b/g, trimmedArgs);
+  }
+  return trimmedArgs ? `${body}\n\n${trimmedArgs}` : body;
+}
 
 /** Migrate legacy settings to new provider and model structure */
 export function migrateToProviderSettings(raw: Partial<AppSettings>): AppSettings {
@@ -623,6 +726,10 @@ export type AgentEvent =
   | { type: 'plan_proposal'; plan: PlanProposal }
   | { type: 'step_progress'; step: number; maxSteps: number }
   | { type: 'max_steps_reached'; completedSteps: number; chunkSize: number }
+  /** 运行中被追加的用户消息已进入模型上下文（回执，用于把气泡从「排队中」转为「已送达」）。 */
+  | { type: 'queued_message_consumed'; id: string }
+  /** 本轮在这些消息被取走之前就结束了，它们从未进入上下文。 */
+  | { type: 'queued_message_undelivered'; ids: string[]; reason: string }
   | {
       type: 'context_usage';
       usedTokens: number;
@@ -630,7 +737,29 @@ export type AgentEvent =
       source: 'api' | 'estimate';
     }
   | { type: 'error'; message: string }
-  | { type: 'done'; finalText: string };
+  | { type: 'metrics'; metrics: ChatMessageMetrics }
+  | { type: 'done'; finalText: string; metrics?: ChatMessageMetrics; circuitBroken?: boolean };
+
+export interface ChatMessageMetrics {
+  /** 本次回复所使用的具体模型标识 */
+  model?: string;
+  /** 本次生成总耗时（毫秒） */
+  durationMs?: number;
+  /** 首字延迟（Time to First Token，毫秒） */
+  ttftMs?: number;
+  /** 输出生成速度（Tokens 每秒） */
+  tokensPerSecond?: number;
+  /** 提示词/输入消耗的 Token 数 */
+  promptTokens?: number;
+  /** 生成/输出消耗的 Token 数 */
+  completionTokens?: number;
+  /** 总消耗的 Token 数 */
+  totalTokens?: number;
+  /** 本轮执行调用的工具总次数 */
+  toolCallsCount?: number;
+  /** 服务端停止原因（如 stop, tool_calls, length 等） */
+  finishReason?: string;
+}
 
 export interface PendingDiff {
   id: string;
@@ -640,6 +769,30 @@ export interface PendingDiff {
   description?: string;
   originalTitle?: string;
   modifiedTitle?: string;
+}
+
+/** 「撤销本轮 AI 改动」的状态摘要。 */
+export interface CheckpointSummary {
+  runId: string;
+  /** 本轮记录到的可回放操作数。 */
+  mutations: number;
+  /** 存在无法忠实留底的操作（二进制、超大目录），此时整轮拒绝撤销。 */
+  incomplete: boolean;
+  incompleteReason?: string;
+  createdAt: number;
+}
+
+/**
+ * 运行中追加给 Agent 的用户消息。
+ *
+ * 为什么不让渲染层直接调用 `startAgent` 再起一轮：Agent 正在跑的时候，工作区处在一个
+ * 中间状态（改了一半的文件、还没验证的改动），新起一轮会拿到这个中间态当作起点。
+ * 而「追加」是把它插进**当前这轮**的下一步之前，模型仍在同一条上下文里，能看到自己刚做了什么。
+ */
+export interface QueuedUserMessage {
+  id: string;
+  content: string;
+  attachments?: ChatAttachment[];
 }
 
 export interface ConfirmRequest {
@@ -759,6 +912,27 @@ export interface ChatSessionMessage {
   createdAt: number;
   /** True for intermediate reasoning messages before a tool call (not final answers) */
   isIntermediate?: boolean;
+  /**
+   * 发起这条用户消息的 Agent run。用来把「这一轮」和该轮的文件改动记录（checkpoint）对上，
+   * 从而支持按轮撤销。历史会话里加载回来的旧消息没有这个字段 —— 那些轮次本来就撤销不了。
+   */
+  runId?: string;
+  /**
+   * 运行中追加的消息状态。
+   * `queued` = 已提交但还没到步骤边界；`consumed` = 已进入模型上下文。
+   * `undelivered` = 本轮在取走它之前就结束了，消息从未被模型看到（界面需提示用户重发）。
+   */
+  delivery?: 'queued' | 'consumed' | 'undelivered';
+  /** 模型性能与延迟度量数据（TPS、耗时、TTFT、Token 计数等） */
+  metrics?: ChatMessageMetrics;
+  /**
+   * 这条回复是「思考死循环熔断」的产物，没有有效内容。
+   *
+   * 回灌历史时要跳过它：把一句熔断报错塞进上下文，会诱导模型接着复读，形成二次死循环。
+   * **判定必须走这个标志位，不能去比对 content 里的中文句子** —— 那句话一旦改措辞，
+   * 熔断消息就会被当成正常回复回灌，而症状（下一轮又开始复读）离原因很远，很难查。
+   */
+  circuitBroken?: boolean;
 }
 
 export interface ChatSession {
@@ -1143,6 +1317,18 @@ export interface SearchCodeRequest {
 
 export type WorkspaceKind = 'local' | 'ssh';
 
+/**
+ * 未打开工作区时 `WorkspaceInfo.label` 的哨兵值。
+ *
+ * 主进程设置它、渲染进程要靠它判断「是不是真的没有工作区」（标题栏、项目名、
+ * 会话元数据都要区分「工作区名叫未打开工作区」和「压根没打开」）。两边各写一份
+ * 字面量迟早会分叉，而分叉的表现是标题栏显示出一个假的项目名 —— 不报错，只是不对。
+ *
+ * 注意：这只是**内部哨兵**，不是给用户看的文案。界面上要显示时用 i18n 的
+ * `panel.noWorkspace`。
+ */
+export const NO_WORKSPACE_LABEL = '未打开工作区';
+
 export interface WorkspaceInfo {
   kind: WorkspaceKind;
   root: string | null;
@@ -1177,6 +1363,14 @@ export interface SshConnectResult {
   root?: string;
   label?: string;
   detail: string;
+  /**
+   * 失败原因是否为「macOS 本地网络隐私授权未放行」。
+   *
+   * 渲染层要据此决定是否显示「打开系统设置」按钮。**必须走这个显式标志位**：
+   * 原先渲染层是拿 `detail.includes('本地网络')` 判断的，而 detail 是给人看的文案，
+   * 一旦翻译或改写，按钮就会静默消失 —— 失败的还是同一次失败，只是用户再也点不到补救入口。
+   */
+  needsLocalNetwork?: boolean;
 }
 
 export interface RemoteDirEntry {
@@ -1269,6 +1463,11 @@ export interface IpcApi {
     attachments?: ChatAttachment[];
   }) => Promise<{ runId: string }>;
   cancelAgent: (runId: string) => Promise<void>;
+  /**
+   * 向正在运行的一轮追加一条用户消息。返回 `false` 表示该轮已结束，
+   * 调用方应改为发起新一轮（而不是把消息丢掉）。
+   */
+  queueAgentMessage: (runId: string, message: QueuedUserMessage) => Promise<boolean>;
   respondConfirm: (requestId: string, approved: boolean, answer?: string) => Promise<void>;
   continueAgent: (runId: string) => Promise<void>;
   stopContinueAgent: (runId: string) => Promise<void>;
@@ -1276,6 +1475,18 @@ export interface IpcApi {
   rejectDiff: (diffId: string) => Promise<void>;
   acceptAllDiffs: () => Promise<void>;
   rejectAllDiffs: () => Promise<void>;
+  /**
+   * 本轮 AI 改动的写前记录摘要（用于「撤销本轮 AI 改动」按钮的可用性判断）。
+   * 没有记录时返回 `null`。
+   */
+  getCheckpointSummary: (runId?: string) => Promise<CheckpointSummary | null>;
+  /**
+   * 撤销一轮 AI 的全部文件改动。返回被还原的路径，以及因冲突/无法留底而跳过的部分 ——
+   * 调用方必须把跳过项告诉用户，否则「撤销成功」会成为一句谎话。
+   */
+  revertCheckpoint: (
+    runId?: string,
+  ) => Promise<{ runId: string; reverted: string[]; conflicts: string[]; skipped: Array<{ path: string; reason: string }> } | { error: string }>;
   listSessions: () => Promise<ChatSession[]>;
   getSession: (id: string) => Promise<ChatSession | null>;
   saveSession: (session: ChatSession) => Promise<void>;
@@ -1299,6 +1510,11 @@ export interface IpcApi {
   }) => Promise<{ completion: string }>;
   listSkills: () => Promise<SkillInfo[]>;
   openUserSkillsDir: () => Promise<string>;
+  /** 读工作区与用户目录下的自定义命令（`.echoly/commands` 等）。 */
+  listCommands: () => Promise<SlashCommandInfo[]>;
+  /** 重载 MCP 服务器：读设置、连接、返回各服务器状态。设置变更后调用。 */
+  mcpReload: () => Promise<McpServerStatus[]>;
+  mcpStatus: () => Promise<McpServerStatus[]>;
   rulesGet: (workspaceRoot?: string) => Promise<{ ok: boolean; content?: string | null; filename?: string }>;
   rulesSave: (content: string, workspaceRoot?: string) => Promise<{ ok: boolean }>;
   cloneRepo: (req: GitCloneRequest) => Promise<GitCloneResult>;
@@ -1563,10 +1779,23 @@ export interface IpcApi {
   /** 打开系统外部链接或本地网络服务 */
   openExternal?: (url: string) => Promise<boolean>;
 
-  /** 代码库全局符号索引与自然语言语义搜索 */
-  codebaseIndex: () => Promise<CodebaseIndexStatus>;
+  /** 代码库全局符号索引与 BM25 检索 */
+  codebaseIndex: (force?: boolean) => Promise<CodebaseIndexStatus>;
   codebaseSearch: (query: string, limit?: number) => Promise<CodebaseSymbolHit[]>;
   codebaseStatus: () => Promise<CodebaseIndexStatus>;
+  /** 索引进度推送；返回取消订阅函数。 */
+  onCodebaseProgress?: (
+    cb: (progress: NonNullable<CodebaseIndexStatus['progress']>) => void,
+  ) => () => void;
+
+  /**
+   * 把渲染层 Monaco 的 markers 上报给主进程，供 Agent 的 get_diagnostics 工具读取。
+   *
+   * TS/JS 的语言服务只在渲染进程里，主进程 LSP 只覆盖 clangd/pyright/gopls，
+   * 两边合起来才是模型看到的完整诊断视图。`entries` 是当前窗口的**全量快照**
+   * （不是增量），空数组表示工作区已无诊断。
+   */
+  reportDiagnostics?: (entries: WorkspaceDiagnostic[]) => Promise<boolean>;
 
   /** 挂载/更新内置浏览器 DevTools 原生视图（bounds 为渲染层 CSS 像素，主进程负责换算 DIP） */
   openDevToolsView?: (targetWebContentsId: number, layout: DevToolsViewLayout) => Promise<boolean>;
@@ -1797,6 +2026,24 @@ export interface CodebaseIndexStatus {
   totalSymbols: number;
   lastIndexedTime: number;
   isIndexing: boolean;
+  /** 当前/最近一次索引的进度。索引可能跑几十秒，没有它界面上只能转圈。 */
+  progress?: {
+    phase: 'scan' | 'read' | 'save' | 'done';
+    scanned: number;
+    total: number;
+    /** 本轮复用旧索引的文件数（增量更新的效果）。 */
+    reused: number;
+  };
+}
+
+/** 一条工作区诊断（Monaco marker / LSP diagnostic 归一化后的形态），供 Agent 自检使用。 */
+export interface WorkspaceDiagnostic {
+  path: string;
+  line: number;
+  column?: number;
+  severity: 'error' | 'warning' | 'info' | 'hint';
+  message: string;
+  source?: string;
 }
 
 declare global {

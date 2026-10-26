@@ -1,12 +1,14 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
 import { PanelSelect } from './PanelSelect';
+import { useI18n } from '../i18n';
 import {
-  FILTER_OPERATOR_LABELS,
+  FILTER_OPERATORS,
   operatorNeedsValue,
   type DbTableFilterCondition,
   type DbTableFilterOperator,
 } from '../services/dbTableQuery';
+import { dbOperatorLabel } from '../i18nParts/db';
 
 export interface DbFilterPopoverProps {
   /** 要筛选的列名 */
@@ -44,6 +46,7 @@ export function DbFilterPopover({
   onApply,
   onCancel,
 }: DbFilterPopoverProps) {
+  const { t } = useI18n();
   const [operator, setOperator] = useState<DbTableFilterOperator>(
     // 编辑已有条件 > 列头菜单点的那一项 > 按列类型给的默认值
     initial?.operator ?? initialOperator ?? defaultOperator(meta),
@@ -101,7 +104,7 @@ export function DbFilterPopover({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="db-filter-popover-title">
-        筛选「{column}」
+        {t('db.filterColumnTitle', { column })}
         {meta?.type ? <span className="db-filter-popover-type">{meta.type}</span> : null}
       </div>
 
@@ -112,10 +115,10 @@ export function DbFilterPopover({
           className="db-filter-popover-select"
           value={operator}
           onChange={setOperator}
-          title="选择比较运算符"
-          options={(Object.keys(FILTER_OPERATOR_LABELS) as DbTableFilterOperator[]).map((op) => ({
+          title={t('db.selectOperator')}
+          options={FILTER_OPERATORS.map((op) => ({
             value: op,
-            label: FILTER_OPERATOR_LABELS[op],
+            label: dbOperatorLabel(t, op),
           }))}
         />
       </div>
@@ -126,7 +129,7 @@ export function DbFilterPopover({
             ref={inputRef}
             type="text"
             className="db-filter-popover-control"
-            placeholder="输入要比较的值，回车确定"
+            placeholder={t('db.filterValuePlaceholder')}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
@@ -141,7 +144,7 @@ export function DbFilterPopover({
 
       <div className="db-filter-popover-actions">
         <button type="button" className="panel-action-btn db-filter-popover-btn" onClick={onCancel}>
-          取消
+          {t('db.cancel')}
         </button>
         <button
           type="button"
@@ -149,7 +152,7 @@ export function DbFilterPopover({
           onClick={submit}
           disabled={needsValue && !value.trim()}
         >
-          应用
+          {t('db.apply')}
         </button>
       </div>
     </div>

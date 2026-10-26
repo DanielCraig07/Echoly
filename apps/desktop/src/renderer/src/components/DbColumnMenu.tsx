@@ -3,11 +3,12 @@ import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
 import {
   COMMON_FILTER_OPERATORS,
   FILTER_OPERATOR_ICONS,
-  FILTER_OPERATOR_LABELS,
   MORE_FILTER_OPERATORS,
   operatorNeedsValue,
   type DbTableFilterOperator,
 } from '../services/dbTableQuery';
+import { dbOperatorLabel } from '../i18nParts/db';
+import { useI18n } from '../i18n';
 
 export interface DbColumnMenuProps {
   column: string;
@@ -52,6 +53,7 @@ export function DbColumnMenu({
   onHide,
   onClose,
 }: DbColumnMenuProps) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement | null>(null);
   /** 「更多筛选」二级是否展开（行内展开，不是悬浮飞出） */
   const [moreOpen, setMoreOpen] = useState(false);
@@ -104,9 +106,9 @@ export function DbColumnMenu({
       >
         <div className="menu-item-left">
           <span className="menu-item-icon">↑</span>
-          <span>升序排序</span>
+          <span>{t('db.sortAsc')}</span>
         </div>
-        {sortDirection === 'asc' && <span className="db-column-menu-hint">当前</span>}
+        {sortDirection === 'asc' && <span className="db-column-menu-hint">{t('db.current')}</span>}
       </div>
       <div
         className={`menu-item${sortDirection === 'desc' ? ' menu-item-checked' : ''}`}
@@ -115,9 +117,9 @@ export function DbColumnMenu({
       >
         <div className="menu-item-left">
           <span className="menu-item-icon">↓</span>
-          <span>降序排序</span>
+          <span>{t('db.sortDesc')}</span>
         </div>
-        {sortDirection === 'desc' && <span className="db-column-menu-hint">当前</span>}
+        {sortDirection === 'desc' && <span className="db-column-menu-hint">{t('db.current')}</span>}
       </div>
       <div
         className="menu-item"
@@ -127,7 +129,7 @@ export function DbColumnMenu({
       >
         <div className="menu-item-left">
           <span className="menu-item-icon">✕</span>
-          <span>清除排序</span>
+          <span>{t('db.clearSort')}</span>
         </div>
       </div>
 
@@ -140,9 +142,9 @@ export function DbColumnMenu({
               <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
             </svg>
           </span>
-          <span>{hasFilter ? '修改筛选条件…' : '筛选…'}</span>
+          <span>{hasFilter ? t('db.editFilter') : t('db.filterMenu')}</span>
         </div>
-        {hasFilter && <span className="db-column-menu-hint">已筛选</span>}
+        {hasFilter && <span className="db-column-menu-hint">{t('db.filtered')}</span>}
       </div>
 
       {/* 常用的几个条件直接摆出来：这条路径上（看一眼列就想筛掉空值 / 找包含某串的行）
@@ -154,14 +156,17 @@ export function DbColumnMenu({
           role="menuitem"
           title={
             operatorNeedsValue(op)
-              ? `${FILTER_OPERATOR_LABELS[op]}：打开后输入要比较的值`
-              : `${FILTER_OPERATOR_LABELS[op]}：无需填值，直接筛选`
+              ? t('db.filterOpNeedsValue', { op: dbOperatorLabel(t, op) })
+              : t('db.filterOpNoValue', { op: dbOperatorLabel(t, op) })
           }
           onClick={() => onFilter(op)}
         >
           <div className="menu-item-left">
             <span className="menu-item-icon">{FILTER_OPERATOR_ICONS[op]}</span>
-            <span>{FILTER_OPERATOR_LABELS[op]}{operatorNeedsValue(op) ? '…' : ''}</span>
+            <span>
+              {dbOperatorLabel(t, op)}
+              {operatorNeedsValue(op) ? '…' : ''}
+            </span>
           </div>
         </div>
       ))}
@@ -171,12 +176,12 @@ export function DbColumnMenu({
       <div
         className={`menu-item db-column-menu-sub-item${moreOpen ? ' open' : ''}`}
         role="menuitem"
-        title="其余比较与匹配条件"
+        title={t('db.otherOperators')}
         onClick={() => setMoreOpen((v) => !v)}
       >
         <div className="menu-item-left">
           <span className="menu-item-icon">{moreOpen ? '⌄' : '›'}</span>
-          <span>更多筛选</span>
+          <span>{t('db.moreFilters')}</span>
         </div>
         <span className="db-column-menu-hint">{MORE_FILTER_OPERATORS.length}</span>
       </div>
@@ -190,7 +195,10 @@ export function DbColumnMenu({
           >
             <div className="menu-item-left">
               <span className="menu-item-icon">{FILTER_OPERATOR_ICONS[op]}</span>
-              <span>{FILTER_OPERATOR_LABELS[op]}{operatorNeedsValue(op) ? '…' : ''}</span>
+              <span>
+                {dbOperatorLabel(t, op)}
+                {operatorNeedsValue(op) ? '…' : ''}
+              </span>
             </div>
           </div>
         ))}
@@ -205,7 +213,7 @@ export function DbColumnMenu({
           >
             <div className="menu-item-left">
               <span className="menu-item-icon">✕</span>
-              <span>清除筛选</span>
+              <span>{t('db.clearFilter')}</span>
             </div>
           </div>
         </>
@@ -215,7 +223,12 @@ export function DbColumnMenu({
 
       {/* 隐藏列：字段多的表里「把这一列收起来」比来回横滚顺手，
           放回来后走右上角的「显示字段」—— 在菜单里只留单向入口，避免两个方向各写一套 */}
-      <div className="menu-item" role="menuitem" title="隐藏这一列（用右上角「显示字段」可放回来）" onClick={onHide}>
+      <div
+        className="menu-item"
+        role="menuitem"
+        title={t('db.hideColumnTitle')}
+        onClick={onHide}
+      >
         <div className="menu-item-left">
           <span className="menu-item-icon">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -223,7 +236,7 @@ export function DbColumnMenu({
               <line x1="1" y1="1" x2="23" y2="23" />
             </svg>
           </span>
-          <span>隐藏这一列</span>
+          <span>{t('db.hideColumn')}</span>
         </div>
       </div>
     </div>

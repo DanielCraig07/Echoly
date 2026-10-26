@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
+import { useI18n } from '../i18n';
 import type { DbColumnTooltip } from '../services/dbColumnTooltip';
 
 export interface DbHoverCardProps {
@@ -25,6 +26,7 @@ export interface DbHoverCardProps {
  * （同 `DbColumnMenu` / `DbFilterPopover` / `DbColumnPicker`）。
  */
 export function DbHoverCard({ content, anchor }: DbHoverCardProps) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
@@ -51,10 +53,12 @@ export function DbHoverCard({ content, anchor }: DbHoverCardProps) {
     >
       <div className="db-hover-card-title">{content.title}</div>
       {content.typeLine && <div className="db-hover-card-type">{content.typeLine}</div>}
-      <div className="db-hover-card-table">表：{content.tableLine}</div>
+      <div className="db-hover-card-table">{t('db.hoverTable', { line: content.tableLine })}</div>
       {/* 注释来自数据库（MySQL / PG），SQLite 没有这个概念 —— 没有就整行不渲染，不显示一个空的「说明：」 */}
       {content.description && (
-        <div className="db-hover-card-desc">说明：{content.description}</div>
+        <div className="db-hover-card-desc">
+          {t('db.hoverDescription', { text: content.description })}
+        </div>
       )}
     </div>
   );

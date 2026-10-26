@@ -5,6 +5,7 @@ import type {
 } from '@deepseek-ide/shared';
 import * as monaco from 'monaco-editor';
 import { columnCacheKey } from './dbColumnCache';
+import type { Translate } from '../i18n';
 
 export interface SqlMetadataProvider {
   getConnectionId: () => string;
@@ -269,12 +270,107 @@ export function detectSqlContext(fullSqlBeforeCursor: string): 'table' | 'column
 }
 
 /**
+ * 补全项 `documentation` 的拼装（多行「标签: 值」）。
+ *
+ * 收成函数是因为同样的拼装在下面出现了十几处：写死中文时改一处措辞要改十几遍，
+ * 而漏掉的第 N 处**不报错、不崩**，只是那一格继续显示中文 —— 正是 i18n 铺开时
+ * 最难发现的一类缺口。
+ */
+function docLines(entries: Array<[string, string] | null>): string {
+  return entries
+    .filter((e): e is [string, string] => e !== null)
+    .map(([label, value]) => `${label}: ${value}`)
+    .join('\n');
+}
+
+/**
+ * 字段补全项的 detail，如 `[users 字段] VARCHAR(20) 🔑 [主键] · 用户名`。
+ *
+ * `pkBadge` 为假时只画一个钥匙不写「[主键]」—— 早期两种写法并存，这里按原样保留。
+ */
+function fieldDetail(
+  t: Translate,
+  table: string,
+  col: DatabaseColumnMeta,
+  opts: { pkBadge: boolean },
+): string {
+  const pk = col.pk ? t(opts.pkBadge ? 'db.compPkBadge' : 'db.compPkBadgeShort') : '';
+  const comment = col.comment ? ` · ${col.comment}` : '';
+  return `${t('db.compFieldOf', { table })} ${col.type}${pk}${comment}`;
+}
+
+/**
+ * 字段补全项的 documentation。
+ *
+ * 两种版式刻意都留着（历史上就是这样，改动它们等于顺带改工具提示的信息量）：
+ * - `full`（点号补全）：所属库 / 所属表 / 字段名 / 数据类型 / 可空 / 主键 / 默认值 / 注释
+ * - `compact`（SQL 里已引用到的表）：所属表 / 字段名(类型) / 主键 / 注释
+ *
+ * 库名未知时不写「所属库」这一行 —— 写一个「默认库」会让人以为库名就叫这个。
+ */
+function fieldDoc(
+  t: Translate,
+  col: DatabaseColumnMeta,
+  where: { schema?: string; table: string; layout: 'full' | 'compact' },
+): string {
+  if (where.layout === 'compact') {
+    return docLines([
+      [t('db.compDocTable'), where.table],
+      [t('db.compDocColumn'), `${col.name} (${col.type})`],
+      col.pk ? [t('db.compDocPk'), t('db.compYes')] : null,
+      col.comment ? [t('db.compDocComment'), col.comment] : null,
+    ]);
+  }
+  return docLines([
+    where.schema ? [t('db.compDocSchema'), where.schema] : null,
+    [t('db.compDocTable'), where.table],
+    [t('db.compDocColumn'), col.name],
+    [t('db.compDocType'), col.type],
+    [t('db.compDocNullable'), col.notnull ? t('db.compNo') : t('db.compYes')],
+    col.pk ? [t('db.compDocPk'), t('db.compYes')] : null,
+    col.dflt_value !== undefined && col.dflt_value !== null
+      ? [t('db.compDocDefault'), String(col.dflt_value)]
+      : null,
+    col.comment ? [t('db.compDocComment'), col.comment] : null,
+  ]);
+}
+
+/** 表补全项的 documentation */
+function tableDoc(
+  t: Translate,
+  table: { name: string; kind?: string; comment?: string },
+  schema?: string,
+): string {
+  return docLines([
+    [t('db.compDocTableName'), table.name],
+    [t('db.compDocKind'), table.kind ? table.kind.toUpperCase() : 'TABLE'],
+    schema ? [t('db.compDocSchema'), schema] : null,
+    table.comment ? [t('db.compDocRemark'), table.comment] : null,
+  ]);
+}
+
+/** 表补全项的 detail：有注释就用注释，否则退到 `[表 · 库名]` / `[表]` */
+function tableDetail(
+  t: Translate,
+  table: { comment?: string },
+  schema?: string,
+): string {
+  if (table.comment) return `${t('db.compTable')} ${table.comment}`;
+  return schema ? t('db.compTableIn', { schema }) : t('db.compTablePlain');
+}
+
+/**
  * 构造 SQL 智能补全项
  */
 export async function provideSqlCompletions(
   model: monaco.editor.ITextModel,
   position: monaco.Position,
   provider: SqlMetadataProvider,
+  /**
+   * 翻译函数。**刻意不叫 `t`**：下面 `for (const t of tables)` 会把 `t` 遮住，
+   * 那正是本次 i18n 铺开里犯过的错（CSS 里的 `t` 被当成翻译函数调用）。
+   */
+  translate: Translate,
 ): Promise<monaco.languages.CompletionList> {
   const connId = provider.getConnectionId();
   const currentSchema = provider.getSchemaName();
@@ -311,12 +407,15 @@ export async function provideSqlCompletions(
       const columns = await getOrFetchColumns(connId, schemaPrefix, qualifier);
       if (columns && columns.length > 0) {
         for (const col of columns) {
-          const pkBadge = col.pk ? ' 🔑 [主键]' : '';
           suggestions.push({
             label: col.name,
             kind: monaco.languages.CompletionItemKind.Field,
-            detail: `[${qualifier} 字段] ${col.type}${pkBadge}${col.comment ? ` · ${col.comment}` : ''}`,
-            documentation: `所属库: ${schemaPrefix}\n所属表: ${qualifier}\n字段名: ${col.name}\n数据类型: ${col.type}\n是否允许为NULL: ${!col.notnull ? '是' : '否'}${col.pk ? '\n主键: 是' : ''}${col.dflt_value !== undefined && col.dflt_value !== null ? `\n默认值: ${col.dflt_value}` : ''}${col.comment ? `\n注释: ${col.comment}` : ''}`,
+            detail: fieldDetail(translate, qualifier, col, { pkBadge: true }),
+            documentation: fieldDoc(translate, col, {
+              schema: schemaPrefix,
+              table: qualifier,
+              layout: 'full',
+            }),
             insertText: col.name,
             range,
             sortText: `0_${col.pk ? '0' : '1'}_${col.name}`,
@@ -335,8 +434,8 @@ export async function provideSqlCompletions(
         suggestions.push({
           label: t.name,
           kind: monaco.languages.CompletionItemKind.Class,
-          detail: t.comment ? `[表] ${t.comment}` : `[数据表 · ${matchedSchema.name}]`,
-          documentation: `表名: ${t.name}\n类型: ${t.kind ? t.kind.toUpperCase() : 'TABLE'}\n所在库: ${matchedSchema.name}${t.comment ? `\n备注: ${t.comment}` : ''}`,
+          detail: tableDetail(translate, t, matchedSchema.name),
+          documentation: tableDoc(translate, t, matchedSchema.name),
           insertText: t.name,
           range,
           sortText: `0_${t.name}`,
@@ -355,12 +454,15 @@ export async function provideSqlCompletions(
     const columns = await getOrFetchColumns(connId, targetSchema, targetTableName);
     if (columns && columns.length > 0) {
       for (const col of columns) {
-        const pkBadge = col.pk ? ' 🔑 [主键]' : '';
         suggestions.push({
           label: col.name,
           kind: monaco.languages.CompletionItemKind.Field,
-          detail: `[${targetTableName} 字段] ${col.type}${pkBadge}${col.comment ? ` · ${col.comment}` : ''}`,
-          documentation: `所属库: ${targetSchema || '默认库'}\n所属表: ${targetTableName}\n字段名: ${col.name}\n数据类型: ${col.type}\n是否允许为NULL: ${!col.notnull ? '是' : '否'}${col.pk ? '\n主键: 是' : ''}${col.dflt_value !== undefined && col.dflt_value !== null ? `\n默认值: ${col.dflt_value}` : ''}${col.comment ? `\n注释: ${col.comment}` : ''}`,
+          detail: fieldDetail(translate, targetTableName, col, { pkBadge: true }),
+          documentation: fieldDoc(translate, col, {
+            schema: targetSchema || translate('db.compDocDefaultSchema'),
+            table: targetTableName,
+            layout: 'full',
+          }),
           insertText: col.name,
           range,
           sortText: `0_${col.pk ? '0' : '1'}_${col.name}`,
@@ -378,7 +480,7 @@ export async function provideSqlCompletions(
         suggestions.push({
           label: col.name,
           kind: monaco.languages.CompletionItemKind.Field,
-          detail: `[${exactTable.name} 字段] ${col.type}${col.pk ? ' 🔑' : ''}`,
+          detail: fieldDetail(translate, exactTable.name, col, { pkBadge: false }),
           insertText: col.name,
           range,
           sortText: `0_${col.name}`,
@@ -407,8 +509,11 @@ export async function provideSqlCompletions(
       tableColumns.push({
         label: col.name,
         kind: monaco.languages.CompletionItemKind.Field,
-        detail: `[${ref.tableName} 字段] ${col.type}${col.pk ? ' 🔑' : ''}${col.comment ? ` · ${col.comment}` : ''}`,
-        documentation: `所属表: ${ref.raw}\n字段名: ${col.name} (${col.type})${col.pk ? '\n主键: 是' : ''}${col.comment ? `\n注释: ${col.comment}` : ''}`,
+        detail: fieldDetail(translate, ref.tableName, col, { pkBadge: false }),
+        documentation: fieldDoc(translate, col, {
+          table: ref.raw,
+          layout: 'compact',
+        }),
         insertText: col.name,
         range,
         // 在字段上下文（SELECT/WHERE/ON/ORDER BY）中置于最高优先级 0_
@@ -424,8 +529,8 @@ export async function provideSqlCompletions(
     tableItems.push({
       label: t.name,
       kind: monaco.languages.CompletionItemKind.Class,
-      detail: t.comment ? `[表] ${t.comment}` : '[数据表]',
-      documentation: `表名: ${t.name}\n类型: ${t.kind ? t.kind.toUpperCase() : 'TABLE'}${t.comment ? `\n备注: ${t.comment}` : ''}`,
+      detail: tableDetail(translate, t),
+      documentation: tableDoc(translate, t),
       insertText: t.name,
       range,
       // 在表上下文（FROM/JOIN/INTO/UPDATE）中置于最高优先级 0_
@@ -440,8 +545,8 @@ export async function provideSqlCompletions(
     schemaItems.push({
       label: s.name,
       kind: monaco.languages.CompletionItemKind.Module,
-      detail: '[数据库]',
-      documentation: `数据库 / Schema: ${s.name}`,
+      detail: translate('db.compDatabase'),
+      documentation: `${translate('db.compDocDatabase')}: ${s.name}`,
       insertText: s.name,
       range,
       sortText: context === 'table' ? `1_${s.name}` : `4_${s.name}`,
@@ -454,7 +559,7 @@ export async function provideSqlCompletions(
     keywordItems.push({
       label: kw,
       kind: monaco.languages.CompletionItemKind.Keyword,
-      detail: '[SQL 关键字]',
+      detail: translate('db.compSqlKeyword'),
       insertText: kw,
       range,
       sortText: `5_${kw}`,

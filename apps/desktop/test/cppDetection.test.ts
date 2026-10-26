@@ -1,5 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { detectProjectScripts } from '../src/renderer/src/components/RunWidget';
+import { translate, translateWith, type Translate } from '../src/renderer/src/i18n';
+
+/**
+ * 固定中文的翻译器。
+ *
+ * `detectProjectScripts` 现在必须显式传入 `t`（它生成的脚本名是用户可见文案，
+ * 之前靠一个模块级默认值兜底，会连带让「英文界面」这件事在类型上不可见）。
+ * 这里的断言写的都是中文名，所以这里固定用 zh —— 组件里传的是 hook 的实时 t。
+ */
+const zhT: Translate = (key, params) =>
+  params ? translateWith(key, 'zh', params) : translate(key, 'zh');
 
 describe('C/C++ and CMake Project Detection', () => {
   beforeEach(() => {
@@ -25,7 +36,7 @@ describe('C/C++ and CMake Project Detection', () => {
       listDir: async () => [],
     };
 
-    const scripts = await detectProjectScripts('/workspace', '/workspace/main.cpp');
+    const scripts = await detectProjectScripts('/workspace', zhT, '/workspace/main.cpp');
     const cppScript = scripts.find((s) => s.id === 'active:main.cpp');
 
     expect(cppScript).toBeDefined();
@@ -47,7 +58,7 @@ describe('C/C++ and CMake Project Detection', () => {
       listDir: async () => [],
     };
 
-    const scripts = await detectProjectScripts('/workspace', '/workspace/test/calc_test.cpp');
+    const scripts = await detectProjectScripts('/workspace', zhT, '/workspace/test/calc_test.cpp');
     const testScript = scripts.find((s) => s.id === 'active:test:test/calc_test.cpp');
 
     expect(testScript).toBeDefined();
@@ -64,7 +75,7 @@ describe('C/C++ and CMake Project Detection', () => {
       listDir: async () => [],
     };
 
-    const scripts = await detectProjectScripts('/workspace', '/workspace/solution.hpp');
+    const scripts = await detectProjectScripts('/workspace', zhT, '/workspace/solution.hpp');
     const headerScript = scripts.find((s) => s.id === 'active:check:solution.hpp');
 
     expect(headerScript).toBeDefined();
@@ -88,7 +99,7 @@ add_test(NAME unit_test COMMAND server --test)
       listDir: async () => [{ name: 'CMakeLists.txt', isDirectory: false }],
     };
 
-    const scripts = await detectProjectScripts('/workspace');
+    const scripts = await detectProjectScripts('/workspace', zhT);
     
     // Check CMake: Configure
     const configure = scripts.find((s) => s.id === 'cmake:configure');
@@ -134,7 +145,7 @@ add_test(NAME unit_test COMMAND server --test)
       listDir: async () => [],
     };
 
-    const scripts = await detectProjectScripts('/workspace', '/workspace/src/main.cpp');
+    const scripts = await detectProjectScripts('/workspace', zhT, '/workspace/src/main.cpp');
     const cppScript = scripts.find((s) => s.id === 'active:src/main.cpp');
 
     expect(cppScript).toBeDefined();

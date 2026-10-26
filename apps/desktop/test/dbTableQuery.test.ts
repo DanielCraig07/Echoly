@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { translate, translateWith, type Translate } from '../src/renderer/src/i18n';
+import { dbDescribeFilter } from '../src/renderer/src/i18nParts/db';
+
+/** 断言钉的是中文文案，所以测试自己带一份 zh 的 t */
+const zhT: Translate = (key, params) =>
+  params ? translateWith(key, 'zh', params) : translate(key, 'zh');
 import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
 import {
   buildFilterClause,
   buildOrderByClause,
   buildTableQuerySql,
   buildWhereClause,
-  describeFilter,
-  describeSort,
   EMPTY_VIEW_STATE,
   escapeLikeValue,
   isEmptyViewState,
@@ -242,8 +246,9 @@ describe('排序推进与描述文案', () => {
     const sorts = [{ column: 'age', direction: 'desc' as const }];
     expect(sortDirectionOf(sorts, 'age')).toBe('desc');
     expect(sortDirectionOf(sorts, 'name')).toBeNull();
-    expect(describeSort(sorts[0])).toBe('age 降序');
-    expect(describeSort({ column: 'age', direction: 'asc' })).toBe('age 升序');
+    // chip 上的可读文案已搬到 i18nParts/db 的 dbDescribeSort（服务层那份写死中文，已删）
+    expect(zhT('db.sortDescWord')).toBe('降序');
+    expect(zhT('db.sortAscWord')).toBe('升序');
   });
 
   it('菜单里显式指定方向：不经过中间的「升序」阶段', () => {
@@ -267,19 +272,18 @@ describe('排序推进与描述文案', () => {
   });
 });
 
-describe('describeFilter · chip 文案', () => {
-  it('无值运算符只显示列名与运算符', () => {
-    expect(describeFilter({ column: 'note', operator: 'isNull' })).toBe('note 为空');
-  });
-
-  it('数值列的数字不加引号，文本值加引号', () => {
-    expect(describeFilter({ column: 'age', operator: 'gt', value: 18 }, 'INT')).toBe('age 大于 18');
-    expect(describeFilter({ column: 'name', operator: 'contains', value: '张' }, 'VARCHAR(10)')).toBe(
+describe('筛选 chip 的可读文案（已搬进 i18nParts/db）', () => {
+  it('运算符名走字典，列名与值原样保留', () => {
+    // 服务层原先的 describeFilter 返回写死中文，英文环境下会原样显示中文，已删除。
+    // 现在这两条断言覆盖的是渲染侧那份实现（dbDescribeFilter），
+    // 走的是真实 key 表，所以字典漏条目 / key 拼错都会在这里失败。
+    expect(dbDescribeFilter(zhT, { column: 'note', operator: 'isNull' })).toBe('note 为空');
+    expect(dbDescribeFilter(zhT, { column: 'age', operator: 'gt', value: 18 }, 'INT')).toBe(
+      'age 大于 18',
+    );
+    expect(dbDescribeFilter(zhT, { column: 'name', operator: 'contains', value: '张' }, 'VARCHAR(10)')).toBe(
       'name 包含 "张"',
     );
-  });
-
-  it('值为 NULL 时文案里明确写 NULL，不显示成空', () => {
-    expect(describeFilter({ column: 'age', operator: 'eq', value: null })).toBe('age 等于 NULL');
+    expect(dbDescribeFilter(zhT, { column: 'age', operator: 'eq', value: null })).toBe('age 等于 NULL');
   });
 });

@@ -4,7 +4,9 @@ import 'prismjs/components/prism-sql';
 import type { DatabaseColumnMeta } from '@deepseek-ide/shared';
 import { prettyPrintSql } from '../services/dbSqlPreview';
 import { loadSqlBarExpanded, saveSqlBarExpanded } from '../services/sqlBarCollapsed';
-import { describeFilter, describeSort, type DbTableViewState } from '../services/dbTableQuery';
+import { useI18n } from '../i18n';
+import { dbDescribeFilter, dbDescribeSort } from '../i18nParts/db';
+import type { DbTableViewState } from '../services/dbTableQuery';
 
 export interface DbFilterSqlBarProps {
   /** 当前视图对应的完整语句（已含分页），由调用方用 `buildFullTableSql` 算好 */
@@ -44,6 +46,7 @@ export function DbFilterSqlBar({
   onClearAll,
   onShowToast,
 }: DbFilterSqlBarProps) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   /**
    * 语句块的展开态：默认收起，点标题条展开。
@@ -86,9 +89,9 @@ export function DbFilterSqlBar({
     try {
       await navigator.clipboard.writeText(sql);
       setCopied(true);
-      onShowToast?.('已复制完整 SQL', sql, 'success');
+      onShowToast?.(t('db.copiedFullSql'), sql, 'success');
     } catch {
-      onShowToast?.('复制失败', undefined, 'error');
+      onShowToast?.(t('db.copyFailed'), undefined, 'error');
     }
   };
 
@@ -102,7 +105,7 @@ export function DbFilterSqlBar({
         <button
           type="button"
           className="db-sql-bar-toggle"
-          title={expanded ? '收起完整 SQL' : '展开完整 SQL'}
+          title={expanded ? t('db.collapseFullSql') : t('db.expandFullSql')}
           aria-expanded={expanded}
           onClick={toggleExpanded}
         >
@@ -117,12 +120,12 @@ export function DbFilterSqlBar({
               </svg>
             )}
           </span>
-          <span className="db-sql-bar-label">当前查询</span>
+          <span className="db-sql-bar-label">{t('db.currentQuery')}</span>
         </button>
         <button
           type="button"
           className="panel-action-btn"
-          title={copied ? '已复制' : '复制完整 SQL'}
+          title={copied ? t('db.copied') : t('db.copyFullSql')}
           onClick={() => void handleCopy()}
         >
           {copied ? (
@@ -153,16 +156,18 @@ export function DbFilterSqlBar({
             <span
               key={`f-${i}`}
               className="db-view-chip filter"
-              title={`${f.column} — 点击可修改该筛选条件`}
+              title={t('db.editFilterChipTitle', { column: f.column })}
               onClick={(e) =>
                 onEditFilter(f.column, { x: e.clientX, y: e.clientY })
               }
             >
-              筛选：{describeFilter(f, columns.find((c) => c.name === f.column)?.type)}
+              {t('db.filterChip', {
+                summary: dbDescribeFilter(t, f, columns.find((c) => c.name === f.column)?.type),
+              })}
               <button
                 type="button"
                 className="db-chip-close"
-                title="移除该筛选条件"
+                title={t('db.removeFilter')}
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemoveFilter(i);
@@ -173,12 +178,16 @@ export function DbFilterSqlBar({
             </span>
           ))}
           {view.sorts.map((s) => (
-            <span key={`s-${s.column}`} className="db-view-chip sort" title="点击移除该排序">
-              排序：{describeSort(s)}
+            <span
+              key={`s-${s.column}`}
+              className="db-view-chip sort"
+              title={t('db.removeSortTitle')}
+            >
+              {t('db.sortChip', { summary: dbDescribeSort(t, s) })}
               <button
                 type="button"
                 className="db-chip-close"
-                title="移除该排序"
+                title={t('db.removeSort')}
                 onClick={() => onRemoveSort(s.column)}
               >
                 ✕
@@ -186,7 +195,7 @@ export function DbFilterSqlBar({
             </span>
           ))}
           <button type="button" className="db-chip-clear" onClick={onClearAll}>
-            全部清空
+            {t('db.clearAll')}
           </button>
         </div>
       )}

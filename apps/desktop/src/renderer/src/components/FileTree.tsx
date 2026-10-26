@@ -16,6 +16,7 @@ import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { validateMove } from '../utils/fileMoveValidation';
 import { PanelChevron } from './PanelChevron';
+import { useI18n } from '../i18n';
 
 export type PathClipboard = {
   mode: 'cut' | 'copy';
@@ -86,6 +87,7 @@ interface MenuProps {
 }
 
 function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }: MenuProps) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
   const gitTriggerRef = useRef<HTMLDivElement>(null);
@@ -187,23 +189,23 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
   const items: ReactNode[] = [];
 
   if (isBlank || node) {
-    items.push(item('new-file', '新建文件...'));
-    items.push(item('new-folder', '新建文件夹...'));
+    items.push(item('new-file', t('tree.newFile')));
+    items.push(item('new-folder', t('tree.newFolder')));
   }
   if (node) {
-    items.push(item('open-terminal', '在集成终端中打开'));
+    items.push(item('open-terminal', t('tree.openTerminal')));
     items.push(sep('s1'));
-    items.push(item('add-chat', '添加到聊天'));
-    items.push(item('add-new-chat', '在新对话中添加'));
+    items.push(item('add-chat', t('tree.addToChat')));
+    items.push(item('add-new-chat', t('tree.addToNewChat')));
     if (isDir) {
       items.push(sep('s2'));
-      items.push(item('find-in-folder', '在文件夹中查找...'));
+      items.push(item('find-in-folder', t('tree.findInFolder')));
     }
     items.push(sep('s3'));
-    items.push(item('cut', '剪切'));
-    items.push(item('copy', '复制'));
+    items.push(item('cut', t('tree.cut')));
+    items.push(item('copy', t('tree.copy')));
   }
-  items.push(item('paste', '粘贴', { disabled: !canPaste }));
+  items.push(item('paste', t('tree.paste'), { disabled: !canPaste }));
 
   // ── Git 专属级联菜单 ──
   if (node) {
@@ -247,17 +249,17 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
       }),
   );
   if (hasGitChange) {
-    items.push(item('git-rollback', '放弃更改 (Rollback)...', { danger: true }));
+    items.push(item('git-rollback', t('tree.rollback'), { danger: true }));
   }
   if (node) {
     const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
     items.push(sep('s5'));
-    items.push(item('copy-abs', '复制路径'));
-    items.push(item('copy-rel', '复制相对路径'));
-    items.push(item('reveal-in-finder', isMac ? '在访达中显示' : '在资源管理器中显示'));
+    items.push(item('copy-abs', t('tree.copyPath')));
+    items.push(item('copy-rel', t('tree.copyRelativePath')));
+    items.push(item('reveal-in-finder', isMac ? t('tree.revealInFinder') : t('tree.revealInExplorer')));
     items.push(sep('s6'));
-    items.push(item('rename', '重命名...'));
-    items.push(item('delete', '永久删除', { danger: true }));
+    items.push(item('rename', t('tree.rename')));
+    items.push(item('delete', t('tree.deletePermanently'), { danger: true }));
   }
 
   const handleGitAction = (actionId: string, disabled?: boolean) => (e: React.MouseEvent) => {
@@ -300,7 +302,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 16, display: 'inline-block' }} />
-              <span>显示 Git 追溯标注</span>
+              {t('tree.gitAnnotate')}
             </span>
           </button>
 
@@ -321,7 +323,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
                 <line x1="4.5" y1="8" x2="6" y2="8" stroke="#f87171" strokeWidth="1.2" />
                 <line x1="10" y1="8" x2="12" y2="8" stroke="#38bdf8" strokeWidth="1.2" />
               </svg>
-              <span>显示差异</span>
+              {t('tree.gitShowDiff')}
             </span>
             <kbd className="shortcut-badge">{diffShortcut}</kbd>
           </button>
@@ -336,7 +338,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 16, display: 'inline-block' }} />
-              <span>与历史版本对比...</span>
+              {t('tree.gitCompareRevision')}
             </span>
           </button>
 
@@ -350,7 +352,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 16, display: 'inline-block' }} />
-              <span>与分支或标签对比...</span>
+              {t('tree.gitCompareBranch')}
             </span>
           </button>
 
@@ -366,7 +368,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
                 <circle cx="12" cy="12" r="9" />
                 <polyline points="12 7 12 12 15 15" />
               </svg>
-              <span>显示文件历史记录</span>
+              {t('tree.gitHistory')}
             </span>
           </button>
 
@@ -380,7 +382,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 16, display: 'inline-block' }} />
-              <span>查看当前提交版本</span>
+              {t('tree.gitCurrentRevision')}
             </span>
           </button>
 
@@ -396,7 +398,7 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                 <path d="M3 3v5h5" />
               </svg>
-              <span>回滚修改...</span>
+              {t('tree.gitRollback')}
             </span>
             <kbd className="shortcut-badge">{rollbackShortcut}</kbd>
           </button>
@@ -545,6 +547,7 @@ function TreeNode({
   onInlineCancel: () => void;
   onMoveNode?: (sourcePath: string, targetDirPath: string, sourceIsDir: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(depth === 0);
   const [children, setChildren] = useState<FileTreeNode[] | null>(null);
   const [isDropTarget, setIsDropTarget] = useState(false);
@@ -638,7 +641,7 @@ function TreeNode({
         {showRename ? (
           <InlineNameInput
             initial={node.name}
-            placeholder="文件夹名"
+            placeholder={t('tree.folderName')}
             depth={depth}
             onSubmit={(name) => onInlineDone(inlineEdit, name)}
             onCancel={onInlineCancel}
@@ -744,7 +747,7 @@ function TreeNode({
         {showCreateHere && (
           <InlineNameInput
             initial=""
-            placeholder={inlineEdit.mode === 'create-file' ? '文件名' : '文件夹名'}
+            placeholder={inlineEdit.mode === 'create-file' ? t('tree.fileName') : t('tree.folderName')}
             depth={depth + 1}
             onSubmit={(name) => onInlineDone(inlineEdit, name)}
             onCancel={onInlineCancel}
@@ -828,7 +831,7 @@ function TreeNode({
     return (
       <InlineNameInput
         initial={node.name}
-        placeholder="文件名"
+        placeholder={t('tree.fileName')}
         depth={depth}
         onSubmit={(name) => onInlineDone(inlineEdit, name)}
         onCancel={onInlineCancel}
@@ -900,6 +903,7 @@ function FindInFolderModal({
   onOpenFile: (path: string) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<string[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -1026,7 +1030,7 @@ function FindInFolderModal({
               <circle cx="11" cy="11" r="3" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <h2 className="find-folder-title">在文件夹中查找</h2>
+            <h2 className="find-folder-title">{t('findInFolder.title')}</h2>
             <span className="find-folder-path-tag" title={folderPath}>
               {folderPath}
             </span>
@@ -1035,7 +1039,7 @@ function FindInFolderModal({
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭 (Esc)"
+            title={t('findInFolder.close')}
           >
             <svg
               width="14"
@@ -1071,7 +1075,7 @@ function FindInFolderModal({
             autoFocus
             type="text"
             className="find-folder-input"
-            placeholder="按文件名或路径过滤…"
+            placeholder={t('findInFolder.filterPh')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleInputKeyDown}
@@ -1084,7 +1088,7 @@ function FindInFolderModal({
                 setQuery('');
                 inputRef.current?.focus();
               }}
-              title="清空"
+              title={t('findInFolder.clear')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -1098,12 +1102,12 @@ function FindInFolderModal({
           {scanning && (
             <div className="find-folder-empty">
               <span className="find-folder-spinner" />
-              <span>正在扫描文件夹文件…</span>
+              <span>{t('findInFolder.scanning')}</span>
             </div>
           )}
           {!scanning && filtered.length === 0 && (
             <div className="find-folder-empty">
-              <span>{query ? '未找到匹配文件' : '文件夹内暂无文件'}</span>
+              <span>{query ? t('findInFolder.noMatch') : t('findInFolder.noFiles')}</span>
             </div>
           )}
           {!scanning &&
@@ -1143,14 +1147,15 @@ function FindInFolderModal({
         <div className="find-folder-footer">
           <div className="find-folder-meta">
             <span className="find-folder-count">
-              {scanning ? '扫描中…' : `共 ${filtered.length} 个文件`}
+              {scanning ? t('findInFolder.scanningShort') : t('findInFolder.count', { n: filtered.length })}
             </span>
             <span className="find-folder-tips">
-              <kbd>↑↓</kbd> 导航 <kbd>↵</kbd> 打开 <kbd>Esc</kbd> 关闭
+              <kbd>↑↓</kbd> {t('findInFolder.navNav')} <kbd>↵</kbd> {t('findInFolder.navOpen')}{' '}
+              <kbd>Esc</kbd> {t('findInFolder.navClose')}
             </span>
           </div>
           <button type="button" className="find-folder-action-btn" onClick={onClose}>
-            关闭
+            {t('findInFolder.closeBtn')}
           </button>
         </div>
       </div>
@@ -1210,6 +1215,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
   }: Props,
   ref,
 ) {
+  const { t } = useI18n();
   const [roots, setRoots] = useState<FileTreeNode[]>([]);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [collapseKey, setCollapseKey] = useState(0);
@@ -1228,9 +1234,10 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
   const handleMoveNode = useCallback(
     async (sourcePath: string, targetDirPath: string, sourceIsDir: boolean) => {
       const check = validateMove(sourcePath, targetDirPath, sourceIsDir);
-      if (!check.valid || !check.newPath) {
-        if (check.reason && check.reason !== '文件已在目标目录中') {
-          onShowToast?.('无法移动', check.reason, 'warn');
+      if (!check.valid) {
+        // 拖回原目录等于没动，用户没做错事，不该弹警告；其余拒绝原因要说明白
+        if (check.code !== 'already-in-target') {
+          onShowToast?.(t('tree.moveFailed'), t(`tree.moveReject.${check.code}`), 'warn');
         }
         return;
       }
@@ -1240,13 +1247,17 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
         onFileMoved?.(sourcePath, check.newPath);
         setLocalRefreshKey((k) => k + 1);
         const fileName = sourcePath.split(/[/\\]/).pop() || sourcePath;
-        const targetLabel = targetDirPath === '.' ? '根目录' : targetDirPath;
-        onShowToast?.('移动成功', `已将 ${fileName} 移动至 ${targetLabel}`, 'success');
+        const targetLabel = targetDirPath === '.' ? t('tree.rootDir') : targetDirPath;
+        onShowToast?.(
+          t('tree.moveOk'),
+          t('tree.moveOkDetail', { name: fileName, target: targetLabel }),
+          'success',
+        );
       } catch (err) {
-        onShowToast?.('移动失败', err instanceof Error ? err.message : String(err), 'error');
+        onShowToast?.(t('tree.moveFail'), err instanceof Error ? err.message : String(err), 'error');
       }
     },
-    [onFileMoved, onShowToast],
+    [onFileMoved, onShowToast, t],
   );
 
   const bump = () => setLocalRefreshKey((k) => k + 1);
@@ -1355,7 +1366,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
       if (edit.mode === 'create-file') {
         const path = joinRel(edit.parentPath, name);
         if (await window.ide.pathExists(path)) {
-          window.alert('已存在同名文件');
+          window.alert(t('tree.nameExistsFile'));
           return;
         }
         await window.ide.writeFile(path, '');
@@ -1368,7 +1379,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
       } else if (edit.mode === 'create-folder') {
         const path = joinRel(edit.parentPath, name);
         if (await window.ide.pathExists(path)) {
-          window.alert('已存在同名文件夹');
+          window.alert(t('tree.nameExistsFolder'));
           return;
         }
         await window.ide.mkdir(path);
@@ -1382,7 +1393,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
         const next = joinRel(parent, name);
         if (next === edit.node.path) return;
         if (await window.ide.pathExists(next)) {
-          window.alert('目标已存在');
+          window.alert(t('tree.targetExists'));
           return;
         }
         await window.ide.renamePath(edit.node.path, next);
@@ -1515,19 +1526,20 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
         case 'delete':
           if (node) {
             const ok = await confirm.confirm({
-              title: node.isDirectory ? '永久删除文件夹' : '永久删除文件',
+              title: node.isDirectory ? t('tree.deleteFolderTitle') : t('tree.deleteFileTitle'),
               content: buildSqlConfirmMarkdown({
-                intro: node.isDirectory
-                  ? '该文件夹及其**全部内容**会从磁盘上永久删除，**不进回收站、无法撤销**。'
-                  : '该文件会从磁盘上永久删除，**不进回收站、无法撤销**。',
+                t,
+                intro: node.isDirectory ? t('tree.deleteFolderBody') : t('tree.deleteFileBody'),
                 statements: [],
               }),
               details: [
-                { label: '路径', value: node.path },
-                ...(node.isDirectory ? [{ label: '类型', value: '文件夹（递归删除）' }] : []),
+                { label: t('tree.labelPath'), value: node.path },
+                ...(node.isDirectory
+                  ? [{ label: t('tree.labelType'), value: t('tree.typeFolderRecursive') }]
+                  : []),
               ],
               tone: 'danger',
-              confirmLabel: '确认删除',
+              confirmLabel: t('tree.confirmDelete'),
             });
             if (ok === null) return;
             await window.ide.removePath(node.path);
@@ -1548,7 +1560,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
   }
 
   if (!workspace) {
-    return <div className="empty-state">打开一个工作区以浏览文件</div>;
+    return <div className="empty-state">{t('tree.emptyOpen')}</div>;
   }
 
   const rootCreate =
@@ -1593,7 +1605,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
       {rootCreate && (
         <InlineNameInput
           initial=""
-          placeholder={inlineEdit.mode === 'create-file' ? '文件名' : '文件夹名'}
+          placeholder={inlineEdit.mode === 'create-file' ? t('tree.fileName') : t('tree.folderName')}
           depth={0}
           onSubmit={(name) => void handleInlineDone(inlineEdit, name)}
           onCancel={() => setInlineEdit(null)}

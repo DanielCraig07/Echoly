@@ -33,7 +33,22 @@ const STYLE_PROBE_KEYS = [
   'z-index',
 ];
 
-export const INJECTED_INSPECT_SCRIPT = `
+/**
+ * 注入脚本里的两条用户可见文案。
+ *
+ * 注入脚本跑在**被浏览的页面**里，拿不到渲染层的 i18n 上下文，所以文案只能由调用方
+ * 传进来再插值。之所以做成参数而不是留中文字面量：这是画在用户屏幕上的提示条，
+ * 英文环境下它同样是中文，而且因为它在 iframe 里，`useI18n` 那套检查扫不到它。
+ */
+export interface InspectScriptLabels {
+  /** 顶部提示条：「元素选取中：点击引用 · ↑ 选父级 · ↓ 选子级 · Esc 取消」 */
+  hint: string;
+  /** 尺寸标签上的匹配数后缀，`{n}` 会被替换成实际数量 */
+  matchSuffix: string;
+}
+
+export function buildInspectScript(labels: InspectScriptLabels): string {
+  return `
 (async function() {
   // 若已有一次拾取会话在等待，先结束它（上一个 await 会收到 null）
   var stale = window.__echoly_cleanup_inspect;
@@ -42,6 +57,8 @@ export const INJECTED_INSPECT_SCRIPT = `
   }
 
   return await new Promise(function(resolve) {
+    var HINT_TEXT = ${JSON.stringify(labels.hint)};
+    var MATCH_SUFFIX = ${JSON.stringify(labels.matchSuffix)};
     var OVERLAY_ID = '__echoly_inspector_overlay';
     var LABEL_ID = '__echoly_inspector_label';
     var HINT_ID = '__echoly_inspector_hint';
@@ -239,7 +256,7 @@ export const INJECTED_INSPECT_SCRIPT = `
 
     hintEl = document.createElement('div');
     hintEl.id = HINT_ID;
-    hintEl.textContent = '元素选取中：点击引用 · ↑ 选父级 · ↓ 选子级 · Esc 取消';
+    hintEl.textContent = HINT_TEXT;
     hintEl.style.cssText = [
       'position: fixed',
       'top: 0',
@@ -279,7 +296,7 @@ export const INJECTED_INSPECT_SCRIPT = `
 
       var selector = getSelectorPath(el, 6);
       var matches = countSelectorMatch(selector);
-      var suffix = matches > 1 ? ' · 匹配 ' + matches + ' 个' : '';
+      var suffix = matches > 1 ? MATCH_SUFFIX.replace('{n}', String(matches)) : '';
       labelEl.textContent =
         describe(el) + ' (' + Math.round(rect.width) + '×' + Math.round(rect.height) + ')' + suffix;
 
@@ -396,6 +413,7 @@ export const INJECTED_INSPECT_SCRIPT = `
   });
 })();
 `;
+}
 
 /**
  * 取消元素拾取。

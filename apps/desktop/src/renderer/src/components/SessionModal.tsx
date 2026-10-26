@@ -5,6 +5,7 @@ import { formatSessionWorkspaceLine, folderNameFromPath } from '../utils';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { useI18n, type Translate } from '../i18n';
 
 interface Props {
   currentSessionId: string;
@@ -101,10 +102,18 @@ function getStoredRecentWorkspaces(): RecentWorkspaceItem[] {
   }
 }
 
+/**
+ * 汇总所有「已知项目」用于下拉选单。
+ *
+ * `t` 是**必填**的：两个兜底名（未命名项目 / 当前项目）会直接出现在下拉里，
+ * 早先做成可选带中文兜底，等于把「英文环境显示中文」藏进类型系统看不见的地方 ——
+ * 单测要中文断言就自己传一份 zh 的 t（见 workspaceSessionBinding.test.ts）。
+ */
 export function collectAvailableProjects(
   workspaceInfo: WorkspaceInfo | null | undefined,
   recentWorkspaces: RecentWorkspaceItem[] | undefined,
   sessions: ChatSession[],
+  t: Translate,
 ): AvailableProject[] {
   // key 为规范化小写项目名，确保相同项目名称在下拉列表中全局唯一，不重复出现
   const map = new Map<
@@ -118,7 +127,7 @@ export function collectAvailableProjects(
   ): { canonicalKey: string; name: string } => {
     const n = (rawName || '').trim();
     const folder = folderNameFromPath(rawPath || '').trim();
-    const name = n || folder || '未命名项目';
+    const name = n || folder || t('session.unnamedProject');
     return {
       canonicalKey: name.toLowerCase(),
       name,
@@ -128,7 +137,9 @@ export function collectAvailableProjects(
   // 1. 当前打开的工作区（置顶）
   if (workspaceInfo?.root) {
     const currentName =
-      folderNameFromPath(workspaceInfo.root) || workspaceInfo.label || '当前项目';
+      folderNameFromPath(workspaceInfo.root) ||
+      workspaceInfo.label ||
+      t('session.currentProject');
     const { canonicalKey, name } = getCanonical(currentName, workspaceInfo.root);
     map.set(canonicalKey, {
       key: canonicalKey,
@@ -236,6 +247,7 @@ export function SessionModal({
   workspaceInfo,
   recentWorkspaces,
 }: Props) {
+  const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_session_modal_size',
     defaultWidth: 640,
@@ -325,18 +337,19 @@ export function SessionModal({
     e.stopPropagation();
     const target = sessions.find((s) => s.id === id);
     const ok = await confirm.confirm({
-      title: '删除历史会话',
+      title: t('session.deleteTitle'),
       content: buildSqlConfirmMarkdown({
-        intro: '这条会话的全部对话记录将被永久删除，且**无法撤销**。',
+        t,
+        intro: t('session.deleteIntro'),
         statements: [],
       }),
       details: [
-        { label: '标题', value: target?.title?.trim() || '（无标题）' },
-        { label: '时间', value: target ? formatTime(target.updatedAt) : '未知' },
-        { label: '轮次', value: `${target?.messages?.length ?? 0} 轮` },
+        { label: t('session.labelTitle'), value: target?.title?.trim() || t('session.untitled') },
+        { label: t('session.labelTime'), value: target ? formatTime(target.updatedAt) : t('session.unknown') },
+        { label: t('session.labelTurns'), value: t('session.turnsCount', { n: target?.messages?.length ?? 0 }) },
       ],
       tone: 'danger',
-      confirmLabel: '确认删除',
+      confirmLabel: t('session.confirmDelete'),
     });
     if (ok === null) return;
     setDeleting(id);
@@ -407,8 +420,8 @@ export function SessionModal({
 
   // 收集并整理所有项目（包含无历史会话的项目）
   const availableProjects = useMemo(
-    () => collectAvailableProjects(workspaceInfo, recentWorkspaces, sessions),
-    [workspaceInfo, recentWorkspaces, sessions],
+    () => collectAvailableProjects(workspaceInfo, recentWorkspaces, sessions, t),
+    [workspaceInfo, recentWorkspaces, sessions, t],
   );
 
   const selectedSpecificProject = useMemo(
@@ -440,7 +453,7 @@ export function SessionModal({
     const q = search.toLowerCase();
     const matchTitle = s.title.toLowerCase().includes(q);
     const matchMsg = s.messages.some((m) => m.content.toLowerCase().includes(q));
-    const ws = formatSessionWorkspaceLine(s);
+    const ws = formatSessionWorkspaceLine(s, t);
     const matchWs =
       ws.text.toLowerCase().includes(q) ||
       ws.badge.toLowerCase().includes(q) ||
@@ -449,15 +462,17 @@ export function SessionModal({
   });
 
   const activeScopeBadgeText = useMemo(() => {
-    if (filterScope === 'all') return '全局会话 (全部项目)';
+    if (filterScope === 'all') return t('session.scopeAll');
     if (filterScope === 'current') {
-      return currentProjectName ? `当前项目: ${currentProjectName}` : '当前项目';
+      return currentProjectName
+        ? t('session.scopeCurrentNamed', { name: currentProjectName })
+        : t('session.currentProject');
     }
     if (selectedSpecificProject) {
-      return `项目: ${selectedSpecificProject.name}`;
+      return t('session.scopeProject', { name: selectedSpecificProject.name });
     }
-    return '历史会话';
-  }, [filterScope, currentProjectName, selectedSpecificProject]);
+    return t('session.scopeHistory');
+  }, [filterScope, currentProjectName, selectedSpecificProject, t]);
 
   const safeOverlay = createSafeOverlayHandlers(onClose);
 
@@ -476,7 +491,7 @@ export function SessionModal({
       >
         <div className="session-modal-header">
           <div className="session-modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>历史会话</span>
+            <span>{t('session.historyTitle')}</span>
             <span
               style={{
                 fontSize: 11,
@@ -491,7 +506,7 @@ export function SessionModal({
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}
-              title={selectedSpecificProject?.path || workspaceInfo?.root || '全部项目'}
+              title={selectedSpecificProject?.path || workspaceInfo?.root || t('session.allProjects')}
             >
               {activeScopeBadgeText}
             </span>
@@ -526,9 +541,12 @@ export function SessionModal({
                     whiteSpace: 'nowrap',
                   }}
                   onClick={() => setFilterScope('current')}
-                  title={`当前项目：${currentProjectName} (${currentProjectSessions.length} 条会话)`}
+                  title={t('session.currentProjectTitle', {
+                    name: currentProjectName,
+                    n: currentProjectSessions.length,
+                  })}
                 >
-                  当前项目 ({currentProjectSessions.length})
+                  {t('session.currentProjectCount', { n: currentProjectSessions.length })}
                 </button>
               )}
               <button
@@ -546,9 +564,9 @@ export function SessionModal({
                   whiteSpace: 'nowrap',
                 }}
                 onClick={() => setFilterScope('all')}
-                title={`全部项目历史会话 (${sessions.length} 条)`}
+                title={t('session.allProjectsTitle', { n: sessions.length })}
               >
-                全部项目 ({sessions.length})
+                {t('session.allProjectsCount', { n: sessions.length })}
               </button>
 
               {/* 下拉选择具体项目（包含无历史会话的所有已知项目） */}
@@ -571,7 +589,7 @@ export function SessionModal({
                     maxWidth: 150,
                   }}
                   onClick={() => setProjectDropdownOpen((v) => !v)}
-                  title="选择具体项目（包含暂无历史会话的所有已知项目）"
+                  title={t('session.specificProjectTitle')}
                 >
                   <span
                     style={{
@@ -582,7 +600,7 @@ export function SessionModal({
                   >
                     {selectedSpecificProject
                       ? `${selectedSpecificProject.name} (${selectedSpecificProject.count})`
-                      : '指定项目'}
+                      : t('session.specificProject')}
                   </span>
                   <span style={{ fontSize: 9, opacity: 0.8 }}>▾</span>
                 </button>
@@ -590,8 +608,10 @@ export function SessionModal({
                 {projectDropdownOpen && (
                   <div className="session-project-dropdown-menu">
                     <div className="session-project-dropdown-header">
-                      <span>切换查看项目（所有项目均可选）</span>
-                      <span className="session-project-dropdown-badge">{availableProjects.length} 个项目</span>
+                      <span>{t('session.dropdownHeader')}</span>
+                      <span className="session-project-dropdown-badge">
+                        {t('session.projectCount', { n: availableProjects.length })}
+                      </span>
                     </div>
 
                     {/* 全局全部项目 */}
@@ -616,11 +636,13 @@ export function SessionModal({
                           <line x1="2" y1="12" x2="22" y2="12" />
                           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                         </svg>
-                        <span className="session-project-item-title">全部项目 (全局)</span>
+                        <span className="session-project-item-title">
+                          {t('session.allProjectsGlobal')}
+                        </span>
                       </div>
                       <div className="session-project-item-right">
                         <span className={`session-project-count-pill${sessions.length > 0 ? ' has-sessions' : ''}`}>
-                          {sessions.length} 条
+                          {t('session.countBadge', { n: sessions.length })}
                         </span>
                         {filterScope === 'all' && (
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -676,15 +698,17 @@ export function SessionModal({
                               </svg>
                             )}
                             <span className="session-project-item-title">
-                              {p.isCurrent ? `当前：${p.name}` : p.name}
+                              {p.isCurrent ? t('session.currentPrefix', { name: p.name }) : p.name}
                             </span>
                             {p.isCurrent && (
-                              <span className="session-project-current-tag">当前</span>
+                              <span className="session-project-current-tag">
+                                {t('session.currentTag')}
+                              </span>
                             )}
                           </div>
                           <div className="session-project-item-right">
                             <span className={`session-project-count-pill${p.count > 0 ? ' has-sessions' : ''}`}>
-                              {p.count > 0 ? `${p.count} 条` : '0'}
+                              {p.count > 0 ? t('session.countBadge', { n: p.count }) : '0'}
                             </span>
                             {isSelected && (
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -708,13 +732,13 @@ export function SessionModal({
                 onClose();
               }}
             >
-              + 新建会话
+              {t('session.new')}
             </button>
             <button
               type="button"
               className="panel-action-btn"
               onClick={onClose}
-              title="关闭 (Esc)"
+              title={t('common.closeEsc')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -740,7 +764,7 @@ export function SessionModal({
             </svg>
             <input
               type="text"
-              placeholder="搜索历史会话标题或内容…"
+              placeholder={t('session.searchPh')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               autoFocus
@@ -750,7 +774,7 @@ export function SessionModal({
                 type="button"
                 className="session-search-clear-btn"
                 onClick={() => setSearch('')}
-                title="清空"
+                title={t('session.clear')}
               >
                 ✕
               </button>
@@ -767,16 +791,18 @@ export function SessionModal({
                 <line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" />
                 <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
               </svg>
-              <span>加载中…</span>
+              <span>{t('session.loading')}</span>
             </div>
           ) : filteredSessions.length === 0 ? (
             <div className="session-modal-empty" style={{ padding: '32px 16px', textAlign: 'center' }}>
               {search ? (
-                '没有匹配的会话'
+                t('session.noMatch')
               ) : filterScope === 'current' ? (
                 <div>
                   <div style={{ color: 'var(--muted)', marginBottom: 12 }}>
-                    当前项目（{currentProjectName || '当前项目'}）暂无历史会话
+                    {t('session.emptyCurrent', {
+                      name: currentProjectName || t('session.currentProject'),
+                    })}
                   </div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                     {sessions.length > 0 && (
@@ -786,7 +812,7 @@ export function SessionModal({
                         onClick={() => setFilterScope('all')}
                         style={{ fontSize: 12, padding: '4px 12px' }}
                       >
-                        查看全部项目会话 ({sessions.length})
+                        {t('session.viewAllProjects', { n: sessions.length })}
                       </button>
                     )}
                   </div>
@@ -794,7 +820,7 @@ export function SessionModal({
               ) : selectedSpecificProject ? (
                 <div>
                   <div style={{ color: 'var(--muted)', marginBottom: 12 }}>
-                    项目 “{selectedSpecificProject.name}” 暂无历史会话
+                    {t('session.emptyProject', { name: selectedSpecificProject.name })}
                   </div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
                     {workspaceInfo?.root && (
@@ -804,7 +830,7 @@ export function SessionModal({
                         onClick={() => setFilterScope('current')}
                         style={{ fontSize: 12, padding: '4px 12px' }}
                       >
-                        查看当前项目 ({currentProjectSessions.length})
+                        {t('session.viewCurrentProject', { n: currentProjectSessions.length })}
                       </button>
                     )}
                     <button
@@ -813,12 +839,12 @@ export function SessionModal({
                       onClick={() => setFilterScope('all')}
                       style={{ fontSize: 12, padding: '4px 12px' }}
                     >
-                      查看全部项目会话 ({sessions.length})
+                      {t('session.viewAllProjects', { n: sessions.length })}
                     </button>
                   </div>
                 </div>
               ) : (
-                '暂无历史会话记录'
+                t('session.emptyRecords')
               )}
             </div>
           ) : (
@@ -827,7 +853,7 @@ export function SessionModal({
                 const isActiveTab = activeSessionIds.includes(s.id);
                 const isCurrent = s.id === currentSessionId;
                 const isEditing = editingId === s.id;
-                const ws = formatSessionWorkspaceLine(s);
+                const ws = formatSessionWorkspaceLine(s, t);
                 const msgCount = s.messages.filter((m) => m.role !== 'tool').length;
 
                 return (
@@ -873,7 +899,7 @@ export function SessionModal({
                               <button
                                 type="button"
                                 className="session-rename-btn save"
-                                title="保存名称 (Enter)"
+                                title={t('session.renameSaveTitle')}
                                 onMouseDown={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -887,7 +913,7 @@ export function SessionModal({
                               <button
                                 type="button"
                                 className="session-rename-btn cancel"
-                                title="取消 (Esc)"
+                                title={t('session.renameCancelTitle')}
                                 onMouseDown={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -902,7 +928,7 @@ export function SessionModal({
                             </div>
                             {isCurrent && (
                               <span className="session-current-badge">
-                                当前
+                                {t('session.currentTag')}
                               </span>
                             )}
                           </div>
@@ -925,7 +951,7 @@ export function SessionModal({
                             </span>
                             {isCurrent && (
                               <span className="session-current-badge">
-                                当前
+                                {t('session.currentTag')}
                               </span>
                             )}
                           </div>
@@ -955,7 +981,7 @@ export function SessionModal({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        💬 {msgCount} 轮
+                        {t('session.turnsBadge', { n: msgCount })}
                       </span>
                       <div className="session-row-actions" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                         {!isEditing && (
@@ -963,7 +989,7 @@ export function SessionModal({
                             type="button"
                             className="session-card-icon-btn"
                             onClick={(e) => handleStartRename(s, e)}
-                            title="重命名会话"
+                            title={t('session.renameTitle')}
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
@@ -988,7 +1014,7 @@ export function SessionModal({
                           className="session-card-delete"
                           disabled={deleting === s.id}
                           onClick={(e) => void handleDelete(s.id, e)}
-                          title="删除会话"
+                          title={t('session.deleteOneTitle')}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',

@@ -52,21 +52,30 @@ export function isEmptyViewState(view: DbTableViewState | undefined): boolean {
   return !hasFilter && view.sorts.length === 0;
 }
 
-/** 运算符的中文名（下拉选项与 chip 文案共用） */
-export const FILTER_OPERATOR_LABELS: Record<DbTableFilterOperator, string> = {
-  eq: '等于',
-  ne: '不等于',
-  gt: '大于',
-  gte: '大于等于',
-  lt: '小于',
-  lte: '小于等于',
-  contains: '包含',
-  notContains: '不包含',
-  startsWith: '以…开头',
-  endsWith: '以…结尾',
-  isNull: '为空',
-  isNotNull: '非空',
-};
+/**
+ * 全部运算符，同时也是它们的**展示顺序**。
+ *
+ * 这里原本是一个「运算符 → 中文名」的表（`FILTER_OPERATOR_LABELS`），两个作用：
+ * 给 `describeFilter` 拼 chip 文案，以及被 `Object.keys()` 取出来当枚举。
+ * 铺 i18n 时前者废掉了 —— 运算符名进了字典（`db.op.*`，见 `i18nParts/db.ts` 的
+ * `dbOperatorLabel`），因为那张表返回的是写死的中文，英文环境下会原样显示中文。
+ * 剩下的只有枚举这一个用途，所以改成数组：**别再往这里加文案**，
+ * 数组里多出来的中文迟早会有人当成「已经翻好了」直接渲染出去。
+ */
+export const FILTER_OPERATORS: readonly DbTableFilterOperator[] = [
+  'eq',
+  'ne',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'contains',
+  'notContains',
+  'startsWith',
+  'endsWith',
+  'isNull',
+  'isNotNull',
+];
 
 /**
  * 运算符的图标（列菜单里摆在文案左边）。
@@ -118,9 +127,9 @@ export const COMMON_FILTER_OPERATORS: readonly DbTableFilterOperator[] = [
 ];
 
 /** 「更多筛选」里的运算符：从全量里减去常用项，保证两边不重不漏 */
-export const MORE_FILTER_OPERATORS: readonly DbTableFilterOperator[] = (
-  Object.keys(FILTER_OPERATOR_LABELS) as DbTableFilterOperator[]
-).filter((op) => !COMMON_FILTER_OPERATORS.includes(op));
+export const MORE_FILTER_OPERATORS: readonly DbTableFilterOperator[] = FILTER_OPERATORS.filter(
+  (op) => !COMMON_FILTER_OPERATORS.includes(op),
+);
 
 /**
  * LIKE 模式串的转义。
@@ -245,26 +254,6 @@ export function buildTableQuerySql(
   const orderBy = buildOrderByClause(driver, view?.sorts ?? [], pkColumnsOf(columns));
   if (orderBy) segments.push(orderBy);
   return `${segments.join(' ')};`;
-}
-
-/** 条件的可读文案（chip 上显示），例如 `age 大于 18`、`name 包含 "张"` */
-export function describeFilter(
-  condition: DbTableFilterCondition,
-  columnType?: string,
-): string {
-  const label = FILTER_OPERATOR_LABELS[condition.operator] ?? condition.operator;
-  if (!operatorNeedsValue(condition.operator)) return `${condition.column} ${label}`;
-  const value = condition.value;
-  if (value === null || value === undefined) return `${condition.column} ${label} NULL`;
-  if (typeof value === 'number' || (isNumericColumnType(columnType) && /^-?\d+(\.\d+)?$/.test(String(value)))) {
-    return `${condition.column} ${label} ${value}`;
-  }
-  return `${condition.column} ${label} "${String(value)}"`;
-}
-
-/** 排序的可读文案，例如 `age 降序` */
-export function describeSort(sort: DbTableSort): string {
-  return `${sort.column} ${sort.direction === 'desc' ? '降序' : '升序'}`;
 }
 
 /**

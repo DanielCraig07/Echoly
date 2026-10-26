@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { BrowserElementRef } from '@deepseek-ide/shared';
 import {
-  INJECTED_INSPECT_SCRIPT,
+  buildInspectScript,
   CANCEL_INSPECT_SCRIPT,
   ROUTE_SYNC_SCRIPT,
   PASSWORD_INTERCEPTOR_SCRIPT,
@@ -14,6 +14,7 @@ import {
   deleteCredential,
   type SavedCredential,
 } from '../../services/browserPasswordManager';
+import { useI18n, translateSegments } from '../../i18n';
 
 export interface BrowserViewPaneProps {
   initialUrl?: string;
@@ -103,6 +104,11 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
   onAddPageToChat,
   onShowToast,
 }) => {
+  const { t, locale } = useI18n();
+  // 挂载期一次性绑定的 webview 事件回调里也要取字典，用 ref 承载避免闭包锁死在首次 locale
+  const tRef = useRef(t);
+  tRef.current = t;
+
   // 获取当前上下文基准 Origin (例如 http://localhost:5173 或 http://localhost:3000 等)
   const getBaseOrigin = () => {
     try {
@@ -204,7 +210,9 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
   const initialSrcRef = useRef(initialParsedUrl || '');
   const [urlInput, setUrlInput] = useState(initialParsedUrl || '');
   const [currentUrl, setCurrentUrl] = useState(initialParsedUrl || '');
-  const [pageTitle, setPageTitle] = useState(tabTitle || (initialParsedUrl ? '内置浏览器' : '新标签页'));
+  const [pageTitle, setPageTitle] = useState(
+    tabTitle || (initialParsedUrl ? t('app.browserTab') : t('app.newTab')),
+  );
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -327,12 +335,12 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
     setUrlInput('');
     setCurrentUrl('');
     currentUrlRef.current = '';
-    setPageTitle('新标签页');
-    pageTitleRef.current = '新标签页';
+    setPageTitle(t('app.newTab'));
+    pageTitleRef.current = t('app.newTab');
     setLoadError(null);
     setInspectActive(false);
     onUpdateTabRef.current?.({
-      title: '新标签页',
+      title: t('app.newTab'),
       virtual: {
         browser: {
           url: '',
@@ -352,7 +360,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         addressInputRef.current?.focus();
       }
     }, 50);
-  }, []);
+  }, [t]);
 
   // 打开或关闭 Google Chrome 原生 DevTools 开发者控制台 (在浏览器下方展示，不新开窗口/标签)
   const toggleGoogleDevTools = useCallback(() => {
@@ -627,19 +635,24 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
       try {
         wv.executeJavaScript(CANCEL_INSPECT_SCRIPT);
       } catch {}
-      onShowToast?.('已退出元素选取模式', 'info');
+      onShowToast?.(t('browser.inspectExited'), 'info');
       return;
     }
 
     setInspectActive(true);
-    onShowToast?.('请点击页面中的目标元素进行引用 (↑/↓ 切换父/子级，Esc 退出)', 'info');
+    onShowToast?.(t('browser.inspectPrompt'), 'info');
 
     // 注入脚本返回一个 Promise：用户点击元素或按 Esc 时 resolve。
     // 早期实现走 console.log 哨兵串回传，页面一旦包装 console.log 拾取就静默失效，
     // 现在直接 await 返回值，通道更可靠。
     let picked: string | null = null;
     try {
-      picked = wv.executeJavaScript(INJECTED_INSPECT_SCRIPT);
+      picked = wv.executeJavaScript(
+        buildInspectScript({
+          hint: t('browser.inspectHint'),
+          matchSuffix: t('browser.inspectMatchCount'),
+        }),
+      );
     } catch (err) {
       console.error('Failed to execute inspect script:', err);
       setInspectActive(false);
@@ -684,17 +697,22 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         console.warn('[BrowserViewPane] inspect promise rejected:', err);
         setInspectActive(false);
       });
-  }, [inspectActive, onShowToast, getSafeWebContentsId]);
+  }, [inspectActive, onShowToast, getSafeWebContentsId, t]);
 
   // 处理拾取到的元素数据
   const handleElementPicked = useCallback(
     (payload: BrowserElementRef) => {
       const label = `<${payload.tagName}${payload.id ? '#' + payload.id : ''}>`;
-      const dupTip =
+      const dupCount =
         payload.selectorMatchCount && payload.selectorMatchCount > 1
-          ? ` (选择器命中 ${payload.selectorMatchCount} 个同类元素)`
-          : '';
-      onShowToast?.(`已拾取元素 ${label}${dupTip}`, 'success');
+          ? payload.selectorMatchCount
+          : 0;
+      onShowToast?.(
+        dupCount
+          ? t('browser.pickedWithDuplicate', { label, n: dupCount })
+          : t('browser.picked', { label }),
+        'success',
+      );
       if (onAddElementToChat) {
         onAddElementToChat(payload);
       } else {
@@ -706,7 +724,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         );
       }
     },
-    [onAddElementToChat, onShowToast],
+    [onAddElementToChat, onShowToast, t],
   );
   const handleElementPickedRef = useRef(handleElementPicked);
   handleElementPickedRef.current = handleElementPicked;
@@ -733,8 +751,8 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         }),
       );
     }
-    onShowToast?.(`已将标签页 "${pageTitle}" 引用至 AI 对话`, 'success');
-  }, [currentUrl, pageTitle, consoleLogs, onAddPageToChat, onShowToast]);
+    onShowToast?.(t('browser.quotedPage', { title: pageTitle }), 'success');
+  }, [currentUrl, pageTitle, consoleLogs, onAddPageToChat, onShowToast, t]);
 
   // 绑定 Webview 事件：只在组件挂载时执行一次，生命周期完全稳定
   useEffect(() => {
@@ -849,7 +867,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
     };
 
     const handlePageTitleUpdated = (e: any) => {
-      const t = e.title || '内置浏览器';
+      const t = e.title || tRef.current('app.browserTab');
       // 忽略 Chromium 错误页标题
       if (t.includes('chromewebdata') || t.includes('chrome-error://')) return;
       setPageTitle(t);
@@ -898,7 +916,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
       setIsLoading(false);
       setLoadError({
         code: e.errorCode,
-        description: e.errorDescription || '无法连接到该地址',
+        description: e.errorDescription || tRef.current('browser.connectFailed'),
         url: e.validatedURL || currentUrlRef.current,
       });
     };
@@ -1066,7 +1084,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className="panel-action-btn"
-            title="后退 (Alt+Left)"
+            title={t('browser.back')}
             disabled={!canGoBack}
             onClick={() => webviewRef.current?.goBack?.()}
             style={{ opacity: canGoBack ? 1 : 0.4 }}
@@ -1078,7 +1096,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className="panel-action-btn"
-            title="前进 (Alt+Right)"
+            title={t('browser.forward')}
             disabled={!canGoForward}
             onClick={() => webviewRef.current?.goForward?.()}
             style={{ opacity: canGoForward ? 1 : 0.4 }}
@@ -1090,7 +1108,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className="panel-action-btn"
-            title={isLoading ? '停止加载' : '重新加载 (Cmd/Ctrl+R)'}
+            title={isLoading ? t('browser.stop') : t('browser.reload')}
             onClick={() => {
               if (isLoading) webviewRef.current?.stop?.();
               else webviewRef.current?.reload?.();
@@ -1111,7 +1129,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className="panel-action-btn"
-            title="首页 (显示新标签页，不打开任何地址)"
+            title={t('browser.home')}
             onClick={handleGoHome}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1123,7 +1141,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className="panel-action-btn"
-            title="新建浏览器标签页"
+            title={t('browser.newTabTitle')}
             onClick={handleCreateNewTab}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1179,7 +1197,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 setUrlInput(currentUrlRef.current);
               }
             }}
-            placeholder="输入网址或页面路由 (如 localhost:5173，按回车访问)..."
+            placeholder={t('browser.addressPh')}
             autoFocus={!initialParsedUrl}
             style={{
               width: '100%',
@@ -1218,7 +1236,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className={`panel-action-btn ${inspectActive ? 'active' : ''}`}
-            title={inspectActive ? '正在选取元素 (点击页面任意元素，按 Esc 取消)' : '检查元素：直接选取页面特定元素引用到聊天框'}
+            title={inspectActive ? t('browser.inspectActiveTitle') : t('browser.inspectIdleTitle')}
             onClick={toggleInspectMode}
             style={{
               background: inspectActive ? 'rgba(59, 130, 246, 0.25)' : undefined,
@@ -1234,7 +1252,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className="panel-action-btn"
-            title="将当前页面标签引用到聊天框"
+            title={t('browser.quotePageTitle')}
             onClick={handleQuotePageToChat}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1248,7 +1266,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className={`panel-action-btn ${isDevToolsOpen ? 'active' : ''}`}
-            title={isDevToolsOpen ? "关闭下方 Google 控制台 (Chrome DevTools)" : "在下方展开 Google 控制台 (Chrome DevTools)"}
+            title={isDevToolsOpen ? t('browser.devtoolsCloseTitle') : t('browser.devtoolsOpenTitle')}
             onClick={toggleGoogleDevTools}
             style={{ position: 'relative' }}
           >
@@ -1280,8 +1298,8 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             className={`panel-action-btn ${siteCredentials.length > 0 ? 'active' : ''}`}
             title={
               siteCredentials.length > 0
-                ? `密码管理器：此站点已保存 ${siteCredentials.length} 个账号密码 (点击查看/一键填入)`
-                : '密码管理器：查看与管理此站点保存的密码'
+                ? t('browser.passwordManagerSavedTitle', { n: siteCredentials.length })
+                : t('browser.passwordManagerTitle')
             }
             onClick={() => setShowPasswordModal((prev) => !prev)}
             style={{
@@ -1299,7 +1317,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
           <button
             type="button"
             className="panel-action-btn"
-            title="在系统外部浏览器中打开"
+            title={t('browser.openExternalTitle')}
             onClick={() => {
               if (window.ide?.openExternal) {
                 window.ide.openExternal(currentUrl);
@@ -1336,7 +1354,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ display: 'inline-flex', animation: 'pulse 1.5s infinite' }}>🎯</span>
-            <span>元素检查选取模式已开启：移动鼠标查看元素高亮，点击即可精准引用至聊天框</span>
+            <span>{t('browser.inspectBanner')}</span>
           </div>
           <button
             type="button"
@@ -1351,7 +1369,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               cursor: 'pointer',
             }}
           >
-            退出 (Esc)
+            {t('browser.exitEsc')}
           </button>
         </div>
       )}
@@ -1398,12 +1416,16 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13 }}>
                 <span style={{ fontSize: 16 }}>🔑</span>
-                <span>{pendingPasswordPrompt.isUpdate ? '更新此网站的密码？' : '保存此网站的密码？'}</span>
+                <span>
+                  {pendingPasswordPrompt.isUpdate
+                    ? t('browser.updatePasswordTitle')
+                    : t('browser.savePasswordTitle')}
+                </span>
               </div>
               <button
                 type="button"
                 className="panel-action-btn"
-                title="关闭"
+                title={t('browser.closeTitle')}
                 onClick={() => setPendingPasswordPrompt(null)}
               >
                 ✕
@@ -1411,13 +1433,13 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             </div>
 
             <div style={{ fontSize: 12, color: 'var(--muted, #9ca3af)', marginBottom: 10, wordBreak: 'break-all' }}>
-              站点：<strong style={{ color: '#e5e7eb' }}>{pendingPasswordPrompt.origin}</strong>
+              {t('browser.siteLabel')}<strong style={{ color: '#e5e7eb' }}>{pendingPasswordPrompt.origin}</strong>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
               <div>
                 <label style={{ fontSize: 11, color: 'var(--muted, #9ca3af)', display: 'block', marginBottom: 3 }}>
-                  用户名 / 账号
+                  {t('browser.accountLabel')}
                 </label>
                 <input
                   type="text"
@@ -1425,7 +1447,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   onChange={(e) =>
                     setPendingPasswordPrompt((prev) => (prev ? { ...prev, username: e.target.value } : null))
                   }
-                  placeholder="未识别到用户名，可手动输入"
+                  placeholder={t('browser.accountPh')}
                   style={{
                     width: '100%',
                     height: 28,
@@ -1443,7 +1465,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
 
               <div>
                 <label style={{ fontSize: 11, color: 'var(--muted, #9ca3af)', display: 'block', marginBottom: 3 }}>
-                  密码
+                  {t('browser.passwordLabel')}
                 </label>
                 <input
                   type="password"
@@ -1472,7 +1494,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 onClick={() => setPendingPasswordPrompt(null)}
                 style={{ fontSize: 12, padding: '4px 12px' }}
               >
-                暂不
+                {t('browser.notNow')}
               </button>
               <button
                 type="button"
@@ -1486,14 +1508,16 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   const updated = getCredentialsForOrigin(pendingPasswordPrompt.origin);
                   setSiteCredentials(updated);
                   onShowToast?.(
-                    pendingPasswordPrompt.isUpdate ? '已更新该站点的密码' : '已保存该站点的账号密码',
+                    pendingPasswordPrompt.isUpdate
+                      ? t('browser.passwordUpdated')
+                      : t('browser.passwordSaved'),
                     'success',
                   );
                   setPendingPasswordPrompt(null);
                 }}
                 style={{ fontSize: 12, padding: '4px 14px' }}
               >
-                {pendingPasswordPrompt.isUpdate ? '更新' : '保存'}
+                {pendingPasswordPrompt.isUpdate ? t('browser.update') : t('browser.save')}
               </button>
             </div>
           </div>
@@ -1533,12 +1557,12 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 13 }}>
                 <span>🔑</span>
-                <span>已保存的密码 ({siteCredentials.length})</span>
+                <span>{t('browser.savedPasswords', { n: siteCredentials.length })}</span>
               </div>
               <button
                 type="button"
                 className="panel-action-btn"
-                title="关闭"
+                title={t('browser.closeTitle')}
                 onClick={() => setShowPasswordModal(false)}
               >
                 ✕
@@ -1546,12 +1570,12 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             </div>
 
             <div style={{ fontSize: 12, color: 'var(--muted, #9ca3af)', marginBottom: 12 }}>
-              当前站点：<span style={{ color: '#60a5fa' }}>{extractOrigin(currentUrl) || '无活动网页'}</span>
+              {t('browser.currentSite')}<span style={{ color: '#60a5fa' }}>{extractOrigin(currentUrl) || t('browser.noActivePage')}</span>
             </div>
 
             {siteCredentials.length === 0 ? (
               <div style={{ padding: '16px 0', textAlign: 'center', fontSize: 12, color: 'var(--muted, #9ca3af)' }}>
-                当前站点尚未保存账号密码
+                {t('browser.noSavedCredentials')}
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
@@ -1570,31 +1594,34 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: 12, fontWeight: 600, color: '#f3f4f6' }}>
-                        {cred.username || '未命名账号'}
+                        {cred.username || t('browser.unnamedAccount')}
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <button
                           type="button"
                           className="btn secondary"
-                          title="自动填入当前登录页"
+                          title={t('browser.autofillTitle')}
                           onClick={() => {
                             triggerAutofill(cred);
-                            onShowToast?.(`已自动填入账号 ${cred.username}`, 'info');
+                            onShowToast?.(
+                              t('browser.autofilled', { name: cred.username }),
+                              'info',
+                            );
                             setShowPasswordModal(false);
                           }}
                           style={{ fontSize: 11, padding: '2px 8px' }}
                         >
-                          填入
+                          {t('browser.fill')}
                         </button>
                         <button
                           type="button"
                           className="panel-action-btn"
-                          title="删除此凭据"
+                          title={t('browser.deleteCredentialTitle')}
                           onClick={() => {
                             deleteCredential(cred.id);
                             const updated = getCredentialsForOrigin(currentUrl);
                             setSiteCredentials(updated);
-                            onShowToast?.('已删除该账号凭据', 'info');
+                            onShowToast?.(t('browser.credentialDeleted'), 'info');
                           }}
                         >
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1607,7 +1634,8 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
 
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted, #9ca3af)' }}>
                       <span>
-                        密码：{showPlainPasswordId === cred.id ? cred.password : '••••••••'}
+                        {t('browser.passwordPrefix')}
+                        {showPlainPasswordId === cred.id ? cred.password : '••••••••'}
                       </span>
                       <button
                         type="button"
@@ -1616,7 +1644,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                           setShowPlainPasswordId(showPlainPasswordId === cred.id ? null : cred.id)
                         }
                       >
-                        {showPlainPasswordId === cred.id ? '隐藏' : '显示'}
+                        {showPlainPasswordId === cred.id ? t('browser.hide') : t('browser.show')}
                       </button>
                     </div>
                   </div>
@@ -1677,7 +1705,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             <div
               className="browser-devtools-resizer"
               onPointerDown={handleDevToolsPointerDown}
-              title="上下拖动调整控制台高度（按住并上下拖拽）"
+              title={t('browser.devtoolsResizeTitle')}
               style={{
                 height: 12,
                 cursor: 'row-resize',
@@ -1770,10 +1798,10 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             </div>
 
             <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px', color: '#f3f4f6', letterSpacing: '-0.02em' }}>
-              新标签页
+              {t('app.newTab')}
             </h2>
             <p style={{ fontSize: 13, color: 'var(--muted, #9ca3af)', margin: '0 0 24px', maxWidth: 440 }}>
-              输入网址或页面路由，按回车即可立即访问
+              {t('browser.newTabSubtitle')}
             </p>
 
             {/* 居中快速搜索与网址输入框 */}
@@ -1813,7 +1841,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 type="text"
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="搜索或输入网址 (如 localhost:5173、:3000、域名等)..."
+                placeholder={t('browser.searchPh')}
                 style={{
                   width: '100%',
                   height: 44,
@@ -1856,7 +1884,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   cursor: 'pointer',
                   opacity: urlInput.trim() ? 1 : 0.4,
                 }}
-                title="前往"
+                title={t('browser.go')}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                   <polyline points="9 18 15 12 9 6" />
@@ -1867,15 +1895,15 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             {/* 本地开发服务（5173、3000、8080）与常用入口磁贴 */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
               <div style={{ fontSize: 11, color: 'var(--muted, #9ca3af)', letterSpacing: '0.04em', textTransform: 'uppercase', fontWeight: 600 }}>
-                本地开发服务与常用磁贴
+                {t('browser.tilesHeader')}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center', maxWidth: 560 }}>
                 {[
-                  { label: '⚡ 本地服务 (5173)', url: 'http://localhost:5173', tip: 'Vite 开发服务' },
-                  { label: '⚛️ 本地服务 (3000)', url: 'http://localhost:3000', tip: 'Node / React 服务' },
-                  { label: '☕ 本地服务 (8080)', url: 'http://localhost:8080', tip: 'Spring / 后端 API 服务' },
-                  { label: '🔍 Google 搜索', url: 'https://www.google.com', tip: '搜索引擎' },
-                  { label: '🐙 GitHub', url: 'https://github.com', tip: '代码托管与开源平台' },
+                  { label: t('browser.tileViteLabel'), url: 'http://localhost:5173', tip: t('browser.tileViteTip') },
+                  { label: t('browser.tileNodeLabel'), url: 'http://localhost:3000', tip: t('browser.tileNodeTip') },
+                  { label: t('browser.tileSpringLabel'), url: 'http://localhost:8080', tip: t('browser.tileSpringTip') },
+                  { label: t('browser.tileGoogleLabel'), url: 'https://www.google.com', tip: t('browser.tileGoogleTip') },
+                  { label: t('browser.tileGithubLabel'), url: 'https://github.com', tip: t('browser.tileGithubTip') },
                 ].map((item) => (
                   <button
                     key={item.url}
@@ -1907,7 +1935,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                       e.currentTarget.style.color = 'var(--text-secondary, #d1d5db)';
                       e.currentTarget.style.transform = 'none';
                     }}
-                    title={`点击立即前往 ${item.url} (${item.tip})`}
+                    title={t('browser.tileTitle', { url: item.url, tip: item.tip })}
                   >
                     <span>{item.label}</span>
                   </button>
@@ -1955,18 +1983,30 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               </svg>
             </div>
             <h3 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 8px', color: '#f8fafc' }}>
-              无法访问此网页
+              {t('browser.loadFailTitle')}
             </h3>
             <p style={{ fontSize: 13, color: 'var(--muted)', margin: '0 0 6px', maxWidth: 460 }}>
-              无法连接至 <code style={{ color: '#60a5fa', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}>{loadError.url}</code>
+              {translateSegments('browser.cannotConnect', locale, { url: loadError.url }).map(
+                (seg, i) =>
+                  seg.emphasis ? (
+                    <code
+                      key={i}
+                      style={{ color: '#60a5fa', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: 4 }}
+                    >
+                      {seg.text}
+                    </code>
+                  ) : (
+                    <span key={i}>{seg.text}</span>
+                  ),
+              )}
             </p>
             <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 18px', maxWidth: 440, lineHeight: 1.6 }}>
               {loadError.url.includes(':573') ? (
                 <span style={{ color: '#f59e0b' }}>
-                  提示：端口可能是笔误（573 少输入了 1），当前机器活跃开发服务在 <strong>5173</strong> 端口。
+                  {t('browser.portTypoHint', { port: 5173 })}
                 </span>
               ) : (
-                `${loadError.description} (${loadError.code})。如果这是本地开发项目，请确认服务已在对应端口启动。`
+                t('browser.loadFailDetail', { desc: loadError.description, code: loadError.code })
               )}
             </p>
 
@@ -1977,7 +2017,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 onClick={() => navigateTo('http://localhost:5173')}
                 style={{ fontSize: 12, padding: '5px 16px' }}
               >
-                立即打开活跃服务 (http://localhost:5173)
+                {t('browser.openActiveService')}
               </button>
               <button
                 type="button"
@@ -1985,7 +2025,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 onClick={() => navigateTo(loadError.url)}
                 style={{ fontSize: 12, padding: '5px 12px' }}
               >
-                重试加载当前地址
+                {t('browser.retry')}
               </button>
             </div>
           </div>

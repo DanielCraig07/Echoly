@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
 import { NewProjectWizardModal } from './NewProjectWizardModal';
 import { detectTechBadge } from '../utils/techStack';
+import { useI18n } from '../i18n';
+import type { Locale } from '../i18n';
 
 interface Props {
   onPickLocal: () => void;
@@ -20,18 +22,30 @@ interface Props {
 
 const MAX_VISIBLE_RECENT = 8;
 
-function formatRelativeTime(ts: number): string {
+/**
+ * 相对时间。
+ *
+ * 接 t / locale 而不是自己写中文：它是模块级函数、拿不到 hook，
+ * 而「3分钟前」的英文是 "3 min ago" —— 数字和单位之间的空格、
+ * 量词的有无都不一样，拼接没法两边都对。
+ * 超过 30 天退回日期，此时 `toLocaleDateString` 的 locale 也必须跟着走，
+ * 否则英文界面里会冒出一个「10月26日」。
+ */
+function formatRelativeTime(ts: number, t: (key: string, params?: Record<string, string | number>) => string, locale: Locale): string {
   if (!ts) return '';
   const now = Date.now();
   const diffSec = Math.floor((now - ts) / 1000);
-  if (diffSec < 60) return '刚刚';
+  if (diffSec < 60) return t('welcome.justNow');
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}分钟前`;
+  if (diffMin < 60) return t('welcome.minutesAgo', { n: diffMin });
   const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours}小时前`;
+  if (diffHours < 24) return t('welcome.hoursAgo', { n: diffHours });
   const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return `${diffDays}天前`;
-  return new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+  if (diffDays < 30) return t('welcome.daysAgo', { n: diffDays });
+  return new Date(ts).toLocaleDateString(locale === 'en' ? 'en-US' : 'zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+  });
 }
 
 export function WelcomeView({
@@ -48,6 +62,7 @@ export function WelcomeView({
 }: Props) {
   const visibleRecent = recentWorkspaces.slice(0, MAX_VISIBLE_RECENT);
   const [showWizard, setShowWizard] = useState(false);
+  const { t, locale } = useI18n();
 
   return (
     <div className="welcome-view">
@@ -57,7 +72,7 @@ export function WelcomeView({
             <h1 className="welcome-view-title">Echoly</h1>
             <span className="welcome-version-badge">AI Native IDE</span>
           </div>
-          <p className="welcome-view-subtitle">选择一种方式打开项目，即刻开启全自动 Agent 辅助编程</p>
+          <p className="welcome-view-subtitle">{t('welcome.subtitle')}</p>
         </header>
 
         <div className="welcome-view-choices" role="list">
@@ -77,8 +92,8 @@ export function WelcomeView({
               </svg>
             </span>
             <span className="welcome-choice-body">
-              <span className="welcome-choice-title">本地文件夹</span>
-              <span className="welcome-choice-desc">打开本机已有目录作为工作区</span>
+              <span className="welcome-choice-title">{t('welcome.localTitle')}</span>
+              <span className="welcome-choice-desc">{t('welcome.localDesc')}</span>
             </span>
             <span className="welcome-choice-hint">Open</span>
           </button>
@@ -100,8 +115,8 @@ export function WelcomeView({
               </svg>
             </span>
             <span className="welcome-choice-body">
-              <span className="welcome-choice-title">SSH 远程主机</span>
-              <span className="welcome-choice-desc">通过 SSH / SFTP 安全连接远程服务</span>
+              <span className="welcome-choice-title">{t('welcome.sshTitle')}</span>
+              <span className="welcome-choice-desc">{t('welcome.sshDesc')}</span>
             </span>
             <span className="welcome-choice-hint">Remote</span>
           </button>
@@ -126,8 +141,8 @@ export function WelcomeView({
               </svg>
             </span>
             <span className="welcome-choice-body">
-              <span className="welcome-choice-title">从 Git 克隆</span>
-              <span className="welcome-choice-desc">拉取远程代码仓库至本地并即刻就绪</span>
+              <span className="welcome-choice-title">{t('welcome.cloneTitle')}</span>
+              <span className="welcome-choice-desc">{t('welcome.cloneDesc')}</span>
             </span>
             <span className="welcome-choice-hint">Clone</span>
           </button>
@@ -154,10 +169,8 @@ export function WelcomeView({
               </svg>
             </span>
             <span className="welcome-choice-body">
-              <span className="welcome-choice-title">新建标准工程向导</span>
-              <span className="welcome-choice-desc">
-                生成 Java、Python、Go、Node 或 C++ 标准开发与调试工程
-              </span>
+              <span className="welcome-choice-title">{t('welcome.wizardTitle')}</span>
+              <span className="welcome-choice-desc">{t('welcome.wizardDesc')}</span>
             </span>
             <span className="welcome-choice-hint">Wizard</span>
           </button>
@@ -175,16 +188,16 @@ export function WelcomeView({
 
         <section className="welcome-view-recent">
           <div className="welcome-view-recent-header">
-            <span>最近打开</span>
+            <span>{t('welcome.recent')}</span>
             {visibleRecent.length > 0 && onClearRecent && (
               <button type="button" className="ghost welcome-recent-clear" onClick={onClearRecent}>
-                清空
+                {t('welcome.clear')}
               </button>
             )}
           </div>
 
           {visibleRecent.length === 0 ? (
-            <div className="welcome-view-recent-empty">暂无历史记录</div>
+            <div className="welcome-view-recent-empty">{t('welcome.noRecent')}</div>
           ) : (
             <ul className="welcome-view-recent-list">
               {visibleRecent.map((item) => {
@@ -194,8 +207,8 @@ export function WelcomeView({
                   item.sshServer && !item.path.includes('@')
                     ? `${item.sshServer}:${item.path}`
                     : item.path;
-                const tech = detectTechBadge(item.name || '', item.path || '', item.techStack);
-                const relativeTime = formatRelativeTime(item.lastOpenedAt);
+                const tech = detectTechBadge(item.name || '', item.path || '', t, item.techStack);
+                const relativeTime = formatRelativeTime(item.lastOpenedAt, t, locale);
                 return (
                   <li key={item.path}>
                     <button
@@ -205,7 +218,7 @@ export function WelcomeView({
                     >
                       <div className="welcome-recent-badges">
                         <span className={`welcome-recent-kind ${isSsh ? 'ssh' : 'local'}`}>
-                          {isSsh ? 'SSH' : '本地'}
+                          {isSsh ? 'SSH' : t('welcome.kindLocal')}
                         </span>
                         <span
                           className="open-ws-tech-pill"
@@ -219,7 +232,7 @@ export function WelcomeView({
                             flexShrink: 0,
                             letterSpacing: '0.02em',
                           }}
-                          title={`智能识别技术栈: ${tech.label}`}
+                          title={t('welcome.techTooltip', { label: tech.label })}
                         >
                           {tech.label}
                         </span>
@@ -240,7 +253,12 @@ export function WelcomeView({
                                 alignItems: 'center',
                                 gap: 3,
                               }}
-                              title={`当前分支: ${item.gitBranch}${item.uncommittedCount ? ` (${item.uncommittedCount} 个未提交修改)` : ''}`}
+                              title={
+                                t('welcome.branchTooltip', { branch: item.gitBranch }) +
+                                (item.uncommittedCount
+                                  ? t('welcome.branchDirty', { n: item.uncommittedCount })
+                                  : '')
+                              }
                             >
                               <span>⎇ {item.gitBranch}</span>
                               {item.uncommittedCount && item.uncommittedCount > 0 ? (
@@ -263,7 +281,7 @@ export function WelcomeView({
                       <button
                         type="button"
                         className="welcome-recent-remove"
-                        title="从记录中移除"
+                        title={t('welcome.removeRecent')}
                         onClick={(e) => {
                           e.stopPropagation();
                           onRemoveRecent(item.path);
@@ -296,7 +314,7 @@ export function WelcomeView({
 
           {recentWorkspaces.length > MAX_VISIBLE_RECENT && onMoreHistory && (
             <button type="button" className="welcome-recent-more" onClick={onMoreHistory}>
-              查看全部（{recentWorkspaces.length}）
+              {t('welcome.viewAll', { n: recentWorkspaces.length })}
             </button>
           )}
         </section>

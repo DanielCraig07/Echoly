@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { GitBranchInfo } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n, translateSegments } from '../i18n';
 
 interface Props {
   open: boolean;
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: Props) {
+  const { t, locale } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_branch_switch_modal_size',
     defaultWidth: 500,
@@ -49,7 +51,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
         const curIdx = branchList.findIndex((b) => b.current || b.name === currentBranch);
         setSelectedIndex(curIdx >= 0 ? curIdx : 0);
       } else {
-        setError(res.detail || '无法获取 Git 分支/标签');
+        setError(res.detail || t('git.loadBranchesFailed'));
       }
     });
   }, [open, currentBranch]);
@@ -69,7 +71,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
 
   const filteredLocal = q ? localBranches.filter((b) => b.name.toLowerCase().includes(q)) : localBranches;
   const filteredRemote = q ? remoteBranches.filter((b) => b.name.toLowerCase().includes(q)) : remoteBranches;
-  const filteredTags = q ? tags.filter((t) => t.toLowerCase().includes(q)) : tags;
+  const filteredTags = q ? tags.filter((tag) => tag.toLowerCase().includes(q)) : tags;
 
   const visibleBranches =
     activeTab === 'local'
@@ -83,7 +85,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
 
   useEffect(() => {
     if (activeTab === 'tags') {
-      const curIdx = filteredTags.findIndex((t) => t === currentBranch);
+      const curIdx = filteredTags.findIndex((tag) => tag === currentBranch);
       setSelectedIndex(curIdx >= 0 ? curIdx : 0);
     } else {
       const curIdx = visibleBranches.findIndex((b) => b.current || b.name === currentBranch);
@@ -156,7 +158,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
         onSwitched();
         onClose();
       } else {
-        setError(res.detail || '切换失败');
+        setError(res.detail || t('git.switchFailed'));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -173,10 +175,10 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
     try {
       const stashRes = await window.ide.gitStash(
         'push',
-        `Echoly 切换至 ${target} 前自动暂存修改`,
+        t('git.autoStashMessage', { target }),
       );
       if (!stashRes.ok) {
-        setError(stashRes.detail || '自动暂存修改失败');
+        setError(stashRes.detail || t('git.autoStashFailed'));
         setLoading(false);
         return;
       }
@@ -304,7 +306,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
               <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0z" />
             </svg>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #fff)' }}>
-              切换 Git 分支 / Tag 标签
+              {t('git.switchTitle')}
             </span>
           </div>
 
@@ -336,7 +338,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                   whiteSpace: 'nowrap',
                 }}
               >
-                全部 ({branches.length})
+                {t('git.tabAll', { n: branches.length })}
               </button>
               <button
                 type="button"
@@ -354,7 +356,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                   whiteSpace: 'nowrap',
                 }}
               >
-                本地 ({localBranches.length})
+                {t('git.tabLocal', { n: localBranches.length })}
               </button>
               <button
                 type="button"
@@ -372,7 +374,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                   whiteSpace: 'nowrap',
                 }}
               >
-                远程 ({remoteBranches.length})
+                {t('git.tabRemote', { n: remoteBranches.length })}
               </button>
               <button
                 type="button"
@@ -390,7 +392,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                   whiteSpace: 'nowrap',
                 }}
               >
-                Tag 标签 ({tags.length})
+                {t('git.tabTagsCount', { n: tags.length })}
               </button>
             </div>
 
@@ -398,7 +400,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
               type="button"
               className="panel-action-btn"
               onClick={onClose}
-              title="关闭 (Esc)"
+              title={t('git.closeEsc')}
             >
               <svg
                 width="14"
@@ -443,12 +445,12 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
             type="text"
             placeholder={
               activeTab === 'all'
-                ? '搜索或切换分支… (支持 ↑↓ 键选择，Enter 确认)'
+                ? t('git.phAll')
                 : activeTab === 'local'
-                  ? '搜索本地分支… (支持 ↑↓ 键选择，Enter 确认)'
+                  ? t('git.phLocal')
                   : activeTab === 'remote'
-                    ? '搜索远程分支… (支持 ↑↓ 键选择，Enter 确认)'
-                    : '搜索或切换 Tag 标签…'
+                    ? t('git.phRemote')
+                    : t('git.phTags')
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -482,7 +484,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 padding: 0,
                 flexShrink: 0,
               }}
-              title="清空"
+              title={t('git.clear')}
             >
               ✕
             </button>
@@ -499,7 +501,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 flexShrink: 0,
               }}
             >
-              Tab 切换
+              {t('git.tabSwitchHint')}
             </span>
           )}
         </div>
@@ -578,7 +580,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
                 <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
               </svg>
-              <span>正在获取分支及标签列表…</span>
+              <span>{t('git.loadingRefs')}</span>
             </div>
           )}
 
@@ -593,15 +595,15 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
             >
               {query
                 ? activeTab === 'local'
-                  ? `未找到与 "${query}" 匹配的本地分支`
+                  ? t('git.noLocalMatch', { query })
                   : activeTab === 'remote'
-                    ? `未找到与 "${query}" 匹配的远程分支`
-                    : `未找到与 "${query}" 匹配的分支`
+                    ? t('git.noRemoteMatch', { query })
+                    : t('git.noBranchMatch', { query })
                 : activeTab === 'local'
-                  ? '暂无本地分支'
+                  ? t('git.noLocalBranches')
                   : activeTab === 'remote'
-                    ? '暂无远程分支（可通过 git remote 关联远端）'
-                    : '暂无可用分支'}
+                    ? t('git.noRemoteBranches')
+                    : t('git.noBranches')}
             </div>
           )}
 
@@ -614,7 +616,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 fontSize: 12,
               }}
             >
-              {query ? `未找到与 "${query}" 匹配的 Tag 标签` : '暂无 Tag 标签'}
+              {query ? t('git.noTagMatch', { query }) : t('git.noTags')}
             </div>
           )}
 
@@ -667,7 +669,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                         {isCurrent ? (
                           <span
                             className="branch-pulse-dot"
-                            title="当前所在分支"
+                            title={t('git.currentBranchTip')}
                             style={{
                               width: 7,
                               height: 7,
@@ -750,7 +752,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                               fontWeight: 500,
                             }}
                           >
-                            远程
+                            {t('git.remoteTag')}
                           </span>
                         ) : (
                           <span
@@ -763,7 +765,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                               flexShrink: 0,
                             }}
                           >
-                            本地
+                            {t('git.localTag')}
                           </span>
                         )}
                       </div>
@@ -799,7 +801,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                           }}
                         >
                           <span style={{ fontSize: 10, opacity: 0.85 }}>
-                            {b.remote ? '检出' : '切换'}
+                            {b.remote ? t('git.checkoutAction') : t('git.switchAction')}
                           </span>
                           <kbd className="cmd-mini-kbd" style={{ fontSize: 9 }}>↵</kbd>
                         </span>
@@ -843,7 +845,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                           }}
                           title={b.lastCommit.message}
                         >
-                          {b.lastCommit.message || '无提交信息'}
+                          {b.lastCommit.message || t('git.noCommitMessage')}
                         </span>
                         {(b.lastCommit.relativeDate || b.lastCommit.author) && (
                           <span style={{ opacity: 0.7, flexShrink: 0, fontSize: 10.5 }}>
@@ -910,7 +912,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                           color: 'var(--muted, #94a3b8)',
                         }}
                       >
-                        {isLocal ? '本地分支' : '远程分支'}
+                        {isLocal ? t('git.sectionLocalBranches') : t('git.sectionRemoteBranches')}
                       </span>
                       <span
                         style={{
@@ -989,16 +991,16 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
 
           {!loading &&
             activeTab === 'tags' &&
-            filteredTags.map((t, index) => {
-              const isCurrent = t === currentBranch;
+            filteredTags.map((tag, index) => {
+              const isCurrent = tag === currentBranch;
               const isSelected = index === selectedIndex;
 
               return (
                 <div
-                  key={t}
+                  key={tag}
                   data-index={index}
                   onMouseEnter={() => setSelectedIndex(index)}
-                  onClick={() => void handleCheckout(t)}
+                  onClick={() => void handleCheckout(tag)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1042,7 +1044,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                         fontWeight: isCurrent ? 650 : isSelected ? 500 : 400,
                       }}
                     >
-                      {t}
+                      {tag}
                     </span>
                     <span
                       style={{
@@ -1111,16 +1113,16 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <kbd className="cmd-mini-kbd">↑↓</kbd> 移动
+              <kbd className="cmd-mini-kbd">↑↓</kbd> {t('git.keyMove')}
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <kbd className="cmd-mini-kbd">Enter</kbd> 切换
+              <kbd className="cmd-mini-kbd">Enter</kbd> {t('git.keySwitch')}
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <kbd className="cmd-mini-kbd">Tab</kbd> 换页/筛选
+              <kbd className="cmd-mini-kbd">Tab</kbd> {t('git.keyTab')}
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <kbd className="cmd-mini-kbd">Esc</kbd> 退出
+              <kbd className="cmd-mini-kbd">Esc</kbd> {t('git.keyExit')}
             </span>
           </div>
 
@@ -1136,7 +1138,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
               padding: '2px 6px',
             }}
           >
-            关闭
+            {t('common.close')}
           </button>
         </div>
 
@@ -1172,15 +1174,27 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                 <span style={{ fontSize: 18 }}>⚠️</span>
                 <span style={{ fontSize: 13.5, fontWeight: 700, color: '#facc15' }}>
-                  检测到本地存在未暂存/未提交修改
+                  {t('git.unsavedWarningTitle')}
                 </span>
               </div>
 
               <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text, #ddd)' }}>
-                当前工作区检测到 <b>{unsavedWarning.changedCount}</b> 个文件有变动
-                {unsavedWarning.stagedCount > 0 && `（已暂存 ${unsavedWarning.stagedCount} 项）`}
-                {unsavedWarning.unstagedCount > 0 && `（未暂存 ${unsavedWarning.unstagedCount} 项）`}。
-                直接签出到目标分支 <b>"{unsavedWarning.target}"</b> 可能会导致本地修改发生冲突或被覆盖。
+                {translateSegments('git.unsavedWarningLead', locale, { changed: unsavedWarning.changedCount }).map((seg, i) =>
+                  seg.emphasis ? (
+                    <b key={i}>{seg.text}</b>
+                  ) : (
+                    <Fragment key={i}>{seg.text}</Fragment>
+                  ),
+                )}
+                {unsavedWarning.stagedCount > 0 && t('git.unsavedWarningStaged', { n: unsavedWarning.stagedCount })}
+                {unsavedWarning.unstagedCount > 0 && t('git.unsavedWarningUnstaged', { n: unsavedWarning.unstagedCount })}
+                {translateSegments('git.unsavedWarningTail', locale, { target: unsavedWarning.target }).map((seg, i) =>
+                  seg.emphasis ? (
+                    <b key={i}>{seg.text}</b>
+                  ) : (
+                    <Fragment key={i}>{seg.text}</Fragment>
+                  ),
+                )}
               </div>
 
               <div
@@ -1197,7 +1211,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                   className="git-modal-btn secondary"
                   onClick={() => setUnsavedWarning(null)}
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="button"
@@ -1208,17 +1222,17 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                     setUnsavedWarning(null);
                     void executeCheckout(target);
                   }}
-                  title="直接执行切换（若冲突 git 会拦截）"
+                  title={t('git.directCheckoutTip')}
                 >
-                  直接签出
+                  {t('git.directCheckout')}
                 </button>
                 <button
                   type="button"
                   className="git-modal-btn primary"
                   onClick={() => void handleStashAndCheckout()}
-                  title="自动将当前修改存入 Git 暂存区后切换分支"
+                  title={t('git.autoStashCheckoutTip')}
                 >
-                  自动暂存并签出 (推荐)
+                  {t('git.autoStashCheckout')}
                 </button>
               </div>
             </div>

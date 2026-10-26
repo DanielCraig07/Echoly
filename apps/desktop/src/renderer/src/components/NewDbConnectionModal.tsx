@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { Fragment, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DatabaseConnectionInfo, DbSavedConnection } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n, translateSegments } from '../i18n';
 import {
+  DB_FORM_ERROR_KEY,
   DEFAULT_PORTS,
   defaultPortFor,
   resolvePort,
@@ -35,6 +37,7 @@ export function NewDbConnectionModal({
   editing,
   onShowToast,
 }: NewDbConnectionModalProps) {
+  const { t, locale } = useI18n();
   const [driver, setDriver] = useState<DbDriverType>('sqlite');
   const [name, setName] = useState<string>('');
 
@@ -113,7 +116,7 @@ export function NewDbConnectionModal({
         }
       }
     } catch (err: any) {
-      onShowToast?.('选择文件失败', err.message || String(err), 'error');
+      onShowToast?.(t('db.connSelectFileFailed'), err.message || String(err), 'error');
     }
   };
 
@@ -124,24 +127,27 @@ export function NewDbConnectionModal({
       setConnecting(true);
       const res = await window.ide.dbCreateDemoDb();
       if (res.ok && res.connection) {
-        onShowToast?.('Demo 数据库已就绪', res.path, 'success');
+        onShowToast?.(t('db.connDemoReady'), res.path, 'success');
         onConnected(res.connection);
         onClose();
       } else {
-        onShowToast?.('创建 Demo 数据库失败', res.error, 'error');
+        onShowToast?.(t('db.connDemoCreateFailed'), res.error, 'error');
       }
     } catch (err: any) {
-      onShowToast?.('操作异常', err.message || String(err), 'error');
+      onShowToast?.(t('db.connOperationFailed'), err.message || String(err), 'error');
     } finally {
       setConnecting(false);
     }
   };
 
-  // 表单校验（端口留空用默认值、非法值给中文提示）
+  // 表单校验（端口留空用默认值；失败只回原因码，文案在渲染层取）
   const validate = (): boolean => {
     const res = validateDbConnection({ driver, sqlitePath, host, port, database, username });
     if (!res.ok) {
-      setTestResult({ ok: false, msg: res.error || '表单校验未通过' });
+      const msg = res.errorCode
+        ? t(DB_FORM_ERROR_KEY[res.errorCode], res.params)
+        : t('db.connFormInvalid');
+      setTestResult({ ok: false, msg });
       return false;
     }
     return true;
@@ -167,10 +173,13 @@ export function NewDbConnectionModal({
       });
 
       if (res && res.ok && res.connection) {
-        setTestResult({ ok: true, msg: `${TYPE_LABEL[driver]} 连接测试成功` });
+        setTestResult({ ok: true, msg: t('db.connTestSuccess', { driver: TYPE_LABEL[driver] }) });
         void window.ide?.dbDisconnect(res.connection.id);
       } else {
-        setTestResult({ ok: false, msg: res?.error || `${TYPE_LABEL[driver]} 连接失败` });
+        setTestResult({
+          ok: false,
+          msg: res?.error || t('db.connTestFailed', { driver: TYPE_LABEL[driver] }),
+        });
       }
     } catch (err: any) {
       setTestResult({ ok: false, msg: err.message || String(err) });
@@ -188,7 +197,8 @@ export function NewDbConnectionModal({
       const saveRes = await window.ide?.dbSaveConnection({
         id: editing?.id,
         type: driver,
-        name: name.trim() || `Test ${TYPE_LABEL[driver]}`,
+        // 兜底连接名会出现在树节点与标签上，所以也要按当前语言生成
+        name: name.trim() || t('db.connDefaultName', { driver: TYPE_LABEL[driver] }),
         path: driver === 'sqlite' ? sqlitePath.trim() : undefined,
         host: driver === 'sqlite' ? undefined : host.trim(),
         port: driver === 'sqlite' ? undefined : resolvePort(driver, port),
@@ -199,7 +209,7 @@ export function NewDbConnectionModal({
       });
 
       if (!saveRes?.ok || !saveRes.connection) {
-        onShowToast?.('保存连接配置失败', saveRes?.error, 'error');
+        onShowToast?.(t('db.connSaveFailed'), saveRes?.error, 'error');
         return;
       }
 
@@ -208,15 +218,15 @@ export function NewDbConnectionModal({
 
       const res = await window.ide?.dbConnectSaved(saved.id);
       if (res && res.ok && res.connection) {
-        onShowToast?.(`数据库「${res.connection.name}」已连接`, undefined, 'success');
+        onShowToast?.(t('db.connSavedConnected', { name: res.connection.name }), undefined, 'success');
         onConnected(res.connection);
         onClose();
       } else {
         // 配置已保存成功，只是这次连不上：不要关弹窗，让用户改完参数重试
-        onShowToast?.('连接失败（配置已保存到项目）', res?.error, 'error');
+        onShowToast?.(t('db.connFailedSettingsSaved'), res?.error, 'error');
       }
     } catch (err: any) {
-      onShowToast?.('操作异常', err.message || String(err), 'error');
+      onShowToast?.(t('db.connOperationFailed'), err.message || String(err), 'error');
     } finally {
       setConnecting(false);
     }
@@ -273,14 +283,14 @@ export function NewDbConnectionModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 16 }}>🗄️</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-              {isEditing ? '编辑数据库连接 (Edit Connection)' : '新建数据库连接 (Database Connection)'}
+              {isEditing ? t('db.editConnectionTitle') : t('db.newConnectionTitle')}
             </span>
           </div>
           <button
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭 (Esc)"
+            title={t('db.closeEsc')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -303,13 +313,13 @@ export function NewDbConnectionModal({
           {/* 驱动类型选择 */}
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>
-              数据库驱动类型 (Driver Type)
+              {t('db.connDriverTypeLabel')}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
               {[
-                { type: 'sqlite' as const, label: 'SQLite', icon: '🪶', desc: '本地嵌入式 (免安装)' },
-                { type: 'mysql' as const, label: 'MySQL', icon: '🐬', desc: '标准关系型服务' },
-                { type: 'postgres' as const, label: 'PostgreSQL', icon: '🐘', desc: '高级对象关系型' },
+                { type: 'sqlite' as const, label: 'SQLite', icon: '🪶', desc: t('db.connDescSqlite') },
+                { type: 'mysql' as const, label: 'MySQL', icon: '🐬', desc: t('db.connDescMysql') },
+                { type: 'postgres' as const, label: 'PostgreSQL', icon: '🐘', desc: t('db.connDescPostgres') },
               ].map((item) => (
                 <div
                   key={item.type}
@@ -347,11 +357,17 @@ export function NewDbConnectionModal({
           {/* 连接名称 */}
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
-              连接显示名称 (Connection Name)
+              {t('db.connNameLabel')}
             </div>
             <input
               type="text"
-              placeholder={driver === 'sqlite' ? '例如: Main SQLite DB' : driver === 'postgres' ? 'postgresql' : 'mysql'}
+              placeholder={
+                driver === 'sqlite'
+                  ? t('db.connNamePlaceholderSqlite')
+                  : driver === 'postgres'
+                    ? 'postgresql'
+                    : 'mysql'
+              }
               value={name}
               onChange={(e) => setName(e.target.value)}
               style={{
@@ -376,7 +392,7 @@ export function NewDbConnectionModal({
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>
-                      SQLite 文件路径 (*.db / *.sqlite / *.sqlite3)
+                      {t('db.connSqlitePathLabel')}
                     </span>
                     <button
                       type="button"
@@ -391,7 +407,7 @@ export function NewDbConnectionModal({
                         padding: 0,
                       }}
                     >
-                      一键创建 Demo 示例库
+                      {t('db.connCreateDemo')}
                     </button>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -425,7 +441,7 @@ export function NewDbConnectionModal({
                         cursor: 'pointer',
                       }}
                     >
-                      浏览...
+                      {t('db.connBrowse')}
                     </button>
                   </div>
                 </div>
@@ -441,7 +457,15 @@ export function NewDbConnectionModal({
                     lineHeight: 1.5,
                   }}
                 >
-                  💡 <strong>提示：</strong>系统内置零编译原生 SQLite 引擎。可直接连接项目已有的 SQLite 数据库文件，无需启动任何后台数据库服务。
+                  {/* 「提示：」是强调片段，整句（含强调位置）由字典给出，避免把中文语序钉进 JSX */}
+                  {translateSegments('db.connSqliteTip', locale, { label: t('db.connTipLabel') }).map(
+                    (seg, i) =>
+                      seg.emphasis ? (
+                        <strong key={i}>{seg.text}</strong>
+                      ) : (
+                        <Fragment key={i}>{seg.text}</Fragment>
+                      ),
+                  )}
                 </div>
               </div>
             )}
@@ -451,10 +475,10 @@ export function NewDbConnectionModal({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: 8 }}>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>主机 (Host)</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{t('db.connHostLabel')}</div>
                     <input
                       type="text"
-                      placeholder="127.0.0.1 或 192.168.x.x"
+                      placeholder={t('db.connHostPlaceholder')}
                       value={host}
                       onChange={(e) => setHost(e.target.value)}
                       style={{
@@ -471,7 +495,7 @@ export function NewDbConnectionModal({
                     />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>端口 (Port)</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{t('db.connPortLabel')}</div>
                     <input
                       type="text"
                       inputMode="numeric"
@@ -494,11 +518,11 @@ export function NewDbConnectionModal({
 
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
-                    数据库名 (Database){driver === 'postgres' ? ' *' : ''}
+                    {t('db.connDatabaseLabel')}{driver === 'postgres' ? ' *' : ''}
                   </div>
                   <input
                     type="text"
-                    placeholder="例如: tsingtec 或 test"
+                    placeholder={t('db.connDatabasePlaceholder')}
                     value={database}
                     onChange={(e) => setDatabase(e.target.value)}
                     style={{
@@ -517,7 +541,7 @@ export function NewDbConnectionModal({
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>用户名 (Username)</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{t('db.connUsernameLabel')}</div>
                     <input
                       type="text"
                       placeholder="root"
@@ -537,10 +561,10 @@ export function NewDbConnectionModal({
                     />
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>密码 (Password)</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{t('db.connPasswordLabel')}</div>
                     <input
                       type="password"
-                      placeholder={isEditing ? '已保存，留空则保持不变' : '••••••••'}
+                      placeholder={isEditing ? t('db.connPasswordSavedPlaceholder') : '••••••••'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       style={{
@@ -566,10 +590,13 @@ export function NewDbConnectionModal({
               （哈希目录对用户没有意义，需要时去 ~/.echoly/projects/ 看 project.json）*/}
           {driver !== 'sqlite' && (
             <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              🔐 连接信息（含密码）会与当前项目绑定保存到本机的{' '}
-              <code style={{ fontFamily: 'var(--font-mono, monospace)' }}>~/.echoly/projects/</code>{' '}
-              下，<strong style={{ color: 'var(--text)' }}>不会写入项目目录</strong>
-              ，因此也不会被提交到版本库。
+              {/* 路径与强调片段各自成句：中文里「不会写入项目目录」是句中被逗号切开的成分，
+                  英文里位置与数量都可能不同，拼字符串只能二选一地出错 */}
+              {t('db.connPrivacyLead')}
+              <code style={{ fontFamily: 'var(--font-mono, monospace)' }}>~/.echoly/projects/</code>
+              {t('db.connPrivacyMid')}
+              <strong style={{ color: 'var(--text)' }}>{t('db.connPrivacyKeep')}</strong>
+              {t('db.connPrivacyTail')}
             </div>
           )}
 
@@ -616,7 +643,7 @@ export function NewDbConnectionModal({
               cursor: testing ? 'not-allowed' : 'pointer',
             }}
           >
-            {testing ? '测试中...' : '测试连接 (Test)'}
+            {testing ? t('db.connTesting') : t('db.connTest')}
           </button>
 
           <div style={{ display: 'flex', gap: 8 }}>
@@ -633,9 +660,8 @@ export function NewDbConnectionModal({
                 cursor: 'pointer',
               }}
             >
-              取消
-            </button>
-            <button
+              {t('db.cancel')}
+            </button>            <button
               type="button"
               onClick={handleSaveAndConnect}
               disabled={connecting}
@@ -650,7 +676,7 @@ export function NewDbConnectionModal({
                 fontWeight: 600,
               }}
             >
-              {connecting ? '连接中...' : isEditing ? '保存并连接' : '确定连接'}
+              {connecting ? t('db.connConnecting') : isEditing ? t('db.connSaveAndConnect') : t('db.connConnect')}
             </button>
           </div>
         </div>

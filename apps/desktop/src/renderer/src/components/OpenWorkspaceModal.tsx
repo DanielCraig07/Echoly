@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { WorkspaceInfo } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n, type Translate } from '../i18n';
 
 const isMac =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent);
@@ -48,17 +49,18 @@ function checkIsCurrentWorkspace(
 
 import { detectTechBadge } from '../utils/techStack';
 
-function formatRelativeTime(ts?: number): string {
+function formatRelativeTime(ts: number | undefined, t: Translate): string {
   if (!ts) return '';
   const diff = Date.now() - ts;
   const m = Math.floor(diff / 60000);
-  if (m < 1) return '刚刚';
-  if (m < 60) return `${m}分钟前`;
+  if (m < 1) return t('welcome.justNow');
+  if (m < 60) return t('welcome.minutesAgo', { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}小时前`;
+  if (h < 24) return t('welcome.hoursAgo', { n: h });
   const d = Math.floor(h / 24);
-  if (d < 30) return `${d}天前`;
-  return new Date(ts).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+  if (d < 30) return t('welcome.daysAgo', { n: d });
+  // 超过一个月就直接显示日期，语言相关的月份名交给运行时
+  return new Date(ts).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
 }
 
 export interface RecentWorkspaceItem {
@@ -102,6 +104,7 @@ export function OpenWorkspaceModal({
   onRemoveRecent,
   onClearRecent,
 }: Props) {
+  const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_open_workspace_modal_size',
     defaultWidth: 620,
@@ -184,10 +187,10 @@ export function OpenWorkspaceModal({
             </div>
             <div>
               <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-bright)' }}>
-                打开工作区 (Open Workspace)
+                {t('workspace.title')}
               </h2>
               <p className="ide-modal-desc" style={{ marginTop: 2 }}>
-                选择工作区接入方式，或从历史记录秒级恢复上下文
+                {t('workspace.desc')}
               </p>
             </div>
           </div>
@@ -195,7 +198,7 @@ export function OpenWorkspaceModal({
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭 (Esc)"
+            title={t('common.closeEsc')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -230,10 +233,10 @@ export function OpenWorkspaceModal({
                 </svg>
               </span>
               <span className="welcome-choice-body">
-                <span className="welcome-choice-title">本地文件夹</span>
-                <span className="welcome-choice-desc">打开本机已有目录作为工作区</span>
+                <span className="welcome-choice-title">{t('welcome.localTitle')}</span>
+                <span className="welcome-choice-desc">{t('welcome.localDesc')}</span>
               </span>
-              <span className="welcome-choice-hint">Open</span>
+              <span className="welcome-choice-hint">{t('workspace.hintOpen')}</span>
             </button>
 
             <button
@@ -260,10 +263,10 @@ export function OpenWorkspaceModal({
                 </svg>
               </span>
               <span className="welcome-choice-body">
-                <span className="welcome-choice-title">SSH 远程主机</span>
-                <span className="welcome-choice-desc">通过 SSH / SFTP 安全连接远程服务</span>
+                <span className="welcome-choice-title">{t('welcome.sshTitle')}</span>
+                <span className="welcome-choice-desc">{t('welcome.sshDesc')}</span>
               </span>
-              <span className="welcome-choice-hint">Remote</span>
+              <span className="welcome-choice-hint">{t('workspace.hintRemote')}</span>
             </button>
 
             <button
@@ -293,10 +296,10 @@ export function OpenWorkspaceModal({
                 </svg>
               </span>
               <span className="welcome-choice-body">
-                <span className="welcome-choice-title">从 Git 克隆</span>
-                <span className="welcome-choice-desc">拉取远程代码仓库至本地并即刻就绪</span>
+                <span className="welcome-choice-title">{t('welcome.cloneTitle')}</span>
+                <span className="welcome-choice-desc">{t('welcome.cloneDesc')}</span>
               </span>
-              <span className="welcome-choice-hint">Clone</span>
+              <span className="welcome-choice-hint">{t('workspace.hintClone')}</span>
             </button>
 
             <button
@@ -324,12 +327,12 @@ export function OpenWorkspaceModal({
                 </svg>
               </span>
               <span className="welcome-choice-body">
-                <span className="welcome-choice-title">新建标准工程向导</span>
+                <span className="welcome-choice-title">{t('welcome.wizardTitle')}</span>
                 <span className="welcome-choice-desc">
-                  生成 Java、Python、Go、Node 或 C++ 标准开发与调试工程
+                  {t('welcome.wizardDesc')}
                 </span>
               </span>
-              <span className="welcome-choice-hint">Wizard</span>
+              <span className="welcome-choice-hint">{t('workspace.hintWizard')}</span>
             </button>
           </div>
 
@@ -337,7 +340,7 @@ export function OpenWorkspaceModal({
           <section className="open-ws-recent" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div className="open-ws-recent-header">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>最近历史工程</span>
+                <span>{t('workspace.recentTitle')}</span>
                 <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>
                   ({recentWorkspaces.length})
                 </span>
@@ -347,7 +350,7 @@ export function OpenWorkspaceModal({
                 <div className="open-ws-filter-wrap">
                   <input
                     type="text"
-                    placeholder="过滤工程名称或路径…"
+                    placeholder={t('workspace.filterPh')}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="open-ws-filter-input"
@@ -370,14 +373,14 @@ export function OpenWorkspaceModal({
                   className="ghost open-ws-recent-clear"
                   onClick={onClearRecent}
                 >
-                  清空记录
+                  {t('workspace.clearHistory')}
                 </button>
               )}
             </div>
 
             {filteredRecents.length === 0 ? (
               <div className="open-ws-recent-empty">
-                {searchQuery ? '没有匹配的历史工作区' : '暂无最近打开历史记录'}
+                {searchQuery ? t('workspace.emptyFiltered') : t('workspace.emptyRecent')}
               </div>
             ) : (
               <ul className="open-ws-recent-list" style={{ flex: 1, overflowY: 'auto' }}>
@@ -393,8 +396,8 @@ export function OpenWorkspaceModal({
                     currentWorkspace,
                     currentWorkspaceInfo,
                   );
-                  const tech = detectTechBadge(item.name, item.path, item.techStack);
-                  const relativeTime = formatRelativeTime(item.lastOpenedAt);
+                  const tech = detectTechBadge(item.name, item.path, t, item.techStack);
+                  const relativeTime = formatRelativeTime(item.lastOpenedAt, t);
 
                   return (
                     <li key={item.path} className={`open-ws-item-wrap ${isCurrent ? 'is-current' : ''}`}>
@@ -409,7 +412,7 @@ export function OpenWorkspaceModal({
                         {/* 1 & 2. 连接方式徽标与技术栈徽标（对齐欢迎页固定 106px 宽度容器） */}
                         <div className="welcome-recent-badges">
                           <span className={`welcome-recent-kind ${isSsh ? 'ssh' : 'local'}`}>
-                            {isSsh ? 'SSH' : '本地'}
+                            {isSsh ? t('workspace.kindSsh') : t('workspace.kindLocal')}
                           </span>
                           <span
                             className="open-ws-tech-pill"
@@ -423,7 +426,7 @@ export function OpenWorkspaceModal({
                               flexShrink: 0,
                               letterSpacing: '0.02em',
                             }}
-                            title={`智能识别技术栈: ${tech.label}`}
+                            title={t('welcome.techTooltip', { label: tech.label })}
                           >
                             {tech.label}
                           </span>
@@ -433,9 +436,9 @@ export function OpenWorkspaceModal({
                           <span className="open-ws-recent-name-wrap">
                             <span className="welcome-recent-name">{item.name}</span>
                             {isCurrent && (
-                              <span className="open-ws-current-badge" title="当前正在使用的工作区">
+                              <span className="open-ws-current-badge" title={t('workspace.currentBadgeTitle')}>
                                 <span className="open-ws-current-dot" />
-                                正在使用
+                                {t('workspace.currentBadge')}
                               </span>
                             )}
                             {item.gitBranch && (
@@ -451,7 +454,12 @@ export function OpenWorkspaceModal({
                                   alignItems: 'center',
                                   gap: 3,
                                 }}
-                                title={`当前分支: ${item.gitBranch}${item.uncommittedCount ? ` (${item.uncommittedCount} 个未提交修改)` : ''}`}
+                                title={
+                                  item.uncommittedCount
+                                    ? t('welcome.branchTooltip', { branch: item.gitBranch }) +
+                                      t('welcome.branchDirty', { n: item.uncommittedCount })
+                                    : t('welcome.branchTooltip', { branch: item.gitBranch })
+                                }
                               >
                                 <span>⎇ {item.gitBranch}</span>
                                 {item.uncommittedCount && item.uncommittedCount > 0 ? (
@@ -476,7 +484,7 @@ export function OpenWorkspaceModal({
                         <button
                           type="button"
                           className="open-ws-action-icon-btn"
-                          title={copiedPath === item.path ? '已复制路径！' : '复制工作区路径'}
+                          title={copiedPath === item.path ? t('workspace.copyPathOk') : t('workspace.copyPath')}
                           onClick={(e) => handleCopy(item.path, e)}
                         >
                           {copiedPath === item.path ? (
@@ -512,7 +520,7 @@ export function OpenWorkspaceModal({
                           <button
                             type="button"
                             className="open-ws-action-icon-btn remove-btn"
-                            title="从历史记录中移除"
+                            title={t('workspace.removeRecent')}
                             onClick={(e) => {
                               e.stopPropagation();
                               onRemoveRecent(item.path);
@@ -547,10 +555,10 @@ export function OpenWorkspaceModal({
 
         <footer className="ide-modal-footer">
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            提示：点击任意条目立即无缝接入工作区
+            {t('workspace.footerHint')}
           </span>
           <button type="button" className="panel-standard-btn" onClick={onClose} style={{ fontSize: 12, padding: '5px 14px' }}>
-            关闭
+            {t('session.close')}
           </button>
         </footer>
         {/* 右下角全向拖拽调整大小手柄 */}

@@ -1,15 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatSessionMessage } from '@deepseek-ide/shared';
+import { useI18n, type Translate } from '../i18n';
 
-const TOOL_LABELS: Record<string, string> = {
-  run_terminal: '终端',
-  read_file: '读取文件',
-  write_file: '写入文件',
-  apply_patch: '应用补丁',
-  list_dir: '列出目录',
-  search_code: '搜索代码',
-  glob_files: '匹配文件',
-  ask_user: '询问用户',
+/**
+ * 工具 id → 字典 key。
+ *
+ * 这里存的是 **key 而不是中文**：工具 id（`read_file` 等）是模型的契约，
+ * 永远不能翻；能翻的只有给人看的标签，所以两者要分开存放。
+ */
+const TOOL_LABEL_KEYS: Record<string, string> = {
+  run_terminal: 'chat.toolRunTerminal',
+  read_file: 'chat.toolReadFile',
+  write_file: 'chat.toolWriteFile',
+  apply_patch: 'chat.toolApplyPatch',
+  list_dir: 'chat.toolListDir',
+  search_code: 'chat.toolSearchCode',
+  glob_files: 'chat.toolGlobFiles',
+  ask_user: 'chat.toolAskUser',
 };
 
 const CMD_COLLAPSE_LINES = 6;
@@ -25,9 +32,11 @@ function parseArgs(args?: string): Record<string, unknown> | null {
   }
 }
 
-function toolLabel(name?: string): string {
-  if (!name) return '工具';
-  return TOOL_LABELS[name] ?? name;
+function toolLabel(t: Translate, name?: string): string {
+  if (!name) return t('chat.toolGeneric');
+  const key = TOOL_LABEL_KEYS[name];
+  // 未知工具（含 MCP 注入的）原样显示 id：它比任何兜底文案都更有信息量
+  return key ? t(key) : name;
 }
 
 export function commandFromArgs(args?: string): string | null {
@@ -127,13 +136,15 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-function CopyBtn({ text, label = '复制' }: { text: string; label?: string }) {
+function CopyBtn({ text, label }: { text: string; label?: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const resolved = label ?? t('chat.copy');
   return (
     <button
       type="button"
       className="tool-card-copy"
-      title={label}
+      title={resolved}
       onClick={(e) => {
         e.stopPropagation();
         void copyText(text).then((ok) => {
@@ -143,7 +154,7 @@ function CopyBtn({ text, label = '复制' }: { text: string; label?: string }) {
         });
       }}
     >
-      {copied ? '已复制' : label}
+      {copied ? t('editor.copied') : resolved}
     </button>
   );
 }
@@ -162,6 +173,7 @@ function CollapsibleBlock({
   className?: string;
   emptyLabel?: string;
 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const preRef = useRef<HTMLPreElement | null>(null);
   const total = lineCount(text);
@@ -193,10 +205,10 @@ function CollapsibleBlock({
           }}
         >
           {expanded
-            ? '收起'
+            ? t('editor.collapseShort')
             : live
-              ? `展开全部（共 ${total} 行，当前显示末尾）`
-              : `展开全部（还有 ${hidden} 行）`}
+              ? t('chat.expandAllTail', { n: total })
+              : t('chat.expandAllMore', { n: hidden })}
         </button>
       )}
     </div>
@@ -236,6 +248,7 @@ export function TerminalExecutionView({
   finalOutput: string;
   createdAt?: number;
 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -274,21 +287,21 @@ export function TerminalExecutionView({
           <span className="dot dot-red" />
           <span className="dot dot-yellow" />
           <span className="dot dot-green" />
-          <span className="terminal-exec-title">终端控制台 (bash)</span>
+          <span className="terminal-exec-title">{t('chat.cmdConsole')}</span>
         </div>
         <div className="terminal-exec-status">
           {status === 'running' ? (
             <span className="terminal-badge running">
               <span className="tool-call-spinner" />
-              正在执行 ({elapsedSec}s)
+              {t('chat.runningWithSec', { s: elapsedSec })}
             </span>
           ) : status === 'error' ? (
             <span className="terminal-badge error">
-              ✕ 执行失败 {exitCode !== null ? `(exit ${exitCode})` : ''}
+              {t('chat.execFailed')} {exitCode !== null ? `(exit ${exitCode})` : ''}
             </span>
           ) : (
             <span className="terminal-badge done">
-              ✓ 执行完成 {exitCode !== null ? `(exit ${exitCode})` : ''}
+              {t('chat.execDone')} {exitCode !== null ? `(exit ${exitCode})` : ''}
             </span>
           )}
         </div>
@@ -298,9 +311,9 @@ export function TerminalExecutionView({
               type="button"
               className="term-btn"
               onClick={() => setExpanded(!expanded)}
-              title={expanded ? '收起为紧凑模式' : '展开全部输出'}
+              title={expanded ? t('chat.collapseCompactTip') : t('chat.expandAllOutputTip')}
             >
-              {expanded ? '收起' : `展开全部 (${totalLines} 行)`}
+              {expanded ? t('editor.collapseShort') : t('chat.expandAllLines', { n: totalLines })}
             </button>
           )}
           {status === 'running' && (
@@ -308,12 +321,12 @@ export function TerminalExecutionView({
               type="button"
               className={`term-btn${autoScroll ? ' active' : ''}`}
               onClick={() => setAutoScroll(!autoScroll)}
-              title="切换实时自动滚屏"
+              title={t('chat.toggleAutoScroll')}
             >
-              {autoScroll ? '滚屏: 开' : '滚屏: 关'}
+              {autoScroll ? t('chat.scrollOn') : t('chat.scrollOff')}
             </button>
           )}
-          <CopyBtn text={outputText || command} label="复制输出" />
+          <CopyBtn text={outputText || command} label={t('chat.copyOutput')} />
         </div>
       </div>
 
@@ -321,7 +334,7 @@ export function TerminalExecutionView({
       <div className="terminal-exec-cmd-line">
         <span className="term-prompt">$</span>
         <span className="term-cmd-text">{command}</span>
-        <CopyBtn text={command} label="复制命令" />
+        <CopyBtn text={command} label={t('chat.copyCmd')} />
       </div>
 
       {/* 终端实时/历史输出区域 */}
@@ -329,7 +342,7 @@ export function TerminalExecutionView({
         {status === 'running' && !outputText ? (
           <div className="terminal-live-waiting">
             <span className="tool-call-spinner" />
-            <span>进程已启动，正在执行并监听输出 (已执行 {elapsedSec}s)...</span>
+            <span>{t('chat.procStarted', { s: elapsedSec })}</span>
             <span className="terminal-cursor">▋</span>
           </div>
         ) : (
@@ -339,7 +352,7 @@ export function TerminalExecutionView({
               {status === 'running' && <span className="terminal-cursor">▋</span>}
             </pre>
             {status !== 'running' && !outputText && (
-              <div className="terminal-empty-text">（命令执行完成，标准输出为空）</div>
+              <div className="terminal-empty-text">{t('chat.stdoutEmpty')}</div>
             )}
           </div>
         )}
@@ -347,9 +360,7 @@ export function TerminalExecutionView({
         {status !== 'running' && exitCode !== null && (
           <div className={`terminal-exit-banner ${exitCode === 0 ? 'success' : 'error'}`}>
             <span>
-              {exitCode === 0
-                ? '✔ 进程正常退出 (exit code 0)'
-                : `✘ 进程异常退出 (exit code ${exitCode})`}
+              {exitCode === 0 ? t('chat.exitOk') : t('chat.exitBad', { code: exitCode })}
             </span>
           </div>
         )}
@@ -363,7 +374,7 @@ export function TerminalExecutionView({
             className="terminal-expand-bottom-btn"
             onClick={() => setExpanded(!expanded)}
           >
-            {expanded ? '▴ 收起输出过程' : `▾ 展开查看全部执行过程（共 ${totalLines} 行输出）`}
+            {expanded ? t('chat.collapseOutputProcess') : t('chat.expandOutputProcess', { n: totalLines })}
           </button>
         </div>
       )}
@@ -372,6 +383,7 @@ export function TerminalExecutionView({
 }
 
 export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
+  const { t } = useI18n();
   const status = message.toolStatus ?? 'done';
   const isTerminal = message.toolName === 'run_terminal';
   const command = isTerminal ? commandFromArgs(message.toolArgs) : null;
@@ -400,10 +412,12 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
   const statusClass = status === 'running' ? ' running' : status === 'error' ? ' error' : ' done';
   const statusText =
     status === 'running'
-      ? `正在执行${elapsedSec > 0 ? ` (${elapsedSec}s)` : '…'}`
+      ? elapsedSec > 0
+        ? t('chat.runningWithSec', { s: elapsedSec })
+        : t('chat.runningEllipsis')
       : status === 'error'
-        ? '失败'
-        : '完成';
+        ? t('chat.statusFailed')
+        : t('chat.statusDone');
 
   // While streaming, content is raw chunks; after done, content includes exit=… header.
   const liveOutput = status === 'running' ? message.content || '' : '';
@@ -417,7 +431,7 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
         type="button"
         className="tool-call-header"
         onClick={() => setUserToggled(!open)}
-        title={open ? '点击收起具体执行过程' : '点击展开查看具体执行过程'}
+        title={open ? t('chat.collapseProcessTip') : t('chat.expandProcessTip')}
       >
         <span className={`tool-call-status-dot${statusClass}`} aria-hidden>
           {status === 'running' ? (
@@ -429,7 +443,7 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
           )}
         </span>
         <span className="tool-call-title">
-          <span className="tool-call-name">{toolLabel(message.toolName)}</span>
+          <span className="tool-call-name">{toolLabel(t, message.toolName)}</span>
           <span className="tool-call-status-text">{statusText}</span>
         </span>
         {summary && (
@@ -437,7 +451,9 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
             {isTerminal ? `$ ${summary}` : summary}
           </span>
         )}
-        <span className="tool-call-chevron">{open ? '▴ 收起过程' : '▾ 展开查看具体过程'}</span>
+        <span className="tool-call-chevron">
+          {open ? t('chat.collapseProcess') : t('chat.expandProcess')}
+        </span>
       </button>
 
       {open && (
@@ -455,7 +471,7 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
               {message.toolArgs && (
                 <div className="tool-call-section">
                   <div className="tool-call-section-head">
-                    <span>参数</span>
+                    <span>{t('chat.args')}</span>
                     <CopyBtn text={message.toolArgs} />
                   </div>
                   <CollapsibleBlock
@@ -468,7 +484,7 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
               {status !== 'running' && message.content && (
                 <div className="tool-call-section">
                   <div className="tool-call-section-head">
-                    <span>结果</span>
+                    <span>{t('chat.result')}</span>
                     <CopyBtn text={message.content} />
                   </div>
                   <CollapsibleBlock
@@ -481,7 +497,7 @@ export function ToolCallCard({ message }: { message: ChatSessionMessage }) {
               {status === 'running' && (
                 <div className="tool-terminal-running">
                   <span className="tool-call-spinner" />
-                  正在执行 ({elapsedSec}s)…
+                  {t('chat.runningSecEllipsis', { s: elapsedSec })}
                 </div>
               )}
             </>

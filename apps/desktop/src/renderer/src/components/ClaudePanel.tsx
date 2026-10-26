@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { useI18n } from '../i18n';
 
 // Electron webview 标签类型声明
 declare global {
@@ -25,6 +26,7 @@ interface ClaudePanelProps {
 }
 
 export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudePanelProps) {
+  const { t } = useI18n();
   const [html, setHtml] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -55,12 +57,12 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
           setHtmlFile(filePath ? `file://${filePath}` : '');
           console.log(`[ClaudePanel] Webview file path:`, filePath);
         } else {
-          setError(result.error || '无法加载扩展界面');
+          setError(result.error || t('ext.claudeLoadUiFailed'));
         }
       } catch (err: any) {
         if (!isMounted) return;
         console.error('[ClaudePanel] Error loading webview:', err);
-        setError(err.message || '加载失败');
+        setError(err.message || t('ext.claudeLoadFailed'));
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -86,7 +88,7 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
 
     const handleError = (e: any) => {
       console.error('[ClaudePanel] webview error:', e);
-      setError('加载失败: ' + (e.message || '未知错误'));
+      setError(t('ext.claudeLoadFailedDetail', { msg: e.message || t('ext.claudeUnknownError') }));
     };
 
     const handleConsole = (e: any) => {
@@ -109,7 +111,7 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
       <div className="claude-panel loading">
         <div className="loading-spinner">
           <div className="spinner"></div>
-          <div>加载 Claude 插件...</div>
+          <div>{t('ext.claudeLoading')}</div>
         </div>
       </div>
     );
@@ -123,7 +125,7 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
           <div className="error-text">{error}</div>
           {onClose && (
             <button className="btn-close" onClick={onClose}>
-              关闭
+              {t('ext.claudeClose')}
             </button>
           )}
         </div>
@@ -134,7 +136,7 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
   if (!htmlFile && !loading && !error) {
     return (
       <div className="claude-panel loading">
-        <div>准备加载...</div>
+        <div>{t('ext.claudePreparing')}</div>
       </div>
     );
   }
@@ -154,9 +156,9 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
           />
         ) : (
           <div style={{ padding: '20px', color: 'var(--text-secondary)' }}>
-            等待加载 HTML 文件...
+            {t('ext.claudeWaitingHtml')}
             <div style={{ marginTop: '10px', fontSize: '12px' }}>
-              File: {htmlFile || '(未设置)'}
+              {t('ext.claudeFileLabel', { name: htmlFile || t('ext.claudeNotSet') })}
             </div>
           </div>
         )}

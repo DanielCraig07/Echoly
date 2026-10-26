@@ -413,11 +413,24 @@ export function unstageDeleteRow(changes: DbStagedChanges, rowKey: string): DbSt
  * 校验新增行：非空且**没有默认值**的列必须填。
  * 返回中文缺项描述（空数组表示通过）。
  */
+/**
+ * 提交前列校验的失败原因。
+ *
+ * 回**码 + 涉及列名**而不是拼好的中文句子：本模块是纯逻辑（vitest 直接单测），
+ * 拿不到 i18n 上下文。列名的连接符也不在这里拼 —— 中文用「、」，英文用「, 」，
+ * 拼接必须发生在渲染层那一侧。
+ */
+export interface DbInsertProblem {
+  code: 'missing-required';
+  /** 缺值的列名，按列顺序 */
+  columns: string[];
+}
+
 export function validateStagedInserts(
   columns: DatabaseColumnMeta[],
   inserts: DbStagedInsert[],
-): string[] {
-  const problems: string[] = [];
+): DbInsertProblem[] {
+  const problems: DbInsertProblem[] = [];
   for (const ins of inserts) {
     const missing = columns.filter((col) => {
       if (!col.notnull) return false;
@@ -430,17 +443,34 @@ export function validateStagedInserts(
       return value === undefined || value === null || value === '';
     });
     if (missing.length > 0) {
-      problems.push(
-        `新增行缺少必填列：${missing.map((c) => c.name).join('、')}（这些列不允许为空且没有默认值）`,
-      );
+      problems.push({ code: 'missing-required', columns: missing.map((c) => c.name) });
     }
   }
   return problems;
 }
 
+/**
+ * 汇总语句失败的原因码。同 `DbInsertProblem`：返回码而不是文案，
+ * 渲染层用 `DB_COMMIT_ERROR_KEY` 翻。
+ */
+export type DbCommitErrorCode =
+  | 'no-primary-key'
+  | 'delete-row-missing'
+  | 'delete-sql-failed'
+  | 'update-row-missing'
+  | 'nothing-to-commit';
+
+export const DB_COMMIT_ERROR_KEY: Record<DbCommitErrorCode, string> = {
+  'no-primary-key': 'db.commitErrNoPk',
+  'delete-row-missing': 'db.commitErrDeleteRowMissing',
+  'delete-sql-failed': 'db.commitErrDeleteSql',
+  'update-row-missing': 'db.commitErrUpdateRowMissing',
+  'nothing-to-commit': 'db.commitErrNothing',
+};
+
 export type DbCommitBuildResult =
   | { ok: true; statements: string[] }
-  | { ok: false; error: string };
+  | { ok: false; errorCode: DbCommitErrorCode; /** 插值参数（目前是定位失败时的 rowKey） */ params?: { rowKey: string } };
 
 /**
  * 把暂存改动汇总成一批语句。
@@ -460,11 +490,7 @@ export function buildCommitStatements(
   const pkColumns = pkColumnsOf(columns);
   const needsLocate = changes.deletes.length > 0 || changes.updates.length > 0;
   if (needsLocate && pkColumns.length === 0) {
-    return {
-      ok: false,
-      error:
-        '该表没有主键，无法唯一定位一行，因此不支持修改或删除已有数据。可新增行，或用 SQL 控制台手动操作。',
-    };
+    return { ok: false, errorCode: 'no-primary-key' };
   }
 
   const statements: string[] = [];
@@ -472,17 +498,17 @@ export function buildCommitStatements(
   for (const rowKey of changes.deletes) {
     const row = originalRows[rowKey];
     if (!row) {
-      return { ok: false, error: `找不到待删除行的原始数据（${rowKey}），请刷新后重试` };
+      return { ok: false, errorCode: 'delete-row-missing', params: { rowKey } };
     }
     const sql = buildDeleteSql(driver, schema, table, columns, row);
-    if (!sql) return { ok: false, error: '生成删除语句失败：无法构造主键条件' };
+    if (!sql) return { ok: false, errorCode: 'delete-sql-failed' };
     statements.push(sql);
   }
 
   for (const update of changes.updates) {
     const row = originalRows[update.rowKey];
     if (!row) {
-      return { ok: false, error: `找不到待修改行的原始数据（${update.rowKey}），请刷新后重试` };
+      return { ok: false, errorCode: 'update-row-missing', params: { rowKey: update.rowKey } };
     }
     const sql = buildUpdateSql(driver, schema, table, update.cells, columns, row);
     if (sql) statements.push(sql);
@@ -492,6 +518,6 @@ export function buildCommitStatements(
     statements.push(buildInsertSql(driver, schema, table, columns, ins.cells));
   }
 
-  if (statements.length === 0) return { ok: false, error: '没有可提交的改动' };
+  if (statements.length === 0) return { ok: false, errorCode: 'nothing-to-commit' };
   return { ok: true, statements };
 }

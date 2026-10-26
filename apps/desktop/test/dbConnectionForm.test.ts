@@ -1,11 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DB_FORM_ERROR_KEY,
   DEFAULT_PORTS,
   checkConnectionPreflight,
   resolvePort,
   validateDbConnection,
   type DbConnectionForm,
 } from '../src/renderer/src/services/dbConnectionForm';
+import { translate, translateWith, type Translate } from '../src/renderer/src/i18n';
+
+// 校验现在回**原因码**而不是中文句子（纯逻辑模块没有 i18n 上下文），
+// 文案由渲染层用 t(DB_FORM_ERROR_KEY[code]) 取。测试锁定中文断言，
+// 顺便把「码 → key → 字典条目」这条链走通：key 写错或字典漏条目都会在这里失败。
+const t: Translate = (key, params) =>
+  params ? translateWith(key, 'zh', params) : translate(key, 'zh');
+
+const errText = (res: { errorCode?: keyof typeof DB_FORM_ERROR_KEY; params?: Record<string, string> }) =>
+  t(DB_FORM_ERROR_KEY[res.errorCode!], res.params);
 
 const baseForm: DbConnectionForm = {
   driver: 'mysql',
@@ -38,26 +49,26 @@ describe('resolvePort', () => {
 describe('validateDbConnection', () => {
   it('MySQL：host 与用户名必填，端口可留空', () => {
     expect(validateDbConnection(form()).ok).toBe(true);
-    expect(validateDbConnection(form({ host: '' })).error).toContain('主机');
-    expect(validateDbConnection(form({ username: '' })).error).toContain('用户名');
+    expect(errText(validateDbConnection(form({ host: '' })))).toContain('主机');
+    expect(errText(validateDbConnection(form({ username: '' })))).toContain('用户名');
   });
 
   it('端口必须为 1-65535 的整数', () => {
-    expect(validateDbConnection(form({ port: 'abc' })).error).toContain('数字');
-    expect(validateDbConnection(form({ port: '0' })).error).toContain('1 - 65535');
-    expect(validateDbConnection(form({ port: '65536' })).error).toContain('1 - 65535');
+    expect(errText(validateDbConnection(form({ port: 'abc' })))).toContain('数字');
+    expect(errText(validateDbConnection(form({ port: '0' })))).toContain('1 - 65535');
+    expect(errText(validateDbConnection(form({ port: '65536' })))).toContain('1 - 65535');
     expect(validateDbConnection(form({ port: '3306' })).ok).toBe(true);
   });
 
   it('PostgreSQL：数据库名必填，端口可留空', () => {
     const pg = form({ driver: 'postgres', username: 'postgres' });
-    expect(validateDbConnection(pg).error).toContain('数据库名');
+    expect(errText(validateDbConnection(pg))).toContain('数据库名');
     expect(validateDbConnection({ ...pg, database: 'cvm' }).ok).toBe(true);
   });
 
   it('SQLite：只校验文件路径', () => {
     const sqlite = form({ driver: 'sqlite' });
-    expect(validateDbConnection(sqlite).error).toContain('SQLite');
+    expect(errText(validateDbConnection(sqlite))).toContain('SQLite');
     expect(validateDbConnection({ ...sqlite, sqlitePath: '/tmp/a.db' }).ok).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ import type { RemoteDirEntry, SshProfile } from '@deepseek-ide/shared';
 import type { SwitchWorkspaceTarget } from './SwitchWorkspaceModal';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { useI18n } from '../i18n';
 
 interface Props {
   open: boolean;
@@ -28,6 +29,7 @@ export function SshConnectModal({
   initialServer,
   initialRemotePath,
 }: Props) {
+  const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_ssh_modal_size',
     defaultWidth: 760,
@@ -48,6 +50,12 @@ export function SshConnectModal({
   const [profiles, setProfiles] = useState<SshProfile[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  /**
+   * 本次失败是不是「macOS 本地网络未授权」。由主进程给标志位，**不能**从 `error`
+   * 文案里找关键词：那句话是给人看的，改一次措辞或在英文下就匹配不上，
+   * 「打开系统设置」这个补救入口会静默消失，用户只看到一句干巴巴的失败。
+   */
+  const [needsLocalNetwork, setNeedsLocalNetwork] = useState(false);
   const [showForm, setShowForm] = useState(false);
   // 删除确认走应用内弹窗（理由见 removeProfile 的注释）
   const confirm = useDbConfirm();
@@ -118,6 +126,7 @@ export function SshConnectModal({
       return;
     }
     setError('');
+    setNeedsLocalNetwork(false);
     setStep('credentials');
     if (initialRemotePath) {
       setRemotePath(initialRemotePath);
@@ -160,10 +169,11 @@ export function SshConnectModal({
   async function loadRemoteDir(pathOrEmpty?: string): Promise<void> {
     setDirLoading(true);
     setError('');
+    setNeedsLocalNetwork(false);
     const res = await window.ide.listRemoteDir(pathOrEmpty);
     setDirLoading(false);
     if (!res.ok) {
-      setError(res.detail || '读取远程目录失败');
+      setError(res.detail || t('ssh.loadDirFailed'));
       return;
     }
     setRemoteDirs(res.entries || []);
@@ -189,6 +199,7 @@ export function SshConnectModal({
 
     setBusy(true);
     setError('');
+    setNeedsLocalNetwork(false);
 
     const result = await window.ide.sshConnect({
       host: targetHost,
@@ -205,6 +216,7 @@ export function SshConnectModal({
     setBusy(false);
     if (!result.ok) {
       setError(result.detail);
+      setNeedsLocalNetwork(result.needsLocalNetwork === true);
       setShowForm(true);
       return;
     }
@@ -217,6 +229,7 @@ export function SshConnectModal({
     if (!remotePath.trim()) return;
     setBusy(true);
     setError('');
+    setNeedsLocalNetwork(false);
 
     if (saveProfile) {
       try {
@@ -274,6 +287,7 @@ export function SshConnectModal({
     setBusy(false);
     if (!result.ok) {
       setError(result.detail);
+      setNeedsLocalNetwork(result.needsLocalNetwork === true);
       return;
     }
     onConnected(result.label || result.detail);
@@ -291,17 +305,21 @@ export function SshConnectModal({
     e.stopPropagation();
     const target = profiles.find((p) => p.id === id);
     const ok = await confirm.confirm({
-      title: '删除 SSH 配置',
+      title: t('ssh.deleteTitle'),
       content: buildSqlConfirmMarkdown({
-        intro: '这条配置会从列表里移除，且无法撤销。**服务器上的文件不受影响。**',
+        t,
+        intro: t('ssh.deleteIntro'),
         statements: [],
       }),
       details: [
-        { label: '主机', value: `${target?.host ?? '未知'}:${target?.port || 22}` },
-        { label: '用户', value: target?.username || '（未指定）' },
+        {
+          label: t('ssh.detailHost'),
+          value: `${target?.host ?? t('ssh.unknown')}:${target?.port || 22}`,
+        },
+        { label: t('ssh.detailUser'), value: target?.username || t('ssh.notSpecified') },
       ],
       tone: 'danger',
-      confirmLabel: '确认删除',
+      confirmLabel: t('ssh.confirmDelete'),
     });
     if (ok === null) return;
     await window.ide.deleteSshProfile(id);
@@ -351,18 +369,16 @@ export function SshConnectModal({
           <>
             <header className="ide-modal-header">
               <div>
-                <h2>SSH 远程连接</h2>
+                <h2>{t('ssh.title')}</h2>
                 <p className="ide-modal-desc">
-                  {showForm
-                    ? '填写主机与认证信息；密码不会写入磁盘'
-                    : '选择已有服务器（含 ~/.ssh/config），或添加新连接'}
+                  {showForm ? t('ssh.descForm') : t('ssh.descList')}
                 </p>
               </div>
               <button
                 type="button"
                 className="panel-action-btn"
                 onClick={handleClose}
-                title="关闭 (Esc)"
+                title={t('common.closeEsc')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -429,7 +445,7 @@ export function SshConnectModal({
                       <button
                         type="button"
                         className="ssh-server-remove"
-                        title="删除此配置"
+                        title={t('ssh.removeProfileTitle')}
                         onClick={(e) => void removeProfile(p.id, e)}
                         disabled={busy}
                       >
@@ -447,7 +463,7 @@ export function SshConnectModal({
                 <div className="ide-form">
                   <div className="ide-field-grid">
                     <div className="ide-field ide-field-span-2">
-                      <label htmlFor="ssh-host">主机</label>
+                      <label htmlFor="ssh-host">{t('ssh.host')}</label>
                       <input
                         id="ssh-host"
                         value={host}
@@ -457,11 +473,11 @@ export function SshConnectModal({
                       />
                     </div>
                     <div className="ide-field">
-                      <label htmlFor="ssh-port">端口</label>
+                      <label htmlFor="ssh-port">{t('ssh.port')}</label>
                       <input id="ssh-port" value={port} onChange={(e) => setPort(e.target.value)} />
                     </div>
                     <div className="ide-field">
-                      <label htmlFor="ssh-user">用户名</label>
+                      <label htmlFor="ssh-user">{t('ssh.username')}</label>
                       <input
                         id="ssh-user"
                         value={username}
@@ -470,17 +486,17 @@ export function SshConnectModal({
                       />
                     </div>
                     <div className="ide-field ide-field-span-2">
-                      <label htmlFor="ssh-pass">密码（可选）</label>
+                      <label htmlFor="ssh-pass">{t('ssh.password')}</label>
                       <input
                         id="ssh-pass"
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="会话内有效，不落盘"
+                        placeholder={t('ssh.passwordPh')}
                       />
                     </div>
                     <div className="ide-field ide-field-span-2">
-                      <label htmlFor="ssh-key">私钥路径（可选）</label>
+                      <label htmlFor="ssh-key">{t('ssh.keyPath')}</label>
                       <input
                         id="ssh-key"
                         className="mono-input"
@@ -490,22 +506,22 @@ export function SshConnectModal({
                       />
                     </div>
                     <div className="ide-field">
-                      <label htmlFor="ssh-phrase">私钥口令</label>
+                      <label htmlFor="ssh-phrase">{t('ssh.passphrase')}</label>
                       <input
                         id="ssh-phrase"
                         type="password"
                         value={passphrase}
                         onChange={(e) => setPassphrase(e.target.value)}
-                        placeholder="可选"
+                        placeholder={t('ssh.optional')}
                       />
                     </div>
                     <div className="ide-field">
-                      <label htmlFor="ssh-name">配置名称</label>
+                      <label htmlFor="ssh-name">{t('ssh.profileName')}</label>
                       <input
                         id="ssh-name"
                         value={profileName}
                         onChange={(e) => setProfileName(e.target.value)}
-                        placeholder="显示名称"
+                        placeholder={t('ssh.profileNamePh')}
                       />
                     </div>
                   </div>
@@ -515,7 +531,7 @@ export function SshConnectModal({
                       checked={saveProfile}
                       onChange={(e) => setSaveProfile(e.target.checked)}
                     />
-                    <span>保存连接配置（不含密码）</span>
+                    <span>{t('ssh.saveProfile')}</span>
                   </label>
                 </div>
               )}
@@ -523,14 +539,14 @@ export function SshConnectModal({
               {error && (
                 <div className="probe-fail" style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
                   <span>{error}</span>
-                  {error.includes('本地网络') && (
+                  {needsLocalNetwork && (
                     <button
                       type="button"
                       className="ghost"
                       style={{ padding: '2px 8px', fontSize: 11, textDecoration: 'underline', cursor: 'pointer' }}
                       onClick={() => void window.ide.openSystemSettings?.('localNetwork')}
                     >
-                      打开 macOS「系统设置 - 本地网络」
+                      {t('ssh.openMacSettings')}
                     </button>
                   )}
                 </div>
@@ -541,10 +557,10 @@ export function SshConnectModal({
               {!showForm && profiles.length > 0 ? (
                 <>
                   <button type="button" className="ghost" onClick={handleClose} disabled={busy}>
-                    取消
+                    {t('ssh.cancel')}
                   </button>
                   <button type="button" className="primary" onClick={() => setShowForm(true)}>
-                    添加服务器
+                    {t('ssh.addServer')}
                   </button>
                 </>
               ) : (
@@ -555,7 +571,7 @@ export function SshConnectModal({
                     onClick={() => (profiles.length > 0 ? setShowForm(false) : handleClose())}
                     disabled={busy}
                   >
-                    {profiles.length > 0 ? '返回列表' : '取消'}
+                    {profiles.length > 0 ? t('ssh.backToList') : t('ssh.cancel')}
                   </button>
                   <button
                     type="button"
@@ -563,7 +579,7 @@ export function SshConnectModal({
                     disabled={busy || !host.trim() || !username.trim()}
                     onClick={() => void startConnectAndPickDir()}
                   >
-                    {busy ? '连接中…' : '下一步'}
+                    {busy ? t('ssh.connecting') : t('ssh.next')}
                   </button>
                 </>
               )}
@@ -579,16 +595,16 @@ export function SshConnectModal({
                     {username}@{host}:{port || 22}
                   </span>
                 </div>
-                <h2>选择远程工作区目录</h2>
+                <h2>{t('ssh.pickDirTitle')}</h2>
                 <p className="ide-modal-desc">
-                  浏览选择服务器目录，或通过路径栏直接定位后作为工作区打开
+                  {t('ssh.pickDirDesc')}
                 </p>
               </div>
               <button
                 type="button"
                 className="panel-action-btn"
                 onClick={handleClose}
-                title="关闭 (Esc)"
+                title={t('common.closeEsc')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -602,7 +618,7 @@ export function SshConnectModal({
                 {/* 顶部路径栏与导航按钮 */}
                 <div className="remote-dir-nav-bar">
                   <div className="remote-dir-path-box">
-                    <span className="remote-dir-server-icon" title="远程主机路径">
+                    <span className="remote-dir-server-icon" title={t('ssh.remoteHostPath')}>
                       <svg
                         width="14"
                         height="14"
@@ -640,7 +656,7 @@ export function SshConnectModal({
                         <button
                           type="button"
                           className="remote-dir-icon-action-btn"
-                          title="跳转至该路径 (Enter)"
+                          title={t('ssh.gotoPathTitle')}
                           onMouseDown={(e) => {
                             e.preventDefault();
                             setIsEditingPath(false);
@@ -663,7 +679,7 @@ export function SshConnectModal({
                     ) : (
                       <div
                         className="remote-dir-breadcrumbs"
-                        title="双击此处或点击右侧按钮直接编辑路径"
+                        title={t('ssh.editPathHint')}
                         onDoubleClick={() => {
                           setIsEditingPath(true);
                           setPathInputVal(remotePath);
@@ -673,7 +689,7 @@ export function SshConnectModal({
                           type="button"
                           className={`remote-dir-crumb-item${remotePath === '/' ? ' current' : ''}`}
                           onClick={() => void loadRemoteDir('/')}
-                          title="根目录 /"
+                          title={t('ssh.rootDir')}
                         >
                           /
                         </button>
@@ -705,7 +721,7 @@ export function SshConnectModal({
                           setPathInputVal(remotePath);
                           setTimeout(() => pathInputRef.current?.focus(), 50);
                         }}
-                        title="直接输入路径"
+                        title={t('ssh.inputPathTitle')}
                       >
                         <svg
                           width="12"
@@ -729,7 +745,7 @@ export function SshConnectModal({
                       className="remote-dir-action-pill"
                       onClick={navigateParent}
                       disabled={dirLoading || remotePath === '/'}
-                      title="返回上一级目录"
+                      title={t('ssh.parentDirTitle')}
                     >
                       <svg
                         width="13"
@@ -742,14 +758,14 @@ export function SshConnectModal({
                         <line x1="12" y1="19" x2="12" y2="5" />
                         <polyline points="5 12 12 5 19 12" />
                       </svg>
-                      <span>上一级</span>
+                      <span>{t('ssh.parentDir')}</span>
                     </button>
                     <button
                       type="button"
                       className="remote-dir-action-pill"
                       onClick={() => void loadRemoteDir('')}
                       disabled={dirLoading}
-                      title="前往用户 Home 目录 (~)"
+                      title={t('ssh.homeTitle')}
                     >
                       <svg
                         width="13"
@@ -768,7 +784,11 @@ export function SshConnectModal({
                       type="button"
                       className={`remote-dir-action-pill${showHidden ? ' active' : ''}`}
                       onClick={() => setShowHidden((v) => !v)}
-                      title={showHidden ? '已显示隐藏文件夹，点击隐藏' : `显示隐藏文件夹 (${hiddenCount})`}
+                      title={
+                        showHidden
+                          ? t('ssh.showHiddenTitleOff')
+                          : t('ssh.showHiddenTitleOn', { n: hiddenCount })
+                      }
                     >
                       <svg
                         width="13"
@@ -790,7 +810,7 @@ export function SshConnectModal({
                           </>
                         )}
                       </svg>
-                      <span>{showHidden ? '隐藏' : '显示隐藏'}</span>
+                      <span>{showHidden ? t('ssh.hide') : t('ssh.showHidden')}</span>
                       {hiddenCount > 0 && !showHidden && (
                         <span className="remote-dir-hidden-count">{hiddenCount}</span>
                       )}
@@ -800,7 +820,7 @@ export function SshConnectModal({
                       className="remote-dir-action-pill icon-only"
                       onClick={() => void loadRemoteDir(remotePath)}
                       disabled={dirLoading}
-                      title="刷新当前目录"
+                      title={t('ssh.refreshDirTitle')}
                     >
                       <svg
                         width="13"
@@ -836,14 +856,14 @@ export function SshConnectModal({
                     <input
                       value={filterQuery}
                       onChange={(e) => setFilterQuery(e.target.value)}
-                      placeholder="快速搜索子文件夹..."
+                      placeholder={t('ssh.filterPh')}
                     />
                     {filterQuery && (
                       <button
                         type="button"
                         className="remote-dir-search-clear"
                         onClick={() => setFilterQuery('')}
-                        title="清除搜索"
+                        title={t('ssh.clearSearch')}
                       >
                         ×
                       </button>
@@ -851,10 +871,17 @@ export function SshConnectModal({
                   </div>
                   <div className="remote-dir-count-hint">
                     <span>
-                      共 {filteredDirs.length} 个子目录
-                      {filterQuery && ` (匹配 ${filteredDirs.length}/${remoteDirs.length})`}
+                      {t('ssh.dirCount', { n: filteredDirs.length })}
+                      {filterQuery
+                        ? t('ssh.dirCountMatch', {
+                            matched: filteredDirs.length,
+                            total: remoteDirs.length,
+                          })
+                        : ''}
                     </span>
-                    {dirLoading && <span className="remote-dir-loading-hint"> (读取中…)</span>}
+                    {dirLoading && (
+                      <span className="remote-dir-loading-hint">{t('ssh.reading')}</span>
+                    )}
                   </div>
                 </div>
 
@@ -865,7 +892,7 @@ export function SshConnectModal({
                     {remoteDirs.length === 0 && dirLoading && (
                       <div className="remote-dir-empty-state">
                         <div className="remote-dir-spinner" />
-                        <p>正在读取远程目录列表…</p>
+                        <p>{t('ssh.readingList')}</p>
                       </div>
                     )}
                     {(!dirLoading || remoteDirs.length > 0) && filteredDirs.length === 0 && (
@@ -884,15 +911,15 @@ export function SshConnectModal({
                         </div>
                         <p className="remote-dir-empty-title">
                           {filterQuery
-                            ? `未找到与「${filterQuery}」匹配的文件夹`
+                            ? t('ssh.emptyFiltered', { q: filterQuery })
                             : hiddenCount > 0 && !showHidden
-                              ? `当前目录仅有 ${hiddenCount} 个系统/隐藏文件夹（已被隐藏）`
-                              : '当前目录下无子文件夹'}
+                              ? t('ssh.emptyHidden', { n: hiddenCount })
+                              : t('ssh.emptyDir')}
                         </p>
                         <p className="remote-dir-empty-sub">
                           {hiddenCount > 0 && !showHidden
-                            ? '可点击上方「显示隐藏」查看隐藏文件夹，或直接点击下方打开此目录'
-                            : '您可以直接点击下方「打开工作区」将当前路径作为工程打开'}
+                            ? t('ssh.emptySubHidden')
+                            : t('ssh.emptySub')}
                         </p>
                       </div>
                     )}
@@ -908,7 +935,7 @@ export function SshConnectModal({
                             setRemotePath(dir.path);
                             void loadRemoteDir(dir.path);
                           }}
-                          title={`单击选中，双击进入: ${dir.path}`}
+                          title={t('ssh.rowTitle', { path: dir.path })}
                         >
                           <div className="remote-dir-row-left">
                             <span className="remote-dir-folder-icon">
@@ -923,10 +950,12 @@ export function SshConnectModal({
                               </svg>
                             </span>
                             <span className="remote-dir-row-name">{dir.name}</span>
-                            {isDot && <span className="remote-dir-row-tag">隐藏</span>}
+                            {isDot && (
+                              <span className="remote-dir-row-tag">{t('ssh.rowTagHidden')}</span>
+                            )}
                           </div>
                           <div className="remote-dir-row-right">
-                            <span className="remote-dir-enter-tip">双击进入</span>
+                            <span className="remote-dir-enter-tip">{t('ssh.dblClickEnter')}</span>
                             <svg
                               width="13"
                               height="13"
@@ -956,7 +985,7 @@ export function SshConnectModal({
                         <line x1="12" y1="16" x2="12" y2="12" />
                         <line x1="12" y1="8" x2="12.01" y2="8" />
                       </svg>
-                      单击选中路径，双击可进入下级目录
+                      {t('ssh.tipBar')}
                     </span>
                   </div>
                 </div>
@@ -974,7 +1003,7 @@ export function SshConnectModal({
                   }}
                 >
                   <span>{error}</span>
-                  {error.includes('本地网络') && (
+                  {needsLocalNetwork && (
                     <button
                       type="button"
                       className="ghost"
@@ -986,7 +1015,7 @@ export function SshConnectModal({
                       }}
                       onClick={() => void window.ide.openSystemSettings?.('localNetwork')}
                     >
-                      打开 macOS「系统设置 - 本地网络」
+                      {t('ssh.openMacSettings')}
                     </button>
                   )}
                 </div>
@@ -1016,10 +1045,10 @@ export function SshConnectModal({
                     <line x1="19" y1="12" x2="5" y2="12" />
                     <polyline points="12 19 5 12 12 5" />
                   </svg>
-                  返回
+                  {t('ssh.back')}
                 </button>
                 <span className="remote-dir-selected-preview" title={remotePath}>
-                  <span className="preview-label">目标:</span>
+                  <span className="preview-label">{t('ssh.target')}</span>
                   <span className="preview-path">{remotePath}</span>
                 </span>
               </div>
@@ -1042,7 +1071,7 @@ export function SshConnectModal({
                   >
                     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                   </svg>
-                  {busy ? '打开中…' : `打开「${folderLabel}」`}
+                  {busy ? t('ssh.opening') : t('ssh.openBtn', { name: folderLabel })}
                 </button>
               </div>
             </footer>

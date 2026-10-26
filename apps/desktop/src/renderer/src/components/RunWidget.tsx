@@ -9,6 +9,7 @@ import { resolveDebugConfig } from '../utils/debugLauncher';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { PanelChevron } from './PanelChevron';
+import { useI18n, type Translate } from '../i18n';
 
 interface Props {
   workspace: string | null;
@@ -64,6 +65,7 @@ interface CustomConfig {
 /** 尝试从文件系统多语言检测项目运行配置 (包括 Java, C/C++, CMake, Python, Go, Node, Rust, Docker, Make 等) */
 export async function detectProjectScripts(
   workspace: string,
+  t: Translate,
   activePath?: string | null,
   runtimeCfg?: ProjectRuntimeConfig,
 ): Promise<ScriptOption[]> {
@@ -118,7 +120,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(56, 189, 248, 0.15)',
         badgeColor: '#38bdf8',
         group: 'current',
-        description: '运行当前 Python 文件',
+        description: t('run.descRunPythonFile'),
       });
     } else if (ext === 'sh' || ext === 'bash' || ext === 'zsh') {
       results.push({
@@ -130,7 +132,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(74, 222, 128, 0.15)',
         badgeColor: '#4ade80',
         group: 'current',
-        description: '执行当前 Shell 脚本',
+        description: t('run.descRunShellScript'),
       });
     } else if (ext === 'ts') {
       results.push({
@@ -142,7 +144,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(59, 130, 246, 0.15)',
         badgeColor: '#60a5fa',
         group: 'current',
-        description: 'tsx 运行当前 TypeScript 文件',
+        description: t('run.descTsxRunTs'),
       });
     } else if (ext === 'js' || ext === 'mjs' || ext === 'cjs') {
       results.push({
@@ -154,7 +156,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(167, 139, 250, 0.15)',
         badgeColor: '#c084fc',
         group: 'current',
-        description: 'Node 运行当前脚本',
+        description: t('run.descNodeRunScript'),
       });
     } else if (ext === 'java') {
       // 1. 读取 Java 文件内容，提取 package 与 类名
@@ -243,33 +245,33 @@ export async function detectProjectScripts(
             badgeBg: 'rgba(251, 146, 60, 0.15)',
             badgeColor: '#fb923c',
             group: 'current',
-            description: `Maven 运行主类 ${fullClassName}${rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : ''}`,
+            description: t('run.descMavenRunMain', { cls: fullClassName, vm: rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : '' }),
           });
         } else if (isTestFile) {
           // 若是测试文件，提供一键单测执行
           results.push({
             id: `active:test:${relPath}`,
-            name: `测试: ${rawClassName}`,
+            name: t('run.nameTest', { name: rawClassName }),
             command: `${javaPrefix}${mvnExe} ${settingsArg}${profileArg}test -Dtest=${rawClassName}${vmArgsPart}`.trim(),
             source: 'java',
             badge: 'Maven',
             badgeBg: 'rgba(251, 146, 60, 0.15)',
             badgeColor: '#fb923c',
             group: 'current',
-            description: `Maven 运行单测 ${rawClassName}`,
+            description: t('run.descMavenRunTest', { cls: rawClassName }),
           });
         } else {
           // 该业务类/接口未包含 main 入口方法：提供项目编译验证，杜绝 NoSuchMethodException 报错
           results.push({
             id: `active:compile:${relPath}`,
-            name: `编译项目`,
+            name: t('run.nameCompileProject'),
             command: `${javaPrefix}${mvnExe} ${settingsArg}${profileArg}compile`.trim(),
             source: 'java',
             badge: 'Maven',
             badgeBg: 'rgba(251, 146, 60, 0.15)',
             badgeColor: '#fb923c',
             group: 'current',
-            description: `Maven 编译工程 (${rawClassName} 未包含 main 入口方法)`,
+            description: t('run.descMavenCompileNoMain', { cls: rawClassName }),
           });
         }
       } else {
@@ -296,7 +298,7 @@ export async function detectProjectScripts(
         }
         results.push({
           id: `active:${relPath}`,
-          name: hasMainMethod ? rawClassName : `编译: ${rawClassName}`,
+          name: hasMainMethod ? rawClassName : t('run.nameCompile', { cls: rawClassName }),
           command: javaCmd,
           source: 'java',
           badge: 'Java',
@@ -304,8 +306,8 @@ export async function detectProjectScripts(
           badgeColor: '#fb923c',
           group: 'current',
           description: hasMainMethod
-            ? `运行 Java 主类 ${fullClassName}${rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : ''}`
-            : `javac 编译 ${rawClassName} (未包含 main 方法)`,
+            ? t('run.descRunJavaMain', { cls: fullClassName, vm: rCfg.vmArgs.trim() ? ` [VM: ${rCfg.vmArgs.trim()}]` : '' })
+            : t('run.descJavacCompile', { cls: rawClassName }),
         });
       }
     } else if (ext === 'go') {
@@ -317,14 +319,14 @@ export async function detectProjectScripts(
       if (isTest) {
         results.push({
           id: `active:test:${relPath}`,
-          name: `测试: ${fileName.replace('_test.go', '')}`,
+          name: t('run.nameTest', { name: fileName.replace('_test.go', '') }),
           command: `go test -v ./${dirPath}`,
           source: 'go',
           badge: 'Go Test',
           badgeBg: 'rgba(45, 212, 191, 0.15)',
           badgeColor: '#2dd4bf',
           group: 'current',
-          description: `执行 Go 单元测试 (${fileName})`,
+          description: t('run.descGoTest', { file: fileName }),
         });
       } else if (hasMain) {
         results.push({
@@ -336,19 +338,19 @@ export async function detectProjectScripts(
           badgeBg: 'rgba(45, 212, 191, 0.15)',
           badgeColor: '#2dd4bf',
           group: 'current',
-          description: `运行 Go 主程序 (包目录: ./${dirPath})`,
+          description: t('run.descGoRun', { dir: dirPath }),
         });
       } else {
         results.push({
           id: `active:vet:${relPath}`,
-          name: `检查: ${fileName}`,
+          name: t('run.nameCheck', { name: fileName }),
           command: `go vet "./${dirPath}"`,
           source: 'go',
           badge: 'Go',
           badgeBg: 'rgba(45, 212, 191, 0.15)',
           badgeColor: '#2dd4bf',
           group: 'current',
-          description: `Go 静态语法检查 (非 main 包文件)`,
+          description: t('run.descGoVet'),
         });
       }
     } else if (ext === 'cpp' || ext === 'cc' || ext === 'cxx' || ext === 'c' || ext === 'h' || ext === 'hpp') {
@@ -387,14 +389,14 @@ export async function detectProjectScripts(
         const headerMode = isCpp && !fileName.endsWith('.hpp') ? '-x c++-header ' : '';
         results.push({
           id: `active:check:${relPath}`,
-          name: `语法检查: ${fileName}`,
+          name: t('run.nameSyntaxCheck', { name: fileName }),
           command: `${envPrefix}${defaultCompiler} -fsyntax-only ${headerMode}${incFlags}"${relPath}"`.trim(),
           source: isCpp ? 'cpp' : 'c',
           badge: isCpp ? 'C++' : 'C',
           badgeBg: 'rgba(59, 130, 246, 0.15)',
           badgeColor: '#60a5fa',
           group: 'current',
-          description: `检查头文件 ${fileName} 语法有效性`,
+          description: t('run.descHeaderSyntax', { file: fileName }),
         });
       } else if (isTest) {
         const binDir = isWin ? '.echoly\\bin' : '.echoly/bin';
@@ -405,14 +407,14 @@ export async function detectProjectScripts(
         const compileCmd = `${mkdirCmd}${envPrefix}${defaultCompiler} ${stdFlag}${incFlags}-g "${relPath}" -o "${binPath}"${testLibs} && "${binPath}"${progArgs}`.trim();
         results.push({
           id: `active:test:${relPath}`,
-          name: `测试: ${baseName}`,
+          name: t('run.nameTest', { name: baseName }),
           command: compileCmd,
           source: isCpp ? 'cpp' : 'c',
           badge: isCpp ? 'C++ Test' : 'C Test',
           badgeBg: 'rgba(59, 130, 246, 0.15)',
           badgeColor: '#60a5fa',
           group: 'current',
-          description: `编译并执行单元测试 ${baseName}`,
+          description: t('run.descCppTest', { name: baseName }),
         });
       } else if (hasMain) {
         const binDir = isWin ? '.echoly\\bin' : '.echoly/bin';
@@ -429,20 +431,20 @@ export async function detectProjectScripts(
           badgeBg: 'rgba(59, 130, 246, 0.15)',
           badgeColor: '#60a5fa',
           group: 'current',
-          description: `编译并运行 ${fileName}`,
+          description: t('run.descCppRun', { file: fileName }),
         });
       } else {
         const nullDev = isWin ? 'NUL' : '/dev/null';
         results.push({
           id: `active:compile:${relPath}`,
-          name: `编译检查: ${baseName}`,
+          name: t('run.nameCompileCheck', { name: baseName }),
           command: `${envPrefix}${defaultCompiler} -c ${incFlags}"${relPath}" -o ${nullDev}`.trim(),
           source: isCpp ? 'cpp' : 'c',
           badge: isCpp ? 'C++' : 'C',
           badgeBg: 'rgba(59, 130, 246, 0.15)',
           badgeColor: '#60a5fa',
           group: 'current',
-          description: `验证编译 ${fileName} (未检测到 main 函数)`,
+          description: t('run.descVerifyCompile', { file: fileName }),
         });
       }
     }
@@ -465,7 +467,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(16, 185, 129, 0.15)',
         badgeColor: '#34d399',
         group: 'project',
-        description: '启动 Django 开发服务',
+        description: t('run.descDjangoRun'),
       },
       {
         id: 'py:manage:test',
@@ -476,7 +478,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(16, 185, 129, 0.15)',
         badgeColor: '#34d399',
         group: 'project',
-        description: '运行 Django 单元测试',
+        description: t('run.descDjangoTest'),
       },
     );
   }
@@ -511,7 +513,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(20, 184, 166, 0.15)',
         badgeColor: '#2dd4bf',
         group: 'project',
-        description: '启动 FastAPI 热重载服务',
+        description: t('run.descFastapi'),
       });
     }
     if (/pytest/i.test(pyproject)) {
@@ -524,7 +526,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(56, 189, 248, 0.15)',
         badgeColor: '#38bdf8',
         group: 'project',
-        description: '运行 pytest 单元测试',
+        description: t('run.descPytest'),
       });
     }
   }
@@ -586,7 +588,7 @@ export async function detectProjectScripts(
           badgeBg: 'rgba(56, 189, 248, 0.15)',
           badgeColor: '#38bdf8',
           group: 'project',
-          description: `执行 Python 脚本 ${f}`,
+          description: t('run.descRunPyScript', { file: f }),
         });
       }
     }
@@ -613,7 +615,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(16, 185, 129, 0.15)',
         badgeColor: '#34d399',
         group: 'project',
-        description: 'Spring Boot 本地启动',
+        description: t('run.descSpringBoot'),
       });
     }
     results.push(
@@ -626,7 +628,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(251, 146, 60, 0.15)',
         badgeColor: '#fb923c',
         group: 'project',
-        description: '执行 Maven 单元测试',
+        description: t('run.descMavenTest'),
       },
       {
         id: 'java:mvn:package',
@@ -637,7 +639,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(251, 146, 60, 0.15)',
         badgeColor: '#fb923c',
         group: 'project',
-        description: 'Maven 清理并打包',
+        description: t('run.descMavenPackage'),
       },
     );
   } else if (hasBuildGradle) {
@@ -652,7 +654,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(2, 132, 199, 0.15)',
         badgeColor: '#38bdf8',
         group: 'project',
-        description: 'Gradle 运行应用',
+        description: t('run.descGradleRun'),
       },
       {
         id: 'java:gradle:test',
@@ -663,7 +665,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(2, 132, 199, 0.15)',
         badgeColor: '#38bdf8',
         group: 'project',
-        description: 'Gradle 测试',
+        description: t('run.descGradleTest'),
       },
       {
         id: 'java:gradle:build',
@@ -674,7 +676,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(2, 132, 199, 0.15)',
         badgeColor: '#38bdf8',
         group: 'project',
-        description: 'Gradle 构建',
+        description: t('run.descGradleBuild'),
       },
     );
   }
@@ -706,7 +708,7 @@ export async function detectProjectScripts(
       badgeBg: 'rgba(74, 222, 128, 0.15)',
       badgeColor: '#4ade80',
       group: 'project',
-      description: `执行脚本 bash ${sh}`,
+      description: t('run.descRunBash', { file: sh }),
     });
   }
 
@@ -764,7 +766,7 @@ export async function detectProjectScripts(
       badgeBg: 'rgba(59, 130, 246, 0.15)',
       badgeColor: '#60a5fa',
       group: 'project',
-      description: 'TypeScript 类型静态检查',
+      description: t('run.descTscCheck'),
     });
   }
 
@@ -788,7 +790,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(56, 189, 248, 0.15)',
         badgeColor: '#38bdf8',
         group: 'project',
-        description: '前台启动容器服务',
+        description: t('run.descDockerUp'),
       },
       {
         id: 'docker:compose:up-d',
@@ -799,7 +801,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(56, 189, 248, 0.15)',
         badgeColor: '#38bdf8',
         group: 'project',
-        description: '后台静默启动容器服务',
+        description: t('run.descDockerUpD'),
       },
       {
         id: 'docker:compose:down',
@@ -810,7 +812,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(56, 189, 248, 0.15)',
         badgeColor: '#38bdf8',
         group: 'project',
-        description: '停止并移除容器',
+        description: t('run.descDockerDown'),
       },
     );
   } else if (hasDockerfile) {
@@ -823,7 +825,7 @@ export async function detectProjectScripts(
       badgeBg: 'rgba(56, 189, 248, 0.15)',
       badgeColor: '#38bdf8',
       group: 'project',
-      description: '构建 Docker 镜像',
+      description: t('run.descDockerBuild'),
     });
   }
 
@@ -853,7 +855,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(45, 212, 191, 0.15)',
         badgeColor: '#2dd4bf',
         group: 'project',
-        description: `执行 Go 主程序 (${goRunCmd})`,
+        description: t('run.descGoMain', { cmd: goRunCmd }),
       },
       {
         id: 'go:test',
@@ -935,7 +937,7 @@ export async function detectProjectScripts(
       badgeBg: 'rgba(6, 182, 212, 0.15)',
       badgeColor: '#06b6d4',
       group: 'project',
-      description: `生成构建配置并导出 compile_commands.json (${projName})`,
+      description: t('run.descCmakeConfigure', { project: projName }),
     });
 
     // 1. 全量配置并编译 (CMake: Build All)
@@ -948,7 +950,7 @@ export async function detectProjectScripts(
       badgeBg: 'rgba(6, 182, 212, 0.15)',
       badgeColor: '#06b6d4',
       group: 'project',
-      description: `生成构建配置并全量编译 ${projName}`,
+      description: t('run.descCmakeBuild', { project: projName }),
     });
 
     // 2. 为每个 executable 目标生成独立运行项
@@ -966,7 +968,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(6, 182, 212, 0.15)',
         badgeColor: '#06b6d4',
         group: 'project',
-        description: `构建并运行目标 ${tgt}`,
+        description: t('run.descCmakeRun', { target: tgt }),
       });
     }
 
@@ -981,7 +983,7 @@ export async function detectProjectScripts(
         badgeBg: 'rgba(6, 182, 212, 0.15)',
         badgeColor: '#06b6d4',
         group: 'project',
-        description: '执行 CTest 单元测试集',
+        description: t('run.descCtest'),
       });
     }
 
@@ -995,7 +997,7 @@ export async function detectProjectScripts(
       badgeBg: 'rgba(6, 182, 212, 0.15)',
       badgeColor: '#06b6d4',
       group: 'project',
-      description: '清理 CMake 编译缓存产物',
+      description: t('run.descCmakeClean'),
     });
   }
 
@@ -1051,6 +1053,7 @@ export function RunWidget({
 }: Props) {
   // 删除自定义运行配置走应用内确认框（系统 window.confirm 不是应用主题色）
   const confirm = useDbConfirm();
+  const { t } = useI18n();
   const [detectedScripts, setDetectedScripts] = useState<ScriptOption[]>([]);
   const [customConfigs, setCustomConfigs] = useState<CustomConfig[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
@@ -1111,14 +1114,14 @@ export function RunWidget({
     if (!workspace) return;
     let isMounted = true;
     (async () => {
-      const loaded = await detectProjectScripts(workspace, activePath, runtimeConfig);
+      const loaded = await detectProjectScripts(workspace, t, activePath, runtimeConfig);
       if (!isMounted) return;
       setDetectedScripts(loaded);
     })();
     return () => {
       isMounted = false;
     };
-  }, [workspace, activePath, runtimeConfig]);
+  }, [workspace, activePath, runtimeConfig, t]);
 
   // 将 customConfigs 映射为 ScriptOption
   const customScriptOptions = useMemo<ScriptOption[]>(() => {
@@ -1127,12 +1130,12 @@ export function RunWidget({
       name: c.name,
       command: c.command,
       source: 'custom',
-      badge: '自定义',
+      badge: t('run.badgeCustom'),
       badgeBg: 'rgba(244, 114, 182, 0.15)',
       badgeColor: '#f472b6',
       group: 'custom',
     }));
-  }, [customConfigs]);
+  }, [customConfigs, t]);
 
   // 汇总所有配置
   const allScripts = useMemo<ScriptOption[]>(() => {
@@ -1226,17 +1229,18 @@ export function RunWidget({
     const realId = id.replace(/^custom:/, '');
     const target = customConfigs.find((c) => c.id === realId);
     const ok = await confirm.confirm({
-      title: '删除运行配置',
+      title: t('run.deleteConfigTitle'),
       content: buildSqlConfirmMarkdown({
-        intro: '这条自定义运行配置会被移除，且**无法撤销**。项目文件不受影响。',
+        t,
+        intro: t('run.deleteConfigIntro'),
         statements: [],
       }),
       details: [
-        { label: '名称', value: target?.name || '（未命名）' },
-        ...(target?.command ? [{ label: '命令', value: target.command }] : []),
+        { label: t('run.nameLabel'), value: target?.name || t('run.unnamed') },
+        ...(target?.command ? [{ label: t('run.commandLabel'), value: target.command }] : []),
       ],
       tone: 'danger',
-      confirmLabel: '确认删除',
+      confirmLabel: t('run.confirmDelete'),
     });
     if (ok === null) return;
     const nextList = customConfigs.filter((c) => c.id !== realId);
@@ -1276,7 +1280,7 @@ export function RunWidget({
     setIsRunning(true);
 
     let termType: string = currentOption.source;
-    let termTitle: string = currentOption.badge || '终端';
+    let termTitle: string = currentOption.badge || t('run.terminalFallback');
 
     if (currentOption.badge === 'Java') {
       termType = 'java';
@@ -1326,7 +1330,7 @@ export function RunWidget({
     );
     setIsRunning(true);
 
-    const dbgConfig = resolveDebugConfig(currentOption, activePath);
+    const dbgConfig = resolveDebugConfig(currentOption, t, activePath);
 
     window.dispatchEvent(
       new CustomEvent('echoly:startDebug', {
@@ -1375,7 +1379,7 @@ export function RunWidget({
       }
 
       onRunCommand(buildCmd, undefined, dbgConfig.terminalType, dbgConfig.terminalTitle);
-      onShowToast?.('启动 C/C++ 调试', dbgConfig.toastMessage, 'info');
+      onShowToast?.(t('run.debugCppTitle'), dbgConfig.toastMessage, 'info');
 
       setTimeout(async () => {
         try {
@@ -1402,7 +1406,7 @@ export function RunWidget({
 
     // 针对 Java (JDWP)、Python (debugpy)、Node.js (inspect)、Go (Delve) 等多语言调试
     onRunCommand(dbgConfig.command, undefined, dbgConfig.terminalType, dbgConfig.terminalTitle);
-    onShowToast?.('启动调试', dbgConfig.toastMessage, 'info');
+    onShowToast?.(t('run.debugTitle'), dbgConfig.toastMessage, 'info');
 
     if (dbgConfig.port && window.ide?.dapStartSession) {
       setTimeout(async () => {
@@ -1419,9 +1423,9 @@ export function RunWidget({
             if (!res.success) {
               console.warn('[RunWidget] DAP socket startSession failed:', res.error);
               if (dbgConfig.language === 'python') {
-                onShowToast?.('⚠️ Python 缺少 debugpy 模块', '未能连接到 debugpy。请在终端执行: pip3 install debugpy', 'warn');
+                onShowToast?.(t('run.missingDebugpyTitle'), t('run.missingDebugpyDetail'), 'warn');
               } else {
-                onShowToast?.('调试连接未就绪', res.error || '无法连接到调试监听端口', 'warn');
+                onShowToast?.(t('run.debugNotReadyTitle'), res.error || t('run.debugNotReadyDetail'), 'warn');
               }
               window.dispatchEvent(new CustomEvent('echoly:stopDebug'));
               setIsRunning(false);
@@ -1505,8 +1509,8 @@ export function RunWidget({
         onClick={() => setDropdownOpen((v) => !v)}
         title={
           currentOption
-            ? `运行配置: ${currentOption.name} (${currentOption.command})`
-            : '选择或配置运行命令'
+            ? t('run.currentConfigTitle', { name: currentOption.name, command: currentOption.command })
+            : t('run.selectRunCommand')
         }
         style={{
           display: 'inline-flex',
@@ -1573,7 +1577,7 @@ export function RunWidget({
             </span>
           </div>
         ) : (
-          <span style={{ color: 'var(--muted)' }}>无运行配置</span>
+          <span style={{ color: 'var(--muted)' }}>{t('run.noConfigShort')}</span>
         )}
         <PanelChevron expanded={dropdownOpen} size={10} style={{ opacity: 0.7, marginLeft: 3 }} />
       </button>
@@ -1610,7 +1614,7 @@ export function RunWidget({
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="搜索或过滤运行配置..."
+              placeholder={t('run.searchPlaceholder')}
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               style={{
@@ -1641,7 +1645,7 @@ export function RunWidget({
                     letterSpacing: '0.04em',
                   }}
                 >
-                  当前文件 (Active File)
+                  {t('run.sectionCurrent')}
                 </div>
                 {currentGroup.map((s) => (
                   <ScriptItem
@@ -1666,7 +1670,7 @@ export function RunWidget({
                     letterSpacing: '0.04em',
                   }}
                 >
-                  项目运行配置 (Detected)
+                  {t('run.sectionDetected')}
                 </div>
                 {projectGroup.map((s) => (
                   <ScriptItem
@@ -1691,7 +1695,7 @@ export function RunWidget({
                     letterSpacing: '0.04em',
                   }}
                 >
-                  自定义配置 (Custom)
+                  {t('run.sectionCustom')}
                 </div>
                 {customGroup.map((s) => (
                   <ScriptItem
@@ -1714,10 +1718,10 @@ export function RunWidget({
                   color: 'var(--muted)',
                 }}
               >
-                未检测到项目预置运行配置
+                {t('run.emptyDetected')}
                 <br />
                 <span style={{ fontSize: 10.5, opacity: 0.7 }}>
-                  可打开脚本文件直接运行，或在下方添加自定义命令
+                  {t('run.emptyDetectedHint')}
                 </span>
               </div>
             )}
@@ -1731,7 +1735,7 @@ export function RunWidget({
                   color: 'var(--muted)',
                 }}
               >
-                无匹配运行配置
+                {t('run.noMatch')}
               </div>
             )}
           </div>
@@ -1774,7 +1778,7 @@ export function RunWidget({
                   e.currentTarget.style.background = 'none';
                 }}
               >
-                <span>+</span> 添加自定义运行命令
+                <span>+</span> {t('run.addCustomCommand')}
               </button>
             ) : (
               <div
@@ -1787,7 +1791,7 @@ export function RunWidget({
               >
                 <input
                   type="text"
-                  placeholder="配置名称 (如: dev:prod, pytest, run.sh)"
+                  placeholder={t('run.configNamePlaceholder')}
                   value={newConfigName}
                   onChange={(e) => setNewConfigName(e.target.value)}
                   style={{
@@ -1802,7 +1806,7 @@ export function RunWidget({
                 />
                 <input
                   type="text"
-                  placeholder="执行命令 (如: python3 test.py --env=dev)"
+                  placeholder={t('run.configCommandPlaceholder')}
                   value={newConfigCommand}
                   onChange={(e) => setNewConfigCommand(e.target.value)}
                   style={{
@@ -1833,7 +1837,7 @@ export function RunWidget({
                       cursor: 'pointer',
                     }}
                   >
-                    取消
+                    {t('common.cancel')}
                   </button>
                   <button
                     type="button"
@@ -1854,7 +1858,7 @@ export function RunWidget({
                       opacity: !newConfigName.trim() || !newConfigCommand.trim() ? 0.5 : 1,
                     }}
                   >
-                    保存配置
+                    {t('run.saveConfig')}
                   </button>
                 </div>
               </div>
@@ -1911,7 +1915,7 @@ export function RunWidget({
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      项目全局运行参数配置
+                      {t('run.globalRuntimeArgs')}
                     </div>
                     <div
                       style={{
@@ -1923,7 +1927,7 @@ export function RunWidget({
                         marginTop: 1,
                       }}
                     >
-                      VM Options · 入口参数 · 环境变量
+                      {t('run.globalRuntimeArgsSub')}
                     </div>
                   </div>
                 </div>
@@ -1949,10 +1953,10 @@ export function RunWidget({
                   {hasActiveRuntimeArgs ? (
                     <>
                       <span style={{ fontSize: 7, color: '#38bdf8' }}>●</span>
-                      <span>已生效</span>
+                      <span>{t('run.argsActive')}</span>
                     </>
                   ) : (
-                    <span>未配置</span>
+                    <span>{t('run.argsNotConfigured')}</span>
                   )}
                 </div>
               </button>
@@ -1980,8 +1984,8 @@ export function RunWidget({
           disabled={!currentOption}
           title={
             currentOption
-              ? `一键运行 (Run): ${currentOption.command}`
-              : '🚫 当前项目未检测到可运行配置 (不可运行)'
+              ? t('run.runTitle', { command: currentOption.command })
+              : t('run.runDisabled')
           }
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -1993,7 +1997,7 @@ export function RunWidget({
           type="button"
           className="panel-action-btn stop-action-btn"
           onClick={handleStop}
-          title="停止当前运行 (Stop)"
+          title={t('run.stopTitle')}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <rect x="5" y="5" width="14" height="14" rx="2" />
@@ -2009,8 +2013,8 @@ export function RunWidget({
         disabled={!currentOption}
         title={
           currentOption
-            ? `启动调试 (Debug): ${currentOption.name}`
-            : '🚫 当前项目未检测到可调试配置 (不可调试)'
+            ? t('run.debugButtonTitle', { name: currentOption.name })
+            : t('run.debugDisabled')
         }
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2031,8 +2035,11 @@ export function RunWidget({
         onClick={() => setRuntimeConfigModalOpen(true)}
         title={
           hasActiveRuntimeArgs
-            ? `项目运行时参数已生效 (VM: ${runtimeConfig.vmArgs || '无'}, Profile: ${runtimeConfig.activeProfiles || '无'}) - 单击修改`
-            : '项目全局运行时参数配置 (VM Options / 启动参数 / 环境预设)'
+            ? t('run.runtimeArgsActiveTitle', {
+                vm: runtimeConfig.vmArgs || t('run.none'),
+                profile: runtimeConfig.activeProfiles || t('run.none'),
+              })
+            : t('run.runtimeArgsIdleTitle')
         }
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2080,6 +2087,7 @@ function ScriptItem({
   onSelect: () => void;
   onDelete?: (e: React.MouseEvent) => void;
 }) {
+  const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -2169,7 +2177,7 @@ function ScriptItem({
           <button
             type="button"
             onClick={onDelete}
-            title="删除自定义配置"
+            title={t('run.deleteCustomConfig')}
             style={{
               background: 'none',
               border: 'none',

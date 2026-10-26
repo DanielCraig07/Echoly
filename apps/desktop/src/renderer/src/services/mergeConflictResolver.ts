@@ -1,4 +1,5 @@
 import type * as monaco from 'monaco-editor';
+import type { Translate } from '../i18n';
 
 export interface ConflictBlock {
   id: string;
@@ -49,7 +50,10 @@ export function parseConflictBlocks(content: string): ConflictBlock[] {
         inConflict = true;
         inBase = false;
         startLine = lineNum;
-        currentHeader = line.slice(7).trim() || 'Current Change (当前更改)';
+        // 留空而不是塞一句中文兜底：本模块是纯逻辑（单测直接调），返回的是**数据**。
+        // git 没写分支名的情况由渲染侧用 editor.conflictCurrentFallback 补，
+        // 在这里写死就等于英文环境下弹出一句中文。
+        currentHeader = line.slice(7).trim();
         currentLines = [];
         baseLines = [];
         incomingLines = [];
@@ -59,13 +63,13 @@ export function parseConflictBlocks(content: string): ConflictBlock[] {
       // 处于冲突块内部
       if (!separatorLine && line.startsWith('|||||||')) {
         inBase = true;
-        baseHeader = line.slice(7).trim() || 'Base Change (共同基底)';
+        baseHeader = line.slice(7).trim();
       } else if (line.startsWith('=======') && !line.startsWith('========')) {
         inBase = false;
         separatorLine = lineNum;
       } else if (line.startsWith('>>>>>>>')) {
         // 冲突结束
-        const incomingHeader = line.slice(7).trim() || 'Incoming Change (传入更改)';
+        const incomingHeader = line.slice(7).trim();
         const endLine = lineNum;
 
         const currentStartLine = startLine + 1;
@@ -161,6 +165,7 @@ export function resolveAllConflicts(
  */
 export function registerConflictCodeLensProvider(
   monacoInstance: typeof monaco,
+  t: Translate,
   onResolve?: (block: ConflictBlock, resolution: 'current' | 'incoming' | 'both') => void,
 ): monaco.IDisposable {
   return monacoInstance.languages.registerCodeLensProvider('*', {
@@ -183,7 +188,9 @@ export function registerConflictCodeLensProvider(
           range,
           command: {
             id: 'echoly.resolveConflict',
-            title: `✦ 采用当前更改 (${block.currentHeader || 'HEAD'})`,
+            title: t('editor.conflictTakeCurrent', {
+              header: block.currentHeader || t('editor.conflictCurrentFallback'),
+            }),
             arguments: [block, 'current'],
           },
         });
@@ -192,7 +199,9 @@ export function registerConflictCodeLensProvider(
           range,
           command: {
             id: 'echoly.resolveConflict',
-            title: `✦ 采用传入更改 (${block.incomingHeader || 'Incoming'})`,
+            title: t('editor.conflictTakeIncoming', {
+              header: block.incomingHeader || t('editor.conflictIncomingFallback'),
+            }),
             arguments: [block, 'incoming'],
           },
         });
@@ -201,7 +210,7 @@ export function registerConflictCodeLensProvider(
           range,
           command: {
             id: 'echoly.resolveConflict',
-            title: `✦ 保留双方更改`,
+            title: t('editor.conflictTakeBoth'),
             arguments: [block, 'both'],
           },
         });

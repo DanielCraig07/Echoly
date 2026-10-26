@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
+import { useI18n } from '../i18n';
 
 export interface ModalResizeOptions {
   /** 本地存储 key，用于持久化弹窗宽高 */
@@ -270,7 +271,7 @@ export function createSafeOverlayHandlers(onClose?: () => void) {
 export function ModalResizeHandle({
   onMouseDown,
   className = '',
-  title = '拖动右下角调整大小 (支持上下左右)',
+  title,
   style,
 }: {
   onMouseDown: (e: React.MouseEvent) => void;
@@ -278,11 +279,14 @@ export function ModalResizeHandle({
   title?: string;
   style?: React.CSSProperties;
 }) {
+  // 组件内取字典而不是靠调用点传：二十多个弹窗都只是 `<ModalResizeHandle onMouseDown={...} />`，
+  // 让它们各自去拿 t 只会把同一句文案抄二十遍
+  const { t } = useI18n();
   return (
     <div
       className={`ide-modal-resize-handle ${className}`.trim()}
       onMouseDown={onMouseDown}
-      title={title}
+      title={title ?? t('common.resizeHandle')}
       role="separator"
       aria-orientation="horizontal"
       style={style}

@@ -1,5 +1,6 @@
 import * as monaco from 'monaco-editor';
 import { findJavaDefinitionLocations, JAVA_KEYWORDS } from './javaNavigation';
+import type { Translate } from '../i18n';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -23,6 +24,8 @@ export interface PeekResult {
 }
 
 export interface SymbolNavigationOptions {
+  /** 取当前语言的翻译函数；只有会渲染文案的入口需要它，见 SymbolTextOptions */
+  t?: () => Translate;
   getWorkspaceRoot?: () => string | null | undefined;
   onOpenFile: (path: string, line?: number, column?: number) => void;
   /** Called when there are multiple definition results; host should show pick UI */
@@ -1261,12 +1264,32 @@ export function navigateBack(
 const pyDefinitionCache = new Map<string, boolean>();
 
 /**
+ * 会往编辑器里画文字的入口，`t` 在这里是**必填**。
+ *
+ * 为什么不直接把它并进 `SymbolNavigationOptions`：`navigateBack` 这类入口只是把光标挪回去，
+ * 一个字的文案都不产，强行要求它们传 `t` 只会逼出几处无意义的假参数。
+ * 反过来，会产文案的入口漏传必须是**编译错误** —— 悬停提示会直接画在编辑器里，
+ * 做成可选带中文兜底就等于把「英文环境显示中文」藏进类型系统看不见的地方。
+ */
+export type SymbolTextOptions = SymbolNavigationOptions & { t: () => Translate };
+
+/**
+ * 取当前语言的翻译函数。
+ *
+ * 用**取值函数**而不是直接传 `t`：这里注册的 Monaco 装饰 / 命令是挂载期一次性的，
+ * 闭包会锁死在首次渲染的 `t` 上，切换语言后要重启窗口才生效。
+ */
+function textOf(opts: SymbolTextOptions): Translate {
+  return opts.t();
+}
+
+/**
  * Sets up VS Code-like Cmd+Hover underline link and direct Cmd+Click jump gesture.
  * Excludes comments, string literals, and language keywords from linking.
  */
 export function setupCmdClickGesture(
   editor: monaco.editor.IStandaloneCodeEditor,
-  opts: SymbolNavigationOptions
+  opts: SymbolTextOptions
 ): { dispose: () => void } {
   const linkDecorations = editor.createDecorationsCollection();
   let currentHoveredWord: string | null = null;
@@ -1322,7 +1345,7 @@ export function setupCmdClickGesture(
           range: new monaco.Range(pos.lineNumber, word.startColumn, pos.lineNumber, word.endColumn),
           options: {
             inlineClassName: 'cmd-click-hover-link',
-            hoverMessage: { value: '按住 ⌘ 点击跳转到定义 (Go to Definition)' },
+            hoverMessage: { value: textOf(opts)('editor.cmdClickToDefinition') },
           },
         },
       ]);

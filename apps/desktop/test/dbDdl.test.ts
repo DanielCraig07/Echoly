@@ -13,20 +13,36 @@ import {
   buildRenameTableStatement,
   buildTableOptionsSql,
   buildTruncateTableSql,
-  databaseLevelNoun,
   supportsDatabaseLevel,
   typeAcceptsLength,
   validateIdentifier,
   validateLength,
+  DB_ALTER_SKIP_KEY,
+  DB_DDL_ERROR_KEY,
 } from '../src/renderer/src/services/dbDdl';
+import { translate, translateWith, type Translate } from '../src/renderer/src/i18n';
+
+// 校验与「被跳过的改动」现在回**原因码**（纯逻辑模块拿不到 i18n 上下文），
+// 文案由渲染层用 t(DB_DDL_ERROR_KEY[code] / DB_ALTER_SKIP_KEY[code]) 取。
+// 这里锁定中文断言，顺带把「码 → key → 字典条目」这条链走通：
+// key 拼错或字典漏条目都会在这条测试上失败。
+const t: Translate = (key, params) =>
+  params ? translateWith(key, 'zh', params) : translate(key, 'zh');
+
+/** 把校验返回的原因码翻成中文文案（走真实的 key 表，key 写错这里就会失败） */
+const errText = (code: Parameters<typeof translate>[0] | null | undefined) =>
+  code ? t(DB_DDL_ERROR_KEY[code as keyof typeof DB_DDL_ERROR_KEY]) : '';
+/** 把「被跳过的改动」翻成中文文案 */
+const skips = (list: { code: keyof typeof DB_ALTER_SKIP_KEY; name: string }[] | undefined) =>
+  (list ?? []).map((s) => t(DB_ALTER_SKIP_KEY[s.code], { name: s.name })).join(' ');
 
 describe('validateIdentifier / validateLength', () => {
   it('列名 / 表名：非空、不以数字开头、不含引号与空白', () => {
     expect(validateIdentifier('user_name')).toBeNull();
     expect(validateIdentifier('用户表')).toBeNull();
     expect(validateIdentifier('a$b')).toBeNull();
-    expect(validateIdentifier('')).toContain('不能为空');
-    expect(validateIdentifier('1abc')).toContain('不能以数字开头');
+    expect(errText(validateIdentifier(''))).toContain('不能为空');
+    expect(errText(validateIdentifier('1abc'))).toContain('不能以数字开头');
     expect(validateIdentifier('a b')).not.toBeNull();
     expect(validateIdentifier('a`b')).not.toBeNull();
     expect(validateIdentifier('a"b')).not.toBeNull();
@@ -37,7 +53,7 @@ describe('validateIdentifier / validateLength', () => {
     expect(validateLength('255')).toBeNull();
     expect(validateLength('10,2')).toBeNull();
     expect(validateLength('10, 2')).toBeNull();
-    expect(validateLength('abc')).toContain('数字');
+    expect(errText(validateLength('abc'))).toContain('数字');
     expect(validateLength('10,2,3')).not.toBeNull();
   });
 });
@@ -174,8 +190,8 @@ describe('buildAlterTableStatements · 三驱动分支', () => {
     ]);
     expect(res.statements).toHaveLength(0);
     expect(res.skipped).toBeDefined();
-    expect(res.skipped!.join(' ')).toContain('SQLite');
-    expect(res.skipped!.join(' ')).toContain('整表重建');
+    expect(skips(res.skipped)).toContain('SQLite');
+    expect(skips(res.skipped)).toContain('整表重建');
   });
 
   it('SQLite：新增列、改名、删列仍然放行', () => {
@@ -197,7 +213,7 @@ describe('buildAlterTableStatements · 三驱动分支', () => {
       { name: 'req', type: 'TEXT', notnull: true },
     ]);
     expect(res.statements).toHaveLength(0);
-    expect(res.skipped![0]).toContain('NOT NULL');
+    expect(skips(res.skipped)).toContain('NOT NULL');
   });
 
   it('MySQL：新增主键列拆成 ADD COLUMN + ADD PRIMARY KEY', () => {
@@ -218,11 +234,6 @@ describe('库 / schema 层级', () => {
     expect(supportsDatabaseLevel('sqlite')).toBe(false);
   });
 
-  it('称呼：MySQL 叫数据库，PostgreSQL 叫 Schema', () => {
-    expect(databaseLevelNoun('mysql')).toBe('数据库');
-    expect(databaseLevelNoun('postgres')).toBe('Schema');
-  });
-
   it('CREATE：MySQL 是 DATABASE（可选字符集），PG 是 SCHEMA，SQLite 返回 null', () => {
     expect(buildCreateDatabaseSql('mysql', 'shop')).toBe('CREATE DATABASE `shop`;');
     expect(buildCreateDatabaseSql('mysql', 'shop', { ifNotExists: true, charset: 'utf8mb4' })).toBe(
@@ -239,13 +250,13 @@ describe('库 / schema 层级', () => {
   });
 
   it('重命名库：PG 用原生 ALTER SCHEMA RENAME', () => {
-    expect(buildRenameDatabaseScript('postgres', 'a', 'b', [])).toBe(
+    expect(buildRenameDatabaseScript('postgres', 'a', 'b', [], t)).toBe(
       'ALTER SCHEMA "a" RENAME TO "b";',
     );
   });
 
   it('重命名库：MySQL 生成「建新库 + 逐表 RENAME + 注释掉的删旧库」脚本', () => {
-    const script = buildRenameDatabaseScript('mysql', 'olddb', 'newdb', ['users', 'orders']);
+    const script = buildRenameDatabaseScript('mysql', 'olddb', 'newdb', ['users', 'orders'], t);
     expect(script).toContain('CREATE DATABASE IF NOT EXISTS `newdb`;');
     expect(script).toContain('RENAME TABLE `olddb`.`users` TO `newdb`.`users`;');
     expect(script).toContain('RENAME TABLE `olddb`.`orders` TO `newdb`.`orders`;');
@@ -255,13 +266,13 @@ describe('库 / schema 层级', () => {
   });
 
   it('重命名库：copy 模式生成 CREATE TABLE LIKE + INSERT SELECT', () => {
-    const script = buildRenameDatabaseScript('mysql', 'a', 'b', ['t'], { copyMode: 'copy' });
+    const script = buildRenameDatabaseScript('mysql', 'a', 'b', ['t'], t, { copyMode: 'copy' });
     expect(script).toContain('CREATE TABLE `b`.`t` LIKE `a`.`t`;');
     expect(script).toContain('INSERT INTO `b`.`t` SELECT * FROM `a`.`t`;');
   });
 
   it('重命名库：没有表清单时给出提示而不是空脚本', () => {
-    const script = buildRenameDatabaseScript('mysql', 'a', 'b', []);
+    const script = buildRenameDatabaseScript('mysql', 'a', 'b', [], t);
     expect(script).toContain('未读取到表清单');
   });
 });
@@ -352,19 +363,19 @@ describe('buildRenameTableStatement · 表改名的校验 + 生成', () => {
   it('改名前后名字相同视为没改，不生成语句', () => {
     const res = buildRenameTableStatement('postgres', 'public', 'goods', '  goods  ');
     expect(res.ok).toBe(false);
-    expect(res.error).toBe('新表名与原表名相同');
+    expect(errText(res.errorCode)).toBe('新表名与原表名相同');
   });
 
   it('非法名字被挡在生成之前（表名拼错等于把表改到一个谁都不认识的身份上）', () => {
     const res = buildRenameTableStatement('mysql', undefined, 'goods', 'a-b');
     expect(res.ok).toBe(false);
     expect(res.sql).toBeUndefined();
-    expect(res.error).toContain('只能包含字母');
+    expect(errText(res.errorCode)).toContain('只能包含字母');
   });
 
   it('空名字被挡下', () => {
     const res = buildRenameTableStatement('sqlite', undefined, 'goods', '   ');
     expect(res.ok).toBe(false);
-    expect(res.error).toBe('名称不能为空');
+    expect(errText(res.errorCode)).toBe('名称不能为空');
   });
 });

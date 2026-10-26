@@ -3,6 +3,12 @@ import {
   applyStatements,
   describeApplyResult,
 } from '../src/renderer/src/services/dbStructureApply';
+import { translate, translateWith, type Translate } from '../src/renderer/src/i18n';
+
+// describeApplyResult 的 t 是必填的（返回值直接弹给用户），这里给一份 zh 的 t：
+// 断言钉的是中文文案，顺带把「key → 字典条目」这条链走通，拼错 key 会在这里失败。
+const zhT: Translate = (key, params) =>
+  params ? translateWith(key, 'zh', params) : translate(key, 'zh');
 
 /** 造一个「按语句表返回结果」的假执行器 */
 function runner(map: Record<string, { ok: boolean; error?: string }>, log?: string[]) {
@@ -55,9 +61,11 @@ describe('applyStatements · 逐条执行', () => {
     expect(out.error).toBe('connection closed');
   });
 
-  it('失败但没给原因时兜一个中文说明，不让弹窗出现空白', async () => {
+  it('失败但没给原因时**不**在服务层塞兜底文案（渲染层用 db.unknownReason 补）', async () => {
     const out = await applyStatements(['a'], runner({ a: { ok: false } }));
-    expect(out.error).toBe('未知原因');
+    // 纯逻辑模块拿不到 i18n 上下文，在这里写死中文就等于把英文环境钉死在中文上
+    expect(out.error).toBeUndefined();
+    expect(zhT('db.unknownReason')).toBe('未知原因');
   });
 
   it('空语句表视为成功（调用方本就不该调，但不会崩）', async () => {
@@ -69,14 +77,14 @@ describe('applyStatements · 逐条执行', () => {
 
 describe('describeApplyResult · 结果文案', () => {
   it('全部成功：标题带表名，多条时补一句执行条数', () => {
-    const msg = describeApplyResult('mysql', 'cvm_location', { ok: true, applied: 3 }, 3);
+    const msg = describeApplyResult('mysql', 'cvm_location', { ok: true, applied: 3 }, 3, zhT);
     expect(msg.type).toBe('success');
     expect(msg.title).toContain('cvm_location');
     expect(msg.detail).toContain('3');
   });
 
   it('单条成功时不啰嗦「共执行 1 条」', () => {
-    const msg = describeApplyResult('sqlite', 't', { ok: true, applied: 1 }, 1);
+    const msg = describeApplyResult('sqlite', 't', { ok: true, applied: 1 }, 1, zhT);
     expect(msg.detail).toBeUndefined();
   });
 
@@ -86,6 +94,7 @@ describe('describeApplyResult · 结果文案', () => {
       'orders',
       { ok: false, applied: 0, error: '权限不足' },
       2,
+      zhT,
     );
     expect(msg.type).toBe('error');
     expect(msg.title).toContain('失败');
@@ -94,7 +103,7 @@ describe('describeApplyResult · 结果文案', () => {
   });
 
   it('部分生效：绝不能混进「失败」，要说清已执行几条、第几条出错', () => {
-    const msg = describeApplyResult('mysql', 't', { ok: false, applied: 2, error: 'boom' }, 5);
+    const msg = describeApplyResult('mysql', 't', { ok: false, applied: 2, error: 'boom' }, 5, zhT);
     expect(msg.type).toBe('error');
     expect(msg.title).toContain('部分生效');
     expect(msg.detail).toContain('已执行 2 / 5 条');

@@ -24,7 +24,7 @@ import type {
   ModelProfile,
   DapBreakpoint,
 } from '@deepseek-ide/shared';
-import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, DEFAULT_MODELS } from '@deepseek-ide/shared';
+import { DEFAULT_LAYOUT, DEFAULT_SETTINGS, DEFAULT_MODELS, NO_WORKSPACE_LABEL } from '@deepseek-ide/shared';
 import { FileTree, type FileTreeHandle } from './components/FileTree';
 import { useDbConfirm } from './hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from './services/dbConfirmContent';
@@ -87,7 +87,9 @@ import {
   type CursorPos,
   type VirtualTabState,
 } from './workspaceSession';
+import { useI18n } from './i18n';
 import { setupSymbolNavigation } from './services/symbolNavigation';
+import { setupDiagnosticsReporting } from './services/diagnosticsReporter';
 import type { DbTableViewState } from './services/dbTableQuery';
 import type { DbProjectScriptEntry } from './components/DatabasePanel';
 import {
@@ -201,13 +203,17 @@ function normalizeWorkspacePath(p: string | null | undefined): string {
 }
 
 export function App() {
+  // 面板里有大量中文注释与日志（不翻译），这里只接用户可见文案
+  const { t } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
   // 删除脚本 / 放弃更改等不可逆操作的统一确认框（全应用每个组件各持一个实例）
   const confirm = useDbConfirm();
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [workspaceInfo, setWorkspaceInfo] = useState<WorkspaceInfo>({
     kind: 'local',
     root: null,
-    label: '未打开工作区',
+    label: NO_WORKSPACE_LABEL,
   });
   const [tabs, setTabs] = useState<OpenTab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -267,6 +273,18 @@ export function App() {
     DEFAULT_SETTINGS.terminalScrollback ?? 10000,
   );
   const [formatOnSave, setFormatOnSave] = useState(DEFAULT_SETTINGS.formatOnSave ?? false);
+  /**
+   * 键位方案。两套键位不是互相覆盖而是各有取舍：
+   * VS Code 里「打开文件」是 Cmd+P，IntelliJ 里是 Cmd+Shift+O（Cmd+P 另有含义）。
+   * 其余被两者共享的快捷键（Alt+F12 终端、Cmd+Alt+L 格式化、双击 Shift 全局搜索）始终生效。
+   */
+  const [keymapPreset, setKeymapPreset] = useState<'vscode' | 'intellij'>(
+    DEFAULT_SETTINGS.keymapPreset ?? 'vscode',
+  );
+  // 全局快捷键监听挂载在 [activePath] 的 effect 里（见 onKey），不能为键位方案再挂一次；
+  // 用 ref 读最新值，避免把整个监听器随设置变更反复卸载重装。
+  const keymapPresetRef = useRef(keymapPreset);
+  keymapPresetRef.current = keymapPreset;
   const [largeFileThresholdBytes, setLargeFileThresholdBytes] = useState(
     DEFAULT_SETTINGS.largeFileThresholdBytes ?? 2 * 1024 * 1024,
   );
@@ -355,7 +373,7 @@ export function App() {
 
   const projectDisplayName = useMemo(() => {
     const raw = workspaceInfo.label || workspaceInfo.root || '';
-    if (!raw || raw === '未打开工作区') return 'PROJECT-IDE';
+    if (!raw || raw === NO_WORKSPACE_LABEL) return 'PROJECT-IDE';
     const clean = raw.replace(/^ssh\s+[^\s:]+:/, '');
     const segments = clean.split(/[/\\]/).filter(Boolean);
     const name = segments.pop() || clean;
@@ -480,31 +498,32 @@ export function App() {
     );
 
     const discardDetails = isAll
-      ? [{ label: '范围', value: '工作区中全部未提交的修改' }]
+      ? [{ label: t('app.labelScope'), value: t('app.scopeAllDirty') }]
       : [
-          { label: '范围', value: `${pathsToDiscard.length} 个文件` },
-          ...pathsToDiscard.slice(0, 8).map((p, i) => ({ label: i === 0 ? '文件' : '', value: p })),
+          { label: t('app.labelScope'), value: t('app.scopeFileCount', { n: pathsToDiscard.length }) },
+          ...pathsToDiscard
+            .slice(0, 8)
+            .map((p, i) => ({ label: i === 0 ? t('app.labelFile') : '', value: p })),
           ...(pathsToDiscard.length > 8
-            ? [{ label: '', value: `…另有 ${pathsToDiscard.length - 8} 个文件` }]
+            ? [{ label: '', value: t('app.moreFiles', { n: pathsToDiscard.length - 8 }) }]
             : []),
         ];
 
     const discardOk = await confirm.confirm({
       title: isAll
-        ? '放弃全部未提交修改'
+        ? t('app.discardAllTitle')
         : pathsToDiscard.length > 1
-          ? `放弃 ${pathsToDiscard.length} 个文件的修改`
-          : '放弃更改',
+          ? t('app.discardFilesTitle', { n: pathsToDiscard.length })
+          : t('app.discardTitle'),
       content: buildSqlConfirmMarkdown({
-        intro: isAll
-          ? '工作区中**所有未提交的修改**都会被还原到 HEAD，且**无法撤销**。'
-          : '该文件未提交的修改会被还原到 HEAD，且**无法撤销**。',
+        t,
+        intro: isAll ? t('app.discardAllIntro') : t('app.discardOneIntro'),
         statements: [],
-        notes: ['已暂存（git add）但尚未提交的改动也会一并还原。'],
+        notes: [t('app.discardNote')],
       }),
       details: discardDetails,
       tone: 'danger',
-      confirmLabel: '确认放弃',
+      confirmLabel: t('app.confirmDiscardAll'),
     });
     if (discardOk === null) return;
 
@@ -552,7 +571,7 @@ export function App() {
     // 4. 调用后端 git 服务还原文件
     const discardRes = await window.ide.gitDiscard(pathsToDiscard);
     if (discardRes && !discardRes.ok) {
-      showToast('放弃修改失败', discardRes.detail || 'Git 还原失败', 'error');
+      showToast(t('app.discardFailed'), discardRes.detail || t('app.gitRestoreFailed'), 'error');
       const curStatus = await window.ide.gitStatus();
       if (curStatus.ok) setGitStatus(curStatus);
       return;
@@ -606,7 +625,7 @@ export function App() {
     }
     setTreeRefreshKey((k) => k + 1);
     setScmDiff(null);
-    showToast('✓ 已放弃修改', '已恢复至 Git 最新提交版本', 'success');
+    showToast(t('app.discardedOk'), t('app.discardedOkDetail'), 'success');
 
     // 二次确认刷新：消除延迟残留
     setTimeout(async () => {
@@ -624,26 +643,26 @@ export function App() {
         path: diff.path,
         original: diff.original,
         modified: diff.modified,
-        description: `Git 本地更改(工作树) - ${diff.path}`,
-        originalTitle: '最新提交 (HEAD)',
-        modifiedTitle: '当前工作区 (未提交更改)',
+        description: t('app.diffTitle', { path: diff.path }),
+        originalTitle: t('app.diffOriginal'),
+        modifiedTitle: t('app.diffModified'),
       });
       if (diff.original === diff.modified) {
-        showToast('Git 对比', '当前文件与最新提交 (HEAD) 无差异', 'info');
+        showToast(t('app.diffToHead'), t('app.diffNoChange'), 'info');
       }
     } else {
-      showToast('获取差异失败', diff.detail || '无法对比该文件', 'warn');
+      showToast(t('app.diffFailed'), diff.detail || t('app.diffFailedDetail'), 'warn');
     }
   };
 
   const handleAnnotateGitBlame = (path: string) => {
     if (annotatedBlamePath === path) {
       setAnnotatedBlamePath(null);
-      showToast('Git 追溯 (Blame)', '已关闭代码追溯标注', 'info');
+      showToast(t('app.blameTitle'), t('app.blameOff'), 'info');
     } else {
       openFile(path);
       setAnnotatedBlamePath(path);
-      showToast('Git 追溯 (Blame)', '已开启代码追溯标注栏', 'info');
+      showToast(t('app.blameTitle'), t('app.blameOn'), 'info');
     }
   };
 
@@ -672,9 +691,9 @@ export function App() {
         ];
       });
       setActivePath(headVirtualPath);
-      showToast('Git 当前版本', `已载入 ${fileName} 的 HEAD 提交快照 (只读)`, 'info');
+      showToast(t('app.headSnapshot'), t('app.headSnapshotLoaded', { name: fileName }), 'info');
     } else {
-      showToast('无法查看当前版本', res.detail || '版本库中未找到该文件', 'error');
+      showToast(t('app.headSnapshotFailed'), res.detail || t('app.headSnapshotFailedDetail'), 'error');
     }
   };
 
@@ -1122,10 +1141,10 @@ export function App() {
               setTerminalKey((k) => k + 1);
               setTreeRefreshKey((k) => k + 1);
               await restoreOpenFilesForRoot(info.root);
-              showToast('✓ 已切换远程工作区', `${info.root}`, 'success');
+              showToast(t('app.sshWorkspaceSwitched'), `${info.root}`, 'success');
               return;
             } else {
-              showToast('✕ 切换远程工作区失败', res.detail, 'error');
+              showToast(t('app.sshWorkspaceSwitchFailed'), res.detail, 'error');
             }
           }
         }
@@ -1176,10 +1195,10 @@ export function App() {
             setTerminalKey((k) => k + 1);
             setTreeRefreshKey((k) => k + 1);
             await restoreOpenFilesForRoot(info.root);
-            showToast('✓ 已连接远程工作区', `${info.root}`, 'success');
+            showToast(t('app.sshWorkspaceConnected'), `${info.root}`, 'success');
             return;
           } else {
-            showToast('✕ 连接远程工作区失败', res.detail, 'error');
+            showToast(t('app.sshWorkspaceConnectFailed'), res.detail, 'error');
           }
         }
 
@@ -1308,18 +1327,16 @@ export function App() {
     const count = recentWorkspaces.length;
     if (count > 0) {
       const ok = await confirm.confirm({
-        title: '清空最近打开记录',
+        title: t('app.clearRecentTitle'),
         content: buildSqlConfirmMarkdown({
-          intro: '全部最近打开记录都会被清除，且**无法撤销**。',
+          t,
+          intro: t('app.clearRecentIntro'),
           statements: [],
-          notes: [
-            '只清空这份列表，**磁盘上的项目文件不受影响**；需要时重新打开目录即可。',
-            '各项目记录的文件树展开状态与已打开文件列表会一并清除。',
-          ],
+          notes: [t('app.clearRecentNotes'), t('app.clearRecentNotes2')],
         }),
-        details: [{ label: '数量', value: `${count} 条记录` }],
+        details: [{ label: t('app.labelCount'), value: t('app.countRecords', { n: count }) }],
         tone: 'danger',
-        confirmLabel: '确认清空',
+        confirmLabel: t('app.confirmClearRecent'),
       });
       if (ok === null) return;
     }
@@ -1341,6 +1358,7 @@ export function App() {
     setSelectionAiFloat(s.selectionAiFloat !== false);
     setTerminalScrollback(s.terminalScrollback ?? 10000);
     setFormatOnSave(s.formatOnSave === true);
+    setKeymapPreset(s.keymapPreset ?? 'vscode');
     setLargeFileThresholdBytes(s.largeFileThresholdBytes ?? 2 * 1024 * 1024);
     if (s.models && Array.isArray(s.models) && s.models.length > 0) {
       setModels(s.models);
@@ -1732,7 +1750,7 @@ export function App() {
       handleStopDebug();
       if (custom.detail?.message) {
         showToast(
-          custom.detail.language === 'python' ? '⚠️ Python 缺少 debugpy 模块' : '⚠️ 调试启动失败',
+          custom.detail.language === 'python' ? t('app.debugMissingDebugpy') : t('app.debugStartFailed'),
           custom.detail.message,
           'warn',
         );
@@ -1885,7 +1903,7 @@ export function App() {
         cwd,
         nonce: terminalNonce.current,
         initialCommand: detail?.initialCommand,
-        terminalTitle: detail?.title || (targetDirName ? `终端: ${targetDirName}` : '终端'),
+        terminalTitle: detail?.title || (targetDirName ? t('app.terminalTitle', { name: targetDirName }) : t('terminal.brand')),
       });
       const next = { ...layoutRef.current, bottomPanelExpanded: true };
       setLayout(next);
@@ -1902,7 +1920,7 @@ export function App() {
         cwd,
         nonce: terminalNonce.current,
         initialCommand: detail.command.trim() + '\n',
-        terminalTitle: '运行命令',
+        terminalTitle: t('app.runCommand'),
       });
       const next = { ...layoutRef.current, bottomPanelExpanded: true };
       setLayout(next);
@@ -2060,7 +2078,7 @@ export function App() {
           ];
         });
       } catch (err) {
-        alert(`无法预览图片：${err instanceof Error ? err.message : String(err)}`);
+        alert(t('app.previewImageFailed', { msg: err instanceof Error ? err.message : String(err) }));
         return;
       }
       setActivePath(path);
@@ -2174,9 +2192,38 @@ export function App() {
     setActiveDiffId(id);
   }, []);
 
+  /**
+   * 撤销本轮 AI 改动后同步渲染层状态。
+   *
+   * 主进程负责改磁盘，这里负责把「已经不看磁盘的那几份副本」拉回来：打开标签页的内容、
+   * pending diff 列表、文件树、Git 状态。少了任何一项，界面都会继续展示一份已经不存在的
+   * 改动，用户会以为撤销没生效。
+   */
+  const handleChatRevertTurn = useCallback(
+    async (revertedPaths: string[]) => {
+      // 只丢掉「确实被还原了」的那些 diff：同一会话里其它轮次的改动仍然待审阅，
+      // 全量清空会让用户莫名其妙地失去未处理的变更。
+      const reverted = new Set(revertedPaths.map((p) => p.replace(/\\/g, '/')));
+      setDiffs((prev) => prev.filter((d) => !reverted.has(d.path.replace(/\\/g, '/'))));
+      setActiveDiffId(null);
+      await reloadTabsOnBranchChange();
+      setTreeRefreshKey((k) => k + 1);
+      window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+      try {
+        const st = await window.ide.gitStatus();
+        if (st.ok) setGitStatus(st);
+      } catch {
+        // Git 不可用（非本地工作区）：文件树刷新已经足够反映撤销结果
+      }
+    },
+    [reloadTabsOnBranchChange],
+  );
+
   // Initialize dual-tier symbol navigation (F12 definition jump, Shift+F12 references, and cross-tab opener)
   useEffect(() => {
     const nav = setupSymbolNavigation({
+      // 取值函数而不是 t 本身：这些装饰是挂载期注册一次的，直接传 t 会锁死首次 locale
+      t: () => tRef.current,
       getWorkspaceRoot: () => workspaceRef.current,
       onOpenFile: (targetPath, line, col) => {
         void openFile(targetPath, line, col);
@@ -2189,6 +2236,15 @@ export function App() {
     });
     return () => nav.dispose();
   }, [openFile]);
+
+  // 把 Monaco 的 markers 上报主进程：Agent 的 get_diagnostics 工具在主进程运行，
+  // 而 TS/JS 的诊断只存在于渲染层。工作区根变化时也要重跑，好让路径归一化换到新根。
+  useEffect(() => {
+    const reporter = setupDiagnosticsReporting({
+      getWorkspaceRoot: () => workspaceRef.current,
+    });
+    return () => reporter.dispose();
+  }, [workspace]);
 
   async function pickWorkspace(): Promise<void> {
     const root = await window.ide.pickWorkspace();
@@ -2220,7 +2276,7 @@ export function App() {
     persistOpenFilesForRoot(workspaceRef.current);
     await window.ide.sshDisconnect();
     setWorkspace(null);
-    setWorkspaceInfo({ kind: 'local', root: null, label: '未打开工作区' });
+    setWorkspaceInfo({ kind: 'local', root: null, label: NO_WORKSPACE_LABEL });
     setTabs([]);
     setActivePath(null);
     resetAiChatSession();
@@ -2251,15 +2307,15 @@ export function App() {
         if (relPath === rootAbs || relPath.startsWith(`${rootAbs}/`)) {
           relPath = relPath === rootAbs ? defaultName : relPath.slice(rootAbs.length + 1);
         } else {
-          alert('请将文件保存到当前工作区内');
+          alert(t('app.saveOutsideWorkspace'));
           return false;
         }
       } catch {
-        alert('当前无法写入工作区，请先打开文件夹');
+        alert(t('app.cannotWriteWorkspace'));
         return false;
       }
     } else {
-      alert('请先打开工作区后再保存未命名文件');
+      alert(t('app.openWorkspaceToSave'));
       return false;
     }
 
@@ -2472,23 +2528,24 @@ export function App() {
     const dirtyTabs = tabsRef.current.filter((t) => t.dirty && !isVirtualPath(t.path));
     if (dirtyTabs.length > 0) {
       const ok = await confirm.confirm({
-        title: '关闭工作区',
+        title: t('app.closeWorkspaceTitle'),
         content: buildSqlConfirmMarkdown({
-          intro: '关闭后**未保存的修改会丢失**，且**无法撤销**。',
+          t,
+          intro: t('app.closeWorkspaceIntro'),
           statements: [],
-          notes: ['已保存到磁盘的内容不受影响，重新打开工作区即可继续。'],
+          notes: [t('app.closeWorkspaceNotes')],
         }),
         details: [
-          { label: '未保存', value: `${dirtyTabs.length} 个文件` },
+          { label: t('app.labelUnsaved'), value: t('app.scopeFileCount', { n: dirtyTabs.length }) },
           ...dirtyTabs
             .slice(0, 8)
-            .map((t, i) => ({ label: i === 0 ? '文件' : '', value: t.path })),
+            .map((tab, i) => ({ label: i === 0 ? t('app.labelFile') : '', value: tab.path })),
           ...(dirtyTabs.length > 8
-            ? [{ label: '', value: `…另有 ${dirtyTabs.length - 8} 个文件` }]
+            ? [{ label: '', value: t('app.moreFiles', { n: dirtyTabs.length - 8 }) }]
             : []),
         ],
         tone: 'danger',
-        confirmLabel: '仍然关闭',
+        confirmLabel: t('app.confirmCloseAnyway'),
       });
       if (ok === null) return;
     }
@@ -2500,7 +2557,7 @@ export function App() {
     }
     await window.ide.setWorkspace('');
     setWorkspace(null);
-    setWorkspaceInfo({ kind: 'local', root: null, label: '未打开工作区' });
+    setWorkspaceInfo({ kind: 'local', root: null, label: NO_WORKSPACE_LABEL });
     setTabs([]);
     setActivePath(null);
     resetAiChatSession();
@@ -2729,7 +2786,7 @@ export function App() {
       try {
         content = (await window.ide.readProjectConfigFile(script.scriptPath)) ?? '';
       } catch (err: any) {
-        showToast('打开脚本失败', err?.message || String(err), 'error');
+        showToast(t('app.openScriptFailed'), err?.message || String(err), 'error');
         return;
       }
       // 目标连接不记得是谁了：脚本路径里的连接段就是连接 id，直接用它当会话目标。
@@ -2751,17 +2808,18 @@ export function App() {
   const deleteProjectScript = useCallback(
     async (script: DbProjectScriptEntry) => {
       const ok = await confirm.confirm({
-        title: '删除查询脚本',
+        title: t('app.deleteScriptTitle'),
         content: buildSqlConfirmMarkdown({
-          intro: '这个脚本文件会从磁盘上删除，且**无法撤销**。',
+          t,
+          intro: t('app.deleteScriptIntro'),
           statements: [],
         }),
         details: [
-          { label: '名称', value: script.title },
-          { label: '路径', value: script.scriptPath },
+          { label: t('app.labelName'), value: script.title },
+          { label: t('app.labelFilePath'), value: script.scriptPath },
         ],
         tone: 'danger',
-        confirmLabel: '确认删除',
+        confirmLabel: t('app.confirmDeleteScript'),
       });
       if (ok === null) return;
       try {
@@ -2771,9 +2829,9 @@ export function App() {
         const tab = tabsRef.current.find((t) => t.virtual?.scriptPath === script.scriptPath);
         if (tab) closeTabDirect(tab.path);
         await refreshProjectScripts();
-        showToast('已删除脚本', script.fileName, 'success');
+        showToast(t('app.scriptDeleted'), script.fileName, 'success');
       } catch (err: any) {
-        showToast('删除脚本失败', err?.message || String(err), 'error');
+        showToast(t('app.scriptDeleteFailed'), err?.message || String(err), 'error');
       }
     },
     [closeTabDirect, refreshProjectScripts, showToast],
@@ -3076,13 +3134,13 @@ export function App() {
       let title = customTitle;
       if (!title) {
         if (!normUrl) {
-          title = '新标签页';
+          title = t('app.newTab');
         } else {
           try {
             const u = new URL(normUrl.startsWith('http') ? normUrl : `http://${normUrl}`);
-            title = u.hostname || '内置浏览器';
+            title = u.hostname || t('app.browserTab');
           } catch {
-            title = '内置浏览器';
+            title = t('app.browserTab');
           }
         }
       }
@@ -3551,6 +3609,23 @@ export function App() {
         searchRef.current?.focus('actions');
         return;
       }
+      // IntelliJ 键位下 Cmd+Shift+O 是「打开文件」（VS Code 里这个键是转到符号，见 EditorPane）。
+      // VS Code 键位保持 Cmd+P，且不抢 Shift+O，免得把 Monaco 的符号跳转吃掉。
+      // 即便在 IntelliJ 键位下，焦点在编辑器内时也让位给 Monaco 的「转到符号」——
+      // 这个监听器挂在 window 的捕获阶段，不加这层判断会把编辑器内的快捷键整个吞掉。
+      if (
+        ctrl &&
+        e.shiftKey &&
+        keymapPresetRef.current === 'intellij' &&
+        e.key.toLowerCase() === 'o'
+      ) {
+        const el = document.activeElement as HTMLElement | null;
+        if (!(el && typeof el.closest === 'function' && el.closest('.monaco-editor'))) {
+          e.preventDefault();
+          searchRef.current?.focus('files');
+          return;
+        }
+      }
       if (ctrl && e.key.toLowerCase() === 'p' && !e.shiftKey) {
         e.preventDefault();
         searchRef.current?.focus('files');
@@ -3591,7 +3666,8 @@ export function App() {
           if (inMonaco) return false;
           const bottomPanel = document.querySelector<HTMLElement>('.bottom-panel');
           const isBottomVisible = bottomPanel && getComputedStyle(bottomPanel).display !== 'none';
-          const isTerminalTabActive = !!document.querySelector('.bottom-tab-btn.active')?.textContent?.includes('终端');
+          const isTerminalTabActive =
+            document.querySelector('.bottom-tab-btn.active')?.getAttribute('data-tab') === 'terminal';
           return !!(isBottomVisible && isTerminalTabActive);
         })();
 
@@ -3731,8 +3807,8 @@ export function App() {
   const ideActions: CommandAction[] = [
     {
       id: 'cmd-open-composer',
-      title: 'Composer: 多文件智能重构协同编辑 (⌘I)',
-      category: 'AI',
+      title: t('cmd.openComposer'),
+      category: t('cmd.categoryAi'),
       shortcut: isMac ? '⌘I' : 'Ctrl+I',
       handler: () => {
         setComposerOpen(true);
@@ -3740,8 +3816,8 @@ export function App() {
     },
     {
       id: 'cmd-new-chat',
-      title: 'AI: 新建对话会话',
-      category: 'AI',
+      title: t('cmd.newChat'),
+      category: t('cmd.categoryAi'),
       shortcut: 'Cmd+N',
       handler: () => {
         chatRef.current?.clearAndNewSession();
@@ -3754,8 +3830,8 @@ export function App() {
     },
     {
       id: 'cmd-toggle-sidebar',
-      title: '视图: 展开/折叠左侧边栏',
-      category: '视图',
+      title: t('cmd.toggleSidebar'),
+      category: t('cmd.categoryView'),
       shortcut: isMac ? '⌘⇧B' : 'Ctrl+Shift+B',
       handler: () => {
         const next = {
@@ -3768,22 +3844,22 @@ export function App() {
     },
     {
       id: 'cmd-toggle-ai',
-      title: '视图: 展开/折叠 AI 助手',
-      category: '视图',
+      title: t('cmd.toggleAi'),
+      category: t('cmd.categoryView'),
       shortcut: 'Cmd+B',
       handler: toggleAiChat,
     },
     {
       id: 'cmd-focus-ai',
-      title: 'AI: 提问 / 聚焦 AI 助手',
-      category: 'AI',
+      title: t('cmd.focusAi'),
+      category: t('cmd.categoryAi'),
       shortcut: 'Cmd+L',
       handler: handleFocusAi,
     },
     {
       id: 'cmd-open-browser',
-      title: '视图: 打开内置浏览器 (Browser Preview)',
-      category: '视图',
+      title: t('cmd.openBrowser'),
+      category: t('cmd.categoryView'),
       shortcut: isMac ? '⌘⌥B' : 'Ctrl+Alt+B',
       handler: () => {
         openBrowserTab('');
@@ -3791,15 +3867,15 @@ export function App() {
     },
     {
       id: 'cmd-toggle-terminal',
-      title: '终端: 展开/折叠底部控制台',
-      category: '终端',
+      title: t('cmd.toggleTerminal'),
+      category: t('cmd.categoryTerminal'),
       shortcut: 'Cmd+J / Alt+F12',
       handler: toggleTerminal,
     },
     {
       id: 'cmd-new-terminal',
-      title: '终端: 新建终端标签页',
-      category: '终端',
+      title: t('cmd.newTerminal'),
+      category: t('cmd.categoryTerminal'),
       shortcut: 'Cmd+Shift+`',
       handler: () => {
         terminalNonce.current += 1;
@@ -3811,8 +3887,8 @@ export function App() {
     },
     {
       id: 'cmd-git-status',
-      title: 'Git: 查看源代码版本控制',
-      category: 'Git',
+      title: t('cmd.gitStatus'),
+      category: t('cmd.categoryGit'),
       shortcut: 'Cmd+Shift+G',
       handler: () => {
         setLeftPanel('git');
@@ -3823,8 +3899,8 @@ export function App() {
     },
     {
       id: 'cmd-git-branch',
-      title: 'Git: 切换分支 / Tag 标签',
-      category: 'Git',
+      title: t('cmd.gitBranch'),
+      category: t('cmd.categoryGit'),
       shortcut: '',
       handler: () => {
         setBranchModalOpen(true);
@@ -3832,8 +3908,8 @@ export function App() {
     },
     {
       id: 'cmd-git-pull',
-      title: 'Git: 拉取远端更新 (Pull)',
-      category: 'Git',
+      title: t('cmd.gitPull'),
+      category: t('cmd.categoryGit'),
       shortcut: '',
       handler: async () => {
         const res = await window.ide.gitPull();
@@ -3845,28 +3921,28 @@ export function App() {
     },
     {
       id: 'cmd-git-discard',
-      title: 'Git: 放弃工作区所有更改 (Discard All)',
-      category: 'Git',
+      title: t('cmd.gitDiscard'),
+      category: t('cmd.categoryGit'),
       shortcut: '',
       handler: () => void handleDiscardPath('all'),
     },
     {
       id: 'cmd-git-history',
-      title: 'Git: 查看当前文件提交历史',
-      category: 'Git',
+      title: t('cmd.gitHistory'),
+      category: t('cmd.categoryGit'),
       shortcut: '',
       handler: () => {
         if (activePath) {
           handleViewFileHistory(activePath);
         } else {
-          showToast('无法查看文件历史', '请先在编辑器中打开一个文件', 'info');
+          showToast(t('app.noFileHistory'), t('app.noFileHistoryDetail'), 'info');
         }
       },
     },
     {
       id: 'cmd-git-log',
-      title: 'Git: 查看提交历史与图谱 (Commit Graph)',
-      category: 'Git',
+      title: t('cmd.gitLog'),
+      category: t('cmd.categoryGit'),
       shortcut: '',
       handler: () => {
         setLeftPanel('git');
@@ -3877,15 +3953,15 @@ export function App() {
     },
     {
       id: 'cmd-open-settings',
-      title: '首选项: 打开 IDE 设置与多模型管理',
-      category: '设置',
+      title: t('cmd.openSettings'),
+      category: t('cmd.categorySettings'),
       shortcut: 'Cmd+,',
       handler: () => setSettingsOpen(true),
     },
     {
       id: 'cmd-switch-workspace',
-      title: '工作区: 打开或切换工作区目录',
-      category: '工作区',
+      title: t('cmd.switchWorkspace'),
+      category: t('cmd.categoryWorkspace'),
       shortcut: 'Cmd+O',
       handler: () => {
         if (switchTargetRef.current) return;
@@ -3894,22 +3970,22 @@ export function App() {
     },
     {
       id: 'cmd-ssh-connect',
-      title: '工作区: 连接远程 SSH 主机',
-      category: '远程',
+      title: t('cmd.sshConnect'),
+      category: t('cmd.categoryRemote'),
       shortcut: '',
       handler: () => setSshOpen(true),
     },
     {
       id: 'cmd-clone-repo',
-      title: 'Git: 从远程 URL 克隆仓库 (Clone)',
-      category: 'Git',
+      title: t('cmd.cloneRepo'),
+      category: t('cmd.categoryGit'),
       shortcut: '',
       handler: () => setCloneOpen(true),
     },
     {
       id: 'cmd-reload-window',
-      title: '窗口: 重载窗口 (Reload Window)',
-      category: '窗口',
+      title: t('cmd.reloadWindow'),
+      category: t('cmd.categoryWindow'),
       shortcut: 'Cmd+R',
       handler: () => {
         persistOpenFilesForRoot(workspaceRef.current);
@@ -3928,12 +4004,12 @@ export function App() {
         <div className="titlebar-left" style={{ width: 70, WebkitAppRegion: 'drag' } as any}></div>
         <div className="titlebar-center" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {remoteHost && (
-            <span className="titlebar-remote-badge" title={`远程服务器 ${remoteHost}`}>
+            <span className="titlebar-remote-badge" title={t('app.remoteServer', { host: remoteHost })}>
               SSH {remoteHost}
             </span>
           )}
           <span className="titlebar-title-text">
-            {workspaceInfo.label && workspaceInfo.label !== '未打开工作区'
+            {workspaceInfo.label && workspaceInfo.label !== NO_WORKSPACE_LABEL
               ? `${workspaceInfo.label.split('/').pop()} — `
               : ''}
             {activePath ? activePath.split('/').pop() : 'Echoly'}
@@ -3979,7 +4055,7 @@ export function App() {
             type="button"
             className="top-search-trigger"
             onClick={() => searchRef.current?.focus('actions')}
-            title={isMac ? '搜索动作或文件 (⌘P / ⌘⇧P)' : '搜索动作或文件 (Ctrl+P / Ctrl+Shift+P)'}
+            title={isMac ? t('app.searchOrCommand') : t('app.searchOrCommandWin')}
           >
             <svg
               width="15"
@@ -3992,7 +4068,7 @@ export function App() {
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <span className="search-trigger-text">命令 / 搜索</span>
+            <span className="search-trigger-text">{t('app.commandSearch')}</span>
             <kbd className="search-trigger-kbd">{isMac ? '⌘P' : 'Ctrl+P'}</kbd>
           </button>
 
@@ -4003,8 +4079,12 @@ export function App() {
               className={`layout-toggle-btn ${showLeftPanel ? 'active' : ''}`}
               title={
                 showLeftPanel
-                  ? `折叠左侧边栏 (${isMac ? '⌘⇧B' : 'Ctrl+Shift+B'})`
-                  : `展开左侧边栏 (${isMac ? '⌘⇧B' : 'Ctrl+Shift+B'})`
+                  ? isMac
+                    ? t('app.collapseSidebar')
+                    : t('app.collapseSidebarWin')
+                  : isMac
+                    ? t('app.expandSidebar')
+                    : t('app.expandSidebarWin')
               }
               disabled={isWelcomeShell}
               onClick={() => {
@@ -4047,8 +4127,12 @@ export function App() {
               className={`layout-toggle-btn ${!isWelcomeShell && layout.bottomPanelExpanded === true ? 'active' : ''}`}
               title={
                 layout.bottomPanelExpanded === true
-                  ? `折叠底部终端 (${isMac ? '⌘J' : 'Ctrl+J'})`
-                  : `展开底部终端 (${isMac ? '⌘J' : 'Ctrl+J'})`
+                  ? isMac
+                    ? t('app.collapseTerminal')
+                    : t('app.collapseTerminalWin')
+                  : isMac
+                    ? t('app.expandTerminal')
+                    : t('app.expandTerminalWin')
               }
               disabled={isWelcomeShell}
               onClick={() => {
@@ -4094,8 +4178,12 @@ export function App() {
               className={`layout-toggle-btn ${showChatPanel ? 'active' : ''}`}
               title={
                 showChatPanel
-                  ? `折叠右侧 AI 面板 (${isMac ? '⌘B' : 'Ctrl+B'})`
-                  : `展开右侧 AI 面板 (${isMac ? '⌘B' : 'Ctrl+B'})`
+                  ? isMac
+                    ? t('app.collapseAi')
+                    : t('app.collapseAiWin')
+                  : isMac
+                    ? t('app.expandAi')
+                    : t('app.expandAiWin')
               }
               disabled={isWelcomeShell}
               onClick={() => {
@@ -4139,7 +4227,7 @@ export function App() {
           <button
             type="button"
             className="layout-toggle-btn"
-            title={isMac ? '内置浏览器 (⌘⌥B)' : '内置浏览器 (Ctrl+Alt+B)'}
+            title={isMac ? t('app.browserTitle') : t('app.browserTitleWin')}
             onClick={() => openBrowserTab()}
           >
             <svg
@@ -4162,7 +4250,7 @@ export function App() {
           <button
             type="button"
             className="layout-toggle-btn settings-btn"
-            title={isMac ? '设置 (⌘,)' : '设置 (Ctrl+,)'}
+            title={isMac ? t('app.settingsTitle') : t('app.settingsTitleWin')}
             onClick={() => setSettingsOpen(true)}
           >
             <svg
@@ -4208,7 +4296,7 @@ export function App() {
                   type="button"
                   className={leftPanel === 'explorer' ? 'active' : ''}
                   onClick={() => setLeftPanel('explorer')}
-                  title="文件"
+                  title={t('app.tabFiles')}
                   style={{ width: 28, height: 28, borderRadius: 6 }}
                 >
                   <svg
@@ -4229,7 +4317,7 @@ export function App() {
                 <button
                   type="button"
                   className={leftPanel === ('search' as any) ? 'active' : ''}
-                  title="搜索"
+                  title={t('app.tabSearch')}
                   onClick={() => setLeftPanel('search' as any)}
                   style={{ width: 28, height: 28, borderRadius: 6 }}
                 >
@@ -4249,7 +4337,7 @@ export function App() {
                   type="button"
                   className={leftPanel === 'git' ? 'active' : ''}
                   onClick={() => setLeftPanel('git')}
-                  title="版本控制"
+                  title={t('app.tabSourceControl')}
                   style={{ width: 28, height: 28, borderRadius: 6 }}
                 >
                   <svg
@@ -4271,7 +4359,7 @@ export function App() {
                     type="button"
                     className={leftPanel === 'maven' ? 'active' : ''}
                     onClick={() => setLeftPanel('maven')}
-                    title="Maven 管理"
+                    title={t('app.tabMaven')}
                     style={{ width: 28, height: 28, borderRadius: 6 }}
                   >
                     <svg
@@ -4292,7 +4380,7 @@ export function App() {
                   type="button"
                   className={leftPanel === 'database' ? 'active' : ''}
                   onClick={() => setLeftPanel('database')}
-                  title="轻量数据库"
+                  title={t('app.tabDatabase')}
                   style={{ width: 28, height: 28, borderRadius: 6 }}
                 >
                   <svg
@@ -4386,14 +4474,18 @@ export function App() {
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title={activePath ? `定位当前文件 (${activePath.split('/').pop()})` : '定位到当前打开的文件'}
+                        title={
+          activePath
+            ? t('app.locateCurrentFile', { name: activePath.split('/').pop() ?? '' })
+            : t('app.locateCurrentFilePlain')
+        }
                         onClick={() => {
                           if (!activePath) {
-                            showToast('当前没有打开的文件', undefined, 'info');
+                            showToast(t('app.noOpenFile'), undefined, 'info');
                             return;
                           }
                           fileTreeRef.current?.locateActiveFile();
-                          showToast(`已定位: ${activePath.split('/').pop()}`, undefined, 'info');
+                          showToast(t('app.located', { name: activePath.split('/').pop() ?? '' }), undefined, 'info');
                         }}
                       >
                         <svg
@@ -4419,7 +4511,7 @@ export function App() {
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title="新建文件"
+                        title={t('app.newFile')}
                         onClick={() => fileTreeRef.current?.createFile()}
                       >
                         <svg
@@ -4444,7 +4536,7 @@ export function App() {
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title="新建文件夹"
+                        title={t('app.newFolder')}
                         onClick={() => fileTreeRef.current?.createFolder()}
                       >
                         <svg
@@ -4468,7 +4560,7 @@ export function App() {
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title="刷新文件树"
+                        title={t('app.refreshTree')}
                         onClick={() => {
                           setTreeRefreshKey((k) => k + 1);
                           void (async () => {
@@ -4496,7 +4588,7 @@ export function App() {
                       <button
                         type="button"
                         className="panel-action-btn"
-                        title={isTreeCollapsed ? '全部展开' : '全部折叠'}
+                        title={isTreeCollapsed ? t('app.expandAll') : t('app.collapseAll')}
                         onClick={() => {
                           if (isTreeCollapsed) {
                             fileTreeRef.current?.expandAll();
@@ -4557,7 +4649,7 @@ export function App() {
                           setTerminalOpenRequest({
                             cwd: cwd || workspace || '',
                             nonce: terminalNonce.current,
-                            terminalTitle: targetDirName ? `终端: ${targetDirName}` : '终端',
+                            terminalTitle: targetDirName ? t('app.terminalTitle', { name: targetDirName }) : t('terminal.brand'),
                           });
                           const next = { ...layoutRef.current, bottomPanelExpanded: true };
                           setLayout(next);
@@ -4729,7 +4821,7 @@ export function App() {
             <div
               className="splitter splitter-v"
               onMouseDown={(e) => startResize('explorer', e)}
-              title="拖拽调整资源树宽度"
+              title={t('app.resizeTree')}
             />
           </>
         )}
@@ -4882,7 +4974,7 @@ export function App() {
                 <div
                   className="splitter splitter-h"
                   onMouseDown={(e) => startResize('bottom', e)}
-                  title="拖拽调整底栏高度"
+                  title={t('app.resizeBottom')}
                 />
               )}
               <div
@@ -4918,21 +5010,22 @@ export function App() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: '100%' }}>
                     <button
                       type="button"
+                      data-tab="terminal"
                       className={`bottom-tab-btn ${bottomTab === 'terminal' ? 'active' : ''}`}
                       onClick={() => setBottomTab('terminal')}
-                      title="切换至终端面板"
+                      title={t('app.terminalTab')}
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="4 17 10 11 4 5" />
                         <line x1="12" y1="19" x2="20" y2="19" />
                       </svg>
-                      <span>终端 (Terminal)</span>
+                      <span>{t('app.terminalTabLabel')}</span>
                     </button>
                     <button
                       type="button"
                       className={`bottom-tab-btn ${bottomTab === 'debug' ? 'active' : ''}`}
                       onClick={() => setBottomTab('debug')}
-                      title="切换至调试工作台"
+                      title={t('app.debugTab')}
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="m8 2 1.88 1.88" />
@@ -4947,7 +5040,7 @@ export function App() {
                         <path d="M22 13h-4" />
                         <path d="M17.2 17c2.1.1 3.8 1.9 3.8 4" />
                       </svg>
-                      <span>调试控制台 (Debug)</span>
+                      <span>{t('app.debugTabLabel')}</span>
                       {isDebugging && (
                         <span
                           style={{
@@ -4964,14 +5057,14 @@ export function App() {
                       type="button"
                       className={`bottom-tab-btn ${bottomTab === 'problems' ? 'active' : ''}`}
                       onClick={() => setBottomTab('problems')}
-                      title="切换至代码问题与诊断面板"
+                      title={t('app.problemsTab')}
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10" />
                         <line x1="12" y1="8" x2="12" y2="12" />
                         <line x1="12" y1="16" x2="12.01" y2="16" />
                       </svg>
-                      <span>问题 (Problems)</span>
+                      <span>{t('app.problemsTabLabel')}</span>
                       {problemsCount > 0 && (
                         <span className="problems-tab-badge">
                           {problemsCount}
@@ -4983,12 +5076,12 @@ export function App() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {bottomTab === 'problems' && (
                       <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 4 }}>
-                        {problemsCount > 0 ? `共 ${problemsCount} 处诊断` : '未发现代码问题'}
+                        {problemsCount > 0 ? t('app.problemsCount', { n: problemsCount }) : t('app.problemsNone')}
                       </span>
                     )}
                     {bottomTab === 'terminal' && (
                       <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 4 }}>
-                        {terminalKind === 'ssh' ? '远程 SSH 终端' : '本地终端'}
+                        {terminalKind === 'ssh' ? t('app.terminalKindSsh') : t('app.terminalKindLocal')}
                       </span>
                     )}
                     {bottomTab === 'debug' && (
@@ -5020,9 +5113,9 @@ export function App() {
                         />
                         {isDebugging
                           ? debugState === 'paused'
-                            ? '调试已暂停'
-                            : '调试进行中'
-                          : '未在调试 (就绪)'}
+                            ? t('app.debugPaused')
+                            : t('app.debugRunning')
+                          : t('app.debugIdle')}
                       </span>
                     )}
 
@@ -5037,7 +5130,7 @@ export function App() {
                           }),
                         );
                       }}
-                      title={bottomMaximized ? '还原面板高度' : '最大化面板高度'}
+                      title={bottomMaximized ? t('app.restorePanel') : t('app.maximizePanel')}
                     >
                       {bottomMaximized ? (
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -5064,7 +5157,7 @@ export function App() {
                         setLayout(next);
                         persistLayout(next);
                       }}
-                      title="折叠面板"
+                      title={t('app.collapsePanel')}
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="18" y1="6" x2="6" y2="18" />
@@ -5117,7 +5210,7 @@ export function App() {
                           detail: {},
                         }),
                       );
-                      showToast('调试已终止', undefined, 'info');
+                      showToast(t('app.debugTerminated'), undefined, 'info');
                     }}
                   />
                 </div>
@@ -5141,7 +5234,7 @@ export function App() {
               <div
                 className="splitter splitter-v"
                 onMouseDown={(e) => startResize('chat', e)}
-                title="拖拽调整聊天面板宽度"
+                title={t('app.resizeChat')}
               />
             )}
             <aside
@@ -5157,13 +5250,13 @@ export function App() {
                     className={`right-panel-tab ${rightPanelTab === 'chat' ? 'active' : ''}`}
                     onClick={() => setRightPanelTab('chat')}
                   >
-                    AI 对话
+                    {t('app.chatTab')}
                   </button>
                   <button
                     className={`right-panel-tab ${rightPanelTab === 'claude' ? 'active' : ''}`}
                     onClick={() => setRightPanelTab('claude')}
                   >
-                    Claude 扩展
+                    {t('app.claudeTab')}
                   </button>
                 </div>
               )}
@@ -5203,6 +5296,7 @@ export function App() {
                   diffs={diffs}
                   onAcceptAllDiffs={handleChatAcceptAllDiffs}
                   onRejectAllDiffs={handleChatRejectAllDiffs}
+                  onRevertTurn={handleChatRevertTurn}
                   onSelectDiff={handleChatSelectDiff}
                   onOpenFile={handleChatOpenFile}
                   onOpenSettings={handleOpenSettings}
@@ -5456,7 +5550,7 @@ export function App() {
             column: col ?? 1,
             nonce: revealNonceRef.current,
           });
-          showToast(`已跳转到第 ${line} 行`, undefined, 'info');
+          showToast(t('app.jumpedToLine', { line }), undefined, 'info');
         }}
         onToggleEol={(nextEol) => {
           // 虚拟标签（db:// / untitled:) 没有磁盘 EOL 语义，改行尾毫无意义且会误标脏
@@ -5482,7 +5576,7 @@ export function App() {
               detail: { path: activePath, language: lang },
             }),
           );
-          showToast(`语言模式已切换为 ${lang}`, undefined, 'info');
+          showToast(t('app.languageChanged', { lang }), undefined, 'info');
         }}
         onOpenAbout={() => {
           setSettingsInitialTab('about');
@@ -5506,24 +5600,24 @@ export function App() {
             pointerEvents: 'none',
           }}
         >
-          {toasts.map((t) => {
-            const cleanTitle = t.title.replace(
+          {toasts.map((toast) => {
+            const cleanTitle = toast.title.replace(
               /^[\u2713\u2715\u26a0\u2139\u26a1\u2699\u00d7]\uFE0F?\s*/u,
               '',
             );
-            const isLong = (t.detail && t.detail.length > 40) || cleanTitle.length > 25;
+            const isLong = (toast.detail && toast.detail.length > 40) || cleanTitle.length > 25;
 
             return (
               <div
-                key={t.id}
+                key={toast.id}
                 className="toast-drawer-item"
                 onClick={() => {
                   if (isLong) {
                     setToastDetailModal({
-                      id: t.id,
+                      id: toast.id,
                       title: cleanTitle,
-                      detail: t.detail,
-                      type: t.type,
+                      detail: toast.detail,
+                      type: toast.type,
                     });
                   }
                 }}
@@ -5553,11 +5647,11 @@ export function App() {
                     alignItems: 'center',
                   }}
                 >
-                  {t.type === 'success'
+                  {toast.type === 'success'
                     ? '✓'
-                    : t.type === 'error'
+                    : toast.type === 'error'
                       ? '✕'
-                      : t.type === 'warn'
+                      : toast.type === 'warn'
                         ? '⚠️'
                         : 'ℹ️'}
                 </span>
@@ -5581,7 +5675,7 @@ export function App() {
                   >
                     {cleanTitle}
                   </div>
-                  {t.detail && (
+                  {toast.detail && (
                     <div
                       style={{
                         color: 'var(--muted)',
@@ -5591,9 +5685,9 @@ export function App() {
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                       }}
-                      title={t.detail}
+                      title={toast.detail}
                     >
-                      {t.detail}
+                      {toast.detail}
                     </div>
                   )}
                 </div>
@@ -5617,17 +5711,17 @@ export function App() {
                       height: 24,
                       padding: 0,
                       borderRadius: 4,
-                      color: copiedToastId === t.id ? '#10b981' : 'var(--muted)',
+                      color: copiedToastId === toast.id ? '#10b981' : 'var(--muted)',
                     }}
-                    title="复制提示内容"
+                    title={t('app.copyHint')}
                     onClick={() => {
-                      const text = t.detail ? `${cleanTitle}\n${t.detail}` : cleanTitle;
+                      const text = toast.detail ? `${cleanTitle}\n${toast.detail}` : cleanTitle;
                       void navigator.clipboard.writeText(text);
-                      setCopiedToastId(t.id);
+                      setCopiedToastId(toast.id);
                       setTimeout(() => setCopiedToastId(null), 1500);
                     }}
                   >
-                    {copiedToastId === t.id ? (
+                    {copiedToastId === toast.id ? (
                       <span style={{ fontSize: 12, fontWeight: 700 }}>✓</span>
                     ) : (
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -5643,13 +5737,13 @@ export function App() {
                       type="button"
                       className="panel-action-btn"
                       style={{ width: 24, height: 24, padding: 0, borderRadius: 4 }}
-                      title="弹窗查看完整详情"
+                      title={t('app.viewFullDetail')}
                       onClick={() =>
                         setToastDetailModal({
-                          id: t.id,
+                          id: toast.id,
                           title: cleanTitle,
-                          detail: t.detail,
-                          type: t.type,
+                          detail: toast.detail,
+                          type: toast.type,
                         })
                       }
                     >
@@ -5667,8 +5761,8 @@ export function App() {
                     type="button"
                     className="panel-action-btn"
                     style={{ width: 20, height: 20, padding: 0, fontSize: 13, borderRadius: 4 }}
-                    title="关闭"
-                    onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}
+                    title={t('common.close')}
+                    onClick={() => setToasts((prev) => prev.filter((item) => item.id !== toast.id))}
                   >
                     ×
                   </button>
@@ -5770,7 +5864,7 @@ export function App() {
                   setTimeout(() => setModalCopied(false), 2000);
                 }}
               >
-                {modalCopied ? '✓ 已复制完整内容' : '复制内容'}
+                {modalCopied ? t('app.copiedFull') : t('app.copyContent')}
               </button>
               <button
                 type="button"
@@ -5778,7 +5872,7 @@ export function App() {
                 style={{ padding: '5px 14px', fontSize: 12 }}
                 onClick={() => setToastDetailModal(null)}
               >
-                关闭
+                {t('common.close')}
               </button>
             </div>
           </div>

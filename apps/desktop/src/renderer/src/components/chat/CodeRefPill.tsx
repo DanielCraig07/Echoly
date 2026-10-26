@@ -1,4 +1,5 @@
 import React from 'react';
+import { useI18n } from '../../i18n';
 
 export interface ParsedCodeRef {
   raw: string;
@@ -453,6 +454,7 @@ export const CodeRefPill: React.FC<{
   codeRef: ParsedCodeRef;
   onOpenFile?: (path: string, line?: number, endLine?: number) => void;
 }> = ({ codeRef, onOpenFile }) => {
+  const { t } = useI18n();
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -479,7 +481,7 @@ export const CodeRefPill: React.FC<{
           handleClick(e as any);
         }
       }}
-      title={`点击打开文件并定位高亮: ${codeRef.path}${codeRef.lineLabel || ''}`}
+      title={t('chat.openRefFile', { path: `${codeRef.path}${codeRef.lineLabel || ''}` })}
     >
       <FileLanguageIcon fileName={codeRef.fileName} />
       <span className="chat-code-ref-pill-name">{codeRef.fileName}</span>

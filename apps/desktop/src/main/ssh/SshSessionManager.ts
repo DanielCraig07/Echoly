@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import net from 'node:net';
 import electronLog from 'electron-log';
 import type { SshConnectRequest, SshConnectResult, SshProfile } from '@deepseek-ide/shared';
-import type { CommandResult, DirEntry, WorkspaceBackend } from '@deepseek-ide/tools';
+import type { CommandResult, DirEntry, FileStat, WorkspaceBackend } from '@deepseek-ide/tools';
 import type { WorkspaceService } from '../workspace';
 import type { WindowSession } from '../windowRegistry';
 import type { BrowserWindow } from 'electron';
@@ -248,6 +248,27 @@ export class SftpBackend implements WorkspaceBackend {
     });
 
     return await withTimeout(op, 8000, `listDir(${relPath})`);
+  }
+
+  /**
+   * 时间戳 + 大小，供增量索引判断文件是否需要重读。
+   *
+   * 远端 stat 要过一趟网络，比本地贵得多，所以它比本地版本更需要这个优化 ——
+   * 没有它，SSH 工作区的每次增量索引都等于一次全量重读。
+   */
+  async stat(relPath: string): Promise<FileStat | null> {
+    const abs = this.resolve(relPath);
+    const op = new Promise<FileStat | null>((resolve) => {
+      this.sftp.stat(abs, (err, stats) => {
+        if (err || !stats) return resolve(null);
+        resolve({ size: stats.size, mtimeMs: (stats.mtime ?? 0) * 1000 });
+      });
+    });
+    try {
+      return await withTimeout(op, 8000, `stat(${relPath})`);
+    } catch {
+      return null;
+    }
   }
 
   async readFile(relPath: string): Promise<string> {
@@ -1495,10 +1516,15 @@ export class SshSessionManager {
         rawMsg.includes('Connection lost before handshake') ||
         rawMsg.includes('ECONNRESET');
 
+      // 供渲染层判断是否要给出「打开系统设置」入口。不能用 detail 里的中文去反推：
+      // 那是给人看的文案，改一次措辞或翻成英文，按钮就静默消失了。
+      let needsLocalNetwork = false;
+
       if (rawMsg.includes('All configured authentication methods failed')) {
         detail = `认证失败：请检查用户名、密码或私钥口令是否正确 (${rawMsg})`;
       } else if (isLocalHost && isNetworkUnreachable) {
         if (process.platform === 'darwin') {
+          needsLocalNetwork = true;
           detail = `无法连接本地网络服务器 (${host}:${port}): ${rawMsg}。由于 macOS 隐私保护机制，请前往「系统设置 -> 隐私与安全性 -> 本地网络」，确保已允许 Echoly (或 Electron) 访问本地网络；同时确认局域网 IP 与网络路由可达。`;
         } else {
           detail = `无法连接局域网服务器 (${host}:${port}): ${rawMsg}。请检查局域网连接、目标 IP 与防火墙设置。`;
@@ -1508,6 +1534,7 @@ export class SshSessionManager {
       return {
         ok: false,
         detail,
+        needsLocalNetwork,
       };
     }
   }

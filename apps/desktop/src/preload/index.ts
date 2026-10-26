@@ -48,6 +48,8 @@ const api: IpcApi = {
   pickFile: (filters) => ipcRenderer.invoke('dialog:pickFile', filters),
   startAgent: (payload) => ipcRenderer.invoke('agent:start', payload),
   cancelAgent: (runId) => ipcRenderer.invoke('agent:cancel', runId),
+  queueAgentMessage: (runId, message) =>
+    ipcRenderer.invoke('agent:queueMessage', runId, message),
   respondConfirm: (requestId, approved, answer) =>
     ipcRenderer.invoke('agent:respondConfirm', requestId, approved, answer),
   continueAgent: (runId) => ipcRenderer.invoke('agent:continue', runId),
@@ -56,6 +58,8 @@ const api: IpcApi = {
   rejectDiff: (diffId) => ipcRenderer.invoke('diff:reject', diffId),
   acceptAllDiffs: () => ipcRenderer.invoke('diff:acceptAll'),
   rejectAllDiffs: () => ipcRenderer.invoke('diff:rejectAll'),
+  getCheckpointSummary: (runId?: string) => ipcRenderer.invoke('checkpoint:summary', runId),
+  revertCheckpoint: (runId?: string) => ipcRenderer.invoke('checkpoint:revert', runId),
   listSessions: () => ipcRenderer.invoke('session:list'),
   getSession: (id) => ipcRenderer.invoke('session:get', id),
   saveSession: (session: ChatSession) => ipcRenderer.invoke('session:save', session),
@@ -64,6 +68,9 @@ const api: IpcApi = {
     ipcRenderer.invoke('agent:probe', options),
   listSkills: () => ipcRenderer.invoke('skills:list'),
   openUserSkillsDir: () => ipcRenderer.invoke('skills:openUserDir'),
+  listCommands: () => ipcRenderer.invoke('commands:list'),
+  mcpReload: () => ipcRenderer.invoke('mcp:reload'),
+  mcpStatus: () => ipcRenderer.invoke('mcp:status'),
   cloneRepo: (req: GitCloneRequest) => ipcRenderer.invoke('git:clone', req),
   gitInit: () => ipcRenderer.invoke('git:init'),
   gitStatus: () => ipcRenderer.invoke('git:status'),
@@ -205,9 +212,16 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('lsp:diagnostics', listener);
   },
 
-  codebaseIndex: () => ipcRenderer.invoke('codebase:index'),
+  codebaseIndex: (force) => ipcRenderer.invoke('codebase:index', force),
   codebaseSearch: (query, limit) => ipcRenderer.invoke('codebase:search', query, limit),
   codebaseStatus: () => ipcRenderer.invoke('codebase:status'),
+  onCodebaseProgress: (cb) => {
+    const listener = (_: any, ev: any) => cb(ev);
+    ipcRenderer.on('codebase:progress', listener);
+    return () => ipcRenderer.removeListener('codebase:progress', listener);
+  },
+
+  reportDiagnostics: (entries) => ipcRenderer.invoke('diagnostics:report', entries),
 
   cppCheckToolchain: () => ipcRenderer.invoke('cpp:checkToolchain'),
   multiLangCheckToolchain: () => ipcRenderer.invoke('multiLang:checkToolchain'),

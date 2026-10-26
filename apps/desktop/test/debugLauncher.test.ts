@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { resolveDebugConfig } from '../src/renderer/src/utils/debugLauncher';
+import { translate, translateWith, type Translate } from '../src/renderer/src/i18n';
+
+// resolveDebugConfig 现在要求显式传 `t`（它产出的 toastMessage 是用户可见文案，
+// 做成可选带默认值就等于把「英文环境弹中文」这件事藏进类型系统看不见的地方）。
+// 测试因此自带一个锁定中文的翻译器：断言按中文写，与组件传进来的实时 hook 互不干扰。
+const zhT: Translate = (key, params) =>
+  params ? translateWith(key, 'zh', params) : translate(key, 'zh');
 
 describe('resolveDebugConfig', () => {
   it('correctly configures Java / Maven JDWP debug session', () => {
@@ -10,7 +17,7 @@ describe('resolveDebugConfig', () => {
       source: 'java',
       badge: 'Java',
     };
-    const res = resolveDebugConfig(javaOption);
+    const res = resolveDebugConfig(javaOption, zhT);
     expect(res.type).toBe('terminal');
     expect(res.language).toBe('java');
     expect(res.port).toBe(5005);
@@ -26,7 +33,7 @@ describe('resolveDebugConfig', () => {
       source: 'java',
       badge: 'Maven',
     };
-    const res = resolveDebugConfig(testOption);
+    const res = resolveDebugConfig(testOption, zhT);
     expect(res.terminalType).toBe('mvn');
     expect(res.command).toContain('-Dmaven.surefire.debug');
   });
@@ -39,7 +46,7 @@ describe('resolveDebugConfig', () => {
       source: 'python',
       badge: 'Py',
     };
-    const res = resolveDebugConfig(pyOption);
+    const res = resolveDebugConfig(pyOption, zhT);
     expect(res.type).toBe('terminal');
     expect(res.language).toBe('python');
     expect(res.port).toBe(5678);
@@ -54,7 +61,7 @@ describe('resolveDebugConfig', () => {
       source: 'npm',
       badge: 'TS',
     };
-    const res = resolveDebugConfig(tsOption);
+    const res = resolveDebugConfig(tsOption, zhT);
     expect(res.type).toBe('terminal');
     expect(res.language).toBe('node');
     expect(res.port).toBe(9229);
@@ -67,7 +74,7 @@ describe('resolveDebugConfig', () => {
       source: 'npm',
       badge: 'npm',
     };
-    const resNpm = resolveDebugConfig(npmOption);
+    const resNpm = resolveDebugConfig(npmOption, zhT);
     expect(resNpm.command).toBe('NODE_OPTIONS="--inspect=9229" npm run dev');
   });
 
@@ -79,7 +86,7 @@ describe('resolveDebugConfig', () => {
       source: 'go',
       badge: 'Go',
     };
-    const res = resolveDebugConfig(goOption);
+    const res = resolveDebugConfig(goOption, zhT);
     expect(res.type).toBe('terminal');
     expect(res.language).toBe('go');
     expect(res.port).toBe(2345);
@@ -94,7 +101,7 @@ describe('resolveDebugConfig', () => {
       source: 'cpp',
       badge: 'C++',
     };
-    const res = resolveDebugConfig(cppOption);
+    const res = resolveDebugConfig(cppOption, zhT);
     expect(res.type).toBe('dap');
     expect(res.language).toBe('cpp');
   });

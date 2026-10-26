@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import * as monaco from 'monaco-editor';
+import { useI18n } from '../i18n';
 
 interface Props {
   workspace?: string | null;
@@ -25,6 +26,7 @@ export const ProblemsPanel: React.FC<Props> = ({
   onOpenFile,
   onCountChange,
 }) => {
+  const { t } = useI18n();
   const [filterText, setFilterText] = useState('');
   const [severityFilter, setSeverityFilter] = useState<'all' | 'error' | 'warning'>('all');
   const [markers, setMarkers] = useState<ProblemItem[]>([]);
@@ -100,6 +102,12 @@ export const ProblemsPanel: React.FC<Props> = ({
     return Array.from(map.entries());
   }, [filteredMarkers]);
 
+  /**
+   * 下面两处拼的是**送给模型的 prompt**（经 `echoly:askAi` 自动提交），
+   * 不是界面文案 —— 与 `services/specialMentions.ts` 里那批同类，故不进字典。
+   * 把「错误 (Error)」翻成 "Error (Error)" 只会改变模型的输入分布，不会让用户更看得懂。
+   * 面板上真正显示给用户的那份文案（筛选项、空态、分组标题）才是翻的。
+   */
   const handleDiagnose = (item: ProblemItem, e: React.MouseEvent) => {
     e.stopPropagation();
     const sevLabel = item.severity === monaco.MarkerSeverity.Error ? '错误 (Error)' : '警告 (Warning)';
@@ -154,7 +162,7 @@ export const ProblemsPanel: React.FC<Props> = ({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text)' }}>
-            诊断与问题 ({filteredMarkers.length})
+            {t('problems.title', { n: filteredMarkers.length })}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
             <button
@@ -162,21 +170,21 @@ export const ProblemsPanel: React.FC<Props> = ({
               className={`problems-filter-pill ${severityFilter === 'all' ? 'active' : ''}`}
               onClick={() => setSeverityFilter('all')}
             >
-              全部
+              {t('problems.filterAll')}
             </button>
             <button
               type="button"
               className={`problems-filter-pill ${severityFilter === 'error' ? 'active' : ''}`}
               onClick={() => setSeverityFilter('error')}
             >
-              仅错误
+              {t('problems.filterError')}
             </button>
             <button
               type="button"
               className={`problems-filter-pill ${severityFilter === 'warning' ? 'active' : ''}`}
               onClick={() => setSeverityFilter('warning')}
             >
-              仅警告
+              {t('problems.filterWarning')}
             </button>
           </div>
         </div>
@@ -185,7 +193,7 @@ export const ProblemsPanel: React.FC<Props> = ({
           <input
             type="text"
             className="problems-search-input"
-            placeholder="过滤消息或文件..."
+            placeholder={t('problems.filterPh')}
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
           />
@@ -195,7 +203,7 @@ export const ProblemsPanel: React.FC<Props> = ({
               type="button"
               className="panel-action-btn"
               onClick={handleDiagnoseAll}
-              title="一键让 AI 批量诊断修复"
+              title={t('problems.diagnoseAllTitle')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -207,7 +215,7 @@ export const ProblemsPanel: React.FC<Props> = ({
             type="button"
             className="panel-action-btn"
             onClick={refreshMarkers}
-            title="刷新诊断结果"
+            title={t('problems.refreshTitle')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M23 4v6h-6" />
@@ -223,7 +231,7 @@ export const ProblemsPanel: React.FC<Props> = ({
         {groupedByFile.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--muted)', fontSize: 13, gap: 8 }}>
             <span>✓</span>
-            <span>未发现任何错误或警告，代码运行良好！</span>
+            <span>{t('problems.allGood')}</span>
           </div>
         ) : (
           groupedByFile.map(([filePath, items]) => {
@@ -251,7 +259,7 @@ export const ProblemsPanel: React.FC<Props> = ({
                   <span style={{ opacity: 0.7 }}>📄</span>
                   <span>{relPath}</span>
                   <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>
-                    ({items.length} 个问题)
+                    {t('problems.fileProblemCount', { n: items.length })}
                   </span>
                 </div>
 
@@ -318,9 +326,9 @@ export const ProblemsPanel: React.FC<Props> = ({
                           type="button"
                           className="problems-fix-ai-btn"
                           onClick={(e) => handleDiagnose(item, e)}
-                          title="让 AI 针对此问题生成修复建议"
+                          title={t('problems.fixTitle')}
                         >
-                          ⚡️ AI 修复
+                          {t('problems.fix')}
                         </button>
                       </div>
                     );

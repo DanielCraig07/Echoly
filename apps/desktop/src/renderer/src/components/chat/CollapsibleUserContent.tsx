@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { parseContentWithCodeRefs, CodeRefPill } from './CodeRefPill';
+import { useI18n } from '../../i18n';
 
 const USER_BUBBLE_COLLAPSED_MAX_PX = 120;
 
@@ -14,6 +15,7 @@ export function CollapsibleUserContent({
   content: string;
   onOpenFile?: (path: string, line?: number, endLine?: number) => void;
 }) {
+  const { t } = useI18n();
   const bodyRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
@@ -65,7 +67,7 @@ export function CollapsibleUserContent({
           className="msg-user-expand-btn"
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? '收起' : '展开全部'}
+          {expanded ? t('editor.collapseShort') : t('chat.expandAllUser')}
         </button>
       )}
     </div>

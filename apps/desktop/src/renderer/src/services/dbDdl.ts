@@ -14,6 +14,7 @@
  *    返回 `null` 表示该驱动不支持，调用方据此隐藏菜单项。
  */
 
+import type { Translate } from '../i18n';
 import { qualifyIdent, quoteIdent, type DbDriverType } from './dbIdentifiers';
 import { formatSqlLiteral } from './dbMutations';
 
@@ -98,26 +99,70 @@ export interface DbColumnSpec {
   defaultIsLiteral?: boolean;
 }
 
+/**
+ * 校验失败 / 被跳过的原因码。
+ *
+ * 这里一律返回**码**而不是中文句子：本模块是纯逻辑（vitest 直接单测），拿不到 i18n
+ * 上下文；返回文案就等于把英文环境钉死在中文上，而且这些码会被当作数组元素传来传去，
+ * 扫「源码里的中文字符串」那类检查也未必扫得到。
+ */
+export type DbDdlErrorCode =
+  | 'name-empty'
+  | 'name-too-long'
+  | 'name-invalid-chars'
+  | 'length-invalid'
+  | 'rename-same';
+
+/** 该驱动不支持的列改动，逐条说明原因 */
+export type DbAlterSkipCode =
+  | 'sqlite-add-notnull-no-default'
+  | 'sqlite-add-pk'
+  | 'sqlite-change-type'
+  | 'sqlite-change-notnull'
+  | 'sqlite-change-default';
+
+export interface DbAlterSkip {
+  code: DbAlterSkipCode;
+  /** 涉及的对象名（列名 / 类型名），用于插值 */
+  name: string;
+}
+
+export const DB_DDL_ERROR_KEY: Record<DbDdlErrorCode, string> = {
+  'name-empty': 'db.ddlErrNameEmpty',
+  'name-too-long': 'db.ddlErrNameTooLong',
+  'name-invalid-chars': 'db.ddlErrNameChars',
+  'length-invalid': 'db.ddlErrLength',
+  'rename-same': 'db.ddlErrRenameSame',
+};
+
+export const DB_ALTER_SKIP_KEY: Record<DbAlterSkipCode, string> = {
+  'sqlite-add-notnull-no-default': 'db.ddlSkipAddNotnull',
+  'sqlite-add-pk': 'db.ddlSkipAddPk',
+  'sqlite-change-type': 'db.ddlSkipChangeType',
+  'sqlite-change-notnull': 'db.ddlSkipChangeNotnull',
+  'sqlite-change-default': 'db.ddlSkipChangeDefault',
+};
+
 /** 列定义里可加进语句的标识符：只放行常规名字，避免把任意文本拼进 DDL */
 function safeColumnName(name: string): string {
   return name.trim();
 }
 
 /** 校验列名：非空、长度合理、不含反引号 / 双引号 / 空白等会破坏引号包裹的字符 */
-export function validateIdentifier(name: string): string | null {
+export function validateIdentifier(name: string): DbDdlErrorCode | null {
   const trimmed = name.trim();
-  if (!trimmed) return '名称不能为空';
-  if (trimmed.length > 64) return '名称过长（最多 64 个字符）';
+  if (!trimmed) return 'name-empty';
+  if (trimmed.length > 64) return 'name-too-long';
   if (!/^[A-Za-z_一-龥][A-Za-z0-9_$一-龥]*$/.test(trimmed)) {
-    return '只能包含字母、数字、下划线、$ 与中文，且不能以数字开头';
+    return 'name-invalid-chars';
   }
   return null;
 }
 
 /** 长度 / 精度的合法性：`255` 或 `10,2` */
-export function validateLength(length: string): string | null {
+export function validateLength(length: string): DbDdlErrorCode | null {
   if (!length.trim()) return null;
-  if (!/^\d+(\s*,\s*\d+)?$/.test(length.trim())) return '长度 / 精度必须是数字，或形如 10,2';
+  if (!/^\d+(\s*,\s*\d+)?$/.test(length.trim())) return 'length-invalid';
   return null;
 }
 
@@ -229,11 +274,11 @@ export function buildRenameTableStatement(
   schema: string | undefined,
   from: string,
   to: string,
-): { ok: boolean; sql?: string; error?: string } {
+): { ok: boolean; sql?: string; errorCode?: DbDdlErrorCode } {
   const next = to.trim();
   const err = validateIdentifier(next);
-  if (err) return { ok: false, error: err };
-  if (next === from.trim()) return { ok: false, error: '新表名与原表名相同' };
+  if (err) return { ok: false, errorCode: err };
+  if (next === from.trim()) return { ok: false, errorCode: 'rename-same' };
   return { ok: true, sql: buildRenameTableSql(driver, schema, from, next) };
 }
 
@@ -261,9 +306,12 @@ export interface DbColumnChange extends DbColumnSpec {
 export interface DbAlterBuildResult {
   ok: boolean;
   statements: string[];
-  /** 该驱动不支持、被跳过的改动（中文说明，UI 直接展示） */
-  skipped?: string[];
-  error?: string;
+  /**
+   * 该驱动不支持、被跳过的改动。给的是**码 + 对象名**而不是中文句子：
+   * 调用点在渲染层，那里才有 `t`。（见 DB_ALTER_SKIP_KEY）
+   */
+  skipped?: DbAlterSkip[];
+  errorCode?: DbDdlErrorCode;
 }
 
 /**
@@ -283,7 +331,7 @@ export function buildAlterTableStatements(
 ): DbAlterBuildResult {
   const target = qualifyIdent(driver, schema, table);
   const statements: string[] = [];
-  const skipped: string[] = [];
+  const skipped: DbAlterSkip[] = [];
 
   for (const change of changes) {
     const name = safeColumnName(change.name);
@@ -297,12 +345,12 @@ export function buildAlterTableStatements(
         // SQLite 的 ADD COLUMN 不允许 NOT NULL 且无默认值（既有行没有值可填）
         const spec: DbColumnSpec = { ...change };
         if (spec.notnull && !spec.defaultValue?.trim()) {
-          skipped.push(`SQLite 无法新增 NOT NULL 且无默认值的列「${name}」，已跳过（既有行无值可填）`);
+          skipped.push({ code: 'sqlite-add-notnull-no-default', name });
           continue;
         }
         // SQLite 也不允许加主键列
         if (spec.pk) {
-          skipped.push(`SQLite 无法通过 ALTER 新增主键列「${name}」，已跳过`);
+          skipped.push({ code: 'sqlite-add-pk', name });
           continue;
         }
         statements.push(`ALTER TABLE ${target} ADD COLUMN ${columnDefinition(driver, spec)};`);
@@ -347,7 +395,7 @@ export function buildAlterTableStatements(
     // ── 改类型 ──
     if (change.type?.trim()) {
       if (driver === 'sqlite') {
-        skipped.push(`SQLite 不支持修改列类型（「${effective}」需整表重建），已跳过`);
+        skipped.push({ code: 'sqlite-change-type', name: effective });
       } else if (driver === 'mysql') {
         statements.push(
           `ALTER TABLE ${target} MODIFY COLUMN ${columnDefinition(driver, { ...change, name: effective })};`,
@@ -367,7 +415,7 @@ export function buildAlterTableStatements(
     if (change.notnull !== undefined) {
       const action = change.notnull ? 'SET' : 'DROP';
       if (driver === 'sqlite') {
-        skipped.push(`SQLite 不支持修改列的非空约束（「${effective}」需整表重建），已跳过`);
+        skipped.push({ code: 'sqlite-change-notnull', name: effective });
       } else if (driver === 'mysql') {
         statements.push(
           `ALTER TABLE ${target} MODIFY COLUMN ${columnDefinition(driver, { ...change, name: effective })};`,
@@ -383,7 +431,7 @@ export function buildAlterTableStatements(
     if (change.defaultValue !== undefined) {
       const hasDefault = String(change.defaultValue).trim() !== '';
       if (driver === 'sqlite') {
-        skipped.push(`SQLite 不支持通过 ALTER 修改默认值（「${effective}」需整表重建），已跳过`);
+        skipped.push({ code: 'sqlite-change-default', name: effective });
       } else if (driver === 'mysql') {
         statements.push(
           `ALTER TABLE ${target} MODIFY COLUMN ${columnDefinition(driver, { ...change, name: effective })};`,
@@ -490,11 +538,6 @@ export function supportsDatabaseLevel(driver: DbDriverType): boolean {
   return driver === 'mysql' || driver === 'postgres';
 }
 
-/** 库层级在该驱动的称呼（拼中文提示用） */
-export function databaseLevelNoun(driver: DbDriverType): string {
-  return driver === 'postgres' ? 'Schema' : '数据库';
-}
-
 /** CREATE DATABASE / CREATE SCHEMA；SQLite 返回 null 表示不支持 */
 export function buildCreateDatabaseSql(
   driver: DbDriverType,
@@ -539,6 +582,7 @@ export function buildRenameDatabaseScript(
   from: string,
   to: string,
   tables: string[],
+  t: Translate,
   options?: { copyMode?: 'rename' | 'copy' },
 ): string | null {
   if (!supportsDatabaseLevel(driver)) return null;
@@ -547,17 +591,23 @@ export function buildRenameDatabaseScript(
   }
 
   const copyMode = options?.copyMode ?? 'rename';
+  /**
+   * 脚本注释也走字典：整段脚本会被**直接倒进 SQL 控制台**摆到用户面前，
+   * 里面那几行 `-- …` 是这段脚本唯一的说明书。写死中文，英文环境下就是
+   * 「一屏英文 SQL 夹着三行看不懂的话」。
+   * SQL 本身（`CREATE DATABASE …`）不进字典 —— 那是数据库原生写法。
+   */
   const lines: string[] = [
-    `-- 重命名数据库 ${from} → ${to}`,
-    '-- MySQL 没有 RENAME DATABASE，以下是「建新库 → 逐表迁移 → 删旧库」的等价脚本。',
-    '-- 请逐条检查后执行；执行前务必备份。',
+    `-- ${t('db.renameScriptHeader', { from, to })}`,
+    `-- ${t('db.renameScriptWhyMysql')}`,
+    `-- ${t('db.renameScriptWarning')}`,
     '',
     `CREATE DATABASE IF NOT EXISTS ${quoteIdent(driver, to)};`,
     '',
   ];
 
   if (tables.length === 0) {
-    lines.push('-- 未读取到表清单，请手动补充迁移语句。');
+    lines.push(`-- ${t('db.renameScriptNoTables')}`);
   } else {
     for (const table of tables) {
       const fromTable = qualifyIdent(driver, from, table);
@@ -572,7 +622,11 @@ export function buildRenameDatabaseScript(
     }
   }
 
-  lines.push('', `-- 确认数据无误后，再执行下面这条删除旧库：`, `-- DROP DATABASE ${quoteIdent(driver, from)};`);
+  lines.push(
+    '',
+    `-- ${t('db.renameScriptDropOld')}`,
+    `-- DROP DATABASE ${quoteIdent(driver, from)};`,
+  );
   return lines.join('\n');
 }
 

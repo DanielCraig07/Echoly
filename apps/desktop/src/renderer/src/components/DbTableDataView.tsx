@@ -25,6 +25,7 @@ import {
 } from '../services/dbColumnLayout';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { DbConfirmModal } from './DbConfirmModal';
+import { useI18n } from '../i18n';
 import {
   buildCommitStatements,
   buildDeleteSql,
@@ -33,6 +34,7 @@ import {
   buildRowWhereClause,
   buildUpdateSql,
   countStagedChanges,
+  DB_COMMIT_ERROR_KEY,
   defaultDisplayHint,
   emptyStagedChanges,
   isSameCellValue,
@@ -49,8 +51,6 @@ import {
 import {
   EMPTY_VIEW_STATE,
   buildTableQuerySql,
-  describeFilter,
-  describeSort,
   isEmptyViewState,
   nextSortState,
   sortDirectionOf,
@@ -58,6 +58,8 @@ import {
   type DbTableFilterOperator,
   type DbTableViewState,
 } from '../services/dbTableQuery';
+// 筛选条件的可读描述在服务层是写死中文的，这里改用 i18nParts/db 里的翻译版（列名与值原样保留）
+import { dbDescribeFilter } from '../i18nParts/db';
 
 export interface DbTableDataViewProps {
   connectionId: string;
@@ -144,6 +146,7 @@ export function DbTableDataView({
   initialView,
   viewNonce,
 }: DbTableDataViewProps) {
+  const { t } = useI18n();
   const [columns, setColumns] = useState<DatabaseColumnMeta[]>([]);
   const [queryResult, setQueryResult] = useState<DatabaseQueryResult | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -515,7 +518,7 @@ export function DbTableDataView({
         setQueryResult(res);
         setPage(targetPage);
         if (!res.ok) {
-          onShowToast?.(`加载表数据失败: ${res.error}`, undefined, 'error');
+          onShowToast?.(t('db.dataLoadFailed', { error: res.error ?? '' }), undefined, 'error');
         } else {
           // 累积原始行快照（而不是每次覆盖）：暂存改动里的 WHERE 必须基于「读到的原值」，
           // 用户翻到第 2 页后再提交第 1 页改的那几行时，靠覆盖式快照会找不到原始行而整批失败
@@ -526,7 +529,7 @@ export function DbTableDataView({
           originalRowsRef.current = { ...originalRowsRef.current, ...snapshot };
         }
       } catch (err: any) {
-        onShowToast?.('查询异常', err.message || String(err), 'error');
+        onShowToast?.(t('db.dataQueryException'), err.message || String(err), 'error');
       } finally {
         setLoading(false);
       }
@@ -541,6 +544,7 @@ export function DbTableDataView({
       view,
       ensureColumns,
       onShowToast,
+      t,
     ],
   );
 
@@ -591,12 +595,12 @@ export function DbTableDataView({
     async (text: string, label: string) => {
       try {
         await navigator.clipboard.writeText(text);
-        onShowToast?.(`已复制${label}`, text, 'success');
+        onShowToast?.(t('db.copiedLabel', { label }), text, 'success');
       } catch {
-        onShowToast?.(`复制${label}失败`, undefined, 'error');
+        onShowToast?.(t('db.copyLabelFailed', { label }), undefined, 'error');
       }
     },
-    [onShowToast],
+    [onShowToast, t],
   );
 
   const handleCopyCell = (text: string, key: string) => {
@@ -607,7 +611,7 @@ export function DbTableDataView({
 
   const handleExportCsv = () => {
     if (!queryResult?.rows || queryResult.rows.length === 0) {
-      onShowToast?.('当前无数据可导出');
+      onShowToast?.(t('db.dataNothingToExport'));
       return;
     }
     const cols = queryResult.columns;
@@ -630,12 +634,12 @@ export function DbTableDataView({
     a.download = `${tableName}_export.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    onShowToast?.(`已导出 CSV: ${tableName}_export.csv`, undefined, 'success');
+    onShowToast?.(t('db.dataExportedCsv', { name: `${tableName}_export.csv` }), undefined, 'success');
   };
 
   const handleExportJson = () => {
     if (!queryResult?.rows || queryResult.rows.length === 0) {
-      onShowToast?.('当前无数据可导出');
+      onShowToast?.(t('db.dataNothingToExport'));
       return;
     }
     const jsonContent = JSON.stringify(queryResult.rows, null, 2);
@@ -646,12 +650,12 @@ export function DbTableDataView({
     a.download = `${tableName}_export.json`;
     a.click();
     URL.revokeObjectURL(url);
-    onShowToast?.(`已导出 JSON: ${tableName}_export.json`, undefined, 'success');
+    onShowToast?.(t('db.dataExportedJson', { name: `${tableName}_export.json` }), undefined, 'success');
   };
 
   const handleExportExcel = () => {
     if (!queryResult?.rows || queryResult.rows.length === 0) {
-      onShowToast?.('当前无数据可导出');
+      onShowToast?.(t('db.dataNothingToExport'));
       return;
     }
     const cols = queryResult.columns;
@@ -671,7 +675,7 @@ export function DbTableDataView({
     a.download = `${tableName}_export.xls`;
     a.click();
     URL.revokeObjectURL(url);
-    onShowToast?.(`已导出 Excel: ${tableName}_export.xls`, undefined, 'success');
+    onShowToast?.(t('db.dataExportedExcel', { name: `${tableName}_export.xls` }), undefined, 'success');
   };
 
   // ── 单元格编辑 ────────────────────────────────────────────────────────────
@@ -736,7 +740,7 @@ export function DbTableDataView({
   const handleDeleteSelected = () => {
     if (!selectedRowKey) return;
     if (!hasPk) {
-      onShowToast?.('该表无主键', '无法唯一定位一行，因此不支持删除。可改用 SQL 控制台手动操作。', 'warn');
+      onShowToast?.(t('db.dataNoPkTitle'), t('db.dataNoPkDeleteDetail'), 'warn');
       return;
     }
     setStaged((prev) => stageDeleteRow(prev, selectedRowKey));
@@ -751,11 +755,26 @@ export function DbTableDataView({
 
   // ── 提交 ──────────────────────────────────────────────────────────────────
 
-  /** 把暂存改动汇总成语句；失败时返回中文原因 */
+  /**
+   * 把暂存改动汇总成语句；失败时返回**已翻译好的**原因。
+   *
+   * `dbMutations` 是纯逻辑模块（vitest 直接单测），拿不到 i18n 上下文，所以它只回
+   * 原因码和插值参数，翻译在这里做。列名列表的连接符也要在这里拼：中文用顿号、
+   * 英文用逗号加空格，由 `db.listSeparator` 决定。
+   */
   const currentStatements = useCallback((): { ok: true; statements: string[] } | { ok: false; error: string } => {
     const problems = validateStagedInserts(columns, staged.inserts);
-    if (problems.length > 0) return { ok: false, error: problems.join('；') };
-    return buildCommitStatements(
+    if (problems.length > 0) {
+      const detail = problems
+        .map((p) =>
+          t('db.errInsertMissingRequired', {
+            columns: p.columns.join(t('db.listSeparator')),
+          }),
+        )
+        .join(t('db.errorSeparator'));
+      return { ok: false, error: detail };
+    }
+    const built = buildCommitStatements(
       staged,
       driver,
       querySchema,
@@ -763,12 +782,14 @@ export function DbTableDataView({
       columns,
       originalRowsRef.current,
     );
-  }, [staged, columns, driver, querySchema, tableName]);
+    if (built.ok) return built;
+    return { ok: false, error: t(DB_COMMIT_ERROR_KEY[built.errorCode], built.params) };
+  }, [staged, columns, driver, querySchema, tableName, t]);
 
   const handleGenerateSql = () => {
     const built = currentStatements();
     if (!built.ok) {
-      onShowToast?.('无法生成 SQL', built.error, 'warn');
+      onShowToast?.(t('db.dataCannotBuildSql'), built.error, 'warn');
       return;
     }
     onOpenConsole?.(built.statements.join('\n'));
@@ -783,23 +804,27 @@ export function DbTableDataView({
       if (res.ok) {
         setStaged(emptyStagedChanges());
         setSelectedRowKey(null);
-        onShowToast?.(`已提交 ${changeCount} 项改动`, `影响 ${res.results.length} 条语句`, 'success');
+        onShowToast?.(
+          t('db.dataCommitted', { n: changeCount }),
+          t('db.dataCommitAffected', { n: res.results.length }),
+          'success',
+        );
         await loadData(page, pageSize);
       } else {
         // 保留暂存：用户的编辑没有落库，清掉等于让他重敲一遍
         const bad = res.results.find((r) => !r.ok);
         const detail = bad ? `${bad.sql}\n\n${bad.error}` : res.error;
-        onShowToast?.('提交失败，已整体回滚', detail, 'error');
+        onShowToast?.(t('db.dataCommitFailedRolledBack'), detail, 'error');
         if (res.rolledBack === false) {
           onShowToast?.(
-            '回滚未成功',
-            '数据可能处于半改状态，请刷新后核对数据再重试。',
+            t('db.dataRollbackFailed'),
+            t('db.dataRollbackFailedDetail'),
             'error',
           );
         }
       }
     } catch (err: any) {
-      onShowToast?.('提交异常', err.message || String(err), 'error');
+      onShowToast?.(t('db.dataCommitException'), err.message || String(err), 'error');
     } finally {
       setSubmitting(false);
     }
@@ -982,9 +1007,9 @@ export function DbTableDataView({
         title={
           readOnly
             ? pkNames.has(colName)
-              ? '主键列不可直接编辑，请用 SQL 控制台修改'
-              : '该表无主键，不支持修改已有数据'
-            : `双击编辑 · 单击复制${meta?.type ? ` · ${meta.type}` : ''}`
+              ? t('db.dataPkReadOnly')
+              : t('db.dataNoPkReadOnly')
+            : t('db.dataEditHint', { type: meta?.type ? ` · ${meta.type}` : '' })
         }
         onClick={() => handleCellClick(displayStr === 'NULL' ? '' : displayStr, key)}
         onDoubleClick={(e) => {
@@ -1000,7 +1025,11 @@ export function DbTableDataView({
             copiedCell === key ? 'rgba(16, 185, 129, 0.15)' : edited ? 'rgba(245, 158, 11, 0.1)' : undefined,
         }}
       >
-        {defaultHint ? <span className="db-cell-default-hint">默认 {defaultHint}</span> : displayStr}
+        {defaultHint ? (
+          <span className="db-cell-default-hint">{t('db.dataDefaultHint', { value: defaultHint })}</span>
+        ) : (
+          displayStr
+        )}
       </td>
     );
   };
@@ -1039,11 +1068,11 @@ export function DbTableDataView({
           {/* 列数以**这次真正查出来的结果集**为准：列元数据是异步取的，切表瞬间可能还是上一张表的，
               用它来报数就会和表头渲染出来的列对不上（「63 列」却只看到几列）*/}
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            {queryResult?.columns.length ?? columns.length} 列
+            {t('db.dataColumnCount', { n: queryResult?.columns.length ?? columns.length })}
           </span>
           {!hasPk && (
-            <span style={{ fontSize: 11, color: '#f59e0b' }} title="没有主键就无法唯一定位一行">
-              无主键
+            <span style={{ fontSize: 11, color: '#f59e0b' }} title={t('db.dataNoPkBadgeTitle')}>
+              {t('db.dataNoPkBadge')}
             </span>
           )}
         </div>
@@ -1053,7 +1082,7 @@ export function DbTableDataView({
           <div style={{ position: 'relative', width: '100%' }}>
             <input
               type="text"
-              placeholder="页内搜索（仅过滤本页已加载的行）"
+              placeholder={t('db.dataInPageSearchPlaceholder')}
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
               style={{
@@ -1096,7 +1125,7 @@ export function DbTableDataView({
           <button
             type="button"
             className="panel-action-btn"
-            title={hasPk ? '新增一行（暂存，提交后写库）' : '新增一行（该表无主键，仅支持新增）'}
+            title={hasPk ? t('db.dataAddRowTitle') : t('db.dataAddRowNoPkTitle')}
             onClick={handleAddRow}
             disabled={loading}
           >
@@ -1109,7 +1138,7 @@ export function DbTableDataView({
           <button
             type="button"
             className="panel-action-btn"
-            title={hasPk ? '删除选中的行（先点行号选中）' : '该表无主键，不支持删除'}
+            title={hasPk ? t('db.dataDeleteRowTitle') : t('db.dataDeleteRowNoPkTitle')}
             onClick={handleDeleteSelected}
             disabled={!selectedRowKey || !hasPk}
           >
@@ -1126,50 +1155,54 @@ export function DbTableDataView({
             <button
               type="button"
               className="db-btn-undo"
-              title="撤销全部未提交的改动"
+              title={t('db.dataRevertAllTitle')}
               onClick={handleRevertAll}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 7v6h6" />
                 <path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7" />
               </svg>
-              <span>撤销 {changeCount} 项</span>
+              <span>{t('db.dataRevertCount', { n: changeCount })}</span>
             </button>
           )}
 
           <button
             type="button"
             className="panel-action-btn"
-            title="把暂存改动生成 SQL 并在控制台打开（可先核对再执行）"
+            title={t('db.dataGenerateSqlTitle')}
             onClick={handleGenerateSql}
             disabled={changeCount === 0 || !onOpenConsole}
           >
-            <span style={{ fontSize: 11, padding: '0 4px' }}>生成 SQL</span>
+            <span style={{ fontSize: 11, padding: '0 4px' }}>{t('db.dataGenerateSql')}</span>
           </button>
 
           <button
             type="button"
             className="db-btn-commit"
-            title="在一个事务里提交全部暂存改动，失败整体回滚"
+            title={t('db.dataCommitTitle')}
             onClick={() => {
               const built = currentStatements();
               if (!built.ok) {
-                onShowToast?.('无法提交', built.error, 'warn');
+                onShowToast?.(t('db.dataCannotCommit'), built.error, 'warn');
                 return;
               }
               // 先弹确认框；真正下发在弹窗的 onConfirm 里（见 handleSubmit）
               setSubmitConfirm({
                 statements: built.statements,
                 content: buildSqlConfirmMarkdown({
-                  intro: `即将提交 **${changeCount}** 项改动，共 ${built.statements.length} 条语句。`,
+                  t,
+                  intro: t('db.dataCommitIntro', {
+                    n: changeCount,
+                    m: built.statements.length,
+                  }),
                   statements: built.statements,
-                  notes: ['这些语句会在**同一个事务**里执行，任一失败则整体回滚。'],
+                  notes: [t('db.dataCommitNote')],
                 }),
               });
             }}
             disabled={changeCount === 0 || submitting}
           >
-            {submitting ? '提交中…' : `提交 ${changeCount} 项改动`}
+            {submitting ? t('db.dataCommitting') : t('db.dataCommitCount', { n: changeCount })}
           </button>
 
           <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 4px' }} />
@@ -1177,7 +1210,7 @@ export function DbTableDataView({
           <button
             type="button"
             className="panel-action-btn"
-            title="刷新数据"
+            title={t('db.dataRefreshTitle')}
             onClick={() => void loadData(page, pageSize)}
           >
             <svg
@@ -1199,7 +1232,7 @@ export function DbTableDataView({
             <button
               type="button"
               className="panel-action-btn"
-              title="在 SQL 查询控制台中打开"
+              title={t('db.dataOpenInConsoleTitle')}
               onClick={() =>
                 onOpenConsole(`${buildSelectSql(driver, schemaName, tableName)} LIMIT 100;`)
               }
@@ -1213,7 +1246,7 @@ export function DbTableDataView({
           <button
             type="button"
             className="panel-action-btn"
-            title="导出当前结果为 CSV"
+            title={t('db.dataExportCsvTitle')}
             onClick={handleExportCsv}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1226,7 +1259,7 @@ export function DbTableDataView({
           <button
             type="button"
             className="panel-action-btn"
-            title="导出当前结果为 JSON"
+            title={t('db.dataExportJsonTitle')}
             onClick={handleExportJson}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1241,7 +1274,7 @@ export function DbTableDataView({
           <button
             type="button"
             className="panel-action-btn"
-            title="导出当前结果为 Excel (.xls)"
+            title={t('db.dataExportExcelTitle')}
             onClick={handleExportExcel}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1259,7 +1292,7 @@ export function DbTableDataView({
             className={`panel-action-btn${pickerAnchor ? ' active' : ''}${
               visibleColumns.length < (queryResult?.columns.length ?? 0) ? ' filtered' : ''
             }`}
-            title="选择要显示哪些字段"
+            title={t('db.dataPickColumnsTitle')}
             disabled={!queryResult || visibleColumns.length === 0}
             onClick={(e) => {
               e.stopPropagation();
@@ -1281,7 +1314,7 @@ export function DbTableDataView({
             <button
               type="button"
               className="panel-action-btn"
-              title="上一页"
+              title={t('db.dataPrevPage')}
               disabled={!hasPrev || loading}
               onClick={() => void loadData(page - 1, pageSize)}
             >
@@ -1292,7 +1325,7 @@ export function DbTableDataView({
             <button
               type="button"
               className="panel-action-btn"
-              title="下一页"
+              title={t('db.dataNextPage')}
               disabled={!hasNext || loading}
               onClick={() => void loadData(page + 1, pageSize)}
             >
@@ -1322,9 +1355,7 @@ export function DbTableDataView({
 
       {/* 无主键提示：只允许新增，改 / 删会被拦下 */}
       {!hasPk && !loading && columns.length > 0 && (
-        <div className="db-no-pk-banner">
-          该表没有主键，无法唯一定位一行 —— 仅支持新增行；修改 / 删除请使用 SQL 控制台。
-        </div>
+        <div className="db-no-pk-banner">{t('db.dataNoPkBanner')}</div>
       )}
 
       {/* ── 数据表格展示区 ── */}
@@ -1347,7 +1378,7 @@ export function DbTableDataView({
               zIndex: 10,
             }}
           >
-            <div style={{ color: '#60a5fa', fontSize: 12 }}>加载数据中...</div>
+            <div style={{ color: '#60a5fa', fontSize: 12 }}>{t('db.dataLoading')}</div>
           </div>
         )}
 
@@ -1418,7 +1449,7 @@ export function DbTableDataView({
                         >
                           {colName}
                         </span>
-                        {meta?.pk && <span className="db-col-pk-dot" title="主键" />}
+                        {meta?.pk && <span className="db-col-pk-dot" title={t('db.dataPkDotTitle')} />}
                         {dir && (
                           <span className="db-col-dir">
                             {dir === 'asc' ? '▲' : '▼'}
@@ -1426,14 +1457,14 @@ export function DbTableDataView({
                             {view.sorts.length > 1 ? sortIndex + 1 : ''}
                           </span>
                         )}
-                        {filterIndex >= 0 && <span className="db-col-filter-dot" title="已设置筛选条件" />}
+                        {filterIndex >= 0 && <span className="db-col-filter-dot" title={t('db.dataFilterDotTitle')} />}
                         {/* 排序 / 筛选菜单只从这一个箭头打开（点列名不再触发） */}
                         <button
                           type="button"
                           className={`db-col-trigger${dir ? ' sorted' : ''}${
                             filterIndex >= 0 ? ' filtered' : ''
                           }${menuOpen ? ' open' : ''}`}
-                          title="排序或筛选本字段"
+                          title={t('db.dataColMenuTitle')}
                           onClick={(e) => {
                             e.stopPropagation();
                             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -1462,7 +1493,7 @@ export function DbTableDataView({
                       {/* 拖列宽的分隔条：只有右边缘这一条热区，双击恢复默认宽度 */}
                       <span
                         className={`db-col-resizer${resizing?.column === colName ? ' active' : ''}`}
-                        title="拖动调整列宽 · 双击恢复默认"
+                        title={t('db.dataResizerTitle')}
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => {
                           // 只处理左键：右键 / 中键点到这里不该进入拖动态
@@ -1500,7 +1531,7 @@ export function DbTableDataView({
                     <button
                       type="button"
                       className="db-new-badge"
-                      title="撤销这一新增行"
+                      title={t('db.dataUndoInsertRowTitle')}
                       onClick={() => setStaged((prev) => unstageInsertRow(prev, ins.tempId))}
                     >
                       +{insIdx + 1} ✕
@@ -1532,7 +1563,7 @@ export function DbTableDataView({
                   >
                     <td
                       className="db-data-cell index"
-                      title="点击选中该行 · 右键更多操作"
+                      title={t('db.dataSelectRowTitle')}
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedRowKey(rowKey);
@@ -1557,10 +1588,9 @@ export function DbTableDataView({
               fontSize: 13,
             }}
           >
-            当前表中无数据记录
+            {t('db.dataEmptyTable')}
           </div>
         )}
-
         {queryResult && displayRows.length === 0 && newRowCount === 0 && (
           <div
             style={{
@@ -1571,10 +1601,10 @@ export function DbTableDataView({
             }}
           >
             {filterText
-              ? '本页没有符合页内搜索的行（页内搜索只作用于已加载的这一页）'
+              ? t('db.dataNoSearchHit')
               : viewActive
-                ? '没有符合筛选条件的数据'
-                : '当前表中无数据记录'}
+                ? t('db.dataNoFilterHit')
+                : t('db.dataEmptyTable')}
           </div>
         )}
       </div>
@@ -1597,25 +1627,25 @@ export function DbTableDataView({
         <div style={{ display: 'flex', gap: 12 }}>
           {/* 总数仍是主进程的 rows.length 语义（控制台也在用），因此这里如实说「本页 M 行」而不是「共 X 页」 */}
           <span>
-            第 {page} 页 · 本页 {queryResult?.rows?.length ?? 0} 行
+            {t('db.dataPageStatus', { page, n: queryResult?.rows?.length ?? 0 })}
           </span>
-          {filterText && <span>页内搜索命中 {displayRows.length} 行</span>}
+          {filterText && <span>{t('db.dataSearchHits', { n: displayRows.length })}</span>}
           {stagedCount > 0 && (
             <span style={{ color: '#f59e0b' }}>
-              已修改 {stagedCount} 行
-              {newRowCount > 0 ? ` · 新增 ${newRowCount} 行` : ''}
+              {t('db.dataModifiedRows', { n: stagedCount })}
+              {newRowCount > 0 ? t('db.dataNewRowsSuffix', { n: newRowCount }) : ''}
             </span>
           )}
         </div>
-        <div>双击单元格编辑 · 单击复制 · 行号右键更多操作</div>
+        <div>{t('db.dataFooterHint')}</div>
       </div>
 
       {/* 提交确认：Markdown 渲染，每条 SQL 各自一个可复制的代码块 */}
       <DbConfirmModal
         isOpen={submitConfirm !== null}
-        title={`提交 ${changeCount} 项改动`}
+        title={t('db.dataConfirmSubmitTitle', { n: changeCount })}
         content={submitConfirm?.content ?? ''}
-        confirmLabel="确认提交"
+        confirmLabel={t('db.dataConfirmSubmit')}
         onConfirm={() => {
           const statements = submitConfirm?.statements ?? [];
           setSubmitConfirm(null);
@@ -1638,7 +1668,7 @@ export function DbTableDataView({
           hasFilter={view.filters.some((f) => f.column === columnMenu.column)}
           filterSummary={(() => {
             const f = view.filters.find((x) => x.column === columnMenu.column);
-            return f ? describeFilter(f, metaOf(columnMenu.column)?.type) : undefined;
+            return f ? dbDescribeFilter(t, f, metaOf(columnMenu.column)?.type) : undefined;
           })()}
           anchor={columnMenu.anchor}
           onSort={(dir) => handleSortPick(columnMenu.column, dir)}
@@ -1722,7 +1752,9 @@ export function DbTableDataView({
             <div className="menu-item-left">
               <span className="menu-item-icon" />
               <span>
-                {staged.deletes.includes(rowMenu.rowKey) ? '取消删除此行' : '删除此行（暂存）'}
+                {staged.deletes.includes(rowMenu.rowKey)
+                  ? t('db.dataRowCancelDelete')
+                  : t('db.dataRowDelete')}
               </span>
             </div>
           </div>
@@ -1733,12 +1765,12 @@ export function DbTableDataView({
             onClick={() => {
               const row = originalRowsRef.current[rowMenu.rowKey];
               setRowMenu(null);
-              if (row) void copy(buildInsertSql(driver, querySchema, tableName, columns, row), 'INSERT 语句');
+              if (row) void copy(buildInsertSql(driver, querySchema, tableName, columns, row), t('db.dataCopiedInsert'));
             }}
           >
             <div className="menu-item-left">
               <span className="menu-item-icon" />
-              <span>复制为 INSERT</span>
+              <span>{t('db.dataRowCopyInsert')}</span>
             </div>
           </div>
           <div
@@ -1755,13 +1787,18 @@ export function DbTableDataView({
                 filtered[col.name] = row[col.name];
               }
               const sql = buildUpdateSql(driver, querySchema, tableName, filtered, columns, row);
-              if (sql) void copy(sql, 'UPDATE 语句');
-              else onShowToast?.('无法生成 UPDATE', '该表没有主键，无法定位行', 'warn');
+              if (sql) void copy(sql, t('db.dataCopiedUpdate'));
+              else
+                onShowToast?.(
+                  t('db.dataCannotBuildUpdate'),
+                  t('db.dataCannotBuildUpdateDetail'),
+                  'warn',
+                );
             }}
           >
             <div className="menu-item-left">
               <span className="menu-item-icon" />
-              <span>复制为 UPDATE</span>
+              <span>{t('db.dataRowCopyUpdate')}</span>
             </div>
           </div>
           <div
@@ -1773,13 +1810,18 @@ export function DbTableDataView({
               setRowMenu(null);
               if (!row) return;
               const where = buildRowWhereClause(driver, pkColumns, row);
-              if (where) void copy(where, 'WHERE 片段');
-              else onShowToast?.('无法生成 WHERE', '该表没有主键', 'warn');
+              if (where) void copy(where, t('db.dataCopiedWhere'));
+              else
+                onShowToast?.(
+                  t('db.dataCannotBuildWhere'),
+                  t('db.dataCannotBuildWhereDetail'),
+                  'warn',
+                );
             }}
           >
             <div className="menu-item-left">
               <span className="menu-item-icon" />
-              <span>复制主键 WHERE</span>
+              <span>{t('db.dataRowCopyWhere')}</span>
             </div>
           </div>
           <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
@@ -1791,12 +1833,12 @@ export function DbTableDataView({
               setRowMenu(null);
               if (!row) return;
               const sql = buildDeleteSql(driver, querySchema, tableName, columns, row);
-              if (sql) void copy(sql, 'DELETE 语句');
+              if (sql) void copy(sql, t('db.dataCopiedDelete'));
             }}
           >
             <div className="menu-item-left">
               <span className="menu-item-icon" />
-              <span>复制为 DELETE</span>
+              <span>{t('db.dataRowCopyDelete')}</span>
             </div>
           </div>
         </div>

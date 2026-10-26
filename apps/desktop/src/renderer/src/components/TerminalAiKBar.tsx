@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { UiTheme } from '@deepseek-ide/shared';
+import { useI18n, translateSegments } from '../i18n';
 
 interface TerminalAiKBarProps {
   open: boolean;
@@ -20,6 +21,7 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
   onExecute,
   onInsert,
 }) => {
+  const { t, locale } = useI18n();
   const [prompt, setPrompt] = useState('');
   const [generatedCmd, setGeneratedCmd] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,6 +51,7 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
 
     const isMac = navigator.platform.toUpperCase().includes('MAC');
     const shellEnv = isMac ? 'macOS (zsh / bash)' : 'Windows / Linux (bash / powershell)';
+    // 送给模型的 system 级指令，不是界面文案（同 ProblemsPanel / specialMentions）：不进字典
     const contextPrompt = `你是一个终端命令生成专家。当前终端操作系统: ${shellEnv}，当前工作路径: ${cwd || '项目根目录'}。
 请根据用户的需求生成一条最精准、可以直接在终端执行的 shell 命令。
 严格要求：
@@ -69,7 +72,7 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
       }
       setGeneratedCmd(cleanCmd);
     } catch (err: any) {
-      setErrorMsg(err?.message || '生成终端命令失败，请重试');
+      setErrorMsg(err?.message || t('terminalAi.generateFailed'));
     } finally {
       setLoading(false);
     }
@@ -177,7 +180,7 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
           type="text"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="向 AI 描述命令需求，例如: 查找占用 8080 端口的进程并杀死、拉取最新代码并合并..."
+          placeholder={t('terminalAi.placeholder')}
           style={{
             flex: 1,
             background: 'transparent',
@@ -193,7 +196,7 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
         {loading ? (
           <span style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span className="spinner-icon" style={{ display: 'inline-block' }}>⟳</span>
-            生成中...
+            {t('terminalAi.generating')}
           </span>
         ) : (
           <button
@@ -203,14 +206,14 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
             onClick={() => void handleGenerate()}
             disabled={!prompt.trim()}
           >
-            {generatedCmd ? '重新生成' : '生成 (↵)'}
+            {generatedCmd ? t('terminalAi.regenerate') : t('terminalAi.generate')}
           </button>
         )}
 
         <button
           type="button"
           className="panel-action-btn"
-          title="关闭 (Esc)"
+          title={t('common.closeEsc')}
           onClick={onClose}
           style={{ marginLeft: 2 }}
         >
@@ -268,7 +271,7 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
             <button
               type="button"
               className="panel-action-btn"
-              title="复制命令"
+              title={t('terminalAi.copyTitle')}
               onClick={() => {
                 void navigator.clipboard.writeText(generatedCmd);
               }}
@@ -282,8 +285,18 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 }}>
             <span style={{ fontSize: 11, color: 'var(--text-secondary, #888)' }}>
-              按 <kbd style={{ padding: '1px 4px', borderRadius: 3, border: '1px solid var(--border)' }}>↵</kbd> 执行，
-              <kbd style={{ padding: '1px 4px', borderRadius: 3, border: '1px solid var(--border)' }}>Esc</kbd> 退出
+              {translateSegments('terminalAi.runHint', locale, { enter: '↵', esc: 'Esc' }).map((seg, i) =>
+                seg.emphasis ? (
+                  <kbd
+                    key={i}
+                    style={{ padding: '1px 4px', borderRadius: 3, border: '1px solid var(--border)' }}
+                  >
+                    {seg.text}
+                  </kbd>
+                ) : (
+                  <span key={i}>{seg.text}</span>
+                ),
+              )}
             </span>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -292,18 +305,18 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
                 className="panel-standard-btn"
                 style={{ padding: '3px 10px', fontSize: 12, height: 26, borderRadius: 5 }}
                 onClick={handleInsertCommand}
-                title="粘贴到终端中（不自动回车）"
+                title={t('terminalAi.insertTitle')}
               >
-                仅插入 (⇧↵)
+                {t('terminalAi.insert')}
               </button>
               <button
                 type="button"
                 className="panel-standard-btn primary"
                 style={{ padding: '3px 12px', fontSize: 12, height: 26, borderRadius: 5 }}
                 onClick={handleRunCommand}
-                title="立即在终端中执行命令"
+                title={t('terminalAi.runTitle')}
               >
-                立即执行 (↵)
+                {t('terminalAi.run')}
               </button>
             </div>
           </div>

@@ -14,6 +14,18 @@ export interface CommandResult {
   code: number;
 }
 
+/**
+ * 文件的时间戳与大小，供增量索引用。
+ *
+ * 做成可选方法而不是必选：`WorkspaceBackend` 有好几个只实现了读写子集的实现
+ * （测试里的内存后端、部分远端后端）。强制要求 `stat` 会让它们全部编译不过，
+ * 而调用方真正需要的语义只是「拿不到就当作每次都变了」—— 那是**慢**，不是**错**。
+ */
+export interface FileStat {
+  size: number;
+  mtimeMs: number;
+}
+
 export interface WorkspaceBackend {
   kind: 'local' | 'ssh';
   root: string;
@@ -34,6 +46,8 @@ export interface WorkspaceBackend {
   /** Absolute local path or remote rooted path for display / download. */
   resolveAbsolute(relPath?: string): string;
   readFileBuffer?(relPath: string): Promise<Buffer>;
+  /** 文件时间戳与大小；不支持的后端可以不实现，调用方须按「每次都变」处理。 */
+  stat?(relPath: string): Promise<FileStat | null>;
   runCommand(
     command: string,
     timeoutMs?: number,
@@ -106,6 +120,20 @@ export class LocalFsBackend implements WorkspaceBackend {
       );
     }
     return fs.readFile(abs, 'utf8');
+  }
+
+  /**
+   * 时间戳 + 大小。取不到（文件不存在 / 权限不足）返回 null，
+   * 而不是抛异常：调用方（增量索引）把 null 当作「变了，去读一次」，
+   * 一次 stat 失败不该让整轮索引中断。
+   */
+  async stat(relPath: string): Promise<FileStat | null> {
+    try {
+      const s = await fs.stat(this.resolve(relPath));
+      return { size: s.size, mtimeMs: s.mtimeMs };
+    } catch {
+      return null;
+    }
   }
 
   async readFileLines(

@@ -1,5 +1,6 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { parseContentWithCodeRefs, FileLanguageIcon, type ParsedCodeRef } from './CodeRefPill';
+import { useI18n } from '../../i18n';
 
 /**
  * 将完整 input 字符串拆分为「引用列表」和「纯文本」两部分。
@@ -59,6 +60,7 @@ function RefPillChip({
   onRemove: () => void;
   onOpenFile?: (path: string, line?: number, endLine?: number) => void;
 }) {
+  const { t } = useI18n();
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -74,7 +76,11 @@ function RefPillChip({
   };
 
   return (
-    <span className="chat-ref-chip" onClick={handleClick} title={`点击打开：${codeRef.path}${codeRef.lineLabel || ''}`}>
+    <span
+      className="chat-ref-chip"
+      onClick={handleClick}
+      title={t('chat.openRef', { path: `${codeRef.path}${codeRef.lineLabel || ''}` })}
+    >
       <span className="chat-ref-chip-icon">
         <FileLanguageIcon fileName={codeRef.fileName} />
       </span>

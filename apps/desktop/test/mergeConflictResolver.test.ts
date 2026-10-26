@@ -33,6 +33,21 @@ export function App() {
     expect(b.endLine).toBe(9);
   });
 
+  it('冲突标记后面没写分支名时，header 留空（不塞中文兜底）', () => {
+    // 本模块是纯逻辑：它返回的是**数据**，不是文案。原先这里兜底成
+    // 'Current Change (当前更改)' —— 那句中文会被 CodeLens 原样渲染出去，
+    // 英文环境下也一样。兜底现在归渲染侧（editor.conflictCurrentFallback）。
+    const bare = `<<<<<<<
+a
+=======
+b
+>>>>>>>
+`;
+    const b = parseConflictBlocks(bare)[0];
+    expect(b.currentHeader).toBe('');
+    expect(b.incomingHeader).toBe('');
+  });
+
   it('resolves conflict with current change', () => {
     const blocks = parseConflictBlocks(sampleConflict);
     const resolved = resolveSingleConflict(sampleConflict, blocks[0], 'current');

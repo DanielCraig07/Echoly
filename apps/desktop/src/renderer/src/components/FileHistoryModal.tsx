@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { GitCommitEntry, PendingDiff } from '@deepseek-ide/shared';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n } from '../i18n';
 
 interface Props {
   filePath: string | null;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
+  const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_file_history_modal_size',
     defaultWidth: 760,
@@ -44,14 +46,14 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
       if (res.ok) {
         setCommits(res.commits || []);
         if (res.commits.length === 0) {
-          setError('该文件暂无已提交的 Git 历史记录');
+          setError(t('history.noCommittedHistory'));
         }
       } else {
-        setError(res.detail || '获取文件历史失败');
+        setError(res.detail || t('history.fetchFailed'));
         setCommits([]);
       }
     });
-  }, [filePath]);
+  }, [filePath, t]);
 
   useEffect(() => {
     if (filePath) {
@@ -112,16 +114,16 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
           path: res.path,
           original: res.original,
           modified: res.modified,
-          description: `提交 ${commit.shortHash} - ${filePath}`,
-          originalTitle: `父提交 (${commit.shortHash}^)`,
-          modifiedTitle: `提交 ${commit.shortHash}`,
+          description: t('history.commitDesc', { hash: commit.shortHash, path: filePath }),
+          originalTitle: t('history.parentCommitTitle', { hash: commit.shortHash }),
+          modifiedTitle: t('history.commitTitle', { hash: commit.shortHash }),
         });
         onClose();
       } else {
-        alert(res.detail || '无法加载该提交的代码差异');
+        alert(res.detail || t('history.diffLoadFailed'));
       }
     } catch (e: any) {
-      alert(e?.message || '获取提交差异发生异常');
+      alert(e?.message || t('history.diffError'));
     } finally {
       setPreviewingHash(null);
     }
@@ -207,7 +209,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                   gap: 6,
                 }}
               >
-                <span>文件提交历史 (Git File History)</span>
+                <span>{t('history.title')}</span>
               </div>
               <div
                 style={{
@@ -229,7 +231,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
             type="button"
             className="panel-action-btn"
             onClick={onClose}
-            title="关闭 (Esc)"
+            title={t('common.closeEsc')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -251,7 +253,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
           <input
             ref={inputRef}
             type="text"
-            placeholder="搜索提交信息、作者或哈希 (支持 ↑↓ 选择，回车查看差异)..."
+            placeholder={t('history.searchPh')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -268,7 +270,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
             }}
           />
           <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            共 {filteredCommits.length} 次变更
+            {t('history.changeCount', { n: filteredCommits.length })}
           </span>
         </div>
 
@@ -291,7 +293,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                 fontSize: 12,
               }}
             >
-              正在获取文件历史记录...
+              {t('history.loading')}
             </div>
           ) : filteredCommits.length === 0 ? (
             <div
@@ -307,9 +309,9 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
               }}
             >
               <span style={{ fontSize: 24 }}>🍃</span>
-              <div>{error || (query ? '未找到匹配的提交记录' : '暂无提交历史')}</div>
+              <div>{error || (query ? t('history.noMatch') : t('history.noHistory'))}</div>
               <div style={{ fontSize: 11, opacity: 0.7 }}>
-                若此文件为新添加尚未 commit，或者刚执行 git init，则不会产生文件历史。
+                {t('history.noHistoryNote')}
               </div>
             </div>
           ) : (
@@ -455,7 +457,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                       boxShadow: isSelected ? '0 2px 8px rgba(0, 122, 204, 0.3)' : 'none',
                     }}
                   >
-                    {isPreviewing ? '加载中…' : '比对差异 (Diff)'}
+                    {isPreviewing ? t('history.diffLoading') : t('history.diffBtn')}
                   </button>
                 </div>
               );
@@ -476,8 +478,8 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
             color: 'var(--muted)',
           }}
         >
-          <span>提示：点击任意提交或按 Enter 可直接对比当前版本与该提交的文件 Diff</span>
-          <span>Esc 关闭</span>
+          <span>{t('history.footerHint')}</span>
+          <span>{t('history.escClose')}</span>
         </div>
         {/* 右下角全向拖拽调整大小手柄 */}
         <ModalResizeHandle onMouseDown={handleResizeStart} />

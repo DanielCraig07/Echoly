@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import type { ChatSessionMessage } from '@deepseek-ide/shared';
 import { commandFromArgs, parseTerminalResult } from '../ToolCallCard';
+import { useI18n, type Translate } from '../../i18n';
 
 interface WorkedForGroupProps {
   messages: ChatSessionMessage[];
@@ -36,7 +37,7 @@ function parseJson(str?: string): any {
 }
 
 /** 智能提炼 Bash 命令的业务意图作为标题后缀 */
-function extractBashTitle(command: string, argsObj?: Record<string, any>): string {
+function extractBashTitle(t: Translate, command: string, argsObj?: Record<string, any>): string {
   if (argsObj?.description && typeof argsObj.description === 'string') {
     return argsObj.description.trim();
   }
@@ -52,22 +53,24 @@ function extractBashTitle(command: string, argsObj?: Record<string, any>): strin
   // 匹配 grep 命令
   if (trimmed.startsWith('grep') || trimmed.includes(' grep ')) {
     const qMatch = trimmed.match(/grep(?:\s+-[a-zA-Z0-9]+)*\s+["']([^"']+)["']/);
-    if (qMatch && qMatch[1]) return `搜索 "${qMatch[1]}"`;
-    return '搜索代码或文件';
+    if (qMatch && qMatch[1]) return t('chat.bashSearchQuery', { q: qMatch[1] });
+    return t('chat.bashSearchGeneric');
   }
   if (trimmed.startsWith('sed ')) {
-    return '查看指定代码行';
+    return t('chat.bashViewLines');
   }
   if (trimmed.startsWith('find ')) {
-    return '查找文件路径';
+    return t('chat.bashFindPath');
   }
-  if (trimmed.startsWith('git status')) return '检查仓库 Git 状态';
-  if (trimmed.startsWith('git diff')) return '查看 Git 改动差异';
-  if (trimmed.startsWith('git log')) return '查看 Git 提交历史';
-  if (trimmed.startsWith('git checkout') || trimmed.startsWith('git restore')) return '还原 Git 文件改动';
-  if (trimmed.startsWith('git ')) return `Git 操作: ${trimmed.slice(4, 32)}`;
+  if (trimmed.startsWith('git status')) return t('chat.bashGitStatus');
+  if (trimmed.startsWith('git diff')) return t('chat.bashGitDiff');
+  if (trimmed.startsWith('git log')) return t('chat.bashGitLog');
+  if (trimmed.startsWith('git checkout') || trimmed.startsWith('git restore')) {
+    return t('chat.bashGitRestore');
+  }
+  if (trimmed.startsWith('git ')) return t('chat.bashGitOp', { cmd: trimmed.slice(4, 32) });
   if (trimmed.startsWith('npm ') || trimmed.startsWith('pnpm ') || trimmed.startsWith('yarn ')) {
-    return `执行脚本: ${trimmed.slice(0, 36)}`;
+    return t('chat.bashScript', { cmd: trimmed.slice(0, 36) });
   }
   const firstLine = trimmed.split('\n')[0] || trimmed;
   return firstLine.length > 56 ? `${firstLine.slice(0, 56)}…` : firstLine;
@@ -94,13 +97,14 @@ function InOutExecutionBox({
   inContent,
   outContent,
   isRunning = false,
-  emptyOutText = '(Bash completed with no output)',
+  emptyOutText,
 }: {
   inContent?: string;
   outContent?: string;
   isRunning?: boolean;
   emptyOutText?: string;
 }) {
+  const { t } = useI18n();
   const [inExpanded, setInExpanded] = useState(false);
   const [outExpanded, setOutExpanded] = useState(false);
   const [copiedIn, setCopiedIn] = useState(false);
@@ -159,8 +163,8 @@ function InOutExecutionBox({
             title={
               inCanToggle
                 ? inExpanded
-                  ? '点击收起输入参数'
-                  : '点击展开查看完整输入参数'
+                  ? t('chat.inCollapseTip')
+                  : t('chat.inExpandTip')
                 : undefined
             }
           >
@@ -168,7 +172,9 @@ function InOutExecutionBox({
               <span className="tool-inout-tag">IN</span>
               {inExpanded ? (
                 <span className="tool-inout-meta">
-                  {inLines.length > 1 ? `${inLines.length} 行输入` : '完整输入'}
+                  {inLines.length > 1
+                    ? t('chat.inLines', { n: inLines.length })
+                    : t('chat.inFull')}
                 </span>
               ) : (
                 <div
@@ -188,7 +194,7 @@ function InOutExecutionBox({
               type="button"
               className="tool-inout-btn tool-inout-copy-btn"
               onClick={handleCopyIn}
-              title={copiedIn ? '已复制' : '复制输入'}
+              title={copiedIn ? t('editor.copied') : t('chat.copyInput')}
             >
               {copiedIn ? (
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="#38bdf8">
@@ -215,7 +221,7 @@ function InOutExecutionBox({
                 type="button"
                 className="tool-inout-btn tool-inout-toggle-btn"
                 onClick={() => setInExpanded((prev) => !prev)}
-                title={inExpanded ? '收起输入' : '展开输入'}
+                title={inExpanded ? t('chat.collapseInput') : t('chat.expandInput')}
               >
                 {inExpanded ? (
                   <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
@@ -255,8 +261,8 @@ function InOutExecutionBox({
           title={
             outCanToggle
               ? outExpanded
-                ? '点击收起输出结果'
-                : '点击展开查看全部输出结果'
+                ? t('chat.outCollapseTip')
+                : t('chat.outExpandTip')
               : undefined
           }
         >
@@ -264,7 +270,7 @@ function InOutExecutionBox({
             <span className="tool-inout-tag">OUT</span>
             {outLines.length > 0 && (
               <span className="tool-inout-meta">
-                {outLines.length} 行输出
+                {t('chat.outLines', { n: outLines.length })}
               </span>
             )}
           </div>
@@ -277,7 +283,7 @@ function InOutExecutionBox({
               type="button"
               className="tool-inout-btn tool-inout-copy-btn"
               onClick={handleCopyOut}
-              title={copiedOut ? '已复制' : '复制输出'}
+              title={copiedOut ? t('editor.copied') : t('chat.copyOutput')}
             >
               {copiedOut ? (
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="#38bdf8">
@@ -305,7 +311,7 @@ function InOutExecutionBox({
               type="button"
               className="tool-inout-btn tool-inout-toggle-btn"
               onClick={() => setOutExpanded((prev) => !prev)}
-              title={outExpanded ? '收起输出' : '展开输出'}
+              title={outExpanded ? t('chat.collapseOutput') : t('chat.expandOutput')}
             >
               {outExpanded ? (
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
@@ -348,19 +354,19 @@ function InOutExecutionBox({
               {outTrimmed ? (
                 <>
                   <span style={{ color: 'var(--accent, #38bdf8)', marginRight: 6 }}>
-                    [等待终端执行中 · {runningSeconds}s / 超时上限5m]
+                    {t('chat.waitTerminalCap', { s: runningSeconds })}
                   </span>
                   {outTrimmed}
                 </>
               ) : (
-                `正在等待终端执行... (${runningSeconds}s / 安全超时上限5分钟)`
+                t('chat.waitTerminalSec', { s: runningSeconds })
               )}
               <span className="terminal-cursor">▋</span>
             </span>
           ) : outTrimmed ? (
             outTrimmed
           ) : (
-            <span className="tool-inout-empty">{emptyOutText}</span>
+            <span className="tool-inout-empty">{emptyOutText ?? t('chat.toolNoOutput')}</span>
           )}
         </div>
       </div>
@@ -375,6 +381,7 @@ export function WorkedForGroup({
   contextUsage,
   onOpenFile,
 }: WorkedForGroupProps) {
+  const { t } = useI18n();
   // 初始状态：流式执行中默认展开，已完成的消息默认折叠
   const [isExpanded, setIsExpanded] = useState<boolean>(() => Boolean(isStreaming));
   const [thoughtToggles, setThoughtToggles] = useState<Record<string, boolean>>({});
@@ -440,7 +447,7 @@ export function WorkedForGroup({
             id: m.id || `bash-${idx}`,
             type: 'tool',
             badge: 'Bash',
-            title: extractBashTitle(command, args),
+            title: extractBashTitle(t, command, args),
             inContent: command,
             outContent: cleanOutput,
             isRunning,
@@ -475,7 +482,7 @@ export function WorkedForGroup({
             filePath,
             line: targetLine,
             inContent: rangeStr ? `${filePath} (${rangeStr})` : filePath,
-            outContent: m.content || '(读取完成，内容为空)',
+            outContent: m.content || t('chat.readEmpty'),
             isRunning,
             isError,
             durationSeconds,
@@ -496,7 +503,7 @@ export function WorkedForGroup({
             title: `${fileName}${diffStr ? ` (${diffStr})` : ''}`,
             filePath,
             inContent: args.content || args.new_text || args.patch || m.toolArgs || '',
-            outContent: m.content || '(已写入并保存成功)',
+            outContent: m.content || t('chat.writeSaved'),
             isRunning,
             isError,
             durationSeconds,
@@ -507,9 +514,9 @@ export function WorkedForGroup({
             id: m.id || `search-${idx}`,
             type: 'tool',
             badge: 'Search',
-            title: query ? `"${query}"` : '搜索代码',
+            title: query ? `"${query}"` : t('chat.searchGeneric'),
             inContent: args.path ? `query: "${query}"  path: ${args.path}` : `query: "${query}"`,
-            outContent: m.content || '(搜索完成，无匹配结果)',
+            outContent: m.content || t('chat.searchDoneEmpty'),
             isRunning,
             isError,
             durationSeconds,
@@ -520,9 +527,9 @@ export function WorkedForGroup({
             id: m.id || `glob-${idx}`,
             type: 'tool',
             badge: 'Glob',
-            title: `匹配文件 "${pattern}"`,
+            title: t('chat.globTitle', { pattern }),
             inContent: `pattern: "${pattern}"`,
-            outContent: m.content || '(未匹配到文件)',
+            outContent: m.content || t('chat.globEmpty'),
             isRunning,
             isError,
             durationSeconds,
@@ -533,9 +540,9 @@ export function WorkedForGroup({
             id: m.id || `list-${idx}`,
             type: 'tool',
             badge: 'List',
-            title: `列出目录 ${path}`,
+            title: t('chat.listDirTitle', { path }),
             inContent: `path: ${path}`,
-            outContent: m.content || '(目录为空)',
+            outContent: m.content || t('chat.listDirEmpty'),
             isRunning,
             isError,
             durationSeconds,
@@ -546,9 +553,9 @@ export function WorkedForGroup({
             id: m.id || `tool-${idx}`,
             type: 'tool',
             badge: name || 'Tool',
-            title: m.toolName || '工具执行',
+            title: m.toolName || t('chat.toolRun'),
             inContent: m.toolArgs || '',
-            outContent: m.content || '(无返回输出)',
+            outContent: m.content || t('chat.toolNoOutput'),
             isRunning,
             isError,
           });
@@ -572,7 +579,7 @@ export function WorkedForGroup({
     });
 
     return items;
-  }, [messages, isStreaming]);
+  }, [messages, isStreaming, t]);
 
   // 总耗时计算
   const totalDurationSeconds = useMemo(() => {
@@ -612,12 +619,12 @@ export function WorkedForGroup({
         type="button"
         className={`worked-for-summary-header${isStreaming ? ' is-streaming' : ''}${isExpanded ? ' is-open' : ''}`}
         onClick={() => setIsExpanded((prev) => !prev)}
-        title={isExpanded ? '点击折叠执行过程' : '点击展开查看完整执行过程'}
+        title={isExpanded ? t('chat.workedCollapseTip') : t('chat.workedExpandTip')}
       >
         <span className="worked-for-label">
           {isStreaming
             ? isWaitingTerminal
-              ? `等待终端执行中 · ${formatDuration(displayDuration)}`
+              ? t('chat.waitTerminalRunning', { time: formatDuration(displayDuration) })
               : `Working for ${formatDuration(displayDuration)}`
             : `Worked for ${formatDuration(displayDuration)}`}
         </span>
@@ -713,7 +720,11 @@ export function WorkedForGroup({
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
                 <span className="agent-timeline-title" style={{ color: 'var(--muted, #888888)' }}>
-                  {liveThinking ? '思考中...' : isWaitingTerminal ? '等待终端执行中...' : '处理中...'}
+                  {liveThinking
+                    ? t('chat.statusThinking')
+                    : isWaitingTerminal
+                      ? t('chat.statusWaitingTerminal')
+                      : t('chat.statusWorking')}
                 </span>
                 <span
                   className="agent-timeline-live-duration"

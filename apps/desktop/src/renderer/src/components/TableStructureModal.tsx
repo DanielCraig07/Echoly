@@ -5,13 +5,17 @@ import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '..
 import { PanelSelect } from './PanelSelect';
 import { DbConfirmModal } from './DbConfirmModal';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
+import { useI18n } from '../i18n';
 import {
   COLUMN_TYPES,
   buildAlterTableStatements,
   buildCreateTableSql,
+  DB_DDL_ERROR_KEY,
+  DB_ALTER_SKIP_KEY,
   typeAcceptsLength,
   validateIdentifier,
   validateLength,
+  type DbAlterSkip,
   type DbColumnSpec,
 } from '../services/dbDdl';
 import {
@@ -63,6 +67,7 @@ export function TableStructureModal({
   onExecute,
   onShowToast,
 }: TableStructureModalProps) {
+  const { t } = useI18n();
   const [createTableName, setCreateTableName] = useState<string>('');
   const [columns, setColumns] = useState<EditableColumn[]>([]);
   const [executing, setExecuting] = useState<boolean>(false);
@@ -106,10 +111,26 @@ export function TableStructureModal({
         .map((c) => ({ c, err: validateLength(c.length) }))
         .filter((x) => x.err);
       const problems: string[] = [];
-      if (nameError) problems.push(`表名：${nameError}`);
-      for (const { c, err } of invalid) problems.push(`列名「${c.name || '未命名'}」：${err}`);
-      for (const { c, err } of lengthErrors) problems.push(`列「${c.name}」长度：${err}`);
-      if (columns.filter((c) => !c.drop).length === 0) problems.push('至少需要一列');
+      if (nameError) {
+        problems.push(t('db.tableNameProblem', { error: t(DB_DDL_ERROR_KEY[nameError]) }));
+      }
+      for (const { c, err } of invalid) {
+        problems.push(
+          t('db.columnNameProblem', {
+            name: c.name || t('db.unnamed'),
+            error: err ? t(DB_DDL_ERROR_KEY[err]) : '',
+          }),
+        );
+      }
+      for (const { c, err } of lengthErrors) {
+        problems.push(
+          t('db.columnLengthProblem', {
+            name: c.name,
+            error: err ? t(DB_DDL_ERROR_KEY[err]) : '',
+          }),
+        );
+      }
+      if (columns.filter((c) => !c.drop).length === 0) problems.push(t('db.needAtLeastOneColumn'));
 
       const specs: DbColumnSpec[] = columns.filter((c) => !c.drop).map(toColumnSpec);
 
@@ -117,7 +138,7 @@ export function TableStructureModal({
         problems.length > 0
           ? ''
           : buildCreateTableSql(driver, schemaName, createTableName.trim(), specs);
-      return { statements: sql ? [sql] : [], problems, skipped: [] as string[] };
+      return { statements: sql ? [sql] : [], problems, skipped: [] as DbAlterSkip[] };
     }
 
     // ── 设计表（ALTER）──
@@ -127,14 +148,25 @@ export function TableStructureModal({
     for (const c of columns) {
       if (c.drop) continue;
       const err = validateIdentifier(c.name);
-      if (err) problems.push(`列名「${c.name || '未命名'}」：${err}`);
+      if (err) {
+        problems.push(
+          t('db.columnNameProblem', {
+            name: c.name || t('db.unnamed'),
+            error: t(DB_DDL_ERROR_KEY[err]),
+          }),
+        );
+      }
       const lenErr = typeAcceptsLength(c.type) ? validateLength(c.length) : null;
-      if (lenErr) problems.push(`列「${c.name}」长度：${lenErr}`);
+      if (lenErr) {
+        problems.push(
+          t('db.columnLengthProblem', { name: c.name, error: t(DB_DDL_ERROR_KEY[lenErr]) }),
+        );
+      }
     }
 
     const res = buildAlterTableStatements(driver, schemaName, tableName || '', changes);
     return { statements: problems.length > 0 ? [] : res.statements, problems, skipped: res.skipped ?? [] };
-  }, [mode, driver, schemaName, createTableName, columns, tableName]);
+  }, [mode, driver, schemaName, createTableName, columns, tableName, t]);
 
   if (!isOpen) return null;
 
@@ -148,12 +180,13 @@ export function TableStructureModal({
     if (!canExecute) return;
     setConfirmContent(
       buildSqlConfirmMarkdown({
+        t,
         intro:
           mode === 'create'
-            ? `即将创建表「${createTableName.trim()}」。`
-            : `即将修改表「${tableName}」的结构，共 **${built.statements.length}** 条语句。`,
+            ? t('db.confirmCreateIntro', { table: createTableName.trim() })
+            : t('db.confirmAlterIntro', { table: tableName ?? '', n: built.statements.length }),
         statements: built.statements,
-        notes: ['DDL 逐条执行且**无法回滚**：若中途失败，前面的语句已经生效。'],
+        notes: [t('db.ddlNoRollbackNote')],
         tone: 'danger',
       }),
     );
@@ -165,14 +198,16 @@ export function TableStructureModal({
       const res = await onExecute(built.statements);
       if (res.ok) {
         onShowToast?.(
-          mode === 'create' ? `已创建表 ${createTableName.trim()}` : `已更新表 ${tableName} 的结构`,
+          mode === 'create'
+            ? t('db.tableCreated', { table: createTableName.trim() })
+            : t('db.tableUpdated', { table: tableName ?? '' }),
           undefined,
           'success',
         );
         onClose();
       } else {
         // 逐条执行时可能前面几条已经生效，这里如实告知「部分生效」，不要让用户以为整体失败
-        onShowToast?.('表结构变更失败', res.error || '未知原因', 'error');
+        onShowToast?.(t('db.structureChangeFailed'), res.error || t('db.unknownReason'), 'error');
       }
     } finally {
       setExecuting(false);
@@ -225,15 +260,13 @@ export function TableStructureModal({
           }}
         >
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em' }}>
-            {mode === 'create'
-              ? '新建表'
-              : `设计表 · ${tableName}`}
+            {mode === 'create' ? t('db.newTable') : t('db.designTable', { table: tableName ?? '' })}
             <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>
               {driver.toUpperCase()}
               {schemaName ? ` · ${schemaName}` : ''}
             </span>
           </div>
-          <button type="button" className="panel-action-btn" title="关闭" onClick={onClose}>
+          <button type="button" className="panel-action-btn" title={t('db.close')} onClick={onClose}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
@@ -244,18 +277,18 @@ export function TableStructureModal({
         {/* 表名 */}
         {mode === 'create' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', flexShrink: 0 }}>
-            <span style={{ fontSize: 12, width: 56 }}>表名</span>
+            <span style={{ fontSize: 12, width: 56 }}>{t('db.metaTableName')}</span>
             <input
               type="text"
               className="db-structure-input"
               style={{ flex: 1, maxWidth: 320 }}
               value={createTableName}
               onChange={(e) => setCreateTableName(e.target.value)}
-              placeholder="例如 users"
+              placeholder={t('db.tableNameExample')}
             />
             {schemaName && (
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                将创建在 {schemaName} 下
+                {t('db.willBeCreatedIn', { schema: schemaName })}
               </span>
             )}
           </div>
@@ -268,13 +301,13 @@ export function TableStructureModal({
               <table className="db-structure-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 150 }}>列名</th>
-                    <th style={{ width: 130 }}>类型</th>
-                    <th style={{ width: 80 }}>长度</th>
-                    <th style={{ width: 46 }}>非空</th>
-                    <th style={{ width: 46 }}>主键</th>
-                    <th style={{ width: 62 }}>自增</th>
-                    <th>默认值</th>
+                    <th style={{ width: 150 }}>{t('db.headerColumnName')}</th>
+                    <th style={{ width: 130 }}>{t('db.headerType')}</th>
+                    <th style={{ width: 80 }}>{t('db.headerLength')}</th>
+                    <th style={{ width: 46 }}>{t('db.headerNotNull')}</th>
+                    <th style={{ width: 46 }}>{t('db.headerPrimaryKey')}</th>
+                    <th style={{ width: 62 }}>{t('db.headerAutoIncrement')}</th>
+                    <th>{t('db.headerDefaultValue')}</th>
                     <th style={{ width: 40 }} />
                   </tr>
                 </thead>
@@ -298,9 +331,9 @@ export function TableStructureModal({
                           className="db-structure-select"
                           value={c.type}
                           disabled={c.drop}
-                          title={c.drop ? '该列已标记删除' : '列类型'}
+                          title={c.drop ? t('db.columnDropped') : t('db.columnType')}
                           onChange={(next) => patchColumn(c.key, { type: next })}
-                          options={types.map((t) => ({ value: t, label: t }))}
+                          options={types.map((typeName) => ({ value: typeName, label: typeName }))}
                         />
                       </td>
                       <td>
@@ -309,7 +342,7 @@ export function TableStructureModal({
                           className="db-structure-input"
                           value={c.length}
                           disabled={c.drop || !typeAcceptsLength(c.type)}
-                          placeholder={typeAcceptsLength(c.type) ? '如 255' : '—'}
+                          placeholder={typeAcceptsLength(c.type) ? t('db.lengthPlaceholder') : '—'}
                           onChange={(e) => patchColumn(c.key, { length: e.target.value })}
                         />
                       </td>
@@ -334,7 +367,7 @@ export function TableStructureModal({
                           type="checkbox"
                           checked={c.autoIncrement}
                           disabled={c.drop || driver === 'postgres'}
-                          title={driver === 'postgres' ? 'PostgreSQL 请使用 SERIAL 类型' : '自增'}
+                          title={driver === 'postgres' ? t('db.pgUseSerial') : t('db.autoIncrement')}
                           onChange={(e) => patchColumn(c.key, { autoIncrement: e.target.checked })}
                         />
                       </td>
@@ -344,7 +377,7 @@ export function TableStructureModal({
                           className="db-structure-input"
                           value={c.defaultValue}
                           disabled={c.drop}
-                          placeholder="留空为无默认值"
+                          placeholder={t('db.defaultValuePlaceholder')}
                           onChange={(e) => patchColumn(c.key, { defaultValue: e.target.value })}
                         />
                       </td>
@@ -353,7 +386,7 @@ export function TableStructureModal({
                           <button
                             type="button"
                             className="panel-action-btn"
-                            title={c.drop ? '取消删除' : '标记删除此列'}
+                            title={c.drop ? t('db.undoDelete') : t('db.markColumnDelete')}
                             onClick={() => patchColumn(c.key, { drop: !c.drop })}
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c.drop ? '#f59e0b' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -366,7 +399,7 @@ export function TableStructureModal({
                           <button
                             type="button"
                             className="panel-action-btn"
-                            title="移除这一行"
+                            title={t('db.removeRow')}
                             onClick={() => setColumns((prev) => prev.filter((x) => x.key !== c.key))}
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -385,7 +418,7 @@ export function TableStructureModal({
                 className="db-structure-add"
                 onClick={() => setColumns((prev) => [...prev, emptyColumn(driver)])}
               >
-                ＋ 添加列
+                {t('db.addColumnPlain')}
               </button>
             </div>
           </div>
@@ -404,10 +437,12 @@ export function TableStructureModal({
                 flexShrink: 0,
               }}
             >
-              即将执行的 SQL{built.statements.length > 1 ? `（${built.statements.length} 条）` : ''}
+              {built.statements.length > 1
+                ? t('db.pendingSqlPreview', { n: built.statements.length })
+                : t('db.pendingSqlPreviewPlain')}
             </div>
             <pre className="db-structure-preview">
-              {previewSql || '-- 填写完整后这里会显示生成的 SQL'}
+              {previewSql || t('db.sqlPreviewPlaceholder')}
             </pre>
             {built.problems.length > 0 && (
               <div className="db-structure-problems">
@@ -419,7 +454,7 @@ export function TableStructureModal({
             {built.problems.length === 0 && built.skipped.length > 0 && (
               <div className="db-structure-skipped">
                 {built.skipped.map((s, i) => (
-                  <div key={i}>ⓘ {s}</div>
+                  <div key={i}>ⓘ {t(DB_ALTER_SKIP_KEY[s.code], { name: s.name })}</div>
                 ))}
               </div>
             )}
@@ -440,17 +475,17 @@ export function TableStructureModal({
           }}
         >
           <button type="button" className="panel-action-btn" onClick={onClose} disabled={executing}>
-            <span style={{ fontSize: 12, padding: '0 4px' }}>取消</span>
+            <span style={{ fontSize: 12, padding: '0 4px' }}>{t('db.cancel')}</span>
           </button>
           <button
             type="button"
             className="panel-action-btn"
             onClick={() => void handleExecute()}
             disabled={!canExecute}
-            title={canExecute ? '执行 DDL（会二次确认）' : '请先补全必填项'}
+            title={canExecute ? t('db.runDdlTitle') : t('db.fillRequiredFirst')}
           >
             <span style={{ fontSize: 12, padding: '0 4px', color: canExecute ? '#4ade80' : undefined }}>
-              {executing ? '执行中…' : mode === 'create' ? '创建表' : '应用变更'}
+              {executing ? t('db.executing') : mode === 'create' ? t('db.createTable') : t('db.applyChanges')}
             </span>
           </button>
         </div>
@@ -461,10 +496,10 @@ export function TableStructureModal({
       {/* DDL 确认：Markdown 渲染，每条语句可单独复制（DDL 无法回滚，值得让用户逐条过目） */}
       <DbConfirmModal
         isOpen={confirmContent !== null}
-        title={mode === 'create' ? '确认创建表' : '确认修改表结构'}
+        title={mode === 'create' ? t('db.confirmCreateTable') : t('db.confirmModifyStructurePlain')}
         content={confirmContent ?? ''}
         tone="danger"
-        confirmLabel={mode === 'create' ? '确认创建' : '确认执行'}
+        confirmLabel={mode === 'create' ? t('db.confirmCreate') : t('db.confirmExecute')}
         onConfirm={() => {
           setConfirmContent(null);
           void runExecute();

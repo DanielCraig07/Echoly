@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { OpenTab } from '@deepseek-ide/shared';
 import { isUntitledPath, untitledTabLabel } from '../utils';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
+import { useI18n } from '../i18n';
 
 export interface UnsavedChangesModalProps {
   open: boolean;
@@ -19,6 +20,7 @@ export function UnsavedChangesModal({
   onDontSave,
   onCancel,
 }: UnsavedChangesModalProps) {
+  const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_unsaved_changes_modal_size',
     defaultWidth: 460,
@@ -69,9 +71,9 @@ export function UnsavedChangesModal({
 
   const isUntitled = isUntitledPath(tab.path);
   const fileName = isUntitled
-    ? `未命名 ${untitledTabLabel(tab.path)}`
+    ? t('workspace.untitledFile', { name: untitledTabLabel(tab.path) })
     : tab.path.split(/[/\\]/).filter(Boolean).pop() || tab.path;
-  const filePath = isUntitled ? '未保存的新建文件' : tab.path;
+  const filePath = isUntitled ? t('workspace.unsavedNewFile') : tab.path;
 
   const handleSave = async () => {
     if (saving) return;
@@ -146,7 +148,7 @@ export function UnsavedChangesModal({
                     wordBreak: 'break-word',
                   }}
                 >
-                  是否保存对 “{fileName}” 的更改？
+                  {t('workspace.saveChangesTitle', { name: fileName })}
                 </div>
                 <div
                   style={{
@@ -156,7 +158,7 @@ export function UnsavedChangesModal({
                     lineHeight: '18px',
                   }}
                 >
-                  如果不保存，您在此文件中所做的更改将会丢失。
+                  {t('workspace.saveChangesDesc')}
                 </div>
               </div>
             </div>
@@ -164,7 +166,7 @@ export function UnsavedChangesModal({
             <button
               type="button"
               className="panel-action-btn"
-              title="取消关闭 (Esc)"
+              title={t('workspace.cancelCloseTitle')}
               onClick={onCancel}
               disabled={saving}
               style={{ flexShrink: 0 }}
@@ -230,9 +232,9 @@ export function UnsavedChangesModal({
               cursor: saving ? 'not-allowed' : 'pointer',
               transition: 'all 0.15s ease',
             }}
-            title="取消关闭，继续编辑 (Esc)"
+            title={t('workspace.cancelCloseHint')}
           >
-            取消
+            {t('workspace.cancel')}
           </button>
 
           <button
@@ -249,9 +251,9 @@ export function UnsavedChangesModal({
               cursor: saving ? 'not-allowed' : 'pointer',
               transition: 'all 0.15s ease',
             }}
-            title="不保存，直接关闭并放弃修改"
+            title={t('workspace.dontSaveTitle')}
           >
-            不保存
+            {t('workspace.dontSave')}
           </button>
 
           <button
@@ -274,7 +276,7 @@ export function UnsavedChangesModal({
               alignItems: 'center',
               gap: 6,
             }}
-            title="保存文件修改并关闭 (Enter)"
+            title={t('workspace.saveTitle')}
           >
             {saving ? (
               <>
@@ -289,10 +291,10 @@ export function UnsavedChangesModal({
                 >
                   <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12" />
                 </svg>
-                <span>保存中...</span>
+                <span>{t('workspace.saving')}</span>
               </>
             ) : (
-              '保存'
+              t('common.save')
             )}
           </button>
         </div>

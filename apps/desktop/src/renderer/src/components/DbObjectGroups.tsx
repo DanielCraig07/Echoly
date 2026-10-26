@@ -1,5 +1,6 @@
 import React from 'react';
 import type { DbObjectGroup, DbSchemaObjects } from '@deepseek-ide/shared';
+import { useI18n } from '../i18n';
 
 /**
  * 库节点展开后的六个分组（表 / 视图 / 索引 / 存储过程 / 触发器 / 事件）。
@@ -21,15 +22,18 @@ export const OBJECT_GROUPS: Array<{ key: DbObjectGroup; label: string }> = [
   { key: 'events', label: 'Events' },
 ];
 
-/** 分组展开后为空时的文案。空分组不能只留一片空白，那会被读成「还没加载」 */
-export const EMPTY_GROUP_HINT: Record<DbObjectGroup, string> = {
-  tables: '没有数据表',
-  views: '没有视图',
-  indexes: '没有索引',
-  procedures: '没有存储过程',
-  triggers: '没有触发器',
-  events: '没有事件',
-};
+/**
+ * 分组展开后为空时的文案。空分组不能只留一片空白，那会被读成「还没加载」。
+ *
+ * 走函数而不是常量表：文案要按当前语言取，常量表在模块加载时就定死了语言。
+ * 调用方在组件里已经有 `t`（来自 `useI18n`），这里就不再引入 hook。
+ */
+export function emptyGroupHint(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  group: DbObjectGroup,
+): string {
+  return t(`db.emptyGroup.${group}`);
+}
 
 /** 分组的小图标，与表 / 库节点的视觉语言保持一致（都是 13×13 的线性图标） */
 export function GroupIcon({ group }: { group: DbObjectGroup }) {
@@ -124,6 +128,7 @@ export function DbGroupRow({
   onToggle,
   children,
 }: DbGroupRowProps) {
+  const { t } = useI18n();
   const disabled = !supported;
   return (
     <div>
@@ -135,8 +140,12 @@ export function DbGroupRow({
         }}
         title={
           disabled
-            ? `${label}：当前数据库类型不支持这一类对象`
-            : `${label}（${count}）${expanded ? ' · 点击折叠' : ' · 点击展开'}`
+            ? t('db.groupUnsupportedTitle', { label })
+            : t('db.groupToggleTitle', {
+                label,
+                count,
+                hint: expanded ? t('db.groupClickCollapse') : t('db.groupClickExpand'),
+              })
         }
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
@@ -169,7 +178,7 @@ export function DbGroupRow({
         {/* 「不支持」与「0 个」必须能分开看：前者是驱动没这个能力，后者是确实没有 */}
         {disabled && (
           <span style={{ fontSize: 10, color: 'var(--text-muted)', flexShrink: 0, opacity: 0.75 }}>
-            不支持
+            {t('db.unsupported')}
           </span>
         )}
       </div>
@@ -177,7 +186,7 @@ export function DbGroupRow({
         <div style={{ paddingLeft: 22, paddingBottom: 2 }}>
           {error && (
             <div style={{ fontSize: 10, color: '#f87171', padding: '2px 0' }} title={error}>
-              加载失败：{error}
+              {t('db.groupLoadFailed', { error })}
             </div>
           )}
           {!error && children}

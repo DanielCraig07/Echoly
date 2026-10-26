@@ -9,7 +9,7 @@ import {
 import {
   COMMON_FILTER_OPERATORS,
   FILTER_OPERATOR_ICONS,
-  FILTER_OPERATOR_LABELS,
+  FILTER_OPERATORS,
   MORE_FILTER_OPERATORS,
   operatorNeedsValue,
   type DbTableFilterOperator,
@@ -102,7 +102,7 @@ describe('columnCategoryBadge 表头角标', () => {
 });
 
 describe('FILTER_OPERATOR_ICONS 运算符图标', () => {
-  const OPERATORS = Object.keys(FILTER_OPERATOR_LABELS) as DbTableFilterOperator[];
+  const OPERATORS = [...FILTER_OPERATORS];
 
   it('每个运算符都有图标，没有漏项', () => {
     for (const op of OPERATORS) {

@@ -22,6 +22,7 @@ import {
 } from '../utils';
 import { BrowserViewPane } from './browser/BrowserViewPane';
 import { RenderFileTreeIcon } from './FileTree';
+import { translateSegments, useI18n, type Translate } from '../i18n';
 import { MarkdownMessage, extractMarkdownHeadings, type MarkdownHeadingItem } from './MarkdownMessage';
 import { WelcomeView } from './WelcomeView';
 import type { RecentWorkspaceItem } from './OpenWorkspaceModal';
@@ -192,6 +193,18 @@ const COMMON_FIND_OPTIONS: MonacoEditor.IEditorFindOptions = {
 const BASE_MONACO_OPTIONS: MonacoEditor.IStandaloneEditorConstructionOptions = {
   useShadowDOM: false,
 };
+
+/**
+ * 冲突解决方向 → 给用户看的词。
+ *
+ * `current`/`incoming`/`both` 是内部契约值（要写进 resolveSingleConflict 的判断里），
+ * 只有外面这层说明才是文案，所以在这里做唯一一次映射。
+ */
+function conflictWhichLabel(t: Translate, resolution: 'current' | 'incoming' | 'both'): string {
+  if (resolution === 'current') return t('editor.conflictWhichCurrent');
+  if (resolution === 'incoming') return t('editor.conflictWhichIncoming');
+  return t('editor.conflictWhichBoth');
+}
 
 function getTabGitMeta(path?: string | null, entries: GitStatusEntry[] = []) {
   if (!path || typeof path !== 'string' || !entries || !Array.isArray(entries) || !entries.length)
@@ -703,6 +716,13 @@ export function EditorPane({
   onUpdateTabMeta,
   onOpenBrowserTab,
 }: Props) {
+  const { t, locale } = useI18n();
+  /**
+   * Monaco 的 CodeLens / 命令是**挂载期一次性注册**的，回调闭包会锁死在首次渲染的 `t` 上。
+   * 用 ref 承载，切换语言后 lens 上的标题才会跟着变（不然要重启窗口才更新）。
+   */
+  const tRef = useRef(t);
+  tRef.current = t;
   const active = tabs.find((t) => t.path === activePath) ?? null;
   const browserTabs = useMemo(
     () =>
@@ -1000,7 +1020,7 @@ export function EditorPane({
               word.endColumn,
             ),
             contents: [
-              { value: `**调试变量求值 (DAP)**` },
+              { value: t('editor.debugHoverTitle') },
               {
                 value: `\`\`\`${lang}\n${word.word} = ${res.result}\n\`\`\`\n${typeLabel}`,
               },
@@ -1013,7 +1033,7 @@ export function EditorPane({
     });
 
     return () => hoverDisposable.dispose();
-  }, [isDebugging, debugState]);
+  }, [isDebugging, debugState, t]);
 
   // 同步断点与命中断点行高亮至 Monaco 装订线
   useEffect(() => {
@@ -1030,8 +1050,8 @@ export function EditorPane({
           : 'debug-breakpoint-glyph',
         glyphMarginHoverMessage: {
           value: bp.condition
-            ? `条件断点: 第 ${bp.line} 行 (条件: \`${bp.condition}\`)`
-            : `断点: 第 ${bp.line} 行`,
+            ? t('editor.bpConditional', { line: bp.line, cond: bp.condition })
+            : t('editor.bpPlain', { line: bp.line }),
         },
       },
     }));
@@ -1048,7 +1068,7 @@ export function EditorPane({
     }
 
     debugDecorationsRef.current = ed.deltaDecorations(debugDecorationsRef.current, newDecs);
-  }, [activePath, breakpoints, debugStoppedInfo]);
+  }, [activePath, breakpoints, debugStoppedInfo, t]);
 
   // Alt+O 快速在头文件与源文件之间切换 (.h <-> .cpp)
   useEffect(() => {
@@ -1286,7 +1306,7 @@ export function EditorPane({
     }
     if (smartApplyDiff && active?.path) {
       onChangeContent(active.path, editorRef.current?.getValue() || smartApplyDiff.newText);
-      onShowToast?.('✓ 已采纳 Smart Apply 代码修改', '', 'success');
+      onShowToast?.(t('editor.smartApplyAccepted'), '', 'success');
     }
     setSmartApplyDiff(null);
   }, [smartApplyDiff, active?.path, onChangeContent, onShowToast]);
@@ -1308,7 +1328,7 @@ export function EditorPane({
           [],
         );
         onChangeContent(smartApplyDiff.targetPath, smartApplyDiff.originalText);
-        onShowToast?.('✗ 已拒绝并撤销 Smart Apply 代码修改', '', 'info');
+        onShowToast?.(t('editor.smartApplyRejected'), '', 'info');
       }
     }
     setSmartApplyDiff(null);
@@ -1396,7 +1416,7 @@ export function EditorPane({
       }
 
       if (!newCode.trim()) {
-        onShowToast?.('AI 未返回有效代码修改', '', 'warn');
+        onShowToast?.(t('editor.inlineAiNoCode'), '', 'warn');
         setInlineAiLoading(false);
         return;
       }
@@ -1451,7 +1471,7 @@ export function EditorPane({
       onChangeContent(active.path, ed.getValue());
     } catch (err: any) {
       console.error('[InlineAi] Error:', err);
-      onShowToast?.('行内 AI 执行失败', err?.message, 'error');
+      onShowToast?.(t('editor.inlineAiFailed'), err?.message, 'error');
     } finally {
       setInlineAiLoading(false);
     }
@@ -1498,6 +1518,15 @@ export function EditorPane({
     }
   }, [active?.path, inlineAiDiff, onChangeContent]);
 
+  /**
+   * 快捷标签往输入框里**预填一段中文指令**。
+   *
+   * 这几个字符串刻意不进字典，理由和 `specialMentions.ts` 里那批一样：
+   * 它们最终是**送给模型的 prompt**，不是给用户看的说明。翻成英文等于换了个问法，
+   * 模型的产出会跟着变 —— 那是另一个行为，不是另一个语言。
+   * 显示给用户的短标签（「异步优化」/「Async」）走 `editor.tag*`，那个是翻的；
+   * 用户在点完之后可以随意改这段指令再发送，可编辑性已经由输入框本身提供。
+   */
   const handleQuickPrompt = useCallback((txt: string) => {
     setInlinePrompt(txt);
     setTimeout(() => inlineInputRef.current?.focus(), 20);
@@ -1602,12 +1631,12 @@ export function EditorPane({
       const updated = resolveSingleConflict(active.content, block, resolution);
       onChangeContent(active.path, updated, true);
       onShowToast?.(
-        'Git 冲突已解决',
-        `已应用${resolution === 'current' ? '当前' : resolution === 'incoming' ? '传入' : '双方'}更改`,
+        t('editor.conflictResolvedTitle'),
+        t('editor.conflictResolvedDetail', { which: conflictWhichLabel(t, resolution) }),
         'success',
       );
     },
-    [active?.path, active?.content, onChangeContent, onShowToast],
+    [active?.path, active?.content, onChangeContent, onShowToast, t],
   );
 
   const [showThreeWayModal, setShowThreeWayModal] = useState<boolean>(false);
@@ -1618,12 +1647,12 @@ export function EditorPane({
       const updated = resolveAllConflicts(active.content, resolution);
       onChangeContent(active.path, updated, true);
       onShowToast?.(
-        'Git 冲突全部解决',
-        `已批量应用${resolution === 'current' ? '当前' : resolution === 'incoming' ? '传入' : '双方'}更改`,
+        t('editor.conflictAllResolvedTitle'),
+        t('editor.conflictAllResolvedDetail', { which: conflictWhichLabel(t, resolution) }),
         'success',
       );
     },
-    [active?.path, active?.content, onChangeContent, onShowToast],
+    [active?.path, active?.content, onChangeContent, onShowToast, t],
   );
 
   const handleJumpNextConflict = useCallback(() => {
@@ -1745,9 +1774,9 @@ export function EditorPane({
             const c = res.commit;
             const cleanMsg = (c.message || '').replace(/[\r\n]+/g, ' ').trim();
             const msg = cleanMsg.length > 40 ? cleanMsg.slice(0, 38) + '…' : cleanMsg;
-            text = `${c.author}, ${c.relativeDate || c.date || '已提交'} • ${msg}`;
+            text = `${c.author}, ${c.relativeDate || c.date || t('editor.blameCommitted')} • ${msg}`;
           } else {
-            text = 'You, 未提交的更改 • 未保存或未提交的修改';
+            text = t('editor.blameUncommitted');
           }
 
           blameCacheRef.current.set(cacheKey, { text, lineNumber });
@@ -1755,7 +1784,7 @@ export function EditorPane({
             applyBlameDecoration(editorRef.current, lineNumber, text);
           }
         } catch {
-          const fallback = 'You, 未提交的更改 • 未保存或未提交的修改';
+          const fallback = t('editor.blameUncommitted');
           if (editorRef.current && currentBlameLineRef.current === lineNumber) {
             applyBlameDecoration(editorRef.current, lineNumber, fallback);
           }
@@ -2676,18 +2705,19 @@ export function EditorPane({
     if (isVirtualPath(active.path)) return;
     // 这里直接写盘还原、不经过 Git，是编辑器里唯一没有第二份的改动 —— 必须确认
     const ok = await confirm.confirm({
-      title: '放弃此块更改',
+      title: t('editor.discardHunkTitle'),
       content: buildSqlConfirmMarkdown({
-        intro: '这一块改动会被还原成 HEAD 里的内容并**直接写回磁盘**，且**无法撤销**。',
+        t,
+        intro: t('editor.discardHunkIntro'),
         statements: [],
-        notes: ['只影响光标所在的这一块（hunk），文件里其他改动保持不动。'],
+        notes: [t('editor.discardHunkNote')],
       }),
       details: [
-        { label: '文件', value: active.path },
-        { label: '行', value: String(gitInlineDiffLine) },
+        { label: t('editor.labelFile'), value: active.path },
+        { label: t('editor.labelLine'), value: String(gitInlineDiffLine) },
       ],
       tone: 'danger',
-      confirmLabel: '确认放弃',
+      confirmLabel: t('editor.confirmDiscard'),
     });
     if (ok === null) return;
     const currentContent = active.content ?? gitDiffData.modified;
@@ -3273,7 +3303,7 @@ export function EditorPane({
           inlineInputRef.current?.select();
         }, 50);
       } else {
-        onShowToast?.('当前代码行未检测到编译或语法诊断错误', '', 'info');
+        onShowToast?.(t('editor.noDiagnostics'), '', 'info');
       }
     },
     [openInlineAiForEditor, onShowToast],
@@ -3308,7 +3338,7 @@ export function EditorPane({
         ]);
         onChangeContent(curActive.path, ed.getValue());
         ed.focus();
-        onShowToast?.('已将代码片段插入当前光标处', '', 'success');
+        onShowToast?.(t('editor.codeInserted'), '', 'success');
       }
     };
 
@@ -3323,7 +3353,7 @@ export function EditorPane({
 
       const origText = ed.getValue();
       if (origText === code) {
-        onShowToast?.('当前代码与建议修改一致，无需更新', '', 'info');
+        onShowToast?.(t('editor.codeAlreadySame'), '', 'info');
         return;
       }
 
@@ -3365,7 +3395,7 @@ export function EditorPane({
       });
 
       ed.focus();
-      onShowToast?.('✦ Smart Apply：代码修改已应用，请在编辑器顶部审查并选择采纳或撤销', '', 'info');
+      onShowToast?.(t('editor.smartApplyToast'), '', 'info');
     };
 
     window.addEventListener('echoly:insertCodeToEditor', onInsertCode);
@@ -3411,7 +3441,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       // 注册 AI 菜单项至 Monaco 右键菜单最顶层 (0_ai 分组)
       ed.addAction({
         id: 'echoly.inlineAi',
-        label: '✦ 行内 AI 编辑 (⌘I / ⌘K)',
+        label: t('editor.actionInlineAi'),
         keybindings: [KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyI],
         contextMenuGroupId: '0_ai',
         contextMenuOrder: 1,
@@ -3421,7 +3451,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       });
       ed.addAction({
         id: 'echoly.addToChat',
-        label: '✦ 添加到 AI 对话',
+        label: t('editor.actionAddToChat'),
         keybindings: [KeyMod.CtrlCmd | KeyCode.KeyL],
         contextMenuGroupId: '0_ai',
         contextMenuOrder: 2,
@@ -3431,7 +3461,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       });
       ed.addAction({
         id: 'echoly.fixWithAi',
-        label: '✦ Fix with AI: 修复此行错误',
+        label: t('editor.actionFixWithAi'),
         keybindings: [KeyMod.Alt | KeyCode.Period],
         contextMenuGroupId: '0_ai',
         contextMenuOrder: 3,
@@ -3441,7 +3471,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       });
       ed.addAction({
         id: 'echoly.toggleSplitEditor',
-        label: 'View: 切换拆分编辑器 (⌘\\)',
+        label: t('editor.actionToggleSplit'),
         keybindings: [KeyMod.CtrlCmd | KeyCode.Backslash],
         contextMenuGroupId: '1_modification',
         contextMenuOrder: 10,
@@ -3468,13 +3498,17 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           if (filePath && !isVirtualPath(filePath)) {
             onViewFileHistoryRef.current?.(filePath);
           } else {
-            onShowToast?.('无法查看文件历史', '当前文件未保存到磁盘或无 Git 记录', 'info');
+            onShowToast?.(
+              t('editor.fileHistoryUnavailable'),
+              t('editor.fileHistoryUnavailableDetail'),
+              'info',
+            );
           }
         },
       });
       ed.addAction({
         id: 'echoly.openInTerminal',
-        label: '在集成终端中打开',
+        label: t('tree.openTerminal'),
         contextMenuGroupId: '9_terminal',
         contextMenuOrder: 1,
         run: () => {
@@ -3629,7 +3663,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         });
       });
     },
-    [openInlineAiForEditor, triggerAddToChatForEditor, workspace, onOpenFile, executeRevealTarget],
+    [openInlineAiForEditor, triggerAddToChatForEditor, workspace, onOpenFile, executeRevealTarget, t],
   );
 
   useEffect(() => {
@@ -3741,14 +3775,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
     };
     let rightBadge = {
-      text: '当前',
+      text: t('editor.badgeCurrent'),
       bg: 'rgba(34, 197, 94, 0.16)',
       color: '#4ade80',
       border: 'rgba(34, 197, 94, 0.3)',
     };
 
     const id = previewDiff.id || '';
-    const desc = previewDiff.description || '';
 
     if (id.startsWith('git:ref:')) {
       const parts = id.split(':');
@@ -3756,7 +3789,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
       const isRemote = targetRef.startsWith('origin/') || targetRef.includes('/');
       if (isRemote) {
         leftBadge = {
-          text: '远程',
+          text: t('editor.badgeRemote'),
           bg: 'rgba(167, 139, 250, 0.16)',
           color: '#c084fc',
           border: 'rgba(167, 139, 250, 0.3)',
@@ -3764,47 +3797,26 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         leftTitle = targetRef;
       } else {
         leftBadge = {
-          text: '分支',
+          text: t('editor.badgeBranch'),
           bg: 'color-mix(in srgb, var(--accent, #007acc) 16%, transparent)',
           color: 'var(--accent-light, #3794ff)',
           border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
         };
         leftTitle = targetRef;
       }
-      if (!rightTitle) rightTitle = '当前工作区 (本地版本)';
+      if (!rightTitle) rightTitle = t('editor.currentWorkspaceLocal');
     } else if (id.startsWith('git:rev:') || id.startsWith('git:commit:')) {
       const parts = id.split(':');
       const hash = parts[2] || '';
       const shortHash = hash.slice(0, 7);
       leftBadge = {
-        text: '版本',
+        text: t('editor.badgeVersion'),
         bg: 'color-mix(in srgb, var(--accent, #007acc) 16%, transparent)',
         color: 'var(--accent-light, #3794ff)',
         border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
       };
-      leftTitle = `提交 ${shortHash}`;
-      if (!rightTitle) rightTitle = '当前工作区 (本地版本)';
-    } else if (desc.includes('↔')) {
-      const [l, r] = desc.split('↔');
-      const cleanL = l.replace(/[「」]/g, '').trim();
-      const cleanR = r.replace(/\([^)]*\)/g, '').trim();
-      leftTitle = cleanL;
-      rightTitle = cleanR || '当前工作区 (本地版本)';
-      if (cleanL.includes('origin/') || cleanL.includes('远程')) {
-        leftBadge = {
-          text: '远程',
-          bg: 'rgba(167, 139, 250, 0.16)',
-          color: '#c084fc',
-          border: 'rgba(167, 139, 250, 0.3)',
-        };
-      } else if (cleanL.includes('提交') || cleanL.includes('版本')) {
-        leftBadge = {
-          text: '版本',
-          bg: 'color-mix(in srgb, var(--accent, #007acc) 16%, transparent)',
-          color: 'var(--accent-light, #3794ff)',
-          border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
-        };
-      }
+      leftTitle = t('editor.commitLabel', { hash: shortHash });
+      if (!rightTitle) rightTitle = t('editor.currentWorkspaceLocal');
     } else if (id.startsWith('staged:')) {
       leftBadge = {
         text: 'HEAD',
@@ -3812,17 +3824,17 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
         color: 'var(--accent-light, #3794ff)',
         border: 'color-mix(in srgb, var(--accent, #007acc) 30%, transparent)',
       };
-      leftTitle = '版本库基准 (HEAD)';
+      leftTitle = t('editor.refBaseHead');
       rightBadge = {
-        text: '暂存区',
+        text: t('editor.badgeStaged'),
         bg: 'rgba(56, 189, 248, 0.16)',
         color: '#38bdf8',
         border: 'rgba(56, 189, 248, 0.3)',
       };
-      rightTitle = '已暂存更改 (Index)';
+      rightTitle = t('editor.stagedChangesIndex');
     } else {
-      if (!leftTitle) leftTitle = '最新提交 (HEAD)';
-      if (!rightTitle) rightTitle = '当前工作区 (未提交更改)';
+      if (!leftTitle) leftTitle = t('editor.latestCommitHead');
+      if (!rightTitle) rightTitle = t('editor.currentWorkspaceUncommitted');
     }
 
     const totalHunks =
@@ -3860,9 +3872,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
               }}
-              title={previewDiff.description || `Git 本地更改(工作树)`}
+              title={previewDiff.description || t('editor.gitLocalChanges')}
             >
-              {previewDiff.description || `Git 本地更改(工作树)`}
+              {previewDiff.description || t('editor.gitLocalChanges')}
             </span>
             <span
               style={{
@@ -3878,7 +3890,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 letterSpacing: '0.02em',
               }}
             >
-              共 {totalHunks} 处差异
+              {t('editor.diffCount', { n: totalHunks })}
             </span>
           </div>
 
@@ -3902,20 +3914,27 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               }}
               title={
                 totalHunks > 0
-                  ? `当前位于第 ${currentHunkDisplay} 处差异 (共 ${totalHunks} 处)，快捷键: F5 下一个，Shift+F5 上一个`
-                  : '当前文件与目标版本内容完全一致，无差异'
+                  ? t('editor.diffPosition', { n: currentHunkDisplay, total: totalHunks })
+                  : t('editor.noDiffWithTarget')
               }
             >
               {totalHunks > 0 ? (
                 <span>
-                  第{' '}
-                  <strong style={{ color: 'var(--accent-light, #3794ff)', fontWeight: 700 }}>
-                    {currentHunkDisplay}
-                  </strong>{' '}
-                  / {totalHunks} 个差异
+                  {translateSegments('editor.diffPositionLabel', locale, {
+                    n: currentHunkDisplay,
+                    total: totalHunks,
+                  }).map((seg, i) =>
+                    seg.emphasis ? (
+                      <strong key={i} style={{ color: 'var(--accent-light, #3794ff)', fontWeight: 700 }}>
+                        {seg.text}
+                      </strong>
+                    ) : (
+                      <span key={i}>{seg.text}</span>
+                    ),
+                  )}
                 </span>
               ) : (
-                <span>无差异</span>
+                <span>{t('editor.noDiff')}</span>
               )}
             </div>
 
@@ -3925,8 +3944,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               className="panel-action-btn"
               title={
                 totalHunks > 0
-                  ? `上一个差异 (跳转至第 ${((diffHunkIdx - 1 + totalHunks) % totalHunks) + 1}/${totalHunks} 处，快捷键: Shift+F5 或 ⌥F5)`
-                  : '上一个差异 (当前无差异)'
+                  ? t('editor.prevDiffTooltip', {
+                      n: ((diffHunkIdx - 1 + totalHunks) % totalHunks) + 1,
+                      total: totalHunks,
+                    })
+                  : t('editor.prevDiffNone')
               }
               disabled={totalHunks === 0}
               onClick={() => {
@@ -3948,8 +3970,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               className="panel-action-btn"
               title={
                 totalHunks > 0
-                  ? `下一个差异 (跳转至第 ${((diffHunkIdx + 1) % totalHunks) + 1}/${totalHunks} 处，快捷键: F5)`
-                  : '下一个差异 (当前无差异)'
+                  ? t('editor.nextDiffTooltip', {
+                      n: ((diffHunkIdx + 1) % totalHunks) + 1,
+                      total: totalHunks,
+                    })
+                  : t('editor.nextDiffNone')
               }
               disabled={totalHunks === 0}
               onClick={() => {
@@ -3972,7 +3997,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <button
                   type="button"
                   className="panel-action-btn"
-                  title={`上一个修改文件 (${displayIndex > 1 ? displayIndex - 1 : modifiedFiles.length}/${modifiedFiles.length}: ${modifiedFiles[(currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length]?.path.split('/').pop()})`}
+                  title={t('editor.prevModifiedFile', {
+                    idx: displayIndex > 1 ? displayIndex - 1 : modifiedFiles.length,
+                    total: modifiedFiles.length,
+                    name:
+                      modifiedFiles[(currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length]?.path
+                        .split('/')
+                        .pop() ?? '',
+                  })}
                   onClick={() => {
                     const prevIdx = (currentIndex - 1 + modifiedFiles.length) % modifiedFiles.length;
                     onPreviewGitDiff?.(modifiedFiles[prevIdx].path);
@@ -3985,7 +4017,12 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <button
                   type="button"
                   className="panel-action-btn"
-                  title={`下一个修改文件 (${displayIndex < modifiedFiles.length ? displayIndex + 1 : 1}/${modifiedFiles.length}: ${modifiedFiles[(currentIndex + 1) % modifiedFiles.length]?.path.split('/').pop()})`}
+                  title={t('editor.nextModifiedFile', {
+                    idx: displayIndex < modifiedFiles.length ? displayIndex + 1 : 1,
+                    total: modifiedFiles.length,
+                    name:
+                      modifiedFiles[(currentIndex + 1) % modifiedFiles.length]?.path.split('/').pop() ?? '',
+                  })}
                   onClick={() => {
                     const nextIdx = (currentIndex + 1) % modifiedFiles.length;
                     onPreviewGitDiff?.(modifiedFiles[nextIdx].path);
@@ -4005,7 +4042,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               <button
                 type="button"
                 className="panel-action-btn"
-                title="暂存文件更改"
+                title={t('editor.stageFileChanges')}
                 onClick={async () => {
                   await window.ide.gitStage([previewDiff.path]);
                   onRefreshGitStatus?.();
@@ -4023,7 +4060,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               <button
                 type="button"
                 className="panel-action-btn"
-                title="放弃更改 (还原文件)"
+                title={t('editor.discardChangesRestore')}
                 onClick={() => {
                   onDiscardPath?.(previewDiff.path);
                 }}
@@ -4040,7 +4077,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               <button
                 type="button"
                 className="panel-action-btn"
-                title="关闭对比视图 (Esc)"
+                title={t('editor.closeDiffEsc')}
                 onClick={onCloseDiff}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -4110,7 +4147,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               </span>
             </div>
             <span style={{ fontSize: 10.5, color: 'var(--muted)', flexShrink: 0, marginLeft: 8 }}>
-              {originalLines} 行
+              {t('editor.lineCount', { n: originalLines })}
             </span>
           </div>
 
@@ -4156,7 +4193,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               </span>
             </div>
             <span style={{ fontSize: 10.5, color: 'var(--muted)', flexShrink: 0, marginLeft: 8 }}>
-              {modifiedLines} 行
+              {t('editor.lineCount', { n: modifiedLines })}
             </span>
           </div>
         </div>
@@ -4289,7 +4326,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             if ((e.target as HTMLElement).closest('.tab')) return;
             onNewUntitled?.();
           }}
-          title={onNewUntitled ? '双击空白处新建文本文件' : undefined}
+          title={onNewUntitled ? t('editor.newUntitledDblClick') : undefined}
         >
           {tabs.map((tab) => {
             const isBrowser = isBrowserPath(tab.path) || tab.language === 'browser' || tab.virtual?.browser;
@@ -4382,9 +4419,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       borderRadius: 3,
                       marginLeft: 4,
                     }}
-                    title="只读版本"
+                    title={t('editor.readOnlyVersion')}
                   >
-                    只读
+                    {t('editor.readOnly')}
                   </span>
                 )}
                 {gitMeta?.label && (
@@ -4393,7 +4430,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     style={{
                       color: gitMeta.color,
                     }}
-                    title="点击查看 Git 对比"
+                    title={t('editor.clickGitDiff')}
                     onClick={(e) => {
                       e.stopPropagation();
                       if (tab.path === activePath) {
@@ -4410,13 +4447,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 )}
                 <span
                   className={`tab-close-btn${tab.dirty ? ' is-dirty' : ''}`}
-                  title={tab.dirty ? '未保存 (点击关闭)' : '关闭'}
+                  title={tab.dirty ? t('editor.unsavedClickClose') : t('editor.close')}
                   onClick={(e) => {
                     e.stopPropagation();
                     onCloseTab(tab.path);
                   }}
                 >
-                  {tab.dirty && <span className="dirty-dot" aria-label="未保存" />}
+                  {tab.dirty && <span className="dirty-dot" aria-label={t('editor.dirtyAria')} />}
                   <svg className="close-icon" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
                     <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z" />
                   </svg>
@@ -4456,7 +4493,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   ref={symbolBtnRef}
                   type="button"
                   className="crumb-symbol-btn"
-                  title={`当前位于: ${currentSymbol.name} (第 ${currentSymbol.line} 行)，点击查看当前文件符号大纲`}
+                  title={t('editor.symbolCurrentTooltip', {
+                    name: currentSymbol.name,
+                    line: currentSymbol.line,
+                  })}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (showSymbolDropdown) {
@@ -4505,7 +4545,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               >
                 <div className="symbol-dropdown-header">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontWeight: 600, color: 'var(--text)' }}>文件符号大纲</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text)' }}>{t('editor.fileSymbolOutline')}</span>
                     <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 4, color: 'var(--muted)' }}>
                       {filteredSymbols.length}
                     </span>
@@ -4514,7 +4554,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     type="button"
                     className="symbol-dropdown-close"
                     onClick={() => setShowSymbolDropdown(false)}
-                    title="关闭 (Esc)"
+                    title={t('editor.closeEsc')}
                   >
                     ×
                   </button>
@@ -4525,7 +4565,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     type="text"
                     value={symbolFilter}
                     onChange={(e) => setSymbolFilter(e.target.value)}
-                    placeholder="搜索符号 (类、方法、变量)..."
+                    placeholder={t('editor.searchSymbolPh')}
                     autoFocus
                     style={{
                       width: '100%',
@@ -4544,7 +4584,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <div className="symbol-dropdown-list" style={{ maxHeight: 260, overflowY: 'auto', padding: 4 }}>
                   {filteredSymbols.length === 0 ? (
                     <div style={{ padding: '14px 10px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>
-                      未找到匹配的符号
+                      {t('editor.noSymbolMatch')}
                     </div>
                   ) : (
                     filteredSymbols.map((sym, idx) => {
@@ -4586,7 +4626,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             <button
               type="button"
               className="editor-breadcrumb-btn breadcrumb-nav-back-btn"
-              title="返回跳转前位置 (⌃- 或 ⌘[)"
+              title={t('editor.backToPrev')}
               onClick={() => {
                 markNavigatingBack();
                 const fn = onOpenFileRef?.current ?? onOpenFile;
@@ -4609,7 +4649,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ verticalAlign: -1 }}>
                 <path fillRule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z" />
               </svg>
-              <span>返回</span>
+              <span>{t('editor.back')}</span>
             </button>
             {isMarkdown && (
               <button
@@ -4633,7 +4673,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                     </svg>
-                    编辑
+                    {t('editor.edit')}
                   </>
                 ) : (
                   <>
@@ -4651,7 +4691,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                       <circle cx="12" cy="12" r="3" />
                     </svg>
-                    预览
+                    {t('editor.preview')}
                   </>
                 )}
               </button>
@@ -4661,7 +4701,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 type="button"
                 className={`editor-breadcrumb-btn${showToc ? ' active' : ''}`}
                 onClick={() => setShowToc((v) => !v)}
-                title={showToc ? '收起目录大纲' : '展开目录大纲'}
+                title={showToc ? t('editor.collapseToc') : t('editor.expandToc')}
               >
                 <svg
                   width="13"
@@ -4681,7 +4721,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   <circle cx="4" cy="12" r="1.5" fill="currentColor" />
                   <circle cx="4" cy="18" r="1.5" fill="currentColor" />
                 </svg>
-                目录{mdHeadings.length > 0 ? ` (${mdHeadings.length})` : ''}
+                {mdHeadings.length > 0 ? t('editor.tocCount', { n: mdHeadings.length }) : t('editor.toc')}
               </button>
             )}
             {onToggleWordWrap && (
@@ -4689,9 +4729,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 type="button"
                 className={`editor-breadcrumb-btn${wordWrap ? ' active' : ''}`}
                 onClick={onToggleWordWrap}
-                title={wordWrap ? '禁用自动换行' : '启用自动换行'}
+                title={wordWrap ? t('editor.disableWordWrap') : t('editor.enableWordWrap')}
               >
-                ↵ 换行
+                {t('editor.wordWrapBtn')}
               </button>
             )}
             <button
@@ -4704,13 +4744,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   setSplitPath(otherTab ? otherTab.path : activePath);
                 }
               }}
-              title={isSplit ? '关闭拆分视图' : '拆分编辑器 (双栏并排/上下对照编辑)'}
+              title={isSplit ? t('editor.closeSplit') : t('editor.splitEditorTip')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, verticalAlign: -1 }}>
                 <rect x="3" y="3" width="18" height="18" rx="2" />
                 <line x1="12" y1="3" x2="12" y2="21" />
               </svg>
-              <span>{isSplit ? '关闭拆分' : '拆分'}</span>
+              <span>{isSplit ? t('editor.splitClose') : t('editor.split')}</span>
             </button>
           </div>
         </div>
@@ -4800,7 +4840,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     handleAddToChat(e);
                   }
                 }}
-                title={`添加到 AI 会话提问 (${cmdKey}L)`}
+                title={t('editor.addToChatTip', { key: cmdKey })}
               >
                 <svg
                   className="selection-ai-sparkle-icon"
@@ -4827,7 +4867,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     </linearGradient>
                   </defs>
                 </svg>
-                <span>AI 提问</span>
+                <span>{t('editor.aiAsk')}</span>
                 <kbd className="selection-ai-kbd">{cmdKey} L</kbd>
               </button>
               <div className="selection-ai-divider" />
@@ -4851,9 +4891,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     setTimeout(() => inlineInputRef.current?.focus(), 50);
                   }
                 }}
-                title={`行内智能编辑 (${cmdKey}K)`}
+                title={t('editor.inlineEditTip', { key: cmdKey })}
               >
-                <span>编辑</span>
+                <span>{t('editor.edit')}</span>
                 <kbd className="selection-ai-kbd">{cmdKey} K</kbd>
               </button>
               <div className="selection-ai-divider" />
@@ -4871,9 +4911,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   }
                   handleExplainSelection();
                 }}
-                title="向 AI 提问解释选中的代码"
+                title={t('editor.explainSelectionTip')}
               >
-                <span>解释</span>
+                <span>{t('editor.explain')}</span>
               </button>
               <div className="selection-ai-divider" />
               <button
@@ -4894,9 +4934,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     setInlinePrompt('优化此代码段的性能与可读性');
                   }
                 }}
-                title="行内 AI 优化重构选中的代码"
+                title={t('editor.optimizeSelectionTip')}
               >
-                <span>优化</span>
+                <span>{t('editor.optimize')}</span>
               </button>
               <div className="selection-ai-divider" />
               <button
@@ -4913,7 +4953,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   }
                   setSelectionCoords(null);
                 }}
-                title="隐藏快捷栏 (Esc)"
+                title={t('editor.hideToolbar')}
               >
                 ✕
               </button>
@@ -4957,8 +4997,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           >
             <div className="inline-ai-header">
               <span className="inline-ai-title">
-                ✦ 行内 AI 编辑{' '}
-                {selectionRange ? `(行 ${selectionRange.startLine}-${selectionRange.endLine})` : ''}
+                {t('editor.inlineAiTitle')}{' '}
+                {selectionRange
+                  ? t('editor.lineRange', {
+                      start: selectionRange.startLine,
+                      end: selectionRange.endLine,
+                    })
+                  : ''}
               </span>
               <button
                 type="button"
@@ -4967,7 +5012,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   if (inlineAiDiff) handleRejectInlineAi();
                   else setShowInlineAi(false);
                 }}
-                title="关闭 (Esc)"
+                title={t('editor.closeEsc')}
               >
                 ×
               </button>
@@ -4981,25 +5026,29 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               return (
                 <div className="inline-ai-diff-actions">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span className="inline-ai-diff-badge">✦ 差异就绪 ({diffText} 行)</span>
-                    <span style={{ fontSize: 10, color: 'var(--muted, #888)', opacity: 0.8 }}>Enter: 追问微调</span>
+                    <span className="inline-ai-diff-badge">
+                      {t('editor.diffReady', { diff: diffText })}
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--muted, #888)', opacity: 0.8 }}>
+                      {t('editor.enterFollowUp')}
+                    </span>
                   </div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <button
                       type="button"
                       className="inline-ai-accept-btn"
                       onClick={handleAcceptInlineAi}
-                      title="接受代码变更 (⌘↵)"
+                      title={t('editor.acceptTip')}
                     >
-                      ✓ 接受 (⌘↵)
+                      {t('editor.acceptBtn')}
                     </button>
                     <button
                       type="button"
                       className="inline-ai-reject-btn"
                       onClick={handleRejectInlineAi}
-                      title="放弃变更并还原 (Esc)"
+                      title={t('editor.rejectTip')}
                     >
-                      ✕ 放弃 (Esc)
+                      {t('editor.rejectBtn')}
                     </button>
                   </div>
                 </div>
@@ -5009,7 +5058,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             {inlineAiLoading ? (
               <div className="inline-ai-loading-row">
                 <div className="inline-ai-spinner" />
-                <span>AI 正在原地生成代码修改...</span>
+                <span>{t('editor.inlineAiGenerating')}</span>
               </div>
             ) : (
               <div className="inline-ai-input-row">
@@ -5018,9 +5067,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   type="text"
                   className="inline-ai-input"
                   placeholder={
-                    inlineAiDiff
-                      ? '在当前修改基础上追问微调，如：改为异步函数、增加空值校验 (Enter 再次生成)...'
-                      : '输入修改要求，例如：重构优化 / 增加异常捕获 (Enter 发送)...'
+                    inlineAiDiff ? t('editor.inlineAiFollowUpPh') : t('editor.inlineAiInputPh')
                   }
                   value={inlinePrompt}
                   onChange={(e) => setInlinePrompt(e.target.value)}
@@ -5037,7 +5084,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   disabled={!inlinePrompt.trim()}
                   onClick={handleInlineAiSubmit}
                 >
-                  {inlineAiDiff ? '再次微调' : '发送'}
+                  {inlineAiDiff ? t('editor.tweakAgain') : t('editor.send')}
                 </button>
               </div>
             )}
@@ -5049,25 +5096,25 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     className="inline-ai-tag"
                     onClick={() => handleQuickPrompt('优化为 async/await 异步并发形式')}
                   >
-                    异步优化
+                    {t('editor.tagAsyncOptimize')}
                   </span>
                   <span
                     className="inline-ai-tag"
                     onClick={() => handleQuickPrompt('提取复用子函数并精简主流程')}
                   >
-                    抽取子函数
+                    {t('editor.tagExtractFn')}
                   </span>
                   <span
                     className="inline-ai-tag"
                     onClick={() => handleQuickPrompt('补充极端情况与空值保护')}
                   >
-                    防护增强
+                    {t('editor.tagGuard')}
                   </span>
                   <span
                     className="inline-ai-tag"
                     onClick={() => handleQuickPrompt('添加关键步骤的中文行内注释')}
                   >
-                    补充注释
+                    {t('editor.tagAddComments')}
                   </span>
                 </>
               ) : (
@@ -5076,25 +5123,25 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     className="inline-ai-tag"
                     onClick={() => handleQuickPrompt('优化并简化此段代码结构')}
                   >
-                    优化结构
+                    {t('editor.tagOptimizeStructure')}
                   </span>
                   <span
                     className="inline-ai-tag"
                     onClick={() => handleQuickPrompt('为选区代码添加清晰的中文注释')}
                   >
-                    添加注释
+                    {t('editor.tagAddComment')}
                   </span>
                   <span
                     className="inline-ai-tag"
                     onClick={() => handleQuickPrompt('增强入参校验与异常捕获逻辑')}
                   >
-                    错误处理
+                    {t('editor.tagErrorHandling')}
                   </span>
                   <span
                     className="inline-ai-tag"
                     onClick={() => handleQuickPrompt('编写对应的核心单元测试用例')}
                   >
-                    生成单测
+                    {t('editor.tagUnitTest')}
                   </span>
                 </>
               )}
@@ -5110,7 +5157,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 type="button"
                 className="debug-toolbar-btn"
                 onClick={() => window.ide?.dapContinue?.()}
-                title="继续执行 (F5)"
+                title={t('editor.debugContinue')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="#22c55e">
                   <polygon points="5 3 19 12 5 21 5 3" />
@@ -5121,7 +5168,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 type="button"
                 className="debug-toolbar-btn"
                 onClick={() => window.ide?.dapPause?.()}
-                title="暂停执行 (F6)"
+                title={t('editor.debugPause')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="#facc15">
                   <rect x="6" y="4" width="4" height="16" />
@@ -5133,7 +5180,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               type="button"
               className="debug-toolbar-btn"
               onClick={() => window.ide?.dapStepOver?.()}
-              title="单步跳过 (F10)"
+              title={t('editor.debugStepOver')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
@@ -5144,7 +5191,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               type="button"
               className="debug-toolbar-btn"
               onClick={() => window.ide?.dapStepInto?.()}
-              title="单步步入 (F11)"
+              title={t('editor.debugStepInto')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="7 13 12 18 17 13" />
@@ -5155,7 +5202,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               type="button"
               className="debug-toolbar-btn"
               onClick={() => window.ide?.dapStepOut?.()}
-              title="单步步出 (Shift+F11)"
+              title={t('editor.debugStepOut')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="7 11 12 6 17 11" />
@@ -5167,7 +5214,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               type="button"
               className="debug-toolbar-btn"
               onClick={handleStopDebug}
-              title="停止调试 (Shift+F5)"
+              title={t('editor.debugStop')}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="#ef4444">
                 <rect x="4" y="4" width="16" height="16" rx="2" />
@@ -5199,7 +5246,12 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 onShowToast={onShowToast}
                 onOpenConsole={(sql) => {
                   // 「生成 SQL 到控制台」只是把文本交出去，落在哪个脚本文件、叫什么名字由 App 决定
-                  onOpenConsoleForTable?.(connId, schemaName || undefined, sql, `查询 - ${tableName}`);
+                  onOpenConsoleForTable?.(
+                    connId,
+                    schemaName || undefined,
+                    sql,
+                    t('editor.consoleQueryTitle', { table: tableName }),
+                  );
                 }}
               />
             );
@@ -5259,7 +5311,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 </div>
               </>
             ) : (
-              <div className="image-preview-empty">无法加载图片预览</div>
+              <div className="image-preview-empty">{t('editor.imagePreviewFailed')}</div>
             )}
           </div>
         ) : active && showMdPreview && isMarkdown ? (
@@ -5299,6 +5351,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   setupEditorKeybindings(ed, onOpenFileRef);
                   setupEditorScrollSync(ed);
                   const cmdClickGesture = setupCmdClickGesture(ed, {
+                    t: () => tRef.current,
                     getWorkspaceRoot: () => workspace,
                     onOpenFile: (targetPath, line, col) => {
                       onOpenFile?.(targetPath, line, col);
@@ -5403,8 +5456,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                           e.event.preventDefault();
                           const existingBp = breakpointsRef.current.find((b) => b.path === curPath && b.line === line);
                           const promptMsg = existingBp
-                            ? `编辑第 ${line} 行条件断点表达式（留空则转为普通断点，点击取消不修改）:`
-                            : `为第 ${line} 行设置条件断点表达式（例如: i > 10 或 ptr != nullptr）:`;
+                            ? t('editor.bpEditConditional', { line })
+                            : t('editor.bpSetConditional', { line });
                           const defaultVal = existingBp?.condition || '';
                           const cond = window.prompt(promptMsg, defaultVal);
                           if (cond !== null) {
@@ -5490,7 +5543,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             <div
               className="splitter splitter-v md-splitter"
               onMouseDown={startMdResize}
-              title="拖动调整预览宽度"
+              title={t('editor.resizePreview')}
             />
             <div className="md-preview-container">
               <div
@@ -5503,18 +5556,20 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               {showToc && (
                 <div className="md-toc-floating-panel">
                   <div className="md-toc-header">
-                    <span className="md-toc-title">文档大纲 ({mdHeadings.length})</span>
+                    <span className="md-toc-title">
+                      {t('editor.docOutlineCount', { n: mdHeadings.length })}
+                    </span>
                     <button
                       type="button"
                       className="md-toc-close-btn"
                       onClick={() => setShowToc(false)}
-                      title="关闭大纲 (Esc)"
+                      title={t('editor.closeOutlineEsc')}
                     >
                       ✕
                     </button>
                   </div>
                   {mdHeadings.length === 0 ? (
-                    <div className="md-toc-empty">暂无标题大纲</div>
+                    <div className="md-toc-empty">{t('editor.noHeadings')}</div>
                   ) : (
                     <div className="md-toc-list" ref={tocListRef}>
                       {mdHeadings.map((h, idx) => {
@@ -5524,7 +5579,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                             key={`${h.id}-${idx}`}
                             className={`md-toc-item level-${h.level}${isActive ? ' active' : ''}`}
                             onClick={() => handleHeadingClick(h)}
-                            title={`第 ${h.line} 行: ${h.text}`}
+                            title={t('editor.headingTooltip', { line: h.line, text: h.text })}
                           >
                             <span className="md-toc-bullet" />
                             <span className="md-toc-text">{h.text}</span>
@@ -5649,7 +5704,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             <div
               className={`splitter ${splitOrientation === 'vertical' ? 'splitter-h' : 'splitter-v'} split-editor-splitter`}
               onMouseDown={startSplitResize}
-              title={`拖动调整${splitOrientation === 'vertical' ? '上下' : '左右'}分屏比例`}
+              title={
+                splitOrientation === 'vertical'
+                  ? t('editor.resizeSplitVertical')
+                  : t('editor.resizeSplitHorizontal')
+              }
               style={
                 splitOrientation === 'vertical'
                   ? { height: 4, width: '100%', cursor: 'row-resize', background: 'var(--border)' }
@@ -5691,7 +5750,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    拆分窗格
+                    {t('editor.splitPane')}
                   </span>
                   <select
                     value={splitActive?.path || ''}
@@ -5725,7 +5784,11 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   <button
                     type="button"
                     className="panel-action-btn"
-                    title={splitOrientation === 'horizontal' ? '切换为上下拆分' : '切换为左右拆分'}
+                    title={
+                      splitOrientation === 'horizontal'
+                        ? t('editor.switchSplitHorizontal')
+                        : t('editor.switchSplitVertical')
+                    }
                     onClick={() => setSplitOrientation((o) => (o === 'horizontal' ? 'vertical' : 'horizontal'))}
                   >
                     {splitOrientation === 'horizontal' ? (
@@ -5743,7 +5806,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   <button
                     type="button"
                     className="panel-action-btn"
-                    title="关闭拆分视图"
+                    title={t('editor.closeSplit')}
                     onClick={() => setIsSplit(false)}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -5823,50 +5886,52 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             {conflictBlocks.length > 0 && !active.isLargeFile && (
               <div className="editor-conflict-banner">
                 <div className="conflict-banner-info">
-                  <span className="conflict-banner-badge">{conflictBlocks.length} 处冲突</span>
-                  <span>当前文件包含未解决的 Git 合并冲突标记</span>
+                  <span className="conflict-banner-badge">
+                    {t('editor.conflictCount', { n: conflictBlocks.length })}
+                  </span>
+                  <span>{t('editor.conflictBannerText')}</span>
                 </div>
                 <div className="conflict-banner-actions">
                   <button
                     type="button"
                     className="editor-conflict-btn"
                     onClick={() => setShowThreeWayModal(true)}
-                    title="开启独立三方合并解决器 (Current | Base | Incoming 三栏对比)"
+                    title={t('editor.threeWayTip')}
                     style={{ background: 'var(--accent, #6366f1)', color: '#fff', fontWeight: 600 }}
                   >
-                    ⚡️ 3-Way 三栏合并解决器
+                    {t('editor.threeWayBtn')}
                   </button>
                   <button
                     type="button"
                     className="editor-conflict-btn accept-current"
                     onClick={() => handleResolveAllConflicts('current')}
-                    title="批量采用当前分支修改 (HEAD)"
+                    title={t('editor.acceptCurrentTip')}
                   >
-                    全部采用当前
+                    {t('editor.acceptCurrentBtn')}
                   </button>
                   <button
                     type="button"
                     className="editor-conflict-btn accept-incoming"
                     onClick={() => handleResolveAllConflicts('incoming')}
-                    title="批量采用传入分支修改 (Incoming)"
+                    title={t('editor.acceptIncomingTip')}
                   >
-                    全部采用传入
+                    {t('editor.acceptIncomingBtn')}
                   </button>
                   <button
                     type="button"
                     className="editor-conflict-btn"
                     onClick={() => handleResolveAllConflicts('both')}
-                    title="保留双方修改"
+                    title={t('editor.keepBothTip')}
                   >
-                    全部保留双方
+                    {t('editor.keepBothBtn')}
                   </button>
                   <button
                     type="button"
                     className="editor-conflict-btn"
                     onClick={handleJumpNextConflict}
-                    title="跳转到下一处冲突"
+                    title={t('editor.jumpNextConflict')}
                   >
-                    下一处 ▾
+                    {t('editor.nextConflictBtn')}
                   </button>
                 </div>
               </div>
@@ -5894,7 +5959,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
                   <span style={{ fontWeight: 700, color: '#10b981' }}>✦ Smart Apply</span>
-                  <span style={{ color: 'var(--text, #fff)' }}>AI 代码变更审查中</span>
+                  <span style={{ color: 'var(--text, #fff)' }}>{t('editor.smartApplyReviewing')}</span>
                   <span
                     style={{
                       fontSize: 11,
@@ -5905,7 +5970,10 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       fontWeight: 600,
                     }}
                   >
-                    +{smartApplyDiff.addedLinesCount} / -{smartApplyDiff.removedLinesCount} 行变动
+                    {t('editor.linesChanged', {
+                      added: smartApplyDiff.addedLinesCount,
+                      removed: smartApplyDiff.removedLinesCount,
+                    })}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -5913,26 +5981,26 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     type="button"
                     className="panel-action-btn"
                     onClick={handleAcceptSmartApply}
-                    title="采纳所有修改并保存 (Accept)"
+                    title={t('editor.acceptAllTip')}
                     style={{ color: '#10b981', fontWeight: 600 }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
-                    <span style={{ fontSize: 11, marginLeft: 2 }}>采纳 (Accept)</span>
+                    <span style={{ fontSize: 11, marginLeft: 2 }}>{t('editor.acceptShort')}</span>
                   </button>
                   <button
                     type="button"
                     className="panel-action-btn"
                     onClick={handleRejectSmartApply}
-                    title="拒绝所有修改并撤回原代码 (Reject)"
+                    title={t('editor.rejectAllTip')}
                     style={{ color: '#ef4444' }}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
-                    <span style={{ fontSize: 11, marginLeft: 2 }}>拒绝 (Reject)</span>
+                    <span style={{ fontSize: 11, marginLeft: 2 }}>{t('editor.rejectShort')}</span>
                   </button>
                 </div>
               </div>
@@ -5942,7 +6010,13 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             {active.isLargeFile && (
               <div className="large-file-guard-banner">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>⚠️ <strong>大文件安全模式</strong>：该文件体积较大，已自动关闭复杂语法解析以保障编辑器极速流畅</span>
+                  <span>
+                    {translateSegments('editor.largeFileBanner', locale, {
+                      mode: t('editor.bigFileMode'),
+                    }).map((seg, i) =>
+                      seg.emphasis ? <strong key={i}>{seg.text}</strong> : <span key={i}>{seg.text}</span>,
+                    )}
+                  </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button
@@ -5950,7 +6024,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     className="guard-btn"
                     onClick={() => onForceLoadLargeFile?.(active.path)}
                   >
-                    强制完全加载 (解除防护)
+                    {t('editor.forceLoad')}
                   </button>
                 </div>
               </div>
@@ -5969,16 +6043,14 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <div className="large-file-placeholder">
                   <div className="large-file-icon">📄</div>
                   <div className="large-file-title">{active.path.split('/').pop() || active.path}</div>
-                  <div className="large-file-hint">
-                    文件较大（&gt;2MB），为避免编辑器卡顿未预先加载全文。
-                  </div>
+                  <div className="large-file-hint">{t('editor.largeFileHint')}</div>
                   <button
                     type="button"
                     className="guard-btn"
                     style={{ marginTop: 12, padding: '6px 14px', fontSize: 13 }}
                     onClick={() => onForceLoadLargeFile?.(active.path)}
                   >
-                    立即加载并查看 (安全模式)
+                    {t('editor.loadNow')}
                   </button>
                 </div>
               ) : (
@@ -5996,7 +6068,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 setEditorInstance(ed);
                 registerAiInlineCompletions();
                 if (monaco) {
-                  registerConflictCodeLensProvider(monaco, handleResolveConflict);
+                  // 传的是**转发函数**而不是 t 本身：provideCodeLenses 每次由 Monaco 现取，
+                  // 但注册只发生一次，直接把 t 传进去会让 lens 标题锁死在首次 locale
+                  registerConflictCodeLensProvider(monaco, (key, params) => tRef.current(key, params), handleResolveConflict);
                   registerConflictCommands(monaco, handleResolveConflict);
                 }
                 try {
@@ -6030,6 +6104,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   }
                 }
                 const cmdClickGesture = setupCmdClickGesture(ed, {
+                  t: () => tRef.current,
                   getWorkspaceRoot: () => workspace,
                   onOpenFile: (targetPath, line, col) => {
                     const fn = onOpenFileRef?.current ?? onOpenFile;
@@ -6170,8 +6245,8 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                         e.event.preventDefault();
                         const existingBp = breakpointsRef.current.find((b) => b.path === curPath && b.line === line);
                         const promptMsg = existingBp
-                          ? `编辑第 ${line} 行条件断点表达式（留空则转为普通断点，点击取消不修改）:`
-                          : `为第 ${line} 行设置条件断点表达式（例如: i > 10 或 ptr != nullptr）:`;
+                          ? t('editor.bpEditConditional', { line })
+                          : t('editor.bpSetConditional', { line });
                         const defaultVal = existingBp?.condition || '';
                         const cond = window.prompt(promptMsg, defaultVal);
                         if (cond !== null) {
@@ -6285,7 +6360,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
             onMoreHistory={onMoreWorkspaceHistory}
           />
         ) : (
-          <div className="empty-state">从左侧打开文件，或让 Agent 开始改代码</div>
+          <div className="empty-state">{t('editor.emptyOpenHint')}</div>
         )}
 
         {/* Full-width Inline Diff Banner matching user screenshot 100% */}
@@ -6322,7 +6397,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               if (!gitDiffData || gitDiffData.path !== activePath) {
                 return (
                   <div style={{ padding: '12px 16px', color: 'var(--muted)' }}>
-                    正在加载改动对比数据...
+                    {t('editor.loadingDiff')}
                   </div>
                 );
               }
@@ -6462,7 +6537,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                         {active.path.split('/').pop() || active.path}
                       </span>
                       <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                        Git 本地更改(工作树) - 第 {currentHunkIdx + 1} 个更改(共 {totalHunks} 个)
+                        {t('editor.hunkTitle', { index: currentHunkIdx + 1, total: totalHunks })}
                       </span>
                     </div>
 
@@ -6470,7 +6545,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       {/* 1. Stage button + */}
                       <button
                         type="button"
-                        title="暂存文件更改"
+                        title={t('editor.stageFileChanges')}
                         onClick={async () => {
                           await window.ide.gitStage([active.path]);
                           onRefreshGitStatus?.();
@@ -6496,7 +6571,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       {/* 2. Discard button ⟲ (精准放弃当前改动块) */}
                       <button
                         type="button"
-                        title="放弃此块更改"
+                        title={t('editor.discardHunkTitle')}
                         onClick={() => {
                           void handleDiscardSingleHunk();
                         }}
@@ -6521,7 +6596,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       {/* 3. Previous diff ↑ */}
                       <button
                         type="button"
-                        title="上一个更改"
+                        title={t('editor.prevChange')}
                         onClick={() => {
                           if (hunks.length > 0) {
                             const prevIdx = (currentHunkIdx - 1 + hunks.length) % hunks.length;
@@ -6551,7 +6626,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       {/* 4. Next diff ↓ */}
                       <button
                         type="button"
-                        title="下一个更改"
+                        title={t('editor.nextChange')}
                         onClick={() => {
                           if (hunks.length > 0) {
                             const nextIdx = (currentHunkIdx + 1) % hunks.length;
@@ -6581,7 +6656,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                       {/* 5. Close ✕ */}
                       <button
                         type="button"
-                        title="关闭对比 (Esc)"
+                        title={t('editor.closeDiffShort')}
                         onClick={() => setGitInlineDiffLine(null)}
                         style={{
                           background: 'transparent',
@@ -6607,7 +6682,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   <div style={{ maxHeight: 340, overflowY: 'auto', overflowX: 'auto', background: 'var(--bg-editor, #1e1e1e)' }}>
                     {displayRows.length === 0 ? (
                       <div style={{ padding: '12px 16px', color: 'var(--muted)' }}>
-                        当前未检测到行级改动
+                        {t('editor.noLineChange')}
                       </div>
                     ) : (
                       displayRows.map((row) => {
@@ -6768,9 +6843,9 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                     <path d="M3 3v5h5" />
                   </svg>
-                  <span>放弃修改 (Discard Changes)</span>
+                  <span>{t('editor.discardChangesMenu')}</span>
                 </div>
-                <kbd className="shortcut-badge shortcut-badge-icon" title="放弃修改">
+                <kbd className="shortcut-badge shortcut-badge-icon" title={t('editor.discardChanges')}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                     <path d="M3 3v5h5" />
@@ -6786,7 +6861,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
-              <span>关闭</span>
+              <span>{t('editor.close')}</span>
             </div>
             <kbd className="shortcut-badge">{isMac ? '⌘W' : 'Ctrl+W'}</kbd>
           </div>
@@ -6796,7 +6871,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <rect x="3" y="3" width="13" height="13" rx="2" />
                 <path d="M9 17h10a2 2 0 0 0 2-2V9" />
               </svg>
-              <span>关闭其他</span>
+              <span>{t('editor.closeOthers')}</span>
             </div>
             <kbd className="shortcut-badge">{isMac ? '⌥⌘T' : 'Alt+Ctrl+T'}</kbd>
           </div>
@@ -6806,7 +6881,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <polyline points="15 18 9 12 15 6" />
                 <line x1="5" y1="5" x2="5" y2="19" />
               </svg>
-              <span>关闭左侧标签页</span>
+              <span>{t('editor.closeLeftTabs')}</span>
             </div>
           </div>
           <div className="menu-item" onClick={() => handleCloseRight(contextMenu.targetPath)}>
@@ -6815,7 +6890,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <polyline points="9 18 15 12 9 6" />
                 <line x1="19" y1="5" x2="19" y2="19" />
               </svg>
-              <span>关闭右侧标签页</span>
+              <span>{t('editor.closeRightTabs')}</span>
             </div>
           </div>
           <div className="menu-item" onClick={handleCloseSaved}>
@@ -6825,7 +6900,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <polyline points="17 21 17 13 7 13 7 21" />
                 <polyline points="7 3 7 8 15 8" />
               </svg>
-              <span>关闭已保存</span>
+              <span>{t('editor.closeSaved')}</span>
             </div>
           </div>
           <div className="menu-item" onClick={handleCloseAll}>
@@ -6835,7 +6910,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <line x1="9" y1="9" x2="15" y2="15" />
                 <line x1="15" y1="9" x2="9" y2="15" />
               </svg>
-              <span>全部关闭</span>
+              <span>{t('editor.closeAllTabs')}</span>
             </div>
           </div>
 
@@ -6850,7 +6925,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <rect x="9" y="9" width="13" height="13" rx="2" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
-              <span>复制绝对路径</span>
+              <span>{t('editor.copyAbsPath')}</span>
             </div>
             <kbd className="shortcut-badge">{isMac ? '⌥⌘C' : 'Alt+Ctrl+C'}</kbd>
           </div>
@@ -6863,7 +6938,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                 <polyline points="16 18 22 12 16 6" />
                 <polyline points="8 6 2 12 8 18" />
               </svg>
-              <span>复制相对路径</span>
+              <span>{t('editor.copyRelPath')}</span>
             </div>
             <kbd className="shortcut-badge">{isMac ? '⌥⇧⌘C' : 'Alt+Shift+Ctrl+C'}</kbd>
           </div>
@@ -6885,7 +6960,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     <rect x="2" y="4" width="20" height="16" rx="2" />
                     <line x1="12" y1="4" x2="12" y2="20" />
                   </svg>
-                  <span>与历史版本对比 (Compare with Revision)</span>
+                  <span>{t('editor.compareRevision')}</span>
                 </div>
               </div>
 
@@ -6904,7 +6979,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     <circle cx="6" cy="18" r="3" />
                     <path d="M18 9a9 9 0 0 1-9 9" />
                   </svg>
-                  <span>与分支或标签对比 (Compare with Branch or Tag)</span>
+                  <span>{t('editor.compareBranchTag')}</span>
                 </div>
               </div>
 
@@ -6921,7 +6996,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     <circle cx="12" cy="12" r="10" />
                     <polyline points="12 6 12 12 16 14" />
                   </svg>
-                  <span>查看文件历史 (Show History)</span>
+                  <span>{t('editor.showHistory')}</span>
                 </div>
               </div>
 
@@ -6938,7 +7013,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                     <path d="M12 20h9" />
                     <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                   </svg>
-                  <span>Git 追溯 (Annotate / Git Blame)</span>
+                  <span>{t('editor.annotateBlame')}</span>
                 </div>
               </div>
               <div className="menu-divider" />
@@ -6953,7 +7028,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
               <svg className="menu-item-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
               </svg>
-              <span>{isMac ? '在 Finder 中显示' : '在资源管理器中显示'}</span>
+              <span>{isMac ? t('editor.revealInFinder') : t('tree.revealInExplorer')}</span>
             </div>
             <kbd className="shortcut-badge">{isMac ? '⌥⌘R' : 'Alt+Ctrl+R'}</kbd>
           </div>
@@ -6974,7 +7049,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
                   <polyline points="4 17 10 11 4 5" />
                   <line x1="12" y1="19" x2="20" y2="19" />
                 </svg>
-                <span>在集成终端中打开</span>
+                <span>{t('tree.openTerminal')}</span>
               </div>
             </div>
           )}
@@ -6988,7 +7063,7 @@ function focusEditorFindWidget(ed: MonacoEditor.IStandaloneCodeEditor | null | u
           theme={monacoTheme}
           onSave={(merged) => {
             onChangeContent(active.path, merged, true);
-            onShowToast?.('三方合并已保存', '冲突已成功解决并写回文件', 'success');
+            onShowToast?.(t('editor.threeWaySavedTitle'), t('editor.threeWaySavedDetail'), 'success');
           }}
           onClose={() => setShowThreeWayModal(false)}
         />

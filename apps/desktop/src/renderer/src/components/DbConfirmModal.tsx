@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useModalResize, ModalResizeHandle, createSafeOverlayHandlers } from '../hooks/useModalResize';
 import { MarkdownMessage } from './MarkdownMessage';
 import { isTypingConfirmed, type DbConfirmTone } from '../services/dbConfirmContent';
+import { useI18n } from '../i18n';
 
 /** 文本输入模式：在弹窗里顺带收集一个字符串（新建库名、重命名、筛选值…） */
 export interface DbConfirmInput {
@@ -60,13 +61,17 @@ export function DbConfirmModal({
   content,
   details,
   tone = 'normal',
-  confirmLabel = '确认执行',
-  cancelLabel = '取消',
+  confirmLabel,
+  cancelLabel,
   requireTyping,
   input,
   onConfirm,
   onCancel,
 }: DbConfirmModalProps) {
+  const { t } = useI18n();
+  /** 调用方没给按钮文案时退回通用文案（新建 / 删除等场景都有自己的说法，会显式传入） */
+  const confirmText = confirmLabel ?? t('db.confirmExecute');
+  const cancelText = cancelLabel ?? t('db.cancel');
   const [typed, setTyped] = useState('');
   const confirmBtnRef = React.useRef<HTMLButtonElement>(null);
   const cancelBtnRef = React.useRef<HTMLButtonElement>(null);
@@ -196,7 +201,7 @@ export function DbConfirmModal({
             type="button"
             className="panel-action-btn"
             onClick={onCancel}
-            title="关闭 (Esc)"
+            title={t('db.closeEsc')}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -227,7 +232,7 @@ export function DbConfirmModal({
           <div className="db-confirm-typing">
             <div className="db-confirm-typing-hint">
               {input?.label ??
-                `此操作不可恢复。请原样输入 ${requireTyping} 以确认：`}
+                t('db.typeToConfirm', { name: requireTyping ?? '' })}
             </div>
             <input
               type="text"
@@ -267,9 +272,9 @@ export function DbConfirmModal({
             type="button"
             className="panel-action-btn db-confirm-btn"
             onClick={onCancel}
-            title={`${cancelLabel} (Esc)`}
+            title={t('db.labelEsc', { label: cancelText })}
           >
-            {cancelLabel}
+            {cancelText}
           </button>
           <button
             ref={confirmBtnRef}
@@ -277,9 +282,13 @@ export function DbConfirmModal({
             className={`panel-action-btn db-confirm-btn primary${danger ? ' danger' : ''}`}
             onClick={submit}
             disabled={!canConfirm}
-            title={!canConfirm ? '请先完成上方输入' : `${confirmLabel} (Enter)`}
+            title={
+              !canConfirm
+                ? t('db.completeInputAbove')
+                : t('db.labelEnter', { label: confirmText })
+            }
           >
-            {confirmLabel}
+            {confirmText}
           </button>
         </div>
 

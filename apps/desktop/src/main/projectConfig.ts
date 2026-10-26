@@ -58,6 +58,23 @@ export function projectConfigDir(workspaceRoot: string, homeDir: string = os.hom
   return path.join(projectConfigsRoot(homeDir), projectConfigKey(workspaceRoot));
 }
 
+/** 派生数据的根目录：`~/.echoly/indexes` */
+export const INDEXES_DIR_NAME = 'indexes';
+
+/**
+ * 代码库索引的落盘目录：`~/.echoly/indexes/<哈希>`。
+ *
+ * 与项目配置**分开放**，因为两者的生命周期完全不同：配置是用户手写的、丢了要重填；
+ * 索引是纯派生数据，随时可以删、删了下次搜索时重建。混在一个目录里，
+ * 用户想清掉索引腾空间时就得先分辨哪些文件不能删。
+ *
+ * 哈希规则复用 `projectConfigKey`：同一个工作区在配置与索引两边必须落在同一个标识下，
+ * 否则会出现「配置认得这个项目、索引不认得」这种只能靠翻日志发现的错位。
+ */
+export function projectIndexDir(workspaceRoot: string, homeDir: string = os.homedir()): string {
+  return path.join(homeDir, '.echoly', INDEXES_DIR_NAME, projectConfigKey(workspaceRoot));
+}
+
 /** 元数据内容：把目录与项目路径对上号（仅供人查看，读取方不得依赖它做判定） */
 export interface ProjectConfigMeta {
   /** 工作区根路径，原样记录，不做归一化 */

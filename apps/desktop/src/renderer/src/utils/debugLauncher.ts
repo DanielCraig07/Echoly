@@ -1,3 +1,5 @@
+import type { Translate } from '../i18n';
+
 export interface ScriptOptionLike {
   id: string;
   name: string;
@@ -18,10 +20,14 @@ export interface ResolvedDebugConfig {
 }
 
 /**
- * 针对当前选中的运行配置，智能注入多语言调试参数并生成调试指令
+ * 针对当前选中的运行配置，智能注入多语言调试参数并生成调试指令。
+ *
+ * `t` 是**必填**参数，不是可选带默认值的：`toastMessage` 会直接弹到界面上，漏传就等于
+ * 英文环境下弹一句中文，而这件事在中文环境下完全看不出来。做成必填，漏传是编译错误。
  */
 export function resolveDebugConfig(
   option: ScriptOptionLike,
+  t: Translate,
   activePath?: string | null,
 ): ResolvedDebugConfig {
   const { id, name, command, source, badge } = option;
@@ -34,7 +40,7 @@ export function resolveDebugConfig(
       command,
       terminalType: 'cpp',
       terminalTitle: 'C/C++ Debug Build',
-      toastMessage: '正在编译并启动 C/C++ 调试器 (lldb-dap)...',
+      toastMessage: t('run.debugToastCpp'),
     };
   }
 
@@ -75,7 +81,7 @@ export function resolveDebugConfig(
       terminalType: termType,
       terminalTitle: 'Java (Debug: 5005)',
       port: 5005,
-      toastMessage: 'Java 调试会话已启动，已挂载 JDWP 监听端口 5005',
+      toastMessage: t('run.debugToastJava'),
     };
   }
 
@@ -102,7 +108,7 @@ export function resolveDebugConfig(
       terminalType: 'python',
       terminalTitle: 'Python (Debug: 5678)',
       port: 5678,
-      toastMessage: 'Python 调试命令已就绪，正在准备连接...',
+      toastMessage: t('run.debugToastPython'),
     };
   }
 
@@ -132,7 +138,7 @@ export function resolveDebugConfig(
       terminalType: 'node',
       terminalTitle: 'Node (Debug: 9229)',
       port: 9229,
-      toastMessage: 'Node.js 调试会话已启动，V8 Inspector 监听端口 9229',
+      toastMessage: t('run.debugToastNode'),
     };
   }
 
@@ -152,7 +158,7 @@ export function resolveDebugConfig(
       terminalType: 'go',
       terminalTitle: 'Go (Debug: 2345)',
       port: 2345,
-      toastMessage: 'Go 调试会话已启动，Delve DAP 监听 2345 端口...',
+      toastMessage: t('run.debugToastGo'),
     };
   }
 
@@ -163,6 +169,6 @@ export function resolveDebugConfig(
     command,
     terminalType: source || 'shell',
     terminalTitle: `${name} (Debug)`,
-    toastMessage: `已启动 ${name} 调试执行`,
+    toastMessage: t('run.debugToastGeneric', { name }),
   };
 }
