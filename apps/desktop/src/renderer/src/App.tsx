@@ -2150,6 +2150,30 @@ export function App() {
     }
   }, []);
 
+  const handleChatOpenFile = useCallback(
+    (p: string, l?: number, e?: number) => {
+      void openFile(p, l, undefined, e);
+    },
+    [openFile],
+  );
+
+  const handleOpenSettings = useCallback(() => {
+    setSettingsOpen(true);
+  }, []);
+
+  const handleChatAcceptAllDiffs = useCallback(() => {
+    void acceptAll();
+  }, [acceptAll]);
+
+  const handleChatRejectAllDiffs = useCallback(() => {
+    void rejectAll();
+  }, [rejectAll]);
+
+  const handleChatSelectDiff = useCallback((id: string) => {
+    setScmDiff(null);
+    setActiveDiffId(id);
+  }, []);
+
   // Initialize dual-tier symbol navigation (F12 definition jump, Shift+F12 references, and cross-tab opener)
   useEffect(() => {
     const nav = setupSymbolNavigation({
@@ -5151,19 +5175,18 @@ export function App() {
                   ref={chatRef}
                   workspace={workspace}
                   workspaceInfo={workspaceInfo}
-                  openFiles={[
-                    ...tabs.filter((t) => t.path === activePath),
-                    ...tabs.filter((t) => t.path !== activePath),
-                  ]
-                    .filter(
-                      (t) =>
-                        t.language !== 'image' &&
-                        !t.previewUrl &&
-                        !isUntitledPath(t.path) &&
-                        !isDbPath(t.path) &&
-                        !isBrowserPath(t.path),
-                    )
-                    .map((t) => ({ path: t.path, content: t.content }))}
+                  openFiles={
+                    tabs
+                      .filter(
+                        (t) =>
+                          t.language !== 'image' &&
+                          !t.previewUrl &&
+                          !isUntitledPath(t.path) &&
+                          !isDbPath(t.path) &&
+                          !isBrowserPath(t.path),
+                      )
+                      .map((t) => ({ path: t.path, content: t.content }))
+                  }
                   selection={editorSelection}
                   cursor={
                     activePath
@@ -5178,14 +5201,11 @@ export function App() {
                   onPermissionModeChange={(m) => void changePermissionMode(m)}
                   contextWindowTokens={contextWindowTokens}
                   diffs={diffs}
-                  onAcceptAllDiffs={() => void acceptAll()}
-                  onRejectAllDiffs={() => void rejectAll()}
-                  onSelectDiff={(id) => {
-                    setScmDiff(null);
-                    setActiveDiffId(id);
-                  }}
-                  onOpenFile={(p, l, e) => void openFile(p, l, undefined, e)}
-                  onOpenSettings={() => setSettingsOpen(true)}
+                  onAcceptAllDiffs={handleChatAcceptAllDiffs}
+                  onRejectAllDiffs={handleChatRejectAllDiffs}
+                  onSelectDiff={handleChatSelectDiff}
+                  onOpenFile={handleChatOpenFile}
+                  onOpenSettings={handleOpenSettings}
                   onSwitchWorkspace={handleSwitchWorkspacePath}
                   models={models}
                   activeModelId={activeModelId}

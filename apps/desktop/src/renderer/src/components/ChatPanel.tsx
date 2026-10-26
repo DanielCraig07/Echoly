@@ -88,6 +88,7 @@ export interface SessionTab {
   status: AgentRunStatus;
   runId: string | null;
   streaming: string;
+  streamingMsgId?: string;
   thinkingStreaming?: string;
   confirm: ConfirmRequest | null;
   plan: PlanProposal | null;
@@ -760,7 +761,15 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const scrollToBottom = useCallback((force = false) => {
     const el = messagesElRef.current;
     if (!el) return;
-    if (!force && (!stickRef.current || userInteractingRef.current)) return;
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    const hasSelection = Boolean(
+      sel &&
+        !sel.isCollapsed &&
+        sel.rangeCount > 0 &&
+        ((sel.anchorNode && (el.contains(sel.anchorNode) || (sel.anchorNode.parentElement && el.contains(sel.anchorNode.parentElement)))) ||
+          (sel.focusNode && (el.contains(sel.focusNode) || (sel.focusNode.parentElement && el.contains(sel.focusNode.parentElement))))),
+    );
+    if (!force && (!stickRef.current || userInteractingRef.current || hasSelection)) return;
     isProgrammaticScrollRef.current = true;
     if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
     el.scrollTop = el.scrollHeight;
@@ -1048,11 +1057,50 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const el = messagesElRef.current;
     if (!el) return;
 
+    const hasUserSelection = () => {
+      const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false;
+      const anchor = sel.anchorNode;
+      const focus = sel.focusNode;
+      return Boolean(
+        (anchor && (el.contains(anchor) || (anchor.parentElement && el.contains(anchor.parentElement)))) ||
+          (focus && (el.contains(focus) || (focus.parentElement && el.contains(focus.parentElement)))),
+      );
+    };
+
+    const onSelectionChange = () => {
+      if (hasUserSelection()) {
+        userInteractingRef.current = true;
+      }
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+
+    let isMouseDown = false;
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 0) {
+        isMouseDown = true;
+        userInteractingRef.current = true;
+      }
+    };
+
+    const onWindowMouseUp = () => {
+      if (!isMouseDown) return;
+      isMouseDown = false;
+      if (userInteractTimerRef.current) clearTimeout(userInteractTimerRef.current);
+      userInteractTimerRef.current = setTimeout(() => {
+        if (!hasUserSelection()) {
+          userInteractingRef.current = false;
+        }
+      }, 500);
+    };
+
     const onWheel = (e: WheelEvent) => {
       userInteractingRef.current = true;
       if (userInteractTimerRef.current) clearTimeout(userInteractTimerRef.current);
       userInteractTimerRef.current = setTimeout(() => {
-        userInteractingRef.current = false;
+        if (!hasUserSelection()) {
+          userInteractingRef.current = false;
+        }
       }, 250);
 
       if (e.deltaY < 0) {
@@ -1078,7 +1126,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       userInteractingRef.current = true;
       if (userInteractTimerRef.current) clearTimeout(userInteractTimerRef.current);
       userInteractTimerRef.current = setTimeout(() => {
-        userInteractingRef.current = false;
+        if (!hasUserSelection()) {
+          userInteractingRef.current = false;
+        }
       }, 250);
 
       const currentY = e.touches[0]?.clientY ?? 0;
@@ -1098,7 +1148,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const onTouchEnd = () => {
       if (userInteractTimerRef.current) clearTimeout(userInteractTimerRef.current);
       userInteractTimerRef.current = setTimeout(() => {
-        userInteractingRef.current = false;
+        if (!hasUserSelection()) {
+          userInteractingRef.current = false;
+        }
       }, 250);
     };
 
@@ -1109,8 +1161,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       const atBottom = distance <= STICK_BOTTOM_THRESHOLD_PX;
 
-      if (userInteractingRef.current) {
-        // 用户主动滚动交互：以用户意图为最高准则
+      if (userInteractingRef.current || hasUserSelection()) {
+        // 用户主动滚动交互或正在选中文本：以用户意图为最高准则
         if (atBottom) {
           stickRef.current = true;
           setShowJumpLatest((prev) => (prev ? false : prev));
@@ -1139,7 +1191,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     let lastKnownScrollHeight = el.scrollHeight;
 
     const observer = new MutationObserver(() => {
-      if (!stickRef.current || userInteractingRef.current || isProgrammaticScrollRef.current) {
+      if (
+        !stickRef.current ||
+        userInteractingRef.current ||
+        isProgrammaticScrollRef.current ||
+        hasUserSelection()
+      ) {
         lastKnownScrollHeight = el.scrollHeight;
         return;
       }
@@ -1149,7 +1206,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         if (mutationRafId !== null) cancelAnimationFrame(mutationRafId);
         mutationRafId = requestAnimationFrame(() => {
           mutationRafId = null;
-          if (stickRef.current && !userInteractingRef.current && messagesElRef.current) {
+          if (
+            stickRef.current &&
+            !userInteractingRef.current &&
+            !hasUserSelection() &&
+            messagesElRef.current
+          ) {
             isProgrammaticScrollRef.current = true;
             messagesElRef.current.scrollTop = messagesElRef.current.scrollHeight;
             if (programmaticScrollTimerRef.current) clearTimeout(programmaticScrollTimerRef.current);
@@ -1167,6 +1229,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       characterData: true,
     });
 
+    el.addEventListener('mousedown', onMouseDown, { passive: true });
+    window.addEventListener('mouseup', onWindowMouseUp, { passive: true });
     el.addEventListener('scroll', onScroll, { passive: true });
     el.addEventListener('wheel', onWheel, { passive: true });
     el.addEventListener('touchstart', onTouchStart, { passive: true });
@@ -1175,6 +1239,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     return () => {
       observer.disconnect();
       if (mutationRafId !== null) cancelAnimationFrame(mutationRafId);
+      document.removeEventListener('selectionchange', onSelectionChange);
+      el.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mouseup', onWindowMouseUp);
       el.removeEventListener('scroll', onScroll);
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('touchstart', onTouchStart);
@@ -1397,6 +1464,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         return {
           ...t,
           streaming: item.streaming ? (t.streaming || '') + item.streaming : t.streaming,
+          streamingMsgId: t.streamingMsgId || uid(),
           thinkingStreaming: item.thinking
             ? (t.thinkingStreaming || '') + item.thinking
             : t.thinkingStreaming,
@@ -1625,6 +1693,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               (next.messages.some((m) => m.role === 'tool')
                 ? '已完成执行，详细操作步骤已收折在上方「Worked for」面板中，点击即可展开查看。'
                 : '');
+            const finalizedId = targetTab.streamingMsgId || uid();
+            next.streamingMsgId = undefined;
             if (textToDisplay && textToDisplay !== '(cancelled)') {
               const lastIdx = next.messages.length - 1;
               const last = next.messages[lastIdx];
@@ -1634,7 +1704,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               // the same answer to be appended twice.
               if (last && last.role === 'assistant' && last.isIntermediate) {
                 const msgs = [...next.messages];
-                msgs[lastIdx] = { ...last, content: textToDisplay, isIntermediate: false };
+                msgs[lastIdx] = { ...last, id: finalizedId, content: textToDisplay, isIntermediate: false };
                 next.messages = msgs;
               } else if (last && last.role === 'assistant' && last.content === textToDisplay) {
                 const msgs = [...next.messages];
@@ -1644,7 +1714,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 next.messages = [
                   ...next.messages,
                   {
-                    id: uid(),
+                    id: finalizedId,
                     role: 'assistant',
                     content: textToDisplay,
                     isIntermediate: false,
@@ -2539,6 +2609,18 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               });
               // Trailing tool/reasoning group is live only for the current turn while running
               flushGroup(`${turnKey}-g-end`, true);
+              if (turnIsLive && activeTab?.streaming) {
+                const streamingKey = activeTab.streamingMsgId || 'streaming-current';
+                bodyEls.push(
+                  <div
+                    key={streamingKey}
+                    id={`msg-${streamingKey}`}
+                    className="msg assistant"
+                  >
+                    <MarkdownMessage content={activeTab.streaming} streaming onOpenFile={onOpenFile} />
+                  </div>,
+                );
+              }
               return bodyEls;
             };
 
@@ -2554,11 +2636,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   )}
                   <div className="chat-turn-files">
                     {renderTurnBody(turn.body, turnKey, isLastTurn)}
-                    {isLastTurn && activeTab?.streaming && (
-                      <div className="msg assistant">
-                        <MarkdownMessage content={activeTab.streaming} streaming onOpenFile={onOpenFile} />
-                      </div>
-                    )}
                   </div>
                 </div>
               );

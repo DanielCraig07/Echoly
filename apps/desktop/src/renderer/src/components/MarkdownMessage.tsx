@@ -242,6 +242,10 @@ function highlightCode(code: string, language: string): string {
     .replace(/>/g, '&gt;');
 }
 
+export const MarkdownOpenFileContext = React.createContext<
+  ((path: string, line?: number, endLine?: number) => void) | undefined
+>(undefined);
+
 function CodeBlock({
   language,
   code,
@@ -253,6 +257,8 @@ function CodeBlock({
   fileRef?: ParsedCodeRef | null;
   onOpenFile?: (path: string, line?: number, endLine?: number) => void;
 }) {
+  const contextOnOpenFile = React.useContext(MarkdownOpenFileContext);
+  const effectiveOnOpenFile = onOpenFile || contextOnOpenFile;
   const [copied, setCopied] = useState(false);
   const [ranInTerm, setRanInTerm] = useState(false);
   const [inserted, setInserted] = useState(false);
@@ -306,7 +312,7 @@ function CodeBlock({
       <div className="md-code-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
           <span className="md-code-lang">{language || 'text'}</span>
-          {fileRef && <CodeRefPill codeRef={fileRef} onOpenFile={onOpenFile} />}
+          {fileRef && <CodeRefPill codeRef={fileRef} onOpenFile={effectiveOnOpenFile} />}
         </div>
         <div className={`md-code-actions ${hasActive ? 'has-active' : ''}`}>
           {isShellCommand && (
@@ -494,6 +500,66 @@ export function extractMarkdownHeadings(content: string): MarkdownHeadingItem[] 
   return headings;
 }
 
+function ContextualCodeRefPill({
+  codeRef,
+  onOpenFile,
+}: {
+  codeRef: ParsedCodeRef;
+  onOpenFile?: (path: string, line?: number, endLine?: number) => void;
+}) {
+  const contextOnOpenFile = React.useContext(MarkdownOpenFileContext);
+  return <CodeRefPill codeRef={codeRef} onOpenFile={onOpenFile || contextOnOpenFile} />;
+}
+
+function ContextualAnchor({ href, children, onOpenFile, ...props }: any) {
+  const contextOnOpenFile = React.useContext(MarkdownOpenFileContext);
+  const effectiveOnOpenFile = onOpenFile || contextOnOpenFile;
+  const hrefRef = href ? parseAnyCodeRef(href) : null;
+  const text = extractNodeText(children);
+  const textRef = text ? parseAnyCodeRef(text) : null;
+
+  const targetRef = hrefRef || textRef;
+  if (targetRef && isCodeFile(targetRef.fileName)) {
+    if (hrefRef && textRef) {
+      if (textRef.startLine !== undefined && hrefRef.startLine === undefined) {
+        targetRef.startLine = textRef.startLine;
+        targetRef.endLine = textRef.endLine;
+        targetRef.lineLabel = textRef.lineLabel;
+      }
+    }
+    return <ContextualCodeRefPill codeRef={targetRef} onOpenFile={effectiveOnOpenFile} />;
+  }
+
+  const isExternal = href?.startsWith('http://') || href?.startsWith('https://');
+  return (
+    <a
+      href={href}
+      target={isExternal ? '_blank' : undefined}
+      rel={isExternal ? 'noopener noreferrer' : undefined}
+      onClick={(e) => {
+        if (href?.startsWith('file://')) {
+          e.preventDefault();
+          const ref = parseAnyCodeRef(href);
+          if (ref) {
+            if (effectiveOnOpenFile) {
+              effectiveOnOpenFile(ref.path, ref.startLine, ref.endLine);
+            } else {
+              window.dispatchEvent(
+                new CustomEvent('echoly:openFile', {
+                  detail: { path: ref.path, line: ref.startLine, endLine: ref.endLine },
+                }),
+              );
+            }
+          }
+        }
+      }}
+      {...props}
+    >
+      {children}
+    </a>
+  );
+}
+
 /**
  * 将文本节点中的代码引用渲染为胶囊 Pill，普通文字原样输出。
  * 用于 AI 回复中自动识别文件路径引用（双向胶囊化）。
@@ -503,11 +569,10 @@ function renderSegmentsWithPills(
   onOpenFile?: (path: string, line?: number, endLine?: number) => void,
 ): React.ReactNode[] {
   const segments = parseAiContentCodeRefs(text);
-  // 如果没有任何引用，返回 null 让调用方走默认渲染
   if (!segments.some((s) => s.type === 'ref')) return [];
   return segments.map((seg, i) => {
     if (seg.type === 'ref' && seg.ref) {
-      return <CodeRefPill key={i} codeRef={seg.ref} onOpenFile={onOpenFile} />;
+      return <ContextualCodeRefPill key={i} codeRef={seg.ref} onOpenFile={onOpenFile} />;
     }
     return <React.Fragment key={i}>{seg.value}</React.Fragment>;
   });
@@ -593,7 +658,7 @@ export function createMarkdownComponents(
         if (typeof text === 'string' && !text.includes('\n')) {
           const ref = parseAnyCodeRef(text);
           if (ref && isCodeFile(ref.fileName)) {
-            return <CodeRefPill codeRef={ref} onOpenFile={onOpenFile} />;
+            return <ContextualCodeRefPill codeRef={ref} onOpenFile={onOpenFile} />;
           }
         }
       }
@@ -604,49 +669,10 @@ export function createMarkdownComponents(
       );
     },
     a({ href, children, ...props }: any) {
-      const hrefRef = href ? parseAnyCodeRef(href) : null;
-      const text = extractNodeText(children);
-      const textRef = text ? parseAnyCodeRef(text) : null;
-
-      const targetRef = hrefRef || textRef;
-      if (targetRef && isCodeFile(targetRef.fileName)) {
-        if (hrefRef && textRef) {
-          if (textRef.startLine !== undefined && hrefRef.startLine === undefined) {
-            targetRef.startLine = textRef.startLine;
-            targetRef.endLine = textRef.endLine;
-            targetRef.lineLabel = textRef.lineLabel;
-          }
-        }
-        return <CodeRefPill codeRef={targetRef} onOpenFile={onOpenFile} />;
-      }
-
-      const isExternal = href?.startsWith('http://') || href?.startsWith('https://');
       return (
-        <a
-          href={href}
-          target={isExternal ? '_blank' : undefined}
-          rel={isExternal ? 'noopener noreferrer' : undefined}
-          onClick={(e) => {
-            if (href?.startsWith('file://')) {
-              e.preventDefault();
-              const ref = parseAnyCodeRef(href);
-              if (ref) {
-                if (onOpenFile) {
-                  onOpenFile(ref.path, ref.startLine, ref.endLine);
-                } else {
-                  window.dispatchEvent(
-                    new CustomEvent('echoly:openFile', {
-                      detail: { path: ref.path, line: ref.startLine, endLine: ref.endLine },
-                    }),
-                  );
-                }
-              }
-            }
-          }}
-          {...props}
-        >
+        <ContextualAnchor href={href} onOpenFile={onOpenFile} {...props}>
           {children}
-        </a>
+        </ContextualAnchor>
       );
     },
     p({ children }: any) {
@@ -742,39 +768,35 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   const mathProcessed = preprocessMath(mainContent);
   const source = streaming ? stabilizeMarkdown(mathProcessed) : mathProcessed;
 
-  // 动态构建带 onOpenFile 上下文的 components
-  const components = useMemo(
-    () => createMarkdownComponents(onOpenFile),
-    [onOpenFile],
-  );
-
   return (
-    <div className={`md-body${streaming ? ' streaming' : ''}`}>
-      {thinkContent && (
-        <div className={`think-block${thinkExpanded ? ' expanded' : ''}`}>
-          <button
-            className="think-toggle"
-            onClick={() => setThinkExpanded((v) => !v)}
-            type="button"
-          >
-            <span className="think-icon reasoning-step-dot">●</span>
-            <span>{streaming && !content.includes('</think>') ? '思考中…' : '思考过程'}</span>
-            <span className="think-chevron">{thinkExpanded ? '▲' : '▼'}</span>
-          </button>
-          {thinkExpanded && (
-            <div className="think-content">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-                {preprocessMath(thinkContent)}
-              </ReactMarkdown>
-            </div>
-          )}
-        </div>
-      )}
-      {source && (
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-          {source}
-        </ReactMarkdown>
-      )}
-    </div>
+    <MarkdownOpenFileContext.Provider value={onOpenFile}>
+      <div className={`md-body${streaming ? ' streaming' : ''}`}>
+        {thinkContent && (
+          <div className={`think-block${thinkExpanded ? ' expanded' : ''}`}>
+            <button
+              className="think-toggle"
+              onClick={() => setThinkExpanded((v) => !v)}
+              type="button"
+            >
+              <span className="think-icon reasoning-step-dot">●</span>
+              <span>{streaming && !content.includes('</think>') ? '思考中…' : '思考过程'}</span>
+              <span className="think-chevron">{thinkExpanded ? '▲' : '▼'}</span>
+            </button>
+            {thinkExpanded && (
+              <div className="think-content">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {preprocessMath(thinkContent)}
+                </ReactMarkdown>
+              </div>
+            )}
+          </div>
+        )}
+        {source && (
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            {source}
+          </ReactMarkdown>
+        )}
+      </div>
+    </MarkdownOpenFileContext.Provider>
   );
 });

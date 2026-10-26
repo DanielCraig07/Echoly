@@ -3201,6 +3201,8 @@ span.keybinding {
   flex-direction: column;
   gap: 0;
   background: var(--bg-panel);
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* AI 对话空状态与快捷 Prompt 胶囊引导层 */
@@ -3451,9 +3453,28 @@ span.keybinding {
   padding: 10px 14px 14px;
   border-radius: 12px;
   box-shadow: none;
+  user-select: text;
+  -webkit-user-select: text;
   transition:
     background 0.15s ease,
     border-color 0.15s ease;
+}
+
+/* 优化全局与对话区域选区高亮，确保暗色/亮色模式下选区对比度鲜明清晰 */
+.chat-messages ::selection,
+.md-body ::selection,
+.msg.assistant ::selection,
+.chat-turn ::selection {
+  background: rgba(55, 148, 255, 0.38) !important;
+  color: inherit !important;
+}
+
+[data-theme='light'] .chat-messages ::selection,
+[data-theme='light'] .md-body ::selection,
+[data-theme='light'] .msg.assistant ::selection,
+[data-theme='light'] .chat-turn ::selection {
+  background: rgba(130, 49, 142, 0.28) !important;
+  color: inherit !important;
 }
 
 .msg.assistant:hover {
@@ -3558,6 +3579,8 @@ span.keybinding {
   word-break: break-word;
   color: #e2e8f0;
   letter-spacing: 0.01em;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .md-body.streaming {
@@ -5759,7 +5782,9 @@ span.keybinding {
   margin: 0 3px;
   cursor: pointer;
   vertical-align: middle;
-  user-select: none;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-user-drag: none;
   line-height: 1.4;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   transition: background 0.15s, border-color 0.15s, transform 0.1s;
