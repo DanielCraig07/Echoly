@@ -48,6 +48,13 @@ function mapSessionToChat(m: ChatSessionMessage): ChatMessage | null {
   if (m.role === 'assistant') {
     // 跳过中间推理消息，只保留最终回复
     if (m.isIntermediate) return null;
+    // 如果上一轮是思考陷入死循环且未产出有效内容的熔断错误，不回灌到历史上下文，避免诱发后续模型再次死循环
+    if (
+      typeof m.content === 'string' &&
+      m.content.includes('模型在思考阶段陷入重复循环，未能产出有效内容')
+    ) {
+      return null;
+    }
     return { role: 'assistant', content: m.content };
   }
   if (m.role === 'tool') {

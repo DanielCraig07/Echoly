@@ -335,4 +335,59 @@ describe('Agent Context Compaction & Empty FinalText Fallback', () => {
     expect(result.finalText).toContain('周期性重复');
     expect(events.some((e) => e.type === 'done')).toBe(true);
   });
+
+  it('思考阶段陷入死循环时，自动优化提示词并破环重试成功', async () => {
+    const { LlmTimeoutError } = await import('@deepseek-ide/llm');
+    let callCount = 0;
+    let lastParams: any = null;
+
+    const mockClient = {
+      chatStreamCollect: async (params: any) => {
+        callCount++;
+        lastParams = params;
+        if (callCount === 1) {
+          // 第一次调用在思考阶段陷入复读死循环，抛出 REPETITION_LOOP 且 content 为空
+          throw new LlmTimeoutError(
+            '检测到思考过程周期性重复（25 字符的片段连续重复 30 次），已熔断以终止无限复读',
+            'REPETITION_LOOP',
+            0,
+            { message: { role: 'assistant', content: null, reasoning_content: '思考死循环' } },
+          );
+        }
+        // 第二次调用带入破环自愈提示词与采样扰动，成功产出结论
+        return {
+          message: {
+            role: 'assistant',
+            content: '已成功破环自愈并完成最终任务。',
+          },
+        };
+      },
+    };
+
+    const events: any[] = [];
+    const result = await runAgent({
+      prompt: '优化算法避免重复死锁',
+      workspaceRoot: os.tmpdir(),
+      backend: new LocalFsBackend(os.tmpdir()),
+      settings: { contextWindowTokens: 128000 } as any,
+      mode: 'agent',
+      client: mockClient as any,
+      applyImmediately: true,
+      onEvent: (e) => events.push(e),
+    });
+
+    // 验证触发了自动重试自愈
+    expect(callCount).toBe(2);
+    expect(result.finalText).toContain('已成功破环自愈并完成最终任务。');
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+
+    // 验证第二次调用传入了防循环指令以及采样惩罚
+    expect(lastParams.frequencyPenalty).toBe(0.5);
+    expect(lastParams.presencePenalty).toBe(0.5);
+    const antiLoopNotice = lastParams.messages.find(
+      (m: any) => m.role === 'system' && m.content?.includes('【强制破环执行规则】'),
+    );
+    expect(antiLoopNotice).toBeDefined();
+    expect(antiLoopNotice.content).toContain('优化算法避免重复死锁');
+  });
 });

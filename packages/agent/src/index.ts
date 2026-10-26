@@ -634,6 +634,9 @@ ${el.outerHtml || att.content || ''}
         let finishReason: string | undefined;
         let callAttempts = 0;
         const maxTimeoutRetries = 1;
+        let loopAttempts = 0;
+        const maxLoopRetries = 1;
+        let samplingOverride: { frequencyPenalty?: number; presencePenalty?: number } | undefined;
 
         while (true) {
           try {
@@ -642,6 +645,8 @@ ${el.outerHtml || att.content || ''}
                 messages,
                 tools: effectiveTools,
                 signal,
+                frequencyPenalty: samplingOverride?.frequencyPenalty,
+                presencePenalty: samplingOverride?.presencePenalty,
               },
               (token: string) => onEvent({ type: 'token', text: token }),
               (thinking: string) => onEvent({ type: 'thinking_token', text: thinking }),
@@ -668,11 +673,72 @@ ${el.outerHtml || att.content || ''}
             }
 
             // 复读退化熔断：模型陷入「重复同一句话」的死循环，已由流式层掐断。
-            // 这里必须直接收尾而不是重试 —— 重试会把退化文本连同原上下文一起回灌，
-            // 几乎必然立刻再次复读，表现就是用户看到的「卡在那里一直重复」。
             if (isRepetitionLoopError(err)) {
               const partial = (err as { partialMessage?: ChatMessage }).partialMessage;
               const recovered = (partial?.content ?? '').trim();
+
+              // 思考阶段陷入死循环且未产出任何有效内容时，自动优化提示词并破环重试
+              if (!recovered && loopAttempts < maxLoopRetries) {
+                loopAttempts++;
+                callAttempts++;
+                onEvent({ type: 'status', status: 'thinking' });
+
+                // 清洗上下文：移除历史消息中残留的所有 thinking 残留（消除循环吸引子）
+                for (const m of messages) {
+                  if (m.thinking) m.thinking = undefined;
+                  if (m.reasoning_content) m.reasoning_content = undefined;
+                  if (
+                    m.role === 'tool' &&
+                    typeof m.content === 'string' &&
+                    m.content.length > 200
+                  ) {
+                    m.content = `${m.content.slice(0, 150)}...[因思考防环已精简]`;
+                  }
+                }
+
+                const antiLoopDirective = [
+                  `[系统自愈干预：上一轮推理在思考阶段陷入循环反思（Repetition Loop），未能产出有效行动。]`,
+                  `【强制破环执行规则】:`,
+                  `1. 严格禁止展开长篇思考与无限自我反思推演；`,
+                  `2. 保持思考简明扼要，直奔核心行动；`,
+                  `3. 如需调用工具，直接给出具体的工具调用（参数必须完整有效）；`,
+                  `4. 如需回答用户，直接输出精炼、明确、可执行的最终结论；`,
+                  `5. 绝不要重复上一轮陷入停滞的反复怀疑或自指推演。`,
+                  `【当前任务的原始诉求】:`,
+                  `"""`,
+                  prompt.trim(),
+                  `"""`,
+                  `请直接基于当前工作区状态与上述诉求继续完成任务。`,
+                ].join('\n');
+
+                const recent = messages.slice(-4);
+                let firstClean = 0;
+                while (firstClean < recent.length && recent[firstClean].role === 'tool') {
+                  firstClean++;
+                }
+                const cleanRecent = recent.slice(firstClean);
+
+                messages = [
+                  messages[0],
+                  userMessage,
+                  {
+                    role: 'system',
+                    content: antiLoopDirective,
+                  },
+                  ...cleanRecent,
+                ];
+
+                // 提升采样惩罚以打破确定性复读循环
+                samplingOverride = {
+                  frequencyPenalty: 0.5,
+                  presencePenalty: 0.5,
+                };
+
+                emitContextUsage(estimateTokensFromMessages(messages), 'estimate');
+                continue;
+              }
+
+              // 超过重试次数或已有大量可用回复正文时，收尾熔断
               const loopNotice =
                 '[系统提示] 检测到模型输出陷入周期性重复，已自动熔断该次生成以避免无限复读。';
               finalText = recovered
