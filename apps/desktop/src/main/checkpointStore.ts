@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CheckpointSummary, CheckpointDetail, CheckpointMutationDetail } from '@deepseek-ide/shared';
+import type {
+  CheckpointSummary,
+  CheckpointDetail,
+  CheckpointMutationDetail,
+} from '@deepseek-ide/shared';
 import type { FileMutation, RevertResult, WorkspaceBackend } from '@deepseek-ide/tools';
 import { revertMutations } from '@deepseek-ide/tools';
 import { writeFileAtomic } from './atomicWrite';
@@ -158,7 +162,10 @@ export class CheckpointStore {
     return path.join(this.storageDir, `${safeName}.json`);
   }
 
-  private persistToDisk(runId: string, entry: { mutations: FileMutation[]; createdAt: number }): void {
+  private persistToDisk(
+    runId: string,
+    entry: { mutations: FileMutation[]; createdAt: number },
+  ): void {
     const p = this.checkpointPath(runId);
     if (!p) return;
     try {
@@ -296,7 +303,11 @@ export class CheckpointStore {
     }
     const bad = entry.mutations.find((m) => m.kind === 'unrecordable');
     // 如果用户指定了路径且所选路径不包含不可留底文件，允许继续
-    if (bad && bad.kind === 'unrecordable' && (!options?.paths || options.paths.includes(bad.path))) {
+    if (
+      bad &&
+      bad.kind === 'unrecordable' &&
+      (!options?.paths || options.paths.includes(bad.path))
+    ) {
       return {
         error: `本轮包含无法完整留底的操作（${bad.path}：${bad.reason}），为避免只还原一半，已放弃自动撤销。请用 Git 还原。`,
       };
@@ -319,7 +330,9 @@ export class CheckpointStore {
           this.order = this.order.filter((x) => x !== id);
           const p = this.checkpointPath(id);
           if (p && fs.existsSync(p)) {
-            try { fs.unlinkSync(p); } catch {}
+            try {
+              fs.unlinkSync(p);
+            } catch {}
           }
         } else {
           this.persistToDisk(id, entry);
@@ -329,7 +342,9 @@ export class CheckpointStore {
         this.order = this.order.filter((x) => x !== id);
         const p = this.checkpointPath(id);
         if (p && fs.existsSync(p)) {
-          try { fs.unlinkSync(p); } catch {}
+          try {
+            fs.unlinkSync(p);
+          } catch {}
         }
       }
     }

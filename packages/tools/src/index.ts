@@ -934,7 +934,7 @@ export function isDisallowedTerminalFileWrite(command: string): string | null {
   // 4. 内联 python 脚本写入文件（必须包含以写模式打开文件或 Path.write_text 等，排除 sys.stdout.write）
   if (
     /\bpython[23]?\b/.test(trimmed) &&
-    (/(?:open\s*\([^)]*['"][wa]\+?b?['"]\)|Path\([^)]*\)\.write_(?:text|bytes))/.test(trimmed))
+    /(?:open\s*\([^)]*['"][wa]\+?b?['"]\)|Path\([^)]*\)\.write_(?:text|bytes))/.test(trimmed)
   ) {
     return 'inline Python script writing to file';
   }
@@ -942,7 +942,7 @@ export function isDisallowedTerminalFileWrite(command: string): string | null {
   // 5. 内联 node 脚本写入文件
   if (
     /\bnode\b/.test(trimmed) &&
-    (/fs\.(?:writeFileSync|writeFile|appendFileSync|appendFile)/.test(trimmed))
+    /fs\.(?:writeFileSync|writeFile|appendFileSync|appendFile)/.test(trimmed)
   ) {
     return 'inline Node script writing to file';
   }

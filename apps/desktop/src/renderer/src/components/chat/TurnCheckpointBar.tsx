@@ -33,7 +33,16 @@ export const TurnCheckpointBar: React.FC<TurnCheckpointBarProps> = ({
       <div className="chat-turn-checkpoint-card">
         <div className="checkpoint-card-left" onClick={() => setModalOpen(true)}>
           <div className="checkpoint-card-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
               <polyline points="14 2 14 8 20 8" />
               <path d="M9 15l2 2 4-4" />
@@ -41,9 +50,13 @@ export const TurnCheckpointBar: React.FC<TurnCheckpointBarProps> = ({
           </div>
           <div className="checkpoint-card-info">
             <span className="checkpoint-card-title">
-              本轮修改了 <strong className="count">{checkpoint.fileCount ?? checkpoint.mutations}</strong> 个文件
+              本轮修改了{' '}
+              <strong className="count">{checkpoint.fileCount ?? checkpoint.mutations}</strong>{' '}
+              个文件
               {checkpoint.mutations > (checkpoint.fileCount ?? checkpoint.mutations) && (
-                <span className="checkpoint-card-subcount">（共 {checkpoint.mutations} 次操作）</span>
+                <span className="checkpoint-card-subcount">
+                  （共 {checkpoint.mutations} 次操作）
+                </span>
               )}
             </span>
             {checkpoint.incomplete && (
@@ -64,7 +77,16 @@ export const TurnCheckpointBar: React.FC<TurnCheckpointBarProps> = ({
             title="查看具体修改了哪些文件与代码 Diff"
             onClick={() => setModalOpen(true)}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <circle cx="18" cy="18" r="3" />
               <circle cx="6" cy="6" r="3" />
               <path d="M13 6h3a2 2 0 0 1 2 2v7" />
@@ -86,7 +108,16 @@ export const TurnCheckpointBar: React.FC<TurnCheckpointBarProps> = ({
             }
             onClick={() => setModalOpen(true)}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M9 14 4 9l5-5" />
               <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" />
             </svg>

@@ -99,7 +99,10 @@ export class WindowSession {
    * accept 之后还能用（那才是用户反悔的时刻）。
    */
   readonly checkpoints: CheckpointStore;
-  constructor(readonly webContentsId: number, checkpointsDir?: string) {
+  constructor(
+    readonly webContentsId: number,
+    checkpointsDir?: string,
+  ) {
     this.checkpoints = new CheckpointStore(checkpointsDir);
   }
 

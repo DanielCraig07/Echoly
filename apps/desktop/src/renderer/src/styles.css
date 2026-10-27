@@ -16768,7 +16768,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: var(--bg-modal, #18181c);
   border: 1px solid var(--border, #33333e);
   border-radius: 12px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8), 0 2px 10px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.8),
+    0 2px 10px rgba(0, 0, 0, 0.4);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -16797,7 +16799,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.22) 0%, rgba(14, 165, 233, 0.12) 100%);
   color: #38bdf8;
   border: 1px solid rgba(56, 189, 248, 0.45);
-  box-shadow: 0 2px 14px rgba(56, 189, 248, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  box-shadow:
+    0 2px 14px rgba(56, 189, 248, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -16808,7 +16812,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 .turn-revert-icon-pill:hover {
   transform: translateY(-1px) scale(1.05);
   border-color: rgba(56, 189, 248, 0.65);
-  box-shadow: 0 0 24px rgba(56, 189, 248, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 0 24px rgba(56, 189, 248, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .turn-revert-close-btn {
@@ -16843,7 +16849,9 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: linear-gradient(135deg, rgba(2, 132, 199, 0.15) 0%, rgba(14, 165, 233, 0.06) 100%);
   border-color: rgba(2, 132, 199, 0.3);
   color: #0284c7;
-  box-shadow: 0 1px 4px rgba(2, 132, 199, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 1px 4px rgba(2, 132, 199, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 [data-theme='light'] .turn-revert-close-btn {
@@ -17450,14 +17458,18 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 2px 10px rgba(220, 38, 38, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .turn-revert-btn-confirm:hover:not(:disabled) {
   background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
   border-color: rgba(248, 113, 113, 0.7);
-  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  box-shadow:
+    0 4px 16px rgba(220, 38, 38, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
   transform: translateY(-1px);
 }
 

@@ -63,7 +63,9 @@ describe('executeTool defensive validation', () => {
       dummyCtx,
     );
     expect(res1.isError).toBe(true);
-    expect(res1.content).toContain('Modifying, appending to, or writing workspace files via run_terminal is forbidden');
+    expect(res1.content).toContain(
+      'Modifying, appending to, or writing workspace files via run_terminal is forbidden',
+    );
 
     // 2. sed -i
     const res2 = await executeTool(

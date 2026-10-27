@@ -202,8 +202,7 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
     setIsExecuting(true);
     setErrorMsg(null);
 
-    const pathsToRevert =
-      revertMode === 'all' ? undefined : Array.from(selectedPaths);
+    const pathsToRevert = revertMode === 'all' ? undefined : Array.from(selectedPaths);
 
     if (revertMode === 'selected' && (!pathsToRevert || pathsToRevert.length === 0)) {
       setErrorMsg('请至少勾选一个需要回退的文件');
@@ -233,8 +232,10 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
 
   if (!open) return null;
 
-  const isAllSelected = detail && detail.files.length > 0 && selectedPaths.size === detail.files.length;
-  const isIndeterminate = detail && selectedPaths.size > 0 && selectedPaths.size < detail.files.length;
+  const isAllSelected =
+    detail && detail.files.length > 0 && selectedPaths.size === detail.files.length;
+  const isIndeterminate =
+    detail && selectedPaths.size > 0 && selectedPaths.size < detail.files.length;
   const targetCount = revertMode === 'all' ? (detail?.files.length ?? 0) : selectedPaths.size;
 
   const modalContent = (
@@ -254,7 +255,16 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
         <div className="turn-revert-header">
           <div className="turn-revert-header-left">
             <div className="turn-revert-icon-pill" title="回退控制">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                 <path d="M3 3v5h5" />
                 <polyline points="12 7 12 12 15 14" />
@@ -273,7 +283,16 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
             title="关闭 (Esc)"
             onClick={onClose}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -282,7 +301,14 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
 
         {errorMsg && (
           <div className="turn-revert-error-banner">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -388,13 +414,13 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
                           </div>
                         </div>
                         <div className="turn-revert-file-meta">
-                          <span className={`turn-revert-kind-badge ${kindClass}`}>
-                            {kindLabel}
-                          </span>
+                          <span className={`turn-revert-kind-badge ${kindClass}`}>{kindLabel}</span>
                           {(stats.added > 0 || stats.deleted > 0) && (
                             <span className="turn-revert-stats-badge">
                               {stats.added > 0 && <span className="diff-add">+{stats.added}</span>}
-                              {stats.deleted > 0 && <span className="diff-del">-{stats.deleted}</span>}
+                              {stats.deleted > 0 && (
+                                <span className="diff-del">-{stats.deleted}</span>
+                              )}
                             </span>
                           )}
                         </div>
@@ -440,7 +466,16 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
                             onClose();
                           }}
                         >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
                             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                             <polyline points="15 3 21 3 21 9" />
                             <line x1="10" y1="14" x2="21" y2="3" />
@@ -453,7 +488,16 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
                       <div className="turn-revert-special-card-wrap">
                         <div className="turn-revert-special-card">
                           <div className="turn-revert-special-icon move-icon">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg
+                              width="24"
+                              height="24"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
                               <polyline points="17 1 21 5 17 9" />
                               <path d="M3 11V9a4 4 0 0 1 4-4h14" />
                               <polyline points="7 23 3 19 7 15" />
@@ -473,7 +517,8 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
                             </div>
                           </div>
                           <div className="turn-revert-special-desc">
-                            执行回退后，该文件将原样移动回原路径 <code>{activeFile.from || activeFile.path}</code>。
+                            执行回退后，该文件将原样移动回原路径{' '}
+                            <code>{activeFile.from || activeFile.path}</code>。
                           </div>
                         </div>
                       </div>
@@ -481,7 +526,16 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
                       <div className="turn-revert-special-card-wrap">
                         <div className="turn-revert-special-card">
                           <div className="turn-revert-special-icon warn-icon">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <svg
+                              width="24"
+                              height="24"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
                               <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
                               <line x1="12" y1="9" x2="12" y2="13" />
                               <line x1="12" y1="17" x2="12.01" y2="17" />
@@ -492,7 +546,8 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
                             {activeFile.reason || '文件过大或包含二进制内容'}
                           </div>
                           <div className="turn-revert-special-desc">
-                            由于改动内容超出安全快照阈值，建议通过 Git 源代码管理器查看工作树差异或丢弃更改。
+                            由于改动内容超出安全快照阈值，建议通过 Git
+                            源代码管理器查看工作树差异或丢弃更改。
                           </div>
                         </div>
                       </div>
@@ -576,7 +631,10 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
               </label>
             </div>
 
-            <label className="turn-revert-safe-check" title="如果文件在本轮 AI 改动之后被手动二次编辑过，防冲突保护会安全跳过它，防止覆盖您的手写代码">
+            <label
+              className="turn-revert-safe-check"
+              title="如果文件在本轮 AI 改动之后被手动二次编辑过，防冲突保护会安全跳过它，防止覆盖您的手写代码"
+            >
               <input
                 type="checkbox"
                 checked={safeConflictCheck}
@@ -608,7 +666,16 @@ export const TurnRevertModal: React.FC<TurnRevertModalProps> = ({
                 </>
               ) : (
                 <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M9 14 4 9l5-5" />
                     <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11" />
                   </svg>
