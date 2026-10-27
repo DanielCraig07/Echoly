@@ -57,7 +57,9 @@ const api: IpcApi = {
   acceptAllDiffs: () => ipcRenderer.invoke('diff:acceptAll'),
   rejectAllDiffs: () => ipcRenderer.invoke('diff:rejectAll'),
   getCheckpointSummary: (runId?: string) => ipcRenderer.invoke('checkpoint:summary', runId),
-  revertCheckpoint: (runId?: string) => ipcRenderer.invoke('checkpoint:revert', runId),
+  getCheckpointDetail: (runId?: string) => ipcRenderer.invoke('checkpoint:detail', runId),
+  revertCheckpoint: (runId?: string, options?: { paths?: string[]; force?: boolean }) =>
+    ipcRenderer.invoke('checkpoint:revert', runId, options),
   listSessions: () => ipcRenderer.invoke('session:list'),
   getSession: (id) => ipcRenderer.invoke('session:get', id),
   saveSession: (session: ChatSession) => ipcRenderer.invoke('session:save', session),

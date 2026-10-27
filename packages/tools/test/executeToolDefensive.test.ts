@@ -54,4 +54,75 @@ describe('executeTool defensive validation', () => {
     expect(res.isError).toBe(true);
     expect(res.content).toContain('missing required "pattern" argument');
   });
+
+  it('intercepts shell commands that attempt to write to workspace files', async () => {
+    // 1. cat >> file
+    const res1 = await executeTool(
+      'run_terminal',
+      JSON.stringify({ command: "cat >> ua.txt <<'EOF'\nnew ua line\nEOF" }),
+      dummyCtx,
+    );
+    expect(res1.isError).toBe(true);
+    expect(res1.content).toContain('Modifying, appending to, or writing workspace files via run_terminal is forbidden');
+
+    // 2. sed -i
+    const res2 = await executeTool(
+      'run_terminal',
+      JSON.stringify({ command: "sed -i '' '16d' ip.txt" }),
+      dummyCtx,
+    );
+    expect(res2.isError).toBe(true);
+    expect(res2.content).toContain('sed in-place edit');
+
+    // 3. inline python script writing to file
+    const res3 = await executeTool(
+      'run_terminal',
+      JSON.stringify({ command: "python3 - <<'PY'\nopen('ua.txt', 'w').write('new')\nPY" }),
+      dummyCtx,
+    );
+    expect(res3.isError).toBe(true);
+    expect(res3.content).toContain('inline Python script writing to file');
+
+    // 4. echo > file
+    const res4 = await executeTool(
+      'run_terminal',
+      JSON.stringify({ command: 'echo "hello" > foo.txt' }),
+      dummyCtx,
+    );
+    expect(res4.isError).toBe(true);
+    expect(res4.content).toContain('shell redirection to file');
+
+    // 5. cat << 'EOF' > file (heredoc before target)
+    const res5 = await executeTool(
+      'run_terminal',
+      JSON.stringify({ command: "cat << 'EOF' > ua.txt\nline1\nEOF" }),
+      dummyCtx,
+    );
+    expect(res5.isError).toBe(true);
+    expect(res5.content).toContain('redirection to file');
+
+    // 6. False positive protection: echo "a > b" must NOT be intercepted
+    const res6 = await executeTool(
+      'run_terminal',
+      JSON.stringify({ command: 'echo "score > 90"' }),
+      dummyCtx,
+    );
+    expect(res6.content).not.toContain('Modifying, appending to, or writing workspace files');
+
+    // 7. False positive protection: python sys.stdout.write must NOT be intercepted
+    const res7 = await executeTool(
+      'run_terminal',
+      JSON.stringify({ command: 'python3 -c "import sys; sys.stdout.write(\'ok\')"' }),
+      dummyCtx,
+    );
+    expect(res7.content).not.toContain('inline Python script writing to file');
+
+    // 8. False positive protection: redirection to /dev/null must NOT be intercepted
+    const res8 = await executeTool(
+      'run_terminal',
+      JSON.stringify({ command: 'npm test > /dev/null 2>&1' }),
+      dummyCtx,
+    );
+    expect(res8.content).not.toContain('Modifying, appending to, or writing workspace files');
+  });
 });

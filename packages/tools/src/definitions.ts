@@ -55,7 +55,7 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'write_file',
       description:
-        'Create or overwrite a text file with full content. Prefer apply_patch for edits.',
+        'Create or overwrite a text file with full content. If appending lines or if apply_patch target text is not unique, read the file first and use write_file with the full updated content. ALL file creations or edits MUST use write_file or apply_patch so that diffs and undo checkpoints are properly tracked.',
       parameters: {
         type: 'object',
         properties: {
@@ -75,7 +75,7 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
         'replacements in one call. Each `old_text` must match the file exactly (including indentation) and ' +
         'must be unique in the file — if it occurs more than once the edit is rejected, so include enough ' +
         'surrounding context to disambiguate, or set `replace_all: true` to intentionally replace every ' +
-        'occurrence. The single `old_text`/`new_text` form is still accepted as a shorthand for one edit.',
+        'occurrence. If target text is difficult to match or duplicate, use write_file instead. Never use terminal commands or scripts to edit files.',
       parameters: {
         type: 'object',
         properties: {
@@ -243,7 +243,7 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: 'run_terminal',
       description:
-        'Run a shell command inside the workspace. Prefer readonly commands. Destructive commands may require user confirmation.',
+        'Run a shell command inside the workspace. Use ONLY for build, test, lint, package manager, or readonly inspection commands (e.g. ls, git status, npm test). STRICTLY FORBIDDEN: Do NOT use run_terminal (or python/bash scripts, echo, cat, sed, redirection) to create, edit, append to, or delete files in the workspace; you MUST use write_file, apply_patch, move_path, or delete_path so that file diffs and undo checkpoints are properly tracked.',
       parameters: {
         type: 'object',
         properties: {

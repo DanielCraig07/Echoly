@@ -77,16 +77,24 @@ async function restoreSnapshot(backend: WorkspaceBackend, snapshot: PathSnapshot
 export async function revertMutations(
   backend: WorkspaceBackend,
   mutations: FileMutation[],
+  options?: { paths?: string[]; force?: boolean },
 ): Promise<RevertResult> {
   const result: RevertResult = { reverted: [], skipped: [], conflicts: [] };
   const revertedSet = new Set<string>();
+  const targetPaths = options?.paths ? new Set(options.paths) : null;
+  const force = Boolean(options?.force);
 
   for (let i = mutations.length - 1; i >= 0; i--) {
     const m = mutations[i];
+    const pathKey = m.kind === 'move' ? m.from : m.path;
+    if (targetPaths && !targetPaths.has(pathKey) && (m.kind !== 'move' || !targetPaths.has(m.to))) {
+      continue;
+    }
     try {
       if (m.kind === 'write') {
         const current = await readIfExists(backend, m.path);
         if (
+          !force &&
           m.written !== null &&
           current !== null &&
           current !== m.written &&

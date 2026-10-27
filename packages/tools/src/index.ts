@@ -889,6 +889,67 @@ async function movePathTool(ctx: ToolContext, from: string, to: string): Promise
   return { content: `Moved ${from} → ${to}.` };
 }
 
+/**
+ * 检查终端命令是否试图直接向工作区文件写内容（如 cat >> file、echo > file、sed -i、
+ * 或内联 python/node 脚本 open/write 工作区文件）。
+ *
+ * 为什么要挡下：IDE 的改动审查与写前撤销（checkpoint）只在通过 `write_file` / `apply_patch` /
+ * `delete_path` / `move_path` 时才能完整记录原始快照与计算 Monaco Diff。
+ * Agent 绕过工具直接用 shell 脚本改文件会导致审查栏丢失修改记录，且脚本容易出现末行缺回车等格式损坏。
+ */
+export function isDisallowedTerminalFileWrite(command: string): string | null {
+  const trimmed = command.trim();
+
+  // 1. sed in-place 编辑
+  if (/\bsed\s+-[^;\n|]*i\b/.test(trimmed)) {
+    return 'sed in-place edit (sed -i)';
+  }
+
+  // 2. 将引号内的字面量中和掉，避免将包含比较运算符如 echo "a > b" 或 printf '%s > %s' 误判为重定向
+  const neutralized = stripQuoted(trimmed);
+
+  // 检查 shell 重定向写文件：> 或 >>（排除 /dev/null、/dev/stderr、/dev/stdout 以及标准输出合并 &1 等）
+  const redirMatch =
+    /(?:^|[;&|\s])(?:cat|echo|printf|tee|head|tail|sort|uniq|awk)\b.*?>>?\s*([^\s;&|<]+)/.exec(
+      neutralized,
+    );
+  if (redirMatch && redirMatch[1]) {
+    const target = redirMatch[1].replace(/['"]/g, '');
+    if (!target.startsWith('/dev/') && !target.startsWith('&') && target !== '/dev/null') {
+      return `shell redirection to file (${target})`;
+    }
+  }
+
+  // 3. cat heredoc 重定向：涵盖 cat >> file <<'EOF' 与 cat <<'EOF' > file
+  if (/\bcat\b/.test(neutralized) && /<<\s*['"]?EOF['"]?|<<\s*Q/.test(neutralized)) {
+    const heredocTargetMatch = />>?\s*([^\s;&|<]+)/.exec(neutralized);
+    if (heredocTargetMatch && heredocTargetMatch[1]) {
+      const target = heredocTargetMatch[1].replace(/['"]/g, '');
+      if (!target.startsWith('/dev/') && !target.startsWith('&') && target !== '/dev/null') {
+        return `heredoc redirection to file (${target})`;
+      }
+    }
+  }
+
+  // 4. 内联 python 脚本写入文件（必须包含以写模式打开文件或 Path.write_text 等，排除 sys.stdout.write）
+  if (
+    /\bpython[23]?\b/.test(trimmed) &&
+    (/(?:open\s*\([^)]*['"][wa]\+?b?['"]\)|Path\([^)]*\)\.write_(?:text|bytes))/.test(trimmed))
+  ) {
+    return 'inline Python script writing to file';
+  }
+
+  // 5. 内联 node 脚本写入文件
+  if (
+    /\bnode\b/.test(trimmed) &&
+    (/fs\.(?:writeFileSync|writeFile|appendFileSync|appendFile)/.test(trimmed))
+  ) {
+    return 'inline Node script writing to file';
+  }
+
+  return null;
+}
+
 async function runTerminal(
   ctx: ToolContext,
   command: string,
@@ -896,6 +957,18 @@ async function runTerminal(
 ): Promise<ToolResult> {
   // 防卡死保护：强制单条终端命令安全超时上限为 5 分钟（300,000ms），允许运行大型构建与全量测试套件
   const safeTimeoutMs = Math.min(Math.max(timeoutMs || 300_000, 5_000), 300_000);
+
+  // 防绕过保护：严禁使用终端命令修改工作区文件，确保所有文件改动都记录在检查点与 Diff 中
+  const fileWriteReason = isDisallowedTerminalFileWrite(command);
+  if (fileWriteReason) {
+    return {
+      content:
+        `Error: Modifying, appending to, or writing workspace files via run_terminal is forbidden [detected: ${fileWriteReason}]. ` +
+        `You MUST use write_file or apply_patch (or delete_path/move_path) so that the IDE can track visual diffs and record undo checkpoints for the user. ` +
+        `If apply_patch text is duplicate or difficult to match, read the file with read_file and use write_file with the updated full content.`,
+      isError: true,
+    };
+  }
 
   if (needsTerminalConfirm(ctx, command)) {
     const approved = await ctx.requestConfirm({

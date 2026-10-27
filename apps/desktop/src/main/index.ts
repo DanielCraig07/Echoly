@@ -577,6 +577,7 @@ app.whenReady().then(async () => {
   }
 
   const sessions = new SessionStore(app.getPath('userData'));
+  windowRegistry.setCheckpointsDir(join(app.getPath('userData'), 'checkpoints'));
   const resolveSession = () => windowRegistry.resolve(getActiveWindow);
   const resolveWorkspace = () => resolveSession().workspace;
   const terminals = new TerminalService(

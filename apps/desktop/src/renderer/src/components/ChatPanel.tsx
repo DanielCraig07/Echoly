@@ -49,6 +49,7 @@ import { CollapsibleUserContent } from './chat/CollapsibleUserContent';
 import { InputCodeRefOverlay, type InputCodeRefOverlayHandle } from './chat/InputCodeRefOverlay';
 import { FileLanguageIcon } from './chat/CodeRefPill';
 import { ModelMetricsBadge } from './chat/ModelMetricsBadge';
+import { TurnCheckpointBar } from './chat/TurnCheckpointBar';
 import { PanelChevron } from './PanelChevron';
 import { computeLineDiffStats } from '../services/diffStats';
 import echolyAppIcon from '../assets/echoly-icon.png';
@@ -1812,7 +1813,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           case 'queued_message_consumed':
             // 气泡从「排队中」转为普通用户消息：模型已经看到它了
             next.messages = next.messages.map((m) =>
-              m.id === event.id ? { ...m, delivery: 'consumed' as const } : m,
+              m.id === event.id ? { ...m, delivery: 'consumed' as const, runId: event.runId } : m,
             );
             break;
           // 注：queued_message_undelivered 在上面的监听入口就按消息 id 处理掉了，
@@ -2433,6 +2434,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
     const isCustom = isCustomSessionTitle(session.title, firstUserSnippet, session.customTitle);
 
+    const sessionRunIds = (session.messages ?? [])
+      .map((m) => m.runId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
     const existing = tabs.find((t) => t.id === session.id);
     if (existing) {
       // 无论已存在还是新打开，都确保同步最新的标题、自定义标题标记和消息
@@ -2450,7 +2455,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         ),
       );
       setActiveTabId(existing.id);
-      void refreshCheckpoints(knownRunIds(existing));
+      void refreshCheckpoints(sessionRunIds);
       return;
     }
 
@@ -2463,7 +2468,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       return [...prev, tab];
     });
     setActiveTabId(tab.id);
-    void refreshCheckpoints(knownRunIds(tab));
+    void refreshCheckpoints(sessionRunIds);
   };
 
   const handleRenameSession = (id: string, newTitle: string) => {
@@ -3171,39 +3176,18 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   )}
                   <div className="chat-turn-files">
                     {renderTurnBody(turn.body, turnKey, isLastTurn)}
-                    {/* 只在「这一轮确实改过文件」时出现：纯问答轮次不该多一个按不动的按钮 */}
+                    {/* 这一轮修改了文件时显示美化的修改清单与回退控制栏 */}
                     {checkpoint && (
-                      <div className="chat-turn-actions">
-                        <button
-                          type="button"
-                          className="chat-turn-revert-btn"
-                          onClick={() => void revertTurn(checkpoint.runId)}
-                          disabled={checkpoint.incomplete}
-                          title={
-                            checkpoint.incomplete
-                              ? t('chat.revertIncompleteTip', {
-                                  reason: checkpoint.incompleteReason ?? t('chat.unknownReason'),
-                                })
-                              : t('chat.revertTurnTip', { n: checkpoint.mutations })
-                          }
-                        >
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M3 7v6h6" />
-                            <path d="M3 13a9 9 0 1 0 3-7.7L3 8" />
-                          </svg>
-                          <span>{t('chat.revertTurn')}</span>
-                          <span className="chat-turn-revert-count">{checkpoint.mutations}</span>
-                        </button>
-                      </div>
+                      <TurnCheckpointBar
+                        checkpoint={checkpoint}
+                        onRevertTurn={async (paths) => {
+                          await onRevertTurn?.(paths);
+                          setCheckpoints((prev) => ({ ...prev, [checkpoint.runId]: null }));
+                          void refreshCheckpoints([checkpoint.runId]);
+                        }}
+                        onOpenFile={onOpenFile}
+                        onRefreshCheckpoints={() => void refreshCheckpoints([checkpoint.runId])}
+                      />
                     )}
                   </div>
                 </div>

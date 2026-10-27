@@ -156,4 +156,82 @@ describe('CheckpointStore', () => {
     store.begin('r1');
     expect(store.summary()).toBeNull();
   });
+
+  it('aggregates multiple mutations on the same file and reports accurate fileCount', () => {
+    const store = new CheckpointStore();
+    store.begin('r1');
+    // ua.txt written twice
+    store.record('r1', write('ua.txt', 'v0', 'v1'));
+    store.record('r1', write('ua.txt', 'v1', 'v2'));
+    // _add_ua.py created, modified, then deleted
+    store.record('r1', write('_add_ua.py', null, 'script_v1'));
+    store.record('r1', write('_add_ua.py', 'script_v1', 'script_v2'));
+    store.record('r1', {
+      kind: 'delete',
+      path: '_add_ua.py',
+      snapshot: { dirs: [], files: [{ path: '_add_ua.py', content: 'script_v2' }] },
+    });
+
+    const summary = store.summary('r1');
+    expect(summary?.mutations).toBe(5);
+    expect(summary?.fileCount).toBe(2);
+
+    const detail = store.detail('r1');
+    expect(detail?.fileCount).toBe(2);
+    expect(detail?.files.length).toBe(2);
+
+    const ua = detail?.files.find((f) => f.path === 'ua.txt');
+    expect(ua).toBeDefined();
+    expect(ua?.kind).toBe('write');
+    expect(ua?.original).toBe('v0');
+    expect(ua?.written).toBe('v2');
+
+    const script = detail?.files.find((f) => f.path === '_add_ua.py');
+    expect(script).toBeDefined();
+    expect(script?.kind).toBe('delete');
+    expect(script?.original).toBeNull();
+    expect(script?.written).toBeNull();
+  });
+
+  it('persists checkpoints to disk and reloads them after memory is cleared', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cp-test-'));
+
+    try {
+      const store = new CheckpointStore(tmpDir);
+      store.begin('r100');
+      store.record('r100', write('foo.txt', 'old', 'new'));
+
+      // Checkpoint file should exist on disk
+      const filePath = path.join(tmpDir, 'r100.json');
+      expect(fs.existsSync(filePath)).toBe(true);
+
+      // Clear memory (simulating session reload / restart)
+      store.clear();
+
+      // Now query summary and detail from disk
+      const summary = store.summary('r100');
+      expect(summary).not.toBeNull();
+      expect(summary?.runId).toBe('r100');
+      expect(summary?.fileCount).toBe(1);
+
+      const detail = store.detail('r100');
+      expect(detail).not.toBeNull();
+      expect(detail?.files[0].path).toBe('foo.txt');
+
+      // Now revert from disk
+      const backend = memBackend({ 'foo.txt': 'new' });
+      const rev = await store.revert(backend, 'r100');
+      expect('error' in rev).toBe(false);
+      expect(backend.__store.get('foo.txt')).toBe('old');
+
+      // Checkpoint file should be cleaned up after full revert
+      expect(fs.existsSync(filePath)).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
+

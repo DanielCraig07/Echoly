@@ -1958,14 +1958,15 @@ export function SettingsModal({
             {activeTab === 'mcp' && (
               <div className="settings-panel-section">
                 <div className="panel-title-bar">
-                  <div>
+                  <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
                     <h3 className="panel-h3">{t('settings.mcp.title')}</h3>
                     <p className="panel-desc">{t('settings.mcp.desc')}</p>
                   </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
                     <button
                       type="button"
                       className="open-skills-btn"
+                      style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
                       disabled={mcpReloading}
                       onClick={() => {
                         setMcpReloading(true);
@@ -1978,7 +1979,12 @@ export function SettingsModal({
                     >
                       {mcpReloading ? t('settings.mcp.connecting') : t('settings.mcp.reconnect')}
                     </button>
-                    <button type="button" className="open-skills-btn" onClick={handleAddMcpServer}>
+                    <button
+                      type="button"
+                      className="open-skills-btn"
+                      style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                      onClick={handleAddMcpServer}
+                    >
                       {t('settings.mcp.addServer')}
                     </button>
                   </div>

@@ -285,8 +285,12 @@ At the end of your final message you MUST include a fenced plan block exactly li
 Todos should be concrete, ordered steps.`
         : `You are a coding agent inside an IDE connected to an intranet Deepseek model.
 You can explore and modify the workspace with tools.
-Use apply_patch for surgical edits: pass an \`edits\` array to make several independent replacements in one call. Each old_text must match the file exactly and be unique — if it is not unique the patch is rejected, so include surrounding context or set replace_all: true. Use write_file for new files or full rewrites.
-Use delete_path / move_path for file-level changes rather than shelling out to rm/mv.
+## CRITICAL FILE MODIFICATION RULES (MANDATORY):
+- ALL file creations and full rewrites MUST use write_file.
+- ALL surgical edits MUST use apply_patch. If old_text is duplicate/not unique or difficult to match, or when appending lines, read the file with read_file and use write_file with the complete updated content.
+- ALL file deletes/moves MUST use delete_path / move_path.
+- STRICTLY FORBIDDEN: NEVER use run_terminal (or python/node scripts, echo >>, cat >, sed -i, awk, shell redirection) to create, edit, append to, or delete files in the workspace. Any file edits in run_terminal bypass IDE diff inspection and undo checkpoint recording, preventing the user from reviewing or reverting your changes!
+- Use run_terminal ONLY for build, test, lint, package manager, or read-only inspection commands (e.g. ls, git status, pytest, npm test).
 ${sharedRules}
 ## Reasoning discipline
 ${reasoningRules}`;

@@ -98,8 +98,10 @@ export class WindowSession {
    * 与 `diffs` 并列而不是合并：diff 在用户 accept 后即清空，而撤销按钮恰恰要在
    * accept 之后还能用（那才是用户反悔的时刻）。
    */
-  readonly checkpoints = new CheckpointStore();
-  constructor(readonly webContentsId: number) {}
+  readonly checkpoints: CheckpointStore;
+  constructor(readonly webContentsId: number, checkpointsDir?: string) {
+    this.checkpoints = new CheckpointStore(checkpointsDir);
+  }
 
   dispose(): void {
     // 配置目录的建立时机由渲染层决定（打开工作区时显式调用），这里只做清理
@@ -121,6 +123,14 @@ export class WindowRegistry {
   private readonly sessions = new Map<number, WindowSession>();
   private readonly als = new AsyncLocalStorage<WindowSession>();
   private disposeHook: ((webContentsId: number) => void) | null = null;
+  private checkpointsDir?: string;
+
+  setCheckpointsDir(dir: string): void {
+    this.checkpointsDir = dir;
+    for (const session of this.sessions.values()) {
+      session.checkpoints.setStorageDir(dir);
+    }
+  }
 
   /** e.g. tear down that window's SSH when the renderer is destroyed */
   setSessionDisposeHook(hook: (webContentsId: number) => void): void {
@@ -132,7 +142,7 @@ export class WindowRegistry {
     let session = this.sessions.get(id);
     if (session) return session;
 
-    session = new WindowSession(id);
+    session = new WindowSession(id, this.checkpointsDir);
     this.sessions.set(id, session);
     let lastDbRoot: string | null = session.workspace.getRoot();
     session.workspace.setChangeListener((info) => {
@@ -227,6 +237,6 @@ export class WindowRegistry {
     }
     const any = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
     if (any) return this.forWebContents(any.webContents);
-    return new WindowSession(-1);
+    return new WindowSession(-1, this.checkpointsDir);
   }
 }

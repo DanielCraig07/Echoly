@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.0.51';
+export const APP_VERSION = '0.0.52';
 export const DEFAULT_LLM_BASE_URL = 'http://192.168.10.241:8002';
 /**
  * 内网 vLLM 实际 serve 出来的模型名。
@@ -781,10 +781,28 @@ export interface CheckpointSummary {
   runId: string;
   /** 本轮记录到的可回放操作数。 */
   mutations: number;
+  /** 本轮涉及的不同文件数（去重后）。 */
+  fileCount: number;
   /** 存在无法忠实留底的操作（二进制、超大目录），此时整轮拒绝撤销。 */
   incomplete: boolean;
   incompleteReason?: string;
   createdAt: number;
+}
+
+/** 单个文件的变动留底详情（供审查具体修改了哪些、如何回退）。 */
+export interface CheckpointMutationDetail {
+  kind: 'write' | 'delete' | 'move' | 'unrecordable';
+  path: string;
+  from?: string;
+  to?: string;
+  original: string | null;
+  written: string | null;
+  reason?: string;
+}
+
+/** 完整本轮快照详情，含所有文件的具体变动。 */
+export interface CheckpointDetail extends CheckpointSummary {
+  files: CheckpointMutationDetail[];
 }
 
 /**
@@ -1479,11 +1497,16 @@ export interface IpcApi {
    * 没有记录时返回 `null`。
    */
   getCheckpointSummary: (runId?: string) => Promise<CheckpointSummary | null>;
+  /** 获取本轮改动的完整文件清单与 Diff 详情，供细粒度审查与自选回退 */
+  getCheckpointDetail: (runId?: string) => Promise<CheckpointDetail | null>;
   /**
-   * 撤销一轮 AI 的全部文件改动。返回被还原的路径，以及因冲突/无法留底而跳过的部分 ——
+   * 撤销一轮 AI 的全部或指定文件改动。返回被还原的路径，以及因冲突/无法留底而跳过的部分 ——
    * 调用方必须把跳过项告诉用户，否则「撤销成功」会成为一句谎话。
    */
-  revertCheckpoint: (runId?: string) => Promise<
+  revertCheckpoint: (
+    runId?: string,
+    options?: { paths?: string[]; force?: boolean },
+  ) => Promise<
     | {
         runId: string;
         reverted: string[];

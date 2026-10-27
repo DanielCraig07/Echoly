@@ -479,23 +479,28 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('checkpoint:summary', (e, runId?: string) =>
     run(e, () => registry.current().checkpoints.summary(runId)),
   );
-  ipcMain.handle('checkpoint:revert', (e, runId?: string) =>
-    run(e, async () => {
-      const session = registry.current();
-      const backend = session.workspace.getBackend();
-      if (!backend) return { error: '未打开工作区，无法撤销。' } as const;
-      const outcome = await session.checkpoints.revert(backend, runId);
-      if ('error' in outcome) return outcome;
-      // 撤销把文件改回了写前状态，内存里的 pending diff 已经不再对应当前磁盘内容：
-      // 留着它们会让用户对着「已经不存在」的改动点 Accept。整批丢弃，由文件树刷新兜底。
-      // 必须用 discard（只清记录）而不是 accept/reject —— 后两者都会往磁盘写，
-      // 正好把刚刚完成的撤销覆盖掉。
-      for (const diff of session.diffs.list()) {
-        if (outcome.result.reverted.includes(diff.path)) session.diffs.discard(diff.id);
-      }
-      session.workspace.notifyFsChange('agent');
-      return { runId: outcome.runId, ...outcome.result };
-    }),
+  ipcMain.handle('checkpoint:detail', (e, runId?: string) =>
+    run(e, () => registry.current().checkpoints.detail(runId)),
+  );
+  ipcMain.handle(
+    'checkpoint:revert',
+    (e, runId?: string, options?: { paths?: string[]; force?: boolean }) =>
+      run(e, async () => {
+        const session = registry.current();
+        const backend = session.workspace.getBackend();
+        if (!backend) return { error: '未打开工作区，无法撤销。' } as const;
+        const outcome = await session.checkpoints.revert(backend, runId, options);
+        if ('error' in outcome) return outcome;
+        // 撤销把文件改回了写前状态，内存里的 pending diff 已经不再对应当前磁盘内容：
+        // 留着它们会让用户对着「已经不存在」的改动点 Accept。整批丢弃，由文件树刷新兜底。
+        // 必须用 discard（只清记录）而不是 accept/reject —— 后两者都会往磁盘写，
+        // 正好把刚刚完成的撤销覆盖掉。
+        for (const diff of session.diffs.list()) {
+          if (outcome.result.reverted.includes(diff.path)) session.diffs.discard(diff.id);
+        }
+        session.workspace.notifyFsChange('agent');
+        return { runId: outcome.runId, ...outcome.result };
+      }),
   );
 
   ipcMain.handle('session:list', () => sessions.list());
