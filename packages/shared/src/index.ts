@@ -667,6 +667,30 @@ export interface TokenUsage {
   totalTokens?: number;
 }
 
+/**
+ * 估算纯文本消耗的 Token 数。
+ * 粗略圈定 CJK 与常见全角标点按一字一 token，其余按 4 字符一 token。
+ */
+export function estimateTextTokens(text: string): number {
+  if (!text) return 0;
+  let cjk = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (
+      (c >= 0x3040 && c <= 0x30ff) || // 日文假名
+      (c >= 0x3400 && c <= 0x4dbf) || // 扩展 A
+      (c >= 0x4e00 && c <= 0x9fff) || // 基本区
+      (c >= 0xf900 && c <= 0xfaff) || // 兼容表意
+      (c >= 0xff00 && c <= 0xff60) || // 全角
+      (c >= 0x3000 && c <= 0x303f) // CJK 标点
+    ) {
+      cjk++;
+    }
+  }
+  const rest = text.length - cjk;
+  return cjk + Math.ceil(rest / 4);
+}
+
 export interface ChatCompletionResponse {
   id: string;
   object: string;

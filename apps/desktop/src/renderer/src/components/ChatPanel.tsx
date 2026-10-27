@@ -28,11 +28,11 @@ import type {
   SlashCommandInfo,
 } from '@deepseek-ide/shared';
 import { renderCommand } from '@deepseek-ide/shared';
-import { buildSessionWorkspaceMeta, isCustomSessionTitle, uid } from '../utils';
+import { buildSessionWorkspaceMeta, isCustomSessionTitle, uid, folderNameFromPath } from '../utils';
 import { buildAgentHistory } from '../chatHistory';
 import { MarkdownMessage } from './MarkdownMessage';
 import { PlanPanel } from './PlanPanel';
-import { SessionModal } from './SessionModal';
+import { SessionModal, isSessionMatchingWorkspace } from './SessionModal';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { showGlobalToast } from '../services/toast';
@@ -52,6 +52,7 @@ import { ModelMetricsBadge } from './chat/ModelMetricsBadge';
 import { TurnCheckpointBar } from './chat/TurnCheckpointBar';
 import { PanelChevron } from './PanelChevron';
 import { computeLineDiffStats } from '../services/diffStats';
+import { ProjectHistoryView } from './chat/ProjectHistoryView';
 import echolyAppIcon from '../assets/echoly-icon.png';
 
 interface MentionItem {
@@ -347,8 +348,64 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
    */
   const [checkpoints, setCheckpoints] = useState<Record<string, CheckpointSummary | null>>({});
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [projectSessions, setProjectSessions] = useState<ChatSession[]>([]);
   // 清空对话等不可逆操作走应用内确认框（系统 window.confirm 不是应用主题色，也没法列出影响范围）
   const confirm = useDbConfirm();
+
+  const currentProjectName = useMemo(() => {
+    if (workspaceInfo?.root) return folderNameFromPath(workspaceInfo.root);
+    return workspaceInfo?.label || '';
+  }, [workspaceInfo?.root, workspaceInfo?.label]);
+
+  const loadProjectSessions = useCallback(async () => {
+    try {
+      const list = await window.ide.listSessions();
+      if (!Array.isArray(list)) {
+        setProjectSessions([]);
+        return;
+      }
+      const matching = list.filter((s) => {
+        if (!isSessionMatchingWorkspace(s, workspaceInfoRef.current)) return false;
+        const validMsgs = s.messages?.filter((m) => m.role === 'user' || m.role === 'assistant');
+        return Boolean(validMsgs && validMsgs.length > 0);
+      });
+      matching.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      setProjectSessions(matching);
+    } catch (err) {
+      console.warn('Failed to load project sessions', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProjectSessions();
+  }, [workspaceInfo?.root, workspaceInfo?.label, loadProjectSessions]);
+
+  useEffect(() => {
+    if (!showHistoryModal) {
+      void loadProjectSessions();
+    }
+  }, [showHistoryModal, loadProjectSessions]);
+
+  const handleDeleteProjectSession = useCallback(
+    async (id: string, title?: string) => {
+      const ok = await confirm.confirm({
+        title: t('session.deleteTitle'),
+        content: t('chat.deleteSessionConfirm', {
+          title: title?.trim() || t('session.untitled'),
+        }),
+        tone: 'danger',
+        confirmLabel: t('session.confirmDelete'),
+      });
+      if (ok === null) return;
+      try {
+        await window.ide.deleteSession(id);
+        void loadProjectSessions();
+      } catch (err) {
+        console.error('Failed to delete session', err);
+      }
+    },
+    [confirm, t, loadProjectSessions],
+  );
   const [showJumpLatest, setShowJumpLatest] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -461,6 +518,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     setConfirmAnswer('');
   }, [activeTab?.confirm?.id]);
 
+  useEffect(() => {
+    if (activeTab?.messages.length === 0) {
+      void loadProjectSessions();
+    }
+  }, [activeTab?.id, activeTab?.messages.length, loadProjectSessions]);
+
   // Helper to update a specific session tab
   const workspaceInfoRef = useRef(workspaceInfo);
   workspaceInfoRef.current = workspaceInfo;
@@ -484,14 +547,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
           const title = isCustom ? updated.title : firstUserSnippet || updated.title;
           const meta = buildSessionWorkspaceMeta(workspaceInfoRef.current);
-          void window.ide.saveSession({
-            id: updated.id,
-            title,
-            customTitle: isCustom,
-            messages: updated.messages,
-            updatedAt: Date.now(),
-            ...meta,
-          });
+          void window.ide
+            .saveSession({
+              id: updated.id,
+              title,
+              customTitle: isCustom,
+              messages: updated.messages,
+              updatedAt: Date.now(),
+              ...meta,
+            })
+            .then(() => void loadProjectSessions());
         }
         return updated;
       }),
@@ -2440,30 +2505,43 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
     const existing = tabs.find((t) => t.id === session.id);
     if (existing) {
-      // 无论已存在还是新打开，都确保同步最新的标题、自定义标题标记和消息
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.id === session.id
-            ? {
-                ...t,
-                title: session.title || t.title,
-                customTitle: isCustom,
-                messages:
-                  session.messages && session.messages.length > 0 ? session.messages : t.messages,
-              }
-            : t,
-        ),
-      );
+      // 如果当前标签页是空白无内容的且不是这个会话，顺手把这个空白标签关掉，避免留下一堆无用的空白标签
+      if (
+        activeTab &&
+        activeTab.id !== existing.id &&
+        activeTab.messages.length === 0 &&
+        !activeTab.streaming &&
+        tabs.length > 1
+      ) {
+        setTabs((prev) => prev.filter((t) => t.id !== activeTab.id));
+      } else {
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === session.id
+              ? {
+                  ...t,
+                  title: session.title || t.title,
+                  customTitle: isCustom,
+                  messages:
+                    session.messages && session.messages.length > 0 ? session.messages : t.messages,
+                }
+              : t,
+          ),
+        );
+      }
       setActiveTabId(existing.id);
       void refreshCheckpoints(sessionRunIds);
       return;
     }
 
     const tab = sessionToTab(session);
-    // 如果当前只有一个空标签页（没有对话消息），直接替换该空标签，体验更流畅
+    // 如果当前选中的标签页是空白且未发送过消息，直接替换当前空白标签页，体验更流畅
     setTabs((prev) => {
-      if (prev.length === 1 && prev[0].messages.length === 0) {
-        return [tab];
+      const activeIdx = prev.findIndex((t) => t.id === activeTabId);
+      if (activeIdx >= 0 && prev[activeIdx].messages.length === 0 && !prev[activeIdx].streaming) {
+        const copy = [...prev];
+        copy[activeIdx] = tab;
+        return copy;
       }
       return [...prev, tab];
     });
@@ -3195,6 +3273,24 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             });
 
             if (msgs.length === 0 && !activeTab?.streaming) {
+              if (projectSessions.length > 0) {
+                return (
+                  <>
+                    <ProjectHistoryView
+                      sessions={projectSessions}
+                      activeSessionIds={tabs.map((t) => t.id)}
+                      projectName={currentProjectName}
+                      onSelectSession={handleLoadSessionFromModal}
+                      onDeleteSession={handleDeleteProjectSession}
+                      onOpenHistoryModal={() => setShowHistoryModal(true)}
+                      onQuickPrompt={handleQuickPrompt}
+                      selection={selection}
+                    />
+                    <div ref={bottomRef} />
+                  </>
+                );
+              }
+
               return (
                 <>
                   <div className="chat-empty-state">

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import type { ChatSessionMessage } from '@deepseek-ide/shared';
+import { estimateTextTokens, type ChatSessionMessage } from '@deepseek-ide/shared';
 import { commandFromArgs, parseTerminalResult } from '../ToolCallCard';
 import { useI18n, type Translate } from '../../i18n';
 
@@ -380,6 +380,11 @@ export function WorkedForGroup({
   const prevStreamingRef = React.useRef(isStreaming);
   const liveThinkingBoxRef = React.useRef<HTMLDivElement>(null);
 
+  // 实时预估当前思考内容的 Token 数
+  const liveThinkingTokens = useMemo(() => {
+    return liveThinking ? estimateTextTokens(liveThinking) : 0;
+  }, [liveThinking]);
+
   // 思考内容流式输出时自动滚动到底部跟随
   useEffect(() => {
     if (liveThinking && liveThinkingBoxRef.current) {
@@ -558,12 +563,15 @@ export function WorkedForGroup({
         const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
         const nextTime = nextMsg?.createdAt || Date.now();
         const dur = Math.max(1, Math.round((nextTime - prevTime) / 1000));
+        const thoughtContent = m.content || '';
+        const thoughtTokens = thoughtContent ? estimateTextTokens(thoughtContent) : 0;
+        const tokenSuffix = thoughtTokens > 0 ? ` · ${formatTokens(thoughtTokens)} tokens` : '';
         items.push({
           id: m.id || `thought-${idx}`,
           type: 'thought',
           badge: 'Thought',
-          title: `Thought for ${dur}s`,
-          thoughtContent: m.content || '',
+          title: `Thought for ${dur}s${tokenSuffix}`,
+          thoughtContent,
           isRunning: isStreaming && idx === messages.length - 1,
         });
       }
@@ -728,8 +736,8 @@ export function WorkedForGroup({
                   }}
                 >
                   ({formatDuration(currentStepLiveDuration || 1)}
-                  {contextUsage?.usedTokens
-                    ? ` · ${formatTokens(contextUsage.usedTokens)} tokens`
+                  {liveThinking && liveThinkingTokens > 0
+                    ? ` · ${formatTokens(liveThinkingTokens)} tokens`
                     : ''}
                   )
                 </span>

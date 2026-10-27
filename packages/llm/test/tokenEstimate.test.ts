@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '@deepseek-ide/shared';
-import { estimateTokensFromMessages } from '../src/index';
+import { estimateTokensFromMessages, estimateTextTokens } from '../src/index';
 
 /**
  * 估算值的唯一用途是决定要不要压缩上下文，所以这里断言的重点不是「准」，
@@ -94,5 +94,26 @@ describe('estimateTokensFromMessages', () => {
 
   it('空消息列表仍然给一个正数（下游拿它做分母）', () => {
     expect(estimateTokensFromMessages([])).toBe(1);
+  });
+});
+
+describe('estimateTextTokens', () => {
+  it('空字符串或无内容返回 0', () => {
+    expect(estimateTextTokens('')).toBe(0);
+  });
+
+  it('英文与代码按 4 字符一 token 估算', () => {
+    expect(estimateTextTokens('12345678')).toBe(2);
+    expect(estimateTextTokens('hello world!')).toBe(3);
+  });
+
+  it('中文按一字一 token 估算', () => {
+    const zh = '深度思考过程测试';
+    expect(estimateTextTokens(zh)).toBe(8);
+  });
+
+  it('中英文混排正确叠加', () => {
+    const mixed = '思考 12345678'; // 2个汉字 + 1个空格 + 8个字符 = 2 + ceil(9/4) = 5
+    expect(estimateTextTokens(mixed)).toBe(5);
   });
 });

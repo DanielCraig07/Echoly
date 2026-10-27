@@ -9,7 +9,7 @@ import type {
   ProviderConfig,
   ReasoningEffort,
 } from '@deepseek-ide/shared';
-import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from '@deepseek-ide/shared';
+import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL, estimateTextTokens } from '@deepseek-ide/shared';
 import { AnthropicClient, formatLlmErrorMessage } from './anthropic';
 import {
   Semaphore,
@@ -298,31 +298,8 @@ export function estimateTokensFromMessages(messages: ChatMessage[]): number {
 }
 
 /** 文本 → token 数。CJK / 全角标点按一字一 token，其余按 4 字符一 token。 */
-function textToTokens(text: string): number {
-  // 粗略圈定 CJK 与常见全角标点：这些字符在 BPE 词表里基本都是独立或近独立的 token，
-  // 用「4 字符一 token」会把中文段落低估到实际值的四分之一。
-  const cjk = countCjk(text);
-  const rest = text.length - cjk;
-  return cjk + Math.ceil(rest / 4);
-}
-
-function countCjk(text: string): number {
-  let n = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if (
-      (c >= 0x3040 && c <= 0x30ff) || // 日文假名
-      (c >= 0x3400 && c <= 0x4dbf) || // 扩展 A
-      (c >= 0x4e00 && c <= 0x9fff) || // 基本区
-      (c >= 0xf900 && c <= 0xfaff) || // 兼容表意
-      (c >= 0xff00 && c <= 0xff60) || // 全角
-      (c >= 0x3000 && c <= 0x303f) // CJK 标点
-    ) {
-      n++;
-    }
-  }
-  return n;
-}
+export const textToTokens = estimateTextTokens;
+export { estimateTextTokens };
 
 /**
  * `data:image/png;base64,xxxx` → 近似 token 数。
