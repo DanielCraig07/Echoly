@@ -328,12 +328,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   } = useProjectSessions({ workspaceInfo });
 
   // 领域 Hook：文件改动检查点与回退状态管理
-  const {
-    checkpoints,
-    setCheckpoints,
-    refreshCheckpoints,
-    knownRunIds,
-  } = useChatCheckpoints();
+  const { checkpoints, setCheckpoints, refreshCheckpoints, knownRunIds } = useChatCheckpoints();
   const [showJumpLatest, setShowJumpLatest] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -2449,7 +2444,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       // 直接在当前聊天面板中打开该历史会话，不再触发切换工作区弹窗
       const firstUser = fullSession.messages?.find((m) => m.role === 'user');
       const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
-      const isCustom = isCustomSessionTitle(fullSession.title, firstUserSnippet, fullSession.customTitle);
+      const isCustom = isCustomSessionTitle(
+        fullSession.title,
+        firstUserSnippet,
+        fullSession.customTitle,
+      );
 
       const sessionRunIds = (fullSession.messages ?? [])
         .map((m) => m.runId)
@@ -3330,7 +3329,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             };
 
             const DEFAULT_MAX_TURNS_VISIBLE = 10;
-            const hasHiddenOlderTurns = turns.length > DEFAULT_MAX_TURNS_VISIBLE && !showAllOlderTurns;
+            const hasHiddenOlderTurns =
+              turns.length > DEFAULT_MAX_TURNS_VISIBLE && !showAllOlderTurns;
             const visibleTurns = hasHiddenOlderTurns
               ? turns.slice(turns.length - DEFAULT_MAX_TURNS_VISIBLE)
               : turns;

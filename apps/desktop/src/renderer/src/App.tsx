@@ -10,7 +10,6 @@ import {
 import type {
   AgentEvent,
   AppSettings,
-  ChatSession,
   ChatSessionMessage,
   GitCommitEntry,
   GitStatusResult,

@@ -73,7 +73,11 @@ describe('SessionStore with lightweight indexing', () => {
     };
 
     // Write file directly into disk without index
-    fs.writeFileSync(path.join(sessionsDir, 'sess-legacy.json'), JSON.stringify(legacySession), 'utf8');
+    fs.writeFileSync(
+      path.join(sessionsDir, 'sess-legacy.json'),
+      JSON.stringify(legacySession),
+      'utf8',
+    );
 
     // Creating fresh store
     const freshStore = new SessionStore(tmpDir);
@@ -103,4 +107,3 @@ describe('SessionStore with lightweight indexing', () => {
     expect(store.list().length).toBe(0);
   });
 });
-

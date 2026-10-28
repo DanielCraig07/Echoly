@@ -359,10 +359,19 @@ export const chatDict: Record<string, { zh: string; en: string }> = {
   'chat.clearConfirm': { zh: '确认清空', en: 'Confirm clear' },
 
   // ---- 会话分叉、历史折叠与分支联动 ----
-  'chat.forkTip': { zh: '基于此轮对话创建新分支会话 (Fork)', en: 'Fork conversation from this turn' },
-  'chat.forkSession': { zh: '分叉当前会话为新 Tab (Fork)', en: 'Fork current session into new tab' },
+  'chat.forkTip': {
+    zh: '基于此轮对话创建新分支会话 (Fork)',
+    en: 'Fork conversation from this turn',
+  },
+  'chat.forkSession': {
+    zh: '分叉当前会话为新 Tab (Fork)',
+    en: 'Fork current session into new tab',
+  },
   'chat.forkSuffix': { zh: '分支', en: 'Fork' },
-  'chat.showOlderTurns': { zh: '展开更早的 {n} 轮历史对话', en: 'Show {n} earlier conversation turns' },
+  'chat.showOlderTurns': {
+    zh: '展开更早的 {n} 轮历史对话',
+    en: 'Show {n} earlier conversation turns',
+  },
   'chat.hideOlderTurns': { zh: '折叠更早的历史对话', en: 'Collapse earlier conversation turns' },
   'chat.currentBranchFilter': { zh: '仅当前分支', en: 'Current branch only' },
   'chat.branchFilterActive': { zh: '已启用', en: 'Active' },

@@ -38,7 +38,6 @@ export class SessionStore {
    */
   private buildIndexItem(session: ChatSession): SessionIndexItem {
     const msgs = session.messages || [];
-    const validMsgs = msgs.filter((m) => m.role === 'user' || m.role === 'assistant');
     const firstMsg = msgs[0]?.content || '';
     const lastMsg = msgs[msgs.length - 1]?.content || '';
 
@@ -47,7 +46,11 @@ export class SessionStore {
     if (!snippet) {
       for (let i = msgs.length - 1; i >= 0; i--) {
         const m = msgs[i];
-        if ((m.role === 'user' || m.role === 'assistant') && !m.isIntermediate && m.content?.trim()) {
+        if (
+          (m.role === 'user' || m.role === 'assistant') &&
+          !m.isIntermediate &&
+          m.content?.trim()
+        ) {
           snippet = m.content
             .replace(/```[\s\S]*?```/g, '')
             .replace(/`([^`]+)`/g, '$1')

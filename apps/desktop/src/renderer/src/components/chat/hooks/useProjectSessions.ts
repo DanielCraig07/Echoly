@@ -94,4 +94,3 @@ export function useProjectSessions({ workspaceInfo }: UseProjectSessionsOptions)
     setShowHistoryModal,
   };
 }
-

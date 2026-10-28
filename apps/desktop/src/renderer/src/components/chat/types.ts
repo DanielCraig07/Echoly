@@ -1,10 +1,7 @@
 import type {
   AgentMode,
   AgentRunStatus,
-  BrowserElementRef,
-  BrowserPageRef,
   ChatAttachment,
-  ChatMessageMetrics,
   ChatSessionMessage,
   ConfirmRequest,
   PlanProposal,
@@ -46,4 +43,3 @@ export interface SessionTab {
   contextUsage: { usedTokens: number; windowTokens: number; source: 'api' | 'estimate' } | null;
   updatedAt: number;
 }
-
