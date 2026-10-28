@@ -5495,6 +5495,7 @@ export function App() {
                     activeModelId={activeModelId}
                     onActiveModelChange={handleActiveModelChange}
                     recentWorkspaces={recentWorkspaces}
+                    gitBranch={gitStatus?.branch}
                   />
                 </ErrorBoundary>
               )}

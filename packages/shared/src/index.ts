@@ -993,6 +993,12 @@ export interface ChatSession {
   /** Folder / project display name (without host). */
   projectName?: string;
   workspaceKind?: WorkspaceKind;
+  /** Git branch at the time of conversation. */
+  gitBranch?: string;
+  /** Number of messages in this session. */
+  messageCount?: number;
+  /** Brief snippet/preview text for list view. */
+  snippet?: string;
 }
 
 export interface SkillInfo {

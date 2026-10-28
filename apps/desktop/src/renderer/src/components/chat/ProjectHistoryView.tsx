@@ -120,8 +120,9 @@ export const ProjectHistoryView: React.FC<ProjectHistoryViewProps> = ({
       <div className="project-history-list">
         {displaySessions.map((session) => {
           const isActiveTab = activeSessionIds.includes(session.id);
-          const snippet = getSessionSnippet(session);
-          const msgCount = session.messages.filter((m) => m.role !== 'tool').length;
+          const snippet = session.snippet || getSessionSnippet(session);
+          const msgCount =
+            session.messageCount ?? session.messages?.filter((m) => m.role !== 'tool').length ?? 0;
 
           return (
             <div
@@ -196,21 +197,46 @@ export const ProjectHistoryView: React.FC<ProjectHistoryViewProps> = ({
               {snippet && <div className="project-history-card-snippet">{snippet}</div>}
 
               <div className="project-history-card-footer">
-                <span className="project-history-card-count">
-                  <svg
-                    width="11"
-                    height="11"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
-                  </svg>
-                  {t('chat.sessionMessagesCount', { n: msgCount })}
-                </span>
+                <div className="project-history-card-footer-left">
+                  <span className="project-history-card-count">
+                    <svg
+                      width="11"
+                      height="11"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+                    </svg>
+                    {t('chat.sessionMessagesCount', { n: msgCount })}
+                  </span>
+                  {session.gitBranch && (
+                    <span
+                      className="project-history-branch-pill"
+                      title={t('chat.branchBadge', { branch: session.gitBranch })}
+                    >
+                      <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <line x1="6" y1="3" x2="6" y2="15" />
+                        <circle cx="18" cy="6" r="3" />
+                        <circle cx="6" cy="18" r="3" />
+                        <path d="M18 9a9 9 0 0 1-9 9" />
+                      </svg>
+                      <span>{session.gitBranch}</span>
+                    </span>
+                  )}
+                </div>
                 <span className="project-history-arrow">→</span>
               </div>
             </div>

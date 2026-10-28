@@ -20,6 +20,7 @@ interface Props {
   onRenameSession?: (id: string, newTitle: string) => void;
   workspaceInfo?: WorkspaceInfo | null;
   recentWorkspaces?: RecentWorkspaceItem[];
+  currentBranch?: string | null;
 }
 
 export function isSessionMatchingWorkspace(
@@ -33,7 +34,9 @@ export function isSessionMatchingWorkspace(
   const wsRoot = norm(ws.root);
   const wsLabel = norm(ws.label);
   const sessionPath = norm(session.workspacePath);
-  const sessionProject = norm(session.projectName);
+  const sessionProject = norm(
+    session.projectName || (session.workspacePath ? folderNameFromPath(session.workspacePath) : ''),
+  );
   const currentProject = norm(folderNameFromPath(ws.root));
 
   // 1. 绝对或规范化路径直接匹配
@@ -61,7 +64,9 @@ export function isSessionMatchingProject(
   const projPath = norm(project.path);
   const projName = norm(project.name);
   const sessionPath = norm(session.workspacePath);
-  const sessionProject = norm(session.projectName);
+  const sessionProject = norm(
+    session.projectName || (session.workspacePath ? folderNameFromPath(session.workspacePath) : ''),
+  );
 
   // 1. 路径直接匹配
   if (projPath && sessionPath) {
@@ -245,6 +250,7 @@ export function SessionModal({
   onRenameSession,
   workspaceInfo,
   recentWorkspaces,
+  currentBranch,
 }: Props) {
   const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
@@ -264,6 +270,7 @@ export function SessionModal({
   const [editTitle, setEditTitle] = useState('');
   // 筛选范围：'current' 为当前工作区，'all' 为全局全部会话，或者指定项目的 key
   const [filterScope, setFilterScope] = useState<string>('current');
+  const [onlyCurrentBranch, setOnlyCurrentBranch] = useState(false);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -447,6 +454,9 @@ export function SessionModal({
   }, [filterScope, sessions, workspaceInfo, currentProjectSessions, selectedSpecificProject]);
 
   const filteredSessions = poolSessions.filter((s) => {
+    if (onlyCurrentBranch && currentBranch && s.gitBranch !== currentBranch) {
+      return false;
+    }
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const matchTitle = s.title.toLowerCase().includes(q);
@@ -812,6 +822,36 @@ export function SessionModal({
               </button>
             )}
           </div>
+          {currentBranch && (
+            <button
+              type="button"
+              className={`session-branch-filter-btn ${onlyCurrentBranch ? 'is-active' : ''}`}
+              onClick={() => setOnlyCurrentBranch((v) => !v)}
+              title={
+                onlyCurrentBranch
+                  ? `${t('chat.currentBranchFilter')} (${t('chat.branchFilterActive')})`
+                  : t('chat.currentBranchFilter')
+              }
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="session-branch-filter-icon"
+              >
+                <line x1="6" y1="3" x2="6" y2="15" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <path d="M18 9a9 9 0 0 1-9 9" />
+              </svg>
+              <span className="session-branch-filter-label">{currentBranch}</span>
+            </button>
+          )}
         </div>
 
         <div className="session-modal-body">
@@ -1011,6 +1051,29 @@ export function SessionModal({
                               </span>
                             ) : null}
                             <span className="session-row-project-name">{ws.text}</span>
+                            {s.gitBranch && (
+                              <span
+                                className="session-branch-badge"
+                                title={t('chat.branchBadge', { branch: s.gitBranch })}
+                              >
+                                <svg
+                                  width="10"
+                                  height="10"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <line x1="6" y1="3" x2="6" y2="15" />
+                                  <circle cx="18" cy="6" r="3" />
+                                  <circle cx="6" cy="18" r="3" />
+                                  <path d="M18 9a9 9 0 0 1-9 9" />
+                                </svg>
+                                <span>{s.gitBranch}</span>
+                              </span>
+                            )}
                           </span>
                         </div>
                       ) : (
@@ -1034,6 +1097,29 @@ export function SessionModal({
                               </span>
                             ) : null}
                             <span className="session-row-project-name">{ws.text}</span>
+                            {s.gitBranch && (
+                              <span
+                                className="session-branch-badge"
+                                title={t('chat.branchBadge', { branch: s.gitBranch })}
+                              >
+                                <svg
+                                  width="10"
+                                  height="10"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <line x1="6" y1="3" x2="6" y2="15" />
+                                  <circle cx="18" cy="6" r="3" />
+                                  <circle cx="6" cy="18" r="3" />
+                                  <path d="M18 9a9 9 0 0 1-9 9" />
+                                </svg>
+                                <span>{s.gitBranch}</span>
+                              </span>
+                            )}
                           </span>
                         </div>
                       )}

@@ -53,20 +53,11 @@ import { TurnCheckpointBar } from './chat/TurnCheckpointBar';
 import { PanelChevron } from './PanelChevron';
 import { computeLineDiffStats } from '../services/diffStats';
 import { ProjectHistoryView } from './chat/ProjectHistoryView';
+import { useProjectSessions } from './chat/hooks/useProjectSessions';
+import { useChatCheckpoints } from './chat/hooks/useChatCheckpoints';
+import type { MentionItem, SessionTab } from './chat/types';
+export type { MentionItem, SessionTab } from './chat/types';
 import echolyAppIcon from '../assets/echoly-icon.png';
-
-interface MentionItem {
-  id: string;
-  type: 'special' | 'file' | 'command';
-  title: string;
-  desc: string;
-  path?: string;
-  insertText: string;
-  /** 命令项专用：展开后的正文。选中时替换掉 `/name` 而不是插入名字。 */
-  commandBody?: string;
-  /** 命令项的来源标记（工作区 / 用户）。 */
-  badge?: string;
-}
 
 interface Props {
   workspace: string | null;
@@ -94,6 +85,7 @@ interface Props {
   activeModelId?: string;
   onActiveModelChange?: (modelId: string) => void;
   recentWorkspaces?: RecentWorkspaceItem[];
+  gitBranch?: string | null;
 }
 
 export type ChatPanelHandle = {
@@ -104,30 +96,6 @@ export type ChatPanelHandle = {
   focusInput: () => void;
   addBrowserElementRef?: (ref: BrowserElementRef) => void;
 };
-
-export interface SessionTab {
-  id: string;
-  title: string;
-  customTitle?: boolean;
-  messages: ChatSessionMessage[];
-  attachments?: ChatAttachment[];
-  mode: AgentMode;
-  modelId?: string;
-  input: string;
-  status: AgentRunStatus;
-  runId: string | null;
-  streaming: string;
-  streamingMsgId?: string;
-  thinkingStreaming?: string;
-  confirm: ConfirmRequest | null;
-  plan: PlanProposal | null;
-  pendingPlanContext: PlanProposal | null;
-  stepInfo: { step: number; maxSteps: number } | null;
-  awaitingContinue: boolean;
-  continueInfo: { completedSteps: number; chunkSize: number } | null;
-  contextUsage: { usedTokens: number; windowTokens: number; source: 'api' | 'estimate' } | null;
-  updatedAt: number;
-}
 
 const MODE_LABEL: Record<AgentMode, string> = {
   ask: 'Ask',
@@ -325,9 +293,15 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     activeModelId,
     onActiveModelChange,
     recentWorkspaces,
+    gitBranch,
   } = props;
   // 面板里有大量中文注释与日志（不翻译），这里只接用户可见文案
   const { t, locale } = useI18n();
+  const workspaceInfoRef = useRef(workspaceInfo);
+  workspaceInfoRef.current = workspaceInfo;
+  const gitBranchRef = useRef(gitBranch);
+  gitBranchRef.current = gitBranch;
+
   // Manage multiple active session tabs
   const [tabs, setTabs] = useState<SessionTab[]>(() => {
     const initial = createEmptyTab();
@@ -339,73 +313,27 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     return [initial];
   });
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
-  /**
-   * runId → 该轮文件改动的写前记录摘要。
-   *
-   * 主进程存的是真正可回放的数据，这里只缓存「有没有、几个、是否可完整撤销」，
-   * 用来决定每轮气泡下那个「撤销本轮改动」按钮出不出现。
-   * `null` 表示查过了：这一轮没有可撤销的改动（例如纯问答），按钮不显示。
-   */
-  const [checkpoints, setCheckpoints] = useState<Record<string, CheckpointSummary | null>>({});
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [projectSessions, setProjectSessions] = useState<ChatSession[]>([]);
-  // 清空对话等不可逆操作走应用内确认框（系统 window.confirm 不是应用主题色，也没法列出影响范围）
+  // 清空对话、回滚等不可逆操作走应用内确认框
   const confirm = useDbConfirm();
 
-  const currentProjectName = useMemo(() => {
-    if (workspaceInfo?.root) return folderNameFromPath(workspaceInfo.root);
-    return workspaceInfo?.label || '';
-  }, [workspaceInfo?.root, workspaceInfo?.label]);
+  // 领域 Hook：项目历史会话与弹窗状态管理
+  const {
+    projectSessions,
+    hasLoadedSessions,
+    currentProjectName,
+    loadProjectSessions,
+    handleDeleteProjectSession,
+    showHistoryModal,
+    setShowHistoryModal,
+  } = useProjectSessions({ workspaceInfo });
 
-  const loadProjectSessions = useCallback(async () => {
-    try {
-      const list = await window.ide.listSessions();
-      if (!Array.isArray(list)) {
-        setProjectSessions([]);
-        return;
-      }
-      const matching = list.filter((s) => {
-        if (!isSessionMatchingWorkspace(s, workspaceInfoRef.current)) return false;
-        const validMsgs = s.messages?.filter((m) => m.role === 'user' || m.role === 'assistant');
-        return Boolean(validMsgs && validMsgs.length > 0);
-      });
-      matching.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-      setProjectSessions(matching);
-    } catch (err) {
-      console.warn('Failed to load project sessions', err);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadProjectSessions();
-  }, [workspaceInfo?.root, workspaceInfo?.label, loadProjectSessions]);
-
-  useEffect(() => {
-    if (!showHistoryModal) {
-      void loadProjectSessions();
-    }
-  }, [showHistoryModal, loadProjectSessions]);
-
-  const handleDeleteProjectSession = useCallback(
-    async (id: string, title?: string) => {
-      const ok = await confirm.confirm({
-        title: t('session.deleteTitle'),
-        content: t('chat.deleteSessionConfirm', {
-          title: title?.trim() || t('session.untitled'),
-        }),
-        tone: 'danger',
-        confirmLabel: t('session.confirmDelete'),
-      });
-      if (ok === null) return;
-      try {
-        await window.ide.deleteSession(id);
-        void loadProjectSessions();
-      } catch (err) {
-        console.error('Failed to delete session', err);
-      }
-    },
-    [confirm, t, loadProjectSessions],
-  );
+  // 领域 Hook：文件改动检查点与回退状态管理
+  const {
+    checkpoints,
+    setCheckpoints,
+    refreshCheckpoints,
+    knownRunIds,
+  } = useChatCheckpoints();
   const [showJumpLatest, setShowJumpLatest] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
@@ -435,6 +363,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [exported, setExported] = useState(false);
   const [diffFilesCollapsed, setDiffFilesCollapsed] = useState(false);
+  const [showAllOlderTurns, setShowAllOlderTurns] = useState(false);
+
+  useEffect(() => {
+    setShowAllOlderTurns(false);
+  }, [activeTabId]);
   const stickRef = useRef(true);
   const userInteractingRef = useRef(false);
   const userInteractTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -526,9 +459,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   }, [activeTab?.id, activeTab?.messages.length, loadProjectSessions]);
 
   // Helper to update a specific session tab
-  const workspaceInfoRef = useRef(workspaceInfo);
-  workspaceInfoRef.current = workspaceInfo;
-
   const updateTab = useCallback((id: string, updater: (prev: SessionTab) => SessionTab) => {
     setTabs((prevTabs) =>
       prevTabs.map((t) => {
@@ -555,6 +485,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               customTitle: isCustom,
               messages: updated.messages,
               updatedAt: Date.now(),
+              gitBranch: gitBranchRef.current || undefined,
               ...meta,
             })
             .then(() => void loadProjectSessions());
@@ -1725,40 +1656,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   }, [workspace, workspaceInfo?.root, workspaceInfo?.label, sessionToTab]);
 
   /**
-   * 刷新某轮（或全部已知轮次）的撤销可用性。
-   *
-   * 只在「一轮结束」和「撤销完成后」这两个时点查：checkpoint 的 status 在主进程里
-   * 随写入变化，但按钮的可用状态只在用户能看到结果之后才有意义，逐次工具调用去轮询
-   * 只会给每条 tool_result 增加一次 IPC 往返。
-   */
-  const refreshCheckpoints = useCallback(async (runIds: string[]) => {
-    if (runIds.length === 0) return;
-    const entries = await Promise.all(
-      runIds.map(async (id) => {
-        try {
-          return [id, await window.ide.getCheckpointSummary(id)] as const;
-        } catch {
-          return [id, null] as const;
-        }
-      }),
-    );
-    setCheckpoints((prev) => {
-      const next = { ...prev };
-      for (const [id, summary] of entries) next[id] = summary;
-      return next;
-    });
-  }, []);
-
-  /** 当前标签页里所有带 runId 的轮次。 */
-  const knownRunIds = useCallback(
-    (tab: SessionTab | undefined): string[] =>
-      (tab?.messages ?? [])
-        .map((m) => m.runId)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0),
-    [],
-  );
-
-  /**
    * 切换标签页 / 工作区后补齐尚未查询过的轮次。
    *
    * 只查 `checkpoints` 里还没有键的那些，且结果是 `null` 也是一种「已查过」的记录 ——
@@ -2531,61 +2428,145 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     }
   };
 
-  const handleLoadSessionFromModal = (session: ChatSession) => {
-    // 直接在当前聊天面板中打开该历史会话，不再触发切换工作区弹窗
-    const firstUser = session.messages?.find((m) => m.role === 'user');
-    const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
-    const isCustom = isCustomSessionTitle(session.title, firstUserSnippet, session.customTitle);
-
-    const sessionRunIds = (session.messages ?? [])
-      .map((m) => m.runId)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0);
-
-    const existing = tabs.find((t) => t.id === session.id);
-    if (existing) {
-      // 如果当前标签页是空白无内容的且不是这个会话，顺手把这个空白标签关掉，避免留下一堆无用的空白标签
+  const handleLoadSessionFromModal = useCallback(
+    async (session: ChatSession) => {
+      // 若会话消息为轻量索引骨架（消息数少于真实条数），按需拉取全量会话
+      let fullSession = session;
       if (
-        activeTab &&
-        activeTab.id !== existing.id &&
-        activeTab.messages.length === 0 &&
-        !activeTab.streaming &&
-        tabs.length > 1
+        session.messageCount !== undefined &&
+        (session.messages?.length ?? 0) < session.messageCount
       ) {
-        setTabs((prev) => prev.filter((t) => t.id !== activeTab.id));
-      } else {
-        setTabs((prev) =>
-          prev.map((t) =>
-            t.id === session.id
-              ? {
-                  ...t,
-                  title: session.title || t.title,
-                  customTitle: isCustom,
-                  messages:
-                    session.messages && session.messages.length > 0 ? session.messages : t.messages,
-                }
-              : t,
-          ),
-        );
+        try {
+          const loaded = await window.ide.getSession(session.id);
+          if (loaded && loaded.messages && loaded.messages.length > 0) {
+            fullSession = loaded;
+          }
+        } catch (err) {
+          console.warn('Failed to load full session from disk', err);
+        }
       }
-      setActiveTabId(existing.id);
-      void refreshCheckpoints(sessionRunIds);
-      return;
-    }
 
-    const tab = sessionToTab(session);
-    // 如果当前选中的标签页是空白且未发送过消息，直接替换当前空白标签页，体验更流畅
-    setTabs((prev) => {
-      const activeIdx = prev.findIndex((t) => t.id === activeTabId);
-      if (activeIdx >= 0 && prev[activeIdx].messages.length === 0 && !prev[activeIdx].streaming) {
-        const copy = [...prev];
-        copy[activeIdx] = tab;
-        return copy;
+      // 直接在当前聊天面板中打开该历史会话，不再触发切换工作区弹窗
+      const firstUser = fullSession.messages?.find((m) => m.role === 'user');
+      const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
+      const isCustom = isCustomSessionTitle(fullSession.title, firstUserSnippet, fullSession.customTitle);
+
+      const sessionRunIds = (fullSession.messages ?? [])
+        .map((m) => m.runId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+      const existing = tabs.find((t) => t.id === fullSession.id);
+      if (existing) {
+        // 如果当前标签页是空白无内容的且不是这个会话，顺手把这个空白标签关掉，避免留下一堆无用的空白标签
+        if (
+          activeTab &&
+          activeTab.id !== existing.id &&
+          activeTab.messages.length === 0 &&
+          !activeTab.streaming &&
+          tabs.length > 1
+        ) {
+          setTabs((prev) => prev.filter((t) => t.id !== activeTab.id));
+        } else {
+          setTabs((prev) =>
+            prev.map((t) =>
+              t.id === session.id
+                ? {
+                    ...t,
+                    title: fullSession.title || t.title,
+                    customTitle: isCustom,
+                    messages:
+                      fullSession.messages && fullSession.messages.length > 0
+                        ? fullSession.messages
+                        : t.messages,
+                  }
+                : t,
+            ),
+          );
+        }
+        setActiveTabId(existing.id);
+        void refreshCheckpoints(sessionRunIds);
+        return;
       }
-      return [...prev, tab];
-    });
-    setActiveTabId(tab.id);
-    void refreshCheckpoints(sessionRunIds);
-  };
+
+      const tab = sessionToTab(fullSession);
+      // 如果当前选中的标签页是空白且未发送过消息，直接替换当前空白标签页，体验更流畅
+      setTabs((prev) => {
+        const activeIdx = prev.findIndex((t) => t.id === activeTabId);
+        if (activeIdx >= 0 && prev[activeIdx].messages.length === 0 && !prev[activeIdx].streaming) {
+          const copy = [...prev];
+          copy[activeIdx] = tab;
+          return copy;
+        }
+        return [...prev, tab];
+      });
+      setActiveTabId(tab.id);
+      void refreshCheckpoints(sessionRunIds);
+    },
+    [tabs, activeTab, activeTabId, sessionToTab, refreshCheckpoints],
+  );
+
+  /**
+   * 基于选定轮次或整个会话分叉对话（Fork），保留前置上下文并在新 Tab 中探索
+   */
+  const handleForkFromTurn = useCallback(
+    (targetMsg?: ChatSessionMessage) => {
+      if (!activeTab || activeTab.messages.length === 0) return;
+      const msgs = activeTab.messages;
+      let endIdx = msgs.length;
+      if (targetMsg) {
+        const targetIdx = msgs.findIndex((m) => m.id === targetMsg.id);
+        if (targetIdx >= 0) {
+          endIdx = targetIdx + 1;
+          if (targetMsg.role === 'user') {
+            // 截取到本轮结束（即下一条 user 消息之前，或会话末尾）
+            while (endIdx < msgs.length && msgs[endIdx].role !== 'user') {
+              endIdx++;
+            }
+          }
+        }
+      }
+      const forkedMsgs = msgs.slice(0, endIdx).map((m) => ({ ...m, id: uid() }));
+
+      const newId = uid();
+      const baseTitle = activeTab.title || t('chat.untitled');
+      const forkTitle = `${baseTitle} (${t('chat.forkSuffix')})`;
+      const forkedTab: SessionTab = {
+        ...activeTab,
+        id: newId,
+        title: forkTitle,
+        customTitle: true,
+        messages: forkedMsgs,
+        status: 'idle',
+        runId: null,
+        streaming: '',
+        confirm: null,
+        plan: null,
+        pendingPlanContext: null,
+        stepInfo: null,
+        awaitingContinue: false,
+        continueInfo: null,
+        updatedAt: Date.now(),
+      };
+
+      setTabs((prev) => [...prev, forkedTab]);
+      setActiveTabId(newId);
+
+      // 异步持久化分叉会话并同步项目历史列表
+      const meta = buildSessionWorkspaceMeta(workspaceInfoRef.current);
+      void window.ide
+        .saveSession({
+          id: newId,
+          title: forkTitle,
+          customTitle: true,
+          messages: forkedMsgs,
+          updatedAt: Date.now(),
+          gitBranch: gitBranchRef.current || undefined,
+          ...meta,
+        })
+        .then(() => void loadProjectSessions());
+    },
+    [activeTab, t, loadProjectSessions],
+  );
 
   const handleRenameSession = (id: string, newTitle: string) => {
     setTabs((prev) =>
@@ -2788,6 +2769,30 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         </div>
 
         <div className="chat-header-actions">
+          <button
+            type="button"
+            className="icon-btn"
+            title={t('chat.forkSession')}
+            onClick={() => handleForkFromTurn()}
+            disabled={!activeTab || activeTab.messages.length === 0}
+            style={{ opacity: !activeTab || activeTab.messages.length === 0 ? 0.35 : 1 }}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="6" y1="3" x2="6" y2="15" />
+              <circle cx="18" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <path d="M18 9a9 9 0 0 1-9 9" />
+            </svg>
+          </button>
           <button
             type="button"
             className={`icon-btn ${exported ? 'active' : ''}`}
@@ -3145,6 +3150,28 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                       <polyline points="7 6 3 10 7 14" />
                     </svg>
                   </button>
+                  <button
+                    type="button"
+                    className="msg-action-btn"
+                    title={t('chat.forkTip')}
+                    onClick={() => handleForkFromTurn(m)}
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="6" y1="3" x2="6" y2="15" />
+                      <circle cx="18" cy="6" r="3" />
+                      <circle cx="6" cy="18" r="3" />
+                      <path d="M18 9a9 9 0 0 1-9 9" />
+                    </svg>
+                  </button>
                 </div>
               </div>
             );
@@ -3203,6 +3230,28 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                         </svg>
                       )}
+                    </button>
+                    <button
+                      type="button"
+                      className="msg-action-btn"
+                      title={t('chat.forkTip')}
+                      onClick={() => handleForkFromTurn(m)}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <line x1="6" y1="3" x2="6" y2="15" />
+                        <circle cx="18" cy="6" r="3" />
+                        <circle cx="6" cy="18" r="3" />
+                        <path d="M18 9a9 9 0 0 1-9 9" />
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -3280,37 +3329,105 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               return bodyEls;
             };
 
-            const turnNodes = turns.map((turn, turnIdx) => {
-              const turnKey = turn.user?.id ?? `orphan-${turnIdx}`;
-              const isLastTurn = turnIdx === turns.length - 1;
-              const turnRunId = turn.user?.runId;
-              const checkpoint = turnRunId ? checkpoints[turnRunId] : undefined;
-              return (
-                <div key={turnKey} className="chat-turn">
-                  {turn.user && (
-                    <div className="chat-turn-folder">{renderUserBubble(turn.user)}</div>
-                  )}
-                  <div className="chat-turn-files">
-                    {renderTurnBody(turn.body, turnKey, isLastTurn)}
-                    {/* 这一轮修改了文件时显示美化的修改清单与回退控制栏 */}
-                    {checkpoint && (
-                      <TurnCheckpointBar
-                        checkpoint={checkpoint}
-                        onRevertTurn={async (paths) => {
-                          await onRevertTurn?.(paths);
-                          setCheckpoints((prev) => ({ ...prev, [checkpoint.runId]: null }));
-                          void refreshCheckpoints([checkpoint.runId]);
-                        }}
-                        onOpenFile={onOpenFile}
-                        onRefreshCheckpoints={() => void refreshCheckpoints([checkpoint.runId])}
-                      />
-                    )}
+            const DEFAULT_MAX_TURNS_VISIBLE = 10;
+            const hasHiddenOlderTurns = turns.length > DEFAULT_MAX_TURNS_VISIBLE && !showAllOlderTurns;
+            const visibleTurns = hasHiddenOlderTurns
+              ? turns.slice(turns.length - DEFAULT_MAX_TURNS_VISIBLE)
+              : turns;
+            const hiddenCount = turns.length - visibleTurns.length;
+
+            const turnNodes = (
+              <>
+                {hasHiddenOlderTurns && (
+                  <div className="chat-older-turns-toggle">
+                    <button
+                      type="button"
+                      className="chat-older-turns-btn"
+                      onClick={() => setShowAllOlderTurns(true)}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="7 11 12 6 17 11" />
+                        <polyline points="7 17 12 12 17 17" />
+                      </svg>
+                      <span>{t('chat.showOlderTurns', { n: hiddenCount })}</span>
+                    </button>
                   </div>
-                </div>
-              );
-            });
+                )}
+                {showAllOlderTurns && turns.length > DEFAULT_MAX_TURNS_VISIBLE && (
+                  <div className="chat-older-turns-toggle">
+                    <button
+                      type="button"
+                      className="chat-older-turns-btn"
+                      onClick={() => setShowAllOlderTurns(false)}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <polyline points="7 13 12 18 17 13" />
+                        <polyline points="7 7 12 12 17 7" />
+                      </svg>
+                      <span>{t('chat.hideOlderTurns')}</span>
+                    </button>
+                  </div>
+                )}
+                {visibleTurns.map((turn, turnIdx) => {
+                  const actualIdx = hasHiddenOlderTurns ? hiddenCount + turnIdx : turnIdx;
+                  const turnKey = turn.user?.id ?? `orphan-${actualIdx}`;
+                  const isLastTurn = actualIdx === turns.length - 1;
+                  const turnRunId = turn.user?.runId;
+                  const checkpoint = turnRunId ? checkpoints[turnRunId] : undefined;
+                  return (
+                    <div key={turnKey} className="chat-turn">
+                      {turn.user && (
+                        <div className="chat-turn-folder">{renderUserBubble(turn.user)}</div>
+                      )}
+                      <div className="chat-turn-files">
+                        {renderTurnBody(turn.body, turnKey, isLastTurn)}
+                        {/* 这一轮修改了文件时显示美化的修改清单与回退控制栏 */}
+                        {checkpoint && (
+                          <TurnCheckpointBar
+                            checkpoint={checkpoint}
+                            onRevertTurn={async (paths) => {
+                              await onRevertTurn?.(paths);
+                              setCheckpoints((prev) => ({ ...prev, [checkpoint.runId]: null }));
+                              void refreshCheckpoints([checkpoint.runId]);
+                            }}
+                            onOpenFile={onOpenFile}
+                            onRefreshCheckpoints={() => void refreshCheckpoints([checkpoint.runId])}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </>
+            );
 
             if (msgs.length === 0 && !activeTab?.streaming) {
+              if (!hasLoadedSessions) {
+                return (
+                  <div className="chat-empty-state chat-empty-state--loading">
+                    <div ref={bottomRef} />
+                  </div>
+                );
+              }
+
               if (projectSessions.length > 0) {
                 return (
                   <>
@@ -3400,9 +3517,21 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
             activeTab?.status,
             activeTab?.runId,
             activeTab?.pendingPlanContext,
+            activeTab?.streaming,
             copiedId,
             isDragging,
             workspace,
+            projectSessions,
+            hasLoadedSessions,
+            currentProjectName,
+            tabs,
+            checkpoints,
+            selection,
+            handleLoadSessionFromModal,
+            handleDeleteProjectSession,
+            handleQuickPrompt,
+            handleForkFromTurn,
+            showAllOlderTurns,
             t,
           ])}
         </div>
@@ -4310,6 +4439,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           activeSessionIds={tabs.map((t) => t.id)}
           workspaceInfo={workspaceInfo}
           recentWorkspaces={recentWorkspaces}
+          currentBranch={gitBranch || undefined}
           onSelectSession={handleLoadSessionFromModal}
           onNewSession={handleDeleteCurrentSessionAndOpenNew}
           onRenameSession={handleRenameSession}
