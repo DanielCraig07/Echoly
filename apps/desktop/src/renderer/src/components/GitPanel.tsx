@@ -36,6 +36,7 @@ import {
 import { useI18n } from '../i18n';
 
 interface Props {
+  visible?: boolean;
   workspaceInfo: WorkspaceInfo | null;
   onPreviewDiff: (diff: PendingDiff | null) => void;
   onDiscardPath?: (path: string | string[]) => void | Promise<void>;
@@ -758,6 +759,7 @@ function GitFileContextMenu({
 }
 
 export function GitPanel({
+  visible = true,
   workspaceInfo,
   onPreviewDiff,
   onDiscardPath,
@@ -1235,35 +1237,55 @@ export function GitPanel({
         window.ide.gitStash('list').catch(() => ({ ok: false, stashes: [] })),
       ]);
 
-      setStatus(st);
+      if (st.ok) {
+        setStatus(st);
+      } else {
+        // 遇到临时网络异常/超时，保留上一次有效的 Git 状态，避免突变为“非 Git 项目”
+        setStatus((prev) => (prev?.isRepo ? prev : st));
+      }
+
       if (br.ok) {
         setAllBranches(br.branches);
         setBranches(br.branches.filter((b) => !b.remote));
+      } else if (!st.ok) {
+        // 网络/超时故障时保留原有分支列表，避免界面闪烁清空
       } else {
         setAllBranches([]);
         setBranches([]);
       }
 
-      const curBranch = st?.branch || 'HEAD';
+      const curBranch = (st.ok ? st.branch : status?.branch) || 'HEAD';
       const hist = await window.ide.gitHistory(
-        isFocus ? { all: false, branch: curBranch } : { all: true },
+        isFocus ? { all: false, branch: curBranch, maxCount: 200 } : { all: true, maxCount: 200 },
       );
 
-      setHistoryResult(hist);
-      if (hist.ok) setCommits(hist.commits);
-      else setCommits([]);
+      if (hist.ok) {
+        setHistoryResult(hist);
+        setCommits(hist.commits);
+      } else if (!st.ok) {
+        // 网络故障时保留原有提交历史
+      } else {
+        setHistoryResult(hist);
+        setCommits([]);
+      }
 
       if (stashRes?.ok && stashRes.stashes) {
         setStashes(stashRes.stashes);
+      } else if (!st.ok) {
+        // 网络故障时保留原有 stash 列表
       } else {
         setStashes([]);
       }
 
-      if (!st.ok && st.detail) setError(st.detail);
-      else if (!hist.ok && hist.detail && !hist.emptyRepo) setError(hist.detail);
-      else setError(null);
+      if (!st.ok && st.detail && (!status || !status.isRepo)) {
+        setError(st.detail);
+      } else if (!hist.ok && hist.detail && !hist.emptyRepo) {
+        setError(hist.detail);
+      } else {
+        setError(null);
+      }
     },
-    [workspaceInfo],
+    [workspaceInfo, status?.branch, status?.isRepo],
   );
 
   const handleStashPush = useCallback(async () => {
@@ -1409,10 +1431,13 @@ export function GitPanel({
   );
 
   useEffect(() => {
+    if (visible === false) return;
     void refresh();
     let timer: ReturnType<typeof setInterval> | null = null;
     if (autoSyncEnabled) {
-      timer = setInterval(() => void refresh(), 8000);
+      const isSsh = workspaceInfo?.kind === 'ssh';
+      const intervalMs = isSsh ? 15000 : 8000;
+      timer = setInterval(() => void refresh(), intervalMs);
     }
     const unbind = window.ide.onGitBranchSwitched?.(() => {
       void refresh();
@@ -1421,7 +1446,7 @@ export function GitPanel({
       if (timer) clearInterval(timer);
       unbind?.();
     };
-  }, [refresh, refreshNonce, autoSyncEnabled]);
+  }, [refresh, refreshNonce, autoSyncEnabled, visible, workspaceInfo?.kind]);
 
   const runOp = async (fn: () => Promise<unknown>) => {
     setBusy(true);

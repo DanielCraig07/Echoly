@@ -108,6 +108,8 @@ export const chatDict: Record<string, { zh: string; en: string }> = {
   // ---- 待审阅改动（输入框上方的文件清单） ----
   'chat.diffViewTip': { zh: '点击查看 {path} 差异', en: 'Click to view the diff of {path}' },
   'chat.diffFilesWithChanges': { zh: '{n} 个文件有改动', en: '{n} Files With Changes' },
+  'chat.diffExpandList': { zh: '展开文件清单', en: 'Expand file list' },
+  'chat.diffCollapseList': { zh: '折叠文件清单', en: 'Collapse file list' },
   'chat.diffRejectAll': { zh: '全部拒绝', en: 'Reject all' },
   'chat.diffAcceptAll': { zh: '全部接受', en: 'Accept all' },
 

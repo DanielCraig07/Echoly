@@ -434,6 +434,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const [isDragging, setIsDragging] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [exported, setExported] = useState(false);
+  const [diffFilesCollapsed, setDiffFilesCollapsed] = useState(false);
   const stickRef = useRef(true);
   const userInteractingRef = useRef(false);
   const userInteractTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -472,7 +473,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     void checkRules();
     const timer = setInterval(() => {
       void checkRules();
-    }, 4000);
+    }, 30000);
     return () => {
       unmounted = true;
       clearInterval(timer);
@@ -534,7 +535,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         if (t.id !== id) return t;
         const updated = updater(t);
         // Auto-save to IPC if messages changed
-        if (updated.messages.length > 0) {
+        if (updated.messages.length > 0 && updated.messages !== t.messages) {
           const firstUserMsg = updated.messages.find((m) => m.role === 'user');
           const firstUserSnippet = firstUserMsg ? firstUserMsg.content.slice(0, 40) : '';
           // 判定收在 utils.isCustomSessionTitle 里（原先这段在 5 处各抄一遍，
@@ -562,6 +563,39 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       }),
     );
   }, []);
+
+  // ── 输入框局部受控状态与防抖同步（彻底解耦键盘按键与巨型消息列表 Re-render） ──────
+  const [localInput, setLocalInput] = useState<string>(activeTab?.input ?? '');
+  const inputDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 当外部显式切换 Tab 或外部清空/注入 input 时，同步至 localInput
+  useEffect(() => {
+    setLocalInput((prev) => {
+      const incoming = activeTab?.input ?? '';
+      return prev === incoming ? prev : incoming;
+    });
+  }, [activeTab?.id, activeTab?.input]);
+
+  const debouncedSyncTabInput = useCallback(
+    (val: string) => {
+      if (inputDebounceTimerRef.current) clearTimeout(inputDebounceTimerRef.current);
+      inputDebounceTimerRef.current = setTimeout(() => {
+        const curTabId = activeTabIdRef.current;
+        updateTab(curTabId, (t) => (t.input === val ? t : { ...t, input: val }));
+      }, 250);
+    },
+    [updateTab],
+  );
+
+  const flushTabInput = useCallback(
+    (val?: string) => {
+      if (inputDebounceTimerRef.current) clearTimeout(inputDebounceTimerRef.current);
+      const v = typeof val === 'string' ? val : localInput;
+      const curTabId = activeTabIdRef.current;
+      updateTab(curTabId, (t) => (t.input === v ? t : { ...t, input: v }));
+    },
+    [localInput, updateTab],
+  );
 
   /**
    * 回退到某条用户消息：把这条之后的消息全部丢弃。
@@ -2164,9 +2198,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       return;
     }
     if (!activeTab) return;
-    const rawPrompt = (overridePrompt ?? activeTab.input).trim();
+    const rawPrompt = (overridePrompt ?? localInput).trim();
     const currentAttachments = activeTab.attachments || [];
     if (!rawPrompt && currentAttachments.length === 0) return;
+    if (!overridePrompt) {
+      if (inputDebounceTimerRef.current) clearTimeout(inputDebounceTimerRef.current);
+      setLocalInput('');
+    }
     const prompt =
       rawPrompt ||
       (currentAttachments.some((a) => a.type === 'image')
@@ -2856,7 +2894,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       {/* Messages Wrap */}
       <div className="chat-messages-wrap">
         <div className="chat-messages" ref={messagesElRef}>
-          {(() => {
+          {useMemo(() => {
             const msgs = activeTab?.messages ?? [];
             const isRunning = activeTab
               ? activeTab.status !== 'idle' &&
@@ -3357,7 +3395,16 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                 <div ref={bottomRef} />
               </>
             );
-          })()}
+          }, [
+            activeTab?.messages,
+            activeTab?.status,
+            activeTab?.runId,
+            activeTab?.pendingPlanContext,
+            copiedId,
+            isDragging,
+            workspace,
+            t,
+          ])}
         </div>
         {showJumpLatest && (
           <button type="button" className="jump-latest-btn" onClick={jumpToLatest}>
@@ -3369,62 +3416,56 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       {/* Windsurf/Cursor style modified files block (above chat input) */}
       {diffs && diffs.length > 0 && (
         <div className="chat-diff-summary-container">
-          <div className="chat-diff-file-list">
-            {diffs.map((d) => {
-              const fileName = d.path.split('/').filter(Boolean).pop() || d.path;
-              const { added, deleted } = computeLineDiffStats(d.original, d.modified);
+          {!diffFilesCollapsed && (
+            <div className="chat-diff-file-list">
+              {diffs.map((d) => {
+                const fileName = d.path.split('/').filter(Boolean).pop() || d.path;
+                const { added, deleted } = computeLineDiffStats(d.original, d.modified);
 
-              return (
-                <div
-                  key={d.id}
-                  className="chat-diff-file-item"
-                  onClick={() => onSelectDiff?.(d.id)}
-                  title={t('chat.diffViewTip', { path: d.path })}
-                >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    style={{ color: 'var(--warn)', flexShrink: 0 }}
+                return (
+                  <div
+                    key={d.id}
+                    className="chat-diff-file-item"
+                    onClick={() => onSelectDiff?.(d.id)}
+                    title={t('chat.diffViewTip', { path: d.path })}
                   >
-                    <rect
-                      x="2"
-                      y="2"
+                    <svg
                       width="12"
                       height="12"
-                      rx="2"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    />
-                    <circle cx="8" cy="8" r="2" fill="currentColor" />
-                  </svg>
-                  <span className="diff-stats">
-                    <span className="diff-add">+{added}</span>
-                    <span className="diff-del">-{deleted}</span>
-                  </span>
-                  <span className="diff-filename">{fileName}</span>
-                  <span className="diff-filepath">{d.path}</span>
-                </div>
-              );
-            })}
-          </div>
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      style={{ color: 'var(--warn)', flexShrink: 0 }}
+                    >
+                      <rect
+                        x="2"
+                        y="2"
+                        width="12"
+                        height="12"
+                        rx="2"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                      />
+                      <circle cx="8" cy="8" r="2" fill="currentColor" />
+                    </svg>
+                    <span className="diff-stats">
+                      <span className="diff-add">+{added}</span>
+                      <span className="diff-del">-{deleted}</span>
+                    </span>
+                    <span className="diff-filename">{fileName}</span>
+                    <span className="diff-filepath">{d.path}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="chat-diff-action-bar">
-            <div className="chat-diff-action-left">
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ opacity: 0.7 }}
-              >
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
+            <div
+              className="chat-diff-action-left"
+              onClick={() => setDiffFilesCollapsed((c) => !c)}
+              title={diffFilesCollapsed ? t('chat.diffExpandList') : t('chat.diffCollapseList')}
+            >
+              <PanelChevron expanded={!diffFilesCollapsed} size={11} color="var(--muted)" />
               <svg
                 width="12"
                 height="12"
@@ -3774,7 +3815,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           <InputCodeRefOverlay
             ref={textareaRef}
             className="chat-textarea-custom"
-            value={activeTab?.input ?? ''}
+            value={localInput}
             style={{
               border: 'none',
               background: 'transparent',
@@ -3796,7 +3837,8 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     : t('chat.placeholderAgent')
             }
             onChange={(val) => {
-              updateTab(activeTab.id, (t) => ({ ...t, input: val }));
+              setLocalInput(val);
+              debouncedSyncTabInput(val);
 
               // 检测 @ / 两个触发符
               // 从末尾反向找光标位置（onChange 中无法直接获取 selectionStart，取全长近似）
@@ -3874,13 +3916,15 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   const end = target.selectionEnd;
                   // target.value 是 plainText；activeTab.input 是完整値（含 refs 前缀）
                   const plain = target.value;
-                  const fullInput = activeTab.input ?? '';
+                  const fullInput = localInput ?? '';
                   const newPlain = plain.substring(0, start) + '\n' + plain.substring(end);
                   // 保留 refs 前缀（fullInput 头部），替换 plainText 部分
                   const refPart = fullInput.endsWith(plain)
                     ? fullInput.slice(0, fullInput.length - plain.length)
                     : '';
-                  updateTab(activeTab.id, (t) => ({ ...t, input: refPart + newPlain }));
+                  const nextVal = refPart + newPlain;
+                  setLocalInput(nextVal);
+                  debouncedSyncTabInput(nextVal);
                   requestAnimationFrame(() => {
                     target.selectionStart = target.selectionEnd = start + 1;
                   });
@@ -4199,7 +4243,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                     停止按钮此刻占着原来的发送位，用户看不到任何「可以继续输入」的视觉线索，
                     于是会以为输入框已经不可用而干等。
                   */}
-                  {(activeTab.input ?? '').trim().length > 0 && (
+                  {(localInput ?? '').trim().length > 0 && (
                     <button
                       type="button"
                       className="chat-action-circle-btn send"

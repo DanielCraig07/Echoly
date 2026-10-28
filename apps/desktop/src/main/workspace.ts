@@ -217,11 +217,14 @@ export class WorkspaceService {
     const backend = this.requireBackend();
     const SKIP = new Set(['node_modules', '.git', '.DS_Store', '.', '..']);
 
+    const isSsh = this.kind === 'ssh';
+    const maxCompactDepth = isSsh ? 4 : 8;
+
     /** Compact-merge: collapse single-child-dir chains like VS Code. */
     async function compact(name: string, p: string): Promise<{ name: string; path: string }> {
       let curName = name;
       let curPath = p;
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < maxCompactDepth; i++) {
         let children: { name: string; isDirectory: boolean }[];
         try {
           children = await backend.listDir(curPath);
@@ -251,29 +254,32 @@ export class WorkspaceService {
       }
       return [];
     }
-    const nodes: FileTreeNode[] = [];
-    for (const entry of entries) {
-      if (!entry.name || SKIP.has(entry.name) || entry.name === '.' || entry.name === '..')
-        continue;
 
-      let childPath =
-        !relPath || relPath === '.' ? entry.name : `${relPath.replace(/\/$/, '')}/${entry.name}`;
-      childPath = childPath.replace(/\\/g, '/');
+    const rawNodes = await Promise.all(
+      entries.map(async (entry) => {
+        if (!entry.name || SKIP.has(entry.name) || entry.name === '.' || entry.name === '..')
+          return null;
 
-      let displayName = entry.name;
+        let childPath =
+          !relPath || relPath === '.' ? entry.name : `${relPath.replace(/\/$/, '')}/${entry.name}`;
+        childPath = childPath.replace(/\\/g, '/');
 
-      if (entry.isDirectory && this.kind === 'local') {
-        const result = await compact(displayName, childPath);
-        displayName = result.name;
-        childPath = result.path;
-      }
+        let displayName = entry.name;
 
-      nodes.push({
-        name: displayName,
-        path: childPath,
-        isDirectory: entry.isDirectory,
-      });
-    }
+        if (entry.isDirectory) {
+          const result = await compact(displayName, childPath);
+          displayName = result.name;
+          childPath = result.path;
+        }
+
+        return {
+          name: displayName,
+          path: childPath,
+          isDirectory: entry.isDirectory,
+        };
+      }),
+    );
+    const nodes = rawNodes.filter(Boolean) as FileTreeNode[];
     return nodes.sort(
       (a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name),
     );

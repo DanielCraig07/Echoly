@@ -162,7 +162,7 @@ function SearchTreeNodeView({
       </div>
       {!isCollapsed && (
         <div>
-          {hits.map((hit, idx) => (
+          {hits.slice(0, 100).map((hit, idx) => (
             <div
               key={`${hit.path}-${hit.line}-${idx}`}
               onClick={() => {
@@ -210,6 +210,20 @@ function SearchTreeNodeView({
               </span>
             </div>
           ))}
+          {hits.length > 100 && (
+            <div
+              style={{
+                paddingLeft: 28 + depth * 14,
+                paddingTop: 4,
+                paddingBottom: 4,
+                fontSize: 11,
+                color: 'var(--muted)',
+                fontStyle: 'italic',
+              }}
+            >
+              ... 另有 {hits.length - 100} 处匹配已折叠
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1031,7 +1045,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                       {/* Match Lines */}
                       {!isCollapsed && (
                         <div>
-                          {group.hits.map((hit, idx) => (
+                          {group.hits.slice(0, 100).map((hit, idx) => (
                             <div
                               key={`${hit.path}-${hit.line}-${idx}`}
                               onClick={() => {
@@ -1073,6 +1087,18 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                               </span>
                             </div>
                           ))}
+                          {group.hits.length > 100 && (
+                            <div
+                              style={{
+                                padding: '4px 12px 4px 28px',
+                                fontSize: 11,
+                                color: 'var(--muted)',
+                                fontStyle: 'italic',
+                              }}
+                            >
+                              ... 另有 {group.hits.length - 100} 处匹配已折叠
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

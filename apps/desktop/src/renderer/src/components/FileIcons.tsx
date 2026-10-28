@@ -22,7 +22,6 @@ export interface IconProps {
 }
 
 const svgStyle: React.CSSProperties = {
-  marginRight: 6,
   flexShrink: 0,
   verticalAlign: 'middle',
   display: 'inline-block',

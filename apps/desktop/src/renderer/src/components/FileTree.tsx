@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  memo,
   useImperativeHandle,
   useCallback,
   useEffect,
@@ -508,6 +509,25 @@ export { RenderFileTreeIcon, detectCodeSubtype };
 // 全局缓存探测到的代码文件子类型（如 Java 类、接口、枚举等）
 const codeTypeCache = new Map<string, CodeSubtype>();
 
+// 并发读取限制队列（最多 2 个并发任务），防止批量展开目录时瞬时产生巨量 I/O
+let activeDetectCount = 0;
+const detectQueue: Array<() => void> = [];
+function scheduleDetect(task: () => Promise<void>): void {
+  const run = () => {
+    activeDetectCount++;
+    task().finally(() => {
+      activeDetectCount--;
+      const next = detectQueue.shift();
+      if (next) next();
+    });
+  };
+  if (activeDetectCount < 2) {
+    run();
+  } else {
+    detectQueue.push(run);
+  }
+}
+
 /** 归一化：反斜杠转正斜杠、去掉开头的 `/`。索引与查询两侧都跑一遍，
  *  保证「索引里存的是什么、查的时候拿什么比」是同一套写法。 */
 function normGitPath(p: string): string {
@@ -618,25 +638,7 @@ export function getNodeGitStatus(
   return index.dirsWithChanges.has(norm) ? { hasChanges: true, color: '#e5a54b' } : null;
 }
 
-function TreeNode({
-  node,
-  depth,
-  activePath,
-  selectedNode,
-  gitIndex,
-  refreshKey,
-  collapseKey,
-  expandKey,
-  locateKey,
-  expandPath,
-  inlineEdit,
-  onOpenFile,
-  onSelectNode,
-  onContextNode,
-  onInlineDone,
-  onInlineCancel,
-  onMoveNode,
-}: {
+interface TreeNodeProps {
   node: FileTreeNode;
   depth: number;
   activePath: string | null;
@@ -649,13 +651,102 @@ function TreeNode({
   locateKey?: number;
   expandPath: string | null;
   inlineEdit: InlineEdit | null;
+  isRemote?: boolean;
   onOpenFile: (path: string) => void;
   onSelectNode?: (node: { path: string; isDirectory: boolean } | null) => void;
   onContextNode: (e: ReactMouseEvent, node: FileTreeNode) => void;
   onInlineDone: (edit: InlineEdit, name: string) => void;
   onInlineCancel: () => void;
   onMoveNode?: (sourcePath: string, targetDirPath: string, sourceIsDir: boolean) => void;
-}) {
+}
+
+function areTreeNodePropsEqual(prev: TreeNodeProps, next: TreeNodeProps): boolean {
+  if (prev.refreshKey !== next.refreshKey) return false;
+  if (prev.collapseKey !== next.collapseKey) return false;
+  if (prev.expandKey !== next.expandKey) return false;
+  if (prev.locateKey !== next.locateKey) return false;
+  if (prev.isRemote !== next.isRemote) return false;
+
+  // 节点元数据变动
+  if (
+    prev.node.path !== next.node.path ||
+    prev.node.name !== next.node.name ||
+    prev.node.isDirectory !== next.node.isDirectory
+  ) {
+    return false;
+  }
+  if (prev.depth !== next.depth) return false;
+
+  // 激活态比对：仅在该节点从 active 变 inactive，或从 inactive 变 active 时重绘
+  const wasActive = prev.activePath === prev.node.path;
+  const isNowActive = next.activePath === next.node.path;
+  if (wasActive !== isNowActive) return false;
+
+  // 选中态比对：仅在该节点选中状态发生切换时重绘
+  const wasSelected = prev.selectedNode?.path === prev.node.path;
+  const isNowSelected = next.selectedNode?.path === next.node.path;
+  if (wasSelected !== isNowSelected) return false;
+
+  // 行内编辑状态比对：仅在该节点自身或其子级涉及新增/重命名时重绘
+  const isNodeInvolvedInEdit = (edit: InlineEdit | null, p: string) => {
+    if (!edit) return false;
+    return edit.mode === 'rename' ? edit.node.path === p : edit.parentPath === p;
+  };
+  const prevInvolvedInEdit = isNodeInvolvedInEdit(prev.inlineEdit, prev.node.path);
+  const nextInvolvedInEdit = isNodeInvolvedInEdit(next.inlineEdit, next.node.path);
+  if (prevInvolvedInEdit !== nextInvolvedInEdit) return false;
+  if (nextInvolvedInEdit && prev.inlineEdit !== next.inlineEdit) return false;
+
+  // 路径展开比对：仅当 expandPath 命中当前目录或其祖先/子级时重绘
+  if (prev.expandPath !== next.expandPath) {
+    if (prev.node.isDirectory) {
+      const prevAffects =
+        prev.expandPath &&
+        (prev.expandPath === prev.node.path || prev.expandPath.startsWith(`${prev.node.path}/`));
+      const nextAffects =
+        next.expandPath &&
+        (next.expandPath === next.node.path || next.expandPath.startsWith(`${next.node.path}/`));
+      if (prevAffects || nextAffects) return false;
+    }
+  }
+
+  // Git 状态比对：通过 O(1) 预建索引快速判断当前节点的状态标识是否有实质变更
+  if (prev.gitIndex !== next.gitIndex) {
+    const prevStatus = getNodeGitStatus(prev.node.path, prev.node.isDirectory, prev.gitIndex);
+    const nextStatus = getNodeGitStatus(next.node.path, next.node.isDirectory, next.gitIndex);
+    if (
+      prevStatus?.label !== nextStatus?.label ||
+      prevStatus?.color !== nextStatus?.color ||
+      prevStatus?.hasChanges !== nextStatus?.hasChanges ||
+      prevStatus?.isIgnored !== nextStatus?.isIgnored
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function TreeNodeComponent({
+  node,
+  depth,
+  activePath,
+  selectedNode,
+  gitIndex,
+  refreshKey,
+  collapseKey,
+  expandKey,
+  locateKey,
+  expandPath,
+  inlineEdit,
+  isRemote,
+  onOpenFile,
+  onSelectNode,
+  onContextNode,
+  onInlineDone,
+  onInlineCancel,
+  onMoveNode,
+}: TreeNodeProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(depth === 0);
   const [children, setChildren] = useState<FileTreeNode[] | null>(null);
@@ -679,22 +770,26 @@ function TreeNode({
       setDetectedType(codeTypeCache.get(node.path)!);
       return;
     }
+    // 远程 SSH 工作区绝不发起批量 readFile 泛洪，直接信赖高精度智能文件名推断
+    if (isRemote) return;
+
     let cancelled = false;
     if (window.ide?.readFile) {
-      window.ide
-        .readFile(node.path)
-        .then((content) => {
+      scheduleDetect(async () => {
+        if (cancelled) return;
+        try {
+          const content = await window.ide.readFile(node.path);
           if (cancelled || !content) return;
           const resolved = detectCodeSubtype(node.name, content.slice(0, 800));
           codeTypeCache.set(node.path, resolved);
           setDetectedType(resolved);
-        })
-        .catch(() => {});
+        } catch {}
+      });
     }
     return () => {
       cancelled = true;
     };
-  }, [node.path, isJava, node.name]);
+  }, [node.path, isJava, node.name, isRemote]);
 
   useEffect(() => {
     if (collapseKey && collapseKey > 0) {
@@ -879,7 +974,6 @@ function TreeNode({
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                marginRight: 4,
                 position: 'relative',
                 zIndex: 1,
               }}
@@ -936,6 +1030,7 @@ function TreeNode({
                 onInlineDone={onInlineDone}
                 onInlineCancel={onInlineCancel}
                 onMoveNode={onMoveNode}
+                isRemote={isRemote}
               />
             ))}
           </>
@@ -1013,6 +1108,8 @@ function TreeNode({
     </div>
   );
 }
+
+const TreeNode = memo(TreeNodeComponent, areTreeNodePropsEqual);
 
 function FindInFolderModal({
   folderPath,
@@ -1328,6 +1425,7 @@ interface Props extends FileTreeHandlers {
     type?: 'success' | 'error' | 'info' | 'warn',
   ) => void;
   refreshKey: number;
+  isRemote?: boolean;
 }
 
 export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
@@ -1336,6 +1434,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     activePath,
     selectedNode = null,
     gitStatus,
+    isRemote,
     onViewFileHistory,
     onDiscardPath,
     onPreviewGitDiff,
@@ -1370,6 +1469,8 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
   const [expandKey, setExpandKey] = useState(0);
   const [locateKey, setLocateKey] = useState(0);
   const refreshKey = (extRefreshKey ?? 0) + localRefreshKey;
+  const effectiveIsRemote =
+    isRemote ?? Boolean(workspace && (workspace.startsWith('ssh:') || workspace.includes('@')));
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [clipboard, setClipboard] = useState<PathClipboard>(null);
   const [inlineEdit, setInlineEdit] = useState<InlineEdit | null>(null);
@@ -1795,6 +1896,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           onInlineDone={(edit, name) => void handleInlineDone(edit, name)}
           onInlineCancel={() => setInlineEdit(null)}
           onMoveNode={handleMoveNode}
+          isRemote={effectiveIsRemote}
         />
       ))}
       {menu && (

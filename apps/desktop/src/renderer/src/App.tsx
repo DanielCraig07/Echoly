@@ -390,6 +390,21 @@ export function App() {
     return name.toUpperCase();
   }, [workspaceInfo.label, workspaceInfo.root]);
 
+  const openFilesForChat = useMemo(
+    () =>
+      tabs
+        .filter(
+          (t) =>
+            t.language !== 'image' &&
+            !t.previewUrl &&
+            !isUntitledPath(t.path) &&
+            !isDbPath(t.path) &&
+            !isBrowserPath(t.path),
+        )
+        .map((t) => ({ path: t.path, content: t.content })),
+    [tabs],
+  );
+
   const [cursorLine, setCursorLine] = useState(1);
   const [cursorCol, setCursorCol] = useState(1);
   const [activeLanguage, setActiveLanguage] = useState('plaintext');
@@ -765,6 +780,7 @@ export function App() {
   useEffect(() => {
     if (!workspace) return;
     let isMounted = true;
+    const isSshWorkspace = workspaceInfo.kind === 'ssh';
     const fetchGit = async () => {
       try {
         const res = await window.ide.gitStatus();
@@ -781,19 +797,20 @@ export function App() {
           }
         } else {
           // 遇到临时网络异常/超时，保留上一次有效的 Git 状态，避免突变为“非 Git 项目”
-          setGitStatus((prev) => (prev?.isRepo ? prev : res));
+          setGitStatus((prev) => (prev?.isRepo ? prev : res.isRepo ? res : prev));
         }
       } catch {
         // 网络/IPC 异常时静默容灾保持
       }
     };
     void fetchGit();
-    const timer = setInterval(() => void fetchGit(), 5000);
+    const intervalMs = isSshWorkspace ? 12000 : 5000;
+    const timer = setInterval(() => void fetchGit(), intervalMs);
     return () => {
       isMounted = false;
       clearInterval(timer);
     };
-  }, [workspace, handleBranchSwitchSync]);
+  }, [workspace, workspaceInfo.kind, handleBranchSwitchSync]);
 
   useEffect(() => {
     return window.ide.onGitBranchSwitched?.(() => {
@@ -4708,6 +4725,7 @@ export function App() {
                         <FileTree
                           ref={fileTreeRef}
                           workspace={workspace}
+                          isRemote={workspaceInfo.kind === 'ssh'}
                           activePath={activePath}
                           selectedNode={selectedNode}
                           onSelectNode={setSelectedNode}
@@ -4767,6 +4785,7 @@ export function App() {
                   title={t('errorBoundary.panelTitle', { name: t('panel.sourceControl') })}
                 >
                   <GitPanel
+                    visible={leftPanel === 'git'}
                     workspaceInfo={workspaceInfo}
                     onOpenFile={(p) => void openFile(p)}
                     onPreviewDiff={(diff) => {
@@ -5450,16 +5469,7 @@ export function App() {
                     ref={chatRef}
                     workspace={workspace}
                     workspaceInfo={workspaceInfo}
-                    openFiles={tabs
-                      .filter(
-                        (t) =>
-                          t.language !== 'image' &&
-                          !t.previewUrl &&
-                          !isUntitledPath(t.path) &&
-                          !isDbPath(t.path) &&
-                          !isBrowserPath(t.path),
-                      )
-                      .map((t) => ({ path: t.path, content: t.content }))}
+                    openFiles={openFilesForChat}
                     selection={editorSelection}
                     cursor={
                       activePath

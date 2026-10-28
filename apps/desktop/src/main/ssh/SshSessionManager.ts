@@ -183,6 +183,7 @@ export class SftpBackend implements WorkspaceBackend {
   readonly kind = 'ssh' as const;
   private dirCache = new Map<string, { entries: DirEntry[]; expireAt: number }>();
   private realpathCache = new Map<string, { value: string | null; expireAt: number }>();
+  private existsCache = new Map<string, { value: boolean; expireAt: number }>();
 
   constructor(
     public root: string,
@@ -192,6 +193,7 @@ export class SftpBackend implements WorkspaceBackend {
 
   clearDirCache(): void {
     this.dirCache.clear();
+    this.existsCache.clear();
   }
 
   resolve(relPath = '.'): string {
@@ -504,10 +506,16 @@ export class SftpBackend implements WorkspaceBackend {
     if (!this.sftp) return false;
     try {
       const abs = await this.resolveSafe(relPath);
+      const cached = this.existsCache.get(abs);
+      if (cached && cached.expireAt > Date.now()) {
+        return cached.value;
+      }
       const op = new Promise<boolean>((resolve) => {
         this.sftp.stat(abs, (err) => resolve(!err));
       });
-      return await withTimeout(op, 6000, `exists(${relPath})`);
+      const res = await withTimeout(op, 6000, `exists(${relPath})`);
+      this.existsCache.set(abs, { value: res, expireAt: Date.now() + 3000 });
+      return res;
     } catch {
       return false;
     }

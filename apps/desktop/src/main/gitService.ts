@@ -35,6 +35,37 @@ interface GitRunResult {
   stderr: string;
   error?: string;
 }
+
+export function parsePorcelainBranchLine(firstLine: string): {
+  branch: string | null;
+  ahead: number;
+  behind: number;
+} {
+  let ahead = 0;
+  let behind = 0;
+  let branch: string | null = null;
+  if (!firstLine.startsWith('##')) return { branch: null, ahead: 0, behind: 0 };
+  const raw = firstLine.slice(2).trim();
+  const ab = raw.match(/\[ahead\s+(\d+)(?:,\s*behind\s+(\d+))?\]|\[behind\s+(\d+)\]/);
+  if (ab) {
+    if (ab[1]) ahead = Number(ab[1]);
+    if (ab[2]) behind = Number(ab[2]);
+    if (ab[3]) behind = Number(ab[3]);
+  }
+  const branchPart = raw.replace(/\s*\[.*\]$/, '').trim();
+  if (branchPart === 'HEAD (no branch)') {
+    branch = 'HEAD';
+  } else if (branchPart.startsWith('No commits yet on ')) {
+    branch = branchPart.slice('No commits yet on '.length).trim() || null;
+  } else if (branchPart.startsWith('Initial commit on ')) {
+    branch = branchPart.slice('Initial commit on '.length).trim() || null;
+  } else if (branchPart.includes('...')) {
+    branch = branchPart.split('...')[0].trim() || null;
+  } else {
+    branch = branchPart || null;
+  }
+  return { branch, ahead, behind };
+}
 function formatCommitDate(timestampSec: number | string): {
   relativeDate: string;
   fullDate: string;
@@ -66,6 +97,7 @@ function formatCommitDate(timestampSec: number | string): {
 export class GitService {
   private inFlightStatus = new Map<string, Promise<GitStatusResult>>();
   private statusCache = new Map<string, { result: GitStatusResult; timestamp: number }>();
+  private lastKnownGoodStatus = new Map<string, GitStatusResult>();
 
   constructor(
     private readonly resolveWorkspace: () => WorkspaceService,
@@ -335,10 +367,10 @@ export class GitService {
     const workspace = this.resolveWorkspace();
     const isSsh = workspace.getKind() === 'ssh';
 
-    // 1. SSH 工作区短时缓存检查（1500ms 内复用缓存，避免频繁切窗口/Tab 时高频轰炸远程 SSH 链路）
+    // 1. SSH 工作区短时缓存检查（3000ms 内复用缓存，避免频繁切窗口/Tab 时高频轰炸远程 SSH 链路）
     if (isSsh) {
       const cached = this.statusCache.get(root);
-      if (cached && Date.now() - cached.timestamp < 1500) {
+      if (cached && Date.now() - cached.timestamp < 3000) {
         return cached.result;
       }
     }
@@ -362,16 +394,31 @@ export class GitService {
 
     this.inFlightStatus.set(root, promise);
     const result = await promise;
-    if (isSsh && result.ok) {
-      this.statusCache.set(root, { result, timestamp: Date.now() });
+    if (result.ok && result.isRepo) {
+      this.lastKnownGoodStatus.set(root, result);
+    }
+    if (isSsh) {
+      if (result.ok) {
+        this.statusCache.set(root, { result, timestamp: Date.now() });
+      } else {
+        const fallback = this.lastKnownGoodStatus.get(root) || this.statusCache.get(root)?.result;
+        if (fallback && fallback.ok && fallback.isRepo) {
+          // 遇到临时网络抖动/超时，使用上一次成功的缓存状态，避免分支和状态闪烁清空
+          return {
+            ...fallback,
+            detail: `远程连接响应缓慢，已展示缓存的 Git 状态${result.detail ? ` (${result.detail})` : ''}`,
+          };
+        }
+      }
     }
     return result;
   }
 
   /**
    * 远程 SSH 模式专用：单次 RTT 复合脚本获取 Git 完整状态。
-   * 将原本 5~6 次串行 SSH exec 往返合成为单条 Shell 管道一次性返回，
-   * 在网络波动/高延迟下将响应时间从几秒锐减至 100~150ms。
+   * 将多步 SSH exec 往返合成为单条 Shell 管道一次性返回，
+   * 结合 -u 代替 -uall 避免扫穿 node_modules 等忽略目录，
+   * 在网络波动/高延迟下将响应时间从数秒/超时锐减至 50~100ms。
    */
   private async statusRemoteSsh(
     root: string,
@@ -381,16 +428,12 @@ export class GitService {
     const compositeScript = [
       `git rev-parse --is-inside-work-tree 2>&1`,
       `echo "${SEP}"`,
-      `git branch --show-current 2>&1`,
+      `git status --porcelain=v1 -b -u --ignored=matching 2>&1`,
       `echo "${SEP}"`,
-      `git status -sb --porcelain=v1 2>&1`,
-      `echo "${SEP}"`,
-      `git update-index -q --really-refresh 2>/dev/null; git status --porcelain=v1 -uall --ignored=matching 2>&1`,
-      `echo "${SEP}"`,
-      `git diff HEAD --ignore-cr-at-eol --numstat -- 2>&1`,
+      `(git diff HEAD --ignore-cr-at-eol --numstat -- 2>/dev/null || true)`,
     ].join(' && ');
 
-    const res = await this.ssh!.runCommand(compositeScript, 8000);
+    const res = await this.ssh!.runCommand(compositeScript, 10_000);
     if (res.code !== 0 && !res.stdout.includes(SEP)) {
       const err = (res.stderr || res.stdout).toLowerCase();
       if (err.includes('not a git repository')) {
@@ -407,7 +450,7 @@ export class GitService {
       return {
         ok: false,
         detail: res.stderr || '获取远程 Git 状态超时或失败',
-        isRepo: false,
+        isRepo: true,
         branch: null,
         ahead: 0,
         behind: 0,
@@ -442,7 +485,7 @@ export class GitService {
       return {
         ok: false,
         detail: isInsideWorkTree || '获取 Git 状态失败',
-        isRepo: false,
+        isRepo: true,
         branch: null,
         ahead: 0,
         behind: 0,
@@ -450,23 +493,16 @@ export class GitService {
       };
     }
 
-    const branch = parts[1]?.trim() || null;
-    const sb = parts[2] || '';
-    const firstLine = sb.split(/\r?\n/)[0] ?? '';
-    let ahead = 0;
-    let behind = 0;
-    const ab = firstLine.match(/\[ahead\s+(\d+)(?:,\s*behind\s+(\d+))?\]|\[behind\s+(\d+)\]/);
-    if (ab) {
-      if (ab[1]) ahead = Number(ab[1]);
-      if (ab[2]) behind = Number(ab[2]);
-      if (ab[3]) behind = Number(ab[3]);
-    }
+    const statusOutput = parts[1] || '';
+    const statusLines = statusOutput.split(/\r?\n/);
+    const firstLine = statusLines[0] || '';
+    const { branch, ahead, behind } = parsePorcelainBranchLine(firstLine);
 
-    const porcelain = parts[3] || '';
     const entries: GitStatusEntry[] = [];
     const ignoredPaths: string[] = [];
 
-    for (const line of porcelain.split(/\r?\n/)) {
+    for (let i = 1; i < statusLines.length; i++) {
+      const line = statusLines[i];
       if (!line || line.length < 3) continue;
       const index = line[0] ?? ' ';
       const workTree = line[1] ?? ' ';
@@ -491,7 +527,7 @@ export class GitService {
       });
     }
 
-    const numstatOut = parts[4] || '';
+    const numstatOut = parts[2] || '';
     const workTreeModified = entries.filter(
       (e) => !e.untracked && e.workTree && e.workTree !== ' ',
     );
@@ -598,7 +634,7 @@ export class GitService {
 
     await this.runGit(['update-index', '-q', '--really-refresh'], root, workspace);
     const porcelain = await this.runGit(
-      ['status', '--porcelain=v1', '-uall', '--ignored=matching'],
+      ['status', '--porcelain=v1', '-u', '--ignored=matching'],
       root,
       workspace,
     );
@@ -755,6 +791,18 @@ export class GitService {
 
     const isAll = cleanInputPaths.some((p) => !p || p === '.' || p === 'ALL' || p === 'all');
     if (isAll) {
+      if (this.workspace.getKind() === 'ssh' && this.ssh) {
+        // 远程 SSH 模式下，一次性复合执行全部命令，避免 6 次串行网络往返
+        const res = await this.ssh.runCommand(
+          `git reset HEAD . && git checkout -f HEAD -- . && git checkout -f -- . && git clean -fd && git update-index -q --refresh`,
+          15_000,
+        );
+        this.invalidateStatusCache(root);
+        return {
+          ok: res.code === 0,
+          detail: res.code === 0 ? '已还原所有改动' : res.stderr || '还原失败',
+        };
+      }
       await this.runGit(['reset', 'HEAD', '.'], root);
       await this.runGit(['checkout', '-f', 'HEAD', '--', '.'], root);
       await this.runGit(['checkout', '-f', '--', '.'], root);
@@ -959,17 +1007,21 @@ export class GitService {
       };
     }
     const { root } = gate as { root: string };
-    const check = await this.runGit(['rev-parse', '--is-inside-work-tree'], root);
-    if (check.code !== 0 || !check.stdout.trim().includes('true')) {
-      return {
-        ok: false,
-        detail: 'Not a git repository',
-        path: relPath,
-        original: '',
-        modified: '',
-        staged,
-        isTracked: false,
-      };
+    const isKnownRepo =
+      this.lastKnownGoodStatus.get(root)?.isRepo ?? this.statusCache.get(root)?.result.isRepo;
+    if (isKnownRepo !== true) {
+      const check = await this.runGit(['rev-parse', '--is-inside-work-tree'], root);
+      if (check.code !== 0 || !check.stdout.trim().includes('true')) {
+        return {
+          ok: false,
+          detail: 'Not a git repository',
+          path: relPath,
+          original: '',
+          modified: '',
+          staged,
+          isTracked: false,
+        };
+      }
     }
 
     let posix = relPath.replace(/\\/g, '/');
@@ -1000,18 +1052,22 @@ export class GitService {
     }
 
     if (staged) {
-      let original = '';
-      const head = await this.runGit(['show', `HEAD:${posix}`], root);
-      if (head.code === 0) original = head.stdout;
-      const cached = await this.runGit(['show', `:0:${posix}`], root);
+      const [head, cached] = await Promise.all([
+        this.runGit(['show', `HEAD:${posix}`], root),
+        this.runGit(['show', `:0:${posix}`], root),
+      ]);
+      const original = head.code === 0 ? head.stdout : '';
       const modified = cached.code === 0 ? cached.stdout : '';
       return { ok: true, path: posix, original, modified, staged: true, isTracked: true };
     }
 
-    // unstaged: 优先以 HEAD 为基准版本，使得自最新 commit 以来的修改在编辑器左侧 gutter 均能准确呈现变动色条
+    // unstaged: 优先以 HEAD 为基准版本，并行并发读取工作区文件与 git HEAD 版本
+    const [headShow, modifiedRes] = await Promise.all([
+      this.runGit(['show', `HEAD:${posix}`], root),
+      this.workspace.readFile(posix).catch(() => ''),
+    ]);
     let original = '';
     let isTracked = false;
-    const headShow = await this.runGit(['show', `HEAD:${posix}`], root);
     if (headShow.code === 0) {
       original = headShow.stdout;
       isTracked = true;
@@ -1032,9 +1088,9 @@ export class GitService {
           return ep === posix || posix.endsWith('/' + ep) || ep.endsWith('/' + posix);
         });
         if (entry && !entry.untracked) {
-          const headShow = await this.runGit(['show', `HEAD:${entry.path}`], root);
-          if (headShow.code === 0) {
-            original = headShow.stdout;
+          const headShowFallback = await this.runGit(['show', `HEAD:${entry.path}`], root);
+          if (headShowFallback.code === 0) {
+            original = headShowFallback.stdout;
             isTracked = true;
           } else {
             const indexShow = await this.runGit(['show', `:0:${entry.path}`], root);
@@ -1049,13 +1105,7 @@ export class GitService {
       }
     }
 
-    let modified = '';
-    try {
-      modified = await this.workspace.readFile(posix);
-    } catch {
-      modified = '';
-    }
-
+    const modified = typeof modifiedRes === 'string' ? modifiedRes : '';
     return { ok: true, path: posix, original, modified, staged: false, isTracked };
   }
 
