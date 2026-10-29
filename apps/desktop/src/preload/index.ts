@@ -26,6 +26,8 @@ const api: IpcApi = {
   setWorkspace: (root) => ipcRenderer.invoke('workspace:set', root),
   listDir: (relPath) => ipcRenderer.invoke('workspace:listDir', relPath),
   readFile: (relPath) => ipcRenderer.invoke('workspace:readFile', relPath),
+  readFileLines: (relPath, offset, limit) =>
+    ipcRenderer.invoke('workspace:readFileLines', relPath, offset, limit),
   readFileDataUrl: (relPath) => ipcRenderer.invoke('workspace:readFileDataUrl', relPath),
   writeFile: (relPath, content) => ipcRenderer.invoke('workspace:writeFile', relPath, content),
   mkdir: (relPath) => ipcRenderer.invoke('workspace:mkdir', relPath),
@@ -104,6 +106,9 @@ const api: IpcApi = {
   gitDiffBetweenRefs: (baseRef: string, targetRef: string, path: string) =>
     ipcRenderer.invoke('git:diffBetweenRefs', baseRef, targetRef, path),
   gitGenerateCommitMessage: () => ipcRenderer.invoke('git:generateCommitMessage'),
+  gitGeneratePrSummary: (targetBranch) => ipcRenderer.invoke('git:generatePrSummary', targetBranch),
+  projectGetMemory: () => ipcRenderer.invoke('project:getMemory'),
+  projectSaveMemory: (memory) => ipcRenderer.invoke('project:saveMemory', memory),
 
   searchFiles: (query, max) => ipcRenderer.invoke('search:files', query, max),
   resolveFilePath: (fileNameOrPath: string) =>

@@ -28,6 +28,7 @@ export const gitDict: Record<string, { zh: string; en: string }> = {
   'git.menuNewBranch': { zh: '新建分支...', en: 'New Branch...' },
   'git.menuCheckout': { zh: '切换分支 (Checkout)...', en: 'Checkout Branch...' },
   'git.menuCreateTag': { zh: '创建标签 (Tag)...', en: 'Create Tag...' },
+  'git.menuBranchDiff': { zh: '分支比对与 PR 摘要...', en: 'Branch Compare & PR Summary...' },
   'git.menuCommit': { zh: '提交更改 (Commit)', en: 'Commit Changes' },
   'git.menuStash': { zh: '暂存修改 (Stash Push)', en: 'Stash Changes' },
   'git.menuStashPop': { zh: '弹出最新暂存 (Stash Pop)', en: 'Pop Latest Stash' },

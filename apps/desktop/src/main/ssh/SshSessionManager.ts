@@ -6,6 +6,7 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
+import readline from 'node:readline';
 import electronLog from 'electron-log';
 import type { SshConnectRequest, SshConnectResult, SshProfile } from '@deepseek-ide/shared';
 import type { CommandResult, DirEntry, FileStat, WorkspaceBackend } from '@deepseek-ide/tools';
@@ -388,17 +389,67 @@ export class SftpBackend implements WorkspaceBackend {
     offset?: number,
     limit?: number,
   ): Promise<{ lines: string[]; total: number; offset: number; truncated: boolean }> {
-    const text = await this.readFile(relPath);
-    const allLines = text.split(/\r?\n/);
-    const total = allLines.length;
-    const start = Math.max((offset ?? 1) - 1, 0);
-    const end = limit != null ? Math.min(start + limit, total) : total;
-    return {
-      lines: allLines.slice(start, end),
-      total,
-      offset: start + 1,
-      truncated: end < total,
-    };
+    const abs = await this.resolveSafe(relPath);
+    const op = (async () => {
+      return await new Promise<{
+        lines: string[];
+        total: number;
+        offset: number;
+        truncated: boolean;
+      }>((resolve, reject) => {
+        try {
+          const stream = this.sftp.createReadStream(abs);
+          const rl = readline.createInterface({
+            input: stream,
+            crlfDelay: Infinity,
+          });
+          const startLine = Math.max((offset ?? 1) - 1, 0);
+          const targetCount = limit != null ? limit : 2000;
+          const collected: string[] = [];
+          let currentLineIndex = 0;
+          let reachedCap = false;
+
+          rl.on('line', (line) => {
+            if (currentLineIndex >= startLine && collected.length < targetCount) {
+              collected.push(line);
+            }
+            currentLineIndex++;
+            // 远程 SSH 大文件优化：一旦满足指定 limit，即刻掐断远程 SFTP 流，免去数兆全量传输卡顿
+            if (limit != null && collected.length >= targetCount) {
+              reachedCap = true;
+              rl.close();
+              stream.destroy();
+              resolve({
+                lines: collected,
+                total: currentLineIndex + 1,
+                offset: startLine + 1,
+                truncated: true,
+              });
+            }
+          });
+
+          rl.on('close', () => {
+            if (!reachedCap) {
+              resolve({
+                lines: collected,
+                total: currentLineIndex,
+                offset: startLine + 1,
+                truncated: limit != null && currentLineIndex > startLine + collected.length,
+              });
+            }
+          });
+
+          stream.on('error', (err: any) => {
+            if (reachedCap) return;
+            reject(err);
+          });
+        } catch (err) {
+          reject(err);
+        }
+      });
+    })();
+
+    return await withTimeout(op, 15000, `readFileLines(${relPath})`);
   }
 
   async readFileBuffer(relPath: string): Promise<Buffer> {

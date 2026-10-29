@@ -2155,64 +2155,80 @@ export function App() {
         return;
       }
       let content = '';
+      let isFileTooLarge = false;
       try {
         content = await window.ide.readFile(path);
-      } catch (err) {
-        // 1. 优先使用快速定向文件解析器（毫秒级定向探测，避免全盘递归阻塞）
-        let resolved = false;
-        if (window.ide.resolveFilePath) {
+      } catch (err: any) {
+        const errMsg = String(err?.message || err);
+        if (/too large|文件过大/i.test(errMsg)) {
+          isFileTooLarge = true;
           try {
-            const resolvedPath = await window.ide.resolveFilePath(path);
-            if (resolvedPath) {
-              content = await window.ide.readFile(resolvedPath);
-              resolvedPathCache.current.set(path, resolvedPath);
-              resolvedPathCache.current.set(rawPath, resolvedPath);
-              const fileName = path.split('/').pop() || path;
-              resolvedPathCache.current.set(fileName, resolvedPath);
-              path = resolvedPath;
-              resolved = true;
-            }
+            const linesRes = await window.ide.readFileLines(path, 1, 2000);
+            content = linesRes.lines.join('\n');
           } catch {
-            // fall through
+            content = '';
           }
-        }
-
-        // 2. 兜底尝试 searchFiles
-        if (!resolved && window.ide.searchFiles) {
-          const fileName = path.split('/').pop() || path;
-          try {
-            const hits = await window.ide.searchFiles(fileName, 5);
-            const matched = hits.find(
-              (h) =>
-                h.path === path ||
-                h.path.endsWith('/' + path) ||
-                h.path.endsWith('/' + fileName) ||
-                h.path.endsWith(fileName),
-            );
-            if (matched) {
-              content = await window.ide.readFile(matched.path);
-              resolvedPathCache.current.set(path, matched.path);
-              resolvedPathCache.current.set(rawPath, matched.path);
-              resolvedPathCache.current.set(fileName, matched.path);
-              path = matched.path;
-              resolved = true;
-            }
-          } catch {
-            // ignore
-          }
-        }
-        if (!resolved) {
-          console.warn(
-            '[navigation] cannot open file:',
-            path,
-            err instanceof Error ? err.message : err,
+          showGlobalToast(
+            '文件体积较大，已开启大文件极速安全模式（展示前 2000 行），防止界面卡顿',
+            'info',
           );
-          return;
+        } else {
+          // 1. 优先使用快速定向文件解析器（毫秒级定向探测，避免全盘递归阻塞）
+          let resolved = false;
+          if (window.ide.resolveFilePath) {
+            try {
+              const resolvedPath = await window.ide.resolveFilePath(path);
+              if (resolvedPath) {
+                content = await window.ide.readFile(resolvedPath);
+                resolvedPathCache.current.set(path, resolvedPath);
+                resolvedPathCache.current.set(rawPath, resolvedPath);
+                const fileName = path.split('/').pop() || path;
+                resolvedPathCache.current.set(fileName, resolvedPath);
+                path = resolvedPath;
+                resolved = true;
+              }
+            } catch {
+              // fall through
+            }
+          }
+
+          // 2. 兜底尝试 searchFiles
+          if (!resolved && window.ide.searchFiles) {
+            const fileName = path.split('/').pop() || path;
+            try {
+              const hits = await window.ide.searchFiles(fileName, 5);
+              const matched = hits.find(
+                (h) =>
+                  h.path === path ||
+                  h.path.endsWith('/' + path) ||
+                  h.path.endsWith('/' + fileName) ||
+                  h.path.endsWith(fileName),
+              );
+              if (matched) {
+                content = await window.ide.readFile(matched.path);
+                resolvedPathCache.current.set(path, matched.path);
+                resolvedPathCache.current.set(rawPath, matched.path);
+                resolvedPathCache.current.set(fileName, matched.path);
+                path = matched.path;
+                resolved = true;
+              }
+            } catch {
+              // ignore
+            }
+          }
+          if (!resolved) {
+            console.warn(
+              '[navigation] cannot open file:',
+              path,
+              err instanceof Error ? err.message : err,
+            );
+            return;
+          }
         }
       }
       // 大文件防护：超过配置阈值（默认 2MB）时开启安全模式，使用纯文本轻量加载避免 AST 卡死
       const threshold = largeFileThresholdBytesRef.current || 2 * 1024 * 1024;
-      const isLarge = content.length > threshold;
+      const isLarge = isFileTooLarge || content.length > threshold;
       setTabs((prev) => {
         if (prev.some((t) => t.path === path)) return prev;
         return [
@@ -2417,12 +2433,14 @@ export function App() {
       // 数据库内置视图不是磁盘文件，只能存在于标签页状态里
       if (isDbPath(tabToSave.path)) {
         setTabs((prev) =>
-          prev.map((t) => (t.path === tabToSave.path ? { ...t, dirty: false } : t)),
+          prev.map((t) => (isSameFileByPath(t.path, tabToSave.path) ? { ...t, dirty: false } : t)),
         );
         return true;
       }
       await window.ide.writeFile(tabToSave.path, tabToSave.content);
-      setTabs((prev) => prev.map((t) => (t.path === tabToSave.path ? { ...t, dirty: false } : t)));
+      setTabs((prev) =>
+        prev.map((t) => (isSameFileByPath(t.path, tabToSave.path) ? { ...t, dirty: false } : t)),
+      );
       void window.ide.gitStatus().then((res) => {
         if (res.ok) {
           setGitStatus(res);
@@ -2444,7 +2462,8 @@ export function App() {
 
   const saveActive = useCallback(async (): Promise<void> => {
     const path = activePathRef.current;
-    const tab = tabsRef.current.find((t) => t.path === path);
+    if (!path) return;
+    const tab = tabsRef.current.find((t) => isSameFileByPath(t.path, path));
     if (!tab || tab.language === 'image' || tab.previewUrl) return;
 
     if (formatOnSave && !tab.isLargeFile) {
@@ -2452,19 +2471,30 @@ export function App() {
       await new Promise((r) => setTimeout(r, 60));
     }
 
-    const freshTab = tabsRef.current.find((t) => t.path === path) || tab;
+    const freshTab = tabsRef.current.find((t) => isSameFileByPath(t.path, path)) || tab;
     await saveTab(freshTab);
   }, [saveTab, formatOnSave]);
 
-  const handleForceLoadLargeFile = useCallback((filePath: string) => {
-    setTabs((prev) =>
-      prev.map((t) =>
-        t.path === filePath
-          ? { ...t, language: languageFromPath(filePath), isLargeFile: false }
-          : t,
-      ),
-    );
-  }, []);
+  const handleForceLoadLargeFile = useCallback(
+    async (filePath: string) => {
+      try {
+        showGlobalToast('正在加载大文件更多内容...', 'info');
+        const linesRes = await window.ide.readFileLines(filePath, 1, 10000);
+        const text = linesRes.lines.join('\n');
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.path === filePath
+              ? { ...t, content: text, language: 'plaintext', isLargeFile: true }
+              : t,
+          ),
+        );
+        showGlobalToast(`已安全加载前 ${linesRes.lines.length} 行大文件内容`, 'success');
+      } catch (err: any) {
+        showGlobalToast(`加载大文件失败: ${err?.message || String(err)}`, 'error');
+      }
+    },
+    [showGlobalToast],
+  );
 
   const handleFileMoved = useCallback((oldPath: string, newPath: string) => {
     setTabs((prev) =>
@@ -3333,7 +3363,9 @@ export function App() {
     if (isVirtualPath(path)) return;
     await window.ide.writeFile(path, content);
     setTabs((prev) =>
-      prev.map((t) => (t.path === path && t.content === content ? { ...t, dirty: false } : t)),
+      prev.map((t) =>
+        isSameFileByPath(t.path, path) && t.content === content ? { ...t, dirty: false } : t,
+      ),
     );
     void window.ide.gitStatus().then((res) => {
       if (res.ok) {

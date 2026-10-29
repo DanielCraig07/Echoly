@@ -218,7 +218,8 @@ export class WorkspaceService {
     const SKIP = new Set(['node_modules', '.git', '.DS_Store', '.', '..']);
 
     const isSsh = this.kind === 'ssh';
-    const maxCompactDepth = isSsh ? 4 : 8;
+    // 远程 SSH 模式下将紧凑合并深度降为 1，杜绝批量 SFTP 串行等待造成的展开卡顿
+    const maxCompactDepth = isSsh ? 1 : 6;
 
     /** Compact-merge: collapse single-child-dir chains like VS Code. */
     async function compact(name: string, p: string): Promise<{ name: string; path: string }> {
@@ -295,6 +296,14 @@ export class WorkspaceService {
    */
   async readFile(relPath: string): Promise<string> {
     return this.requireBackend().readFile(relPath);
+  }
+
+  async readFileLines(
+    relPath: string,
+    offset?: number,
+    limit?: number,
+  ): Promise<{ lines: string[]; total: number; offset: number; truncated: boolean }> {
+    return this.requireBackend().readFileLines(relPath, offset, limit);
   }
 
   async readFileDataUrl(relPath: string): Promise<string> {

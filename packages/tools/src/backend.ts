@@ -1,4 +1,6 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
+import readline from 'node:readline';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import {
@@ -162,25 +164,57 @@ export class LocalFsBackend implements WorkspaceBackend {
     limit?: number,
   ): Promise<{ lines: string[]; total: number; offset: number; truncated: boolean }> {
     const abs = await this.resolveSafe(relPath);
-    const stat = await fs.stat(abs);
-    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB for line-range reads
-    if (stat.size > MAX_FILE_SIZE) {
-      throw new Error(
-        `File too large (${(stat.size / 1024 / 1024).toFixed(1)}MB > 50MB): ${relPath}`,
-      );
-    }
-    const text = await fs.readFile(abs, 'utf8');
-    const allLines = text.split(/\r?\n/);
-    const total = allLines.length;
-    const start = Math.max((offset ?? 1) - 1, 0);
-    const end = limit != null ? Math.min(start + limit, total) : total;
-    const slice = allLines.slice(start, end);
-    return {
-      lines: slice,
-      total,
-      offset: start + 1,
-      truncated: end < total,
-    };
+    return new Promise((resolve, reject) => {
+      try {
+        const stream = fsSync.createReadStream(abs, { encoding: 'utf8' });
+        const rl = readline.createInterface({
+          input: stream,
+          crlfDelay: Infinity,
+        });
+        const startLine = Math.max((offset ?? 1) - 1, 0);
+        const targetCount = limit != null ? limit : 2000;
+        const collected: string[] = [];
+        let currentLineIndex = 0;
+        let reachedCap = false;
+
+        rl.on('line', (line) => {
+          if (currentLineIndex >= startLine && collected.length < targetCount) {
+            collected.push(line);
+          }
+          currentLineIndex++;
+          // 当达到请求数量且指定了 limit 时，提前中止流读取，避免大文件全量常驻内存与垃圾回收卡顿
+          if (limit != null && collected.length >= targetCount) {
+            reachedCap = true;
+            rl.close();
+            stream.destroy();
+            resolve({
+              lines: collected,
+              total: currentLineIndex + 1,
+              offset: startLine + 1,
+              truncated: true,
+            });
+          }
+        });
+
+        rl.on('close', () => {
+          if (!reachedCap) {
+            resolve({
+              lines: collected,
+              total: currentLineIndex,
+              offset: startLine + 1,
+              truncated: limit != null && currentLineIndex > startLine + collected.length,
+            });
+          }
+        });
+
+        stream.on('error', (err) => {
+          if (reachedCap) return;
+          reject(err);
+        });
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 
   async readFileBuffer(relPath: string): Promise<Buffer> {

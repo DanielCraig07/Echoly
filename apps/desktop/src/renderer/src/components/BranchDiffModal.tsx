@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { DiffEditor } from '@monaco-editor/react';
+import type { editor as MonacoEditor } from 'monaco-editor';
 import type { GitBranchInfo, GitDiffResult } from '@deepseek-ide/shared';
 import {
   useModalResize,
@@ -41,6 +42,28 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
   const [diffData, setDiffData] = useState<GitDiffResult | null>(null);
   const [loadingDiff, setLoadingDiff] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [isGeneratingPr, setIsGeneratingPr] = useState<boolean>(false);
+  const [prSummaryText, setPrSummaryText] = useState<string | null>(null);
+  const diffModDecosRef = useRef<string[]>([]);
+  const diffOrigDecosRef = useRef<string[]>([]);
+
+  const handleGeneratePr = async () => {
+    setIsGeneratingPr(true);
+    setError(null);
+    try {
+      const res = await window.ide.gitGeneratePrSummary?.(baseBranch);
+      if (res && res.ok && res.summary) {
+        setPrSummaryText(res.summary);
+        await navigator.clipboard.writeText(res.summary);
+      } else {
+        setError(res?.detail || '生成 PR 摘要说明失败');
+      }
+    } catch (err: any) {
+      setError(err?.message || '生成 PR 摘要时发生异常');
+    } finally {
+      setIsGeneratingPr(false);
+    }
+  };
 
   // 初始化加载所有分支
   useEffect(() => {
@@ -341,8 +364,94 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>
               {t('git.changedFilesLabel', { n: files.length })}
             </span>
+            <button
+              type="button"
+              className="panel-action-btn"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '2px 9px',
+                fontSize: 11,
+                borderRadius: 4,
+                cursor: files.length === 0 || isGeneratingPr ? 'not-allowed' : 'pointer',
+              }}
+              onClick={handleGeneratePr}
+              disabled={isGeneratingPr || files.length === 0}
+              title="通过 AI 基于与基准分支的代码差异自动生成标准 Pull Request (PR) 摘要"
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+              >
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              <span>{isGeneratingPr ? '正在生成 PR...' : '生成 PR 摘要'}</span>
+            </button>
           </div>
         </div>
+
+        {prSummaryText && (
+          <div
+            style={{
+              padding: '10px 14px',
+              background: 'rgba(16, 185, 129, 0.08)',
+              borderBottom: '1px solid rgba(16, 185, 129, 0.25)',
+              maxHeight: 180,
+              overflowY: 'auto',
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 6,
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#34d399' }}>
+                🎉 AI PR 摘要已生成（已复制到剪贴板）
+              </span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  className="panel-action-btn"
+                  style={{ fontSize: 11, padding: '2px 8px' }}
+                  onClick={() => void navigator.clipboard.writeText(prSummaryText)}
+                  title="再次复制到剪贴板"
+                >
+                  再次复制
+                </button>
+                <button
+                  type="button"
+                  className="panel-action-btn"
+                  style={{ fontSize: 11, padding: '2px 8px' }}
+                  onClick={() => setPrSummaryText(null)}
+                  title="关闭"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <pre
+              style={{
+                margin: 0,
+                fontSize: 11,
+                lineHeight: 1.5,
+                whiteSpace: 'pre-wrap',
+                color: '#e2e8f0',
+                fontFamily: 'inherit',
+              }}
+            >
+              {prSummaryText}
+            </pre>
+          </div>
+        )}
 
         {error && (
           <div
@@ -522,6 +631,96 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                     scrollBeyondLastLine: false,
                     fontSize: 12,
                     renderSideBySide: true,
+                    lineNumbersMinChars: 4,
+                    lineDecorationsWidth: 10,
+                  }}
+                  onMount={(diffEd) => {
+                    const modEd = diffEd.getModifiedEditor();
+                    const origEd = diffEd.getOriginalEditor();
+
+                    const updateDiffGutter = () => {
+                      const changes = diffEd.getLineChanges() || [];
+                      const modDecos: MonacoEditor.IModelDeltaDecoration[] = [];
+                      const origDecos: MonacoEditor.IModelDeltaDecoration[] = [];
+
+                      for (const change of changes) {
+                        const isAdded =
+                          change.originalEndLineNumber < change.originalStartLineNumber;
+                        const isDeleted =
+                          change.modifiedEndLineNumber < change.modifiedStartLineNumber;
+                        const type = isAdded ? 'added' : isDeleted ? 'deleted' : 'modified';
+
+                        if (!isDeleted && change.modifiedStartLineNumber > 0) {
+                          modDecos.push({
+                            range: {
+                              startLineNumber: change.modifiedStartLineNumber,
+                              startColumn: 1,
+                              endLineNumber: Math.max(
+                                change.modifiedStartLineNumber,
+                                change.modifiedEndLineNumber,
+                              ),
+                              endColumn: 1,
+                            },
+                            options: {
+                              isWholeLine: true,
+                              linesDecorationsClassName: `git-gutter-${type}`,
+                            },
+                          });
+                        } else if (isDeleted) {
+                          const line = Math.max(1, change.modifiedStartLineNumber || 1);
+                          modDecos.push({
+                            range: {
+                              startLineNumber: line,
+                              startColumn: 1,
+                              endLineNumber: line,
+                              endColumn: 1,
+                            },
+                            options: {
+                              isWholeLine: true,
+                              linesDecorationsClassName: 'git-gutter-deleted',
+                            },
+                          });
+                        }
+
+                        if (change.originalStartLineNumber > 0) {
+                          origDecos.push({
+                            range: {
+                              startLineNumber: change.originalStartLineNumber,
+                              startColumn: 1,
+                              endLineNumber: Math.max(
+                                change.originalStartLineNumber,
+                                change.originalEndLineNumber,
+                              ),
+                              endColumn: 1,
+                            },
+                            options: {
+                              isWholeLine: true,
+                              linesDecorationsClassName: isDeleted
+                                ? 'git-gutter-deleted'
+                                : 'git-gutter-modified',
+                            },
+                          });
+                        }
+                      }
+
+                      const modModel = modEd.getModel();
+                      if (modModel && !modModel.isDisposed()) {
+                        diffModDecosRef.current = modModel.deltaDecorations(
+                          diffModDecosRef.current,
+                          modDecos,
+                        );
+                      }
+                      const origModel = origEd.getModel();
+                      if (origModel && !origModel.isDisposed()) {
+                        diffOrigDecosRef.current = origModel.deltaDecorations(
+                          diffOrigDecosRef.current,
+                          origDecos,
+                        );
+                      }
+                    };
+
+                    diffEd.onDidUpdateDiff(updateDiffGutter);
+                    updateDiffGutter();
                   }}
                 />
               ) : (

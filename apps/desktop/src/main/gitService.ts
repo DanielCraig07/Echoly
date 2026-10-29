@@ -2222,4 +2222,34 @@ export class GitService {
       staged: false,
     };
   }
+
+  /** 获取分支之间的代码文本差异（带安全截断，防止大差异引发卡顿） */
+  async getBranchDiff(
+    baseRef: string,
+    targetRef = 'HEAD',
+    maxBytes = 32768,
+  ): Promise<{ ok: boolean; diff?: string; detail?: string }> {
+    const gate = this.localRootOrError();
+    if ('ok' in gate && gate.ok === false) {
+      return { ok: false, detail: gate.detail };
+    }
+    const { root } = gate as { root: string };
+    const res = await this.runGit(['diff', `${baseRef}...${targetRef}`], root);
+    if (res.code !== 0) {
+      const fallback = await this.runGit(['diff', `${baseRef}..${targetRef}`], root);
+      if (fallback.code !== 0) {
+        return { ok: false, detail: res.stderr || '无法获取分支代码差异' };
+      }
+      const raw = fallback.stdout;
+      return {
+        ok: true,
+        diff: raw.length > maxBytes ? raw.slice(0, maxBytes) + '\n...[差异过长已截断]...' : raw,
+      };
+    }
+    const raw = res.stdout;
+    return {
+      ok: true,
+      diff: raw.length > maxBytes ? raw.slice(0, maxBytes) + '\n...[差异过长已截断]...' : raw,
+    };
+  }
 }

@@ -1460,6 +1460,12 @@ export interface IpcApi {
   setWorkspace: (root: string) => Promise<string>;
   listDir: (relPath?: string) => Promise<FileTreeNode[]>;
   readFile: (relPath: string) => Promise<string>;
+  /** 流式/分页读取指定行区间，用于大文件极速安全预览与防卡顿加载 */
+  readFileLines: (
+    relPath: string,
+    offset?: number,
+    limit?: number,
+  ) => Promise<{ lines: string[]; total: number; offset: number; truncated: boolean }>;
   /** Read binary file as a data URL (used for image preview). */
   readFileDataUrl: (relPath: string) => Promise<string>;
   writeFile: (relPath: string, content: string) => Promise<void>;
@@ -1624,6 +1630,11 @@ export interface IpcApi {
   }>;
   gitDiffBetweenRefs: (baseRef: string, targetRef: string, path: string) => Promise<GitDiffResult>;
   gitGenerateCommitMessage: () => Promise<{ ok: boolean; message?: string; detail?: string }>;
+  gitGeneratePrSummary: (
+    targetBranch?: string,
+  ) => Promise<{ ok: boolean; summary?: string; detail?: string }>;
+  projectGetMemory: () => Promise<{ ok: boolean; memory?: string }>;
+  projectSaveMemory: (memory: string) => Promise<{ ok: boolean }>;
 
   searchFiles: (query: string, max?: number) => Promise<SearchFileHit[]>;
   resolveFilePath: (fileNameOrPath: string) => Promise<string | null>;

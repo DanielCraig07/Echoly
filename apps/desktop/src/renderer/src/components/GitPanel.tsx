@@ -1971,6 +1971,17 @@ export function GitPanel({
             {t('git.menuCreateTag')}
           </div>
 
+          {/* 分支比对与 PR 摘要 */}
+          <div
+            className="git-more-menu-item"
+            onClick={() => {
+              setShowMoreMenu(false);
+              setBranchDiffModalOpen(true);
+            }}
+          >
+            {t('git.menuBranchDiff') || '分支比对与 PR 摘要'}
+          </div>
+
           <div className="git-more-menu-sep" />
 
           <div className="git-more-menu-heading">{t('git.sectionLocalChanges')}</div>

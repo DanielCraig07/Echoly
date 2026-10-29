@@ -170,6 +170,11 @@ export function registerIpc(deps: {
   ipcMain.handle('workspace:readFile', (event, relPath: string) =>
     run(event, () => registry.current().workspace.readFile(relPath)),
   );
+  ipcMain.handle(
+    'workspace:readFileLines',
+    (event, relPath: string, offset?: number, limit?: number) =>
+      run(event, () => registry.current().workspace.readFileLines(relPath, offset, limit)),
+  );
   ipcMain.handle('workspace:readFileDataUrl', (event, relPath: string) =>
     run(event, () => registry.current().workspace.readFileDataUrl(relPath)),
   );
@@ -420,7 +425,15 @@ export function registerIpc(deps: {
         const rulesBlock = rules.content
           ? `\n\n【项目规则规范 (.echolyrules)】\n${rules.content}\n`
           : '';
-        const finalSystem = (payload.systemPrompt || '') + rulesBlock;
+        let memoryBlock = '';
+        try {
+          const ws = registry.current().workspace;
+          const mem = await ws.readProjectConfigFile('memory.json');
+          if (mem && mem.trim()) {
+            memoryBlock = `\n\n【项目长期记忆与架构约定 (.echoly/memory.json)】\n${mem.trim()}\n`;
+          }
+        } catch {}
+        const finalSystem = (payload.systemPrompt || '') + rulesBlock + memoryBlock;
         if (finalSystem.trim()) {
           messages.push({ role: 'system', content: finalSystem.trim() });
         }
@@ -573,20 +586,20 @@ ${payload.suffix.slice(0, 1000)}
       try {
         const client = getActiveLlmClient(settings);
         const prompt = [
-          '你是一名资深代码审查员和 Git 提交专家。请根据以下 Git 代码实际变动（受影响文件与实际 git diff 内容），生成一份专业、精准、客观、实际可用的 Git 提交文案（严格遵循 Conventional Commits 规范）。',
+          '你是一名代码审查员与 Git 提交规范助手。请根据以下受影响文件与 Git diff 差异，生成一条极简、准确的 Conventional Commits 规范提交文案。',
           '',
           `受影响文件 (${summary.files.length} 个):`,
           summary.files.map((f) => `- ${f}`).join('\n'),
           '',
           'Git 代码差异摘要 (Diff):',
           '```diff',
-          summary.diffSnippet || '(无具体文本 diff，包含二进制文件或新增未跟踪文件)',
+          summary.diffSnippet || '(无文本 diff，为二进制或新增未跟踪文件)',
           '```',
           '',
           '严格要求：',
-          '1. 必须使用中文。首行格式为：<type>(<scope>): <简要总结>（例如 feat(editor): 支持分栏编辑 或 fix(git): 修复分支切换高亮色与提交历史边框）。',
-          '2. 只输出最终的提交说明文本本身，绝对禁止输出任何多余说明、包装标记或前缀后缀（严禁输出 ``` 包裹）。',
-          '3. 必须客观反映上述 diff 中的实际代码变更，杜绝毫无信息的空泛占位词。',
+          '1. 必须使用中文，严格限制为单行格式：<type>(<scope>): <简短说明>（例如 feat(chat): 优化历史会话展示 或 fix(git): 修复分支切换高亮）。',
+          '2. 简短说明修改的核心内容即可，控制在 15~35 个汉字以内，不要太详细，绝对不要展开细节列举，不要输出正文（body）、空行、列表项或多余说明。',
+          '3. 仅直接输出这一行提交文案本身，严禁输出任何 markdown 代码块（如 ```）、引号包裹或前后解释。',
         ].join('\n');
 
         const chatRes = await client.chat({
@@ -595,11 +608,12 @@ ${payload.suffix.slice(0, 1000)}
         });
 
         const fullText = typeof chatRes.content === 'string' ? chatRes.content : '';
-        const cleaned = fullText
-          .trim()
-          .replace(/^```[a-z]*\s*/i, '')
-          .replace(/```$/, '')
-          .trim();
+        const lines = fullText
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => Boolean(line) && !line.startsWith('```'));
+        const firstLine = lines[0] || '';
+        const cleaned = firstLine.replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, '').trim();
         if (cleaned) {
           return { ok: true, message: cleaned };
         }
@@ -628,11 +642,11 @@ ${payload.suffix.slice(0, 1000)}
       if (hasBuild && !hasCssOrStyle) {
         type = 'chore';
         scope = 'build';
-        desc = `更新构建与环境配置 (${files.length} 个文件)`;
+        desc = '更新构建与环境配置';
       } else if (hasTest && files.length === 1) {
         type = 'test';
         scope = baseName.replace(/\.(test|spec)\.[a-z]+$/i, '');
-        desc = `完善 ${baseName} 自动化测试用例`;
+        desc = `完善 ${baseName} 测试用例`;
       } else if (hasDoc && files.length === 1) {
         type = 'docs';
         scope = baseName;
@@ -640,7 +654,7 @@ ${payload.suffix.slice(0, 1000)}
       } else if (hasCssOrStyle && !files.some((f) => /\.(tsx|ts|js|jsx)$/i.test(f))) {
         type = 'style';
         scope = 'ui';
-        desc = `优化界面视觉样式与主题配色 (${files.length} 个文件)`;
+        desc = '优化界面视觉样式与主题配色';
       } else {
         if (files.some((f) => f.includes('git') || f.includes('Git'))) {
           scope = 'git';
@@ -648,26 +662,26 @@ ${payload.suffix.slice(0, 1000)}
             summary.diffSnippet.includes('fix') || summary.diffSnippet.includes('bug')
               ? 'fix'
               : 'feat';
-          desc = `优化 Git 状态管理与面板交互 (${files.length} 个文件)`;
+          desc = '优化 Git 状态管理与交互';
         } else if (files.some((f) => f.includes('terminal') || f.includes('Terminal'))) {
           scope = 'terminal';
           type = 'feat';
-          desc = `完善终端运行与命令行交互`;
+          desc = '优化终端运行与交互';
         } else if (files.some((f) => f.includes('editor') || f.includes('Editor'))) {
           scope = 'editor';
           type = 'feat';
-          desc = `增强编辑器功能与代码交互`;
+          desc = '增强代码编辑与交互体验';
         } else if (files.some((f) => f.includes('setting') || f.includes('Setting'))) {
           scope = 'settings';
           type = 'feat';
-          desc = `更新偏好设置与个性化配置项`;
+          desc = '更新偏好设置与配置项';
         } else {
           scope = first.split('/')[0] || ext || 'core';
           type =
             summary.diffSnippet.includes('fix') || summary.diffSnippet.includes('err')
               ? 'fix'
               : 'feat';
-          desc = files.length === 1 ? `更新 ${baseName}` : `协同更新 ${files.length} 个相关模块`;
+          desc = files.length === 1 ? `更新 ${baseName}` : '更新核心功能与相关模块';
         }
       }
 
@@ -675,6 +689,65 @@ ${payload.suffix.slice(0, 1000)}
         ok: true,
         message: `${type}(${scope}): ${desc}`,
       };
+    }),
+  );
+
+  ipcMain.handle('git:generatePrSummary', (e, targetBranch?: string) =>
+    run(e, async () => {
+      const base = targetBranch?.trim() || 'main';
+      const diffRes = await git.getBranchDiff(base, 'HEAD');
+      if (!diffRes.ok) {
+        return { ok: false, detail: diffRes.detail || `获取与分支 ${base} 的代码差异失败` };
+      }
+      const safeDiff = diffRes.diff || '';
+      if (!safeDiff.trim()) {
+        return { ok: false, detail: `当前分支与 ${base} 无代码差异，无需生成 PR 摘要` };
+      }
+
+      try {
+        const client = getActiveLlmClient(settings);
+        const prompt = [
+          '你是一名资深代码审查员。请根据当前分支相对于目标分支的代码差异（Git Diff），生成一份高质量、条理清晰的 Pull Request (PR) 说明。',
+          '',
+          `目标基准分支: ${base}`,
+          '',
+          'Git 代码差异:',
+          '```diff',
+          safeDiff,
+          '```',
+          '',
+          '输出要求：',
+          '1. 必须使用中文 Markdown 格式。',
+          '2. 结构清晰，包含以下三部分：',
+          '   - ## 🎯 变更目的与背景（1-2 句话概括）',
+          '   - ## 🔍 核心修改清单（分条列举关键变动）',
+          '   - ## 🧪 验证与自测建议（列出关键测试项）',
+          '3. 客观反映上述 diff 实际变更，避免空泛套话。',
+        ].join('\n');
+
+        const chatRes = await client.chat({
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+        });
+        const summary = typeof chatRes.content === 'string' ? chatRes.content.trim() : '';
+        return { ok: true, summary };
+      } catch (err: any) {
+        return { ok: false, detail: err?.message || '生成 PR 摘要失败' };
+      }
+    }),
+  );
+
+  ipcMain.handle('project:getMemory', (event) =>
+    run(event, async () => {
+      const content = await registry.current().workspace.readProjectConfigFile('memory.json');
+      return { ok: true, memory: content || '' };
+    }),
+  );
+
+  ipcMain.handle('project:saveMemory', (event, memory: string) =>
+    run(event, async () => {
+      await registry.current().workspace.writeProjectConfigFile('memory.json', memory);
+      return { ok: true };
     }),
   );
 

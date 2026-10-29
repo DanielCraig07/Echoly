@@ -898,6 +898,77 @@ export function EditorPane({
   const [splitRatio, setSplitRatio] = useState<number>(0.5);
   const editorSplitContainerRef = useRef<HTMLDivElement>(null);
 
+  // 记录用户在编辑区最后一次敲入的内容（避免把用户自身产生的输入误判为外部改动）
+  const lastUserTypedContentRef = useRef<Map<string, string>>(new Map());
+
+  // 换行符归一化函数（防止 Windows \r\n 与 Unix \n 细微差异导致比对失真）
+  const normalizeEol = (s: string) => s.replace(/\r\n/g, '\n');
+
+  // 外部内容变更监听与同步：
+  // 仅当 active.content 发生来自外部（Git 放弃更改、AI Agent 重构文件、切分支回读等）的实质变动时，
+  // 才主动向 Monaco Model 应用更新；
+  // 用户在编辑区正常键入时，绝对不通过 value prop 反复冲刷 Model，从根本上彻底杜绝「编辑区内容偶发回退」！
+  useEffect(() => {
+    if (!active?.path || active.content === undefined) return;
+    const lastTyped = lastUserTypedContentRef.current.get(active.path);
+    if (lastTyped !== undefined && normalizeEol(lastTyped) === normalizeEol(active.content)) return;
+    lastUserTypedContentRef.current.set(active.path, active.content);
+
+    const models = MonacoEditor.getModels();
+    for (const model of models) {
+      if (model.isDisposed()) continue;
+      const modelPath = model.uri.fsPath || model.uri.path || '';
+      if (isSameFileByPath(modelPath, active.path)) {
+        if (normalizeEol(model.getValue()) !== normalizeEol(active.content)) {
+          const ed = editorRef.current;
+          if (ed && ed.getModel() === model) {
+            ed.executeEdits('external-sync', [
+              {
+                range: model.getFullModelRange(),
+                text: active.content,
+                forceMoveMarkers: true,
+              },
+            ]);
+            ed.pushUndoStop();
+          } else {
+            model.setValue(active.content);
+          }
+        }
+      }
+    }
+  }, [active?.path, active?.content]);
+
+  useEffect(() => {
+    if (!splitActive?.path || splitActive.content === undefined) return;
+    const lastTyped = lastUserTypedContentRef.current.get(splitActive.path);
+    if (lastTyped !== undefined && normalizeEol(lastTyped) === normalizeEol(splitActive.content))
+      return;
+    lastUserTypedContentRef.current.set(splitActive.path, splitActive.content);
+
+    const models = MonacoEditor.getModels();
+    for (const model of models) {
+      if (model.isDisposed()) continue;
+      const modelPath = model.uri.fsPath || model.uri.path || '';
+      if (isSameFileByPath(modelPath, splitActive.path)) {
+        if (normalizeEol(model.getValue()) !== normalizeEol(splitActive.content)) {
+          const ed = splitEditorRef.current;
+          if (ed && ed.getModel() === model) {
+            ed.executeEdits('external-sync', [
+              {
+                range: model.getFullModelRange(),
+                text: splitActive.content,
+                forceMoveMarkers: true,
+              },
+            ]);
+            ed.pushUndoStop();
+          } else {
+            model.setValue(splitActive.content);
+          }
+        }
+      }
+    }
+  }, [splitActive?.path, splitActive?.content]);
+
   // 记录每个 Tab 的最近访问时间戳
   const tabAccessTimesRef = useRef<Map<string, number>>(new Map());
 
@@ -939,6 +1010,19 @@ export function EditorPane({
       const models = monaco.editor.getModels();
       for (const model of models) {
         const uriStr = model.uri.toString();
+        const modelPath = model.uri.fsPath || model.uri.path || '';
+
+        // 绝不释放当前正活跃的主编辑区与分屏编辑区 Model
+        if (active?.path && isSameFileByPath(modelPath, active.path)) continue;
+        if (splitActive?.path && isSameFileByPath(modelPath, splitActive.path)) continue;
+
+        // 绝不释放任何处于 dirty 状态或标签数量适中时的已打开 Tab Model
+        const matchingTab = tabs.find((t) => isSameFileByPath(modelPath, t.path));
+        if (matchingTab) {
+          if (matchingTab.dirty) continue;
+          if (tabs.length <= 30) continue;
+        }
+
         // 排除系统内部与只读临时 model，如果此 model 对应的路径不在当前打开的 tabs 中或已被 LRU 休眠，安全 dispose 释放内存
         if (uriStr.startsWith('file://')) {
           const isNotActiveTab = !activeUris.has(uriStr);
@@ -1252,6 +1336,8 @@ export function EditorPane({
     Map<string, { scrollTop: number; scrollLeft: number; line: number; col: number }>
   >(new Map());
   const editorViewStateMapRef = useRef<Map<string, MonacoEditor.ICodeEditorViewState>>(new Map());
+  const diffModDecosRef = useRef<string[]>([]);
+  const diffOrigDecosRef = useRef<string[]>([]);
   // 切换文件锁定标志：在 Monaco 切换 model 期间屏蔽 reset 产生的 (1,1) 和 scrollTop=0 误写
   const isSwitchingFileRef = useRef(false);
   const switchFileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3681,14 +3767,18 @@ export function EditorPane({
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
             {/* 差异状态定位指示：第 X / Y 个差异 */}
             <div
+              className="diff-hunk-badge"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                padding: '2px 8px',
-                borderRadius: 5,
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid var(--border)',
-                fontSize: 11.5,
+                gap: 3,
+                padding: '1px 7px',
+                height: 22,
+                boxSizing: 'border-box',
+                borderRadius: 4,
+                background: 'var(--bg-card, rgba(255, 255, 255, 0.05))',
+                border: '1px solid var(--border, rgba(255, 255, 255, 0.12))',
+                fontSize: 11,
                 fontFamily:
                   'ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Monaco, monospace',
                 color: totalHunks > 0 ? 'var(--text)' : 'var(--muted)',
@@ -3701,25 +3791,26 @@ export function EditorPane({
                   ? t('editor.diffPosition', { n: currentHunkDisplay, total: totalHunks })
                   : t('editor.noDiffWithTarget')
               }
+              aria-label={
+                totalHunks > 0
+                  ? t('editor.diffPositionLabel', { n: currentHunkDisplay, total: totalHunks })
+                  : t('editor.noDiff')
+              }
             >
               {totalHunks > 0 ? (
-                <span>
-                  {translateSegments('editor.diffPositionLabel', locale, {
-                    n: currentHunkDisplay,
-                    total: totalHunks,
-                  }).map((seg, i) =>
-                    seg.emphasis ? (
-                      <strong
-                        key={i}
-                        style={{ color: 'var(--accent-light, #3794ff)', fontWeight: 700 }}
-                      >
-                        {seg.text}
-                      </strong>
-                    ) : (
-                      <span key={i}>{seg.text}</span>
-                    ),
-                  )}
-                </span>
+                <>
+                  <span style={{ color: 'var(--muted)', fontSize: 10.5 }}>
+                    {locale === 'zh' ? '第' : 'Diff'}
+                  </span>
+                  <span style={{ color: 'var(--accent-light, #58a6ff)', fontWeight: 700 }}>
+                    {currentHunkDisplay}
+                  </span>
+                  <span style={{ color: 'var(--muted)', opacity: 0.6 }}>/</span>
+                  <span style={{ fontWeight: 600 }}>{totalHunks}</span>
+                  <span style={{ color: 'var(--muted)', fontSize: 10.5 }}>
+                    {locale === 'zh' ? '处差异' : ''}
+                  </span>
+                </>
               ) : (
                 <span>{t('editor.noDiff')}</span>
               )}
@@ -4076,6 +4167,83 @@ export function EditorPane({
                 const changes = diffEd.getLineChanges() || [];
                 diffLineChangesRef.current = changes;
                 setDiffHunksCount(changes.length);
+
+                // 在对比编辑器的中间行号边距槽绘制类似 Git 修改的彩色标识条
+                const modDecos: MonacoEditor.IModelDeltaDecoration[] = [];
+                const origDecos: MonacoEditor.IModelDeltaDecoration[] = [];
+
+                for (const change of changes) {
+                  const isAdded = change.originalEndLineNumber < change.originalStartLineNumber;
+                  const isDeleted = change.modifiedEndLineNumber < change.modifiedStartLineNumber;
+                  const type = isAdded ? 'added' : isDeleted ? 'deleted' : 'modified';
+
+                  if (!isDeleted && change.modifiedStartLineNumber > 0) {
+                    modDecos.push({
+                      range: {
+                        startLineNumber: change.modifiedStartLineNumber,
+                        startColumn: 1,
+                        endLineNumber: Math.max(
+                          change.modifiedStartLineNumber,
+                          change.modifiedEndLineNumber,
+                        ),
+                        endColumn: 1,
+                      },
+                      options: {
+                        isWholeLine: true,
+                        linesDecorationsClassName: `git-gutter-${type}`,
+                      },
+                    });
+                  } else if (isDeleted) {
+                    const line = Math.max(1, change.modifiedStartLineNumber || 1);
+                    modDecos.push({
+                      range: {
+                        startLineNumber: line,
+                        startColumn: 1,
+                        endLineNumber: line,
+                        endColumn: 1,
+                      },
+                      options: {
+                        isWholeLine: true,
+                        linesDecorationsClassName: 'git-gutter-deleted',
+                      },
+                    });
+                  }
+
+                  if (change.originalStartLineNumber > 0) {
+                    origDecos.push({
+                      range: {
+                        startLineNumber: change.originalStartLineNumber,
+                        startColumn: 1,
+                        endLineNumber: Math.max(
+                          change.originalStartLineNumber,
+                          change.originalEndLineNumber,
+                        ),
+                        endColumn: 1,
+                      },
+                      options: {
+                        isWholeLine: true,
+                        linesDecorationsClassName: isDeleted
+                          ? 'git-gutter-deleted'
+                          : 'git-gutter-modified',
+                      },
+                    });
+                  }
+                }
+
+                const modModel = modEd.getModel();
+                if (modModel && !modModel.isDisposed()) {
+                  diffModDecosRef.current = modModel.deltaDecorations(
+                    diffModDecosRef.current,
+                    modDecos,
+                  );
+                }
+                const origModel = origEd.getModel();
+                if (origModel && !origModel.isDisposed()) {
+                  diffOrigDecosRef.current = origModel.deltaDecorations(
+                    diffOrigDecosRef.current,
+                    origDecos,
+                  );
+                }
               };
 
               diffEd.onDidUpdateDiff(updateDiffStats);
@@ -5312,12 +5480,13 @@ export function EditorPane({
               <Editor
                 path={active.path}
                 keepCurrentModel={true}
-                value={active.content}
+                defaultValue={active.content}
                 language={activeLanguage}
                 theme={monacoTheme}
                 onChange={(v) => {
                   if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
                   const content = v ?? '';
+                  lastUserTypedContentRef.current.set(active.path, content);
                   onChangeContent(active.path, content);
                   const isLsp =
                     /^(python|cpp|c|go)$/i.test(activeLanguage) ||
@@ -5521,7 +5690,7 @@ export function EditorPane({
                     'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
                   fontWeight: '400',
                   disableMonospaceOptimizations: true,
-                  minimap: { enabled: minimap !== false },
+                  minimap: { enabled: minimap !== false, showSlider: 'always' },
                   hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                   automaticLayout: true,
                   smoothScrolling: true,
@@ -5630,12 +5799,14 @@ export function EditorPane({
               <Editor
                 path={active.path}
                 keepCurrentModel={true}
-                value={active.content}
+                defaultValue={active.content}
                 language={activeLanguage}
                 theme={monacoTheme}
                 onChange={(v) => {
                   if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
-                  onChangeContent(active.path, v ?? '');
+                  const content = v ?? '';
+                  lastUserTypedContentRef.current.set(active.path, content);
+                  onChangeContent(active.path, content);
                 }}
                 onMount={(ed) => {
                   editorRef.current = ed;
@@ -5691,7 +5862,7 @@ export function EditorPane({
                   ...BASE_MONACO_OPTIONS,
                   fontSize: 13,
                   find: COMMON_FIND_OPTIONS,
-                  minimap: { enabled: minimap !== false },
+                  minimap: { enabled: minimap !== false, showSlider: 'always' },
                   hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                   automaticLayout: true,
                   smoothScrolling: true,
@@ -5864,12 +6035,14 @@ export function EditorPane({
                         : splitActive.path
                     }
                     keepCurrentModel={true}
-                    value={splitActive.content}
+                    defaultValue={splitActive.content}
                     language={splitActiveLanguage}
                     theme={monacoTheme}
                     onChange={(v) => {
                       if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
-                      onChangeContent(splitActive.path, v ?? '');
+                      const content = v ?? '';
+                      lastUserTypedContentRef.current.set(splitActive.path, content);
+                      onChangeContent(splitActive.path, content);
                     }}
                     onMount={(ed) => {
                       splitEditorRef.current = ed;
@@ -6119,12 +6292,14 @@ export function EditorPane({
                 <Editor
                   path={active.path}
                   keepCurrentModel={true}
-                  value={active.content}
+                  defaultValue={active.content}
                   language={activeLanguage}
                   theme={monacoTheme}
                   onChange={(v) => {
                     if (eolAligningRef.current) return; // setEOL 对齐行尾产生的回声，忽略
-                    onChangeContent(active.path, v ?? '');
+                    const content = v ?? '';
+                    lastUserTypedContentRef.current.set(active.path, content);
+                    onChangeContent(active.path, content);
                   }}
                   onMount={(ed, monaco) => {
                     editorRef.current = ed;
@@ -6411,7 +6586,10 @@ export function EditorPane({
                     fontWeight: '400',
                     disableMonospaceOptimizations: true,
                     'semanticHighlighting.enabled': !active.isLargeFile,
-                    minimap: { enabled: !active.isLargeFile && minimap !== false },
+                    minimap: {
+                      enabled: !active.isLargeFile && minimap !== false,
+                      showSlider: 'always',
+                    },
                     hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                     automaticLayout: true,
                     smoothScrolling: true,

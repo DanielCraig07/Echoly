@@ -33,6 +33,7 @@ import { buildAgentHistory } from '../chatHistory';
 import { MarkdownMessage } from './MarkdownMessage';
 import { PlanPanel } from './PlanPanel';
 import { SessionModal, isSessionMatchingWorkspace } from './SessionModal';
+import { ProjectMemoryModal } from './ProjectMemoryModal';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { showGlobalToast } from '../services/toast';
@@ -330,6 +331,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   // 领域 Hook：文件改动检查点与回退状态管理
   const { checkpoints, setCheckpoints, refreshCheckpoints, knownRunIds } = useChatCheckpoints();
   const [showJumpLatest, setShowJumpLatest] = useState(false);
+  const [showProjectMemoryModal, setShowProjectMemoryModal] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -2771,6 +2773,26 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           <button
             type="button"
             className="icon-btn"
+            title="项目长期记忆与架构约定 (.echoly/memory.json)"
+            onClick={() => setShowProjectMemoryModal(true)}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
             title={t('chat.forkSession')}
             onClick={() => handleForkFromTurn()}
             disabled={!activeTab || activeTab.messages.length === 0}
@@ -4446,6 +4468,12 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           onClose={() => setShowHistoryModal(false)}
         />
       )}
+
+      {/* Project Long-term Memory Modal */}
+      <ProjectMemoryModal
+        open={showProjectMemoryModal}
+        onClose={() => setShowProjectMemoryModal(false)}
+      />
 
       {/* Image Lightbox Modal – 使用 createPortal 挂载到 body，避免父容器 stacking context 遮挡 */}
       {previewImage &&

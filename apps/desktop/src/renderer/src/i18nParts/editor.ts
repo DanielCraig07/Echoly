@@ -185,8 +185,8 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
     en: 'At difference {n} of {total}; F5 for next, Shift+F5 for previous',
   },
   'editor.diffPositionLabel': {
-    zh: '第 **{n}** / {total} 个差异',
-    en: 'Diff **{n}** / {total}',
+    zh: '第 {n} / {total} 个差异',
+    en: 'Diff {n} / {total}',
   },
   'editor.noDiff': { zh: '无差异', en: 'No differences' },
   'editor.noDiffWithTarget': {

@@ -361,7 +361,17 @@ export class AgentService {
         const skillsText = formatSkillsForPrompt(selected);
 
         const rulesRes = await this.rulesService.getRules(workspaceRoot);
-        const rulesText = rulesRes.content || undefined;
+        let rulesText = rulesRes.content || undefined;
+
+        try {
+          const memoryContent = await workspace.readProjectConfigFile('memory.json');
+          if (memoryContent && memoryContent.trim()) {
+            const memoryPrompt = `\n\n【项目长期记忆与架构约定 (.echoly/memory.json)】\n${memoryContent.trim()}`;
+            rulesText = rulesText ? `${rulesText}\n${memoryPrompt}` : memoryPrompt;
+          }
+        } catch {
+          // 忽略记忆文件读取失败
+        }
 
         const effectiveModelId = payload.modelId || settings.activeModelId;
         const selectedModel = settings.models?.find((m) => m.id === effectiveModelId);
