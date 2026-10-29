@@ -847,6 +847,7 @@ export function EditorPane({
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      editorRef.current?.layout();
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -1227,7 +1228,6 @@ export function EditorPane({
     original: string;
     modified: string;
   } | null>(null);
-  const [mdPreviewScrollTo, setMdPreviewScrollTo] = useState<string | null>(null);
   const mdPreviewRef = useRef<HTMLDivElement>(null);
   const decorationsRef = useRef<string[]>([]);
   const fileDecorationsMapRef = useRef<Map<string, string[]>>(new Map());
@@ -1840,11 +1840,18 @@ export function EditorPane({
     [getMarkdownAnchors],
   );
 
+  const getMarkdownAnchorsRef = useRef(getMarkdownAnchors);
+  getMarkdownAnchorsRef.current = getMarkdownAnchors;
+  const syncEditorToPreviewRef = useRef(syncEditorToPreview);
+  syncEditorToPreviewRef.current = syncEditorToPreview;
+  const syncPreviewToEditorRef = useRef(syncPreviewToEditor);
+  syncPreviewToEditorRef.current = syncPreviewToEditor;
+
   const setupEditorScrollSync = (ed: MonacoEditor.IStandaloneCodeEditor) => {
     ed.onDidScrollChange(() => {
       if (isSyncingScrollRef.current) return;
       if (!mdPreviewRef.current) return;
-      syncEditorToPreview(ed, mdPreviewRef.current);
+      syncEditorToPreviewRef.current(ed, mdPreviewRef.current);
     });
   };
 
@@ -1886,6 +1893,9 @@ export function EditorPane({
     setActiveHeadingId(currentId);
   }, [mdHeadings]);
 
+  const updateActiveHeadingRef = useRef(updateActiveHeading);
+  updateActiveHeadingRef.current = updateActiveHeading;
+
   // Sync active heading on preview / TOC toggle
   useEffect(() => {
     if (showMdPreview && showToc) {
@@ -1911,7 +1921,7 @@ export function EditorPane({
             // 3. 关键：同时把 Monaco 编辑器位置也同步到与预览对应的位置
             //    否则 Monaco 仍停在第 1 行，后续任何编辑器滚动事件会通过
             //    syncEditorToPreview 将预览拉回 0，破坏刚刚恢复的位置。
-            const anchors = getMarkdownAnchors(ed, previewEl);
+            const anchors = getMarkdownAnchorsRef.current(ed, previewEl);
             if (anchors.length >= 2) {
               let ai = 0;
               while (ai < anchors.length - 1 && anchors[ai + 1].previewTop <= cached) ai++;
@@ -1927,23 +1937,16 @@ export function EditorPane({
             setTimeout(() => {
               isSyncingScrollRef.current = false;
             }, 250);
-            updateActiveHeading();
+            updateActiveHeadingRef.current();
           } else {
-            syncEditorToPreview(ed, previewEl);
-            updateActiveHeading();
+            syncEditorToPreviewRef.current(ed, previewEl);
+            updateActiveHeadingRef.current();
           }
         }
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [
-    showMdPreview,
-    isMarkdown,
-    activePath,
-    getMarkdownAnchors,
-    syncEditorToPreview,
-    updateActiveHeading,
-  ]);
+  }, [showMdPreview, isMarkdown, activePath]);
 
   // Keep active item visible inside TOC floating list
   useEffect(() => {
@@ -1956,15 +1959,16 @@ export function EditorPane({
 
   const handlePreviewScroll = () => {
     if (isSyncingScrollRef.current) return;
+    const ed = editorRef.current;
+    if (ed?.hasWidgetFocus()) return;
     updateActiveHeading();
     const previewEl = mdPreviewRef.current;
-    const ed = editorRef.current;
     if (!previewEl || !ed) return;
     // 实时保存当前文件的预览滚动位置
     if (activePath) {
       mdPreviewScrollCacheRef.current.set(activePath, previewEl.scrollTop);
     }
-    syncPreviewToEditor(previewEl, ed);
+    syncPreviewToEditorRef.current(previewEl, ed);
   };
 
   const handleHeadingClick = useCallback((h: MarkdownHeadingItem) => {
@@ -4583,7 +4587,30 @@ export function EditorPane({
                 <button
                   type="button"
                   className={`md-preview-btn${showMdPreview ? ' active' : ''}`}
-                  onClick={() => setShowMdPreview((v) => !v)}
+                  onClick={() => {
+                    const ed = editorRef.current;
+                    const curP = activeRef.current?.path;
+                    if (ed && curP) {
+                      try {
+                        const vs = ed.saveViewState();
+                        if (vs) editorViewStateMapRef.current.set(curP, vs);
+                        const sTop = ed.getScrollTop();
+                        const sLeft = ed.getScrollLeft();
+                        const pos = ed.getPosition();
+                        if (pos && pos.lineNumber > 0) {
+                          editorScrollStateMapRef.current.set(curP, {
+                            scrollTop: sTop,
+                            scrollLeft: sLeft,
+                            line: pos.lineNumber,
+                            col: pos.column,
+                          });
+                        }
+                      } catch {
+                        /* ignore */
+                      }
+                    }
+                    setShowMdPreview((v) => !v);
+                  }}
                 >
                   {showMdPreview ? (
                     <>
@@ -5283,11 +5310,8 @@ export function EditorPane({
               }}
             >
               <Editor
-                path={
-                  workspace && !active.path.startsWith('/')
-                    ? `${workspace.replace(/[/\\]+$/, '')}/${active.path}`
-                    : active.path
-                }
+                path={active.path}
+                keepCurrentModel={true}
                 value={active.content}
                 language={activeLanguage}
                 theme={monacoTheme}
@@ -5315,6 +5339,28 @@ export function EditorPane({
                   const onOpenFileRef = { current: onOpenFile };
                   setupEditorKeybindings(ed, onOpenFileRef);
                   setupEditorScrollSync(ed);
+                  const curP = activeRef.current?.path;
+                  if (curP) {
+                    const vs = editorViewStateMapRef.current.get(curP);
+                    if (vs) {
+                      try {
+                        ed.restoreViewState(vs);
+                      } catch {
+                        /* ignore */
+                      }
+                    }
+                    const saved =
+                      editorScrollStateMapRef.current.get(curP) ??
+                      initialCursorPositionsRef.current?.[curP];
+                    if (saved) {
+                      if (typeof saved.scrollTop === 'number' && saved.scrollTop >= 0) {
+                        ed.setScrollTop(saved.scrollTop);
+                      }
+                      if (typeof saved.scrollLeft === 'number' && saved.scrollLeft >= 0) {
+                        ed.setScrollLeft(saved.scrollLeft);
+                      }
+                    }
+                  }
                   const cmdClickGesture = setupCmdClickGesture(ed, {
                     t: () => tRef.current,
                     getWorkspaceRoot: () => workspace,
@@ -5350,14 +5396,6 @@ export function EditorPane({
                     setCursorLine(e.position.lineNumber);
                     onCursorChange?.(e.position.lineNumber, e.position.column);
                     updateGitBlameRef.current(e.position.lineNumber);
-                    // Track cursor line text for md preview sync
-                    if (showMdPreview && isMarkdown) {
-                      const model = ed.getModel();
-                      if (model) {
-                        const lineText = model.getLineContent(e.position.lineNumber).trim();
-                        if (lineText) setMdPreviewScrollTo(lineText);
-                      }
-                    }
                   });
                   // Git gutter click handler — 点击左侧差异色条/边距触发差异对比，支持随时点击行号及左侧区域打断点
                   ed.onMouseDown(async (e) => {
@@ -5591,6 +5629,7 @@ export function EditorPane({
             >
               <Editor
                 path={active.path}
+                keepCurrentModel={true}
                 value={active.content}
                 language={activeLanguage}
                 theme={monacoTheme}
@@ -5824,6 +5863,7 @@ export function EditorPane({
                         ? splitActive.path + ':split'
                         : splitActive.path
                     }
+                    keepCurrentModel={true}
                     value={splitActive.content}
                     language={splitActiveLanguage}
                     theme={monacoTheme}
@@ -6078,6 +6118,7 @@ export function EditorPane({
               ) : (
                 <Editor
                   path={active.path}
+                  keepCurrentModel={true}
                   value={active.content}
                   language={activeLanguage}
                   theme={monacoTheme}
