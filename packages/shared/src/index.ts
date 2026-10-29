@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.0.55';
+export const APP_VERSION = '0.0.56';
 export const DEFAULT_LLM_BASE_URL = 'http://192.168.10.241:8002';
 /**
  * 内网 vLLM 实际 serve 出来的模型名。
