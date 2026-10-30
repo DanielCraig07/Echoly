@@ -519,6 +519,7 @@ ${payload.suffix.slice(0, 1000)}
   ipcMain.handle('session:list', () => sessions.list());
   ipcMain.handle('session:get', (_e, id: string) => sessions.get(id));
   ipcMain.handle('session:save', (_e, session: ChatSession) => sessions.save(session));
+  ipcMain.handle('session:rename', (_e, id: string, title: string) => sessions.rename(id, title));
   ipcMain.handle('session:delete', (_e, id: string) => sessions.delete(id));
 
   ipcMain.handle('git:clone', (e, req: GitCloneRequest) => run(e, () => git.clone(req)));

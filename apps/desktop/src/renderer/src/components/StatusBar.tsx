@@ -28,6 +28,10 @@ interface Props {
     detail?: string,
     type?: 'success' | 'error' | 'info' | 'warn',
   ) => void;
+  isRemote?: boolean;
+  remoteLabel?: string | null;
+  isSshDisconnected?: boolean;
+  onReconnectSsh?: () => void;
 }
 
 const COMMON_LANGUAGES = [
@@ -74,6 +78,10 @@ export function StatusBar({
   onToggleEol,
   onOpenAbout,
   onShowToast,
+  isRemote,
+  remoteLabel,
+  isSshDisconnected,
+  onReconnectSsh,
 }: Props) {
   const { t } = useI18n();
   const hasChanges = Boolean(gitStatus?.entries?.length);
@@ -201,22 +209,53 @@ export function StatusBar({
       {/* ── 左侧区域 ── */}
       <div className="status-bar-left">
         {/* 1. 远程/SSH连接徽标 */}
-        <button
-          type="button"
-          className="status-item status-remote"
-          title={t('status.remote')}
-          onClick={onOpenRemote}
-        >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 16 16"
-            fill="currentColor"
-            style={{ display: 'inline-block' }}
+        {isSshDisconnected ? (
+          <button
+            type="button"
+            className="status-item status-remote is-disconnected"
+            style={{
+              background: 'rgba(234, 179, 8, 0.25)',
+              color: '#facc15',
+              border: '1px solid rgba(234, 179, 8, 0.45)',
+              fontWeight: 600,
+              gap: 4,
+            }}
+            title="SSH 连接已中断，点击一键静默重连"
+            onClick={onReconnectSsh || onOpenRemote}
           >
-            <path d="M4.5 12.5l-4-4.5 4-4.5.75.67L1.83 8l3.42 3.83-.75.67zm7 0l4-4.5-4-4.5-.75.67L14.17 8l-3.42 3.83.75.67z" />
-          </svg>
-        </button>
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+            <span>SSH 已断开 · 点击重连</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`status-item status-remote${isRemote ? ' is-remote-active' : ''}`}
+            title={remoteLabel ? `远程主机: ${remoteLabel}` : t('status.remote')}
+            onClick={onOpenRemote}
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              style={{ display: 'inline-block' }}
+            >
+              <path d="M4.5 12.5l-4-4.5 4-4.5.75.67L1.83 8l3.42 3.83-.75.67zm7 0l4-4.5-4-4.5-.75.67L14.17 8l-3.42 3.83.75.67z" />
+            </svg>
+            {isRemote && <span style={{ marginLeft: 4, fontWeight: 600, fontSize: 11 }}>SSH</span>}
+          </button>
+        )}
 
         {/* 2. Git 分支切换按钮 */}
         {gitStatus?.isRepo !== false && Boolean(branch) && (

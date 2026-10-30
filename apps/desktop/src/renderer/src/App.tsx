@@ -176,6 +176,11 @@ function computeEffectiveLayoutWidths(
   };
 }
 
+/** 统一文本换行符（CRLF 规范化为 LF，用于精准判定改动回退后的洁净状态） */
+function normalizeEol(s?: string): string {
+  return (s ?? '').replace(/\r\n/g, '\n');
+}
+
 /**
  * Windows opened via File > New Window are flagged with `?blank=1` so they
  * start with no workspace, instead of silently inheriting whatever project
@@ -238,6 +243,7 @@ export function App() {
   const [branchModalOpen, setBranchModalOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
+  const [isSshDisconnected, setIsSshDisconnected] = useState(false);
   const [extensionPanelOpen, setExtensionPanelOpen] = useState(false);
   const [claudePanelOpen, setClaudePanelOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
@@ -634,7 +640,9 @@ export function App() {
           const freshContent = await window.ide.readFile(tab.path);
           setTabs((prev) =>
             prev.map((t) =>
-              t.path === tab.path ? { ...t, content: freshContent, dirty: false } : t,
+              t.path === tab.path
+                ? { ...t, content: freshContent, savedContent: freshContent, dirty: false }
+                : t,
             ),
           );
         } catch {
@@ -754,7 +762,9 @@ export function App() {
           const freshContent = await window.ide.readFile(tab.path);
           setTabs((prev) =>
             prev.map((t) =>
-              t.path === tab.path ? { ...t, content: freshContent, dirty: false } : t,
+              t.path === tab.path
+                ? { ...t, content: freshContent, savedContent: freshContent, dirty: false }
+                : t,
             ),
           );
         } catch {
@@ -803,11 +813,74 @@ export function App() {
       }
     };
     void fetchGit();
-    const intervalMs = isSshWorkspace ? 12000 : 5000;
-    const timer = setInterval(() => void fetchGit(), intervalMs);
+    const normalInterval = isSshWorkspace ? 12000 : 5000;
+    const ecoInterval = 30000;
+
+    let isEcoMode = false;
+    let blurTimer: ReturnType<typeof setTimeout> | null = null;
+    let activeTimer: ReturnType<typeof setInterval> | null = null;
+
+    const startTimer = (ms: number) => {
+      if (activeTimer) clearInterval(activeTimer);
+      activeTimer = setInterval(() => void fetchGit(), ms);
+    };
+
+    startTimer(normalInterval);
+
+    // 节能模式：窗口失焦或最小化/隐藏超过 30s 时降频轮询，恢复前台瞬间立即刷新一次
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        if (!blurTimer) {
+          blurTimer = setTimeout(() => {
+            isEcoMode = true;
+            startTimer(ecoInterval);
+          }, 30000);
+        }
+      } else {
+        if (blurTimer) {
+          clearTimeout(blurTimer);
+          blurTimer = null;
+        }
+        if (isEcoMode) {
+          isEcoMode = false;
+          startTimer(normalInterval);
+          void fetchGit();
+        }
+      }
+    };
+
+    const onFocus = () => {
+      if (blurTimer) {
+        clearTimeout(blurTimer);
+        blurTimer = null;
+      }
+      if (isEcoMode) {
+        isEcoMode = false;
+        startTimer(normalInterval);
+      }
+      void fetchGit();
+    };
+
+    const onBlur = () => {
+      if (!blurTimer) {
+        blurTimer = setTimeout(() => {
+          isEcoMode = true;
+          startTimer(ecoInterval);
+        }, 30000);
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+
     return () => {
       isMounted = false;
-      clearInterval(timer);
+      if (activeTimer) clearInterval(activeTimer);
+      if (blurTimer) clearTimeout(blurTimer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
     };
   }, [workspace, workspaceInfo.kind, handleBranchSwitchSync]);
 
@@ -1032,6 +1105,7 @@ export function App() {
             restored.push({
               path: p,
               content,
+              savedContent: content,
               language: languageFromPath(p),
               dirty: false,
             });
@@ -1301,6 +1375,26 @@ export function App() {
     },
     [requestWorkspaceOpen],
   );
+
+  const handleReconnectSsh = useCallback(async () => {
+    setIsSshDisconnected(false);
+    showToast('正在尝试重新连接远程 SSH...', undefined, 'info');
+    if (workspaceInfo.kind === 'ssh' && workspaceRef.current) {
+      await requestWorkspaceOpen({
+        path: workspaceRef.current,
+        kind: 'ssh',
+      });
+    } else {
+      setSshOpen(true);
+    }
+  }, [workspaceInfo.kind, requestWorkspaceOpen, showToast]);
+
+  useEffect(() => {
+    return window.ide.onSshDisconnected?.((data) => {
+      setIsSshDisconnected(true);
+      showToast('SSH 远程连接已断开', `服务器 ${data.host} 连接关闭，点击状态栏可重连`, 'warn');
+    });
+  }, [showToast]);
 
   const handleSwitchWorkspacePath = useCallback(
     async (targetPath: string) => {
@@ -2236,6 +2330,7 @@ export function App() {
           {
             path,
             content,
+            savedContent: content,
             language: isLarge ? 'plaintext' : languageFromPath(path),
             dirty: false,
             isLargeFile: isLarge,
@@ -2279,10 +2374,33 @@ export function App() {
     void rejectAll();
   }, [rejectAll]);
 
-  const handleChatSelectDiff = useCallback((id: string) => {
-    setScmDiff(null);
-    setActiveDiffId(id);
-  }, []);
+  const handleChatSelectDiff = useCallback(
+    (id: string) => {
+      setScmDiff(null);
+      setActiveDiffId(id);
+      const diff = diffs.find((d) => d.id === id);
+      if (diff?.path) {
+        void openFile(diff.path);
+      }
+    },
+    [diffs, openFile],
+  );
+
+  const handleLocateInTree = useCallback(
+    (targetPath?: string) => {
+      const p = targetPath || activePathRef.current;
+      if (!p) {
+        showToast(t('app.noOpenFile'), undefined, 'info');
+        return;
+      }
+      setLeftPanel('explorer');
+      setTimeout(() => {
+        fileTreeRef.current?.locateActiveFile(p);
+        showToast(t('app.located', { name: p.split('/').pop() ?? '' }), undefined, 'info');
+      }, 60);
+    },
+    [t, showToast],
+  );
 
   /**
    * 撤销本轮 AI 改动后同步渲染层状态。
@@ -2415,7 +2533,14 @@ export function App() {
     setTabs((prev) =>
       prev.map((t) =>
         t.path === tab.path
-          ? { ...t, path: relPath, dirty: false, language: languageFromPath(relPath) }
+          ? {
+              ...t,
+              path: relPath,
+              content: tab.content,
+              savedContent: tab.content,
+              dirty: false,
+              language: languageFromPath(relPath),
+            }
           : t,
       ),
     );
@@ -2439,7 +2564,11 @@ export function App() {
       }
       await window.ide.writeFile(tabToSave.path, tabToSave.content);
       setTabs((prev) =>
-        prev.map((t) => (isSameFileByPath(t.path, tabToSave.path) ? { ...t, dirty: false } : t)),
+        prev.map((t) =>
+          isSameFileByPath(t.path, tabToSave.path)
+            ? { ...t, savedContent: tabToSave.content, dirty: false }
+            : t,
+        ),
       );
       void window.ide.gitStatus().then((res) => {
         if (res.ok) {
@@ -2574,12 +2703,20 @@ export function App() {
       const exists = prev.some((t) => t.path === relPath);
       if (exists) {
         return prev.map((t) =>
-          t.path === relPath ? { ...t, content: tab.content, dirty: false } : t,
+          t.path === relPath
+            ? { ...t, content: tab.content, savedContent: tab.content, dirty: false }
+            : t,
         );
       }
       return [
         ...prev,
-        { path: relPath, content: tab.content, dirty: false, language: languageFromPath(relPath) },
+        {
+          path: relPath,
+          content: tab.content,
+          savedContent: tab.content,
+          dirty: false,
+          language: languageFromPath(relPath),
+        },
       ];
     });
     setActivePath(relPath);
@@ -2596,7 +2733,9 @@ export function App() {
         await window.ide.writeFile(tab.path, tab.content);
       }
     }
-    setTabs((prev) => prev.map((t) => (t.dirty ? { ...t, dirty: false } : t)));
+    setTabs((prev) =>
+      prev.map((t) => (t.dirty ? { ...t, savedContent: t.content, dirty: false } : t)),
+    );
     void window.ide.gitStatus().then((res) => {
       if (res.ok) {
         setGitStatus(res);
@@ -2617,8 +2756,14 @@ export function App() {
     if (!path || isUntitledPath(path) || isDbPath(path)) return;
     try {
       const diskContent = await window.ide.readFile(path);
+      // 锁定抑制期，防止外部内容同步引起的 Monaco onChange 重入翻转 dirty 状态
+      suppressAutoSaveUntilRef.current.set(path, Date.now() + 2000);
       setTabs((prev) =>
-        prev.map((t) => (t.path === path ? { ...t, content: diskContent, dirty: false } : t)),
+        prev.map((t) =>
+          t.path === path
+            ? { ...t, content: diskContent, savedContent: diskContent, dirty: false }
+            : t,
+        ),
       );
     } catch {
       // ignore
@@ -3364,7 +3509,9 @@ export function App() {
     await window.ide.writeFile(path, content);
     setTabs((prev) =>
       prev.map((t) =>
-        isSameFileByPath(t.path, path) && t.content === content ? { ...t, dirty: false } : t,
+        isSameFileByPath(t.path, path) && t.content === content
+          ? { ...t, savedContent: content, dirty: false }
+          : t,
       ),
     );
     void window.ide.gitStatus().then((res) => {
@@ -3448,17 +3595,48 @@ export function App() {
     }
 
     const currentTab = tabsRef.current.find((t) => matches(path, t.path));
+    if (!currentTab) return;
 
-    // 如果内容未曾改变且未标记为 dirty，直接忽略，避免空写盘
-    if (currentTab && currentTab.content === content && !currentTab.dirty && !markDirty) {
+    // 基准已保存内容：优先取 savedContent，若没有且当前不是 dirty，则以当前 content 作为初始基准
+    const baseSavedContent =
+      currentTab.savedContent ?? (!currentTab.dirty ? currentTab.content : undefined);
+
+    // 判断内容是否回退到了与磁盘保存内容完全一致（规范化换行符 \r\n 与 \n 比对）
+    const isClean =
+      baseSavedContent !== undefined &&
+      !isUntitledPath(path) &&
+      normalizeEol(content) === normalizeEol(baseSavedContent);
+
+    let nextDirty: boolean;
+    if (!markDirty) {
+      // 调用方明确指定不标记为 dirty（如单块放弃还原，或已写盘后的更新）
+      nextDirty = false;
+    } else if (isClean) {
+      // 内容已完全撤销回退到了已保存内容：自动消除修改标识
+      nextDirty = false;
+    } else {
+      // 内容有实质改动
+      nextDirty = true;
+    }
+
+    // 如果内容未曾改变且 dirty 状态未变，直接忽略，避免空写盘
+    if (currentTab.content === content && currentTab.dirty === nextDirty) {
       return;
     }
 
     setTabs((prev) => {
-      return prev.map((t) => (matches(path, t.path) ? { ...t, content, dirty: markDirty } : t));
+      return prev.map((t) => {
+        if (!matches(path, t.path)) return t;
+        return {
+          ...t,
+          content,
+          dirty: nextDirty,
+          savedContent: !markDirty ? content : (t.savedContent ?? baseSavedContent),
+        };
+      });
     });
 
-    if (!markDirty) {
+    if (!nextDirty) {
       for (const [k, timer] of autoSaveTimers.current.entries()) {
         if (matches(path, k)) {
           clearTimeout(timer);
@@ -3587,7 +3765,14 @@ export function App() {
     // 同步更新编辑器已打开标签页，内容更新并标记为已保存 (dirty: false)
     setTabs((prev) =>
       prev.map((t) =>
-        t.path === event.diff.path ? { ...t, content: event.diff.modified, dirty: false } : t,
+        t.path === event.diff.path
+          ? {
+              ...t,
+              content: event.diff.modified,
+              savedContent: event.diff.modified,
+              dirty: false,
+            }
+          : t,
       ),
     );
     setTreeRefreshKey((k) => k + 1);
@@ -3602,7 +3787,9 @@ export function App() {
     if (diff) {
       setTabs((prev) =>
         prev.map((t) =>
-          t.path === diff.path ? { ...t, content: diff.modified, dirty: false } : t,
+          t.path === diff.path
+            ? { ...t, content: diff.modified, savedContent: diff.modified, dirty: false }
+            : t,
         ),
       );
       setTreeRefreshKey((k) => k + 1);
@@ -3619,7 +3806,9 @@ export function App() {
       // 拒绝/撤销修改：恢复原始内容并更新标签页与文件树
       setTabs((prev) =>
         prev.map((t) =>
-          t.path === diff.path ? { ...t, content: diff.original, dirty: false } : t,
+          t.path === diff.path
+            ? { ...t, content: diff.original, savedContent: diff.original, dirty: false }
+            : t,
         ),
       );
       setTreeRefreshKey((k) => k + 1);
@@ -3632,7 +3821,9 @@ export function App() {
     for (const diff of diffs) {
       setTabs((prev) =>
         prev.map((t) =>
-          t.path === diff.path ? { ...t, content: diff.modified, dirty: false } : t,
+          t.path === diff.path
+            ? { ...t, content: diff.modified, savedContent: diff.modified, dirty: false }
+            : t,
         ),
       );
     }
@@ -3648,7 +3839,9 @@ export function App() {
     for (const diff of diffs) {
       setTabs((prev) =>
         prev.map((t) =>
-          t.path === diff.path ? { ...t, content: diff.original, dirty: false } : t,
+          t.path === diff.path
+            ? { ...t, content: diff.original, savedContent: diff.original, dirty: false }
+            : t,
         ),
       );
     }
@@ -5072,6 +5265,7 @@ export function App() {
               onCompareWithRevision={(p) => setCompareRevisionModalPath(p)}
               onCompareWithBranchOrTag={(p) => setCompareBranchOrTagModalPath(p)}
               onAnnotateGitBlame={(p) => void handleAnnotateGitBlame(p)}
+              onLocateInTree={handleLocateInTree}
               showBlameAnnotation={annotatedBlamePath === activePath}
               onCloseBlameAnnotation={() => setAnnotatedBlamePath(null)}
               onPreviewDiff={(diff) => {
@@ -5747,6 +5941,14 @@ export function App() {
           const tab = tabs.find((t) => t.path === activePath);
           return tab?.content?.includes('\r\n') ? 'CRLF' : 'LF';
         })()}
+        isRemote={workspaceInfo.kind === 'ssh'}
+        remoteLabel={
+          workspaceInfo.kind === 'ssh'
+            ? workspaceInfo.label || (workspace ? workspace.split(':')[0] : null)
+            : null
+        }
+        isSshDisconnected={isSshDisconnected}
+        onReconnectSsh={handleReconnectSsh}
         onOpenRemote={() => {
           setSshTargetForModal(null);
           setSshOpen(true);

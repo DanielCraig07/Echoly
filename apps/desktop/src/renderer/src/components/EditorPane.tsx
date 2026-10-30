@@ -101,6 +101,7 @@ interface Props {
   onCompareWithRevision?: (path: string) => void;
   onCompareWithBranchOrTag?: (path: string) => void;
   onAnnotateGitBlame?: (path: string) => void;
+  onLocateInTree?: (path: string) => void;
   revealTarget?: {
     path: string;
     line: number;
@@ -213,6 +214,16 @@ const COMMON_FIND_OPTIONS: MonacoEditor.IEditorFindOptions = {
 
 const BASE_MONACO_OPTIONS: MonacoEditor.IStandaloneEditorConstructionOptions = {
   useShadowDOM: false,
+  lineHeight: 22,
+  scrollbar: {
+    vertical: 'visible',
+    horizontal: 'auto',
+    verticalScrollbarSize: 12,
+    horizontalScrollbarSize: 8,
+    verticalSliderSize: 12,
+    horizontalSliderSize: 8,
+    useShadows: false,
+  },
 };
 
 /**
@@ -283,6 +294,7 @@ export function EditorPane({
   onCompareWithRevision,
   onCompareWithBranchOrTag,
   onAnnotateGitBlame,
+  onLocateInTree,
   revealTarget,
   onRevealTargetConsumed,
   uiTheme,
@@ -1394,6 +1406,33 @@ export function EditorPane({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [showSymbolDropdown]);
+
+  // ── 面包屑目录兄弟文件切换状态 ──────────────────────────
+  const [breadcrumbFolderDropdown, setBreadcrumbFolderDropdown] = useState<{
+    dirPath: string;
+    coords: { top: number; left: number };
+    items: Array<{ name: string; isDirectory: boolean; path: string }>;
+    loading: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!breadcrumbFolderDropdown) return;
+    const handleDocClick = (e: MouseEvent) => {
+      const portalEl = document.getElementById('breadcrumb-folder-portal');
+      if (portalEl && !portalEl.contains(e.target as Node)) {
+        setBreadcrumbFolderDropdown(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setBreadcrumbFolderDropdown(null);
+    };
+    document.addEventListener('mousedown', handleDocClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleDocClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [breadcrumbFolderDropdown]);
 
   // ── Git 合并冲突可视化解决状态与交互 ──────────────────────────
   const conflictDecorationsRef = useRef<string[]>([]);
@@ -2567,8 +2606,7 @@ export function EditorPane({
 
     const newContent = newModLines.join('\n');
     await window.ide.writeFile(active.path, newContent);
-    const isNowClean = Boolean(newContent === gitDiffData.original);
-    onChangeContent(active.path, newContent, !isNowClean);
+    onChangeContent(active.path, newContent, false);
     onRefreshGitStatus?.();
     setGitInlineDiffLine(null);
   };
@@ -3167,18 +3205,27 @@ export function EditorPane({
       const curActive = activeRef.current;
       if (!ed || !code || !curActive?.path) return;
       const selection = ed.getSelection();
-      if (selection) {
-        ed.executeEdits('ai-insert', [
-          {
-            range: selection,
-            text: code,
-            forceMoveMarkers: true,
-          },
-        ]);
-        onChangeContent(curActive.path, ed.getValue());
-        ed.focus();
-        onShowToast?.(t('editor.codeInserted'), '', 'success');
+      let targetRange: monaco.IRange;
+      if (
+        !selection ||
+        (selection.startLineNumber === selection.endLineNumber &&
+          selection.startColumn === selection.endColumn)
+      ) {
+        const pos = ed.getPosition() || { lineNumber: 1, column: 1 };
+        targetRange = new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column);
+      } else {
+        targetRange = selection;
       }
+      ed.executeEdits('ai-insert', [
+        {
+          range: targetRange,
+          text: code,
+          forceMoveMarkers: true,
+        },
+      ]);
+      onChangeContent(curActive.path, ed.getValue());
+      ed.focus();
+      onShowToast?.(t('editor.codeInserted'), '', 'success');
     };
 
     const onApplyCode = (e: Event) => {
@@ -4246,8 +4293,31 @@ export function EditorPane({
                 }
               };
 
-              diffEd.onDidUpdateDiff(updateDiffStats);
+              const jumpToFirstHunk = () => {
+                const changes = diffEd.getLineChanges() || [];
+                if (changes.length > 0) {
+                  const ch = changes[0];
+                  const modLine =
+                    ch.modifiedStartLineNumber > 0
+                      ? ch.modifiedStartLineNumber
+                      : Math.max(1, ch.modifiedEndLineNumber || 1);
+                  modEd.revealLineInCenter(modLine);
+                  modEd.setPosition({ lineNumber: modLine, column: 1 });
+                  const origLine =
+                    ch.originalStartLineNumber > 0
+                      ? ch.originalStartLineNumber
+                      : Math.max(1, ch.originalEndLineNumber || 1);
+                  origEd.revealLineInCenter(origLine);
+                  origEd.setPosition({ lineNumber: origLine, column: 1 });
+                }
+              };
+
+              diffEd.onDidUpdateDiff(() => {
+                updateDiffStats();
+                jumpToFirstHunk();
+              });
               updateDiffStats();
+              setTimeout(jumpToFirstHunk, 50);
 
               // 监听光标行号，实时更新当前位于第几个差异
               modEd.onDidChangeCursorPosition((e) => {
@@ -4342,10 +4412,10 @@ export function EditorPane({
               scrollbar: {
                 vertical: 'visible',
                 horizontal: 'auto',
-                verticalScrollbarSize: 4,
-                horizontalScrollbarSize: 3,
-                verticalSliderSize: 4,
-                horizontalSliderSize: 3,
+                verticalScrollbarSize: 12,
+                horizontalScrollbarSize: 8,
+                verticalSliderSize: 12,
+                horizontalSliderSize: 8,
                 useShadows: false,
               },
             }}
@@ -4358,165 +4428,354 @@ export function EditorPane({
   return (
     <div className="editor-area" onClick={() => setContextMenu(null)}>
       {tabs.length > 0 && (
-        <div
-          className={`tabs ${tabsScrolling ? 'tabs-scrolling' : ''}`}
-          onScroll={handleTabsScroll}
-          onWheel={(e) => {
-            if (e.deltaY !== 0 && e.deltaX === 0) {
-              e.currentTarget.scrollLeft += e.deltaY;
-            }
-          }}
-          onDoubleClick={(e) => {
-            if ((e.target as HTMLElement).closest('.tab')) return;
-            onNewUntitled?.();
-          }}
-          title={onNewUntitled ? t('editor.newUntitledDblClick') : undefined}
-        >
-          {tabs.map((tab) => {
-            const isBrowser =
-              isBrowserPath(tab.path) || tab.language === 'browser' || tab.virtual?.browser;
-            const fileName =
-              tab.title ||
-              (isUntitledPath(tab.path)
-                ? untitledTabLabel(tab.path)
-                : tab.path.split('/').pop() || tab.path);
-            const gitMeta = getTabGitMeta(tab.path, gitStatus?.entries);
-            const isActive = tab.path === activePath;
-            return (
-              <button
-                key={tab.path}
-                ref={isActive ? activeTabRef : null}
-                className={`tab ${isActive ? 'active' : ''} ${tab.dirty ? 'is-dirty' : ''} ${isBrowser ? 'is-browser-tab' : ''}`}
-                title={
-                  isBrowser
-                    ? `${fileName}${tab.virtual?.browser?.url ? `\n${tab.virtual.browser.url}` : ''}`
-                    : tab.path.startsWith('/')
-                      ? tab.path
-                      : fileName
-                }
-                onClick={() => onSelectTab(tab.path)}
-                onAuxClick={(e) => {
-                  if (e.button === 1) {
+        <div className="editor-tabs-bar">
+          <div
+            className={`tabs ${tabsScrolling ? 'tabs-scrolling' : ''}`}
+            onScroll={handleTabsScroll}
+            onWheel={(e) => {
+              if (e.deltaY !== 0 && e.deltaX === 0) {
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+            onDoubleClick={(e) => {
+              if ((e.target as HTMLElement).closest('.tab')) return;
+              onNewUntitled?.();
+            }}
+            title={onNewUntitled ? t('editor.newUntitledDblClick') : undefined}
+          >
+            {tabs.map((tab) => {
+              const isBrowser =
+                isBrowserPath(tab.path) || tab.language === 'browser' || tab.virtual?.browser;
+              const fileName =
+                tab.title ||
+                (isUntitledPath(tab.path)
+                  ? untitledTabLabel(tab.path)
+                  : tab.path.split('/').pop() || tab.path);
+              const gitMeta = getTabGitMeta(tab.path, gitStatus?.entries);
+              const isActive = tab.path === activePath;
+              return (
+                <button
+                  key={tab.path}
+                  ref={isActive ? activeTabRef : null}
+                  className={`tab ${isActive ? 'active' : ''} ${tab.dirty ? 'is-dirty' : ''} ${isBrowser ? 'is-browser-tab' : ''}`}
+                  title={
+                    isBrowser
+                      ? `${fileName}${tab.virtual?.browser?.url ? `\n${tab.virtual.browser.url}` : ''}`
+                      : tab.path.startsWith('/')
+                        ? tab.path
+                        : fileName
+                  }
+                  onClick={() => onSelectTab(tab.path)}
+                  onMouseDown={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onCloseTab(tab.path);
+                    }
+                  }}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onCloseTab(tab.path);
+                    }
+                  }}
+                  onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    onCloseTab(tab.path);
-                  }
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setContextMenu({
-                    x: e.clientX,
-                    y: e.clientY,
-                    targetPath: tab.path,
-                  });
-                }}
-              >
-                {isBrowser ? (
-                  tab.virtual?.browser?.favicon ? (
-                    <img
-                      src={tab.virtual.browser.favicon}
-                      alt=""
-                      style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 2 }}
-                    />
-                  ) : (
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="#38bdf8"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      style={{ flexShrink: 0 }}
-                    >
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="2" y1="12" x2="22" y2="12" />
-                      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                    </svg>
-                  )
-                ) : (
-                  <RenderFileTreeIcon
-                    name={fileName}
-                    isDirectory={false}
-                    contentSnippet={tab.content ? tab.content.slice(0, 1000) : undefined}
-                  />
-                )}
-                <span
-                  className="tab-title"
-                  style={{
-                    color: gitMeta?.color,
-                    maxWidth: isBrowser ? 180 : 220,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    display: 'inline-block',
-                    verticalAlign: 'middle',
+                    setContextMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      targetPath: tab.path,
+                    });
                   }}
-                  title={fileName}
                 >
-                  {fileName}
-                </span>
-                {tab.readOnly && (
+                  {isBrowser ? (
+                    tab.virtual?.browser?.favicon ? (
+                      <img
+                        src={tab.virtual.browser.favicon}
+                        alt=""
+                        style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 2 }}
+                      />
+                    ) : (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#38bdf8"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ flexShrink: 0 }}
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="2" y1="12" x2="22" y2="12" />
+                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                      </svg>
+                    )
+                  ) : (
+                    <RenderFileTreeIcon
+                      name={fileName}
+                      isDirectory={false}
+                      contentSnippet={tab.content ? tab.content.slice(0, 1000) : undefined}
+                    />
+                  )}
                   <span
+                    className="tab-title"
                     style={{
-                      fontSize: 10,
-                      color: 'var(--muted)',
-                      background: 'rgba(255, 255, 255, 0.08)',
-                      padding: '1px 5px',
-                      borderRadius: 3,
-                      marginLeft: 4,
+                      color: gitMeta?.color,
+                      maxWidth: isBrowser ? 180 : 220,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-block',
+                      verticalAlign: 'middle',
                     }}
-                    title={t('editor.readOnlyVersion')}
+                    title={fileName}
                   >
-                    {t('editor.readOnly')}
+                    {fileName}
                   </span>
-                )}
-                {gitMeta?.label && (
+                  {tab.readOnly && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--muted)',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        padding: '1px 5px',
+                        borderRadius: 3,
+                        marginLeft: 4,
+                      }}
+                      title={t('editor.readOnlyVersion')}
+                    >
+                      {t('editor.readOnly')}
+                    </span>
+                  )}
+                  {gitMeta?.label && (
+                    <span
+                      className="tab-git-badge"
+                      style={{
+                        color: gitMeta.color,
+                      }}
+                      title={t('editor.clickGitDiff')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (tab.path === activePath) {
+                          const curLine = editorRef.current?.getPosition()?.lineNumber || 1;
+                          setGitInlineDiffLine(curLine);
+                        } else {
+                          onSelectTab(tab.path);
+                          setTimeout(() => setGitInlineDiffLine(1), 100);
+                        }
+                      }}
+                    >
+                      {gitMeta.label}
+                    </span>
+                  )}
                   <span
-                    className="tab-git-badge"
-                    style={{
-                      color: gitMeta.color,
-                    }}
-                    title={t('editor.clickGitDiff')}
+                    className={`tab-close-btn${tab.dirty ? ' is-dirty' : ''}`}
+                    title={tab.dirty ? t('editor.unsavedClickClose') : t('editor.close')}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (tab.path === activePath) {
-                        const curLine = editorRef.current?.getPosition()?.lineNumber || 1;
-                        setGitInlineDiffLine(curLine);
-                      } else {
-                        onSelectTab(tab.path);
-                        setTimeout(() => setGitInlineDiffLine(1), 100);
-                      }
+                      onCloseTab(tab.path);
                     }}
                   >
-                    {gitMeta.label}
+                    {tab.dirty && <span className="dirty-dot" aria-label={t('editor.dirtyAria')} />}
+                    <svg
+                      className="close-icon"
+                      width="10"
+                      height="10"
+                      viewBox="0 0 16 16"
+                      fill="currentColor"
+                    >
+                      <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z" />
+                    </svg>
                   </span>
-                )}
-                <span
-                  className={`tab-close-btn${tab.dirty ? ' is-dirty' : ''}`}
-                  title={tab.dirty ? t('editor.unsavedClickClose') : t('editor.close')}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCloseTab(tab.path);
-                  }}
-                >
-                  {tab.dirty && <span className="dirty-dot" aria-label={t('editor.dirtyAria')} />}
+                </button>
+              );
+            })}
+            <div className="tabs-rest" aria-hidden />
+          </div>
+
+          <div className="editor-tabs-actions">
+            <button
+              type="button"
+              className="panel-action-btn"
+              title={t('editor.backToPrev')}
+              onClick={() => {
+                markNavigatingBack();
+                const fn = onOpenFileRef?.current ?? onOpenFile;
+                if (fn) {
+                  navigateBack(
+                    {
+                      onOpenFile: fn,
+                      getWorkspaceRoot: () => workspace,
+                      getCurrentPath: () => activeRef.current?.path ?? null,
+                      getCurrentPosition: () => {
+                        const pos = editorRef.current?.getPosition();
+                        return pos ? { line: pos.lineNumber, column: pos.column } : null;
+                      },
+                    },
+                    editorRef.current,
+                  );
+                }
+              }}
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+              </svg>
+            </button>
+
+            {isMarkdown && (
+              <button
+                type="button"
+                className={`panel-action-btn${showMdPreview ? ' active' : ''}`}
+                title={showMdPreview ? t('editor.edit') : t('editor.preview')}
+                onClick={() => {
+                  const ed = editorRef.current;
+                  const curP = activeRef.current?.path;
+                  if (ed && curP) {
+                    try {
+                      const vs = ed.saveViewState();
+                      if (vs) editorViewStateMapRef.current.set(curP, vs);
+                      const sTop = ed.getScrollTop();
+                      const sLeft = ed.getScrollLeft();
+                      const pos = ed.getPosition();
+                      if (pos && pos.lineNumber > 0) {
+                        editorScrollStateMapRef.current.set(curP, {
+                          scrollTop: sTop,
+                          scrollLeft: sLeft,
+                          line: pos.lineNumber,
+                          col: pos.column,
+                        });
+                      }
+                    } catch {
+                      /* ignore */
+                    }
+                  }
+                  setShowMdPreview((v) => !v);
+                }}
+              >
+                {showMdPreview ? (
                   <svg
-                    className="close-icon"
-                    width="10"
-                    height="10"
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <path d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z" />
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                   </svg>
-                </span>
+                ) : (
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
               </button>
-            );
-          })}
-          <div className="tabs-rest" aria-hidden />
+            )}
+
+            {isMarkdown && showMdPreview && (
+              <button
+                type="button"
+                className={`panel-action-btn${showToc ? ' active' : ''}`}
+                title={showToc ? t('editor.collapseToc') : t('editor.expandToc')}
+                onClick={() => setShowToc((v) => !v)}
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <line x1="9" y1="6" x2="20" y2="6" />
+                  <line x1="9" y1="12" x2="20" y2="12" />
+                  <line x1="9" y1="18" x2="20" y2="18" />
+                  <circle cx="4" cy="6" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="12" r="1.5" fill="currentColor" />
+                  <circle cx="4" cy="18" r="1.5" fill="currentColor" />
+                </svg>
+              </button>
+            )}
+
+            {onToggleWordWrap && (
+              <button
+                type="button"
+                className={`panel-action-btn${wordWrap ? ' active' : ''}`}
+                onClick={onToggleWordWrap}
+                title={wordWrap ? t('editor.disableWordWrap') : t('editor.enableWordWrap')}
+              >
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="16 16 14 18 16 20" />
+                  <path d="M3 6h18" />
+                  <path d="M3 12h14a3 3 0 0 1 0 6h-3" />
+                </svg>
+              </button>
+            )}
+
+            <button
+              type="button"
+              className={`panel-action-btn${isSplit ? ' active' : ''}`}
+              onClick={() => {
+                setIsSplit((v) => !v);
+                if (!isSplit && !splitPath) {
+                  const otherTab = tabs.find((t) => t.path !== activePath);
+                  setSplitPath(otherTab ? otherTab.path : activePath);
+                }
+              }}
+              title={isSplit ? t('editor.closeSplit') : t('editor.splitEditorTip')}
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="12" y1="3" x2="12" y2="21" />
+              </svg>
+            </button>
+          </div>
         </div>
       )}
 
@@ -4533,12 +4792,56 @@ export function EditorPane({
               {(isUntitledPath(activePath)
                 ? [untitledTabLabel(activePath)]
                 : activePath.split('/')
-              ).map((part, i, arr) => (
-                <span key={i} className="crumb-item">
-                  <span>{part}</span>
-                  {i < arr.length - 1 && <span className="crumb-sep">&gt;</span>}
-                </span>
-              ))}
+              ).map((part, i, arr) => {
+                const isDir = i < arr.length - 1;
+                const dirPath = isDir ? arr.slice(0, i + 1).join('/') : null;
+                return (
+                  <span
+                    key={i}
+                    className={`crumb-item${isDir ? ' crumb-folder-clickable' : ''}`}
+                    onClick={
+                      isDir && dirPath
+                        ? async (e) => {
+                            e.stopPropagation();
+                            if (breadcrumbFolderDropdown?.dirPath === dirPath) {
+                              setBreadcrumbFolderDropdown(null);
+                              return;
+                            }
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setBreadcrumbFolderDropdown({
+                              dirPath,
+                              coords: {
+                                top: rect.bottom + 4,
+                                left: Math.max(10, Math.min(rect.left, window.innerWidth - 260)),
+                              },
+                              items: [],
+                              loading: true,
+                            });
+                            try {
+                              const list = await window.ide.listDir(dirPath);
+                              setBreadcrumbFolderDropdown((prev) =>
+                                prev && prev.dirPath === dirPath
+                                  ? { ...prev, items: list || [], loading: false }
+                                  : prev,
+                              );
+                            } catch {
+                              setBreadcrumbFolderDropdown((prev) =>
+                                prev && prev.dirPath === dirPath
+                                  ? { ...prev, items: [], loading: false }
+                                  : prev,
+                              );
+                            }
+                          }
+                        : undefined
+                    }
+                    title={isDir ? `查看 ${part} 目录下的文件` : part}
+                    style={isDir ? { cursor: 'pointer' } : undefined}
+                  >
+                    <span>{part}</span>
+                    {isDir && <span className="crumb-sep">&gt;</span>}
+                  </span>
+                );
+              })}
 
               {currentSymbol && (
                 <div
@@ -4713,179 +5016,97 @@ export function EditorPane({
                 </div>,
                 document.body,
               )}
-            <div className="editor-breadcrumb-actions">
-              <button
-                type="button"
-                className="editor-breadcrumb-btn breadcrumb-nav-back-btn"
-                title={t('editor.backToPrev')}
-                onClick={() => {
-                  markNavigatingBack();
-                  const fn = onOpenFileRef?.current ?? onOpenFile;
-                  if (fn) {
-                    navigateBack(
-                      {
-                        onOpenFile: fn,
-                        getWorkspaceRoot: () => workspace,
-                        getCurrentPath: () => activeRef.current?.path ?? null,
-                        getCurrentPosition: () => {
-                          const pos = editorRef.current?.getPosition();
-                          return pos ? { line: pos.lineNumber, column: pos.column } : null;
-                        },
-                      },
-                      editorRef.current,
-                    );
-                  }
-                }}
-              >
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  style={{ verticalAlign: -1 }}
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"
-                  />
-                </svg>
-                <span>{t('editor.back')}</span>
-              </button>
-              {isMarkdown && (
-                <button
-                  type="button"
-                  className={`md-preview-btn${showMdPreview ? ' active' : ''}`}
-                  onClick={() => {
-                    const ed = editorRef.current;
-                    const curP = activeRef.current?.path;
-                    if (ed && curP) {
-                      try {
-                        const vs = ed.saveViewState();
-                        if (vs) editorViewStateMapRef.current.set(curP, vs);
-                        const sTop = ed.getScrollTop();
-                        const sLeft = ed.getScrollLeft();
-                        const pos = ed.getPosition();
-                        if (pos && pos.lineNumber > 0) {
-                          editorScrollStateMapRef.current.set(curP, {
-                            scrollTop: sTop,
-                            scrollLeft: sLeft,
-                            line: pos.lineNumber,
-                            col: pos.column,
-                          });
-                        }
-                      } catch {
-                        /* ignore */
-                      }
-                    }
-                    setShowMdPreview((v) => !v);
+            {breadcrumbFolderDropdown &&
+              createPortal(
+                <div
+                  id="breadcrumb-folder-portal"
+                  className="symbol-outline-dropdown breadcrumb-folder-dropdown"
+                  style={{
+                    position: 'fixed',
+                    top: breadcrumbFolderDropdown.coords.top,
+                    left: breadcrumbFolderDropdown.coords.left,
+                    minWidth: 220,
+                    maxWidth: 320,
+                    maxHeight: 280,
+                    overflowY: 'auto',
+                    zIndex: 10000,
                   }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  {showMdPreview ? (
-                    <>
-                      <svg
-                        width="12.5"
-                        height="12.5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={{ marginRight: 4, verticalAlign: -1 }}
-                      >
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                      {t('editor.edit')}
-                    </>
+                  <div className="symbol-dropdown-header">
+                    <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 11 }}>
+                      {breadcrumbFolderDropdown.dirPath.split('/').pop() ||
+                        breadcrumbFolderDropdown.dirPath}
+                    </span>
+                    <button
+                      type="button"
+                      className="symbol-dropdown-close"
+                      onClick={() => setBreadcrumbFolderDropdown(null)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {breadcrumbFolderDropdown.loading ? (
+                    <div
+                      style={{
+                        padding: '12px 10px',
+                        fontSize: 11,
+                        color: 'var(--muted)',
+                        textAlign: 'center',
+                      }}
+                    >
+                      加载中...
+                    </div>
+                  ) : breadcrumbFolderDropdown.items.length === 0 ? (
+                    <div
+                      style={{
+                        padding: '12px 10px',
+                        fontSize: 11,
+                        color: 'var(--muted)',
+                        textAlign: 'center',
+                      }}
+                    >
+                      空目录
+                    </div>
                   ) : (
-                    <>
-                      <svg
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={{ marginRight: 4, verticalAlign: -2 }}
-                      >
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                      {t('editor.preview')}
-                    </>
+                    <div style={{ padding: 4 }}>
+                      {breadcrumbFolderDropdown.items.map((item) => (
+                        <div
+                          key={item.path}
+                          className="symbol-dropdown-item"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '4px 8px',
+                            cursor: 'pointer',
+                            borderRadius: 4,
+                          }}
+                          onClick={() => {
+                            setBreadcrumbFolderDropdown(null);
+                            if (!item.isDirectory) {
+                              onOpenFile?.(item.path);
+                            }
+                          }}
+                        >
+                          <RenderFileTreeIcon name={item.name} isDirectory={item.isDirectory} />
+                          <span
+                            style={{
+                              fontSize: 12,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {item.name}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </button>
+                </div>,
+                document.body,
               )}
-              {isMarkdown && showMdPreview && (
-                <button
-                  type="button"
-                  className={`editor-breadcrumb-btn${showToc ? ' active' : ''}`}
-                  onClick={() => setShowToc((v) => !v)}
-                  title={showToc ? t('editor.collapseToc') : t('editor.expandToc')}
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    style={{ marginRight: 5, verticalAlign: -2 }}
-                  >
-                    <line x1="9" y1="6" x2="20" y2="6" />
-                    <line x1="9" y1="12" x2="20" y2="12" />
-                    <line x1="9" y1="18" x2="20" y2="18" />
-                    <circle cx="4" cy="6" r="1.5" fill="currentColor" />
-                    <circle cx="4" cy="12" r="1.5" fill="currentColor" />
-                    <circle cx="4" cy="18" r="1.5" fill="currentColor" />
-                  </svg>
-                  {mdHeadings.length > 0
-                    ? t('editor.tocCount', { n: mdHeadings.length })
-                    : t('editor.toc')}
-                </button>
-              )}
-              {onToggleWordWrap && (
-                <button
-                  type="button"
-                  className={`editor-breadcrumb-btn${wordWrap ? ' active' : ''}`}
-                  onClick={onToggleWordWrap}
-                  title={wordWrap ? t('editor.disableWordWrap') : t('editor.enableWordWrap')}
-                >
-                  {t('editor.wordWrapBtn')}
-                </button>
-              )}
-              <button
-                type="button"
-                className={`editor-breadcrumb-btn${isSplit ? ' active' : ''}`}
-                onClick={() => {
-                  setIsSplit((v) => !v);
-                  if (!isSplit && !splitPath) {
-                    const otherTab = tabs.find((t) => t.path !== activePath);
-                    setSplitPath(otherTab ? otherTab.path : activePath);
-                  }
-                }}
-                title={isSplit ? t('editor.closeSplit') : t('editor.splitEditorTip')}
-              >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  style={{ marginRight: 4, verticalAlign: -1 }}
-                >
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <line x1="12" y1="3" x2="12" y2="21" />
-                </svg>
-                <span>{isSplit ? t('editor.splitClose') : t('editor.split')}</span>
-              </button>
-            </div>
           </div>
         )}
 
@@ -5690,12 +5911,15 @@ export function EditorPane({
                     'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", "Microsoft YaHei", monospace',
                   fontWeight: '400',
                   disableMonospaceOptimizations: true,
-                  minimap: { enabled: minimap !== false, showSlider: 'always' },
+                  // 缩略图视口滑块走 Monaco 默认的 mouseover 语义；显隐由 styles.css 统一驱动
+                  minimap: { enabled: minimap !== false, showSlider: 'mouseover' },
                   hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                   automaticLayout: true,
                   smoothScrolling: true,
                   wordWrap: wordWrap ? 'on' : 'off',
                   scrollBeyondLastLine: false,
+                  padding: { top: 8, bottom: 120 },
+                  lineHeight: 22,
                   lineNumbersMinChars: 4,
                   lineDecorationsWidth: 10,
                   glyphMargin: true,
@@ -5862,7 +6086,7 @@ export function EditorPane({
                   ...BASE_MONACO_OPTIONS,
                   fontSize: 13,
                   find: COMMON_FIND_OPTIONS,
-                  minimap: { enabled: minimap !== false, showSlider: 'always' },
+                  minimap: { enabled: minimap !== false, showSlider: 'mouseover' },
                   hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                   automaticLayout: true,
                   smoothScrolling: true,
@@ -5872,6 +6096,8 @@ export function EditorPane({
                   multiCursorModifier: 'alt',
                   scrollBeyondLastColumn: 0,
                   scrollBeyondLastLine: false,
+                  padding: { top: 8, bottom: 120 },
+                  lineHeight: 22,
                   lineNumbersMinChars: 4,
                   overviewRulerLanes: 3,
                   overviewRulerBorder: false,
@@ -6068,8 +6294,11 @@ export function EditorPane({
                       scrollbar: {
                         vertical: 'visible',
                         horizontal: 'auto',
-                        verticalScrollbarSize: 4,
-                        horizontalScrollbarSize: 3,
+                        verticalScrollbarSize: 12,
+                        horizontalScrollbarSize: 8,
+                        verticalSliderSize: 12,
+                        horizontalSliderSize: 8,
+                        useShadows: false,
                       },
                     }}
                   />
@@ -6588,7 +6817,7 @@ export function EditorPane({
                     'semanticHighlighting.enabled': !active.isLargeFile,
                     minimap: {
                       enabled: !active.isLargeFile && minimap !== false,
-                      showSlider: 'always',
+                      showSlider: 'mouseover',
                     },
                     hover: { enabled: true, delay: Math.max(500, hoverDelay ?? 500) },
                     automaticLayout: true,
@@ -6596,6 +6825,8 @@ export function EditorPane({
                     wordWrap: active.isLargeFile ? 'off' : wordWrap ? 'on' : 'off',
                     scrollBeyondLastColumn: 0,
                     scrollBeyondLastLine: false,
+                    padding: { top: 8, bottom: 120 },
+                    lineHeight: 22,
                     bracketPairColorization: { enabled: !active.isLargeFile },
                     guides: {
                       bracketPairs: !active.isLargeFile ? 'active' : false,
@@ -6604,7 +6835,6 @@ export function EditorPane({
                     cursorSmoothCaretAnimation: 'on',
                     cursorBlinking: 'smooth',
                     renderWhitespace: 'selection',
-                    padding: { top: 6, bottom: 6 },
                     lineNumbersMinChars: 4,
                     lineDecorationsWidth: 10,
                     glyphMargin: true,
@@ -7484,6 +7714,36 @@ export function EditorPane({
               <div className="menu-divider" />
             </>
           )}
+
+          <div
+            className="menu-item"
+            onClick={() => {
+              const target = contextMenu.targetPath;
+              setContextMenu(null);
+              onLocateInTree?.(target);
+            }}
+          >
+            <div className="menu-item-left">
+              <svg
+                className="menu-item-icon"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <line x1="22" y1="12" x2="18" y2="12" />
+                <line x1="6" y1="12" x2="2" y2="12" />
+                <line x1="12" y1="6" x2="12" y2="2" />
+                <line x1="12" y1="22" x2="12" y2="18" />
+              </svg>
+              <span>{t('app.locateCurrentFilePlain')}</span>
+            </div>
+          </div>
 
           <div
             className="menu-item"

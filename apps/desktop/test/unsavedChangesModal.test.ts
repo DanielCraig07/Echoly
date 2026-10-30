@@ -77,4 +77,60 @@ describe('Unsaved Changes & Close Confirmation Logic', () => {
     expect(nonDirtyToClose.map((t) => t.path)).toEqual(['untitled:Untitled-1', 'README.md']);
     expect(dirtyToQueue.map((t) => t.path)).toEqual(['src/app.tsx', 'untitled:Untitled-2']);
   });
+
+  it('automatically clears dirty flag when all edits are reverted back to savedContent', () => {
+    const normalizeEol = (s?: string) => (s ?? '').replace(/\r\n/g, '\n');
+
+    const computeTabDirtyState = (
+      tab: OpenTab,
+      newContent: string,
+      explicitMarkDirty?: boolean,
+    ): { dirty: boolean; content: string } => {
+      const baseSaved = tab.savedContent ?? (!tab.dirty ? tab.content : undefined);
+      const isClean =
+        baseSaved !== undefined &&
+        !isUntitledPath(tab.path) &&
+        normalizeEol(newContent) === normalizeEol(baseSaved);
+
+      let nextDirty: boolean;
+      if (explicitMarkDirty === false) {
+        nextDirty = false;
+      } else if (isClean) {
+        nextDirty = false;
+      } else {
+        nextDirty = true;
+      }
+
+      return { dirty: nextDirty, content: newContent };
+    };
+
+    const initialTab: OpenTab = {
+      path: 'src/main.ts',
+      content: 'const a = 1;\nconsole.log(a);',
+      savedContent: 'const a = 1;\nconsole.log(a);',
+      language: 'typescript',
+      dirty: false,
+    };
+
+    // 1. 用户键入新内容 -> dirty 变为 true
+    const editedState = computeTabDirtyState(
+      initialTab,
+      'const a = 1;\nconsole.log(a);\nconst b = 2;',
+    );
+    expect(editedState.dirty).toBe(true);
+
+    const dirtyTab: OpenTab = {
+      ...initialTab,
+      content: editedState.content,
+      dirty: editedState.dirty,
+    };
+
+    // 2. 用户撤销所有改动（Cmd+Z 回退原始内容） -> dirty 自动恢复为 false
+    const revertedState = computeTabDirtyState(dirtyTab, 'const a = 1;\nconsole.log(a);');
+    expect(revertedState.dirty).toBe(false);
+
+    // 3. 用户回退时哪怕混入 CRLF 与 LF 换行符差异 -> 规范化比对依然识别为 clean，dirty 恢复为 false
+    const crlfRevertedState = computeTabDirtyState(dirtyTab, 'const a = 1;\r\nconsole.log(a);');
+    expect(crlfRevertedState.dirty).toBe(false);
+  });
 });

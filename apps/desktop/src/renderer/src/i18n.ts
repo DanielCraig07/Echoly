@@ -401,6 +401,7 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'chat.needWorkspace': { zh: '请先打开工作区', en: 'Open a workspace first' },
   'chat.commandBadgeWorkspace': { zh: '工作区', en: 'Workspace' },
   'chat.commandBadgeUser': { zh: '用户', en: 'User' },
+  'chat.commandBadgeBuiltin': { zh: '内置', en: 'Built-in' },
   'chat.commandEmpty': {
     zh: '没有找到命令。在上面的目录里新建一个 {fileName}，它就会出现在这里。',
     en: 'No commands found. Create a {fileName} in the directory above and it will show up here.',

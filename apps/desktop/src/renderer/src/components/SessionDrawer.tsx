@@ -111,7 +111,9 @@ export function SessionDrawer({
         },
         {
           label: t('session.labelTurns'),
-          value: t('session.turnsCount', { n: target?.messages?.length ?? 0 }),
+          value: t('session.turnsCount', {
+            n: target?.messageCount ?? target?.messages?.length ?? 0,
+          }),
         },
       ],
       tone: 'danger',
@@ -132,7 +134,10 @@ export function SessionDrawer({
   };
 
   const handleLoad = async (session: ChatSession) => {
-    if (currentMessages.length > 0) {
+    const isSkeleton = currentMessages.some(
+      (m) => typeof m.id === 'string' && (m.id.endsWith('_preview') || m.id.endsWith('_snippet')),
+    );
+    if (currentMessages.length > 0 && !isSkeleton) {
       const firstUser = currentMessages.find((m) => m.role === 'user');
       const firstUserSnippet = firstUser ? firstUser.content.slice(0, 40) : '';
       const existing = sessions.find((s) => s.id === currentSessionId);
@@ -156,7 +161,18 @@ export function SessionDrawer({
         ...meta,
       });
     }
-    onLoad(session);
+
+    // 权威全量拉取：抽屉列表来自 listSessions，需从磁盘载入真实全量消息链
+    let fullSession = session;
+    try {
+      const loaded = await window.ide.getSession(session.id);
+      if (loaded && Array.isArray(loaded.messages) && loaded.messages.length > 0) {
+        fullSession = loaded;
+      }
+    } catch (err) {
+      console.warn('Failed to load full session from disk in SessionDrawer', err);
+    }
+    onLoad(fullSession);
   };
 
   return (
@@ -203,11 +219,13 @@ export function SessionDrawer({
                     <span className="session-item-time">{formatTime(s.updatedAt)}</span>
                     <span className="session-item-count">
                       {t('session.countBadge', {
-                        n: s.messages.filter((m) => m.role !== 'tool').length,
+                        n: s.messageCount ?? s.messages.filter((m) => m.role !== 'tool').length,
                       })}
                     </span>
                   </div>
-                  <div className="session-item-preview">{sessionPreview(s.messages, t)}</div>
+                  <div className="session-item-preview">
+                    {s.snippet || sessionPreview(s.messages, t)}
+                  </div>
                   <button
                     type="button"
                     className="session-item-delete"

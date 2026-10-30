@@ -12,7 +12,7 @@ import type { SshConnectRequest, SshConnectResult, SshProfile } from '@deepseek-
 import type { CommandResult, DirEntry, FileStat, WorkspaceBackend } from '@deepseek-ide/tools';
 import type { WorkspaceService } from '../workspace';
 import type { WindowSession } from '../windowRegistry';
-import type { BrowserWindow } from 'electron';
+import { type BrowserWindow, webContents } from 'electron';
 
 interface LocalNcProxy {
   port: number;
@@ -1558,6 +1558,10 @@ export class SshSessionManager {
             const cur = this.live.get(webContentsId);
             if (cur && cur.client === client) {
               this.live.delete(webContentsId);
+              try {
+                const wc = webContents.fromId(webContentsId);
+                wc?.send('ssh:disconnected', { host: req.host, username: req.username });
+              } catch {}
             }
           }
         }

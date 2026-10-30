@@ -125,8 +125,11 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
               strokeLinejoin="round"
               style={{ color: 'var(--accent, #3b82f6)' }}
             >
-              <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" />
-              <path d="M12 6v6l4 2" />
+              <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+              <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+              <path d="M12 5v13" />
+              <path d="M16 8h1a2 2 0 0 1 2 2v1" />
+              <path d="M8 8H7a2 2 0 0 0-2 2v1" />
             </svg>
             <span
               style={{

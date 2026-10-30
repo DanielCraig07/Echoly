@@ -112,6 +112,15 @@ export const MONACO_KEYBINDINGS: Record<string, string> = {
   命令面板: isMac ? '⇧⌘P' : 'F1',
 };
 
+/**
+ * 「这块 DOM 属于右键菜单」的判据。
+ *
+ * `scanAllMenus` 从 document 起扫，凡是写内联样式的循环都得先拿它过一遍：
+ * 菜单的修复样式（display:none !important 之类）一旦落到编辑器本体上，
+ * 就是不可逆的破坏 —— 内联 !important 压得过样式表里任何规则。
+ */
+const MENU_SCOPE_SELECTOR = '.monaco-menu-container, .monaco-menu, .context-view';
+
 function translateText(text: string): string {
   const trimmed = text.trim();
   if (MONACO_ZH_TRANSLATIONS[trimmed]) {
@@ -1223,11 +1232,17 @@ export function setupMonacoChineseLocalization() {
       ensureGlobalMenuFixStyleSheet();
       const scanRoot = (root: Document | ShadowRoot | Element) => {
         try {
-          // 彻底隐藏任何常驻滚动条与滑块
-          const scrollbars = root.querySelectorAll<HTMLElement>(
-            '.scrollbar, .scrollbar.vertical, .slider',
-          );
+          // 彻底隐藏菜单自身的滚动条与滑块。
+          //
+          // 这段扫描的根是 document，所以**必须先判归属**：早先这里没有 closest 判断，
+          // 一次右键就把代码编辑器的垂直滚动条一起写成内联 display:none !important ——
+          // 内联 !important 压得过样式表里的任何 !important，右键过一次编辑区，
+          // 那条滑块就再也回不来了（这正是「滚动条滑块偶发消失」的根因之一，
+          // v0.0.57 只在 CSS 侧加 !important 是压不住它的）。同理，下面的
+          // `overflow: visible` 若落到编辑器的 scrollable 上，还会打乱它的裁剪与测量。
+          const scrollbars = root.querySelectorAll<HTMLElement>('.scrollbar, .slider');
           scrollbars.forEach((sb) => {
+            if (!sb.closest(MENU_SCOPE_SELECTOR)) return;
             sb.style.setProperty('display', 'none', 'important');
             sb.style.setProperty('opacity', '0', 'important');
             sb.style.setProperty('visibility', 'hidden', 'important');
@@ -1235,9 +1250,10 @@ export function setupMonacoChineseLocalization() {
             sb.style.setProperty('height', '0px', 'important');
           });
 
-          // 清除内部 scrollable 的边框与多余滚动
+          // 清除菜单内部 scrollable 的边框与多余滚动
           const scrollables = root.querySelectorAll<HTMLElement>('.monaco-scrollable-element');
           scrollables.forEach((el) => {
+            if (!el.closest(MENU_SCOPE_SELECTOR)) return;
             el.style.setProperty('outline', 'none', 'important');
             el.style.setProperty('border', 'none', 'important');
             el.style.setProperty('box-shadow', 'none', 'important');

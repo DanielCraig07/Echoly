@@ -863,6 +863,8 @@ export interface FileTreeNode {
 export interface OpenTab {
   path: string;
   content: string;
+  /** 上次落盘保存或加载时的基准内容（用于回退所有改动后自动消除 dirty 状态） */
+  savedContent?: string;
   language: string;
   dirty: boolean;
   /** Custom display title for tab (e.g. read-only Git revision) */
@@ -1554,6 +1556,7 @@ export interface IpcApi {
   listSessions: () => Promise<ChatSession[]>;
   getSession: (id: string) => Promise<ChatSession | null>;
   saveSession: (session: ChatSession) => Promise<void>;
+  renameSession?: (id: string, title: string) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   probeLlm: (options?: {
     baseUrl?: string;
@@ -1757,6 +1760,7 @@ export interface IpcApi {
   onFsChanged?: (cb: (data: { type: string; path?: string }) => void) => () => void;
   onGitCloneLog: (cb: (line: string) => void) => () => void;
   onGitBranchSwitched: (cb: (data: { branch: string }) => void) => () => void;
+  onSshDisconnected?: (cb: (data: { host: string; username: string }) => void) => () => void;
   onDownloadProgress: (
     cb: (progress: { percent: number; downloaded: number; total: number }) => void,
   ) => () => void;

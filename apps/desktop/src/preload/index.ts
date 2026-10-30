@@ -65,6 +65,7 @@ const api: IpcApi = {
   listSessions: () => ipcRenderer.invoke('session:list'),
   getSession: (id) => ipcRenderer.invoke('session:get', id),
   saveSession: (session: ChatSession) => ipcRenderer.invoke('session:save', session),
+  renameSession: (id: string, title: string) => ipcRenderer.invoke('session:rename', id, title),
   deleteSession: (id) => ipcRenderer.invoke('session:delete', id),
   probeLlm: (options?: { baseUrl?: string; apiKey?: string; model?: string; provider?: string }) =>
     ipcRenderer.invoke('agent:probe', options),
@@ -178,6 +179,12 @@ const api: IpcApi = {
     const listener = (_: Electron.IpcRendererEvent, data: { branch: string }) => cb(data);
     ipcRenderer.on('git:branchSwitched', listener);
     return () => ipcRenderer.removeListener('git:branchSwitched', listener);
+  },
+  onSshDisconnected: (cb: (data: { host: string; username: string }) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { host: string; username: string }) =>
+      cb(data);
+    ipcRenderer.on('ssh:disconnected', listener);
+    return () => ipcRenderer.removeListener('ssh:disconnected', listener);
   },
   onDownloadProgress: (cb) => {
     const listener = (

@@ -106,4 +106,96 @@ describe('SessionStore with lightweight indexing', () => {
     expect(store.get('sess-del')).toBeNull();
     expect(store.list().length).toBe(0);
   });
+
+  it('renames a session safely without touching messages', () => {
+    const session: ChatSession = {
+      id: 'sess-rename',
+      title: '原标题',
+      messages: [
+        { id: 'm1', role: 'user', content: 'hello', createdAt: 100 },
+        { id: 'm2', role: 'assistant', content: 'world', createdAt: 200 },
+      ],
+      updatedAt: 100,
+    };
+    store.save(session);
+
+    store.rename('sess-rename', '新标题');
+    const updated = store.get('sess-rename');
+    expect(updated?.title).toBe('新标题');
+    expect(updated?.customTitle).toBe(true);
+    expect(updated?.messages.length).toBe(2);
+
+    const list = store.list();
+    expect(list[0].title).toBe('新标题');
+    expect(list[0].messageCount).toBe(2);
+  });
+
+  it('guards full session history from being overwritten by skeleton messages', () => {
+    const fullSession: ChatSession = {
+      id: 'sess-full',
+      title: '长对话会话',
+      messages: [
+        { id: 'msg-1', role: 'user', content: '问题1', createdAt: 100 },
+        { id: 'msg-2', role: 'assistant', content: '回答1', createdAt: 200 },
+        { id: 'msg-3', role: 'user', content: '问题2', createdAt: 300 },
+        { id: 'msg-4', role: 'assistant', content: '回答2', createdAt: 400 },
+        { id: 'msg-5', role: 'user', content: '问题3', createdAt: 500 },
+      ],
+      updatedAt: 500,
+      workspacePath: '/path/test',
+    };
+    store.save(fullSession);
+    expect(store.get('sess-full')?.messages.length).toBe(5);
+
+    // List returns skeleton with 2 fake messages
+    const list = store.list();
+    expect(list[0].messages.length).toBe(2);
+    expect(list[0].messages[0].id).toContain('_preview');
+
+    // Attempt to save the skeleton item back (e.g. from an unpatched modal)
+    const skeletonSession: ChatSession = {
+      ...list[0],
+      title: '修改标题',
+    };
+    store.save(skeletonSession);
+
+    // Full session on disk MUST still have all 5 original messages!
+    const saved = store.get('sess-full');
+    expect(saved).not.toBeNull();
+    expect(saved?.title).toBe('修改标题');
+    expect(saved?.messages.length).toBe(5);
+    expect(saved?.messages[0].id).toBe('msg-1');
+    expect(saved?.messages[4].id).toBe('msg-5');
+  });
+
+  it('allows legitimate rollback when first message matches and contains no skeleton', () => {
+    const fullSession: ChatSession = {
+      id: 'sess-rollback',
+      title: '回滚测试会话',
+      messages: [
+        { id: 'm1', role: 'user', content: '问题1', createdAt: 100 },
+        { id: 'm2', role: 'assistant', content: '回答1', createdAt: 200 },
+        { id: 'm3', role: 'user', content: '问题2', createdAt: 300 },
+        { id: 'm4', role: 'assistant', content: '回答2', createdAt: 400 },
+      ],
+      updatedAt: 400,
+    };
+    store.save(fullSession);
+    expect(store.get('sess-rollback')?.messages.length).toBe(4);
+
+    // 用户在第一轮点击重新编辑（回滚至第一轮，剩下 2 条真实消息）
+    const rolledBackSession: ChatSession = {
+      ...fullSession,
+      messages: [
+        { id: 'm1', role: 'user', content: '问题1(已编辑)', createdAt: 100 },
+        { id: 'm2', role: 'assistant', content: '回答1', createdAt: 200 },
+      ],
+      updatedAt: 450,
+    };
+    store.save(rolledBackSession);
+
+    const saved = store.get('sess-rollback');
+    expect(saved?.messages.length).toBe(2);
+    expect(saved?.messages[0].content).toBe('问题1(已编辑)');
+  });
 });

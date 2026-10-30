@@ -354,7 +354,9 @@ export function SessionModal({
         },
         {
           label: t('session.labelTurns'),
-          value: t('session.turnsCount', { n: target?.messages?.length ?? 0 }),
+          value: t('session.turnsCount', {
+            n: target?.messageCount ?? target?.messages?.length ?? 0,
+          }),
         },
       ],
       tone: 'danger',
@@ -402,7 +404,18 @@ export function SessionModal({
         // 关键：立即同步更新当前会话状态并通知 ChatPanel，不等待后台磁盘写入
         setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)));
         onRenameSession?.(id, trimmed);
-        await window.ide.saveSession(updated);
+        if (window.ide.renameSession) {
+          await window.ide.renameSession(id, trimmed);
+        } else {
+          // 降级兜底：拉取全量会话后落盘，绝不可将 target 中的骨架消息写回磁盘
+          const full = await window.ide.getSession(id);
+          await window.ide.saveSession({
+            ...(full || target),
+            title: trimmed,
+            customTitle: true,
+            updatedAt: Date.now(),
+          });
+        }
       }
       setEditingId(null);
     } finally {
@@ -460,7 +473,9 @@ export function SessionModal({
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const matchTitle = s.title.toLowerCase().includes(q);
-    const matchMsg = s.messages.some((m) => m.content.toLowerCase().includes(q));
+    const matchMsg =
+      (s.snippet && s.snippet.toLowerCase().includes(q)) ||
+      s.messages.some((m) => m.content.toLowerCase().includes(q));
     const ws = formatSessionWorkspaceLine(s, t);
     const matchWs =
       ws.text.toLowerCase().includes(q) ||
@@ -946,7 +961,8 @@ export function SessionModal({
                 const isCurrent = s.id === currentSessionId;
                 const isEditing = editingId === s.id;
                 const ws = formatSessionWorkspaceLine(s, t);
-                const msgCount = s.messages.filter((m) => m.role !== 'tool').length;
+                const msgCount =
+                  s.messageCount ?? s.messages.filter((m) => m.role !== 'tool').length;
 
                 return (
                   <div

@@ -241,13 +241,74 @@ export class SessionStore {
   }
 
   save(session: ChatSession): void {
+    const filePath = this.file(session.id);
+    let sessionToSave = session;
+
+    // 核心安全防护：绝不允许用骨架消息或轻量索引条目覆盖破坏磁盘上的真实完整会话
+    if (fs.existsSync(filePath)) {
+      try {
+        const existing = JSON.parse(fs.readFileSync(filePath, 'utf8')) as ChatSession;
+        const incomingMessages = session.messages || [];
+        const existingMessages = existing.messages || [];
+
+        const incomingHasSkeleton =
+          incomingMessages.length > 0 &&
+          incomingMessages.some(
+            (m) =>
+              typeof m.id === 'string' && (m.id.endsWith('_preview') || m.id.endsWith('_snippet')),
+          );
+
+        const isDegradedOrSkeleton =
+          incomingHasSkeleton ||
+          (!incomingMessages.length && existingMessages.length > 0) ||
+          (existingMessages.length > incomingMessages.length &&
+            incomingMessages.length <= 2 &&
+            existingMessages[0]?.id !== incomingMessages[0]?.id);
+
+        if (isDegradedOrSkeleton) {
+          sessionToSave = {
+            ...session,
+            messages: existingMessages,
+            messageCount: existing.messageCount ?? existingMessages.length,
+          };
+        }
+      } catch (err) {
+        console.warn('[SessionStore] Failed to read existing session for safe merge', err);
+      }
+    }
+
     // 1. 原子写：写独立会话完整文件
-    writeFileAtomic(this.file(session.id), JSON.stringify(session, null, 2));
+    writeFileAtomic(filePath, JSON.stringify(sessionToSave, null, 2));
 
     // 2. 增量更新内存索引与轻量索引文件
     const index = this.ensureIndex();
-    index.set(session.id, this.buildIndexItem(session));
+    index.set(sessionToSave.id, this.buildIndexItem(sessionToSave));
     this.flushIndex();
+  }
+
+  /**
+   * 独立重命名接口，只更新会话元数据（标题），杜绝触碰消息体
+   */
+  rename(id: string, newTitle: string): void {
+    const trimmed = newTitle.trim();
+    if (!trimmed) return;
+    const existing = this.get(id);
+    if (!existing) {
+      // 容错：如果仅在索引中存在
+      const index = this.ensureIndex();
+      const item = index.get(id);
+      if (item) {
+        item.title = trimmed;
+        item.customTitle = true;
+        item.updatedAt = Date.now();
+        this.flushIndex();
+      }
+      return;
+    }
+    existing.title = trimmed;
+    existing.customTitle = true;
+    existing.updatedAt = Date.now();
+    this.save(existing);
   }
 
   delete(id: string): void {

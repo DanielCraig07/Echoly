@@ -774,13 +774,14 @@ function TerminalSession({
     const scrollTop = viewport.scrollTop;
 
     if (scrollHeight <= clientHeight + 2) {
-      scrollbar.style.opacity = '0';
-      scrollbar.style.pointerEvents = 'none';
+      scrollbar.classList.remove('is-scrollable');
       return;
     }
 
-    scrollbar.style.opacity = '1';
-    scrollbar.style.pointerEvents = 'auto';
+    // 只标记「内容超出视口」这一个事实，显隐与命中（pointer-events）都交给 CSS。
+    // 早先这里直接写内联 style.opacity / style.pointerEvents，内联样式压过样式表里的
+    // :hover 规则，于是 no-wrap 模式下这条滚动条永远挂在那里，还挡住了右下角 10px 的终端点击。
+    scrollbar.classList.add('is-scrollable');
 
     const thumbRatio = clientHeight / scrollHeight;
     const thumbHeight = Math.max(24, thumbRatio * scrollbar.clientHeight);

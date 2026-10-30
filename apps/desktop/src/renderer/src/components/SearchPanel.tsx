@@ -356,7 +356,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
   useEffect(() => {
     const timer = setTimeout(() => {
       void performSearch(query, isCaseSensitive);
-    }, 150);
+    }, 300);
     return () => clearTimeout(timer);
   }, [query, isCaseSensitive, performSearch]);
 

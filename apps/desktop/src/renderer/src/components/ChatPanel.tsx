@@ -462,7 +462,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         if (t.id !== id) return t;
         const updated = updater(t);
         // Auto-save to IPC if messages changed
-        if (updated.messages.length > 0 && updated.messages !== t.messages) {
+        const hasSkeleton =
+          updated.messages.length > 0 &&
+          updated.messages.some(
+            (m) =>
+              typeof m.id === 'string' && (m.id.endsWith('_preview') || m.id.endsWith('_snippet')),
+          );
+        if (updated.messages.length > 0 && updated.messages !== t.messages && !hasSkeleton) {
           const firstUserMsg = updated.messages.find((m) => m.role === 'user');
           const firstUserSnippet = firstUserMsg ? firstUserMsg.content.slice(0, 40) : '';
           // 判定收在 utils.isCustomSessionTitle 里（原先这段在 5 处各抄一遍，
@@ -1116,26 +1122,68 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     [activeTab?.id, activeTab?.input, mentionState.cursorIndex],
   );
 
+  const BUILTIN_SLASH_COMMANDS = useMemo(
+    () => [
+      {
+        name: 'test',
+        description: '为当前打开的文件编写完备的单元测试',
+        body: '请为当前打开的文件编写完备且具备高覆盖率的单元测试，涵盖正常分支、边界情况与异常处理。',
+      },
+      {
+        name: 'fix',
+        description: '诊断并修复当前代码中的错误与异常',
+        body: '请仔细排查并修复当前代码中的错误、警告或潜在异常，并解释修改原因。',
+      },
+      {
+        name: 'explain',
+        description: '详细解析当前代码的架构、逻辑与数据流',
+        body: '请通俗易懂且深入地解释当前代码的核心设计、关键实现逻辑与数据流转过程。',
+      },
+      {
+        name: 'review',
+        description: '对当前代码进行严格的代码审查（Code Review）',
+        body: '请对当前代码进行严格的代码审查，指出安全隐患、性能瓶颈、可维护性问题及改进建议。',
+      },
+      {
+        name: 'refactor',
+        description: '重构当前代码以提高可读性与模块化',
+        body: '请在保持现有对外行为和契约不变的前提下，重构当前代码，提升可读性、可维护性与代码整洁度。',
+      },
+    ],
+    [],
+  );
+
   /**
    * 命令候选项。
    *
-   * 与 `@` 的文件项不同，这里**不做存在性校验** —— 命令来自刚扫过的磁盘，
+   * 与 `@` 的文件项不同，这里**不做存在性校验** —— 命令来自刚扫过的磁盘与内置预设，
    * 少了它只意味着下拉里少一行，不会让已插入的引用变成死链接。
    */
-  const commandCandidates = useMemo<MentionItem[]>(
-    () =>
-      commands.map((c) => ({
-        id: `command:${c.source}:${c.name}`,
-        type: 'command',
-        title: `/${c.name}`,
-        desc: c.description,
-        insertText: `/${c.name} `,
-        commandBody: c.body,
-        badge:
-          c.source === 'workspace' ? t('chat.commandBadgeWorkspace') : t('chat.commandBadgeUser'),
-      })),
-    [commands, t],
-  );
+  const commandCandidates = useMemo<MentionItem[]>(() => {
+    const userList: MentionItem[] = commands.map((c) => ({
+      id: `command:${c.source}:${c.name}`,
+      type: 'command',
+      title: `/${c.name}`,
+      desc: c.description,
+      insertText: `/${c.name} `,
+      commandBody: c.body,
+      badge:
+        c.source === 'workspace' ? t('chat.commandBadgeWorkspace') : t('chat.commandBadgeUser'),
+    }));
+    const userNames = new Set(commands.map((c) => c.name.toLowerCase()));
+    const builtinList: MentionItem[] = BUILTIN_SLASH_COMMANDS.filter(
+      (b) => !userNames.has(b.name.toLowerCase()),
+    ).map((b) => ({
+      id: `command:builtin:${b.name}`,
+      type: 'command',
+      title: `/${b.name}`,
+      desc: b.description,
+      insertText: `/${b.name} `,
+      commandBody: b.body,
+      badge: t('chat.commandBadgeBuiltin'),
+    }));
+    return [...userList, ...builtinList];
+  }, [commands, BUILTIN_SLASH_COMMANDS, t]);
 
   const filteredCommands = useMemo(() => {
     if (!commandState.isOpen) return [];
@@ -1608,7 +1656,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       id: session.id,
       title: session.title,
       customTitle: isCustom,
-      messages: session.messages,
+      messages: session.messages || [],
       attachments: [],
       mode: 'agent',
       input: '',
@@ -2427,20 +2475,15 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
   const handleLoadSessionFromModal = useCallback(
     async (session: ChatSession) => {
-      // 若会话消息为轻量索引骨架（消息数少于真实条数），按需拉取全量会话
+      // 权威全量拉取：历史列表默认仅提供轻量索引/摘要骨架，在此从磁盘载入完整消息链
       let fullSession = session;
-      if (
-        session.messageCount !== undefined &&
-        (session.messages?.length ?? 0) < session.messageCount
-      ) {
-        try {
-          const loaded = await window.ide.getSession(session.id);
-          if (loaded && loaded.messages && loaded.messages.length > 0) {
-            fullSession = loaded;
-          }
-        } catch (err) {
-          console.warn('Failed to load full session from disk', err);
+      try {
+        const loaded = await window.ide.getSession(session.id);
+        if (loaded && Array.isArray(loaded.messages) && loaded.messages.length > 0) {
+          fullSession = loaded;
         }
+      } catch (err) {
+        console.warn('Failed to load full session from disk', err);
       }
 
       // 直接在当前聊天面板中打开该历史会话，不再触发切换工作区弹窗
@@ -2458,19 +2501,22 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
 
       const existing = tabs.find((t) => t.id === fullSession.id);
       if (existing) {
-        // 如果当前标签页是空白无内容的且不是这个会话，顺手把这个空白标签关掉，避免留下一堆无用的空白标签
-        if (
-          activeTab &&
-          activeTab.id !== existing.id &&
-          activeTab.messages.length === 0 &&
-          !activeTab.streaming &&
-          tabs.length > 1
-        ) {
-          setTabs((prev) => prev.filter((t) => t.id !== activeTab.id));
-        } else {
-          setTabs((prev) =>
-            prev.map((t) =>
-              t.id === session.id
+        setTabs((prev) =>
+          prev
+            // 如果之前激活的是无内容的空白标签页且非目标会话，顺手清理掉空白标签
+            .filter(
+              (t) =>
+                !(
+                  activeTab &&
+                  t.id === activeTab.id &&
+                  t.id !== existing.id &&
+                  t.messages.length === 0 &&
+                  !t.streaming &&
+                  prev.length > 1
+                ),
+            )
+            .map((t) =>
+              t.id === existing.id
                 ? {
                     ...t,
                     title: fullSession.title || t.title,
@@ -2482,8 +2528,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
                   }
                 : t,
             ),
-          );
-        }
+        );
         setActiveTabId(existing.id);
         void refreshCheckpoints(sessionRunIds);
         return;
@@ -2786,8 +2831,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z" />
-              <path d="M12 6v6l4 2" />
+              <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+              <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+              <path d="M12 5v13" />
+              <path d="M16 8h1a2 2 0 0 1 2 2v1" />
+              <path d="M8 8H7a2 2 0 0 0-2 2v1" />
             </svg>
           </button>
           <button

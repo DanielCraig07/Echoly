@@ -16,7 +16,7 @@
   --bg-topbar-from: #141414;
   --bg-topbar-to: #141414;
   --bg-tabs: #141414;
-  --bg-editor: #181818;
+  --bg-editor: #1e1e1e;
   --bg-chat: #181818;
   --bg-bottom: #141414;
   --bg-modal: #141414;
@@ -2932,10 +2932,10 @@ span.keybinding {
 }
 
 .tab.active {
-  background: var(--bg-editor, #181818);
+  background: var(--bg-editor, #1e1e1e);
   color: #ffffff;
   border-top: 2px solid var(--accent-light, #38bdf8);
-  border-bottom: 1px solid var(--bg-editor, #181818);
+  border-bottom: 1px solid var(--bg-editor, #1e1e1e);
 }
 
 .tab .tab-title {
@@ -6712,13 +6712,21 @@ span.keybinding {
 .remote-dir-edit-wrap input {
   flex: 1;
   min-width: 0;
-  background: transparent;
-  border: none;
-  outline: none;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
   color: var(--text);
   font-family: var(--font-mono, monospace);
   font-size: 12.5px;
   padding: 2px 4px;
+}
+
+.remote-dir-edit-wrap input:focus {
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .remote-dir-icon-action-btn {
@@ -7437,7 +7445,10 @@ span.keybinding {
   display: none !important;
 }
 
-/* 自定义纵向滚动条覆盖层：固定在 terminal-session 右边缘，悬停时显示 */
+/* 自定义纵向滚动条覆盖层：固定在 terminal-session 右边缘
+   默认完全隐藏；鼠标进入终端区域（或正在本身上操作）才显形。
+   `.is-scrollable` 由 TerminalPanel 按「内容是否超出视口」加/去 —— 不可滚动时连
+   hover 也不该冒出一条假滑轨。 */
 .terminal-vscroll-overlay {
   position: absolute;
   top: 0;
@@ -7447,13 +7458,22 @@ span.keybinding {
   z-index: 10;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.2s ease;
+  visibility: hidden;
+  /* 隐藏时不接事件：否则这条 10px 覆盖层会从终端手里夺走右下角的选择与点击 */
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    visibility 0.2s ease;
   background: transparent;
 }
 
-.terminal-session:hover .terminal-vscroll-overlay,
-.terminal-vscroll-overlay:active {
+/* 鼠标进入终端区域显形；`:active` 覆盖拖拽 —— 拖动滑块时指针可能滑出终端，
+   但按钮一直按着，:active 会沿祖先链作用到 overlay 上，画面不会中途消失。 */
+.terminal-session:hover .terminal-vscroll-overlay.is-scrollable,
+.terminal-vscroll-overlay.is-scrollable:active {
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .terminal-vscroll-thumb {
@@ -8546,7 +8566,8 @@ span.keybinding {
   box-sizing: border-box;
 }
 
-/* xterm.js 纵向滚动条（换行模式和不换行模式均有效） */
+/* xterm.js 纵向滚动条（换行模式和不换行模式均有效）
+   默认 thumb 全程透明（轨道仍占位，不改变终端列宽），鼠标悬浮终端区域才显形。 */
 /* overflow-x: hidden 防止 FitAddon 与 xterm padding 计算误差导致的水平滚动条 */
 .terminal-host .xterm-viewport {
   overflow-x: hidden !important;
@@ -8562,9 +8583,15 @@ span.keybinding {
 }
 
 .terminal-host .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.22) !important;
+  background: transparent !important;
   border-radius: 4px !important;
   border: 2px solid transparent !important; /* 视觉收窄，轨道空间更宽 */
+  background-clip: content-box !important;
+  transition: background 0.15s ease;
+}
+
+.terminal-host:hover .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22) !important;
   background-clip: content-box !important;
 }
 
@@ -8578,7 +8605,7 @@ span.keybinding {
   background-clip: content-box !important;
 }
 
-[data-theme='light'] .terminal-host .xterm-viewport::-webkit-scrollbar-thumb {
+[data-theme='light'] .terminal-host:hover .xterm-viewport::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.22) !important;
   background-clip: content-box !important;
 }
@@ -15036,64 +15063,77 @@ body.db-col-resizing .db-data-cell {
   height: 0 !important;
 }
 
-/* 确保 Monaco 垂直滚动条自身层级 (z-index: 10) 高于 minimap (z-index: 5)，且不阻挡 minimap 鼠标手势 */
+/* ── Monaco 垂直滚动条：轨道常驻，滑块仅在鼠标悬浮编辑区时显形 ────────────────
+   轨道本身保持 opacity/visibility/display 常驻 + pointer-events: auto，不是笔误：
+   历史上曾用 display: none 隐藏「不必要」的滚动条，导致 Monaco 的宽度测量归零、
+   编辑器内容偶发回退（见 v0.0.57 那笔修复）。用户眼睛看到的是滑块 (slider)，
+   所以「隐藏」只做在滑块的 opacity 上 —— 轨道照旧占位，布局一动不动。 */
 .monaco-editor .overflow-guard > .monaco-scrollable-element > .scrollbar.vertical,
 .monaco-editor .scrollbar.vertical,
-.monaco-diff-editor .monaco-editor .scrollbar.vertical {
+.monaco-editor .scrollbar.vertical.visible,
+.monaco-editor .scrollbar.vertical.invisible,
+.monaco-diff-editor .monaco-editor .scrollbar.vertical,
+.monaco-diff-editor .monaco-editor .scrollbar.vertical.invisible {
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
+  pointer-events: auto !important;
   z-index: 10 !important;
+  width: 14px !important;
+  background: transparent !important;
 }
 
-.monaco-editor .scrollbar.vertical,
+/* 垂直滚动条滑块 (Vertical Slider)：默认透明，鼠标悬浮编辑区时显形 */
+.monaco-editor .scrollbar.vertical .slider,
+.monaco-diff-editor .monaco-editor .scrollbar.vertical .slider {
+  width: 9px !important;
+  right: 2px !important;
+  left: auto !important;
+  border-radius: 5px !important;
+  background: rgba(255, 255, 255, 0.32) !important;
+  opacity: 0 !important;
+  transition:
+    opacity 0.15s ease,
+    background 0.15s ease,
+    width 0.15s ease !important;
+}
+
+/* 悬浮编辑区 / 悬浮滚动条本身 / 正在拖拽 → 滑块显形。
+   `:not(.invisible)` 是必需的：轨道被上面那条规则按「常驻」强制显示后，内容不需要
+   滚动时 Monaco 加的 `.invisible` 只剩类名还留着；不排掉它，短文件的编辑区一悬停
+   就会长出一根占满全高的假滑块。 */
+.monaco-editor:hover .scrollbar.vertical:not(.invisible) .slider,
+.monaco-diff-editor:hover .monaco-editor .scrollbar.vertical:not(.invisible) .slider,
+.monaco-editor .scrollbar.vertical:not(.invisible):hover .slider,
+.monaco-editor .scrollbar.vertical .slider.active,
+.monaco-diff-editor .monaco-editor .scrollbar.vertical .slider.active {
+  opacity: 1 !important;
+}
+
+[data-theme='light'] .monaco-editor .scrollbar.vertical .slider,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider {
+  background: rgba(0, 0, 0, 0.25) !important;
+}
+
+/* 水平滚动条 (Horizontal Scrollbar) 规范 */
 .monaco-editor .scrollbar.horizontal,
-.monaco-diff-editor .scrollbar.vertical,
 .monaco-diff-editor .scrollbar.horizontal {
+  height: 8px !important;
+  z-index: 10 !important;
   opacity: 0.85 !important;
   transition: opacity 0.2s ease-in-out !important;
 }
 
-/* 仅在内容不可滚动时通过 opacity 隐藏，严禁使用 display: none 导致 Monaco 测量高度归零 */
-.monaco-editor .scrollbar.invisible,
-.monaco-diff-editor .scrollbar.invisible,
-.monaco-editor:hover .scrollbar.invisible,
-.monaco-diff-editor:hover .scrollbar.invisible,
-.monaco-diff-editor:hover .monaco-editor .scrollbar.invisible {
+.monaco-editor .scrollbar.horizontal.invisible,
+.monaco-diff-editor .scrollbar.horizontal.invisible {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
 }
 
-.monaco-editor:hover .scrollbar.vertical:not(.invisible),
 .monaco-editor:hover .scrollbar.horizontal:not(.invisible),
-.monaco-diff-editor:hover .scrollbar.vertical:not(.invisible),
-.monaco-diff-editor:hover .scrollbar.horizontal:not(.invisible),
-.monaco-diff-editor:hover .monaco-editor .scrollbar.vertical:not(.invisible),
-.monaco-diff-editor:hover .monaco-editor .scrollbar.horizontal:not(.invisible) {
+.monaco-diff-editor:hover .scrollbar.horizontal:not(.invisible) {
   opacity: 1 !important;
-}
-
-.monaco-editor .scrollbar.vertical,
-.monaco-diff-editor .monaco-editor .scrollbar.vertical {
-  width: 14px !important;
-  background: transparent !important;
-  z-index: 10 !important;
-}
-
-.monaco-editor .scrollbar.horizontal,
-.monaco-diff-editor .monaco-editor .scrollbar.horizontal {
-  height: 8px !important;
-  z-index: 10 !important;
-}
-
-.monaco-editor .scrollbar.vertical .slider,
-.monaco-diff-editor .monaco-editor .scrollbar.vertical .slider {
-  width: 8px !important;
-  right: 2px !important;
-  left: auto !important;
-  border-radius: 4px !important;
-  background: rgba(255, 255, 255, 0.45) !important;
-  transition:
-    background 0.15s ease,
-    width 0.15s ease !important;
 }
 
 .monaco-editor .scrollbar.horizontal .slider,
@@ -15102,38 +15142,52 @@ body.db-col-resizing .db-data-cell {
   top: auto !important;
   bottom: 1px !important;
   border-radius: 3px !important;
-  background: rgba(255, 255, 255, 0.45) !important;
-}
-
-.monaco-editor .scrollbar.vertical .slider:hover,
-.monaco-diff-editor .monaco-editor .scrollbar.vertical .slider:hover {
-  background: rgba(255, 255, 255, 0.8) !important;
-  width: 10px !important;
+  background: rgba(255, 255, 255, 0.25) !important;
 }
 
 .monaco-editor .scrollbar.horizontal .slider:hover,
-.monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider:hover {
-  background: rgba(255, 255, 255, 0.8) !important;
+.monaco-editor .scrollbar.horizontal .slider.active,
+.monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider:hover,
+.monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider.active {
+  background: rgba(255, 255, 255, 0.48) !important;
   height: 6px !important;
 }
 
-/* Monaco Minimap Viewport Slider: 无论鼠标是否悬浮，视口滑块均 100% 显式呈现，带清晰双向高亮框 */
+[data-theme='light'] .monaco-editor .scrollbar.horizontal .slider,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider {
+  background: rgba(0, 0, 0, 0.18) !important;
+}
+
+[data-theme='light'] .monaco-editor .scrollbar.horizontal .slider:hover,
+[data-theme='light'] .monaco-editor .scrollbar.horizontal .slider.active,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider:hover,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider.active {
+  background: rgba(0, 0, 0, 0.38) !important;
+}
+
+/* Monaco Minimap Viewport Slider: 默认隐藏，鼠标悬浮编辑区时显形（低饱和度不刺眼）
+   只留一条基础选择器：`.minimap-slider` 必定在 `.minimap` 内，再按 slider-mouseover /
+   slider-always 分列写一遍只会让「显/隐由谁说了算」变得难查。 */
 .monaco-editor .minimap .minimap-slider,
-.monaco-editor .minimap.slider-mouseover .minimap-slider,
-.monaco-editor .minimap.slider-always .minimap-slider,
 .monaco-diff-editor .monaco-editor .minimap .minimap-slider {
+  opacity: 0 !important;
+  transition: opacity 0.15s ease !important;
+}
+
+.monaco-editor:hover .minimap .minimap-slider,
+.monaco-editor .minimap-slider.active,
+.monaco-diff-editor:hover .monaco-editor .minimap .minimap-slider,
+.monaco-diff-editor .monaco-editor .minimap-slider.active {
   opacity: 1 !important;
-  visibility: visible !important;
-  display: block !important;
 }
 
 .monaco-editor .minimap-slider .minimap-slider-horizontal,
 .monaco-diff-editor .monaco-editor .minimap-slider .minimap-slider-horizontal {
-  background: rgba(255, 255, 255, 0.22) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.45) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.45) !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.25) !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.25) !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.22) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.14) !important;
   border-radius: 2px !important;
   box-sizing: border-box !important;
   transition:
@@ -15141,45 +15195,41 @@ body.db-col-resizing .db-data-cell {
     border-color 0.15s ease !important;
 }
 
+.monaco-editor .minimap:hover .minimap-slider .minimap-slider-horizontal,
 .monaco-editor .minimap-slider:hover .minimap-slider-horizontal,
 .monaco-editor .minimap-slider.active .minimap-slider-horizontal,
+.monaco-diff-editor .monaco-editor .minimap:hover .minimap-slider .minimap-slider-horizontal,
 .monaco-diff-editor .monaco-editor .minimap-slider:hover .minimap-slider-horizontal,
 .monaco-diff-editor .monaco-editor .minimap-slider.active .minimap-slider-horizontal {
-  background: rgba(255, 255, 255, 0.38) !important;
-  border-color: rgba(255, 255, 255, 0.7) !important;
-}
-
-[data-theme='light'] .monaco-editor .scrollbar.vertical .slider,
-[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider,
-[data-theme='light'] .monaco-editor .scrollbar.horizontal .slider,
-[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider {
-  background: rgba(0, 0, 0, 0.3) !important;
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
 }
 
 [data-theme='light'] .monaco-editor .minimap-slider .minimap-slider-horizontal,
 [data-theme='light'] .monaco-diff-editor .monaco-editor .minimap-slider .minimap-slider-horizontal {
-  background: rgba(0, 0, 0, 0.16) !important;
-  border-top: 1px solid rgba(0, 0, 0, 0.35) !important;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.35) !important;
-  border-left: 1px solid rgba(0, 0, 0, 0.2) !important;
-  border-right: 1px solid rgba(0, 0, 0, 0.2) !important;
+  background: rgba(0, 0, 0, 0.06) !important;
+  border-top: 1px solid rgba(0, 0, 0, 0.16) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.16) !important;
+  border-left: 1px solid rgba(0, 0, 0, 0.1) !important;
+  border-right: 1px solid rgba(0, 0, 0, 0.1) !important;
 }
 
+[data-theme='light'] .monaco-editor .minimap:hover .minimap-slider .minimap-slider-horizontal,
 [data-theme='light'] .monaco-editor .minimap-slider:hover .minimap-slider-horizontal,
+[data-theme='light'] .monaco-editor .minimap-slider.active .minimap-slider-horizontal,
+[data-theme='light']
+  .monaco-diff-editor
+  .monaco-editor
+  .minimap:hover
+  .minimap-slider
+  .minimap-slider-horizontal,
 [data-theme='light']
   .monaco-diff-editor
   .monaco-editor
   .minimap-slider:hover
   .minimap-slider-horizontal {
-  background: rgba(0, 0, 0, 0.28) !important;
-  border-color: rgba(0, 0, 0, 0.5) !important;
-}
-
-[data-theme='light'] .monaco-editor .scrollbar.vertical .slider:hover,
-[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider:hover,
-[data-theme='light'] .monaco-editor .scrollbar.horizontal .slider:hover,
-[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider:hover {
-  background: rgba(0, 0, 0, 0.4) !important;
+  background: rgba(0, 0, 0, 0.14) !important;
+  border-color: rgba(0, 0, 0, 0.36) !important;
 }
 
 /* ── Monaco 查找/替换小组件 (Find Widget) 美化 ───────────────────────────────
@@ -20040,42 +20090,42 @@ button.open-ws-action-icon-btn.remove-btn:hover {
    Editor Enhancements: Split Editor, Breadcrumb Actions & Inline AI
    ========================================================================== */
 
-.editor-breadcrumb-actions {
-  margin-left: auto;
+.editor-tabs-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  width: 100%;
+  height: 35px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  background: var(--bg-tabs, #141414);
 }
 
-.editor-breadcrumb-btn {
-  padding: 2px 8px;
-  font-size: 11px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
+.editor-tabs-bar .tabs {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
 }
 
-.editor-breadcrumb-btn:hover {
-  background: var(--bg-hover);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.editor-breadcrumb-btn.active {
-  background: rgba(56, 189, 248, 0.15);
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.breadcrumb-nav-back-btn {
-  display: inline-flex;
+.editor-tabs-actions {
+  display: flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 7px;
-  font-size: 11px;
+  padding: 0 8px;
+  flex-shrink: 0;
+  height: 35px;
+  background: var(--bg-tabs, #141414);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: border-box;
+}
+
+[data-theme='light'] .editor-tabs-actions {
+  border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+
+.crumb-folder-clickable:hover > span:first-child {
+  color: var(--accent, #38bdf8);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 /* Split Editor */
@@ -23306,6 +23356,10 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 /* 复合搜索栏 / 嵌套输入框：消除内层 input 重复绘制边框与高亮 ring */
+.remote-dir-path-box input,
+.remote-dir-path-box input:focus,
+.remote-dir-edit-wrap input,
+.remote-dir-edit-wrap input:focus,
 .remote-dir-search-wrap input,
 .remote-dir-search-wrap input:focus,
 .terminal-search-input-container input,
