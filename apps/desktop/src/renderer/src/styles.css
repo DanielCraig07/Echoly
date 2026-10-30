@@ -15083,19 +15083,26 @@ body.db-col-resizing .db-data-cell {
   background: transparent !important;
 }
 
-/* 垂直滚动条滑块 (Vertical Slider)：默认透明，鼠标悬浮编辑区时显形 */
+/* 垂直滚动条滑块 (Vertical Slider)：默认透明，鼠标悬浮编辑区时显形（淡雅柔和不刺眼） */
 .monaco-editor .scrollbar.vertical .slider,
 .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider {
   width: 9px !important;
   right: 2px !important;
   left: auto !important;
   border-radius: 5px !important;
-  background: rgba(255, 255, 255, 0.32) !important;
+  background: rgba(255, 255, 255, 0.18) !important;
   opacity: 0 !important;
   transition:
     opacity 0.15s ease,
     background 0.15s ease,
     width 0.15s ease !important;
+}
+
+.monaco-editor .scrollbar.vertical .slider:hover,
+.monaco-editor .scrollbar.vertical .slider.active,
+.monaco-diff-editor .monaco-editor .scrollbar.vertical .slider:hover,
+.monaco-diff-editor .monaco-editor .scrollbar.vertical .slider.active {
+  background: rgba(255, 255, 255, 0.32) !important;
 }
 
 /* 悬浮编辑区 / 悬浮滚动条本身 / 正在拖拽 → 滑块显形。
@@ -15112,6 +15119,13 @@ body.db-col-resizing .db-data-cell {
 
 [data-theme='light'] .monaco-editor .scrollbar.vertical .slider,
 [data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider {
+  background: rgba(0, 0, 0, 0.14) !important;
+}
+
+[data-theme='light'] .monaco-editor .scrollbar.vertical .slider:hover,
+[data-theme='light'] .monaco-editor .scrollbar.vertical .slider.active,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider:hover,
+[data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.vertical .slider.active {
   background: rgba(0, 0, 0, 0.25) !important;
 }
 
@@ -15142,27 +15156,27 @@ body.db-col-resizing .db-data-cell {
   top: auto !important;
   bottom: 1px !important;
   border-radius: 3px !important;
-  background: rgba(255, 255, 255, 0.25) !important;
+  background: rgba(255, 255, 255, 0.16) !important;
 }
 
 .monaco-editor .scrollbar.horizontal .slider:hover,
 .monaco-editor .scrollbar.horizontal .slider.active,
 .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider:hover,
 .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider.active {
-  background: rgba(255, 255, 255, 0.48) !important;
+  background: rgba(255, 255, 255, 0.3) !important;
   height: 6px !important;
 }
 
 [data-theme='light'] .monaco-editor .scrollbar.horizontal .slider,
 [data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider {
-  background: rgba(0, 0, 0, 0.18) !important;
+  background: rgba(0, 0, 0, 0.12) !important;
 }
 
 [data-theme='light'] .monaco-editor .scrollbar.horizontal .slider:hover,
 [data-theme='light'] .monaco-editor .scrollbar.horizontal .slider.active,
 [data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider:hover,
 [data-theme='light'] .monaco-diff-editor .monaco-editor .scrollbar.horizontal .slider.active {
-  background: rgba(0, 0, 0, 0.38) !important;
+  background: rgba(0, 0, 0, 0.24) !important;
 }
 
 /* Monaco Minimap Viewport Slider: 默认隐藏，鼠标悬浮编辑区时显形（低饱和度不刺眼）
