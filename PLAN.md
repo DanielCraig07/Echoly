@@ -134,7 +134,9 @@
   - 关键约束：**维度不一致时抛错/返回空，绝不静默返回 0**。换模型、下载不完整、缓存残留旧向量
     都会造成维度不匹配；静默返回 0 会让所有块相似度相同、排序退化成文件顺序 ——
     搜索「看起来在工作」但结果全无关，且没有任何报错可查。
-- [ ] `@huggingface/transformers` + `bge-small-zh-v1.5`（q8）本地推理，模型缓存与下载进度
+- [x] `packages/tools/src/embeddingSource.ts`：模型来源解析（本地目录优先 → 按需下载 → 不可用回落 BM25），
+      支持 `ECHOLY_EMBEDDING_MODEL_DIR` / `ECHOLY_EMBEDDING_MODEL_ID` / `ECHOLY_EMBEDDING_DISABLED` 覆盖（+8 单测）
+- [ ] `@huggingface/transformers` 接入：按上面解析出的来源加载本地模型或按需下载 + 缓存
 - [ ] 向量粗排 topK 50 → BM25 精排 → RRF 融合
 - [ ] chunk 内容 hash 缓存 + 文件级 mtime/size 增量
 - [ ] 模型不可用时完全回落 BM25（绝不静默返回全 0 向量）

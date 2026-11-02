@@ -33,6 +33,15 @@ export type { WebSearchHit } from './web.js';
 export { parseRuleFile, ruleAppliesTo, selectRulesForContext } from './rules.js';
 export { RRF_K, cosineSimilarity, rrfFuse, topKBySimilarity } from './retrieval.js';
 export type { ScoredChunk } from './retrieval.js';
+export {
+  DEFAULT_EMBEDDING_MODEL_ID,
+  REQUIRED_MODEL_FILES,
+  describeEmbeddingSource,
+  inspectModelDir,
+  readEmbeddingEnv,
+  resolveEmbeddingSource,
+} from './embeddingSource.js';
+export type { EmbeddingSource, EmbeddingSourceOptions } from './embeddingSource.js';
 export type { ParsedRule, RuleMeta } from './rules.js';
 export type { RevertResult } from './checkpoint.js';
 export { resolveInWorkspace, assertRealPathInside, PathJailError, toPosixRel } from './pathJail.js';
