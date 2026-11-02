@@ -299,6 +299,16 @@ const api: IpcApi = {
   }) => ipcRenderer.invoke('ai:completeCode', payload),
   cancelCompletion: (requestId: string) =>
     ipcRenderer.invoke('ai:cancelCompletion', requestId) as Promise<{ ok: boolean }>,
+  predictNextEdit: (payload: {
+    context: string;
+    firstLine: number;
+    lastLine: number;
+    language?: string;
+    recentEdits?: { inserted: string; deleted: string }[];
+  }) =>
+    ipcRenderer.invoke('ai:predictNextEdit', payload) as Promise<{
+      edit: { startLine: number; endLine: number; newText: string } | null;
+    }>,
   rulesGet: (workspaceRoot?: string) => ipcRenderer.invoke('rules:get', workspaceRoot),
   rulesSave: (content: string, workspaceRoot?: string) =>
     ipcRenderer.invoke('rules:save', content, workspaceRoot),

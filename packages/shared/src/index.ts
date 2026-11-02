@@ -1592,6 +1592,14 @@ export interface IpcApi {
   }) => Promise<{ completion: string }>;
   /** 取消一次尚未返回的补全请求，避免为一个已经没人要的结果白算一遍。 */
   cancelCompletion: (requestId: string) => Promise<{ ok: boolean }>;
+  /** 预测「下一步最该改的另一处」。`edit` 为 null 表示没有值得预测的修改。 */
+  predictNextEdit: (payload: {
+    context: string;
+    firstLine: number;
+    lastLine: number;
+    language?: string;
+    recentEdits?: { inserted: string; deleted: string }[];
+  }) => Promise<{ edit: { startLine: number; endLine: number; newText: string } | null }>;
   listSkills: () => Promise<SkillInfo[]>;
   openUserSkillsDir: () => Promise<string>;
   /** 读工作区与用户目录下的自定义命令（`.echoly/commands` 等）。 */

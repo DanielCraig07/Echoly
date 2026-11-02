@@ -23,6 +23,7 @@ import type {
 import type { SettingsStore } from './settings';
 import { buildCompletionPrompt, parseCompletionResponse } from './completionPrompt';
 import { CompletionService } from './completionService';
+import { buildNextEditPrompt, parseNextEditResponse } from './nextEditPrompt';
 import type { SessionStore } from './sessions';
 import type { AgentService } from './agentService';
 import type { TerminalService } from './terminal';
@@ -531,6 +532,62 @@ export function registerIpc(deps: {
     completions.cancel(requestId);
     return { ok: true };
   });
+
+  // 预测单独一个缓存：它与补全不是同一类请求（上下文更长、结果更少），
+  // 合用一个缓存会互相淘汰。
+  let nextEditCallerSeq = 0;
+  const nextEdits = new CompletionService({
+    maxEntries: 32,
+    run: async (request, signal) => {
+      const client = getActiveLlmClient(settings);
+      // 这里 `prefix` 承载的是**整段提示词**：预测的输入就是一段文本，
+      // 直接拿它当缓存键，命中即等价于「同样的上下文问过了」。
+      const resp = await client.chat({
+        messages: [{ role: 'user', content: request.prefix }],
+        temperature: 0.2,
+        signal,
+      });
+      return resp.content || '';
+    },
+  });
+
+  ipcMain.handle(
+    'ai:predictNextEdit',
+    async (
+      _e,
+      payload: {
+        context: string;
+        firstLine: number;
+        lastLine: number;
+        language?: string;
+        recentEdits?: { inserted: string; deleted: string }[];
+      },
+    ) => {
+      const prompt = buildNextEditPrompt({
+        context: payload.context,
+        firstLine: payload.firstLine,
+        lastLine: payload.lastLine,
+        language: payload.language,
+        recentEdits: payload.recentEdits,
+      });
+      try {
+        const { completion } = await nextEdits.get(
+          { prefix: prompt, suffix: '' },
+          // 每次探测一个独立的调用方 id：预测不做取消，但 id 撞车会让内部的
+          // 「谁在等这次请求」记账互相覆盖。
+          `ne-${(nextEditCallerSeq += 1)}`,
+        );
+        return {
+          edit: parseNextEditResponse(completion, {
+            firstLine: payload.firstLine,
+            lastLine: payload.lastLine,
+          }),
+        };
+      } catch {
+        return { edit: null };
+      }
+    },
+  );
 
   ipcMain.handle('diff:accept', (e, id: string) =>
     run(e, () => registry.current().diffs.accept(id)),

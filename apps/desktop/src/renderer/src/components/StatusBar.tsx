@@ -9,7 +9,9 @@ import {
 } from '../services/completionMetrics';
 import {
   isAiCompletionEnabled,
+  isNextEditPredictionEnabled,
   setAiCompletionEnabled,
+  setNextEditPredictionEnabled,
   subscribeAiCompletionEnabled,
 } from '../services/completionEnabled';
 
@@ -107,6 +109,7 @@ export function StatusBar({
   const [currentEol, setCurrentEol] = useState<'LF' | 'CRLF'>(eol);
   const [copilotActive, setCopilotActive] = useState(false);
   const [copilotEnabled, setCopilotEnabled] = useState(() => isAiCompletionEnabled());
+  const [nextEditEnabled, setNextEditEnabled] = useState(() => isNextEditPredictionEnabled());
   const [completionStats, setCompletionStats] = useState<CompletionMetricsSnapshot>(() =>
     getCompletionMetrics(),
   );
@@ -125,7 +128,11 @@ export function StatusBar({
 
   // 开关本身的状态跟模块走：设置页/快捷键将来也能改它，这里必须跟着变
   useEffect(
-    () => subscribeAiCompletionEnabled(() => setCopilotEnabled(isAiCompletionEnabled())),
+    () =>
+      subscribeAiCompletionEnabled(() => {
+        setCopilotEnabled(isAiCompletionEnabled());
+        setNextEditEnabled(isNextEditPredictionEnabled());
+      }),
     [],
   );
 
@@ -712,6 +719,10 @@ export function StatusBar({
                       })}`
                     : ''}
                 </span>
+                <span className="status-stats-label">{t('status.copilotNextEdit')}</span>
+                <span className="status-stats-val">
+                  {nextEditEnabled ? t('status.copilotOn2') : t('status.copilotOff2')}
+                </span>
               </div>
               <div
                 style={{
@@ -735,6 +746,21 @@ export function StatusBar({
                   }}
                 >
                   {copilotEnabled ? t('status.copilotPause') : t('status.copilotResume')}
+                </button>
+                <button
+                  type="button"
+                  className="panel-action-btn"
+                  onClick={() => {
+                    const next = !nextEditEnabled;
+                    setNextEditPredictionEnabled(next);
+                    onShowToast?.(
+                      next ? t('status.copilotNextEditOn') : t('status.copilotNextEditOff'),
+                      next ? t('status.copilotNextEditHint') : undefined,
+                      'info',
+                    );
+                  }}
+                >
+                  {t('status.copilotNextEditToggle')}
                 </button>
                 <button
                   type="button"

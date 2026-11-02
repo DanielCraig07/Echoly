@@ -38,6 +38,7 @@ import {
   switchSourceHeader,
 } from '../services/symbolNavigation';
 import { registerAiInlineCompletions } from '../services/inlineCompletion';
+import { registerNextEditPrediction } from '../services/nextEditPrediction';
 import type { CursorPos } from '../workspaceSession';
 import * as monaco from 'monaco-editor';
 import { GitBlameAnnotationGutter } from './GitBlameAnnotationGutter';
@@ -6541,6 +6542,14 @@ export function EditorPane({
                     editorRef.current = ed;
                     setEditorInstance(ed);
                     registerAiInlineCompletions();
+                    if (monaco) {
+                      registerNextEditPrediction({
+                        editor: ed,
+                        monaco,
+                        request: (payload) =>
+                          window.ide?.predictNextEdit?.(payload) ?? Promise.resolve({ edit: null }),
+                      });
+                    }
                     if (monaco) {
                       // 传的是**转发函数**而不是 t 本身：provideCodeLenses 每次由 Monaco 现取，
                       // 但注册只发生一次，直接把 t 传进去会让 lens 标题锁死在首次 locale

@@ -21,6 +21,50 @@ const listeners = new Set<() => void>();
 
 let enabled = load();
 
+const NEXT_EDIT_STORAGE_KEY = 'echoly:ai_next_edit_enabled';
+
+/**
+ * 「下一步编辑预测」的开关，**默认关**。
+ *
+ * 与补全不同：补全是「你停下来才问一次」，预测是「你每次改完都可能去问一次」，
+ * 请求量级完全不同。默认打开会让每个新用户先背上一份看不见的请求开销，
+ * 而这项能力本身需要用户先理解它在做什么（它会在**别处**给出修改建议）。
+ * 所以默认关、显式开。
+ */
+const DEFAULT_NEXT_EDIT_ENABLED = false;
+
+let nextEditEnabled = loadNextEdit();
+
+function loadNextEdit(): boolean {
+  try {
+    const raw = localStorage.getItem(NEXT_EDIT_STORAGE_KEY);
+    return raw === null ? DEFAULT_NEXT_EDIT_ENABLED : raw === '1';
+  } catch {
+    return DEFAULT_NEXT_EDIT_ENABLED;
+  }
+}
+
+export function isNextEditPredictionEnabled(): boolean {
+  return nextEditEnabled;
+}
+
+export function setNextEditPredictionEnabled(next: boolean): void {
+  if (nextEditEnabled === next) return;
+  nextEditEnabled = next;
+  try {
+    localStorage.setItem(NEXT_EDIT_STORAGE_KEY, next ? '1' : '0');
+  } catch {
+    // 记不住偏好不影响本次会话内的开关
+  }
+  for (const listener of listeners) {
+    try {
+      listener();
+    } catch {
+      // 单个订阅者出错不该影响其他订阅者
+    }
+  }
+}
+
 function load(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);

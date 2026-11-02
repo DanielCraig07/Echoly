@@ -7585,6 +7585,19 @@ span.keybinding {
   background: var(--bg-hover);
 }
 
+/* 「下一步编辑预测」的标记：底色要能被一眼看见，但不能盖过正文的语法高亮。
+   用极低透明度的强调色，而不是整行实色 —— 整行实色会让这一块像被选中。 */
+.next-edit-proposal-line {
+  background: color-mix(in srgb, var(--accent, #3794ff) 12%, transparent);
+  border-left: 2px solid var(--accent, #3794ff);
+}
+
+.next-edit-hint {
+  color: var(--muted);
+  font-style: italic;
+  padding-left: 8px;
+}
+
 /* 语义索引计数：可点击区域之外的弱提示，鼠标悬停给出完整状态（模型来源 / 关闭原因）。 */
 .index-semantic-count {
   cursor: help;
