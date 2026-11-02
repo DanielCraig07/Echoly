@@ -49,6 +49,12 @@ export interface LocalEmbeddingHandle {
  * 用动态 import：静态 import 会让任何引用本模块的代码都被迫加载 onnxruntime。
  */
 const defaultFactory: ExtractorFactory = async (source, onProgress) => {
+  // 调用方已在上游拦掉 unavailable，但类型收窄不会跨函数边界生效，
+  // 这里显式挡一层，后面的 source 才能收窄到 local | download。
+  if (source.kind === 'unavailable') {
+    throw new Error(source.reason);
+  }
+
   const { pipeline, env } = await import('@huggingface/transformers');
 
   // 只允许访问本地文件时，可以让 transformers 完全不联网 —— 对应「手工放置模型」那条路。
