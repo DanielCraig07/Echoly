@@ -1,0 +1,19 @@
+{
+  "name": "@deepseek-ide/runner",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Echoly 远端 Agent runner：在 SSH 主机上跑一轮 Agent，把事件写进任务目录",
+  "type": "module",
+  "main": "./src/main.ts",
+  "types": "./src/main.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node ../../scripts/build-runner.mjs"
+  },
+  "dependencies": {
+    "@deepseek-ide/agent": "*",
+    "@deepseek-ide/llm": "*",
+    "@deepseek-ide/shared": "*",
+    "@deepseek-ide/tools": "*"
+  }
+}

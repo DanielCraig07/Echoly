@@ -802,6 +802,102 @@ export interface BackgroundJob {
   transcript: BackgroundJobEntry[];
 }
 
+/**
+ * 远端（SSH 主机上的）Agent 任务。
+ *
+ * 这是「只有 SSH 可达的机器」这一档的做法：把 agent 循环整体搬到那台机器上跑，
+ * IDE 只负责投递任务、回读事件。**它为什么必须整段搬过去**：只要有一次模型调用
+ * 还从本机发出，关掉本机那一步就会把整轮任务掐断 —— 那正是这个功能要解决的问题。
+ * 代价也随之而来，且必须说清楚：
+ *
+ * 1. **模型凭据会被送到远端主机**（写进该任务的 config 文件，0600）。不接受这一点，
+ *    就没有「合上电脑继续跑」这回事 —— 二者是同一件事。所以这件事是**每次提交时显式选择**的。
+ * 2. **远端没有人在旁边点「允许」**。因此在远端一律拒绝需要确认的操作，
+ *    除非提交时明确选了「无人值守」。反过来做（默认放行）等于给了一条绕过权限模型的旁路。
+ * 3. **远端能用的工具比本地少**（没有 LSP 诊断、没有代码库索引、没有 MCP）。
+ *    缺的能力对模型**明确报不可用**，而不是静默返回空结果。
+ */
+export type RemoteRunnerStatus =
+  | 'starting'
+  | 'running'
+  | 'done'
+  | 'error'
+  | 'cancelled'
+  /** 进程没了、也没留下终态 —— 被 OOM/信号杀掉之类，只能如实说不明不白地结束 */
+  | 'lost';
+
+/** 远端 runner 写在任务目录里的元数据（进程自己维护，IDE 只读）。 */
+export interface RemoteRunnerMeta {
+  jobId: string;
+  /** runner 自己的 pid，IDE 用它判断「进程还在不在」 */
+  pid: number;
+  status: 'running' | 'done' | 'error' | 'cancelled';
+  /** 远端工作目录（绝对路径） */
+  workspace: string;
+  startedAt: number;
+  finishedAt?: number;
+  /** 已写入的最后一条事件序号，便于增量读取 */
+  sequence: number;
+  error?: string;
+  summary?: string;
+  /** 协议版本：IDE 与 runner 版本不一致时拒绝复用旧的 runner 文件 */
+  runnerVersion: string;
+  nodeVersion?: string;
+}
+
+/** 事件日志里的一行。带序号是为了断线重连后能接着上次读，而不是整份重放。 */
+export interface RemoteRunnerEvent {
+  seq: number;
+  /** epoch 毫秒 */
+  at: number;
+  event: AgentEvent;
+}
+
+/** IDE 侧维护的任务视图（远端状态 + 本地记忆的投递信息）。 */
+export interface RemoteRunnerJob {
+  jobId: string;
+  /** 远端主机标签，例如 `ssh user@host` */
+  hostLabel: string;
+  workspace: string;
+  /** 提示词首行摘要 */
+  title: string;
+  status: RemoteRunnerStatus;
+  startedAt: number;
+  finishedAt?: number;
+  pid?: number;
+  /** 已收到的最后一条事件序号 */
+  sequence: number;
+  error?: string;
+  summary?: string;
+  /**
+   * 本次运行是否把模型凭据送到了远端。界面上要能一眼看出哪些任务带走了凭据，
+   * 因为清理/轮换凭据时它们是必须一并处理的。
+   */
+  sentCredentials: boolean;
+}
+
+/** 远端 runner 的启动配置，序列化后以 0600 权限落在远端任务目录。 */
+export interface RemoteRunnerConfig {
+  jobId: string;
+  /** 远端工作目录 */
+  workspace: string;
+  prompt: string;
+  /** 模型配置。apiKey 为空表示远端已通过环境变量自带凭据。 */
+  model: {
+    baseUrl: string;
+    model: string;
+    apiKey?: string;
+    /** 走 OpenAI 兼容的 chat completions */
+    provider?: string;
+  };
+  /** 无人值守 = 需要确认的操作也放行。默认 false（一律拒绝）。 */
+  unattended: boolean;
+  /** 给模型的额外上下文（项目规则等） */
+  rulesText?: string;
+  skillsText?: string;
+  maxSteps?: number;
+}
+
 export type AgentEvent =
   | { type: 'status'; status: AgentRunStatus }
   | { type: 'token'; text: string }

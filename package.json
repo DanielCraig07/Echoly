@@ -12,6 +12,7 @@
     "postinstall": "node scripts/fix-pty-perms.js && node scripts/fix-mac-local-network.js",
     "dev": "node scripts/fix-pty-perms.js && node scripts/fix-mac-local-network.js && npm run dev -w @echoly/desktop",
     "build": "npm run build -w @echoly/desktop",
+    "build:runner": "node scripts/build-runner.mjs",
     "preview": "npm run preview -w @echoly/desktop",
     "pack": "npm run pack -w @echoly/desktop",
     "pack:win32": "npm run pack:win32 -w @echoly/desktop",

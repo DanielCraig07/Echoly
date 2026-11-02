@@ -50,6 +50,7 @@ export default defineConfig({
       project('agent', 'packages/agent'),
       project('skills', 'packages/skills'),
       project('vscode-shim', 'packages/vscode-shim'),
+      project('runner', 'packages/runner'),
       project('desktop', 'apps/desktop'),
     ],
   },
