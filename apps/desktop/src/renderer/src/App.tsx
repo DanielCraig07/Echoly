@@ -40,6 +40,15 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { TerminalPanel } from './components/TerminalPanel';
 import { ComposerModal } from './components/ComposerModal';
 import { ReviewPanel } from './components/ReviewPanel';
+import {
+  canGoBack,
+  canGoForward,
+  createHistory,
+  currentEntry,
+  goBack,
+  goForward,
+  pushEntry,
+} from './services/navigationHistory';
 import { DebugPanel } from './components/DebugPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { OpenWorkspaceModal } from './components/OpenWorkspaceModal';
@@ -230,6 +239,28 @@ export function App() {
   });
   const [tabs, setTabs] = useState<OpenTab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
+
+  // 文件导航历史，驱动标题栏的前进/后退。
+  //
+  // 用「监听 activePath」而不是「在 openFile 里埋点」：跳转入口有很多——文件树、
+  // Cmd+P、转到定义、聊天里的文件链接、Git 面板——逐个埋点迟早漏掉一个，
+  // 而漏掉的那个入口在历史里就是一段空白。监听 activePath 天然覆盖全部入口。
+  const [navHistory, setNavHistory] = useState(() => createHistory<string>());
+
+  useEffect(() => {
+    if (!activePath) return;
+    // pushEntry 在内容未变时返回原引用，不会造成额外渲染；
+    // 也正是这条规则让「后退」不会把目标文件又压一条记录上去。
+    setNavHistory((history) => pushEntry(history, activePath));
+  }, [activePath]);
+
+  function navigateHistory(direction: 'back' | 'forward'): void {
+    const next = direction === 'back' ? goBack(navHistory) : goForward(navHistory);
+    if (next === navHistory) return;
+    setNavHistory(next);
+    const target = currentEntry(next);
+    if (target && target !== activePath) void openFile(target);
+  }
   const [settingsOpen, setSettingsOpen] = useState(false);
   // undefined 表示正常打开（由 SettingsModal 自行恢复 localStorage 中的上次 tab），
   // 只有外部需要强制跳转时才赋具体值。
@@ -4331,6 +4362,60 @@ export function App() {
     >
       <header className="titlebar">
         <div className="titlebar-left" style={{ width: 70, WebkitAppRegion: 'drag' } as any}></div>
+        {/* 前进 / 后退：与 Cursor 同位置（紧邻红绿灯按钮之后）。 */}
+        <div
+          className="titlebar-nav"
+          style={
+            { display: 'flex', alignItems: 'center', gap: 2, WebkitAppRegion: 'no-drag' } as any
+          }
+        >
+          <button
+            type="button"
+            disabled={!canGoBack(navHistory)}
+            title="后退到上一个文件"
+            onClick={() => navigateHistory('back')}
+            style={{
+              width: 24,
+              height: 24,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 4,
+              color: canGoBack(navHistory) ? 'var(--text)' : 'var(--muted)',
+              opacity: canGoBack(navHistory) ? 1 : 0.4,
+              cursor: canGoBack(navHistory) ? 'pointer' : 'default',
+              fontSize: 14,
+              lineHeight: 1,
+            }}
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            disabled={!canGoForward(navHistory)}
+            title="前进到下一个文件"
+            onClick={() => navigateHistory('forward')}
+            style={{
+              width: 24,
+              height: 24,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 4,
+              color: canGoForward(navHistory) ? 'var(--text)' : 'var(--muted)',
+              opacity: canGoForward(navHistory) ? 1 : 0.4,
+              cursor: canGoForward(navHistory) ? 'pointer' : 'default',
+              fontSize: 14,
+              lineHeight: 1,
+            }}
+          >
+            →
+          </button>
+        </div>
         <div className="titlebar-center" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {remoteHost && (
             <span
