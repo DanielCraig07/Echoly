@@ -7179,8 +7179,11 @@ span.keybinding {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 35px;
-  min-height: 35px;
+  /* 35px → 26px：会话标签已经投递到上面的面板类型行，这一行不再需要容纳标签条。
+     保留 26px 而不是方案里写的 22px，因为右侧还有分屏/关闭之类的控件，
+     22px 有被裁切的风险——宁可少压一点，也不要挤坏控件。 */
+  height: 26px;
+  min-height: 26px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-tabs);
   padding: 0 8px 0 12px;
