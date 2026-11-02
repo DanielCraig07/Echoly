@@ -8382,14 +8382,17 @@ span.keybinding {
 }
 
 .status-remote {
-  background: #007acc !important;
-  color: #ffffff !important;
+  /* 默认与其余状态栏条目保持一致：透明底 + 次级文字色。
+     只有真正处于远程会话（is-remote-active）时才上强调色，
+     避免本地开发时状态栏左端长期挂着一块实心蓝。 */
+  background: transparent;
+  color: var(--muted);
   padding: 0 10px;
   height: 26px;
   line-height: 26px;
-  font-weight: 700;
+  font-weight: 500;
   font-size: 12px;
-  border-radius: 0;
+  border-radius: 4px;
   margin-right: 4px;
   display: inline-flex;
   align-items: center;
@@ -8397,16 +8400,26 @@ span.keybinding {
   cursor: pointer;
   border: none;
   outline: none;
-  letter-spacing: -0.5px;
+  letter-spacing: 0;
   transition:
     background 0.15s ease,
     filter 0.15s ease;
 }
 
+.status-remote.is-remote-active {
+  background: var(--accent-soft);
+  color: var(--accent-light);
+  font-weight: 600;
+}
+
 .status-remote:hover {
-  background: #1f8ad2 !important;
-  color: #ffffff !important;
-  filter: brightness(1.12);
+  background: var(--bg-hover);
+  color: var(--text-bright);
+}
+
+.status-remote.is-remote-active:hover {
+  background: var(--accent-soft);
+  color: var(--accent-light);
 }
 
 .status-remote:active {
@@ -19715,6 +19728,61 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   gap: 8px;
 }
 
+/* Chat Input Hint：输入区常驻指引行（模式说明 + `/` `@` 触发符用途）。
+   与 Cursor 的「Plan, Build, / for skills, @ for context」同位——都在工具栏上方一行。 */
+.chat-input-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px 2px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.chat-input-hint-mode {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.chat-input-hint-sep {
+  opacity: 0.55;
+}
+
+.chat-input-hint-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-input-hint-spacer {
+  flex: 1 1 auto;
+}
+
+.chat-input-hint-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.chat-input-hint-key code {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
 /* Chat Input Toolbar Layout */
 .chat-input-toolbar {
   display: flex;
@@ -19824,7 +19892,11 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .chat-model-name {
-  max-width: 90px;
+  /* 90px 会把 deepseek-v4.1-flash 这类常见模型名截成「deepseek-v4…」，
+     用户看不出选的是哪个型号。放宽到 140px 并让 flex 自行压缩。 */
+  max-width: 140px;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

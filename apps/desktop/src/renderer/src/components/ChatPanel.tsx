@@ -4141,6 +4141,26 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               }
             }}
           />
+          {/* 常驻功能指引行：模式说明 + `/` `@` 两个触发符的用途。
+              放在工具栏上方，与 Cursor 的「Plan, Build, / for skills, @ for context」同位。 */}
+          <div className="chat-input-hint">
+            <span className="chat-input-hint-mode">{MODE_LABEL[activeTab?.mode || 'agent']}</span>
+            <span className="chat-input-hint-sep">·</span>
+            <span className="chat-input-hint-desc">
+              {activeTab?.mode === 'ask'
+                ? t('chat.hintAskDesc')
+                : activeTab?.mode === 'plan'
+                  ? t('chat.hintPlanDesc')
+                  : t('chat.hintAgentDesc')}
+            </span>
+            <span className="chat-input-hint-spacer" />
+            <span className="chat-input-hint-key">
+              <code>/</code> {t('chat.hintCommands')}
+            </span>
+            <span className="chat-input-hint-key">
+              <code>@</code> {t('chat.hintContext')}
+            </span>
+          </div>
           <div className="chat-input-toolbar">
             <div className="chat-toolbar-left">
               {/* Attachment Button & hidden file input */}

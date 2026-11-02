@@ -265,7 +265,9 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     en: 'Document stats · Click for details',
   },
   'status.statsLines': { zh: '行', en: 'Ln' },
-  'status.statsChars': { zh: '字数', en: 'Chars' },
+  // docStats.charCount 是字符数而非 token 数，原先的「字数」与下方弹出的
+  // 「字符」自相矛盾，且容易被误读成 token 计数。统一成「字符」。
+  'status.statsChars': { zh: '字符', en: 'Chars' },
   'status.statsTitle': { zh: '文档统计详情', en: 'Document Statistics' },
   'status.statsTotalLines': { zh: '总行数:', en: 'Total lines:' },
   'status.statsTotalChars': { zh: '总字符数:', en: 'Total characters:' },
@@ -383,17 +385,30 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   // 占位文案里「@ 引用上下文，/ 调用命令」是必须被用户看到的功能指引，
   // 中英文括号与顿号都不同，所以整句进字典
   'chat.placeholderAsk': {
-    zh: '提问关于代码的问题…（@ 引用上下文，/ 调用命令，Enter 发送）',
-    en: 'Ask about the code… (@ to reference context, / for commands, Enter to send)',
+    zh: '提问关于代码的问题…',
+    en: 'Ask about the code…',
   },
   'chat.placeholderPlan': {
-    zh: '描述目标，生成可执行计划…（@ 引用上下文，/ 调用命令，Enter 发送）',
-    en: 'Describe the goal to get a plan… (@ to reference context, / for commands, Enter to send)',
+    zh: '描述目标，生成可执行计划…',
+    en: 'Describe the goal to get a plan…',
   },
   'chat.placeholderAgent': {
-    zh: '描述任务…（@ 引用上下文，/ 调用命令，Enter 发送）',
-    en: 'Describe the task… (@ to reference context, / for commands, Enter to send)',
+    zh: '描述任务…',
+    en: 'Describe the task…',
   },
+  // 输入区常驻指引：原先「@ 引用上下文，/ 调用命令」只活在各模式 placeholder 里，
+  // 一开始打字就消失，用户再也想不起来有这两个能力。这里抽成独立一行常驻。
+  'chat.hintAskDesc': { zh: '只读问答，不改动工作区', en: 'Read-only Q&A, no workspace changes' },
+  'chat.hintPlanDesc': {
+    zh: '只读调研，产出可执行步骤',
+    en: 'Read-only research, outputs actionable steps',
+  },
+  'chat.hintAgentDesc': {
+    zh: '可读写工作区并执行终端命令',
+    en: 'Can read/write the workspace and run terminal commands',
+  },
+  'chat.hintCommands': { zh: '调用命令', en: 'for commands' },
+  'chat.hintContext': { zh: '引用上下文', en: 'for context' },
   'chat.placeholderRunning': {
     zh: 'AI 正在执行，输入内容将在当前步骤结束后追加给它…',
     en: 'AI is running — your input is queued until the current step finishes…',
