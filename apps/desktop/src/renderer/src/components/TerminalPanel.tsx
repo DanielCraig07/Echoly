@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Terminal, type ILink } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
@@ -10,6 +11,27 @@ import { TerminalAiKBar } from './TerminalAiKBar';
 import { useDbConfirm } from '../hooks/useDbConfirm';
 import { buildSqlConfirmMarkdown } from '../services/dbConfirmContent';
 import { colorizeTerminalLogs } from '../utils/terminalLogColorizer';
+
+/**
+ * 把终端标签条投递到底部面板的槽位。
+ *
+ * 目标是把「面板类型切换行」（`App.tsx`）与「终端会话标签行」并成一行，但不把会话标签
+ * 的状态提升到 App —— 所有权仍在本组件，App 只提供一个空容器，两者之间没有新的状态耦合。
+ *
+ * 没有槽位时原地渲染，行为与改造前完全一致，所以这一步单独上线是安全的。
+ */
+function TabStripPortal({ children }: { children: ReactNode }) {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    // 槽位随布局展开/收起而创建或移除，所以每次渲染后重新查找；
+    // 只在引用确实变化时更新，不会自激成循环渲染。
+    const next = document.getElementById('bottom-panel-tab-slot');
+    setSlot((prev) => (prev === next ? prev : next));
+  });
+
+  return slot ? createPortal(children, slot) : <>{children}</>;
+}
 import { measureContentColumns } from '../utils/terminalWidth';
 import { registerTerminalLogReader, setFocusedTerminalId } from '../services/specialMentions';
 import { useI18n, type Translate } from '../i18n';
@@ -2506,61 +2528,63 @@ export function TerminalPanel({
 
           <span className="terminal-header-divider" />
 
-          <div className="terminal-tabs" role="tablist">
-            {tabs.map((tab) => {
-              const isFocused = tab.clientId === focusedTabId;
-              const isLeft = tab.clientId === leftTabId;
-              const isRight = splitActiveId !== null && tab.clientId === splitActiveId;
-              const isVisibleInSplit = isLeft || isRight;
-              const label = tab.customTitle || tabLabel(terminalKind, tab.index, t);
-              return (
-                <button
-                  key={tab.clientId}
-                  type="button"
-                  role="tab"
-                  aria-selected={isFocused}
-                  className={`terminal-tab${isFocused ? ' active' : ''}${isVisibleInSplit && !isFocused ? ' in-split-secondary' : ''}`}
-                  onClick={(e) => {
-                    (e.currentTarget as HTMLElement).blur();
-                    switchOrFocusTab(tab.clientId);
-                  }}
-                >
-                  {renderTabIcon(tab, terminalKind, t)}
-                  <span className="terminal-tab-label">{label}</span>
-                  {splitActiveId && isVisibleInSplit && (
-                    <span
-                      style={{
-                        fontSize: 9,
-                        marginLeft: 3,
-                        fontWeight: isFocused ? 600 : 400,
-                        color: isFocused ? 'var(--text-bright, #fff)' : 'var(--muted)',
-                      }}
-                    >
-                      {splitDirection === 'vertical'
-                        ? isLeft
-                          ? t('terminal.tipUp')
-                          : t('terminal.tipDown')
-                        : isLeft
-                          ? t('terminal.tipLeft')
-                          : t('terminal.tipRight')}
-                    </span>
-                  )}
-                  <span
-                    className="terminal-tab-close"
-                    title={t('terminal.removeTab')}
-                    role="button"
-                    tabIndex={-1}
+          <TabStripPortal>
+            <div className="terminal-tabs" role="tablist">
+              {tabs.map((tab) => {
+                const isFocused = tab.clientId === focusedTabId;
+                const isLeft = tab.clientId === leftTabId;
+                const isRight = splitActiveId !== null && tab.clientId === splitActiveId;
+                const isVisibleInSplit = isLeft || isRight;
+                const label = tab.customTitle || tabLabel(terminalKind, tab.index, t);
+                return (
+                  <button
+                    key={tab.clientId}
+                    type="button"
+                    role="tab"
+                    aria-selected={isFocused}
+                    className={`terminal-tab${isFocused ? ' active' : ''}${isVisibleInSplit && !isFocused ? ' in-split-secondary' : ''}`}
                     onClick={(e) => {
-                      e.stopPropagation();
-                      closeTerminal(tab.clientId);
+                      (e.currentTarget as HTMLElement).blur();
+                      switchOrFocusTab(tab.clientId);
                     }}
                   >
-                    <IconClose size={9} />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                    {renderTabIcon(tab, terminalKind, t)}
+                    <span className="terminal-tab-label">{label}</span>
+                    {splitActiveId && isVisibleInSplit && (
+                      <span
+                        style={{
+                          fontSize: 9,
+                          marginLeft: 3,
+                          fontWeight: isFocused ? 600 : 400,
+                          color: isFocused ? 'var(--text-bright, #fff)' : 'var(--muted)',
+                        }}
+                      >
+                        {splitDirection === 'vertical'
+                          ? isLeft
+                            ? t('terminal.tipUp')
+                            : t('terminal.tipDown')
+                          : isLeft
+                            ? t('terminal.tipLeft')
+                            : t('terminal.tipRight')}
+                      </span>
+                    )}
+                    <span
+                      className="terminal-tab-close"
+                      title={t('terminal.removeTab')}
+                      role="button"
+                      tabIndex={-1}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeTerminal(tab.clientId);
+                      }}
+                    >
+                      <IconClose size={9} />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </TabStripPortal>
 
           {allDetectedPorts.length > 0 && (
             <div className="terminal-detected-ports">
