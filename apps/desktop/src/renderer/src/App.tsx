@@ -5552,6 +5552,9 @@ export function App() {
                         <span className="problems-tab-badge">{problemsCount}</span>
                       )}
                     </button>
+                    {/* 终端会话标签的投递槽位：由 TerminalPanel 的 TabStripPortal 渲染进来，
+                        让「面板类型」与「会话标签」共用同一行。槽位不存在时终端会原地渲染。 */}
+                    <div id="bottom-panel-tab-slot" style={{ display: 'contents' }} />
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
