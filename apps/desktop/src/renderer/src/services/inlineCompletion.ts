@@ -5,7 +5,7 @@ import {
   recordCompletionOutcome,
   recordCompletionRequest,
 } from './completionMetrics';
-import { attachRecentEditRecorder, getRecentEdits } from './recentEdits';
+import { attachRecentEditRecorder, collectRecentEditsForContext } from './recentEdits';
 
 let isRegistered = false;
 let completionTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -179,7 +179,7 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
             prefix,
             suffix,
             language,
-            recentEdits: getRecentEdits(model.uri.toString()),
+            recentEdits: collectRecentEditsForContext(model.uri.toString()),
             requestId,
           });
           const latency = Date.now() - startedAt;

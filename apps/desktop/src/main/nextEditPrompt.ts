@@ -18,7 +18,7 @@ export interface NextEditPromptInput {
   /** 上下文覆盖的文件行号范围，用于校验模型给的行号是否落在里面 */
   firstLine: number;
   lastLine: number;
-  recentEdits?: readonly { inserted: string; deleted: string }[];
+  recentEdits?: readonly { inserted: string; deleted: string; path?: string }[];
 }
 
 export interface PredictedEdit {
@@ -39,7 +39,9 @@ function condense(text: string): string {
     : `${collapsed.slice(0, MAX_EDIT_SIDE_CHARS)}…`;
 }
 
-function formatRecentEdits(edits: readonly { inserted: string; deleted: string }[]): string {
+function formatRecentEdits(
+  edits: readonly { inserted: string; deleted: string; path?: string }[],
+): string {
   if (edits.length === 0) return '';
   const lines = edits.map((edit) => {
     const removed = condense(edit.deleted);
@@ -47,7 +49,10 @@ function formatRecentEdits(edits: readonly { inserted: string; deleted: string }
     const parts: string[] = [];
     if (removed) parts.push(`改前「${removed}」`);
     if (added) parts.push(`改后「${added}」`);
-    return `- ${parts.join('，')}`;
+    // 标出来源文件：跨文件的改动是「该去改哪儿」最有力的线索（在 A 改了接口，
+    // 下一步往往就是 B 里的调用点），但也必须说清它不在当前文件里。
+    const where = edit.path ? `[${edit.path}] ` : '';
+    return `- ${where}${parts.join('，')}`;
   });
   return `\n用户刚刚做过的修改（从旧到新）：\n${lines.join('\n')}\n`;
 }

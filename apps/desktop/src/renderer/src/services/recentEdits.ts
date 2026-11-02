@@ -21,8 +21,24 @@ export interface RecentEdit {
   inserted: string;
 }
 
+/** 带来源文件的编辑记录。`path` 只有在**来源不是当前文件**时才有值。 */
+export interface ContextualEdit extends RecentEdit {
+  path?: string;
+}
+
 /** 保留最近几次编辑。3 次是「够看出在做什么」与「不淹没当前代码」之间的折中。 */
 export const MAX_RECENT_EDITS = 3;
+
+/** 全局日志的保留条数。它只用来支撑「跨文件」这一层上下文，不需要留很长。 */
+export const MAX_GLOBAL_ENTRIES = 12;
+
+/**
+ * 跨文件上下文里最多带几个**别的**文件。
+ *
+ * 取 2：一次重构通常也就是「改了定义、现在改用法」这种一两跳的跨度。带得越多，
+ * 提示词里越可能塞进一堆与当前这行无关的改动，反而稀释掉真正有用的那条。
+ */
+export const MAX_CROSS_FILE = 2;
 
 /** 单侧文本的记录上限，防止一次粘贴把上下文撑爆。 */
 const MAX_SIDE_CHARS = 400;
@@ -49,6 +65,16 @@ interface ModelState {
 
 const states = new Map<string, ModelState>();
 
+/**
+ * 全局按时间排列的编辑日志。
+ *
+ * 为什么单靠 `states` 不够：`states` 是**按文件分桶**的，桶与桶之间没有先后关系，
+ * 于是「跨文件」这层上下文无从拼出来 —— 而它恰恰对应一个很常见的动作：
+ * 在 A 文件里把接口改了名，回到 B 文件继续改用法。只看 B 文件自己的编辑记录，
+ * 模型并不知道 A 文件刚发生了什么。
+ */
+const globalLog: { uri: string; edit: RecentEdit }[] = [];
+
 function stateOf(uri: string): ModelState {
   let state = states.get(uri);
   if (!state) {
@@ -65,10 +91,15 @@ function clampSide(text: string): string {
 /** 按模型 uri 记录一次编辑（供测试与手动记录使用）。 */
 export function recordEdit(uri: string, edit: RecentEdit): void {
   if (!edit.inserted && !edit.deleted) return;
+  const clamped = { inserted: clampSide(edit.inserted), deleted: clampSide(edit.deleted) };
   const state = stateOf(uri);
-  state.edits.push({ inserted: clampSide(edit.inserted), deleted: clampSide(edit.deleted) });
+  state.edits.push(clamped);
   if (state.edits.length > MAX_RECENT_EDITS) {
     state.edits.splice(0, state.edits.length - MAX_RECENT_EDITS);
+  }
+  globalLog.push({ uri, edit: clamped });
+  if (globalLog.length > MAX_GLOBAL_ENTRIES) {
+    globalLog.splice(0, globalLog.length - MAX_GLOBAL_ENTRIES);
   }
 }
 
@@ -80,9 +111,55 @@ export function getRecentEdits(uri: string): RecentEdit[] {
 export function clearRecentEdits(uri?: string): void {
   if (uri === undefined) {
     states.clear();
+    globalLog.length = 0;
     return;
   }
   states.delete(uri);
+  for (let i = globalLog.length - 1; i >= 0; i -= 1) {
+    if (globalLog[i].uri === uri) globalLog.splice(i, 1);
+  }
+}
+
+/** 从 uri 里取一个给人看的短名（`file:///a/b/foo.ts` → `foo.ts`）。 */
+export function fileLabel(uri: string): string {
+  const withoutQuery = uri.split('?')[0].split('#')[0];
+  const tail = withoutQuery.split(/[\\/]/).filter(Boolean).pop();
+  return tail ? decodeURIComponent(tail) : withoutQuery;
+}
+
+/**
+ * 组装喂给模型的最近编辑：当前文件的编辑 + 最近改过的**别的**文件的编辑。
+ *
+ * 两条规矩：
+ * 1. **按时间输出（旧→新）。** 拼接顺序必须忠于真实发生的顺序，否则模型会把
+ *    「先改的定义、后改的用法」读反。
+ * 2. **只带来源文件，不带来源行号。** 行号在跨文件之后毫无意义（另一个文件的行号
+ *    对当前这行没有任何指导作用），带上反而会诱导模型去引用一个不存在的位置。
+ */
+export function collectRecentEditsForContext(
+  uri: string,
+  opts: { maxCrossFiles?: number } = {},
+): ContextualEdit[] {
+  const maxCrossFiles = opts.maxCrossFiles ?? MAX_CROSS_FILE;
+  // 从新往旧走，先圈定「哪些别的文件算最近」
+  const crossUris: string[] = [];
+  for (let i = globalLog.length - 1; i >= 0; i -= 1) {
+    const { uri: source } = globalLog[i];
+    if (source === uri || crossUris.includes(source)) continue;
+    if (crossUris.length >= maxCrossFiles) break;
+    crossUris.push(source);
+  }
+
+  const kept = globalLog.filter((entry) => entry.uri === uri || crossUris.includes(entry.uri));
+  // 当前文件仍受 MAX_RECENT_EDITS 限制：全局日志比它长，不截断会把当前文件的窗口撑大
+  const forOwnFile = kept.filter((entry) => entry.uri === uri).slice(-MAX_RECENT_EDITS);
+  const cross = kept.filter((entry) => entry.uri !== uri);
+
+  return [...forOwnFile, ...cross]
+    .sort((a, b) => globalLog.indexOf(a) - globalLog.indexOf(b))
+    .map((entry) =>
+      entry.uri === uri ? { ...entry.edit } : { ...entry.edit, path: fileLabel(entry.uri) },
+    );
 }
 
 /**

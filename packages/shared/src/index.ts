@@ -1674,7 +1674,11 @@ export interface IpcApi {
     suffix: string;
     language?: string;
     /** 最近的编辑（从旧到新），让补全知道用户「刚在改什么」而不仅是「停在哪」。 */
-    recentEdits?: { inserted: string; deleted: string }[];
+    /**
+     * `path` 只在**来源不是当前文件**时出现：跨文件改动（例如刚在别的文件里改了接口）
+     * 对当前这行是有效线索，但必须标出来源，否则模型会以为它就发生在当前文件里。
+     */
+    recentEdits?: { inserted: string; deleted: string; path?: string }[];
     /** 本次请求的可寻址 id，配合 `cancelCompletion` 告诉主进程这次结果不用要了。 */
     requestId?: string;
   }) => Promise<{ completion: string }>;
@@ -1686,7 +1690,7 @@ export interface IpcApi {
     firstLine: number;
     lastLine: number;
     language?: string;
-    recentEdits?: { inserted: string; deleted: string }[];
+    recentEdits?: { inserted: string; deleted: string; path?: string }[];
   }) => Promise<{ edit: { startLine: number; endLine: number; newText: string } | null }>;
   /** 检查各文档源是否可用（有没有 `llms.txt`、能解析出多少条目）。 */
   docsStatus: (force?: boolean) => Promise<

@@ -16,7 +16,7 @@ export interface CompletionPromptInput {
   suffix: string;
   language?: string;
   /** 最近的编辑，从旧到新。用来传达「我正在做什么」，而不只是「我停在哪里」。 */
-  recentEdits?: readonly { inserted: string; deleted: string }[];
+  recentEdits?: readonly { inserted: string; deleted: string; path?: string }[];
 }
 
 /** 送进模型的前后缀长度上限。与调用方原来的取值一致。 */
@@ -40,7 +40,7 @@ function condenseEditSide(text: string): string {
  * 而模型真正需要的是「他刚把 X 改成了 Y」这个动量。
  */
 export function formatRecentEdits(
-  edits: readonly { inserted: string; deleted: string }[] | undefined,
+  edits: readonly { inserted: string; deleted: string; path?: string }[] | undefined,
 ): string {
   if (!edits || edits.length === 0) return '';
   const lines = edits.map((edit, index) => {
@@ -49,7 +49,10 @@ export function formatRecentEdits(
     const parts: string[] = [];
     if (removed) parts.push(`删除「${removed}」`);
     if (added) parts.push(`插入「${added}」`);
-    return `${index + 1}. ${parts.join('，')}`;
+    // 跨文件改动必须标出来源文件：不标的话，模型会以为这处改动就发生在光标所在的
+    // 文件里，进而照抄另一个文件的上下文 —— 那比不带这条上下文更糟。
+    const where = edit.path ? `[${edit.path}] ` : '';
+    return `${index + 1}. ${where}${parts.join('，')}`;
   });
   return `\n用户最近的编辑（从旧到新，用来判断当前意图）：\n${lines.join('\n')}\n`;
 }

@@ -15,7 +15,7 @@
 
 import type * as Monaco from 'monaco-editor';
 import { isNextEditPredictionEnabled, subscribeAiCompletionEnabled } from './completionEnabled';
-import { getRecentEdits } from './recentEdits';
+import { collectRecentEditsForContext } from './recentEdits';
 
 /** 停手多久才认为「改完了」，可以预测下一步。比补全的 350ms 长得多：预测的是段落级意图。 */
 const IDLE_MS = 1200;
@@ -69,12 +69,17 @@ export function buildNumberedContext(
   return { context: lines.join('\n'), firstLine, lastLine };
 }
 
-/** 建议的提示文案：单行、短，因为它会被内联注入到代码行尾。 */
+/**
+ * 建议的提示文案：单行、短，因为它会被内联注入到代码行尾。
+ *
+ * 文案里点明「Tab」：这个建议显示在别处、光标不在这儿，如果不说出该按什么键，
+ * 用户看到的就是一行莫名其妙的高亮 —— 那这个功能等于不存在。
+ */
 export function formatProposalHint(edit: PredictedCodeEdit): string {
   const headline = edit.newText.replace(/\s+/g, ' ').trim();
   const shown =
     headline.length > HINT_MAX_CHARS ? `${headline.slice(0, HINT_MAX_CHARS)}…` : headline;
-  return `  ⏎ 下一步编辑建议：${shown}`;
+  return `  ⏎ Tab 跳转 · 下一步编辑：${shown}`;
 }
 
 export interface NextEditPredictionDeps {
@@ -167,7 +172,7 @@ export function registerNextEditPrediction(deps: NextEditPredictionDeps): { disp
         firstLine: numbered.firstLine,
         lastLine: numbered.lastLine,
         language: model.getLanguageId(),
-        recentEdits: getRecentEdits(model.uri.toString()),
+        recentEdits: collectRecentEditsForContext(model.uri.toString()),
       });
       edit = res?.edit ?? null;
     } catch {
@@ -206,6 +211,32 @@ export function registerNextEditPrediction(deps: NextEditPredictionDeps): { disp
     model.pushEditOperations([], [{ range, text: edit.newText }], () => null);
   };
 
+  /**
+   * Tab 的统一语义（只在这一条建议存在时接管）。
+   *
+   * 建议显示在**别处**，光标还停在原地 —— 这时按 Tab 的意图是「带我去看那一处」，
+   * 而不是「在现在这个光标位置插入点什么」。等光标真的落进建议区间，Tab 才变成接受。
+   *
+   * 之所以值得抢 Tab：这个功能此前的入口是 `Alt+]`，一个没人会去猜的组合键 ——
+   * 建议明明已经算出来并高亮在那儿了，用户却不知道该按什么。Tab 是本能动作。
+   *
+   * 代价是可控的：命令带 `echolyNextEditVisible && !inlineSuggestionVisible` 前提，
+   * 没有这条建议时 Tab 完全是它原本的含义（缩进 / 接受幽灵补全）。
+   */
+  const tabAction = (): void => {
+    const edit = proposal;
+    const model = editor.getModel();
+    if (!edit || !model) return;
+    const position = editor.getPosition();
+    if (position && position.lineNumber >= edit.startLine && position.lineNumber <= edit.endLine) {
+      accept();
+      return;
+    }
+    // 只移动光标，不改文件：跳到哪儿看一眼再决定，比「Tab 直接把别处改了」安全得多。
+    editor.setPosition(new monaco.Position(edit.startLine, 1));
+    editor.revealLineInCenterIfOutsideViewport(edit.startLine);
+  };
+
   const changeSubscription = editor.onDidChangeModelContent(() => {
     // 任何内容变动都会让旧建议的行号失去意义，先撤掉再重新计时
     clearProposal();
@@ -227,6 +258,11 @@ export function registerNextEditPrediction(deps: NextEditPredictionDeps): { disp
     accept,
     'echolyNextEditVisible',
   );
+  // vim 模式下 normal 模式的 Tab 归 vim（缩进/跳转），不能被这条抢走
+  const tabWhen = deps.vimContextKey
+    ? `echolyNextEditVisible && !inlineSuggestionVisible && !${deps.vimContextKey}`
+    : 'echolyNextEditVisible && !inlineSuggestionVisible';
+  editor.addCommand(monaco.KeyCode.Tab, tabAction, tabWhen);
   editor.addCommand(
     monaco.KeyMod.Alt | monaco.KeyCode.BracketLeft,
     () => clearProposal(),

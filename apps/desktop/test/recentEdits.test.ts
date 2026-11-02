@@ -3,6 +3,8 @@ import {
   MAX_RECENT_EDITS,
   attachRecentEditRecorder,
   clearRecentEdits,
+  collectRecentEditsForContext,
+  fileLabel,
   getRecentEdits,
   recordEdit,
   type EditableModel,
@@ -123,5 +125,59 @@ describe('recentEdits', () => {
     recordEdit('file:///e.ts', { inserted: 'a', deleted: '' });
     getRecentEdits('file:///e.ts').push({ inserted: 'fake', deleted: '' });
     expect(getRecentEdits('file:///e.ts')).toHaveLength(1);
+  });
+});
+
+describe('跨文件最近编辑（喂给补全的上下文）', () => {
+  beforeEach(() => clearRecentEdits());
+
+  it('fileLabel 从 uri 里取短名', () => {
+    expect(fileLabel('file:///Users/me/proj/src/foo.ts')).toBe('foo.ts');
+    expect(fileLabel('file:///a/b/My%20File.ts')).toBe('My File.ts');
+    expect(fileLabel('inmemory://model/1')).toBe('1');
+  });
+
+  it('当前文件的编辑不带 path；别的文件的编辑带 path', () => {
+    recordEdit('file:///a.ts', { inserted: 'accountId', deleted: 'userId' });
+    recordEdit('file:///b.ts', { inserted: 'const x = 1', deleted: '' });
+
+    const ctx = collectRecentEditsForContext('file:///b.ts');
+    expect(ctx).toHaveLength(2);
+    // 按真实发生顺序输出：先是 a.ts 那次（跨文件），再是 b.ts 这次
+    expect(ctx[0]).toMatchObject({ inserted: 'accountId', deleted: 'userId', path: 'a.ts' });
+    expect(ctx[1]).toMatchObject({ inserted: 'const x = 1' });
+    expect(ctx[1].path).toBeUndefined();
+  });
+
+  it('跨文件条目按新→旧挑选，最多带 MAX_CROSS_FILE 个文件', () => {
+    recordEdit('file:///old.ts', { inserted: 'o', deleted: '' });
+    recordEdit('file:///mid.ts', { inserted: 'm', deleted: '' });
+    recordEdit('file:///new.ts', { inserted: 'n', deleted: '' });
+
+    const ctx = collectRecentEditsForContext('file:///cur.ts');
+    const paths = ctx.map((e) => e.path);
+    expect(paths).toEqual(['mid.ts', 'new.ts']);
+  });
+
+  it('当前文件仍只带最近 MAX_RECENT_EDITS 次', () => {
+    for (let i = 0; i < 6; i++) recordEdit('file:///cur.ts', { inserted: `v${i}`, deleted: '' });
+    const ctx = collectRecentEditsForContext('file:///cur.ts');
+    expect(ctx).toHaveLength(MAX_RECENT_EDITS);
+    expect(ctx.map((e) => e.inserted)).toEqual(['v3', 'v4', 'v5']);
+  });
+
+  it('同一个别的文件只出现一次（不会因多次编辑被重复计入文件数）', () => {
+    recordEdit('file:///a.ts', { inserted: 'a1', deleted: '' });
+    recordEdit('file:///a.ts', { inserted: 'a2', deleted: '' });
+    recordEdit('file:///b.ts', { inserted: 'b1', deleted: '' });
+
+    const ctx = collectRecentEditsForContext('file:///cur.ts');
+    expect(ctx.map((e) => `${e.path}:${e.inserted}`)).toEqual(['a.ts:a1', 'a.ts:a2', 'b.ts:b1']);
+  });
+
+  it('清空之后不再带出跨文件上下文', () => {
+    recordEdit('file:///a.ts', { inserted: 'a', deleted: '' });
+    clearRecentEdits('file:///a.ts');
+    expect(collectRecentEditsForContext('file:///cur.ts')).toEqual([]);
   });
 });
