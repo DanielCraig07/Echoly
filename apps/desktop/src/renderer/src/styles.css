@@ -1243,8 +1243,11 @@ select:focus {
 .activity-pill {
   display: flex;
   align-items: center;
+  /* 整组图标居中，而不是左对齐 / chevron 顶到最右。
+     容器仍然撑满整行：展开 Maven / 数据库时容器轮廓不动，
+     只有里面这一组重新居中，视觉上比「容器跟着内容变宽」稳。 */
+  justify-content: center;
   gap: 2px;
-  /* 撑满整行宽度：chevron 要靠 margin-left:auto 顶到最右，容器必须比内容宽。 */
   flex: 1;
   min-width: 0;
   padding: 4px;
@@ -1289,10 +1292,11 @@ select:focus {
   outline-offset: 1px;
 }
 
-/* chevron 与前面的图标之间留一段更大的空白：「这一个是展开更多，不是又一个页面」
-   这件事靠间距就能读出来，不用额外画分隔线。 */
+/* chevron 与前面的图标之间留一段略大的固定间距：「这一个是展开更多，不是又一个页面」
+   这件事靠间距就能读出来，不用额外画分隔线。
+   用固定值而不是 auto —— auto 会把它顶到容器最右，整组就不居中了。 */
 .activity-pill .activity-more {
-  margin-left: auto;
+  margin-left: 8px;
 }
 
 .activity-pill .activity-more svg {
