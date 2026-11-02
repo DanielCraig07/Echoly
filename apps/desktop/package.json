@@ -6,9 +6,9 @@
   "author": "Echoly",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && electron-vite dev",
+    "dev": "node ../../scripts/fix-pty-perms.js && node ../../scripts/fix-mac-local-network.js && node ../../scripts/dev-guard.mjs dev",
     "build": "node ../../scripts/build-runner.mjs && electron-vite build",
-    "preview": "electron-vite preview",
+    "preview": "node ../../scripts/dev-guard.mjs preview",
     "pack": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --x64 --config.electronVersion=35.7.5 --publish never",
     "pack:win32": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --ia32 --config.electronVersion=35.7.5 --config.electronDist=electron-dist-cache/win32-ia32 --publish never",
     "pack:win:publish": "npm run build && node ../../scripts/fix-pty-perms.js && electron-builder --win --x64 --config.electronVersion=35.7.5 --publish always",

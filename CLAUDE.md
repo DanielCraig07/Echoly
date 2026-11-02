@@ -26,6 +26,17 @@ npm run pack:mac:x64    # Package macOS DMG (Intel only)
 `npm run probe-llm` 支持用环境变量覆盖默认后端：`LLM_BASE_URL`、`LLM_MODEL`、`LLM_API_KEY`
 （见 `packages/llm/src/probe.ts`）。用于临时指向另一台推理服务排查连通性，无需改代码。
 
+`scripts/dev-guard.mjs` 是 `dev` / `preview` 的启动包装：某些 IDE 的扩展宿主进程会往终端注入
+`ELECTRON_RUN_AS_NODE=1`（实测 Antigravity IDE 如此，且它不在 `~/.zshrc`、不在 launchctl、
+不在 IDE 主进程里，只在扩展宿主及其子进程中，从 shell 侧完全看不出来）。带着该变量启动时
+Electron 不初始化运行时，`require('electron')` 返回的是**可执行文件路径字符串**，
+主进程直接崩在 `app.setName("Echoly")` 上（`Cannot read properties of undefined (reading 'setName')`
+—— 报错指向 setName，真因却在环境变量里）。这个包装负责在 spawn 前摘掉该变量并打一行提示。
+
+必须写成**包装进程**而不是 `&&` 链上的一步：`node guard.js && electron-vite dev` 里的 guard
+是独立进程，它删掉的环境变量影响不到后面的兄弟命令。同理，**不要**把 `dev` 脚本改回直接调
+`electron-vite` —— 那样在受影响的 IDE 里会退回到需要手打 `env -u ELECTRON_RUN_AS_NODE npm run dev`。
+
 ## Project overview
 
 内网 AI Agent 轻量 IDE（Electron + Monaco），默认连接 `http://192.168.10.241:8002`（Deepseek-V4 模型），无需公网访问。
