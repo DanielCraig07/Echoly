@@ -36,6 +36,14 @@ export type { ScoredChunk } from './retrieval.js';
 export { DEFAULT_VECTOR_TOPK, hybridRetrieve } from './hybridSearch.js';
 export type { HybridChunk, HybridRetrieveInput, HybridRetrieveResult } from './hybridSearch.js';
 export {
+  MAX_DOC_ENTRIES,
+  parseLlmsTxt,
+  scoreDocEntry,
+  searchDocEntries,
+  tokenizeDocQuery,
+} from './docs.js';
+export type { DocEntry, DocHit, ParsedDocIndex } from './docs.js';
+export {
   DEFAULT_EMBEDDING_MODEL_ID,
   REQUIRED_MODEL_FILES,
   describeEmbeddingSource,
