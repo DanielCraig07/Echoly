@@ -70,7 +70,7 @@
   --db-accent-bar: var(--accent-light);
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, Monaco, monospace;
-  --ui-font-size: 12px;
+  --ui-font-size: 13px;
   color-scheme: dark;
 }
 
@@ -258,7 +258,7 @@ select:focus {
   align-items: center;
   gap: 8px;
   max-width: min(56vw, 640px);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--text);
   pointer-events: none;
   white-space: nowrap;
@@ -496,7 +496,7 @@ select:focus {
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif;
   color: rgba(255, 255, 255, 0.65);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   letter-spacing: 1.2px;
   background: rgba(255, 255, 255, 0.06);
@@ -530,7 +530,7 @@ select:focus {
   border-radius: 6px;
   color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   user-select: none;
   transition: all 0.15s ease;
 }
@@ -542,7 +542,7 @@ select:focus {
 }
 
 .search-trigger-text {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
 }
 
@@ -768,7 +768,7 @@ select:focus {
   background: transparent;
   border: none;
   color: rgba(255, 255, 255, 0.5);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   padding: 0 8px;
   border-radius: 4px;
@@ -980,7 +980,7 @@ select:focus {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   letter-spacing: 1px;
   color: rgba(255, 255, 255, 0.7);
@@ -1047,7 +1047,7 @@ select:focus {
 }
 
 .cmd-code-group-filename {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: #f1f5f9;
 }
@@ -1097,7 +1097,7 @@ select:focus {
 
 .cmd-code-line-badge {
   color: var(--accent, #a78bfa);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   font-family: var(--font-mono);
   min-width: 34px;
@@ -1107,7 +1107,7 @@ select:focus {
 }
 
 .cmd-code-preview-text {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: var(--font-mono);
   color: rgba(255, 255, 255, 0.72);
   white-space: nowrap;
@@ -1271,7 +1271,7 @@ select:focus {
 
 .idea-project-title {
   font-weight: 700 !important;
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
   color: var(--text) !important;
   letter-spacing: 0.05em;
 }
@@ -1296,13 +1296,13 @@ select:focus {
   flex-direction: column;
   padding: 0;
   gap: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .git-panel-empty {
   padding: 16px 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .git-toolbar {
@@ -1325,7 +1325,7 @@ select:focus {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .git-sync-meta {
@@ -1369,7 +1369,7 @@ select:focus {
   border-bottom: 2px solid transparent;
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   text-align: center;
   transition: all 0.15s ease;
@@ -1427,7 +1427,7 @@ select:focus {
 }
 
 .git-commit-msg {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--fg);
   font-weight: 500;
   word-break: break-word;
@@ -1445,7 +1445,7 @@ select:focus {
 .git-branch-row button,
 .git-new-branch button,
 .git-panel > button {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .git-commit-box {
@@ -1463,7 +1463,7 @@ select:focus {
   border-radius: 6px;
   padding: 6px 8px;
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .git-error {
@@ -1523,7 +1523,7 @@ select:focus {
   text-align: left;
   cursor: pointer;
   padding: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: var(--font-mono);
   overflow: hidden;
 }
@@ -1569,7 +1569,7 @@ select:focus {
   padding: 2px 8px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .main-grid {
@@ -1677,7 +1677,7 @@ body.resizing.resizing-row {
 
 .panel-title {
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1688,7 +1688,7 @@ body.resizing.resizing-row {
   overflow: visible;
   padding: 2px 0 6px 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   min-width: 100%;
   width: max-content;
   box-sizing: border-box;
@@ -1842,7 +1842,7 @@ body.resizing.resizing-row {
   min-width: 0;
   padding: 2px 8px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   border-radius: 4px;
   background: var(--bg-input, #131418);
   border: 1px solid var(--accent, #6366f1);
@@ -1945,7 +1945,7 @@ body.resizing.resizing-row {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   letter-spacing: 1.5px;
   color: rgba(255, 255, 255, 0.65);
@@ -2315,7 +2315,7 @@ span.keybinding {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif !important;
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
   font-weight: 500 !important;
   letter-spacing: 1.5px !important;
   color: rgba(255, 255, 255, 0.65) !important;
@@ -2559,7 +2559,7 @@ span.keybinding {
 
 .find-folder-path-tag {
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.55);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2760,7 +2760,7 @@ span.keybinding {
 }
 
 .find-folder-count {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.5);
 }
 
@@ -2789,7 +2789,7 @@ span.keybinding {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.06);
   color: #f1f5f9;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.12s ease;
@@ -3160,7 +3160,7 @@ span.keybinding {
   padding: 8px 14px;
   border-top: 1px solid var(--border);
   background: var(--bg-panel);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .image-preview-name {
@@ -3265,7 +3265,7 @@ span.keybinding {
 }
 
 .chat-empty-subtitle {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted, #94a3b8);
   max-width: 300px;
   line-height: 1.5;
@@ -3288,7 +3288,7 @@ span.keybinding {
   background: var(--bg-elevated, rgba(255, 255, 255, 0.03));
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--text, #cccccc);
   cursor: pointer;
   text-align: left;
@@ -3331,7 +3331,7 @@ span.keybinding {
 .chat-prompt-pill-arrow {
   color: var(--muted, #858585);
   opacity: 0.6;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   transition: all 0.15s ease;
 }
 
@@ -3603,7 +3603,7 @@ span.keybinding {
 }
 
 .project-history-card-snippet {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--fg-muted, #94a3b8);
   line-height: 1.45;
   overflow: hidden;
@@ -3710,7 +3710,7 @@ span.keybinding {
 .project-history-more-btn {
   width: 100%;
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   border-radius: 8px;
   border: 1px dashed var(--border, rgba(255, 255, 255, 0.12));
@@ -3803,7 +3803,7 @@ span.keybinding {
   color: var(--text);
   border-radius: 999px;
   padding: 6px 14px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   box-shadow: var(--shadow-jump);
 }
@@ -3868,7 +3868,7 @@ span.keybinding {
   border: none;
   background: transparent;
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   text-align: left;
@@ -3925,7 +3925,7 @@ span.keybinding {
 .msg.tool {
   border-color: var(--border-tool);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   white-space: pre-wrap;
 }
 
@@ -4080,7 +4080,7 @@ span.keybinding {
   padding: 14px 16px;
   backdrop-filter: blur(16px);
   color: var(--text-main, #e2e8f0);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   animation: metricsPopoverFadeIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
   box-sizing: border-box;
 }
@@ -4953,7 +4953,7 @@ span.keybinding {
 
 .md-katex-error {
   color: #f87171;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: ui-monospace, 'SF Mono', monospace;
   padding: 6px 12px;
   background: rgba(239, 68, 68, 0.08);
@@ -5013,7 +5013,7 @@ span.keybinding {
 }
 
 .md-toc-title {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: #e4e4e7;
   letter-spacing: 0.3px;
@@ -5062,7 +5062,7 @@ span.keybinding {
   gap: 7px;
   padding: 5px 8px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: #a1a1aa;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -5082,7 +5082,7 @@ span.keybinding {
 
 .md-toc-item.level-2 {
   padding-left: 18px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .md-toc-item.level-3 {
@@ -5134,7 +5134,7 @@ span.keybinding {
 .md-toc-empty {
   padding: 18px 14px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: #71717a;
 }
 
@@ -5267,7 +5267,7 @@ span.keybinding {
 }
 
 .tool-call-name {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
 }
 
@@ -5291,7 +5291,7 @@ span.keybinding {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: var(--font-mono);
   color: var(--muted);
 }
@@ -5335,7 +5335,7 @@ span.keybinding {
   background: var(--bg-code, rgba(0, 0, 0, 0.25));
   border: 1px solid var(--border);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
@@ -5409,7 +5409,7 @@ span.keybinding {
 .tool-terminal-prompt {
   flex-shrink: 0;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 700;
   color: var(--accent);
   line-height: 1.45;
@@ -5443,7 +5443,7 @@ span.keybinding {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
 }
 
@@ -5584,7 +5584,7 @@ span.keybinding {
 
 .agent-timeline-cmd {
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: #e2e8f0;
   background: rgba(255, 255, 255, 0.06);
   padding: 1px 5px;
@@ -5594,7 +5594,7 @@ span.keybinding {
 .agent-timeline-diff-add {
   color: #4ade80;
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   margin-left: 2px;
 }
@@ -5602,7 +5602,7 @@ span.keybinding {
 .agent-timeline-diff-del {
   color: #f87171;
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   margin-left: 1px;
 }
@@ -5640,14 +5640,14 @@ span.keybinding {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: #94a3b8;
   padding: 1px 0;
 }
 
 .agent-timeline-sub-action {
   color: #64748b;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .agent-timeline-sub-range {
@@ -5771,7 +5771,7 @@ span.keybinding {
   border-radius: 6px;
   overflow: hidden;
   font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.5;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   animation: fadeInPop 0.12s ease-out;
@@ -5819,7 +5819,7 @@ span.keybinding {
   word-break: break-all;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.5;
 }
 
@@ -5883,7 +5883,7 @@ span.keybinding {
 .tool-inout-body {
   padding: 8px 12px;
   color: var(--text, #d4d4d8);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -6061,7 +6061,7 @@ span.keybinding {
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   text-align: left;
@@ -6093,7 +6093,7 @@ span.keybinding {
   margin: 2px 0 2px 9px;
   padding: 6px 12px;
   border-left: 2px solid var(--border);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.55;
   color: var(--muted);
   font-family: var(--font-mono);
@@ -6135,7 +6135,7 @@ span.keybinding {
   color: inherit;
   cursor: pointer;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: var(--font-mono);
 }
 
@@ -6319,7 +6319,7 @@ span.keybinding {
 .chat-ref-chip-name {
   color: var(--text);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   letter-spacing: 0.01em;
   white-space: nowrap;
   overflow: hidden;
@@ -6406,7 +6406,7 @@ span.keybinding {
 .chat-code-ref-pill-name {
   color: var(--text);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   white-space: nowrap;
 }
 
@@ -6427,7 +6427,7 @@ span.keybinding {
 }
 
 .status-pill {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
 }
 
@@ -6573,7 +6573,7 @@ span.keybinding {
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: var(--font-mono, monospace);
   color: var(--accent);
   margin-bottom: 6px;
@@ -6671,7 +6671,7 @@ span.keybinding {
 .remote-dir-crumb-sep {
   color: var(--muted);
   opacity: 0.45;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   user-select: none;
 }
 
@@ -6782,7 +6782,7 @@ span.keybinding {
   background: var(--bg-card, rgba(255, 255, 255, 0.05));
   border: 1px solid var(--border);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.14s ease;
@@ -6863,7 +6863,7 @@ span.keybinding {
   border: none;
   outline: none;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   padding: 0;
 }
 
@@ -6882,7 +6882,7 @@ span.keybinding {
 }
 
 .remote-dir-count-hint {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -7043,7 +7043,7 @@ span.keybinding {
 }
 
 .remote-dir-empty-sub {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   margin: 0;
   max-width: 360px;
@@ -7057,7 +7057,7 @@ span.keybinding {
   padding: 6px 12px;
   background: color-mix(in srgb, var(--bg-card, rgba(0, 0, 0, 0.2)) 50%, transparent);
   border-top: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
 }
 
@@ -7087,7 +7087,7 @@ span.keybinding {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   overflow: hidden;
   background: color-mix(in srgb, var(--text) 5%, transparent);
   padding: 4px 8px;
@@ -7209,7 +7209,7 @@ span.keybinding {
 }
 
 .terminal-brand-text {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--text);
   letter-spacing: 0.02em;
@@ -7294,7 +7294,7 @@ span.keybinding {
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted, #94a3b8);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
@@ -7675,7 +7675,7 @@ span.keybinding {
 }
 
 .chat-mention-title {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
@@ -7856,7 +7856,7 @@ span.keybinding {
   align-items: center;
   justify-content: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   letter-spacing: 0.01em;
   transition: all 0.15s ease;
@@ -7937,7 +7937,7 @@ span.keybinding {
   padding: 3px 10px;
   background: rgba(0, 0, 0, 0.16);
   border-bottom: 1px solid var(--border);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   min-height: 28px;
   box-sizing: border-box;
@@ -8092,7 +8092,7 @@ span.keybinding {
   padding: 4px 8px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   transition: background 0.1s ease;
 }
 
@@ -8259,7 +8259,7 @@ span.keybinding {
 .git-peek-body {
   overflow-y: auto;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.5;
 }
 
@@ -8330,7 +8330,7 @@ span.keybinding {
   color: rgba(255, 255, 255, 0.72);
   /* 11.5px 是半个像素：不同缩放比下会被各自取整，同一个界面里出现大小不一的状态栏文字。
      与左侧栏、面板标题统一到 12px。 */
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   user-select: none;
   padding: 0 8px 0 0;
@@ -8366,7 +8366,7 @@ span.keybinding {
   cursor: pointer;
   white-space: nowrap;
   color: rgba(255, 255, 255, 0.75);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   background: transparent;
   border: none;
   outline: none;
@@ -8402,7 +8402,7 @@ span.keybinding {
   height: 26px;
   line-height: 26px;
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   border-radius: 4px;
   margin-right: 4px;
   display: inline-flex;
@@ -8499,7 +8499,7 @@ span.keybinding {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--fg);
   background: rgba(255, 255, 255, 0.02);
@@ -8545,7 +8545,7 @@ span.keybinding {
   align-items: center;
   gap: 8px;
   padding: 5px 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--fg);
   cursor: pointer;
   border-radius: 4px;
@@ -8682,7 +8682,7 @@ span.keybinding {
 
 .diff-path {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .diff-actions {
@@ -8935,7 +8935,7 @@ span.keybinding {
 
 .panel-desc {
   margin: 4px 0 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.45);
   line-height: 1.5;
 }
@@ -8950,7 +8950,7 @@ span.keybinding {
   color: #fff;
   border: none;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 122, 204, 0.3);
@@ -9014,7 +9014,7 @@ span.keybinding {
 }
 
 .preset-label {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.5);
 }
 
@@ -9022,7 +9022,7 @@ span.keybinding {
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #e2e8f0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   padding: 3px 8px;
   border-radius: 4px;
   outline: none;
@@ -9042,7 +9042,7 @@ span.keybinding {
 }
 
 .model-edit-box .settings-row label {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   color: rgba(255, 255, 255, 0.75);
 }
@@ -9064,7 +9064,7 @@ span.keybinding {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--accent-light, #3794ff);
@@ -9081,7 +9081,7 @@ span.keybinding {
 
 .edit-section-hint {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.45);
 }
@@ -9091,7 +9091,7 @@ span.keybinding {
   align-items: center;
   height: 32px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.4;
   color: rgba(255, 255, 255, 0.45);
   background: rgba(0, 0, 0, 0.22);
@@ -9218,7 +9218,7 @@ span.keybinding {
   color: #cbd5e1;
   padding: 5px 12px;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
 }
 
@@ -9233,7 +9233,7 @@ span.keybinding {
   color: rgba(255, 255, 255, 0.65);
   padding: 5px 12px;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
 }
 
@@ -9244,7 +9244,7 @@ span.keybinding {
 
 .save-model-btn {
   padding: 5px 14px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
 }
 
@@ -9433,7 +9433,7 @@ span.keybinding {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.45);
   flex-wrap: nowrap;
   min-width: 0;
@@ -9592,7 +9592,7 @@ span.keybinding {
 .card-action-btn {
   padding: 5px 9px;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
@@ -9664,7 +9664,7 @@ span.keybinding {
 }
 
 .card-current-val {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--accent-light, #3794ff);
   font-family: var(--font-mono);
@@ -9672,7 +9672,7 @@ span.keybinding {
 
 .setting-card-desc {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.45);
   line-height: 1.4;
 }
@@ -9702,7 +9702,7 @@ span.keybinding {
   cursor: pointer;
   background: rgba(0, 0, 0, 0.2);
   transition: all 0.15s ease;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   color: rgba(255, 255, 255, 0.7);
 }
@@ -9764,7 +9764,7 @@ span.keybinding {
 }
 
 .perm-hint-bubble {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.6);
   background: rgba(255, 255, 255, 0.035);
   padding: 8px 10px;
@@ -9781,7 +9781,7 @@ span.keybinding {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.6);
 }
 
@@ -9835,7 +9835,7 @@ span.keybinding {
 
 .skill-card-desc {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.45);
   line-height: 1.4;
 }
@@ -9853,7 +9853,7 @@ span.keybinding {
   align-items: baseline;
   gap: 4px;
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.5);
   background: rgba(0, 0, 0, 0.22);
@@ -9987,7 +9987,7 @@ span.keybinding {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
   white-space: nowrap;
@@ -10002,7 +10002,7 @@ span.keybinding {
 }
 
 .settings-modal .mcp-danger-btn {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   padding: 3px 9px;
   border-radius: 5px;
   background: var(--bg-danger-btn);
@@ -10023,14 +10023,14 @@ span.keybinding {
 }
 
 .mcp-error-title {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--danger);
   margin-bottom: 4px;
 }
 
 .mcp-error-msg {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.5;
   color: var(--danger-text);
   word-break: break-word;
@@ -10068,7 +10068,7 @@ span.keybinding {
 }
 
 .mcp-field > span {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.6);
 }
 
@@ -10077,12 +10077,12 @@ span.keybinding {
 .mcp-field textarea {
   width: 100%;
   box-sizing: border-box;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .mcp-field textarea {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.5;
   resize: vertical;
 }
@@ -10109,7 +10109,7 @@ span.keybinding {
 
 .settings-modal .mcp-save-btn {
   padding: 5px 14px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   border-radius: 5px;
   color: #fff;
@@ -10165,7 +10165,7 @@ span.keybinding {
 .empty-sub {
   display: block;
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.6;
   text-align: center;
   color: rgba(255, 255, 255, 0.45);
@@ -10206,7 +10206,7 @@ span.keybinding {
 }
 
 .probe-status-text {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
 }
 
@@ -10230,7 +10230,7 @@ span.keybinding {
   color: #cbd5e1;
   padding: 6px 14px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
 }
 
@@ -10245,7 +10245,7 @@ span.keybinding {
   border: none;
   padding: 6px 16px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 122, 204, 0.3);
@@ -10305,7 +10305,7 @@ span.keybinding {
 }
 
 .settings-row label {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
 }
 
@@ -10339,7 +10339,7 @@ span.keybinding {
 }
 
 .label-hint {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   font-weight: normal;
   margin-left: 4px;
@@ -10442,7 +10442,7 @@ span.keybinding {
   border: 1px solid rgba(147, 51, 234, 0.3);
   border-radius: 4px;
   color: rgb(147, 51, 234);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -10501,7 +10501,7 @@ span.keybinding {
 
 .settings-inline-hint {
   margin: 6px 0 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.5;
   color: var(--muted);
 }
@@ -10677,7 +10677,7 @@ span.keybinding {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
 }
 
@@ -10696,7 +10696,7 @@ span.keybinding {
 }
 
 .step-pill {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
 }
 
@@ -10736,7 +10736,7 @@ span.keybinding {
 
 .settings-hint {
   margin: 0 0 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.5;
 }
 
@@ -10915,7 +10915,7 @@ span.keybinding {
 }
 
 .welcome-choice-desc {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   line-height: 1.45;
 }
@@ -10951,7 +10951,7 @@ span.keybinding {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -11087,7 +11087,7 @@ span.keybinding {
 }
 
 .welcome-recent-path {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -11136,7 +11136,7 @@ button.welcome-recent-remove:hover {
 .welcome-recent-more {
   align-self: flex-start;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   padding: 4px 0;
   background: transparent;
   border: none;
@@ -11188,7 +11188,7 @@ button.welcome-recent-remove:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   font-weight: 600;
   margin-bottom: 8px;
@@ -11251,7 +11251,7 @@ button.welcome-recent-remove:hover {
   color: var(--muted);
   cursor: pointer;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .recent-workspace-item .delete-recent-btn:hover {
@@ -11262,12 +11262,12 @@ button.welcome-recent-remove:hover {
 
 .probe-ok {
   color: var(--ok);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .probe-fail {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .chat-title-row {
@@ -11629,7 +11629,7 @@ button.welcome-recent-remove:hover {
   gap: 6px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   border: 1px solid transparent;
   transition:
     background 0.12s ease,
@@ -11974,7 +11974,7 @@ body.db-col-resizing .db-data-cell {
   border: 1px solid var(--accent, #4c8dff);
   border-radius: 3px;
   padding: 2px 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: inherit;
   outline: none;
 }
@@ -12076,7 +12076,7 @@ body.db-col-resizing .db-data-cell {
   max-height: 132px;
   overflow: auto;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.6;
   white-space: pre;
   background: var(--bg-code);
@@ -12190,7 +12190,7 @@ body.db-col-resizing .db-data-cell {
   border: 1px solid var(--border-strong, var(--border));
   border-radius: 6px;
   box-shadow: var(--shadow-jump);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.55;
   pointer-events: none;
 }
@@ -12274,7 +12274,7 @@ body.db-col-resizing .db-data-cell {
   gap: 7px;
   height: 25px;
   padding: 0 10px 0 26px; /* 产生明确的子级层级缩进 */
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--text);
   cursor: pointer;
   white-space: nowrap;
@@ -12481,7 +12481,7 @@ body.db-col-resizing .db-data-cell {
    而不是又一堆与排序并列的独立功能。 */
 .tab-context-menu .menu-item.db-column-menu-sub-item {
   padding-left: 22px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .tab-context-menu .menu-item.db-column-menu-sub-item .menu-item-icon {
@@ -12577,7 +12577,7 @@ body.db-col-resizing .db-data-cell {
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
 }
 
@@ -12644,7 +12644,7 @@ body.db-col-resizing .db-data-cell {
 .confirm-detail-value {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--text);
   word-break: break-all;
 }
@@ -12677,7 +12677,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .db-confirm-typing-hint {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--text-muted);
   margin-bottom: 6px;
 }
@@ -12697,7 +12697,7 @@ body.db-col-resizing .db-data-cell {
   border: 1px solid var(--border);
   border-radius: 5px;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: var(--font-mono, monospace);
   padding: 6px 9px;
   outline: none;
@@ -12718,7 +12718,7 @@ body.db-col-resizing .db-data-cell {
 .panel-action-btn.db-confirm-btn {
   width: auto;
   padding: 0 14px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text);
@@ -13046,7 +13046,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .db-structure-title {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
@@ -13100,7 +13100,7 @@ body.db-col-resizing .db-data-cell {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   text-align: center;
 }
@@ -13149,7 +13149,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .db-meta-row .db-meta-value {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--text);
   font-family: var(--font-mono, ui-monospace, monospace);
   min-width: 0;
@@ -13179,7 +13179,7 @@ body.db-col-resizing .db-data-cell {
   max-width: 320px;
   height: 22px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: var(--font-mono, ui-monospace, monospace);
   color: var(--text);
   background: var(--bg-input, var(--bg-code));
@@ -13361,7 +13361,7 @@ body.db-col-resizing .db-data-cell {
   border: none;
   background: transparent;
   color: var(--text, #cccccc);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   text-align: left;
   transition:
@@ -13389,7 +13389,7 @@ body.db-col-resizing .db-data-cell {
   justify-content: center;
   gap: 6px;
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   border-radius: 5px;
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   background: var(--bg-button, rgba(255, 255, 255, 0.06));
@@ -13436,7 +13436,7 @@ body.db-col-resizing .db-data-cell {
   padding: 2px 6px;
   min-width: 24px;
   height: 22px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   font-family: inherit;
   border-radius: 4px;
@@ -13544,7 +13544,7 @@ body.db-col-resizing .db-data-cell {
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   border-radius: 6px;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   outline: none;
   box-sizing: border-box;
   transition:
@@ -13676,7 +13676,7 @@ body.db-col-resizing .db-data-cell {
 
 .terminal-search-input::placeholder {
   color: rgba(255, 255, 255, 0.38);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 [data-theme='light'] .terminal-search-input::placeholder {
@@ -13684,7 +13684,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .terminal-search-badge {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted, rgba(255, 255, 255, 0.65));
   white-space: nowrap;
   padding: 0 6px;
@@ -13812,7 +13812,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .session-modal-count {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   font-weight: normal;
 }
@@ -13879,7 +13879,7 @@ body.db-col-resizing .db-data-cell {
 
 .session-project-dropdown-item {
   padding: 7px 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -13918,7 +13918,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .session-project-item-title {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -13977,7 +13977,7 @@ body.db-col-resizing .db-data-cell {
   border: none;
   padding: 5px 12px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -14081,7 +14081,7 @@ body.db-col-resizing .db-data-cell {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
   color: var(--muted, #94a3b8);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   font-family: var(--font-ui, -apple-system, sans-serif);
   flex-shrink: 0;
@@ -14122,7 +14122,7 @@ body.db-col-resizing .db-data-cell {
 
 .session-branch-filter-label {
   font-family: var(--font-code, monospace);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -14390,7 +14390,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .session-card-preview {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   line-height: 1.4;
   height: 34px;
@@ -14422,7 +14422,7 @@ body.db-col-resizing .db-data-cell {
   background: transparent;
   border: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   opacity: 0;
   padding: 2px 5px;
@@ -14606,7 +14606,7 @@ body.db-col-resizing .db-data-cell {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.3;
 }
 
@@ -14675,7 +14675,7 @@ body.db-col-resizing .db-data-cell {
     0 2px 8px rgba(0, 0, 0, 0.5),
     0 0 0 1px rgba(255, 255, 255, 0.06);
   min-width: 242px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   user-select: none;
   animation: tabMenuPop 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -14703,7 +14703,7 @@ body.db-col-resizing .db-data-cell {
     background 0.1s ease,
     color 0.1s ease;
   gap: 16px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .tab-context-menu .menu-item-left {
@@ -14777,7 +14777,7 @@ body.db-col-resizing .db-data-cell {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   letter-spacing: 1.5px;
   color: rgba(255, 255, 255, 0.65);
@@ -14891,7 +14891,7 @@ body.db-col-resizing .db-data-cell {
   border: none;
   outline: none;
   color: #e2e8f0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   padding: 3px 8px;
   border-radius: 6px;
@@ -15489,7 +15489,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .monaco-editor .find-widget .monaco-inputbox .input::placeholder {
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
   color: rgba(255, 255, 255, 0.38) !important;
 }
 
@@ -15516,12 +15516,12 @@ body.db-col-resizing .db-data-cell {
   align-items: center !important;
   gap: 6px !important;
   height: 32px !important;
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
 }
 
 .monaco-editor .find-widget > .replace-part {
   margin: 5px 35px 0 33px !important;
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
 }
 
 .monaco-editor .find-widget:not(.replaceToggled) > .replace-part {
@@ -15626,7 +15626,7 @@ body.db-col-resizing .db-data-cell {
   margin: 0 4px !important;
   padding: 0 6px !important;
   min-width: 66px !important;
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
   line-height: 24px !important;
   height: 24px !important;
   color: var(--muted, rgba(255, 255, 255, 0.65)) !important;
@@ -15926,7 +15926,7 @@ body.db-col-resizing .db-data-cell {
 
 /* 更新检查结果提示（页面内） */
 .update-result-msg {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   padding: 6px 10px;
   border-radius: 6px;
   line-height: 1.5;
@@ -16035,7 +16035,7 @@ body.db-col-resizing .db-data-cell {
   border-radius: 8px;
   padding: 10px 12px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.45;
   white-space: pre-wrap;
   margin: 0;
@@ -16118,7 +16118,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .clone-repo-field-label {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--text-bright, #fff);
   display: flex;
@@ -16209,7 +16209,7 @@ body.db-col-resizing .db-data-cell {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .clone-repo-footer {
@@ -16337,7 +16337,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .ide-field label {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   color: var(--muted);
 }
@@ -16466,7 +16466,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .ssh-server-meta {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   font-family: var(--font-mono);
   overflow: hidden;
@@ -16530,13 +16530,13 @@ button.ssh-server-remove:hover {
 
 .muted {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .skills-list {
   margin: 0;
   padding-left: 18px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .ssh-profiles {
@@ -16599,7 +16599,7 @@ button.ssh-server-remove:hover {
 }
 
 .modern-open-ws-modal .welcome-choice-desc {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .open-ws-grid {
@@ -16666,7 +16666,7 @@ button.ssh-server-remove:hover {
 }
 
 .open-ws-card-desc {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   margin-top: 2px;
   line-height: 1.35;
@@ -16687,7 +16687,7 @@ button.ssh-server-remove:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   font-weight: 600;
   gap: 10px;
@@ -16709,7 +16709,7 @@ button.ssh-server-remove:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: #0d0d0d;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   outline: none;
   box-sizing: border-box;
   transition: all 0.15s ease;
@@ -16743,7 +16743,7 @@ button.ssh-server-remove:hover {
 
 .open-ws-recent-empty {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   padding: 20px 0;
   text-align: center;
   opacity: 0.8;
@@ -16971,7 +16971,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .open-ws-recent-path {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -17080,7 +17080,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--text-bright, #fff);
   background: rgba(255, 255, 255, 0.03);
@@ -17193,7 +17193,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   align-items: center;
   gap: 6px;
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.25;
   cursor: pointer;
   padding: 2px 4px;
@@ -17228,7 +17228,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 .chat-diff-file-item .diff-filename {
   color: var(--text);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.2;
 }
 
@@ -17256,7 +17256,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   user-select: none;
   transition: color 0.15s ease;
@@ -17280,7 +17280,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   padding: 2px 6px;
@@ -17299,7 +17299,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: var(--accent);
   border: none;
   color: #ffffff;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   cursor: pointer;
   padding: 3px 8px;
@@ -17585,7 +17585,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: rgba(239, 68, 68, 0.12);
   border-bottom: 1px solid rgba(239, 68, 68, 0.3);
   color: #f87171;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -17631,7 +17631,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--text-main, #f1f5f9);
   cursor: pointer;
@@ -17699,7 +17699,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .turn-revert-file-name {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   color: var(--fg, #f8fafc);
   overflow: hidden;
@@ -17945,7 +17945,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   align-items: center;
   justify-content: center;
   color: var(--text-muted, #94a3b8);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .turn-revert-special-card-wrap {
@@ -18028,7 +18028,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .move-path-box .move-val {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-family: var(--font-mono, monospace);
   color: var(--text, #f1f5f9);
   word-break: break-all;
@@ -18041,7 +18041,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .turn-revert-special-desc {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.5;
   color: var(--text-muted, #94a3b8);
 }
@@ -18135,7 +18135,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   color: var(--text-muted, #94a3b8);
   padding: 6px 14px;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -18154,7 +18154,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   color: #fff;
   padding: 6px 16px;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
@@ -18332,7 +18332,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   gap: 10px;
   padding: 10px 14px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
 }
 
@@ -18355,7 +18355,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   color: inherit;
   cursor: pointer;
   opacity: 0.7;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .ext-hero-card {
@@ -18429,7 +18429,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .ext-hero-desc {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
   margin-top: 3px;
   line-height: 1.45;
@@ -18446,14 +18446,14 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   margin-bottom: 8px;
 }
 
 .ext-progress-stat {
   font-family: var(--font-mono);
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .ext-progress-track {
@@ -18517,7 +18517,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .ext-section-count {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--muted);
 }
 
@@ -18601,7 +18601,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: 1px dashed var(--border);
   border-radius: 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   text-align: center;
 }
 
@@ -18621,7 +18621,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: transparent;
   border: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   transition:
     color 0.15s ease,
@@ -19020,7 +19020,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   max-width: 220px;
 }
 
@@ -19171,7 +19171,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--text);
   max-width: 100%;
 }
@@ -19368,7 +19368,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   padding: 6px 10px;
   background: rgba(0, 0, 0, 0.35);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .term-prompt {
@@ -19416,7 +19416,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: none;
   color: #d1d5db;
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
@@ -19850,7 +19850,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   outline: none;
   cursor: pointer;
   appearance: none;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   padding: 0;
   line-height: 26px;
@@ -19883,7 +19883,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: 1px solid var(--border);
   border-radius: 13px;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
@@ -20121,7 +20121,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .chat-model-item-title {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
@@ -20153,7 +20153,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .chat-model-check {
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: bold;
 }
 
@@ -20167,12 +20167,12 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 .chat-model-dropdown-menu.compact .chat-model-dropdown-item {
   gap: 12px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.4;
 }
 
 .chat-model-dropdown-menu.compact .chat-model-item-title {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -20180,7 +20180,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .chat-model-dropdown-menu.compact .chat-model-check {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 /* ==========================================================================
@@ -20309,7 +20309,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .inline-ai-title {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--accent);
 }
@@ -20363,7 +20363,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .inline-ai-submit-btn {
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   border-radius: 6px;
   border: none;
@@ -20456,7 +20456,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .inline-ai-accept-btn {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   border-radius: 5px;
   border: none;
@@ -20472,7 +20472,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .inline-ai-reject-btn {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   border-radius: 5px;
   border: 1px solid var(--border);
@@ -20493,7 +20493,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--accent);
   background: rgba(56, 189, 248, 0.08);
   border-radius: 6px;
@@ -20595,7 +20595,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   justify-content: space-between;
   padding: 5px 8px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   transition:
@@ -20625,7 +20625,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 5px;
   padding: 5px 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: #ffffff;
   outline: none;
   margin-bottom: 8px;
@@ -20651,7 +20651,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: none;
   border-radius: 4px;
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   transition: filter 0.12s ease;
@@ -20667,7 +20667,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 4px;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   transition:
     background 0.12s ease,
@@ -20812,7 +20812,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 .monaco-inline-git-blame {
   color: #8b949e !important;
   opacity: 0.82 !important;
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
   font-style: italic !important;
   font-family: var(
     --font-sans,
@@ -20856,7 +20856,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   border-radius: 8px;
   box-shadow: var(--shadow-jump);
   padding: 5px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: var(--text);
 }
 
@@ -20988,7 +20988,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
     Roboto,
     sans-serif
   ) !important;
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
   display: flex !important;
   align-items: center !important;
 }
@@ -21053,7 +21053,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   display: flex !important;
   align-items: center !important;
   padding: 0 8px !important;
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
   line-height: 23px !important;
   color: #c9d1d9 !important;
   border-left: 3px solid transparent !important;
@@ -21147,7 +21147,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .monaco-editor .zone-widget .peekview-widget .body .tree .reference-file .label-name {
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
   font-weight: 600 !important;
   color: var(--text, #e6e8ec) !important;
   white-space: nowrap !important;
@@ -21521,7 +21521,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .switch-workspace-subtitle {
   margin: 3px 0 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: #9ca3af;
 }
 
@@ -21558,7 +21558,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   padding: 8px 12px;
   margin-bottom: 16px;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: #9ca3af;
 }
 
@@ -21643,7 +21643,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .switch-workspace-option-desc {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: #9ca3af;
 }
 
@@ -21672,7 +21672,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   color: #9ca3af;
   padding: 6px 16px;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -21745,7 +21745,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .confirm-delete-desc {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.5);
   line-height: 1.4;
 }
@@ -21770,7 +21770,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .confirm-delete-endpoint {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   color: rgba(255, 255, 255, 0.45);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -21801,7 +21801,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   color: #fff;
   padding: 6px 16px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -21831,7 +21831,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   z-index: 999999;
   background: rgba(22, 23, 29, 0.94);
   color: #f1f5f9;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   line-height: 1.45;
   padding: 5px 10px;
@@ -21983,7 +21983,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .confirm-update-new-badge {
@@ -21994,12 +21994,12 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   font-family: var(--font-mono, monospace);
   padding: 1px 7px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .confirm-update-current-text {
   color: var(--muted, #94a3b8);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
 }
 
 .confirm-update-body {
@@ -22010,7 +22010,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .confirm-update-notes-title {
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   color: var(--muted, #94a3b8);
   letter-spacing: 0.02em;
@@ -22039,7 +22039,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 .confirm-update-notes-empty {
   color: var(--muted, #71717a);
   font-style: italic;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   padding: 4px 0;
 }
 
@@ -22247,7 +22247,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   gap: 6px;
   padding: 6px 14px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
@@ -22452,7 +22452,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .about-feat-desc {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.45);
 }
@@ -22480,7 +22480,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   padding: 3px 10px;
   border-radius: 6px;
   cursor: pointer;
@@ -22503,7 +22503,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   padding: 4px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
@@ -22762,7 +22762,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   width: 100%;
   background: var(--bg, #181818);
   color: var(--text, #cccccc);
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   overflow: hidden;
 }
 
@@ -22836,7 +22836,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   background: transparent;
   color: var(--muted, #94a3b8);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -23023,7 +23023,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 .git-modal-btn {
   padding: 6px 14px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -23126,7 +23126,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .git-tab-btn {
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: var(--ui-font-size, 12px);
   border-radius: 4px;
   border: none;
   cursor: pointer;
@@ -23235,7 +23235,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   display: flex !important;
   align-items: center !important;
   gap: 8px !important;
-  font-size: 12px !important;
+  font-size: var(--ui-font-size, 12px) !important;
   color: var(--text, #e2e8f0) !important;
   transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1) !important;
   box-sizing: border-box !important;
