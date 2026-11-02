@@ -33,7 +33,17 @@ export const REMOTE_RUNNER_VERSION = '1';
 export const MIN_REMOTE_NODE_MAJOR = 20;
 
 /** 远端 runner 目录（相对远端家目录）。 */
-const REMOTE_ROOT = '$HOME/.echoly/runner';
+const REMOTE_ROOT_SUFFIX = '/.echoly/runner';
+
+/**
+ * 远端家目录的占位符。
+ *
+ * 命令里用 `$HOME`（远端自己展开最准）；而 SFTP 传输需要一个**具体**的绝对路径，
+ * 所以体检时会顺手把 `$HOME` 读回来，之后凡是要走 SFTP 的地方都用那个值。
+ * 传进来的 home 一律去掉尾斜杠 —— 否则会拼出 `//` 这种在某些远端会被规范化掉、
+ * 又让路径比对失败的写法。
+ */
+export const HOME_PLACEHOLDER = '$HOME';
 
 /** 启动宽限期：这段时间内还没见到 meta 属正常（正在起），不算失败。 */
 export const START_GRACE_MS = 20_000;
@@ -67,13 +77,22 @@ export function assertSafeJobId(jobId: string): void {
   if (!isSafeJobId(jobId)) throw new Error(`非法的 jobId：${JSON.stringify(jobId)}`);
 }
 
-/** 远端各项文件的路径（未加引号的 shell 表达式，见文件头说明）。 */
-export function remotePaths(jobId: string): RemotePaths {
+/**
+ * 远端各项文件的路径。
+ *
+ * 返回的是**未加引号的 shell 表达式**（默认含 `$HOME`），由调用方拼命令时用双引号包住；
+ * 传入 `home` 时则给出可用于 SFTP 的具体绝对路径。两种形态共用一份定义，
+ * 是为了避免「命令里用的路径」与「上传时用的路径」各写一遍后悄悄分叉 ——
+ * 那种分叉的表现是「文件传上去了，但 runner 找不到它」。
+ */
+export function remotePaths(jobId: string, home: string = HOME_PLACEHOLDER): RemotePaths {
   assertSafeJobId(jobId);
-  const jobs = `${REMOTE_ROOT}/jobs`;
+  const prefix = home === HOME_PLACEHOLDER ? HOME_PLACEHOLDER : home.replace(/\/+$/, '');
+  const root = `${prefix}${REMOTE_ROOT_SUFFIX}`;
+  const jobs = `${root}/jobs`;
   return {
-    root: REMOTE_ROOT,
-    runner: `${REMOTE_ROOT}/echoly-runner.mjs`,
+    root,
+    runner: `${root}/echoly-runner.mjs`,
     jobsDir: jobs,
     meta: `${jobs}/${jobId}.meta.json`,
     events: `${jobs}/${jobId}.jsonl`,
@@ -106,6 +125,9 @@ export function buildProbeCommand(): string {
   const runner = quoted(remotePaths('probe-0000').runner);
   return [
     'command -v node >/dev/null 2>&1 || { echo ECHOLY_NODE_MISSING; exit 0; }',
+    // 家目录必须问远端：SFTP 需要具体路径，而本地猜错会指向一个不存在的目录，
+    // 那种失败看起来像「runner 没装上」，会把人往完全错误的方向带
+    'echo "HOME=$HOME"',
     'echo "NODE_VERSION=$(node -v 2>/dev/null)"',
     `if [ -f ${runner} ]; then echo "RUNNER_SHA=$( (sha256sum ${runner} 2>/dev/null || shasum -a 256 ${runner} 2>/dev/null) | awk '{print $1}' )"; else echo "RUNNER_SHA="; fi`,
   ].join('; ');
@@ -116,6 +138,8 @@ export interface RemoteProbeResult {
   nodeVersion?: string;
   nodeMajor?: number;
   runnerSha?: string;
+  /** 远端家目录的绝对路径，供 SFTP 使用 */
+  home?: string;
 }
 
 /** 解析体检输出。容忍缺行 —— 远端 shell 打点别的噪音不该让体检整体失败。 */
@@ -123,6 +147,7 @@ export function parseProbeOutput(stdout: string): RemoteProbeResult {
   if (stdout.includes('ECHOLY_NODE_MISSING')) return { nodeMissing: true };
   const versionLine = stdout.match(/NODE_VERSION=(\S+)/);
   const shaLine = stdout.match(/RUNNER_SHA=([0-9a-fA-F]*)/);
+  const homeLine = stdout.match(/HOME=(\S*)/);
   const nodeVersion = versionLine?.[1];
   const major = nodeVersion
     ? Number.parseInt(nodeVersion.replace(/^v/, '').split('.')[0], 10)
@@ -132,6 +157,7 @@ export function parseProbeOutput(stdout: string): RemoteProbeResult {
     nodeVersion,
     nodeMajor: Number.isFinite(major) ? major : undefined,
     runnerSha: shaLine?.[1] || undefined,
+    home: homeLine?.[1] || undefined,
   };
 }
 

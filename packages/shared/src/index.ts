@@ -874,6 +874,8 @@ export interface RemoteRunnerJob {
    * 因为清理/轮换凭据时它们是必须一并处理的。
    */
   sentCredentials: boolean;
+  /** 由事件流压出来的一小段时间线，供列表/详情直接展示（远端仍是唯一的真相来源） */
+  transcript?: BackgroundJobEntry[];
 }
 
 /** 远端 runner 的启动配置，序列化后以 0600 权限落在远端任务目录。 */
