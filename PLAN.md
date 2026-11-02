@@ -5,6 +5,9 @@
 > 涉及 UI 的改动还要跑 `npm run dev` 截图回归。
 > 另需 `npm run lint`（0 error）—— 它的 `react-hooks/rules-of-hooks` 是 error，
 > 专门拦「hook 写在提前 return 之后」这类只在运行时炸、typecheck 与测试都看不出来的问题。
+>
+> **「怎么验证」看 [VERIFY.md](./VERIFY.md)**：那里汇总了门禁命令、已自动验证过的部分
+> （含真模型 / 真注册表 / 真文件系统）以及必须在真机上点一遍的清单，还标了已知边界。
 
 ## 0. 前置结论（已确认）
 
