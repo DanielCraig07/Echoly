@@ -394,6 +394,17 @@ export function App() {
   } | null>(null);
   const terminalNonce = useRef(0);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('explorer');
+  /**
+   * 活动栏末尾 chevron 的展开状态：Maven / 数据库这两个「领域面板」默认收在里面。
+   *
+   * 收起它们的理由：这一排图标是每次打开侧栏都会看的东西，而 Maven 只在 Maven 项目里
+   * 有意义、数据库更是与语言无关的独立工具，平铺出来会让第一眼全是平时不点的图标。
+   *
+   * 收起的前提是**入口仍然在**：chevron 常驻可见、提示文案里写清里面是什么
+   * （不是含糊的「更多」），展开一次点击就到；并且当左侧正停在收起的那一组里时
+   * chevron 会自己高亮，避免出现「人已经在面板里、入口却看不见」的错位。
+   */
+  const [railExpanded, setRailExpanded] = useState(false);
   useEffect(() => {
     /**
      * `agent-tasks` 是被**有意**停用的：面板本体（AgentTaskPanel，600 行）与渲染都在，
@@ -4731,123 +4742,85 @@ export function App() {
         {showLeftPanel && (
           <>
             <aside className="panel left-side-panel">
-              <div
-                className="idea-sidebar-tabs"
-                style={{
-                  justifyContent: 'center',
-                  gap: 14,
-                  height: 38,
-                  boxSizing: 'border-box',
-                  padding: '5px 12px 5px',
-                  borderBottom: '1px solid var(--border)',
-                }}
-              >
-                <button
-                  type="button"
-                  className={leftPanel === 'explorer' ? 'active' : ''}
-                  onClick={() => setLeftPanel('explorer')}
-                  title={t('app.tabFiles')}
-                  style={{ width: 28, height: 28, borderRadius: 6 }}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                  >
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <polyline points="14 2 14 8 20 8" />
-                    <line x1="16" y1="13" x2="8" y2="13" />
-                    <line x1="16" y1="17" x2="8" y2="17" />
-                    <polyline points="10 9 9 9 8 9" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className={leftPanel === ('search' as any) ? 'active' : ''}
-                  title={t('app.tabSearch')}
-                  onClick={() => setLeftPanel('search' as any)}
-                  style={{ width: 28, height: 28, borderRadius: 6 }}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                  >
-                    <circle cx="11" cy="11" r="8" />
-                    <path d="m21 21-4.3-4.3" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className={leftPanel === 'git' ? 'active' : ''}
-                  onClick={() => setLeftPanel('git')}
-                  title={t('app.tabSourceControl')}
-                  style={{ width: 28, height: 28, borderRadius: 6 }}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                  >
-                    <circle cx="18" cy="18" r="3" />
-                    <circle cx="6" cy="6" r="3" />
-                    <path d="M13 6h3a2 2 0 0 1 2 2v7" />
-                    <line x1="6" y1="9" x2="6" y2="21" />
-                  </svg>
-                </button>
-                {/* Maven / 数据库是领域面板，与上面「文件 / 搜索 / Git」这组跨项目
-                    基础导航语义不同。这里用分隔线把两组视觉上分开，而不是把入口挪出
-                    一级导航——这一排本来就是这两个面板唯一的入口，挪走等于让人找不到。 */}
-                <span
-                  aria-hidden="true"
-                  style={{
-                    width: 1,
-                    height: 16,
-                    /* 容器已有 4px gap，这里不能再加：叠加后变成 8px，
-                       比图标之间的间距宽一倍，看起来就是「分隔线两侧特别空」。 */
-                    margin: 0,
-                    flexShrink: 0,
-                    background: 'var(--border, rgba(255, 255, 255, 0.12))',
-                  }}
-                />
-                {/* 扩展市场。放在分隔线之后：它与 Maven/数据库同属「工具箱」，
-                    而不是「文件/搜索/Git」那种基础导航。 */}
-                <button
-                  type="button"
-                  className={extensionPanelOpen ? 'active' : ''}
-                  onClick={() => setExtensionPanelOpen(true)}
-                  title={t('app.tabExtensions')}
-                  style={{ width: 28, height: 28, borderRadius: 6 }}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M14 7h3a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v2a1 1 0 0 1-1 1h-3a2 2 0 0 1-4 0H7a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4V8a1 1 0 0 1 1-1h3a2 2 0 0 1 4 0z" />
-                  </svg>
-                </button>
-                {isMavenProject && (
+              {/*
+                活动栏：图标收进一个圆角容器，选中项是圆角高亮，末尾一个 chevron。
+
+                两条自我约束：
+                1. **chevron 后面必须有东西。** 它是「更多面板」的入口而不是装饰；
+                   一个点不动的 chevron，和之前那个「假的暂停补全按钮」是同一类东西。
+                   当前数据库面板不依赖项目类型、永远存在，所以它恒有内容。
+                2. **chevron 展开的东西不藏着状态。** Maven / 数据库默认收起；
+                   若当前正停在其中一个上，chevron 会高亮（告诉用户「你正在看的那个在这儿」），
+                   而不是偷偷把入口显示出来 —— 否则「收起」这个动作的含义就说不清了。
+              */}
+              <div className="idea-sidebar-tabs">
+                <div className="activity-pill">
                   <button
                     type="button"
-                    className={leftPanel === 'maven' ? 'active' : ''}
-                    onClick={() => setLeftPanel('maven')}
-                    title={t('app.tabMaven')}
-                    style={{ width: 28, height: 28, borderRadius: 6 }}
+                    className={leftPanel === 'explorer' ? 'active' : ''}
+                    onClick={() => setLeftPanel('explorer')}
+                    title={t('app.tabFiles')}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    >
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                      <line x1="16" y1="13" x2="8" y2="13" />
+                      <line x1="16" y1="17" x2="8" y2="17" />
+                      <polyline points="10 9 9 9 8 9" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className={leftPanel === ('search' as any) ? 'active' : ''}
+                    title={t('app.tabSearch')}
+                    onClick={() => setLeftPanel('search' as any)}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    >
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="m21 21-4.3-4.3" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className={leftPanel === 'git' ? 'active' : ''}
+                    onClick={() => setLeftPanel('git')}
+                    title={t('app.tabSourceControl')}
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    >
+                      <circle cx="18" cy="18" r="3" />
+                      <circle cx="6" cy="6" r="3" />
+                      <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+                      <line x1="6" y1="9" x2="6" y2="21" />
+                    </svg>
+                  </button>
+                  {/* 扩展市场与「文件 / 搜索 / Git」同属跨项目入口，所以放在同一组；
+                      Maven / 数据库是领域面板，收进 chevron 后面。 */}
+                  <button
+                    type="button"
+                    className={extensionPanelOpen ? 'active' : ''}
+                    onClick={() => setExtensionPanelOpen(true)}
+                    title={t('app.tabExtensions')}
                   >
                     <svg
                       width="18"
@@ -4859,33 +4832,90 @@ export function App() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     >
-                      <path d="M4 19V5.5L12 13.5L20 5.5V19" />
+                      <path d="M14 7h3a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v2a1 1 0 0 1-1 1h-3a2 2 0 0 1-4 0H7a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4V8a1 1 0 0 1 1-1h3a2 2 0 0 1 4 0z" />
                     </svg>
                   </button>
-                )}
-                <button
-                  type="button"
-                  className={leftPanel === 'database' ? 'active' : ''}
-                  onClick={() => setLeftPanel('database')}
-                  title={t('app.tabDatabase')}
-                  style={{ width: 28, height: 28, borderRadius: 6 }}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+
+                  {railExpanded && isMavenProject && (
+                    <button
+                      type="button"
+                      className={leftPanel === 'maven' ? 'active' : ''}
+                      onClick={() => setLeftPanel('maven')}
+                      title={t('app.tabMaven')}
+                    >
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M4 19V5.5L12 13.5L20 5.5V19" />
+                      </svg>
+                    </button>
+                  )}
+                  {railExpanded && (
+                    <button
+                      type="button"
+                      className={leftPanel === 'database' ? 'active' : ''}
+                      onClick={() => setLeftPanel('database')}
+                      title={t('app.tabDatabase')}
+                    >
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <ellipse cx="12" cy="5" rx="9" ry="3" />
+                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                      </svg>
+                    </button>
+                  )}
+
+                  {/* chevron 不写成条件渲染：数据库面板不依赖项目类型，永远存在，
+                      所以它后面恒有内容。真到了「一个都没有」的那天，
+                      这里要跟着变成条件渲染，否则就是个点不动的死按钮。 */}
+                  <button
+                    type="button"
+                    className={`activity-more${railExpanded ? ' expanded' : ''}${
+                      !railExpanded && (leftPanel === 'maven' || leftPanel === 'database')
+                        ? ' active'
+                        : ''
+                    }`}
+                    onClick={() => setRailExpanded((v) => !v)}
+                    title={
+                      railExpanded
+                        ? t('app.railCollapse')
+                        : leftPanel === 'maven' || leftPanel === 'database'
+                          ? t('app.railExpandCurrent')
+                          : t('app.railExpand')
+                    }
                   >
-                    <ellipse cx="12" cy="5" rx="9" ry="3" />
-                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                  </svg>
-                </button>
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+                </div>
               </div>
+
               <div
                 className="explorer-wrapper"
                 style={{

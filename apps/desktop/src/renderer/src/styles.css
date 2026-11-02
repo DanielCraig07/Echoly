@@ -1219,50 +1219,82 @@ select:focus {
   min-height: 0;
 }
 
+/* ── 活动栏（左侧面板顶部这一排） ──
+   「文件 / 搜索 / Git / 扩展」这些跨项目入口收进一个圆角容器，选中项用圆角高亮块表示，
+   末尾一个 chevron 放 Maven / 数据库这种按需展开的领域面板。
+
+   两个刻意的选择：
+   - 选中态靠**底色块**而不是图标变色。这一排线条图标本来就同色，只换颜色几乎读不出来。
+   - 全部走主题 token。旧实现把 rgba(255,255,255,...) 写死，亮色主题下高亮基本不可见 ——
+     --bg-elevated / --bg-hover / --muted 这些两套主题都给了值，这里不再出现裸色值。 */
 .idea-sidebar-tabs {
   display: flex;
-  gap: 6px;
-  padding: 8px 12px 12px;
-  flex-shrink: 0;
   align-items: center;
+  padding: 8px 10px;
+  flex-shrink: 0;
 }
 
-.idea-sidebar-tabs button {
+.activity-pill {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* 撑满整行宽度：chevron 要靠 margin-left:auto 顶到最右，容器必须比内容宽。 */
+  flex: 1;
+  min-width: 0;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.activity-pill button {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.85);
   padding: 0;
-  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 7px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
-.idea-sidebar-tabs button:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: scale(1.05);
+.activity-pill button:hover {
+  color: var(--text);
+  background: var(--bg-hover);
 }
 
-.idea-sidebar-tabs button:active {
-  transform: scale(0.95);
+.activity-pill button:active {
+  background: var(--bg-hover-strong);
 }
 
-.idea-sidebar-tabs button.active {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.22);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+.activity-pill button.active {
+  color: var(--text);
+  background: var(--bg-hover-strong);
 }
 
-.idea-sidebar-tabs button.active:hover {
-  background: rgba(255, 255, 255, 0.25);
-  color: #ffffff;
+.activity-pill button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* chevron 与前面的图标之间留一段更大的空白：「这一个是展开更多，不是又一个页面」
+   这件事靠间距就能读出来，不用额外画分隔线。 */
+.activity-pill .activity-more {
+  margin-left: auto;
+}
+
+.activity-pill .activity-more svg {
+  transition: transform 0.15s ease;
+}
+
+.activity-pill .activity-more.expanded svg {
+  transform: rotate(180deg);
 }
 
 .idea-sidebar-spacer {

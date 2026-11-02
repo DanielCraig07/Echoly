@@ -854,6 +854,14 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'app.tabMaven': { zh: 'Maven 管理', en: 'Maven' },
   'app.tabDatabase': { zh: '轻量数据库', en: 'Database' },
   'app.tabExtensions': { zh: '扩展市场', en: 'Extensions' },
+  // 活动栏 chevron 的提示文案。刻意把里面是什么写出来（而不是含糊的「更多」）：
+  // 这一条是「收起的面板」唯一的入口说明，含糊的文案等于让人挨个点开找。
+  'app.railExpand': { zh: '更多面板（数据库、Maven）', en: 'More panels (Database, Maven)' },
+  'app.railCollapse': { zh: '收起更多面板', en: 'Collapse extra panels' },
+  'app.railExpandCurrent': {
+    zh: '当前面板收在这里，点开查看',
+    en: 'Current panel is in here — click to expand',
+  },
   'app.addFolderToWorkspace': { zh: '添加文件夹到工作区...', en: 'Add Folder to Workspace...' },
   'app.locateCurrentFile': { zh: '定位当前文件 ({name})', en: 'Locate current file ({name})' },
   'app.locateCurrentFilePlain': { zh: '定位到当前打开的文件', en: 'Locate the current file' },
