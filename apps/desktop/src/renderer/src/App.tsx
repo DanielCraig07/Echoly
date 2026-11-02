@@ -4771,6 +4771,19 @@ export function App() {
                     <line x1="6" y1="9" x2="6" y2="21" />
                   </svg>
                 </button>
+                {/* Maven / 数据库是领域面板，与上面「文件 / 搜索 / Git」这组跨项目
+                    基础导航语义不同。这里用分隔线把两组视觉上分开，而不是把入口挪出
+                    一级导航——这一排本来就是这两个面板唯一的入口，挪走等于让人找不到。 */}
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 1,
+                    height: 16,
+                    margin: '0 4px',
+                    flexShrink: 0,
+                    background: 'var(--border, rgba(255, 255, 255, 0.12))',
+                  }}
+                />
                 {isMavenProject && (
                   <button
                     type="button"
