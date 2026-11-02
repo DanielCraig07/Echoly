@@ -86,7 +86,8 @@
   1. [x] `TerminalPanel` 用 `TabStripPortal` 包裹 `.terminal-tabs`：存在
          `#bottom-panel-tab-slot` 则 `createPortal` 渲染进去，否则原地渲染（回退，行为不变）
   2. [x] `App.tsx` 面板类型按钮容器末尾放 `<div id="bottom-panel-tab-slot" style={{display:'contents'}} />`
-  3. [x] 第二行压到 26px（原 35px）。**未压到方案里的 22px**：该行右侧还有分屏/关闭等控件，22px 有被裁切的风险，宁可少压一点也不挤坏控件 —— 需要肉眼确认是否还需要再压
+  3. [x] 第二行 35px → **34px**。曾试 26px，实测 hover 背景被上下切平：`AGENTS.md` 规定面板按钮就是 26x26px，与行高相等时没有余量。34px = 26px 按钮 + 上下各 4px
+  4. [x] 修活动栏分隔线间距：分隔线原本带 `margin: 0 4px`，叠在容器已有 4px gap 上变成 8px，比图标间距宽一倍 —— 改为 `margin: 0`
 
   比"提升 state 到 App.tsx"风险低：会话标签的所有权仍在 `TerminalPanel`，
   App 只提供一个容器，两者之间没有新的状态耦合。步骤 1 单独上线时行为不变（无 slot 即回退），

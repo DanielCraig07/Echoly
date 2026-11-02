@@ -7179,11 +7179,11 @@ span.keybinding {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* 35px → 26px：会话标签已经投递到上面的面板类型行，这一行不再需要容纳标签条。
-     保留 26px 而不是方案里写的 22px，因为右侧还有分屏/关闭之类的控件，
-     22px 有被裁切的风险——宁可少压一点，也不要挤坏控件。 */
-  height: 26px;
-  min-height: 26px;
+  /* 会话标签已经投递到上面的面板类型行，这一行不再需要容纳标签条，从 35px 收紧。
+     但不能收到 26px：AGENTS.md 规定面板操作按钮就是 26x26px，与行高相等时
+     hover 背景会被上下边界切平（实测已复现）。34px = 26px 按钮 + 上下各 4px 余量。 */
+  height: 34px;
+  min-height: 34px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-tabs);
   padding: 0 8px 0 12px;

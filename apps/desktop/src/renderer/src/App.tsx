@@ -4779,7 +4779,9 @@ export function App() {
                   style={{
                     width: 1,
                     height: 16,
-                    margin: '0 4px',
+                    /* 容器已有 4px gap，这里不能再加：叠加后变成 8px，
+                       比图标之间的间距宽一倍，看起来就是「分隔线两侧特别空」。 */
+                    margin: 0,
                     flexShrink: 0,
                     background: 'var(--border, rgba(255, 255, 255, 0.12))',
                   }}
