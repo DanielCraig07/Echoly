@@ -364,6 +364,26 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
     zh: '光标所在行常驻显示 Git Blame (提交人、时间与提交摘要)',
     en: 'Always show Git Blame on the cursor line (author, time and commit summary)',
   },
+  'settings.general.privacyMode': {
+    zh: '隐私模式（切断除模型端点之外的所有出网行为）',
+    en: 'Privacy mode (cut all outbound traffic except your model endpoint)',
+  },
+  'settings.general.privacyModeDesc': {
+    zh: '开启后：Agent 的联网工具关闭，语义检索不再按需下载模型。已经加载过的本地模型不受影响。',
+    en: 'When on: the agent loses web access, and semantic search stops downloading models on demand. Already-loaded local models are unaffected.',
+  },
+  'settings.general.privacyLeaves': {
+    zh: '会发出去的：你在对话里发的消息、被选中的文件与代码片段 —— 目标是你在设置里配置的模型端点。这是本应用的运行前提，隐私模式不改变它。',
+    en: 'Leaves your machine: chat messages and the files or snippets you attach — sent to the model endpoint you configured. That is how the app works; privacy mode does not change it.',
+  },
+  'settings.general.privacyStays': {
+    zh: '留在本机的：代码库索引与向量、补全统计（请求数 / 接受率 / 延迟）、最近编辑记录、对话历史。都不出进程。',
+    en: 'Stays on your machine: codebase index and vectors, completion stats (requests / acceptance / latency), recent edits, and chat history. None of it leaves the process.',
+  },
+  'settings.general.privacyNoTelemetry': {
+    zh: '本应用没有埋点上报代码：没有任何数据会被发往项目方或第三方分析服务。',
+    en: 'There is no telemetry code in this app: nothing is sent to the project maintainers or any third-party analytics.',
+  },
   'settings.general.msUnit': { zh: '毫秒 (ms)', en: 'milliseconds (ms)' },
   'settings.general.scrollback': {
     zh: '终端缓存条数上限 (Scrollback Lines)',

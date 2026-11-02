@@ -87,7 +87,7 @@ describe('readEmbeddingEnv', () => {
       ECHOLY_EMBEDDING_MODEL_DIR: '/tmp/m',
       ECHOLY_EMBEDDING_MODEL_ID: 'a/b',
     } as NodeJS.ProcessEnv);
-    expect(options).toEqual({ localDir: '/tmp/m', modelId: 'a/b' });
+    expect(options).toEqual({ localDir: '/tmp/m', modelId: 'a/b', offline: false });
     expect(disabled).toBe(false);
   });
 
@@ -95,6 +95,42 @@ describe('readEmbeddingEnv', () => {
     expect(readEmbeddingEnv({ ECHOLY_EMBEDDING_DISABLED: '1' } as NodeJS.ProcessEnv).disabled).toBe(
       true,
     );
+  });
+
+  it('ECHOLY_EMBEDDING_OFFLINE=1 时标记为不按需下载（隐私模式）', () => {
+    const { options, disabled } = readEmbeddingEnv({
+      ECHOLY_EMBEDDING_OFFLINE: '1',
+    } as NodeJS.ProcessEnv);
+    expect(options.offline).toBe(true);
+    // 与 disabled 不是一回事：本地放好模型时仍然可用
+    expect(disabled).toBe(false);
+  });
+});
+
+describe('隐私模式下的来源解析', () => {
+  let privacyDir = '';
+  beforeEach(() => {
+    privacyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'echoly-embed-offline-'));
+  });
+  afterEach(() => {
+    fs.rmSync(privacyDir, { recursive: true, force: true });
+  });
+
+  it('offline 时不再按需下载', () => {
+    const source = resolveEmbeddingSource({ offline: true });
+    expect(source.kind).toBe('unavailable');
+    if (source.kind === 'unavailable') expect(source.reason).toContain('隐私模式');
+  });
+
+  it('offline 但本地目录齐备时仍然可用（隐私模式禁的是下载，不是本地模型）', () => {
+    const modelDir = path.join(privacyDir, 'model');
+    for (const file of REQUIRED_MODEL_FILES) {
+      const abs = path.join(modelDir, file);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, '{}');
+    }
+    const source = resolveEmbeddingSource({ localDir: modelDir, offline: true });
+    expect(source).toEqual({ kind: 'local', dir: modelDir });
   });
 });
 

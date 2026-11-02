@@ -260,6 +260,14 @@ export interface AppSettings {
    * （防提示注入诱导 Agent 去打内网接口）；只有列在这里的主机才放行。
    */
   webAllowedHosts?: string[];
+  /**
+   * 隐私模式。开启后切断「除你配置的模型端点以外」的所有出网行为：
+   * Agent 的联网工具关闭，语义检索不再按需下载模型（本地已放好的模型仍可用）。
+   *
+   * 默认关闭。之所以做成显式开关而不是默认行为：这个应用的核心功能本身就要把代码
+   * 发给模型端点，把它们说成「隐私模式」是误导；这里能保证的只是「不再多一个去向」。
+   */
+  privacyMode?: boolean;
   /** 是否开启保存文件时自动格式化 (Format on Save)。默认 true。 */
   formatOnSave?: boolean;
   /** 大文件安全保护阈值大小（字节）。默认 2MB (2 * 1024 * 1024)。 */
@@ -333,6 +341,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keymapPreset: 'vscode',
   webEnabled: true,
   webAllowedHosts: [],
+  privacyMode: false,
   formatOnSave: false,
   largeFileThresholdBytes: 2 * 1024 * 1024,
   mcpServers: [],

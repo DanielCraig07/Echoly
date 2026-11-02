@@ -127,6 +127,7 @@ function defaultEmbeddingLoader(): Promise<LocalEmbeddingHandle> {
     disabled: env.disabled,
     localDir: env.options.localDir,
     modelId: env.options.modelId,
+    offline: env.options.offline,
   });
 }
 

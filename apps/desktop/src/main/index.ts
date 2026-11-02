@@ -7,6 +7,7 @@ import { registerIpc } from './ipc';
 import { initLogging } from './logging';
 import { ensureSystemEnv, primeSystemEnv } from './shellEnv';
 import { SettingsStore } from './settings';
+import { applyPrivacyModeEnv } from './privacyMode';
 import { SessionStore } from './sessions';
 import { AgentService } from './agentService';
 import { TerminalService } from './terminal';
@@ -617,6 +618,9 @@ app.whenReady().then(async () => {
     popupAppMenu,
     onSettingsChanged: () => {
       agents.onPermissionModeChanged(settings.get().permissionMode);
+      // 隐私模式落到环境变量上：语义检索的开关本来就由 `ECHOLY_EMBEDDING_*` 决定，
+      // 让设置页与它共用同一个真相来源，避免两个开关给出矛盾的状态。
+      applyPrivacyModeEnv(settings.get().privacyMode === true);
       // 设置保存后按新配置调整 MCP 连接。apply 内部会跳过没变的服务器，
       // 因此这里不需要判断「这次改动是否与 MCP 有关」。
       void mcpService.reload().catch(() => undefined);
@@ -627,6 +631,10 @@ app.whenReady().then(async () => {
   });
 
   initUpdater(() => settings.get().updateFeed ?? null);
+
+  // 启动时先按已保存的设置把隐私模式落到环境上，否则「上次开了隐私模式、
+  // 这次启动又去下载模型」这种事就会悄悄发生。
+  applyPrivacyModeEnv(settings.get().privacyMode === true);
 
   mainWindow = createWindow();
 

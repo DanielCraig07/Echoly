@@ -443,7 +443,11 @@ export class AgentService {
           // 联网：按用户配置的总开关与内网白名单构造。关闭时注入 undefined，
           // web_* 工具会明确回报「未启用」，而不是给模型一个空的成功结果。
           web: createWebToolHost({
-            enabled: this.deps.settings.get().webEnabled !== false,
+            // 隐私模式直接关掉联网工具：这是本应用里除模型端点之外唯一
+            // 会把内容发到第三方（搜索引擎）的路径。
+            enabled:
+              this.deps.settings.get().webEnabled !== false &&
+              this.deps.settings.get().privacyMode !== true,
             allowedPrivateHosts: this.deps.settings.get().webAllowedHosts ?? [],
           }),
           // 编辑后自检：诊断来自「渲染层上报的 Monaco markers + 主进程 LSP 推送」的合并缓存。

@@ -29,6 +29,8 @@ export interface LocalEmbeddingOptions {
   localDir?: string | null;
   /** 远端模型 id，本地不可用时按需下载 */
   modelId?: string | null;
+  /** 禁止按需下载（隐私模式）；本地目录仍然可用 */
+  offline?: boolean;
   /** 显式关闭（对应 ECHOLY_EMBEDDING_DISABLED） */
   disabled?: boolean;
   batchSize?: number;
@@ -97,6 +99,7 @@ export async function createLocalEmbedding(
   const source = resolveEmbeddingSource({
     localDir: options.localDir,
     modelId: options.modelId,
+    offline: options.offline,
   });
 
   if (source.kind === 'unavailable') {

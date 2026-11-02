@@ -1796,6 +1796,40 @@ export function SettingsModal({
                     </label>
                   </div>
 
+                  {/* 隐私模式：不新增任何去向。声明写清楚「哪些会出去、哪些不会」——
+                      只给一个开关不说清楚，用户没法判断该不该开。 */}
+                  <div className="setting-card" style={{ marginTop: 12 }}>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.privacyMode === true}
+                        onChange={(e) =>
+                          setSettings({ ...settings, privacyMode: e.target.checked })
+                        }
+                      />
+                      <span>{t('settings.general.privacyMode')}</span>
+                    </label>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                      {t('settings.general.privacyModeDesc')}
+                    </div>
+                    <ul
+                      style={{
+                        margin: '10px 0 0',
+                        paddingLeft: 18,
+                        fontSize: 11,
+                        color: 'var(--muted)',
+                        lineHeight: 1.7,
+                      }}
+                    >
+                      <li>{t('settings.general.privacyLeaves')}</li>
+                      <li>{t('settings.general.privacyStays')}</li>
+                      <li>{t('settings.general.privacyNoTelemetry')}</li>
+                    </ul>
+                  </div>
+
                   <div className="setting-card" style={{ marginTop: 12 }}>
                     <div className="setting-card-title">
                       <strong>{t('settings.hoverDelay')}</strong>

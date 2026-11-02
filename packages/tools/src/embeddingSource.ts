@@ -33,6 +33,13 @@ export interface EmbeddingSourceOptions {
   localDir?: string | null;
   /** 远端模型 id，本地不可用时尝试下载 */
   modelId?: string | null;
+  /**
+   * 禁止按需下载（对应 `ECHOLY_EMBEDDING_OFFLINE`，由隐私模式打开）。
+   *
+   * 与 `disabled` 的区别：本地已经放好模型时仍然可用 —— 隐私模式要禁的是
+   * 「联网去 HuggingFace 取权重」，而不是「用本地模型算向量」这件事本身。
+   */
+  offline?: boolean;
 }
 
 export type EmbeddingSource =
@@ -57,6 +64,7 @@ export function readEmbeddingEnv(env: NodeJS.ProcessEnv = process.env): {
     options: {
       localDir: env.ECHOLY_EMBEDDING_MODEL_DIR ?? null,
       modelId: env.ECHOLY_EMBEDDING_MODEL_ID ?? null,
+      offline: env.ECHOLY_EMBEDDING_OFFLINE === '1',
     },
   };
 }
@@ -88,6 +96,12 @@ export function resolveEmbeddingSource(options: EmbeddingSourceOptions = {}): Em
   }
 
   const modelId = options.modelId?.trim() || DEFAULT_EMBEDDING_MODEL_ID;
+  if (options.offline) {
+    return {
+      kind: 'unavailable',
+      reason: '已开启隐私模式，不按需下载模型（可在 ECHOLY_EMBEDDING_MODEL_DIR 指向本地模型目录）',
+    };
+  }
   return { kind: 'download', modelId };
 }
 
