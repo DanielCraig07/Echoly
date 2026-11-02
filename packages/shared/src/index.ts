@@ -251,6 +251,15 @@ export interface AppSettings {
   terminalScrollback?: number;
   /** 键盘快捷键预设模式 ('vscode' | 'intellij')，默认 'vscode'。 */
   keymapPreset?: 'vscode' | 'intellij';
+  /** 是否允许 Agent 联网（web_search / fetch_url）。默认 true。 */
+  webEnabled?: boolean;
+  /**
+   * 允许 Agent 访问的内网主机白名单。
+   *
+   * 私有网段、回环地址、`.local` / `.internal` 这类内网后缀默认一律拦截
+   * （防提示注入诱导 Agent 去打内网接口）；只有列在这里的主机才放行。
+   */
+  webAllowedHosts?: string[];
   /** 是否开启保存文件时自动格式化 (Format on Save)。默认 true。 */
   formatOnSave?: boolean;
   /** 大文件安全保护阈值大小（字节）。默认 2MB (2 * 1024 * 1024)。 */
@@ -322,6 +331,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   terminalScrollback: 10000,
   updateFeed: null,
   keymapPreset: 'vscode',
+  webEnabled: true,
+  webAllowedHosts: [],
   formatOnSave: false,
   largeFileThresholdBytes: 2 * 1024 * 1024,
   mcpServers: [],

@@ -326,6 +326,16 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
 
   // ── 外观与权限 Tab ──
   'settings.general.title': { zh: '外观与工作流权限', en: 'Appearance & Permissions' },
+  'settings.general.webEnabled': { zh: '允许 Agent 联网', en: 'Allow agent web access' },
+  'settings.general.webEnabledDesc': {
+    zh: '开启后 Agent 可搜索网页并抓取 URL 内容。私有网段、回环地址与 .local 这类内网后缀默认一律拦截，只有下方白名单中的主机可以访问。',
+    en: 'When on, the agent can search the web and fetch URLs. Private ranges, loopback and internal suffixes such as .local are blocked by default — only hosts listed below are reachable.',
+  },
+  'settings.general.webAllowlist': { zh: '允许的内网主机', en: 'Allowed internal hosts' },
+  'settings.general.webAllowlistPh': {
+    zh: '一行一个，例如 wiki.corp.local',
+    en: 'One per line, e.g. wiki.corp.local',
+  },
   'settings.general.keymap': {
     zh: '快捷键操作习惯 (Keymap Preset)',
     en: 'Keymap Preset',

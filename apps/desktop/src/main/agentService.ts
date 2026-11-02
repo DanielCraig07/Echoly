@@ -26,6 +26,7 @@ import { appendRunTrace, type WindowGetter } from './diffStore';
 import type { WindowRegistry } from './windowRegistry';
 import type { McpService } from './mcpService';
 import { RulesService } from './rulesService';
+import { createWebToolHost } from './webService';
 
 interface PendingConfirm {
   resolve: (result: boolean | string) => void;
@@ -412,6 +413,12 @@ export class AgentService {
           attachments: payload.attachments,
           applyImmediately: true,
           getPermissionMode: () => this.deps.settings.get().permissionMode,
+          // 联网：按用户配置的总开关与内网白名单构造。关闭时注入 undefined，
+          // web_* 工具会明确回报「未启用」，而不是给模型一个空的成功结果。
+          web: createWebToolHost({
+            enabled: this.deps.settings.get().webEnabled !== false,
+            allowedPrivateHosts: this.deps.settings.get().webAllowedHosts ?? [],
+          }),
           // 编辑后自检：诊断来自「渲染层上报的 Monaco markers + 主进程 LSP 推送」的合并缓存。
           // 代码库检索走 searchCached 而不是 search：这个工具在工具循环里调用，
           // 在这里同步等一次冷启动全量索引会让模型看起来「卡住不动」。

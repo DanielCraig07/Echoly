@@ -286,6 +286,42 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description:
+        'Search the public web and return titles, URLs and snippets. Use this when you need ' +
+        'current API details, version-specific behaviour, or library usage that is not ' +
+        'answerable from the workspace alone. Follow up with fetch_url to read a promising result.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+          limit: { type: 'integer', description: 'Max results to return (default 8)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'fetch_url',
+      description:
+        'Fetch a single http/https URL and return its readable content (HTML is converted to ' +
+        'Markdown, JSON is wrapped in a code block). Use it to read documentation pages found ' +
+        'via web_search. Private and loopback addresses are blocked unless the user has ' +
+        'explicitly allow-listed the host.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Absolute http/https URL' },
+        },
+        required: ['url'],
+      },
+    },
+  },
 ];
 
 export const READONLY_TOOL_NAMES = new Set([
@@ -297,6 +333,8 @@ export const READONLY_TOOL_NAMES = new Set([
   'codebase_search',
   'get_diagnostics',
   'glob_files',
+  'web_search',
+  'fetch_url',
   'ask_user',
 ]);
 

@@ -18,6 +18,18 @@ export {
   WRITE_TOOL_NAMES,
 } from './definitions.js';
 export { revertMutations } from './checkpoint.js';
+export {
+  DEFAULT_URL_POLICY,
+  decodeEntities,
+  htmlToMarkdown,
+  isHostAllowedByList,
+  isPrivateHostname,
+  parseDuckDuckGoHtml,
+  truncateUtf8,
+  validateFetchUrl,
+} from './web.js';
+export type { HtmlToMarkdownOptions, UrlCheckResult, UrlPolicy } from './web.js';
+export type { WebSearchHit } from './web.js';
 export type { RevertResult } from './checkpoint.js';
 export { resolveInWorkspace, assertRealPathInside, PathJailError, toPosixRel } from './pathJail.js';
 export type { WorkspaceBackend, DirEntry, CommandResult, FileStat } from './backend.js';
@@ -49,8 +61,34 @@ export type {
   SymbolKind,
 } from './search.js';
 
+/** 宿主提供的联网能力，形状对着主进程的 `fetchWebPage` / `searchWeb`。 */
+export interface WebToolHost {
+  fetchPage: (url: string) => Promise<{
+    ok: boolean;
+    url: string;
+    title?: string;
+    content?: string;
+    truncated?: boolean;
+    error?: string;
+  }>;
+  search: (
+    query: string,
+    limit?: number,
+  ) => Promise<{
+    ok: boolean;
+    hits: { title: string; url: string; snippet?: string }[];
+    error?: string;
+  }>;
+}
+
 export interface ToolContext {
   workspaceRoot: string;
+  /**
+   * 宿主注入的联网能力。缺省表示当前会话未启用联网 —— `web_*` 工具会返回
+   * 明确的「未启用」而不是静默失败：Agent 读到这句话才会去改方案，
+   * 读到一句空结果只会换个说法再试一次。
+   */
+  web?: WebToolHost;
   backend: WorkspaceBackend;
   permissionMode: PermissionMode;
   /** 运行中实时读取权限（切换「允许所有」后立即生效） */
@@ -1048,6 +1086,16 @@ async function runMcpTool(ctx: ToolContext, name: string, rawArgs: string): Prom
 }
 
 /** 把参数渲染成一行预览，超长截断 —— 确认弹窗里不该出现一屏 JSON。 */
+/** 联网未启用时的统一回复：说清原因和出路，避免 Agent 换个说法反复重试。 */
+function webDisabled(toolName: string): ToolResult {
+  return {
+    content:
+      `联网能力未启用，${toolName} 不可用。` +
+      '请告知用户：要么在设置里打开「允许联网」，要么直接把目标内容贴进来。',
+    isError: true,
+  };
+}
+
 function formatMcpArgsPreview(args: Record<string, unknown>): string {
   const entries = Object.entries(args);
   if (entries.length === 0) return '(无参数)';
@@ -1078,6 +1126,51 @@ export async function executeTool(
     }
 
     switch (name) {
+      case 'web_search': {
+        const args = parseArgs<{ query: string; limit?: number }>(rawArgs);
+        if (!args.query || typeof args.query !== 'string') {
+          return {
+            content: 'Error: missing required "query" argument for web_search',
+            isError: true,
+          };
+        }
+        if (!ctx.web) return webDisabled('web_search');
+
+        const result = await ctx.web.search(args.query, args.limit);
+        if (!result.ok) {
+          return {
+            content: `联网搜索失败：${result.error ?? '未知原因'}`,
+            isError: true,
+          };
+        }
+        const body = result.hits
+          .map((hit, index) => {
+            const head = `${index + 1}. ${hit.title}\n   ${hit.url}`;
+            return hit.snippet ? `${head}\n   ${hit.snippet}` : head;
+          })
+          .join('\n\n');
+        return { content: `搜索「${args.query}」的结果：\n\n${body}` };
+      }
+      case 'fetch_url': {
+        const args = parseArgs<{ url: string }>(rawArgs);
+        if (!args.url || typeof args.url !== 'string') {
+          return { content: 'Error: missing required "url" argument for fetch_url', isError: true };
+        }
+        if (!ctx.web) return webDisabled('fetch_url');
+
+        const page = await ctx.web.fetchPage(args.url);
+        if (!page.ok) {
+          return { content: `抓取失败：${page.error ?? '未知原因'}`, isError: true };
+        }
+        const meta = [
+          `URL: ${page.url}`,
+          page.title ? `标题: ${page.title}` : null,
+          page.truncated ? '（内容超出上限，已截断）' : null,
+        ]
+          .filter(Boolean)
+          .join('\n');
+        return { content: `${meta}\n\n${page.content ?? ''}` };
+      }
       case 'list_dir': {
         const args = parseArgs<{ path?: string }>(rawArgs);
         return await listDir(ctx, args.path || '.');

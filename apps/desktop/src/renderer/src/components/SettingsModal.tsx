@@ -1727,6 +1727,59 @@ export function SettingsModal({
                       <span>{t('settings.general.formatOnSave')}</span>
                     </label>
                   </div>
+                  {/* Agent 联网：总开关 + 内网白名单。
+                      私有网段默认一律拦截（防提示注入诱导 Agent 去打内网接口），
+                      只有列在白名单里的主机才放行。 */}
+                  <div className="setting-card" style={{ marginTop: 12 }}>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.webEnabled !== false}
+                        onChange={(e) => setSettings({ ...settings, webEnabled: e.target.checked })}
+                      />
+                      <span>{t('settings.general.webEnabled')}</span>
+                    </label>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
+                      {t('settings.general.webEnabledDesc')}
+                    </div>
+                    {settings.webEnabled !== false && (
+                      <>
+                        <div style={{ fontSize: 12, marginTop: 10 }}>
+                          {t('settings.general.webAllowlist')}
+                        </div>
+                        <textarea
+                          style={{
+                            marginTop: 6,
+                            width: '100%',
+                            minHeight: 64,
+                            resize: 'vertical',
+                            padding: 8,
+                            fontSize: 12,
+                            fontFamily: 'var(--font-mono)',
+                            color: 'var(--text)',
+                            background: 'var(--bg-input)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 6,
+                            boxSizing: 'border-box',
+                          }}
+                          placeholder={t('settings.general.webAllowlistPh')}
+                          value={(settings.webAllowedHosts ?? []).join('\n')}
+                          onChange={(e) =>
+                            setSettings({
+                              ...settings,
+                              webAllowedHosts: e.target.value
+                                .split('\n')
+                                .map((line) => line.trim())
+                                .filter(Boolean),
+                            })
+                          }
+                        />
+                      </>
+                    )}
+                  </div>
                   <div className="setting-control-group" style={{ marginTop: 12 }}>
                     <label
                       className="modern-checkbox-label"
