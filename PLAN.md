@@ -39,7 +39,9 @@
 
 ### A3 多文件规则系统
 
-- [ ] `.echoly/rules/*.md`，frontmatter 支持 `description` / `globs` / `alwaysApply`
+- [x] `packages/tools/src/rules.ts`：规则文件解析（frontmatter 的 description / globs / alwaysApply）+ 三档分流纯逻辑（+13 单测）
+- [ ] `main/rulesService.ts` 接入目录化规则：扫描 `.echoly/rules/*.md`、从工作区根逐级向下收集
+- [ ] 把三档分流结果接进 Agent 的 prompt 组装
 - [ ] 三档注入：常驻 / 按当前文件 glob 命中 / 按 Agent 检索命中
 - [ ] 从工作区根逐级向下收集，子目录优先
 - [ ] `.echolyrules`、`.cursorrules` 保留为 alwaysApply 兼容
