@@ -83,10 +83,10 @@
   第二行在 `TerminalPanel.tsx:2496+`（`.terminal-toolbar`，35px，类型胶囊 + 会话标签）。
 
   **推荐实现（不改组件所有权，用 portal 让标签"显示在"第一行）**：
-  1. `TerminalPanel` 把 `.terminal-tabs` 抽成一个变量，若页面上存在
-     `#bottom-panel-tab-slot` 则 `createPortal` 渲染进去，否则原地渲染（回退，行为不变）
-  2. `App.tsx` 第一行里放一个空的 `<div id="bottom-panel-tab-slot" />`
-  3. 第二行只保留类型胶囊（本地/SSH），高度压到 22px 与第一行齐平
+  1. [x] `TerminalPanel` 用 `TabStripPortal` 包裹 `.terminal-tabs`：存在
+         `#bottom-panel-tab-slot` 则 `createPortal` 渲染进去，否则原地渲染（回退，行为不变）
+  2. [x] `App.tsx` 面板类型按钮容器末尾放 `<div id="bottom-panel-tab-slot" style={{display:'contents'}} />`
+  3. [ ] **待做**：第二行（`.terminal-toolbar`）现在只剩类型胶囊 + 分隔线，仍是 35px 的整行，看起来偏空 —— 需压到 22px 并与第一行合并视觉边界
 
   比"提升 state 到 App.tsx"风险低：会话标签的所有权仍在 `TerminalPanel`，
   App 只提供一个容器，两者之间没有新的状态耦合。步骤 1 单独上线时行为不变（无 slot 即回退），
