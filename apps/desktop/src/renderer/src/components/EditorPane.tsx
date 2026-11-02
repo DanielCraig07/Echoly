@@ -39,6 +39,8 @@ import {
 } from '../services/symbolNavigation';
 import { registerAiInlineCompletions } from '../services/inlineCompletion';
 import { registerNextEditPrediction } from '../services/nextEditPrediction';
+import { NotebookEditor } from './NotebookEditor';
+import { isNotebookPath, parseNotebook } from '../services/notebook';
 import { attachVimMode, type VimModeHandle } from '../services/vimMode';
 import type { CursorPos } from '../workspaceSession';
 import * as monaco from 'monaco-editor';
@@ -1351,6 +1353,21 @@ export function EditorPane({
   );
 
   /**
+   * 是不是「解析不了的笔记本」。
+   *
+   * 解析不了就**退回纯文本编辑**，而不是显示一句「打开失败」把人挡在外面：
+   * 半截的、被别的工具写坏的、扩展名对但不含 cells 的文件都真实存在，
+   * 用户至少还得能打开它、修好它。
+   *
+   * 空文件也算「解析不了」—— 新建的 .ipynb 是空的，此时给 Monaco 让他自己写结构，
+   * 比给一个单元界面但要猜他要什么更合适。
+   */
+  const isNotebookParseFailed = useMemo(() => {
+    if (!isNotebookPath(active?.path)) return false;
+    return !parseNotebook(active?.content ?? '').ok;
+  }, [active?.path, active?.content]);
+
+  /**
    * vim 键位的挂载/卸载。
    *
    * 用 effect 而不是在 `onMount` 里一次性装上：设置页切到 vim（或切回去）之后
@@ -1829,12 +1846,16 @@ export function EditorPane({
   // 切到内置虚拟视图（db:// 数据/结构/控制台）或图片预览时，主编辑区的 <Editor> 整体卸载，
   // 其 Monaco 实例已被 @monaco-editor/react dispose。这里同步清空引用，避免后续 ⌘I / ⌘K /
   // 插入代码等入口拿一个已销毁的实例去读写，把内容落回到上一个标签的路径上。
+  //
+  // 笔记本视图（能解析的 .ipynb）同理：主 <Editor> 也被换成了单元视图。
+  // 解析失败时仍然渲染普通编辑器，所以那个时候**不能**清空引用。
   useEffect(() => {
     if (!activePath) return;
-    if (!isVirtualPath(activePath) && !isImagePath(activePath)) return;
+    const notebookOwnsArea = isNotebookPath(activePath) && !isNotebookParseFailed;
+    if (!isVirtualPath(activePath) && !isImagePath(activePath) && !notebookOwnsArea) return;
     editorRef.current = null;
     setEditorInstance(null);
-  }, [activePath]);
+  }, [activePath, isNotebookParseFailed]);
 
   const executeRevealTarget = useCallback(
     (ed: MonacoEditor.IStandaloneCodeEditor) => {
@@ -6569,6 +6590,13 @@ export function EditorPane({
                     {t('editor.loadNow')}
                   </button>
                 </div>
+              ) : isNotebookPath(active.path) && !isNotebookParseFailed ? (
+                <NotebookEditor
+                  path={active.path}
+                  content={active.content ?? ''}
+                  readOnly={active.readOnly ?? false}
+                  onChange={(next) => onChangeContent(active.path, next)}
+                />
               ) : (
                 <Editor
                   path={active.path}
