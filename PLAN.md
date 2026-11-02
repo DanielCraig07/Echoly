@@ -41,7 +41,7 @@
 
 - [x] `packages/tools/src/rules.ts`：规则文件解析（frontmatter 的 description / globs / alwaysApply）+ 三档分流纯逻辑（+13 单测）
 - [x] `main/directoryRules.ts`：扫描 `.echoly/rules/*.md`（兼容 `.cursor/rules`），从工作区根逐级向下收集，子目录规则排后即高优先级
-- [ ] 为 `collectDirectoryRules` 补单测（层级顺序、越界路径、上限、坏文件容错）
+- [x] `collectDirectoryRules` 单测：层级顺序、兄弟目录隔离、越界路径、非规则文件过滤、空正文跳过（+8 单测）
 - [ ] 把收集结果接进 `rulesService` 的对外接口与 Agent prompt 组装
 - [ ] 把三档分流结果接进 Agent 的 prompt 组装
 - [ ] 三档注入：常驻 / 按当前文件 glob 命中 / 按 Agent 检索命中
