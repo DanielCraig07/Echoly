@@ -1337,3 +1337,10 @@ export async function probeLlm(options: ProbeLlmOptions = {}): Promise<{
     };
   }
 }
+export {
+  EmbeddingClient,
+  hashEmbeddingContent,
+  DEFAULT_EMBEDDING_BATCH_SIZE,
+  DEFAULT_EMBEDDING_CACHE_ENTRIES,
+} from './embedding.js';
+export type { EmbeddingBackend, EmbeddingClientOptions } from './embedding.js';
