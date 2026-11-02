@@ -13,6 +13,13 @@ interface ProjectMemoryModalProps {
   onClose: () => void;
 }
 
+/** 只读展示用的目录级规则结构，与 IpcApi.rulesListDirectory 的返回保持一致。 */
+type DirectoryRuleView = {
+  relPath: string;
+  body: string;
+  meta: { description?: string; globs: string[]; alwaysApply: boolean };
+};
+
 export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
   const { t } = useI18n();
   const { modalSize, handleResizeStart } = useModalResize({
@@ -28,6 +35,26 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
   const [saving, setSaving] = useState<boolean>(false);
   const [dirty, setDirty] = useState<boolean>(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [rulesOpen, setRulesOpen] = useState<boolean>(false);
+  const [dirRules, setDirRules] = useState<DirectoryRuleView[]>([]);
+
+  // 目录级规则是只读展示，刻意不进 dirty / 保存流程：这个弹窗的 dirty 会触发保存提示，
+  // 把只读内容混进去会误报「有未保存修改」。
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    window.ide
+      .rulesListDirectory?.()
+      .then((rules) => {
+        if (!cancelled) setDirRules(rules ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setDirRules([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -243,6 +270,65 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
               + 避坑清单
             </button>
           </div>
+        </div>
+
+        {/* 目录级规则（只读）：让用户看到本轮会注入哪几条、各自的作用范围。
+            规则系统最大的问题是静默——写了 globs 但路径没写对时会毫无提示，
+            用户会以为规则已经生效。 */}
+        <div
+          style={{
+            flexShrink: 0,
+            borderBottom: '1px solid var(--border, rgba(255, 255, 255, 0.08))',
+            fontSize: 12,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setRulesOpen((v) => !v)}
+            style={{
+              width: '100%',
+              height: 28,
+              padding: '0 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--muted, #888)',
+              fontSize: 12,
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+            title="查看当前生效的目录级规则 (.echoly/rules)"
+          >
+            <span>{rulesOpen ? '▾' : '▸'}</span>
+            <span>目录级规则 ({dirRules.length})</span>
+          </button>
+          {rulesOpen && (
+            <div style={{ maxHeight: 160, overflow: 'auto', padding: '0 14px 10px' }}>
+              {dirRules.length === 0 ? (
+                <div style={{ color: 'var(--muted, #888)', fontSize: 11, padding: '4px 0' }}>
+                  未找到 .echoly/rules/*.md。在该目录下新建 markdown 文件，用 frontmatter 的 globs
+                  指定作用范围即可按目录生效。
+                </div>
+              ) : (
+                dirRules.map((rule) => (
+                  <div key={rule.relPath} style={{ padding: '6px 0' }}>
+                    <div style={{ fontFamily: 'Menlo, Monaco, monospace', fontSize: 11 }}>
+                      {rule.relPath}
+                    </div>
+                    <div style={{ color: 'var(--muted, #888)', fontSize: 11 }}>
+                      {rule.meta.alwaysApply
+                        ? '始终生效'
+                        : rule.meta.globs.length > 0
+                          ? `作用范围: ${rule.meta.globs.join(', ')}`
+                          : '仅在 Agent 检索命中时注入'}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* 编辑区 */}
