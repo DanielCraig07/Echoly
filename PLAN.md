@@ -77,7 +77,24 @@
 - [x] `services/navigationHistory.ts`：浏览器式导航栈（中途跳转截断分支、重复跳转不堆记录、上限 50）+7 单测
 - [x] 标题栏前进/后退按钮 + 接上导航栈（监听 activePath 而非在 openFile 埋点）
 - [x] 底部面板：去掉 `TerminalPanel` 工具栏里重复的「终端」图标+文字（上一行已标注面板名）
-- [ ] 底部面板两行 tab 真正合并为一行（需跨 `App.tsx` 面板类型切换器与 `TerminalPanel` 重新分工，两项独立）
+- [ ] 底部面板两行 tab 真正合并为一行（方案 A，已选）
+
+  **结构定位**：第一行在 `App.tsx:5480-5560`（`.bottom-panel-tab`，三个面板类型共用外壳）；
+  第二行在 `TerminalPanel.tsx:2496+`（`.terminal-toolbar`，35px，类型胶囊 + 会话标签）。
+
+  **推荐实现（不改组件所有权，用 portal 让标签"显示在"第一行）**：
+  1. `TerminalPanel` 把 `.terminal-tabs` 抽成一个变量，若页面上存在
+     `#bottom-panel-tab-slot` 则 `createPortal` 渲染进去，否则原地渲染（回退，行为不变）
+  2. `App.tsx` 第一行里放一个空的 `<div id="bottom-panel-tab-slot" />`
+  3. 第二行只保留类型胶囊（本地/SSH），高度压到 22px 与第一行齐平
+
+  比"提升 state 到 App.tsx"风险低：会话标签的所有权仍在 `TerminalPanel`，
+  App 只提供一个容器，两者之间没有新的状态耦合。步骤 1 单独上线时行为不变（无 slot 即回退），
+  可以分两次提交、每次都可回滚。
+
+  **验收要点（需要人工跑 `npm run dev`）**：新建终端、关闭终端、左右分屏、SSH 会话切换、
+  以及切到「调试控制台」「问题」面板时槽位是否正确释放。
+
 - [x] **样式审计已完成，结论推翻了原计划（见下）**
 
   **审计结果：字号根本没有中心化，「把 12px 改成 13px」这个前提是错的。**
