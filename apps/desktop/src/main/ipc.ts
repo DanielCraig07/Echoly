@@ -21,6 +21,7 @@ import type {
   TerminalCreateOptions,
 } from '@deepseek-ide/shared';
 import type { SettingsStore } from './settings';
+import { buildCompletionPrompt, parseCompletionResponse } from './completionPrompt';
 import type { SessionStore } from './sessions';
 import type { AgentService } from './agentService';
 import type { TerminalService } from './terminal';
@@ -488,26 +489,22 @@ export function registerIpc(deps: {
       },
     ) => {
       const client = getActiveLlmClient(settings);
-      const prompt = `你是一个极速代码补全引擎。请根据光标前后代码预测光标处应补全的代码。
-只输出需要插入补全的代码内容，严禁输出任何 Markdown 标记（如 \`\`\`）、解释或多余字符。如果无需补全，直接输出空。
-
-前缀代码：
-${payload.prefix.slice(-2000)}
-
-<CURSOR>
-
-后缀代码：
-${payload.suffix.slice(0, 1000)}
-`;
+      const prompt = buildCompletionPrompt({
+        prefix: payload.prefix,
+        suffix: payload.suffix,
+        language: payload.language,
+      });
       const resp = await client.chat({
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.1,
       });
-      let completion = (resp.content || '').trim();
-      if (completion.startsWith('```')) {
-        completion = completion.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '');
+      const parsed = parseCompletionResponse(resp.content || '');
+      if (!parsed || !parsed.insertText) {
+        // 空建议与解析失败在这里合并成一个结果：调用方都只该显示「没有建议」。
+        // 但分开记一条日志，出问题时才分得清是「模型说不用补」还是「响应畸形」。
+        return { completion: '' };
       }
-      return { completion };
+      return { completion: parsed.insertText };
     },
   );
 

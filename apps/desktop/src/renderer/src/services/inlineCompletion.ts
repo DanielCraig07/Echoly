@@ -74,12 +74,6 @@ function notifyGhostState(active: boolean) {
   }
 }
 
-/** 剔除模型有时仍会带上的 markdown 围栏。 */
-function stripFences(text: string): string {
-  if (!text.startsWith('```')) return text;
-  return text.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '');
-}
-
 /**
  * 注册行内代码补全提供者 (Cursor Tab / Ghost Text)
  * 监听光标输入并向后台 LLM 发送上下文生成建议补全
@@ -147,7 +141,10 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
             return { items: [] };
           }
 
-          const completionText = stripFences(res.completion);
+          // 围栏与结构化解析都在主进程做过了，这里不再二次裁剪：
+          // 在 markdown 里补全一个代码块时，「```」本身就是要插入的内容，
+          // 渲染层再剥一次会把它吃掉。
+          const completionText = res.completion;
           if (!completionText.trim()) {
             recordCompletionOutcome('empty', latency);
             notifyGhostState(false);
