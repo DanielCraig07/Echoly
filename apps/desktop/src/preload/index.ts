@@ -3,6 +3,7 @@ import type {
   AgentEvent,
   AppSettings,
   BackgroundJob,
+  RemoteRunnerJob,
   ChatSession,
   DevToolsViewLayout,
   GitCloneRequest,
@@ -56,6 +57,12 @@ const api: IpcApi = {
   listBackgroundJobs: () => ipcRenderer.invoke('backgroundJobs:list'),
   clearBackgroundJobs: () => ipcRenderer.invoke('backgroundJobs:clear'),
   openBackgroundJob: (id) => ipcRenderer.invoke('backgroundJobs:open', id),
+  probeRemoteAgent: () => ipcRenderer.invoke('remoteAgent:probe'),
+  submitRemoteAgent: (input) => ipcRenderer.invoke('remoteAgent:submit', input),
+  listRemoteAgents: () => ipcRenderer.invoke('remoteAgent:list'),
+  refreshRemoteAgent: (jobId) => ipcRenderer.invoke('remoteAgent:refresh', jobId),
+  cancelRemoteAgent: (jobId) => ipcRenderer.invoke('remoteAgent:cancel', jobId),
+  removeRemoteAgent: (jobId) => ipcRenderer.invoke('remoteAgent:remove', jobId),
   queueAgentMessage: (runId, message) => ipcRenderer.invoke('agent:queueMessage', runId, message),
   respondConfirm: (requestId, approved, answer) =>
     ipcRenderer.invoke('agent:respondConfirm', requestId, approved, answer),
@@ -153,6 +160,11 @@ const api: IpcApi = {
       cb(event);
     ipcRenderer.on('agent:event', listener);
     return () => ipcRenderer.removeListener('agent:event', listener);
+  },
+  onRemoteAgentChanged: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, job: RemoteRunnerJob) => cb(job);
+    ipcRenderer.on('remoteAgent:changed', listener);
+    return () => ipcRenderer.removeListener('remoteAgent:changed', listener);
   },
   onBackgroundJobsChanged: (cb) => {
     const listener = (_: Electron.IpcRendererEvent, jobs: BackgroundJob[]) => cb(jobs);

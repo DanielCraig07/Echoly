@@ -1715,6 +1715,31 @@ export interface IpcApi {
   clearBackgroundJobs: () => Promise<BackgroundJob[]>;
   /** 打开某个后台任务：聚焦工作区并让渲染层切到那一轮对话 */
   openBackgroundJob: (id: string) => Promise<boolean>;
+  // ── 远端 Agent 任务（在 SSH 主机上跑，窗口关掉也继续） ─────────────────────
+  // 与本地后台任务的区别：这些任务**不依赖本机进程**，所以合上电脑也照跑。
+  // 代价是模型凭据会被送到远端，因此提交时的 `unattended`/
+  // 「是否带凭据」都要在界面上说清楚。
+  /** 体检远端环境（node 版本、家目录、runner 是否同一版本） */
+  probeRemoteAgent: () => Promise<{
+    ok: boolean;
+    reason?: string;
+    nodeVersion?: string;
+    nodeMajor?: number;
+    runnerSha?: string;
+    home?: string;
+  }>;
+  /** 投递一个远端任务。模型配置由主进程从 settings 现取，渲染层不经手 apiKey。 */
+  submitRemoteAgent: (input: {
+    prompt: string;
+    workspace?: string;
+    unattended?: boolean;
+    hostLabel?: string;
+  }) => Promise<RemoteRunnerJob>;
+  listRemoteAgents: () => Promise<RemoteRunnerJob[]>;
+  refreshRemoteAgent: (jobId: string) => Promise<RemoteRunnerJob | null>;
+  cancelRemoteAgent: (jobId: string) => Promise<RemoteRunnerJob | null>;
+  removeRemoteAgent: (jobId: string) => Promise<boolean>;
+  onRemoteAgentChanged: (cb: (job: RemoteRunnerJob) => void) => () => void;
   /**
    * 向正在运行的一轮追加一条用户消息。返回 `false` 表示该轮已结束，
    * 调用方应改为发起新一轮（而不是把消息丢掉）。

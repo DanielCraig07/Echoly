@@ -20650,6 +20650,79 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: #a1a1aa;
 }
 
+.status-job-dot.starting {
+  background: #f59e0b;
+  animation: statusJobPulse 1.2s ease-in-out infinite;
+}
+
+.status-job-dot.lost {
+  background: #71717a;
+  border: 1px solid #f87171;
+}
+
+/* ── 远端任务（SSH 主机上跑） ──────────────────────────────────────────── */
+
+.status-jobs-section {
+  margin-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 6px;
+}
+
+.status-jobs-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a1a1aa;
+}
+
+.status-jobs-hint.warn {
+  color: #f59e0b;
+}
+
+.status-remote-form {
+  padding: 4px 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.status-remote-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #141416;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: var(--ui-font-size, 12px);
+  color: #ffffff;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.status-remote-input:focus {
+  border-color: var(--accent, #38bdf8);
+}
+
+.status-remote-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+}
+
+.status-remote-error {
+  font-size: 10px;
+  line-height: 1.4;
+  color: #f87171;
+  word-break: break-word;
+}
+
 .status-job-action {
   flex-shrink: 0;
   background: transparent;

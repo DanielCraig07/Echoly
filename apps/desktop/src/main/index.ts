@@ -11,6 +11,8 @@ import { applyPrivacyModeEnv } from './privacyMode';
 import { SessionStore } from './sessions';
 import { AgentService } from './agentService';
 import { BackgroundJobStore } from './backgroundJobs';
+import { RemoteAgentService } from './remoteRunner/service';
+import { createSshTransport, resolveRunnerBundle } from './remoteRunner/sshTransport';
 import { TerminalService } from './terminal';
 import { GitService } from './gitService';
 import { SearchService } from './searchService';
@@ -610,6 +612,23 @@ app.whenReady().then(async () => {
     backgroundJobs,
   });
 
+  /**
+   * 远端（SSH 主机上的）Agent 任务。
+   *
+   * `loadBundle` 是惰性的：没打包 runner 的人（比如只跑单测/只改前端）不会因为
+   * 这个功能整体起不来，只在**真的要用**的那一刻报出「请先 npm run build:runner」。
+   */
+  const remoteAgents = new RemoteAgentService({
+    transport: createSshTransport(ssh),
+    loadBundle: resolveRunnerBundle,
+    storePath: join(app.getPath('userData'), 'remote-jobs.json'),
+    onJobUpdate: (job) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('remoteAgent:changed', job);
+      }
+    },
+  });
+
   registerIpc({
     ipcMain,
     dialog,
@@ -621,6 +640,7 @@ app.whenReady().then(async () => {
     git,
     search,
     ssh,
+    remoteAgents,
     mcp: mcpService,
     getWindow: () => getActiveWindow(),
     popupAppMenu,

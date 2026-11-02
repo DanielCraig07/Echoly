@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import type { BackgroundJob } from '@deepseek-ide/shared';
+import type { BackgroundJob, RemoteRunnerJob } from '@deepseek-ide/shared';
 import { useI18n } from '../i18n';
 
 /**
@@ -52,6 +52,84 @@ export function BackgroundJobsIndicator() {
   const running = jobs.filter((job) => job.status === 'running').length;
   const hasFinished = jobs.some((job) => job.status !== 'running');
 
+  // ── 远端任务 ──────────────────────────────────────────────────────────────
+  const [remoteJobs, setRemoteJobs] = useState<RemoteRunnerJob[]>([]);
+  const [remoteOpen, setRemoteOpen] = useState(false);
+  const [prompt, setPrompt] = useState('');
+  const [unattended, setUnattended] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void window.ide
+      ?.listRemoteAgents?.()
+      .then((list) => {
+        if (alive) setRemoteJobs(list);
+      })
+      .catch(() => undefined);
+    const off = window.ide?.onRemoteAgentChanged?.((job) =>
+      setRemoteJobs((prev) => {
+        const index = prev.findIndex((j) => j.jobId === job.jobId);
+        if (index < 0) return [job, ...prev];
+        const next = prev.slice();
+        next[index] = job;
+        return next;
+      }),
+    );
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, []);
+
+  /**
+   * 轮询刷新未结束的远端任务。
+   *
+   * 远端状态变不了推给我们（那边没有长连接），所以只能定时去问。
+   * 只在**浮层开着**且有未结束任务时问，避免为了一个看不见的列表一直打 SSH。
+   */
+  useEffect(() => {
+    if (!open) return;
+    const pending = remoteJobs.filter((j) => j.status === 'starting' || j.status === 'running');
+    if (pending.length === 0) return;
+    let alive = true;
+    const timer = setInterval(() => {
+      for (const job of pending) {
+        void window.ide
+          ?.refreshRemoteAgent?.(job.jobId)
+          .then((next) => {
+            if (!alive || !next) return;
+            setRemoteJobs((prev) => prev.map((j) => (j.jobId === next.jobId ? next : j)));
+          })
+          .catch(() => undefined);
+      }
+    }, 4000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [open, remoteJobs]);
+
+  async function submitRemote(): Promise<void> {
+    const text = prompt.trim();
+    if (!text || busy) return;
+    setBusy(true);
+    setRemoteError(null);
+    try {
+      const job = await window.ide.submitRemoteAgent({ prompt: text, unattended });
+      setRemoteJobs((prev) => [job, ...prev.filter((j) => j.jobId !== job.jobId)]);
+      setPrompt('');
+      setRemoteOpen(false);
+    } catch (err) {
+      // 失败必须留在界面上：远端任务最容易失败的地方（没装 node、没连 SSH、
+      // 远端目录不存在）都只在这一刻能知道原因
+      setRemoteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const relativeTime = (ts: number): string => {
     const diff = Date.now() - ts;
     if (diff < 60_000) return t('status.jobsJustNow');
@@ -94,6 +172,88 @@ export function BackgroundJobsIndicator() {
             )}
           </div>
           <div className="status-jobs-hint">{t('status.jobsHint')}</div>
+          <div className="status-jobs-section">
+            <div className="status-jobs-section-head">
+              <span>{t('status.remoteJobs')}</span>
+              <button
+                type="button"
+                className="status-jobs-clear"
+                onClick={() => {
+                  setRemoteOpen((v) => !v);
+                  setRemoteError(null);
+                }}
+              >
+                {t('status.remoteNew')}
+              </button>
+            </div>
+            <div className="status-jobs-hint">{t('status.remoteHint')}</div>
+            {remoteOpen && (
+              <div className="status-remote-form">
+                <textarea
+                  className="status-remote-input"
+                  value={prompt}
+                  placeholder={t('status.remotePromptPlaceholder')}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={3}
+                />
+                <label className="status-remote-check">
+                  <input
+                    type="checkbox"
+                    checked={unattended}
+                    onChange={(e) => setUnattended(e.target.checked)}
+                  />
+                  <span>{t('status.remoteUnattended')}</span>
+                </label>
+                <div className="status-jobs-hint">{t('status.remoteUnattendedHint')}</div>
+                <div className="status-jobs-hint warn">{t('status.remoteCredential')}</div>
+                {remoteError && <div className="status-remote-error">{remoteError}</div>}
+                <button
+                  type="button"
+                  className="status-goto-btn"
+                  disabled={busy || !prompt.trim()}
+                  onClick={() => void submitRemote()}
+                >
+                  {busy ? t('status.remoteSubmitting') : t('status.remoteSubmit')}
+                </button>
+              </div>
+            )}
+            {remoteJobs.length === 0 && !remoteOpen ? (
+              <div className="status-jobs-empty">{t('status.remoteEmpty')}</div>
+            ) : (
+              remoteJobs.slice(0, 8).map((job) => (
+                <div key={job.jobId} className="status-job-row">
+                  <button
+                    type="button"
+                    className="status-job-main"
+                    title={`${job.workspace}\n${job.summary ?? job.error ?? ''}`}
+                    onClick={() => void window.ide.refreshRemoteAgent(job.jobId)}
+                  >
+                    <span className={`status-job-dot ${job.status}`} />
+                    <span className="status-job-title">{job.title}</span>
+                    <span className="status-job-time">{relativeTime(job.startedAt)}</span>
+                  </button>
+                  {job.status === 'starting' || job.status === 'running' ? (
+                    <button
+                      type="button"
+                      className="status-job-action"
+                      onClick={() => void window.ide.cancelRemoteAgent(job.jobId)}
+                    >
+                      {t('status.jobCancel')}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="status-job-action"
+                      onClick={() => void window.ide.removeRemoteAgent(job.jobId)}
+                    >
+                      {t('status.remoteRemove')}
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
           {jobs.length === 0 ? (
             <div className="status-jobs-empty">{t('status.jobsEmpty')}</div>
           ) : (

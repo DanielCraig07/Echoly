@@ -14,6 +14,19 @@ import type { WorkspaceService } from '../workspace';
 import type { WindowSession } from '../windowRegistry';
 import { type BrowserWindow, webContents } from 'electron';
 
+/**
+ * 远端路径的 dirname。
+ *
+ * 自己实现而不是用 `path.dirname`：`path` 在 Windows 上按 `\` 切分，
+ * 而远端永远是 POSIX —— 用 `path` 会让「Windows 上跑的 IDE 往 Linux 远端传文件」
+ * 拼出一个整段都被当成目录名的怪路径（表现为创建了一堆一层一层的怪目录）。
+ */
+function posixDirname(absPath: string): string {
+  const index = absPath.lastIndexOf('/');
+  if (index <= 0) return '/';
+  return absPath.slice(0, index);
+}
+
 interface LocalNcProxy {
   port: number;
   close: () => void;
@@ -1808,6 +1821,115 @@ export class SshSessionManager {
         finish({ stdout: '', stderr: err?.message || String(err), code: 1 });
       }
     });
+  }
+
+  // ── 远端 Agent 任务：原始命令与文件传输 ────────────────────────────────────
+  //
+  // 这几个方法**刻意不加 `cd <工作区>` 前缀**（`runCommand` 会加）。原因有两个：
+  // 1. runner 的命令全部基于绝对路径（`$HOME` 下），与工作区目录无关；
+  // 2. 工作区可能压根没打开、或者那个目录已经不在远端了 —— 加了 `cd` 之后，
+  //    整条命令会在 cd 那一步就地终止，表现为「远端任务神秘地没有任何输出」，
+  //    而真正的原因（目录不存在）根本读不到。
+  //
+  // **安全边界**：这些方法接受任意远端绝对路径，属于**内部接口**，
+  // 只应由 remoteRunner 用协议生成（jobId 受严格校验）的路径调用，
+  // 绝不要外露给渲染层 —— 那等于把「往远端任意位置写文件」变成了一个 IPC。
+
+  /**
+   * 在远端执行一条命令，不改变工作目录。
+   *
+   * 与 `runCommand` 一样带外层熔断：channel 握手因丢包挂起时不会有任何回调，
+   * 不设超时会让调用方永远等下去。
+   */
+  async execRemoteRaw(command: string, timeoutMs = 30_000): Promise<CommandResult> {
+    const live = this.liveForCurrent();
+    if (!live) return { stdout: '', stderr: 'SSH 未连接', code: 1 };
+
+    return await new Promise<CommandResult>((resolve) => {
+      let settled = false;
+      let timer: NodeJS.Timeout | null = null;
+      let childStream: { close?: () => void } | null = null;
+
+      const finish = (result: CommandResult) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        try {
+          childStream?.close?.();
+        } catch {
+          // 关不掉无所谓
+        }
+        resolve(result);
+      };
+
+      timer = setTimeout(() => {
+        finish({ stdout: '', stderr: `远端命令超时（${timeoutMs}ms）`, code: 124 });
+      }, timeoutMs);
+
+      try {
+        live.client.exec(command, (err, stream) => {
+          if (err) {
+            finish({ stdout: '', stderr: err.message, code: 1 });
+            return;
+          }
+          if (settled) {
+            try {
+              stream.close();
+            } catch {}
+            return;
+          }
+          childStream = stream;
+          let stdout = '';
+          let stderr = '';
+          stream.on('data', (d: Buffer) => {
+            stdout += d.toString('utf8');
+          });
+          stream.stderr.on('data', (d: Buffer) => {
+            stderr += d.toString('utf8');
+          });
+          stream.on('close', (code: number | null) => finish({ stdout, stderr, code: code ?? 0 }));
+        });
+      } catch (err: any) {
+        finish({ stdout: '', stderr: err?.message || String(err), code: 1 });
+      }
+    });
+  }
+
+  /** 往远端写一个文件（自动建父目录），并按给定的权限位落地。 */
+  async uploadRemoteFile(absPath: string, content: string, mode = 0o600): Promise<void> {
+    const live = this.liveForCurrent();
+    if (!live) throw new Error('SSH 未连接');
+    const sftp = live.sftp;
+    await this.sftpMkdirp(sftp, posixDirname(absPath));
+    await new Promise<void>((resolve, reject) => {
+      sftp.writeFile(absPath, content, { mode }, (err: Error | null | undefined) =>
+        err ? reject(err) : resolve(),
+      );
+    });
+  }
+
+  /** 读远端的一个文件；不存在或读不了返回 null（调用方按「还没有」处理）。 */
+  async readRemoteFile(absPath: string): Promise<string | null> {
+    const live = this.liveForCurrent();
+    if (!live) return null;
+    const sftp = live.sftp;
+    return await new Promise<string | null>((resolve) => {
+      sftp.readFile(absPath, (err: Error | null | undefined, data: Buffer) =>
+        err || !data ? resolve(null) : resolve(data.toString('utf8')),
+      );
+    });
+  }
+
+  /** 逐级建目录。忽略错误是刻意的：目录已存在会报 EEXIST，而那不是失败。 */
+  private async sftpMkdirp(sftp: SFTPWrapper, dir: string): Promise<void> {
+    if (!dir || dir === '/' || dir === '.') return;
+    const segments = dir.split('/').filter(Boolean);
+    const absolute = dir.startsWith('/');
+    let current = absolute ? '' : '.';
+    for (const segment of segments) {
+      current = `${current}/${segment}`;
+      await new Promise<void>((resolve) => sftp.mkdir(current, () => resolve()));
+    }
   }
 
   openShell(

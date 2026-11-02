@@ -27,6 +27,7 @@ import { buildNextEditPrompt, parseNextEditResponse } from './nextEditPrompt';
 import { checkDocsSources } from './docsToolHost';
 import type { SessionStore } from './sessions';
 import type { AgentService } from './agentService';
+import type { RemoteAgentService } from './remoteRunner/service';
 import type { TerminalService } from './terminal';
 import type { GitService } from './gitService';
 import type { SearchService } from './searchService';
@@ -87,6 +88,8 @@ export function registerIpc(deps: {
   git: GitService;
   search: SearchService;
   ssh: SshSessionManager;
+  /** 远端（SSH 主机上的）Agent 任务。未接入时 `remoteAgent:*` handler 报不可用。 */
+  remoteAgents?: RemoteAgentService;
   /** 进程级单例的 MCP 宿主。未接入时 `mcp:*` handler 返回空状态。 */
   mcp?: McpService;
   getWindow: () => BrowserWindow | null;
@@ -104,6 +107,7 @@ export function registerIpc(deps: {
     git,
     search,
     ssh,
+    remoteAgents,
     mcp,
     getWindow,
     popupAppMenu,
@@ -382,6 +386,63 @@ export function registerIpc(deps: {
   ipcMain.handle('backgroundJobs:list', () => agents.listBackgroundJobs());
   ipcMain.handle('backgroundJobs:clear', () => agents.clearBackgroundJobs());
   ipcMain.handle('backgroundJobs:open', (_e, id: string) => agents.openBackgroundJob(id));
+
+  // ── 远端 Agent 任务（SSH 主机上跑） ────────────────────────────────────────
+  //
+  // 模型配置在这里从 settings 现取，**不让渲染层经手**：否则 apiKey 要多走一段
+  // IPC + 渲染进程内存，而它最终是要被写到远端去的，链路上每多一处都是多余的暴露面。
+  const requireRemoteAgents = (): RemoteAgentService => {
+    if (!remoteAgents) throw new Error('远端任务未启用');
+    return remoteAgents;
+  };
+
+  ipcMain.handle('remoteAgent:probe', (e) => run(e, () => requireRemoteAgents().probe()));
+  ipcMain.handle('remoteAgent:list', () => requireRemoteAgents().list());
+  ipcMain.handle(
+    'remoteAgent:submit',
+    (e, input: { prompt: string; workspace?: string; unattended?: boolean; hostLabel?: string }) =>
+      run(e, async () => {
+        const service = requireRemoteAgents();
+        const session = registry.current();
+        const current = settings.get();
+        const activeModel = current.models?.find((m) => m.id === current.activeModelId);
+        // 与 agentService 取模型配置的顺序保持一致（先 models 里选中的那条，再 providers）
+        const picked = activeModel ?? {
+          provider: current.currentProvider,
+          baseUrl: current.baseUrl,
+          model: current.model,
+          apiKey: current.apiKey,
+        };
+        const model = {
+          provider: picked.provider,
+          baseUrl: picked.baseUrl || '',
+          model: picked.model || '',
+          apiKey: picked.apiKey || '',
+        };
+        if (!model.baseUrl || !model.model) {
+          throw new Error('当前没有可用的模型配置，请先在设置里选好模型');
+        }
+        // 工作目录默认取当前会话的工作区根 —— 远端任务跑的就是这个目录
+        const workspace = input.workspace || session.workspace.getRoot() || '';
+        if (!workspace) throw new Error('当前没有打开工作区，无法确定远端工作目录');
+        return service.submit({
+          prompt: input.prompt,
+          workspace,
+          model,
+          unattended: input.unattended === true,
+          hostLabel: input.hostLabel || session.workspace.getInfo().label,
+        });
+      }),
+  );
+  ipcMain.handle('remoteAgent:refresh', (e, jobId: string) =>
+    run(e, () => requireRemoteAgents().refresh(jobId)),
+  );
+  ipcMain.handle('remoteAgent:cancel', (e, jobId: string) =>
+    run(e, () => requireRemoteAgents().cancel(jobId)),
+  );
+  ipcMain.handle('remoteAgent:remove', (e, jobId: string) =>
+    run(e, () => requireRemoteAgents().remove(jobId)),
+  );
   ipcMain.handle('skills:list', (e) => run(e, () => agents.listSkills()));
   ipcMain.handle('skills:openUserDir', async () => {
     const dir = agents.openUserSkillsDir();

@@ -311,6 +311,42 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'status.jobsMinutesAgo': { zh: '{n} 分钟前', en: '{n} min ago' },
   'status.jobsHoursAgo': { zh: '{n} 小时前', en: '{n} h ago' },
   'status.jobsDaysAgo': { zh: '{n} 天前', en: '{n} d ago' },
+  'status.job.starting': { zh: '启动中', en: 'Starting' },
+  'status.job.lost': { zh: '已失联', en: 'Lost' },
+  // 远端任务（在 SSH 主机上跑）
+  'status.remoteJobs': { zh: '远端任务', en: 'Remote Jobs' },
+  'status.remoteHint': {
+    zh: '在 SSH 主机上运行，关掉本机窗口也会继续；退出应用不影响它。',
+    en: 'Runs on the SSH host and keeps going after you close the window; quitting the app does not stop it.',
+  },
+  'status.remoteEmpty': { zh: '还没有远端任务', en: 'No remote jobs yet' },
+  'status.remoteNew': { zh: '新建远端任务', en: 'New Remote Job' },
+  'status.remotePromptPlaceholder': {
+    zh: '要它在远端做什么？（例如：把 src 下的 xxx 改成 yyy，并跑一遍测试）',
+    en: 'What should it do on the remote host?',
+  },
+  'status.remoteUnattended': {
+    zh: '无人值守（自动批准所有改动）',
+    en: 'Unattended (auto-approve edits)',
+  },
+  'status.remoteUnattendedHint': {
+    zh: '不勾选时，需要确认的操作会被拒绝 —— 远端没有人在旁边点「允许」。',
+    en: 'When unchecked, actions needing confirmation are denied — nobody is there to approve them.',
+  },
+  'status.remoteCredential': {
+    zh: '模型凭据会被写到远端主机（任务结束后自动删除）。',
+    en: 'Your model credentials will be written to the remote host (deleted when the job ends).',
+  },
+  'status.remoteSubmit': { zh: '投递', en: 'Submit' },
+  'status.remoteSubmitting': { zh: '投递中...', en: 'Submitting...' },
+  'status.remoteSubmitted': { zh: '已投递到远端', en: 'Submitted to remote host' },
+  'status.remoteRefresh': { zh: '刷新', en: 'Refresh' },
+  'status.remoteRemove': { zh: '删除', en: 'Remove' },
+  'status.remoteNeedsSsh': {
+    zh: '需要先连接到 SSH 主机（当前工作区是本地目录）',
+    en: 'Connect to an SSH host first (the current workspace is local)',
+  },
+  'status.remoteOpen': { zh: '打开远端任务面板', en: 'Open remote jobs' },
   'status.copilotState': { zh: '状态', en: 'State' },
   'status.copilotRequests': { zh: '请求数', en: 'Requests' },
   'status.copilotAccepted': { zh: '已接受', en: 'Accepted' },
