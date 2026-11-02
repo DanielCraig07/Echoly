@@ -1549,7 +1549,7 @@ export function RunWidget({
         padding: '0 4px',
         gap: 4,
         position: 'relative',
-        fontSize: 12,
+        fontSize: 'var(--ui-font-size, 12px)',
         userSelect: 'none',
       }}
     >
@@ -1575,7 +1575,7 @@ export function RunWidget({
           cursor: 'pointer',
           padding: '0 6px',
           height: '100%',
-          fontSize: 12,
+          fontSize: 'var(--ui-font-size, 12px)',
           fontWeight: 500,
           borderRadius: 4,
           maxWidth: 180,
@@ -2195,7 +2195,7 @@ function ScriptItem({
         padding: '5px 8px',
         borderRadius: 5,
         cursor: 'pointer',
-        fontSize: 12,
+        fontSize: 'var(--ui-font-size, 12px)',
         color: isSelected ? '#ffffff' : 'var(--text)',
         background: isSelected ? '#242424' : hovered ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
         border: isSelected ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid transparent',
@@ -2231,7 +2231,7 @@ function ScriptItem({
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
           }}
         >
           {item.name}

@@ -4876,7 +4876,7 @@ export function App() {
                       <span
                         title={workspaceInfo.label || workspaceInfo.root || 'PROJECT-IDE'}
                         style={{
-                          fontSize: 12,
+                          fontSize: 'var(--ui-font-size, 12px)',
                           fontWeight: 700,
                           color: 'var(--text)',
                           letterSpacing: '0.05em',
@@ -6167,7 +6167,7 @@ export function App() {
                   padding: '9px 12px',
                   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                   color: 'var(--text)',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
@@ -6260,7 +6260,9 @@ export function App() {
                     }}
                   >
                     {copiedToastId === toast.id ? (
-                      <span style={{ fontSize: 12, fontWeight: 700 }}>✓</span>
+                      <span style={{ fontSize: 'var(--ui-font-size, 12px)', fontWeight: 700 }}>
+                        ✓
+                      </span>
                     ) : (
                       <svg
                         width="12"
@@ -6389,7 +6391,7 @@ export function App() {
                   padding: 12,
                   maxHeight: 280,
                   overflowY: 'auto',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   lineHeight: 1.6,
                   fontFamily: 'Consolas, "Cascadia Code", monospace',
                   color: 'var(--text)',
@@ -6406,7 +6408,7 @@ export function App() {
               <button
                 type="button"
                 className="panel-standard-btn"
-                style={{ padding: '5px 14px', fontSize: 12 }}
+                style={{ padding: '5px 14px', fontSize: 'var(--ui-font-size, 12px)' }}
                 onClick={() => {
                   const text = toastDetailModal.detail
                     ? `${toastDetailModal.title}\n${toastDetailModal.detail}`
@@ -6421,7 +6423,7 @@ export function App() {
               <button
                 type="button"
                 className="panel-standard-btn primary"
-                style={{ padding: '5px 14px', fontSize: 12 }}
+                style={{ padding: '5px 14px', fontSize: 'var(--ui-font-size, 12px)' }}
                 onClick={() => setToastDetailModal(null)}
               >
                 {t('common.close')}

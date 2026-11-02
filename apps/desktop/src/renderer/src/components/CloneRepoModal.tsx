@@ -563,7 +563,7 @@ export function CloneRepoModal({ open, onClose, onCloned }: Props) {
                 background: 'rgba(239, 68, 68, 0.1)',
                 border: '1px solid rgba(239, 68, 68, 0.3)',
                 color: '#f87171',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 display: 'flex',
                 alignItems: 'flex-start',
                 gap: 8,

@@ -254,7 +254,7 @@ export function CompareWithRevisionModal({
             </span>
             <span
               style={{
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: 'var(--muted)',
                 background: 'rgba(255, 255, 255, 0.06)',
                 padding: '2px 8px',
@@ -315,19 +315,36 @@ export function CompareWithRevisionModal({
           >
             {loading && (
               <div
-                style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+                style={{
+                  padding: 24,
+                  textAlign: 'center',
+                  color: 'var(--muted)',
+                  fontSize: 'var(--ui-font-size, 12px)',
+                }}
               >
                 {t('git.loadingHistory')}
               </div>
             )}
             {!loading && error && (
-              <div style={{ padding: 24, textAlign: 'center', color: '#f87171', fontSize: 12 }}>
+              <div
+                style={{
+                  padding: 24,
+                  textAlign: 'center',
+                  color: '#f87171',
+                  fontSize: 'var(--ui-font-size, 12px)',
+                }}
+              >
                 {error}
               </div>
             )}
             {!loading && !error && filteredCommits.length === 0 && (
               <div
-                style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+                style={{
+                  padding: 24,
+                  textAlign: 'center',
+                  color: 'var(--muted)',
+                  fontSize: 'var(--ui-font-size, 12px)',
+                }}
               >
                 {t('git.noMatchingCommits')}
               </div>
@@ -422,7 +439,13 @@ export function CompareWithRevisionModal({
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                    <div
+                      style={{
+                        fontSize: 'var(--ui-font-size, 12px)',
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                      }}
+                    >
                       {/* 提交哈希要显示成等宽强调：用 translateSegments 让占位符位置随语言变化 */}
                       {translateSegments('git.comparingRevision', locale, {
                         hash: selectedCommit.shortHash,
@@ -465,7 +488,7 @@ export function CompareWithRevisionModal({
                     padding: 14,
                     overflow: 'auto',
                     fontFamily: 'monospace',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                   }}
                 >
                   {diffLoading ? (
@@ -479,7 +502,9 @@ export function CompareWithRevisionModal({
                       </div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                        <div
+                          style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted)' }}
+                        >
                           {t('git.leftRevision', {
                             hash: selectedCommit.shortHash,
                             n: diffResult.original.split('\n').length,
@@ -514,7 +539,12 @@ export function CompareWithRevisionModal({
               </>
             ) : (
               <div
-                style={{ padding: 48, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+                style={{
+                  padding: 48,
+                  textAlign: 'center',
+                  color: 'var(--muted)',
+                  fontSize: 'var(--ui-font-size, 12px)',
+                }}
               >
                 {t('git.selectCommitHint')}
               </div>
@@ -757,7 +787,7 @@ export function CompareWithBranchOrTagModal({
             </span>
             <span
               style={{
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: 'var(--muted)',
                 background: 'rgba(255, 255, 255, 0.06)',
                 padding: '2px 8px',
@@ -872,7 +902,14 @@ export function CompareWithBranchOrTagModal({
         {/* List of branches or tags */}
         <div ref={listRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8 }}>
           {loading && (
-            <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+            <div
+              style={{
+                padding: 32,
+                textAlign: 'center',
+                color: 'var(--muted)',
+                fontSize: 'var(--ui-font-size, 12px)',
+              }}
+            >
               {t('git.loadingBranches')}
             </div>
           )}
@@ -885,7 +922,7 @@ export function CompareWithBranchOrTagModal({
                 border: '1px solid rgba(239, 68, 68, 0.3)',
                 borderRadius: 6,
                 color: '#f87171',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
               }}
             >
               {error}
@@ -896,7 +933,12 @@ export function CompareWithBranchOrTagModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {filteredBranches.length === 0 ? (
                 <div
-                  style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+                  style={{
+                    padding: 32,
+                    textAlign: 'center',
+                    color: 'var(--muted)',
+                    fontSize: 'var(--ui-font-size, 12px)',
+                  }}
                 >
                   {t('git.noMatchingBranch')}
                 </div>
@@ -984,7 +1026,12 @@ export function CompareWithBranchOrTagModal({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {filteredTags.length === 0 ? (
                 <div
-                  style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}
+                  style={{
+                    padding: 32,
+                    textAlign: 'center',
+                    color: 'var(--muted)',
+                    fontSize: 'var(--ui-font-size, 12px)',
+                  }}
                 >
                   {t('git.noMatchingTag')}
                 </div>
@@ -1048,7 +1095,7 @@ export function CompareWithBranchOrTagModal({
             background: 'rgba(255, 255, 255, 0.02)',
           }}
         >
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          <div style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted)' }}>
             {selectedRef ? t('git.selectedRef', { ref: selectedRef }) : t('git.selectBranchOrTag')}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -1182,7 +1229,9 @@ export function RollbackFileModal({ open, filePath, onClose, onConfirm }: Rollba
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
               {t('git.rollbackTitle')}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+            <div
+              style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted)', marginTop: 2 }}
+            >
               {t('git.rollbackDesc')}
             </div>
           </div>
@@ -1212,7 +1261,14 @@ export function RollbackFileModal({ open, filePath, onClose, onConfirm }: Rollba
           </div>
         </div>
 
-        <div style={{ fontSize: 12, color: '#f87171', lineHeight: 1.5, marginBottom: 20 }}>
+        <div
+          style={{
+            fontSize: 'var(--ui-font-size, 12px)',
+            color: '#f87171',
+            lineHeight: 1.5,
+            marginBottom: 20,
+          }}
+        >
           {t('git.rollbackWarning')}
         </div>
 

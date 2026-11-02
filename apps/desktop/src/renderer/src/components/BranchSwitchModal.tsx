@@ -519,7 +519,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
               background: 'rgba(244, 67, 54, 0.12)',
               borderBottom: '1px solid rgba(244, 67, 54, 0.25)',
               color: 'var(--danger, #f44336)',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               display: 'flex',
               alignItems: 'center',
               gap: 6,
@@ -560,7 +560,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 padding: '36px 0',
                 textAlign: 'center',
                 color: 'var(--muted, #888)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -595,7 +595,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 padding: '36px 0',
                 textAlign: 'center',
                 color: 'var(--muted, #888)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
               }}
             >
               {query
@@ -618,7 +618,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 padding: '36px 0',
                 textAlign: 'center',
                 color: 'var(--muted, #888)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
               }}
             >
               {query ? t('git.noTagMatch', { query }) : t('git.noTags')}
@@ -655,7 +655,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                         : isSelected
                           ? 'var(--text-bright, #fff)'
                           : 'var(--fg, #ddd)',
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       transition: 'all 0.12s ease',
                       userSelect: 'none',
                     }}
@@ -1032,7 +1032,7 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                       : isSelected
                         ? 'var(--text-bright, #fff)'
                         : 'var(--fg, #ddd)',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     transition: 'all 0.12s ease',
                     userSelect: 'none',
                   }}
@@ -1193,7 +1193,13 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
                 </span>
               </div>
 
-              <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text, #ddd)' }}>
+              <div
+                style={{
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  lineHeight: 1.6,
+                  color: 'var(--text, #ddd)',
+                }}
+              >
                 {translateSegments('git.unsavedWarningLead', locale, {
                   changed: unsavedWarning.changedCount,
                 }).map((seg, i) =>

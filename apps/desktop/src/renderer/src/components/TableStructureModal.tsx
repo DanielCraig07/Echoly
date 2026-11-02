@@ -277,7 +277,13 @@ export function TableStructureModal({
             flexShrink: 0,
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em' }}>
+          <div
+            style={{
+              fontSize: 'var(--ui-font-size, 12px)',
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+            }}
+          >
             {mode === 'create' ? t('db.newTable') : t('db.designTable', { table: tableName ?? '' })}
             <span
               style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}
@@ -318,7 +324,9 @@ export function TableStructureModal({
               flexShrink: 0,
             }}
           >
-            <span style={{ fontSize: 12, width: 56 }}>{t('db.metaTableName')}</span>
+            <span style={{ fontSize: 'var(--ui-font-size, 12px)', width: 56 }}>
+              {t('db.metaTableName')}
+            </span>
             <input
               type="text"
               className="db-structure-input"
@@ -545,7 +553,9 @@ export function TableStructureModal({
           }}
         >
           <button type="button" className="panel-action-btn" onClick={onClose} disabled={executing}>
-            <span style={{ fontSize: 12, padding: '0 4px' }}>{t('db.cancel')}</span>
+            <span style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '0 4px' }}>
+              {t('db.cancel')}
+            </span>
           </button>
           <button
             type="button"
@@ -555,7 +565,11 @@ export function TableStructureModal({
             title={canExecute ? t('db.runDdlTitle') : t('db.fillRequiredFirst')}
           >
             <span
-              style={{ fontSize: 12, padding: '0 4px', color: canExecute ? '#4ade80' : undefined }}
+              style={{
+                fontSize: 'var(--ui-font-size, 12px)',
+                padding: '0 4px',
+                color: canExecute ? '#4ade80' : undefined,
+              }}
             >
               {executing
                 ? t('db.executing')

@@ -96,10 +96,12 @@
         外接屏与内建屏并排时尤其明显。取整规则统一向上（10.5→11、11.5→12…），保持可读性
   - [x] 第二步：`styles.css` 里 **262 处**面板级字号收敛到 `var(--ui-font-size, 12px)`，
         硬编码 `font-size: 12px` 归零；随后把 token 由 12px 翻到 **13px**
-  - [ ] 第三步：组件内联 `fontSize` 改读变量 —— **本轮尝试后已回退**：
-        约 271 处匹配里有一部分调用点的 `fontSize` 是**数字型 props**（不是样式对象），
-        替换成字符串会直接报类型错误。必须逐个判断是「样式」还是「属性」，
-        不能靠正则批量替换。已单列为独立任务。
+  - [x] 第三步：组件内联 `fontSize` 迁移 **256 处**改为 `var(--ui-font-size, 12px)`
+        —— 用「批量替换 + typecheck 判定 + 回退报错文件」的方式收敛：
+        正则无法区分「内联样式对象」与「数字型 props」，但 typecheck 可以。
+        4 个文件因此被回退（`BranchDiffModal` / `TerminalPanel` /
+        `ThreeWayMergeModal` / `chat/TurnRevertModal`），其中混着样式与属性两种用法，
+        留待逐个判断后再迁移。
 
 ### A6 Vim 模式
 

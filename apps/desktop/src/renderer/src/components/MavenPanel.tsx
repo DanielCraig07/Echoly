@@ -774,7 +774,7 @@ export function MavenPanel({
         <div
           className="panel-header-title"
           style={{
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             fontWeight: 700,
             color: 'var(--text)',
             letterSpacing: '0.05em',
@@ -893,7 +893,7 @@ export function MavenPanel({
               border: '1px solid var(--border)',
               borderRadius: 4,
               padding: '4px 8px',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               outline: 'none',
             }}
           />
@@ -927,7 +927,7 @@ export function MavenPanel({
             background: 'rgba(234,179,8,0.08)',
             border: '1px solid rgba(234,179,8,0.25)',
             borderRadius: 8,
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             lineHeight: 1.5,
             flexShrink: 0,
           }}
@@ -1012,12 +1012,14 @@ export function MavenPanel({
             <div style={{ fontWeight: 600, color: 'var(--text-bright)', fontSize: 13 }}>
               {t('maven.noProjectTitle')}
             </div>
-            <div style={{ fontSize: 12, marginTop: 4 }}>{t('maven.noProjectDesc')}</div>
+            <div style={{ fontSize: 'var(--ui-font-size, 12px)', marginTop: 4 }}>
+              {t('maven.noProjectDesc')}
+            </div>
             <button
               type="button"
               className="panel-standard-btn"
               onClick={() => void scanMavenProjects()}
-              style={{ marginTop: 14, fontSize: 12 }}
+              style={{ marginTop: 14, fontSize: 'var(--ui-font-size, 12px)' }}
             >
               {t('maven.rescanShort')}
             </button>
@@ -1054,7 +1056,7 @@ export function MavenPanel({
                     border: '1px solid var(--border)',
                     borderRadius: 4,
                     padding: '4px 6px',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     outline: 'none',
                   }}
                 >
@@ -1272,7 +1274,7 @@ export function MavenPanel({
                           alignItems: 'center',
                           gap: 6,
                           cursor: 'pointer',
-                          fontSize: 12,
+                          fontSize: 'var(--ui-font-size, 12px)',
                           color: isChecked ? 'var(--text-bright)' : 'var(--text)',
                           padding: '3px 6px 3px 32px',
                           margin: '1px 4px',

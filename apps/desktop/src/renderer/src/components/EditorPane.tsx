@@ -3760,7 +3760,7 @@ export function EditorPane({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             color: 'var(--text)',
             boxSizing: 'border-box',
           }}
@@ -5092,7 +5092,7 @@ export function EditorPane({
                           <RenderFileTreeIcon name={item.name} isDirectory={item.isDirectory} />
                           <span
                             style={{
-                              fontSize: 12,
+                              fontSize: 'var(--ui-font-size, 12px)',
                               overflow: 'hidden',
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
@@ -6155,7 +6155,7 @@ export function EditorPane({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
                   <span
                     style={{
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       fontWeight: 700,
                       letterSpacing: '0.05em',
                       color: 'var(--text-secondary, #999)',
@@ -6399,7 +6399,14 @@ export function EditorPane({
                   right: 0,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 'var(--ui-font-size, 12px)',
+                  }}
+                >
                   <span style={{ fontWeight: 700, color: '#10b981' }}>✦ Smart Apply</span>
                   <span style={{ color: 'var(--text, #fff)' }}>
                     {t('editor.smartApplyReviewing')}
@@ -6909,7 +6916,7 @@ export function EditorPane({
               borderTop: '2px solid var(--accent, #007acc)',
               borderBottom: '1px solid var(--border)',
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               fontFamily:
                 'ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Monaco, Consolas, monospace',
               color: 'var(--text)',
@@ -7058,7 +7065,7 @@ export function EditorPane({
                       padding: '0 12px',
                       background: 'rgba(255, 255, 255, 0.03)',
                       borderBottom: '1px solid var(--border)',
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       userSelect: 'none',
                     }}
                   >
@@ -7321,7 +7328,7 @@ export function EditorPane({
                                 : isAdd
                                   ? '3px solid #3fb950'
                                   : '3px solid transparent',
-                              fontSize: 12,
+                              fontSize: 'var(--ui-font-size, 12px)',
                               boxSizing: 'border-box',
                             }}
                           >

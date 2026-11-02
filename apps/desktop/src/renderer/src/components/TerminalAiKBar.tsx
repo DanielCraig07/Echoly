@@ -206,7 +206,7 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
         {loading ? (
           <span
             style={{
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               color: 'var(--text-secondary)',
               display: 'flex',
               alignItems: 'center',
@@ -222,7 +222,12 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
           <button
             type="button"
             className="panel-standard-btn primary"
-            style={{ padding: '3px 10px', fontSize: 12, height: 26, borderRadius: 5 }}
+            style={{
+              padding: '3px 10px',
+              fontSize: 'var(--ui-font-size, 12px)',
+              height: 26,
+              borderRadius: 5,
+            }}
             onClick={() => void handleGenerate()}
             disabled={!prompt.trim()}
           >
@@ -256,7 +261,7 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
         <div
           style={{
             padding: '8px 12px',
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             color: '#f87171',
             background: 'rgba(239, 68, 68, 0.1)',
           }}
@@ -356,7 +361,12 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
               <button
                 type="button"
                 className="panel-standard-btn"
-                style={{ padding: '3px 10px', fontSize: 12, height: 26, borderRadius: 5 }}
+                style={{
+                  padding: '3px 10px',
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  height: 26,
+                  borderRadius: 5,
+                }}
                 onClick={handleInsertCommand}
                 title={t('terminalAi.insertTitle')}
               >
@@ -365,7 +375,12 @@ export const TerminalAiKBar: React.FC<TerminalAiKBarProps> = ({
               <button
                 type="button"
                 className="panel-standard-btn primary"
-                style={{ padding: '3px 12px', fontSize: 12, height: 26, borderRadius: 5 }}
+                style={{
+                  padding: '3px 12px',
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  height: 26,
+                  borderRadius: 5,
+                }}
                 onClick={handleRunCommand}
                 title={t('terminalAi.runTitle')}
               >

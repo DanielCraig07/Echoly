@@ -133,7 +133,7 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
         boxShadow: '0 8px 28px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25)',
         padding: '12px 14px',
         color: 'var(--text, #cccccc)',
-        fontSize: 12,
+        fontSize: 'var(--ui-font-size, 12px)',
         fontFamily:
           'var(--font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif)',
         maxWidth: 480,
@@ -151,7 +151,7 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
           alignItems: 'center',
           flexWrap: 'wrap',
           gap: 4,
-          fontSize: 12,
+          fontSize: 'var(--ui-font-size, 12px)',
           lineHeight: '18px',
           paddingBottom: 8,
         }}
@@ -244,7 +244,7 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
       <div
         style={{
           margin: '8px 0 10px 0',
-          fontSize: 12,
+          fontSize: 'var(--ui-font-size, 12px)',
           lineHeight: '18px',
           display: 'flex',
           alignItems: 'center',
@@ -294,7 +294,7 @@ export const GitCommitPreviewCard: React.FC<GitCommitPreviewCardProps> = ({
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          fontSize: 12,
+          fontSize: 'var(--ui-font-size, 12px)',
           paddingTop: 8,
           borderTop: '1px solid var(--border, rgba(255, 255, 255, 0.08))',
         }}

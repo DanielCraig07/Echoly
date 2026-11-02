@@ -524,7 +524,7 @@ export function EnvironmentSettingsSection({
             borderRadius: 6,
             background: 'rgba(56, 189, 248, 0.08)',
             border: '1px solid rgba(56, 189, 248, 0.25)',
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             color: '#38bdf8',
           }}
         >
@@ -555,7 +555,7 @@ export function EnvironmentSettingsSection({
             borderRadius: 6,
             background: 'rgba(255, 255, 255, 0.04)',
             border: '1px solid var(--border)',
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             color: 'var(--muted)',
           }}
         >
@@ -575,7 +575,7 @@ export function EnvironmentSettingsSection({
           borderRadius: 8,
           background: 'rgba(56, 189, 248, 0.08)',
           border: '1px solid rgba(56, 189, 248, 0.22)',
-          fontSize: 12,
+          fontSize: 'var(--ui-font-size, 12px)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -666,7 +666,7 @@ export function EnvironmentSettingsSection({
                 background:
                   subTab === tab.key ? 'var(--bg-hover, rgba(59, 130, 246, 0.16))' : 'transparent',
                 color: subTab === tab.key ? 'var(--text-bright, #fff)' : 'var(--muted, #a1a1aa)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: subTab === tab.key ? 600 : 400,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
@@ -820,7 +820,7 @@ export function EnvironmentSettingsSection({
                             alignItems: 'center',
                             gap: 6,
                             padding: '4px 10px',
-                            fontSize: 12,
+                            fontSize: 'var(--ui-font-size, 12px)',
                             borderRadius: 6,
                             background: showMoreJdkMenu
                               ? 'var(--bg-hover, rgba(255,255,255,0.08))'
@@ -867,7 +867,11 @@ export function EnvironmentSettingsSection({
                             }}
                           >
                             <span
-                              style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-bright)' }}
+                              style={{
+                                fontWeight: 600,
+                                fontSize: 'var(--ui-font-size, 12px)',
+                                color: 'var(--text-bright)',
+                              }}
                             >
                               {t('envs.moreJdkSection')}
                             </span>
@@ -919,7 +923,7 @@ export function EnvironmentSettingsSection({
                                     <div
                                       style={{
                                         fontWeight: 600,
-                                        fontSize: 12,
+                                        fontSize: 'var(--ui-font-size, 12px)',
                                         color: 'var(--text-bright)',
                                       }}
                                     >
@@ -1256,7 +1260,7 @@ export function EnvironmentSettingsSection({
                     padding: '16px',
                     textAlign: 'center',
                     color: 'var(--muted)',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                   }}
                 >
                   {t('envs.noOtherJdks')}
@@ -1349,7 +1353,7 @@ export function EnvironmentSettingsSection({
             <label
               style={{
                 display: 'block',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: 500,
                 color: 'var(--text)',
                 marginBottom: 6,
@@ -1381,7 +1385,7 @@ export function EnvironmentSettingsSection({
                   borderRadius: 6,
                   padding: '6px 12px',
                   color: 'var(--text-bright)',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   fontFamily: 'monospace',
                   outline: 'none',
                 }}
@@ -1390,7 +1394,7 @@ export function EnvironmentSettingsSection({
                 type="button"
                 className="panel-standard-btn"
                 onClick={handlePickJavaHome}
-                style={{ padding: '6px 14px', fontSize: 12 }}
+                style={{ padding: '6px 14px', fontSize: 'var(--ui-font-size, 12px)' }}
               >
                 {t('envs.browseDir')}
               </button>
@@ -1501,7 +1505,14 @@ export function EnvironmentSettingsSection({
                 </span>
               )}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 12 }}>
+            <div
+              style={{
+                fontSize: 'var(--ui-font-size, 12px)',
+                color: 'var(--muted)',
+                lineHeight: 1.6,
+                marginBottom: 12,
+              }}
+            >
               {t('envs.wrapperDesc')}
             </div>
 
@@ -1511,7 +1522,7 @@ export function EnvironmentSettingsSection({
                 className="panel-standard-btn primary"
                 disabled={generatingWrapper}
                 onClick={() => void handleInitWrapper()}
-                style={{ padding: '5px 14px', fontSize: 12 }}
+                style={{ padding: '5px 14px', fontSize: 'var(--ui-font-size, 12px)' }}
               >
                 {generatingWrapper
                   ? t('envs.generatingWrapper')
@@ -1590,7 +1601,14 @@ export function EnvironmentSettingsSection({
               </div>
             </div>
 
-            <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 12 }}>
+            <div
+              style={{
+                fontSize: 'var(--ui-font-size, 12px)',
+                color: 'var(--muted)',
+                lineHeight: 1.6,
+                marginBottom: 12,
+              }}
+            >
               {t('envs.settingsDescBefore')}
               <code
                 style={{
@@ -1610,7 +1628,7 @@ export function EnvironmentSettingsSection({
               <label
                 style={{
                   display: 'block',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   fontWeight: 500,
                   color: 'var(--text)',
                   marginBottom: 6,
@@ -1636,7 +1654,7 @@ export function EnvironmentSettingsSection({
                     borderRadius: 6,
                     padding: '6px 12px',
                     color: 'var(--text-bright)',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     fontFamily: 'monospace',
                     outline: 'none',
                   }}
@@ -1645,7 +1663,7 @@ export function EnvironmentSettingsSection({
                   type="button"
                   className="panel-standard-btn"
                   onClick={handlePickSettingsPath}
-                  style={{ padding: '6px 14px', fontSize: 12 }}
+                  style={{ padding: '6px 14px', fontSize: 'var(--ui-font-size, 12px)' }}
                 >
                   {t('envs.browseFile')}
                 </button>
@@ -1657,7 +1675,7 @@ export function EnvironmentSettingsSection({
                       updateConfig((prev) => ({ ...prev, customSettingsPath: '' }));
                       onShowToast?.(t('envs.clearedSettingsPath'), undefined, 'info');
                     }}
-                    style={{ padding: '6px 10px', fontSize: 12 }}
+                    style={{ padding: '6px 10px', fontSize: 'var(--ui-font-size, 12px)' }}
                     title={t('envs.clearCustomPath')}
                   >
                     ✕
@@ -1681,7 +1699,7 @@ export function EnvironmentSettingsSection({
                 className="panel-standard-btn"
                 disabled={generatingSettings}
                 onClick={() => void handleInitSettingsXml()}
-                style={{ padding: '5px 14px', fontSize: 12 }}
+                style={{ padding: '5px 14px', fontSize: 'var(--ui-font-size, 12px)' }}
               >
                 {generatingSettings ? t('envs.generating') : t('envs.generateSettingsXml')}
               </button>
@@ -1696,7 +1714,7 @@ export function EnvironmentSettingsSection({
             <label
               style={{
                 display: 'block',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: 500,
                 color: 'var(--text)',
                 marginBottom: 6,
@@ -1722,7 +1740,7 @@ export function EnvironmentSettingsSection({
                   borderRadius: 6,
                   padding: '6px 12px',
                   color: 'var(--text-bright)',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   fontFamily: 'monospace',
                   outline: 'none',
                 }}
@@ -1731,7 +1749,7 @@ export function EnvironmentSettingsSection({
                 type="button"
                 className="panel-standard-btn"
                 onClick={handlePickMvnPath}
-                style={{ padding: '6px 14px', fontSize: 12 }}
+                style={{ padding: '6px 14px', fontSize: 'var(--ui-font-size, 12px)' }}
               >
                 {t('envs.browseFileDoc')}
               </button>
@@ -1743,7 +1761,7 @@ export function EnvironmentSettingsSection({
                     updateConfig((prev) => ({ ...prev, customMvnPath: '' }));
                     onShowToast?.(t('envs.clearedMavenPath'), undefined, 'info');
                   }}
-                  style={{ padding: '6px 10px', fontSize: 12 }}
+                  style={{ padding: '6px 10px', fontSize: 'var(--ui-font-size, 12px)' }}
                   title={t('envs.clearCustomPathTitle')}
                 >
                   ✕
@@ -1759,7 +1777,7 @@ export function EnvironmentSettingsSection({
               borderRadius: 8,
               background: 'var(--bg-card, rgba(0, 0, 0, 0.15))',
               border: '1px solid var(--border)',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               lineHeight: 1.7,
             }}
           >
@@ -1807,7 +1825,7 @@ export function EnvironmentSettingsSection({
             </div>
             <p
               style={{
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: 'var(--muted)',
                 margin: '4px 0 16px 0',
                 lineHeight: 1.5,
@@ -1827,7 +1845,13 @@ export function EnvironmentSettingsSection({
                     marginBottom: 5,
                   }}
                 >
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
+                  <label
+                    style={{
+                      fontSize: 'var(--ui-font-size, 12px)',
+                      fontWeight: 600,
+                      color: 'var(--text-bright)',
+                    }}
+                  >
                     {t('envs.vmOptions')}
                   </label>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -1847,7 +1871,7 @@ export function EnvironmentSettingsSection({
                     borderRadius: 5,
                     color: 'var(--text-bright, #fff)',
                     padding: '8px 10px',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     fontFamily: 'var(--font-mono, monospace)',
                     outline: 'none',
                   }}
@@ -1904,7 +1928,13 @@ export function EnvironmentSettingsSection({
                     marginBottom: 5,
                   }}
                 >
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
+                  <label
+                    style={{
+                      fontSize: 'var(--ui-font-size, 12px)',
+                      fontWeight: 600,
+                      color: 'var(--text-bright)',
+                    }}
+                  >
                     {t('envs.programArgs')}
                   </label>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -1926,7 +1956,7 @@ export function EnvironmentSettingsSection({
                     borderRadius: 5,
                     color: 'var(--text-bright, #fff)',
                     padding: '8px 10px',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     fontFamily: 'var(--font-mono, monospace)',
                     outline: 'none',
                   }}
@@ -1939,7 +1969,7 @@ export function EnvironmentSettingsSection({
                   <label
                     style={{
                       display: 'block',
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       fontWeight: 600,
                       color: 'var(--text-bright)',
                       marginBottom: 5,
@@ -1962,7 +1992,7 @@ export function EnvironmentSettingsSection({
                       borderRadius: 5,
                       color: 'var(--text-bright, #fff)',
                       padding: '8px 10px',
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       fontFamily: 'var(--font-mono, monospace)',
                       outline: 'none',
                     }}
@@ -1973,7 +2003,7 @@ export function EnvironmentSettingsSection({
                   <label
                     style={{
                       display: 'block',
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       fontWeight: 600,
                       color: 'var(--text-bright)',
                       marginBottom: 5,
@@ -1996,7 +2026,7 @@ export function EnvironmentSettingsSection({
                       borderRadius: 5,
                       color: 'var(--text-bright, #fff)',
                       padding: '8px 10px',
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       fontFamily: 'var(--font-mono, monospace)',
                       outline: 'none',
                     }}
@@ -2054,7 +2084,7 @@ export function EnvironmentSettingsSection({
                           display: 'flex',
                           alignItems: 'center',
                           gap: 6,
-                          fontSize: 12,
+                          fontSize: 'var(--ui-font-size, 12px)',
                           fontWeight: 600,
                           color: '#fca5a5',
                         }}
@@ -2210,7 +2240,7 @@ export function EnvironmentSettingsSection({
                     onShowToast?.(t('envs.runtimeSaved'), t('envs.runtimeSavedDetail'), 'success');
                   }}
                   style={{
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     padding: '6px 18px',
                     background: '#22c55e',
                     borderColor: '#22c55e',
@@ -2248,7 +2278,13 @@ export function EnvironmentSettingsSection({
                   {t('envs.cppTitle')}
                 </span>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+              <div
+                style={{
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  color: 'var(--muted)',
+                  lineHeight: 1.5,
+                }}
+              >
                 {t('envs.cppDesc')}
               </div>
             </div>
@@ -2259,7 +2295,7 @@ export function EnvironmentSettingsSection({
                 className="panel-standard-btn"
                 onClick={detectAllToolchains}
                 disabled={detectingMulti}
-                style={{ fontSize: 12, padding: '6px 14px' }}
+                style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '6px 14px' }}
               >
                 {detectingMulti ? t('envs.detecting') : t('envs.rediagnose')}
               </button>
@@ -2793,7 +2829,13 @@ export function EnvironmentSettingsSection({
                   {t('envs.pyTitle')}
                 </span>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+              <div
+                style={{
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  color: 'var(--muted)',
+                  lineHeight: 1.5,
+                }}
+              >
                 {t('envs.pyDesc')}
               </div>
             </div>
@@ -2804,7 +2846,7 @@ export function EnvironmentSettingsSection({
                 className="panel-standard-btn"
                 onClick={detectAllToolchains}
                 disabled={detectingMulti}
-                style={{ fontSize: 12, padding: '6px 14px' }}
+                style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '6px 14px' }}
               >
                 {detectingMulti ? t('envs.detecting') : t('envs.rediagnose')}
               </button>
@@ -3232,7 +3274,13 @@ export function EnvironmentSettingsSection({
                   {t('envs.goTitle')}
                 </span>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+              <div
+                style={{
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  color: 'var(--muted)',
+                  lineHeight: 1.5,
+                }}
+              >
                 {t('envs.goDesc')}
               </div>
             </div>
@@ -3243,7 +3291,7 @@ export function EnvironmentSettingsSection({
                 className="panel-standard-btn"
                 onClick={detectAllToolchains}
                 disabled={detectingMulti}
-                style={{ fontSize: 12, padding: '6px 14px' }}
+                style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '6px 14px' }}
               >
                 {detectingMulti ? t('envs.detecting') : t('envs.rediagnose')}
               </button>
@@ -3669,7 +3717,13 @@ export function EnvironmentSettingsSection({
                   {t('envs.nodeTitle')}
                 </span>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5 }}>
+              <div
+                style={{
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  color: 'var(--muted)',
+                  lineHeight: 1.5,
+                }}
+              >
                 {t('envs.nodeDesc')}
               </div>
             </div>
@@ -3680,7 +3734,7 @@ export function EnvironmentSettingsSection({
                 className="panel-standard-btn"
                 onClick={detectAllToolchains}
                 disabled={detectingMulti}
-                style={{ fontSize: 12, padding: '6px 14px' }}
+                style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '6px 14px' }}
               >
                 {detectingMulti ? t('envs.detecting') : t('envs.rediagnose')}
               </button>

@@ -564,7 +564,11 @@ export const TopSearchBar = forwardRef<TopSearchBarHandle, Props>(function TopSe
                       </span>
                       <span
                         className="cmd-item-path"
-                        style={{ marginLeft: 8, opacity: 0.65, fontSize: 12 }}
+                        style={{
+                          marginLeft: 8,
+                          opacity: 0.65,
+                          fontSize: 'var(--ui-font-size, 12px)',
+                        }}
                       >
                         {activePath}
                       </span>

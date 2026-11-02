@@ -93,7 +93,7 @@ function SearchTreeNodeView({
             paddingTop: 4,
             paddingBottom: 4,
             cursor: 'pointer',
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             userSelect: 'none',
           }}
           className="search-result-item"
@@ -138,7 +138,7 @@ function SearchTreeNodeView({
           paddingTop: 4,
           paddingBottom: 4,
           cursor: 'pointer',
-          fontSize: 12,
+          fontSize: 'var(--ui-font-size, 12px)',
           userSelect: 'none',
         }}
         className="search-result-item"
@@ -178,7 +178,7 @@ function SearchTreeNodeView({
                 paddingTop: 3,
                 paddingBottom: 3,
                 cursor: 'pointer',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontFamily: 'var(--font-mono)',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
@@ -538,7 +538,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
         <div
           className="panel-header-title"
           style={{
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             fontWeight: 700,
             color: 'var(--text)',
             letterSpacing: '0.05em',
@@ -715,7 +715,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                 background: 'transparent',
                 border: 'none',
                 color: 'var(--text)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 outline: 'none',
                 boxSizing: 'border-box',
               }}
@@ -779,7 +779,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                   background: 'transparent',
                   border: 'none',
                   color: 'var(--text)',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   outline: 'none',
                   boxSizing: 'border-box',
                 }}
@@ -930,12 +930,16 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
           </div>
         )}
         {loading && (
-          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>
+          <div
+            style={{ padding: 12, color: 'var(--muted)', fontSize: 'var(--ui-font-size, 12px)' }}
+          >
             {t('search.searching')}
           </div>
         )}
         {!loading && query && groups.length === 0 && (
-          <div style={{ padding: 12, color: 'var(--muted)', fontSize: 12 }}>
+          <div
+            style={{ padding: 12, color: 'var(--muted)', fontSize: 'var(--ui-font-size, 12px)' }}
+          >
             {t('search.noResults')}
           </div>
         )}
@@ -1000,7 +1004,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                         <RenderFileTreeIcon name={group.fileName} isDirectory={false} />
                         <span
                           style={{
-                            fontSize: 12,
+                            fontSize: 'var(--ui-font-size, 12px)',
                             fontWeight: 600,
                             color: 'var(--text)',
                             flexShrink: 0,
@@ -1058,7 +1062,7 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                                 gap: 8,
                                 padding: '4px 12px 4px 28px',
                                 cursor: 'pointer',
-                                fontSize: 12,
+                                fontSize: 'var(--ui-font-size, 12px)',
                                 fontFamily: 'var(--font-mono)',
                                 whiteSpace: 'nowrap',
                                 overflow: 'hidden',

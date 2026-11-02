@@ -95,7 +95,7 @@ export function ReviewPanel({ open, diffs, onAccept, onReject, onClose }: Review
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          fontSize: 12,
+          fontSize: 'var(--ui-font-size, 12px)',
           color: 'var(--text, #cccccc)',
         }}
         onClick={(e) => e.stopPropagation()}

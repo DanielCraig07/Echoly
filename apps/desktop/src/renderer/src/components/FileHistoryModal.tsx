@@ -302,7 +302,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                 padding: '32px 16px',
                 textAlign: 'center',
                 color: 'var(--muted)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
               }}
             >
               {t('history.loading')}
@@ -313,7 +313,7 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
                 padding: '36px 20px',
                 textAlign: 'center',
                 color: 'var(--muted)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',

@@ -159,7 +159,7 @@ export function DbGroupRow({
           </span>
           <span
             style={{
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',

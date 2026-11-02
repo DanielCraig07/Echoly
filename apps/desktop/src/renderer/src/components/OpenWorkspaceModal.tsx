@@ -591,7 +591,7 @@ export function OpenWorkspaceModal({
             type="button"
             className="panel-standard-btn"
             onClick={onClose}
-            style={{ fontSize: 12, padding: '5px 14px' }}
+            style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '5px 14px' }}
           >
             {t('session.close')}
           </button>

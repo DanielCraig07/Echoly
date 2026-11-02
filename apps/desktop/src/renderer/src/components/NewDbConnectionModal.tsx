@@ -378,7 +378,13 @@ export function NewDbConnectionModal({
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span>{item.icon}</span>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                    <span
+                      style={{
+                        fontSize: 'var(--ui-font-size, 12px)',
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                      }}
+                    >
                       {item.label}
                     </span>
                   </div>
@@ -414,7 +420,7 @@ export function NewDbConnectionModal({
                 border: '1px solid var(--border)',
                 borderRadius: 4,
                 padding: '6px 8px',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 outline: 'none',
               }}
             />
@@ -473,7 +479,7 @@ export function NewDbConnectionModal({
                         border: '1px solid var(--border)',
                         borderRadius: 4,
                         padding: '6px 8px',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         fontFamily: 'var(--font-mono, monospace)',
                         outline: 'none',
                       }}
@@ -487,7 +493,7 @@ export function NewDbConnectionModal({
                         border: '1px solid var(--border)',
                         borderRadius: 4,
                         padding: '0 12px',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         cursor: 'pointer',
                       }}
                     >
@@ -542,7 +548,7 @@ export function NewDbConnectionModal({
                         border: '1px solid var(--border)',
                         borderRadius: 4,
                         padding: '5px 8px',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         outline: 'none',
                       }}
                     />
@@ -564,7 +570,7 @@ export function NewDbConnectionModal({
                         border: '1px solid var(--border)',
                         borderRadius: 4,
                         padding: '5px 8px',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         outline: 'none',
                       }}
                     />
@@ -589,7 +595,7 @@ export function NewDbConnectionModal({
                       border: '1px solid var(--border)',
                       borderRadius: 4,
                       padding: '5px 8px',
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       outline: 'none',
                     }}
                   />
@@ -613,7 +619,7 @@ export function NewDbConnectionModal({
                         border: '1px solid var(--border)',
                         borderRadius: 4,
                         padding: '5px 8px',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         outline: 'none',
                       }}
                     />
@@ -635,7 +641,7 @@ export function NewDbConnectionModal({
                         border: '1px solid var(--border)',
                         borderRadius: 4,
                         padding: '5px 8px',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         outline: 'none',
                       }}
                     />
@@ -695,7 +701,7 @@ export function NewDbConnectionModal({
             disabled={testing}
             style={{
               padding: '6px 12px',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               borderRadius: 5,
               background: 'rgba(255, 255, 255, 0.06)',
               color: 'var(--text)',
@@ -712,7 +718,7 @@ export function NewDbConnectionModal({
               onClick={onClose}
               style={{
                 padding: '6px 12px',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 borderRadius: 5,
                 background: 'transparent',
                 color: 'var(--text-muted)',
@@ -728,7 +734,7 @@ export function NewDbConnectionModal({
               disabled={connecting}
               style={{
                 padding: '6px 16px',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 borderRadius: 5,
                 background: 'var(--accent, #3b82f6)',
                 color: '#fff',

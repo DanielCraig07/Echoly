@@ -168,7 +168,14 @@ function MermaidBlock({ chart }: { chart: string }) {
           margin: '8px 0',
         }}
       >
-        <div style={{ color: '#f44336', fontSize: 12, marginBottom: 4, fontWeight: 600 }}>
+        <div
+          style={{
+            color: '#f44336',
+            fontSize: 'var(--ui-font-size, 12px)',
+            marginBottom: 4,
+            fontWeight: 600,
+          }}
+        >
           {t('editor.mermaidParseError')}
         </div>
         <pre style={{ margin: 0, fontSize: 11, color: 'var(--muted)' }}>
@@ -180,7 +187,9 @@ function MermaidBlock({ chart }: { chart: string }) {
 
   if (!svg) {
     return (
-      <div style={{ padding: '8px 0', color: 'var(--muted)', fontSize: 12 }}>
+      <div
+        style={{ padding: '8px 0', color: 'var(--muted)', fontSize: 'var(--ui-font-size, 12px)' }}
+      >
         {t('editor.mermaidRendering')}
       </div>
     );

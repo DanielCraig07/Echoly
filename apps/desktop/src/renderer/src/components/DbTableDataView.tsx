@@ -1059,7 +1059,7 @@ export function DbTableDataView({
         width: '100%',
         background: 'var(--bg-editor, #141414)',
         color: 'var(--text)',
-        fontSize: 12,
+        fontSize: 'var(--ui-font-size, 12px)',
         userSelect: 'text',
         overflow: 'hidden',
         position: 'relative',
@@ -1080,7 +1080,9 @@ export function DbTableDataView({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, fontWeight: 700 }}>{tableName}</span>
+          <span style={{ fontSize: 'var(--ui-font-size, 12px)', fontWeight: 700 }}>
+            {tableName}
+          </span>
           {/* 列数以**这次真正查出来的结果集**为准：列元数据是异步取的，切表瞬间可能还是上一张表的，
               用它来报数就会和表头渲染出来的列对不上（「63 列」却只看到几列）*/}
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
@@ -1122,7 +1124,7 @@ export function DbTableDataView({
                   top: 3,
                   cursor: 'pointer',
                   color: 'var(--text-muted)',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                 }}
               >
                 ✕
@@ -1483,7 +1485,9 @@ export function DbTableDataView({
               zIndex: 10,
             }}
           >
-            <div style={{ color: '#60a5fa', fontSize: 12 }}>{t('db.dataLoading')}</div>
+            <div style={{ color: '#60a5fa', fontSize: 'var(--ui-font-size, 12px)' }}>
+              {t('db.dataLoading')}
+            </div>
           </div>
         )}
 
@@ -1496,7 +1500,7 @@ export function DbTableDataView({
               // 浏览器会把多出来的空间按比例摊回各列，拖动效果就被冲淡了。
               width: tableWidth,
               borderCollapse: 'collapse',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               textAlign: 'left',
               fontFamily: 'var(--font-mono, monospace)',
               tableLayout: 'fixed',
@@ -1710,7 +1714,7 @@ export function DbTableDataView({
               padding: '32px 16px',
               textAlign: 'center',
               color: 'var(--text-muted)',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
             }}
           >
             {filterText

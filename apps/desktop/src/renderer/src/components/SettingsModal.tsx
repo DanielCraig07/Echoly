@@ -1154,7 +1154,7 @@ export function SettingsModal({
                               alignItems: 'center',
                               gap: 8,
                               borderRadius: 6,
-                              fontSize: 12,
+                              fontSize: 'var(--ui-font-size, 12px)',
                               width: '100%',
                               boxSizing: 'border-box',
                             }}
@@ -1747,7 +1747,7 @@ export function SettingsModal({
                     </div>
                     {settings.webEnabled !== false && (
                       <>
-                        <div style={{ fontSize: 12, marginTop: 10 }}>
+                        <div style={{ fontSize: 'var(--ui-font-size, 12px)', marginTop: 10 }}>
                           {t('settings.general.webAllowlist')}
                         </div>
                         <textarea
@@ -1757,7 +1757,7 @@ export function SettingsModal({
                             minHeight: 64,
                             resize: 'vertical',
                             padding: 8,
-                            fontSize: 12,
+                            fontSize: 'var(--ui-font-size, 12px)',
                             fontFamily: 'var(--font-mono)',
                             color: 'var(--text)',
                             background: 'var(--bg-input)',
@@ -1893,7 +1893,7 @@ export function SettingsModal({
                               className="preset-tag-btn"
                               style={{
                                 padding: '3px 9px',
-                                fontSize: 12,
+                                fontSize: 'var(--ui-font-size, 12px)',
                                 borderRadius: 4,
                                 border:
                                   '1px solid ' + (selected ? 'var(--accent)' : 'var(--border)'),

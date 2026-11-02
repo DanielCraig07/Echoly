@@ -2027,7 +2027,7 @@ export function DatabasePanel({
         <div
           className="panel-header-title"
           style={{
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             fontWeight: 700,
             color: 'var(--text)',
             letterSpacing: '0.05em',
@@ -2170,7 +2170,7 @@ export function DatabasePanel({
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
             {t('db.navigatorTitle')}
           </div>
-          <div style={{ fontSize: 12, lineHeight: 1.5, maxWidth: 260 }}>
+          <div style={{ fontSize: 'var(--ui-font-size, 12px)', lineHeight: 1.5, maxWidth: 260 }}>
             {t('db.navigatorDesc')}
           </div>
           <button
@@ -2184,7 +2184,7 @@ export function DatabasePanel({
               alignItems: 'center',
               gap: 6,
               padding: '6px 14px',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               borderRadius: 6,
               background: 'var(--accent, #3b82f6)',
               color: '#fff',
@@ -2245,7 +2245,7 @@ export function DatabasePanel({
                     <span style={{ fontSize: 13, opacity: isConnected ? 1 : 0.55 }}>🗄️</span>
                     <span
                       style={{
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         fontWeight: 600,
                         color: isConnected ? 'var(--text)' : 'var(--text-muted)',
                         whiteSpace: 'nowrap',
@@ -2402,7 +2402,7 @@ export function DatabasePanel({
                                 {kind === 'view' ? <GroupIcon group="views" /> : <IconTable />}
                                 <span
                                   style={{
-                                    fontSize: 12,
+                                    fontSize: 'var(--ui-font-size, 12px)',
                                     fontWeight: 500,
                                     whiteSpace: 'nowrap',
                                     overflow: 'hidden',
@@ -2554,7 +2554,7 @@ export function DatabasePanel({
                               <IconDatabase />
                               <span
                                 style={{
-                                  fontSize: 12,
+                                  fontSize: 'var(--ui-font-size, 12px)',
                                   fontWeight: 500,
                                   whiteSpace: 'nowrap',
                                   overflow: 'hidden',

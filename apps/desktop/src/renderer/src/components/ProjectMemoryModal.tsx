@@ -160,7 +160,7 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
             </svg>
             <span
               style={{
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: 700,
                 letterSpacing: '0.05em',
                 color: 'var(--text, #e2e8f0)',
@@ -279,7 +279,7 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
           style={{
             flexShrink: 0,
             borderBottom: '1px solid var(--border, rgba(255, 255, 255, 0.08))',
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
           }}
         >
           <button
@@ -295,7 +295,7 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
               background: 'transparent',
               border: 'none',
               color: 'var(--muted, #888)',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               cursor: 'pointer',
               textAlign: 'left',
             }}
@@ -341,7 +341,7 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: 'var(--muted, #888)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
               }}
             >
               正在读取项目记忆...
@@ -366,7 +366,7 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
                 outline: 'none',
                 resize: 'none',
                 fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", monospace',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 lineHeight: 1.6,
                 tabSize: 2,
               }}

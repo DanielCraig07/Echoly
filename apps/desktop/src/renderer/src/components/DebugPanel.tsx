@@ -287,7 +287,13 @@ export function DebugPanel({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em' }}>
+          <span
+            style={{
+              fontSize: 'var(--ui-font-size, 12px)',
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+            }}
+          >
             DEBUG CONSOLE & VARIABLES
           </span>
           <span
@@ -604,7 +610,7 @@ export function DebugPanel({
                         borderRadius: 4,
                         padding: '3px 6px',
                         color: '#fff',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                       }}
                     />
                   </div>
@@ -811,7 +817,7 @@ export function DebugPanel({
               overflowY: 'auto',
               padding: '8px 12px',
               fontFamily: 'Menlo, Monaco, Consolas, monospace',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               lineHeight: 1.6,
             }}
           >
@@ -866,7 +872,7 @@ export function DebugPanel({
                 border: 'none',
                 outline: 'none',
                 color: '#fff',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontFamily: 'monospace',
               }}
             />

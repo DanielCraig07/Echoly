@@ -612,7 +612,7 @@ export function DbConsoleView({
         width: '100%',
         background: 'var(--bg-editor, #141414)',
         color: 'var(--text)',
-        fontSize: 12,
+        fontSize: 'var(--ui-font-size, 12px)',
         overflow: 'hidden',
       }}
     >
@@ -650,7 +650,7 @@ export function DbConsoleView({
               gap: 4,
               height: 22,
               padding: '0 8px',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               borderRadius: 4,
               background: '#10b981',
               color: '#fff',
@@ -679,7 +679,7 @@ export function DbConsoleView({
               gap: 4,
               height: 22,
               padding: '0 8px',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               borderRadius: 4,
               background: 'rgba(255, 255, 255, 0.08)',
               color: 'var(--text)',
@@ -894,7 +894,7 @@ export function DbConsoleView({
                 alignItems: 'center',
                 gap: 6,
                 fontWeight: 600,
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
               }}
             >
               <span>{t('db.sqlHistoryPanelTitle')}</span>
@@ -1088,7 +1088,7 @@ export function DbConsoleView({
                 alignItems: 'center',
                 gap: 6,
                 fontWeight: 600,
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
               }}
             >
               <span>{t('db.sqlFavoritesPanelTitle')}</span>
@@ -1174,7 +1174,13 @@ export function DbConsoleView({
                         justifyContent: 'space-between',
                       }}
                     >
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                      <span
+                        style={{
+                          fontSize: 'var(--ui-font-size, 12px)',
+                          fontWeight: 600,
+                          color: 'var(--text)',
+                        }}
+                      >
                         {item.title}
                       </span>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -1370,7 +1376,7 @@ export function DbConsoleView({
             style={{
               width: '100%',
               borderCollapse: 'collapse',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               textAlign: 'left',
               fontFamily: 'var(--font-mono, monospace)',
             }}
@@ -1463,7 +1469,7 @@ export function DbConsoleView({
               padding: '32px',
               textAlign: 'center',
               color: 'var(--text-muted)',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
             }}
           >
             {result.ok
@@ -1478,7 +1484,7 @@ export function DbConsoleView({
               padding: '32px',
               textAlign: 'center',
               color: 'var(--text-muted)',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
             }}
           >
             {t('db.sqlWriteAndRun')}

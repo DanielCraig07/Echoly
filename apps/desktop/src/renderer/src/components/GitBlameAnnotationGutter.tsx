@@ -167,7 +167,12 @@ export function GitBlameAnnotationGutter({ filePath, editor, onClose, onPreviewD
             <line x1="17.01" y1="12" x2="22.96" y2="12" />
           </svg>
           <span
-            style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text)' }}
+            style={{
+              fontSize: 'var(--ui-font-size, 12px)',
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              color: 'var(--text)',
+            }}
           >
             {t('git.blameTitle')}
           </span>

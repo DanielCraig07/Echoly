@@ -236,7 +236,7 @@ export function ComposerModal({
                 borderRadius: 6,
                 background: 'linear-gradient(135deg, #a78bfa, #38bdf8)',
                 color: '#fff',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: 700,
               }}
             >
@@ -365,7 +365,7 @@ export function ComposerModal({
               onClick={handleStartComposer}
               style={{
                 padding: '5px 14px',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 borderRadius: 6,
                 fontWeight: 500,
                 display: 'inline-flex',
@@ -402,7 +402,13 @@ export function ComposerModal({
                 paddingBottom: 6,
               }}
             >
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright, #fff)' }}>
+              <span
+                style={{
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  fontWeight: 600,
+                  color: 'var(--text-bright, #fff)',
+                }}
+              >
                 {t('composer.changedFiles', { n: fileDiffs.length })}
                 {pendingCount > 0 && (
                   <span style={{ color: '#38bdf8', marginLeft: 6 }}>
@@ -453,7 +459,7 @@ export function ComposerModal({
                 margin: 'auto',
                 textAlign: 'center',
                 color: 'var(--muted, #888)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
               }}
             >
               {t('composer.emptyHint')}
@@ -490,7 +496,7 @@ export function ComposerModal({
                     </span>
                     <span
                       style={{
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         fontFamily: 'var(--font-mono, monospace)',
                         fontWeight: 550,
                         color: 'var(--text-bright, #fff)',

@@ -117,7 +117,7 @@ function GitTreeItemView({
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             cursor: 'pointer',
             userSelect: 'none',
             background: isFolderSelected
@@ -271,7 +271,7 @@ function GitTreeItemView({
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        fontSize: 12,
+        fontSize: 'var(--ui-font-size, 12px)',
         cursor: 'pointer',
         background: isSelected
           ? 'var(--bg-hover, rgba(255, 255, 255, 0.08))'
@@ -465,7 +465,7 @@ function GitFileListItemView({
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        fontSize: 12,
+        fontSize: 'var(--ui-font-size, 12px)',
         cursor: 'pointer',
         boxSizing: 'border-box',
         background: isSelected
@@ -1654,7 +1654,7 @@ export function GitPanel({
             }}
             style={{
               padding: '8px 14px',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               fontWeight: 600,
               background: 'var(--accent, #6a4da2)',
               color: '#fff',
@@ -1731,7 +1731,7 @@ export function GitPanel({
         <div
           className="panel-header-title"
           style={{
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             fontWeight: 700,
             color: 'var(--text)',
             letterSpacing: '0.05em',
@@ -2104,7 +2104,7 @@ export function GitPanel({
               borderRadius: 4,
               color: 'var(--text)',
               outline: 'none',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
             }}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
@@ -2244,7 +2244,7 @@ export function GitPanel({
                 boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                 width: 140,
                 padding: 4,
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: 'var(--text)',
               }}
             >
@@ -3015,7 +3015,7 @@ export function GitPanel({
               flex: 1,
               overflowY: 'auto',
               padding: '2px 0',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               display: 'flex',
               flexDirection: 'column',
               position: 'relative',
@@ -3068,7 +3068,7 @@ export function GitPanel({
                           textOverflow: 'ellipsis',
                           flex: 1,
                           whiteSpace: 'nowrap',
-                          fontSize: 12,
+                          fontSize: 'var(--ui-font-size, 12px)',
                           marginLeft: 4,
                           letterSpacing: '0.1px',
                         }}
@@ -3320,7 +3320,7 @@ export function GitPanel({
                 style={{
                   padding: '24px 16px',
                   color: 'var(--muted)',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 8,

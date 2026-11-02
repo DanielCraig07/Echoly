@@ -201,7 +201,7 @@ export function DbConfirmModal({
         >
           <span
             style={{
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               fontWeight: 700,
               color: danger ? '#f87171' : 'var(--text)',
               overflow: 'hidden',

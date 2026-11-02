@@ -716,7 +716,7 @@ export function ProjectRuntimeConfigModal({
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                   }}
                 >
                   {t('rt.boundProject')}
@@ -858,7 +858,7 @@ export function ProjectRuntimeConfigModal({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     fontWeight: 600,
                     color: 'var(--accent-light, #3794ff)',
                   }}
@@ -1073,7 +1073,7 @@ export function ProjectRuntimeConfigModal({
                       boxShadow:
                         '0 12px 32px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05)',
                       padding: 0,
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                     }}
                   >
                     <div
@@ -1444,7 +1444,7 @@ export function ProjectRuntimeConfigModal({
               type="button"
               className="panel-standard-btn"
               onClick={onClose}
-              style={{ fontSize: 12, padding: '5px 14px' }}
+              style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '5px 14px' }}
             >
               {t('common.cancel')}
             </button>

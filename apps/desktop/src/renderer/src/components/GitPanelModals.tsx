@@ -154,7 +154,7 @@ export function GitCreateBranchModal({
             gap: 14,
           }}
         >
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          <div style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted)' }}>
             {translateSegments('git.createBranchDesc', locale, {
               branch: currentBranch || 'HEAD',
             }).map((seg, i) =>
@@ -172,7 +172,7 @@ export function GitCreateBranchModal({
             <label
               style={{
                 display: 'block',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: 500,
                 marginBottom: 6,
                 color: 'var(--text)',
@@ -200,7 +200,7 @@ export function GitCreateBranchModal({
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               cursor: 'pointer',
               userSelect: 'none',
             }}
@@ -432,7 +432,11 @@ export function GitCheckoutModal({
           />
         </div>
 
-        {error && <div style={{ color: '#f87171', fontSize: 12, marginBottom: 8 }}>{error}</div>}
+        {error && (
+          <div style={{ color: '#f87171', fontSize: 'var(--ui-font-size, 12px)', marginBottom: 8 }}>
+            {error}
+          </div>
+        )}
 
         <div
           style={{
@@ -450,7 +454,7 @@ export function GitCheckoutModal({
                 padding: '24px 0',
                 textAlign: 'center',
                 color: 'var(--muted)',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
               }}
             >
               {t('git.noMatchingBranches')}
@@ -663,7 +667,13 @@ export function GitCheckoutModal({
                 </span>
               </div>
 
-              <div style={{ fontSize: 12, lineHeight: 1.6, color: 'var(--text, #ddd)' }}>
+              <div
+                style={{
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  lineHeight: 1.6,
+                  color: 'var(--text, #ddd)',
+                }}
+              >
                 {translateSegments('git.unsavedWarningLead', locale, {
                   changed: unsavedWarning.changedCount,
                 }).map((seg, i) =>
@@ -1135,7 +1145,7 @@ export function GitCreateTagModal({
             gap: 12,
           }}
         >
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          <div style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted)' }}>
             {translateSegments('git.createTagDesc', locale, {
               branch: currentBranch || 'HEAD',
             }).map((seg, i) =>
@@ -1153,7 +1163,7 @@ export function GitCreateTagModal({
             <label
               style={{
                 display: 'block',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: 500,
                 marginBottom: 5,
                 color: 'var(--text)',
@@ -1179,7 +1189,7 @@ export function GitCreateTagModal({
             <label
               style={{
                 display: 'block',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: 500,
                 marginBottom: 5,
                 color: 'var(--text)',
@@ -1197,7 +1207,9 @@ export function GitCreateTagModal({
             />
           </div>
 
-          {error && <div style={{ color: '#f87171', fontSize: 12 }}>{error}</div>}
+          {error && (
+            <div style={{ color: '#f87171', fontSize: 'var(--ui-font-size, 12px)' }}>{error}</div>
+          )}
 
           <div
             style={{
@@ -1407,7 +1419,14 @@ export function GitStatusModal({ open, status, onClose, onRefresh }: StatusModal
           }}
         >
           {entries.length === 0 ? (
-            <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>
+            <div
+              style={{
+                padding: 30,
+                textAlign: 'center',
+                color: 'var(--muted)',
+                fontSize: 'var(--ui-font-size, 12px)',
+              }}
+            >
               {t('git.statusClean')}
             </div>
           ) : (
@@ -1420,7 +1439,7 @@ export function GitStatusModal({ open, status, onClose, onRefresh }: StatusModal
                   justifyContent: 'space-between',
                   padding: '6px 10px',
                   borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                 }}
               >
                 <span

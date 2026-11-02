@@ -43,7 +43,15 @@ class ErrorBoundaryInner extends Component<Props & { t: Translate }, State> {
         <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>
           {title ?? t('errorBoundary.title')}
         </h2>
-        <p style={{ fontSize: 12, opacity: 0.7, margin: 0, maxWidth: 520, textAlign: 'center' }}>
+        <p
+          style={{
+            fontSize: 'var(--ui-font-size, 12px)',
+            opacity: 0.7,
+            margin: 0,
+            maxWidth: 520,
+            textAlign: 'center',
+          }}
+        >
           {t('errorBoundary.hint')}
         </p>
         <pre

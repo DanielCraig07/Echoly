@@ -752,7 +752,7 @@ export function WorkedForGroup({
                     borderRadius: 6,
                     backgroundColor: 'var(--bg-card, rgba(255, 255, 255, 0.04))',
                     border: '1px solid var(--border, rgba(255, 255, 255, 0.1))',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     lineHeight: 1.6,
                     color: 'var(--fg-muted, #a0a0a0)',
                     whiteSpace: 'pre-wrap',

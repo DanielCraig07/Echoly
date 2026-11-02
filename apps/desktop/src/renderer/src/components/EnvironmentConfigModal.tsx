@@ -264,7 +264,13 @@ export function EnvironmentConfigModal({
                 Global Environment
               </span>
             </div>
-            <div style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 3 }}>
+            <div
+              style={{
+                fontSize: 'var(--ui-font-size, 12px)',
+                color: 'rgba(255, 255, 255, 0.5)',
+                marginTop: 3,
+              }}
+            >
               {t('env.modalDesc')}
             </div>
           </div>
@@ -389,7 +395,7 @@ export function EnvironmentConfigModal({
                       />
                       <span
                         style={{
-                          fontSize: 12,
+                          fontSize: 'var(--ui-font-size, 12px)',
                           fontWeight: 600,
                           color: '#93c5fd',
                           textTransform: 'uppercase',
@@ -445,7 +451,7 @@ export function EnvironmentConfigModal({
                         borderRadius: 6,
                         padding: '5px 12px',
                         color: '#e2e8f0',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         cursor: 'pointer',
                         marginLeft: 14,
                         flexShrink: 0,
@@ -481,7 +487,11 @@ export function EnvironmentConfigModal({
                         <span>{t('env.onlineInstallTitle')}</span>
                       </div>
                       <div
-                        style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.5)', marginTop: 2 }}
+                        style={{
+                          fontSize: 'var(--ui-font-size, 12px)',
+                          color: 'rgba(255, 255, 255, 0.5)',
+                          marginTop: 2,
+                        }}
                       >
                         {t('env.onlineInstallDesc')}
                       </div>
@@ -697,7 +707,7 @@ export function EnvironmentConfigModal({
                         background: 'transparent',
                         border: 'none',
                         color: '#60a5fa',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         cursor: 'pointer',
                         padding: '2px 6px',
                       }}
@@ -721,7 +731,7 @@ export function EnvironmentConfigModal({
                           padding: '16px',
                           textAlign: 'center',
                           color: 'rgba(255, 255, 255, 0.4)',
-                          fontSize: 12,
+                          fontSize: 'var(--ui-font-size, 12px)',
                         }}
                       >
                         {t('env.noOtherJdks')}
@@ -844,7 +854,7 @@ export function EnvironmentConfigModal({
                         borderRadius: 6,
                         padding: '6px 12px',
                         color: '#ffffff',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         fontFamily: 'monospace',
                         outline: 'none',
                       }}
@@ -858,7 +868,7 @@ export function EnvironmentConfigModal({
                         background: 'rgba(255, 255, 255, 0.08)',
                         border: '1px solid rgba(255, 255, 255, 0.15)',
                         color: '#ffffff',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         cursor: 'pointer',
                         flexShrink: 0,
                       }}
@@ -898,7 +908,7 @@ export function EnvironmentConfigModal({
                       />
                       <span
                         style={{
-                          fontSize: 12,
+                          fontSize: 'var(--ui-font-size, 12px)',
                           fontWeight: 600,
                           color: '#34d399',
                           textTransform: 'uppercase',
@@ -928,7 +938,7 @@ export function EnvironmentConfigModal({
                       borderRadius: 6,
                       padding: '5px 12px',
                       color: '#e2e8f0',
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       cursor: 'pointer',
                       flexShrink: 0,
                     }}
@@ -981,7 +991,7 @@ export function EnvironmentConfigModal({
                   </div>
                   <div
                     style={{
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       color: 'rgba(255, 255, 255, 0.6)',
                       lineHeight: 1.6,
                       marginBottom: 12,
@@ -1012,7 +1022,7 @@ export function EnvironmentConfigModal({
                         background: '#10b981',
                         color: '#ffffff',
                         border: 'none',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         fontWeight: 500,
                         cursor: generatingWrapper ? 'not-allowed' : 'pointer',
                         display: 'flex',
@@ -1063,7 +1073,7 @@ export function EnvironmentConfigModal({
                         borderRadius: 6,
                         padding: '6px 12px',
                         color: '#ffffff',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         fontFamily: 'monospace',
                         outline: 'none',
                       }}
@@ -1077,7 +1087,7 @@ export function EnvironmentConfigModal({
                         background: 'rgba(255, 255, 255, 0.08)',
                         border: '1px solid rgba(255, 255, 255, 0.15)',
                         color: '#ffffff',
-                        fontSize: 12,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         cursor: 'pointer',
                         flexShrink: 0,
                       }}
@@ -1094,7 +1104,7 @@ export function EnvironmentConfigModal({
                     borderRadius: 8,
                     background: 'rgba(0, 0, 0, 0.2)',
                     border: '1px solid rgba(255, 255, 255, 0.06)',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     lineHeight: 1.7,
                   }}
                 >

@@ -163,7 +163,7 @@ export function UnsavedChangesModal({
                 </div>
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     color: 'var(--text-secondary, #999999)',
                     marginTop: 4,
                     lineHeight: '18px',

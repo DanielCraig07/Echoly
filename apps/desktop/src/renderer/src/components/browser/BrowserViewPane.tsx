@@ -1272,7 +1272,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
               paddingLeft: 26,
               paddingRight: 26,
               color: '#ffffff',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               outline: 'none',
               boxSizing: 'border-box',
               transition: 'all 0.15s ease',
@@ -1543,7 +1543,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
 
             <div
               style={{
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: 'var(--muted, #9ca3af)',
                 marginBottom: 10,
                 wordBreak: 'break-all',
@@ -1582,7 +1582,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                     borderRadius: 4,
                     padding: '0 8px',
                     color: '#fff',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     boxSizing: 'border-box',
                     outline: 'none',
                   }}
@@ -1612,7 +1612,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                     borderRadius: 4,
                     padding: '0 8px',
                     color: '#9ca3af',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     boxSizing: 'border-box',
                     outline: 'none',
                   }}
@@ -1627,7 +1627,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 type="button"
                 className="btn secondary"
                 onClick={() => setPendingPasswordPrompt(null)}
-                style={{ fontSize: 12, padding: '4px 12px' }}
+                style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '4px 12px' }}
               >
                 {t('browser.notNow')}
               </button>
@@ -1650,7 +1650,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   );
                   setPendingPasswordPrompt(null);
                 }}
-                style={{ fontSize: 12, padding: '4px 14px' }}
+                style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '4px 14px' }}
               >
                 {pendingPasswordPrompt.isUpdate ? t('browser.update') : t('browser.save')}
               </button>
@@ -1719,7 +1719,13 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 </button>
               </div>
 
-              <div style={{ fontSize: 12, color: 'var(--muted, #9ca3af)', marginBottom: 12 }}>
+              <div
+                style={{
+                  fontSize: 'var(--ui-font-size, 12px)',
+                  color: 'var(--muted, #9ca3af)',
+                  marginBottom: 12,
+                }}
+              >
                 {t('browser.currentSite')}
                 <span style={{ color: '#60a5fa' }}>
                   {extractOrigin(currentUrl) || t('browser.noActivePage')}
@@ -1731,7 +1737,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                   style={{
                     padding: '16px 0',
                     textAlign: 'center',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     color: 'var(--muted, #9ca3af)',
                   }}
                 >
@@ -1767,7 +1773,13 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                           justifyContent: 'space-between',
                         }}
                       >
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#f3f4f6' }}>
+                        <span
+                          style={{
+                            fontSize: 'var(--ui-font-size, 12px)',
+                            fontWeight: 600,
+                            color: '#f3f4f6',
+                          }}
+                        >
                           {cred.username || t('browser.unnamedAccount')}
                         </span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2191,7 +2203,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                       background: 'rgba(255, 255, 255, 0.04)',
                       border: '1px solid rgba(255, 255, 255, 0.08)',
                       color: 'var(--text-secondary, #d1d5db)',
-                      fontSize: 12,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       fontWeight: 500,
                       cursor: 'pointer',
                       display: 'flex',
@@ -2290,7 +2302,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
             </p>
             <p
               style={{
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: 'var(--muted)',
                 margin: '0 0 18px',
                 maxWidth: 440,
@@ -2319,7 +2331,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 type="button"
                 className="btn primary"
                 onClick={() => navigateTo('http://localhost:5173')}
-                style={{ fontSize: 12, padding: '5px 16px' }}
+                style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '5px 16px' }}
               >
                 {t('browser.openActiveService')}
               </button>
@@ -2327,7 +2339,7 @@ export const BrowserViewPane: React.FC<BrowserViewPaneProps> = ({
                 type="button"
                 className="btn secondary"
                 onClick={() => navigateTo(loadError.url)}
-                style={{ fontSize: 12, padding: '5px 12px' }}
+                style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '5px 12px' }}
               >
                 {t('browser.retry')}
               </button>

@@ -375,7 +375,7 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
           border: '1px solid var(--border)',
           borderRadius: 6,
           padding: '4px 8px',
-          fontSize: 12,
+          fontSize: 'var(--ui-font-size, 12px)',
           outline: 'none',
           textAlign: 'left',
           cursor: 'pointer',
@@ -505,7 +505,7 @@ function StyledSelect({ tasks, value, onChange, onNewTaskClick }: StyledSelectPr
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     transition: 'background 0.1s ease',
                   }}
                   onMouseEnter={(e) => {
@@ -1045,7 +1045,7 @@ export function AgentTaskPanel({
         <div
           className="panel-header-title"
           style={{
-            fontSize: 12,
+            fontSize: 'var(--ui-font-size, 12px)',
             fontWeight: 700,
             color: 'var(--text)',
             letterSpacing: '0.05em',
@@ -1141,7 +1141,7 @@ export function AgentTaskPanel({
               border: '1px solid var(--border)',
               borderRadius: 4,
               padding: '5px 8px',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               outline: 'none',
             }}
             autoFocus
@@ -1246,7 +1246,7 @@ export function AgentTaskPanel({
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
             {t('task.boardOf', { project: projectName })}
           </div>
-          <div style={{ fontSize: 12, lineHeight: 1.5, maxWidth: 260 }}>
+          <div style={{ fontSize: 'var(--ui-font-size, 12px)', lineHeight: 1.5, maxWidth: 260 }}>
             {t('task.emptyBoardDesc')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
@@ -1259,7 +1259,7 @@ export function AgentTaskPanel({
                 justifyContent: 'center',
                 gap: 6,
                 padding: '6px 14px',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 borderRadius: 6,
                 background: 'var(--accent, #3b82f6)',
                 color: '#fff',
@@ -1310,7 +1310,7 @@ export function AgentTaskPanel({
                 justifyContent: 'center',
                 gap: 6,
                 padding: '6px 12px',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 borderRadius: 6,
                 background: 'rgba(255,255,255,0.06)',
                 color: 'var(--text)',
@@ -1333,7 +1333,14 @@ export function AgentTaskPanel({
               flexShrink: 0,
             }}
           >
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', lineHeight: 1.4 }}>
+            <div
+              style={{
+                fontSize: 'var(--ui-font-size, 12px)',
+                fontWeight: 600,
+                color: 'var(--text)',
+                lineHeight: 1.4,
+              }}
+            >
               {activeTask.goal}
             </div>
             <div
@@ -1534,7 +1541,7 @@ export function AgentTaskPanel({
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div
                           style={{
-                            fontSize: 12,
+                            fontSize: 'var(--ui-font-size, 12px)',
                             fontWeight: 500,
                             color: titleColor,
                             lineHeight: 1.3,

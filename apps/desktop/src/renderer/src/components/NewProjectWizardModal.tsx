@@ -391,7 +391,13 @@ export function NewProjectWizardModal({
               <div
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
               >
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
+                <label
+                  style={{
+                    fontSize: 'var(--ui-font-size, 12px)',
+                    fontWeight: 600,
+                    color: 'var(--text-bright)',
+                  }}
+                >
                   {t('workspace.projectNameLabel')}
                 </label>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -415,7 +421,13 @@ export function NewProjectWizardModal({
               <div
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
               >
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-bright)' }}>
+                <label
+                  style={{
+                    fontSize: 'var(--ui-font-size, 12px)',
+                    fontWeight: 600,
+                    color: 'var(--text-bright)',
+                  }}
+                >
                   {t('workspace.parentDirLabel')}
                 </label>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -437,7 +449,11 @@ export function NewProjectWizardModal({
                   type="button"
                   className="panel-standard-btn"
                   onClick={handlePickParentDir}
-                  style={{ fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}
+                  style={{
+                    fontSize: 'var(--ui-font-size, 12px)',
+                    padding: '6px 14px',
+                    whiteSpace: 'nowrap',
+                  }}
                 >
                   {t('workspace.browse')}
                 </button>
@@ -551,7 +567,7 @@ export function NewProjectWizardModal({
                       background: 'rgba(255, 255, 255, 0.02)',
                     }}
                   >
-                    <span style={{ opacity: 0.6, fontSize: 12 }}>
+                    <span style={{ opacity: 0.6, fontSize: 'var(--ui-font-size, 12px)' }}>
                       {f.path.includes('/') ? '📁' : '📄'}
                     </span>
                     <span
@@ -588,7 +604,7 @@ export function NewProjectWizardModal({
             type="button"
             className="panel-standard-btn"
             onClick={onClose}
-            style={{ fontSize: 12, padding: '6px 14px' }}
+            style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '6px 14px' }}
           >
             {t('workspace.cancel')}
           </button>
@@ -599,7 +615,7 @@ export function NewProjectWizardModal({
               className="panel-standard-btn"
               onClick={() => handleCreateAndOpen(false)}
               disabled={isCreating || !parentDir.trim() || !projectName.trim()}
-              style={{ fontSize: 12, padding: '6px 14px' }}
+              style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '6px 14px' }}
               title={t('workspace.openHereTitle')}
             >
               {isCreating ? t('workspace.creating') : t('workspace.openHere')}
@@ -610,7 +626,7 @@ export function NewProjectWizardModal({
               onClick={() => handleCreateAndOpen(true)}
               disabled={isCreating || !parentDir.trim() || !projectName.trim()}
               style={{
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 padding: '6px 18px',
                 background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)',
                 borderColor: '#0284c7',

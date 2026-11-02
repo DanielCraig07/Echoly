@@ -915,7 +915,7 @@ export function SessionModal({
                         type="button"
                         className="ghost-btn-sm"
                         onClick={() => setFilterScope('all')}
-                        style={{ fontSize: 12, padding: '4px 12px' }}
+                        style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '4px 12px' }}
                       >
                         {t('session.viewAllProjects', { n: sessions.length })}
                       </button>
@@ -935,7 +935,7 @@ export function SessionModal({
                         type="button"
                         className="ghost-btn-sm"
                         onClick={() => setFilterScope('current')}
-                        style={{ fontSize: 12, padding: '4px 12px' }}
+                        style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '4px 12px' }}
                       >
                         {t('session.viewCurrentProject', { n: currentProjectSessions.length })}
                       </button>
@@ -944,7 +944,7 @@ export function SessionModal({
                       type="button"
                       className="ghost-btn-sm"
                       onClick={() => setFilterScope('all')}
-                      style={{ fontSize: 12, padding: '4px 12px' }}
+                      style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '4px 12px' }}
                     >
                       {t('session.viewAllProjects', { n: sessions.length })}
                     </button>

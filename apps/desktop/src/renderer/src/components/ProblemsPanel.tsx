@@ -174,7 +174,12 @@ export const ProblemsPanel: React.FC<Props> = ({ workspace, onOpenFile, onCountC
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span
-            style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text)' }}
+            style={{
+              fontSize: 'var(--ui-font-size, 12px)',
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              color: 'var(--text)',
+            }}
           >
             {t('problems.title', { n: filteredMarkers.length })}
           </span>
@@ -292,7 +297,7 @@ export const ProblemsPanel: React.FC<Props> = ({ workspace, onOpenFile, onCountC
                     padding: '4px 6px',
                     borderRadius: 4,
                     background: 'rgba(255, 255, 255, 0.03)',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     fontWeight: 600,
                     color: 'var(--text)',
                     cursor: 'pointer',
@@ -330,7 +335,7 @@ export const ProblemsPanel: React.FC<Props> = ({ workspace, onOpenFile, onCountC
                           justifyContent: 'space-between',
                           padding: '3px 8px',
                           borderRadius: 4,
-                          fontSize: 12,
+                          fontSize: 'var(--ui-font-size, 12px)',
                           cursor: 'pointer',
                         }}
                       >
