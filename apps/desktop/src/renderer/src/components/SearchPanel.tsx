@@ -915,6 +915,20 @@ export function SearchPanel({ onOpenFile, onRevealLine }: Props) {
                     {s.lastIndexedTime
                       ? ` · ${new Date(s.lastIndexedTime).toLocaleTimeString()}`
                       : ''}
+                    {/* 语义一路的状态：让「搜得准不准」有据可查 —— 完全没建向量时，
+                        结果变差是因为模型还没就位，而不是关键词写得不对。
+                        描述整体放在 title 里，界面上只留一个不喧宾夺主的计数。 */}
+                    {s.embedding ? (
+                      <>
+                        {' · '}
+                        <span className="index-semantic-count" title={s.embedding}>
+                          {t('search.semanticSummary', {
+                            vectors: s.vectorizedChunks ?? 0,
+                            symbols: s.totalSymbols,
+                          })}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
                   <button
                     type="button"

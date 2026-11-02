@@ -328,6 +328,10 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     zh: '已索引 {files} 个文件 / {symbols} 个符号',
     en: 'Indexed {files} files / {symbols} symbols',
   },
+  'search.semanticSummary': {
+    zh: '语义向量 {vectors}/{symbols} 块',
+    en: 'Semantic vectors {vectors}/{symbols} chunks',
+  },
   'search.rebuildTitle': {
     zh: '重新解析全部文件（不信任时间戳缓存）',
     en: 'Re-parse every file (ignore the timestamp cache)',

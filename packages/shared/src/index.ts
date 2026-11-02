@@ -2133,6 +2133,10 @@ export interface CodebaseIndexStatus {
   totalSymbols: number;
   lastIndexedTime: number;
   isIndexing: boolean;
+  /** 语义一路的当前状态（模型来源 / 未启用 / 加载失败原因），供设置页与排查使用。 */
+  embedding?: string;
+  /** 已算出向量的块数。远小于 totalSymbols 说明后台向量化还没跑完。 */
+  vectorizedChunks?: number;
   /** 当前/最近一次索引的进度。索引可能跑几十秒，没有它界面上只能转圈。 */
   progress?: {
     phase: 'scan' | 'read' | 'save' | 'done';

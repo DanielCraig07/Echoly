@@ -1,25 +1,36 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { WorkspaceBackend, FileStat } from '@deepseek-ide/tools';
+import {
+  readEmbeddingEnv,
+  hybridRetrieve,
+  type EmbeddingSource,
+  type WorkspaceBackend,
+  type FileStat,
+} from '@deepseek-ide/tools';
+import { createLocalEmbedding, type LocalEmbeddingHandle } from '@deepseek-ide/llm';
 import type { WorkspaceService } from './workspace';
 import { projectIndexDir } from './projectConfig';
 import type { CodebaseSymbolHit, CodebaseIndexStatus } from '@deepseek-ide/shared';
 
 /**
- * 代码库索引：把工作区拆成「符号块」，用真正的 BM25 做检索。
+ * 代码库索引：把工作区拆成「符号块」，BM25 + 本地向量双路召回。
  *
- * 关于「语义」这个词的诚实说明：这里**没有**向量、没有 embedding。
- * 它是一个词法索引（符号名 + 注释 + 代码体），只是排序用了正牌的 BM25（含 IDF 与
- * 长度归一化），而不是手工拍的权重和。之所以不做 embedding：
+ * 检索分两路：
  *
- *   1. 后端是否提供 embedding 接口**无法验证** —— 探测 `/v1/models` 返回 401，
- *      内网网关需要鉴权而模型清单拿不到，任何「先建向量再说」的实现都只能靠猜。
- *   2. 真做错的话，代价不是「搜不准」而是「静默地搜不准」：向量维度对不上时，
- *      多数客户端会退回全 0 向量，于是所有块相似度相同、排序退化成文件顺序。
+ *   1. **BM25 词法路**（一直是主力）：符号名 + 注释 + 代码体，排序用正牌 BM25
+ *      （含 IDF 与长度归一化），不是手工拍的权重和。字面匹配、找符号定义靠它。
+ *   2. **向量语义路**（可选增强）：本地 onnx 模型把块与查询都编码成向量，
+ *      用余弦相似度粗排。问「在哪里刷新 token」这种词面上对不上的问题靠它。
  *
- * 所以这一版把能确定做好的部分做扎实：**落盘持久化 + 增量更新 + 真 BM25**。
- * 等 embedding 端点可验证时再叠加一层语义召回（先向量粗排、再 BM25 精排），
- * 那时这份索引正好是精排层，不会被浪费。
+ * 两路由 `hybridRetrieve` 按 RRF 融合名次。为什么不用后端的 embedding 接口：
+ * 内网网关**没有 embedding 通道**（实测 `/v1/models` 只有 5 个对话模型、
+ * `/v1/embeddings` 对常见模型名一律 503），所以语义一路走本地模型
+ * （本地目录优先，缺失则按需下载；`ECHOLY_EMBEDDING_DISABLED=1` 可整体关闭）。
+ *
+ * 一条硬约束贯穿始终：**语义一路只做增强，任何环节失败都必须静默回落到 BM25。**
+ * 模型没装、下载不动、维度对不上——结果最多是「搜得不够聪明」，
+ * 绝不能从「搜得不准」变成「搜不出来」。降级原因进 `getStatus().embedding`，
+ * 免得「为什么搜得不准」无从查起。
  */
 
 export interface CodeChunk {
@@ -42,12 +53,28 @@ interface IndexedChunk extends CodeChunk {
   nameTokens: string[];
   pathTokens: string[];
   docTokens: string[];
+  /**
+   * 语义向量。缺失表示这一块还没被向量化（模型没装 / 刚建完索引还没轮到它）。
+   * 缺失是**正常状态**而非错误：BM25 一路不依赖它，检索照常可用。
+   */
+  vector?: number[];
+}
+
+/**
+ * 落盘时的块形状。
+ *
+ * 与内存形状唯一的差别是向量：内存里是 `number[]`，落盘时压成 base64 字符串 `v`。
+ * 单独定义类型而不是在 `IndexedChunk` 上挂可选的两种形态，
+ * 是为了让「忘了编码就直接写盘」在类型层面就编译不过。
+ */
+interface PersistedChunk extends Omit<IndexedChunk, 'vector'> {
+  v?: string;
 }
 
 interface PersistedFile {
   size: number;
   mtimeMs: number;
-  chunks: IndexedChunk[];
+  chunks: PersistedChunk[];
 }
 
 interface PersistedIndex {
@@ -56,13 +83,87 @@ interface PersistedIndex {
   root: string;
   savedAt: number;
   files: Record<string, PersistedFile>;
+  /** 这些向量由哪个模型产出（`local:<dir>` / `download:<id>`）。换模型时据此丢弃旧向量。 */
+  vectorKey?: string;
 }
 
 /** 落盘格式版本。改动 IndexedChunk 的形状时必须一起改，否则旧缓存会被误当成新格式读进来。 */
-const INDEX_FORMAT_VERSION = 2;
+const INDEX_FORMAT_VERSION = 3;
+
+/**
+ * 向量的落盘编码：Float32 → base64。
+ *
+ * 为什么不用 JSON 数组：512 维向量写成 JSON 数字是每个约 18 字符，一块就接近 10KB，
+ * 上万块的文件体积会到上百 MB，而且每次节流保存都要重新字符串化一遍。
+ * Float32 + base64 是每维 4 字节 → 约 2.7KB，解码也只是一次内存拷贝。
+ * 精度损失（Float64 → Float32）对余弦相似度排序没有可观察的影响。
+ */
+function encodeVector(vector: readonly number[]): string {
+  const floats = Float32Array.from(vector);
+  return Buffer.from(floats.buffer, floats.byteOffset, floats.byteLength).toString('base64');
+}
+
+function decodeVector(encoded: string): number[] | null {
+  try {
+    const buf = Buffer.from(encoded, 'base64');
+    // 长度不是 4 的倍数说明数据被截断或格式不符，当作「没有向量」处理
+    if (buf.byteLength === 0 || buf.byteLength % 4 !== 0) return null;
+    const floats = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+    return Array.from(floats);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 默认的 embedding 装配：读环境变量决定用本地目录、按需下载，还是整体关闭。
+ *
+ * `createLocalEmbedding` 本身不抛错（失败返回 `client: null`），所以这里不需要额外兜底：
+ * 拿到的 handle 无论成败都能安全地交给检索层去判断「有没有向量可用」。
+ */
+function defaultEmbeddingLoader(): Promise<LocalEmbeddingHandle> {
+  const env = readEmbeddingEnv();
+  return createLocalEmbedding({
+    disabled: env.disabled,
+    localDir: env.options.localDir,
+    modelId: env.options.modelId,
+  });
+}
+
+/**
+ * 向量来源的稳定标识。
+ *
+ * 换模型时旧向量必须整批作废：维度不同的向量混在一起，粗排会因为维度校验失败
+ * 而返回空、整体回落到 BM25 —— 结果没错，但语义能力静默失效且无从察觉。
+ * 用「来源标识」在建库时就发现这件事，比事后从「怎么突然搜不准了」倒推省事得多。
+ */
+function vectorKeyOf(source: EmbeddingSource): string {
+  switch (source.kind) {
+    case 'local':
+      return `local:${source.dir}`;
+    case 'download':
+      return `download:${source.modelId}`;
+    default:
+      return '';
+  }
+}
+
+/**
+ * 送进模型的文本。
+ *
+ * 拼上符号名与路径：同一段实现出现在不同文件里时，向量会带上「它在哪、叫什么」的信息，
+ * 查询「UserService 里怎么校验 token」就会更靠近 `UserService.verifyToken` 那一块。
+ */
+function embeddingTextOf(chunk: IndexedChunk): string {
+  const head = `${chunk.name}\n${chunk.filePath}`;
+  return chunk.doc ? `${head}\n${chunk.doc}\n${chunk.content}` : `${head}\n${chunk.content}`;
+}
 
 /** 单文件最多保留的符号块数：超出的部分只留文件概览块，避免一个巨型文件吃光索引体积。 */
 const MAX_CHUNKS_PER_FILE = 400;
+
+/** 每批送进本地模型的块数。小批 + 让出事件循环，避免后台向量化把主进程挤卡。 */
+const VECTORIZE_BATCH = 64;
 
 /** 索引文件的保存节流窗口。连续编辑会反复触发保存，合并成一次落盘。 */
 const SAVE_DEBOUNCE_MS = 1500;
@@ -240,16 +341,26 @@ export class CodebaseService {
   private saveTimer: NodeJS.Timeout | null = null;
   /** 已经尝试过读缓存的根，避免每次搜索都去 stat 一遍磁盘。 */
   private loadedRoot: string | null = null;
+  /** 本地 embedding 装配结果。惰性创建：没搜过就不加载 25MB 模型，更不会偷偷联网下载。 */
+  private embedding: LocalEmbeddingHandle | null = null;
+  private embeddingInit: Promise<LocalEmbeddingHandle> | null = null;
+  /** 内存中这批向量由哪个模型产出；与当前模型不符时全部作废重算。 */
+  private vectorKey = '';
+  private vectorizePromise: Promise<void> | null = null;
 
   /**
    * @param resolveWorkspace 当前窗口的工作区
    * @param resolveIndexDir  索引落盘目录的推导（默认 `~/.echoly/indexes/<哈希>`）。
    *   做成可注入是为了**测试**：否则跑一次用例就会往开发者的真实主目录里写文件，
    *   而「测试写进用户 home」这种事一旦发生，清理不及时就会留下垃圾。
+   * @param embeddingLoader  本地 embedding 的装配（默认读环境变量走本地模型）。
+   *   同样是**为了测试**：用例里注入一个假装配，就能覆盖「有向量 / 无向量 / 加载失败」
+   *   三条路径，而不必真的下载并加载一个 onnx 模型。
    */
   constructor(
     private readonly resolveWorkspace: () => WorkspaceService,
     private readonly resolveIndexDir: (workspaceRoot: string) => string = projectIndexDir,
+    private readonly embeddingLoader: () => Promise<LocalEmbeddingHandle> = defaultEmbeddingLoader,
   ) {}
 
   private get workspace(): WorkspaceService {
@@ -274,13 +385,25 @@ export class CodebaseService {
   }
 
   getStatus(): CodebaseIndexStatus {
+    const described =
+      this.embedding?.describe ??
+      (this.embeddingInit ? '语义检索模型加载中…' : '语义检索尚未启用（尚未发起搜索）');
     return {
       indexedFiles: this.indexedFiles,
       totalSymbols: this.chunks.length,
       lastIndexedTime: this.lastIndexedTime,
       isIndexing: this.isIndexing,
       progress: this.lastProgress ?? undefined,
+      embedding: described,
+      vectorizedChunks: this.countVectorized(),
     };
+  }
+
+  /** 已算出向量的块数，用于判断「语义检索到底建好了没有」。 */
+  private countVectorized(): number {
+    let n = 0;
+    for (const c of this.chunks) if (c.vector && c.vector.length > 0) n += 1;
+    return n;
   }
 
   // ── 持久化 ────────────────────────────────────────────────────────────────
@@ -321,12 +444,19 @@ export class CodebaseService {
       const stats = new Map<string, FileStat>();
       for (const [rel, entry] of Object.entries(parsed.files ?? {})) {
         stats.set(rel, { size: entry.size, mtimeMs: entry.mtimeMs });
-        for (const c of entry.chunks) chunks.push(c);
+        for (const c of entry.chunks) {
+          // 向量是可选字段：解码失败就当这块没向量（下次后台向量化会补上），
+          // 而不是让整份缓存因为一个损坏的向量作废——重建一次的代价高得多。
+          const vector = c.v ? decodeVector(c.v) : null;
+          const { v: _ignored, ...rest } = c;
+          chunks.push(vector ? { ...rest, vector } : rest);
+        }
       }
       this.chunks = chunks;
       this.fileStats = stats;
       this.indexedFiles = stats.size;
       this.lastIndexedTime = parsed.savedAt || Date.now();
+      this.vectorKey = parsed.vectorKey ?? '';
       this.rebuildInvertedIndex();
     } catch {
       // 缓存损坏（写一半断电、版本串了）时静默忽略：重建一次的代价远小于让功能不可用
@@ -350,13 +480,22 @@ export class CodebaseService {
     for (const [rel, chunks] of byFile) {
       const st = this.fileStats.get(rel);
       if (!st) continue;
-      files[rel] = { size: st.size, mtimeMs: st.mtimeMs, chunks };
+      files[rel] = {
+        size: st.size,
+        mtimeMs: st.mtimeMs,
+        chunks: chunks.map((c) => {
+          if (!c.vector || c.vector.length === 0) return c as PersistedChunk;
+          const { vector, ...rest } = c;
+          return { ...rest, v: encodeVector(vector) };
+        }),
+      };
     }
     const payload: PersistedIndex = {
       version: INDEX_FORMAT_VERSION,
       root,
       savedAt: this.lastIndexedTime || Date.now(),
       files,
+      vectorKey: this.vectorKey || undefined,
     };
     try {
       await fs.mkdir(path.dirname(file), { recursive: true });
@@ -387,6 +526,9 @@ export class CodebaseService {
     this.indexedFiles = 0;
     this.lastIndexedTime = 0;
     this.lastReused = 0;
+    // 向量属于刚被丢弃的这批块，来源标识也要一起清掉，
+    // 否则新工作区会被误认为「向量已经算过了」而跳过向量化。
+    this.vectorKey = '';
   }
 
   /** 工作区根发生变化时调用：清空内存索引，下次搜索会重新加载对应项目的缓存。 */
@@ -705,7 +847,7 @@ export class CodebaseService {
   async search(query: string, limit = 20): Promise<CodebaseSymbolHit[]> {
     if (!query.trim()) return [];
     await this.ensureIndexed();
-    return this.runSearch(query, limit);
+    return await this.runSearch(query, limit);
   }
 
   /**
@@ -730,7 +872,7 @@ export class CodebaseService {
       }
     }
     if (this.chunks.length === 0) return [];
-    return this.runSearch(query, limit);
+    return await this.runSearch(query, limit);
   }
 
   private async ensureIndexed(): Promise<void> {
@@ -739,7 +881,7 @@ export class CodebaseService {
     if (this.chunks.length === 0) await this.buildIndex();
   }
 
-  private runSearch(query: string, limit: number): CodebaseSymbolHit[] {
+  private bm25Rank(query: string, limit: number): { idx: number; score: number }[] {
     const queryTokens = Array.from(new Set(tokenizeText(query)));
     if (queryTokens.length === 0) return [];
 
@@ -774,23 +916,164 @@ export class CodebaseService {
       }
     }
 
-    const sortedIndices = Array.from(scores.entries())
+    return Array.from(scores.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, limit);
+      .slice(0, limit)
+      .map(([idx, score]) => ({ idx, score }));
+  }
 
-    return sortedIndices.map(([idx, score]) => {
-      const chunk = this.chunks[idx];
-      return {
-        filePath: chunk.filePath,
-        name: chunk.name,
-        kind: chunk.kind,
-        line: chunk.line,
-        endLine: chunk.endLine,
-        content: chunk.content,
-        doc: chunk.doc,
-        score: Math.round(score * 100) / 100,
-      };
+  private toHit(chunk: IndexedChunk, score: number): CodebaseSymbolHit {
+    return {
+      filePath: chunk.filePath,
+      name: chunk.name,
+      kind: chunk.kind,
+      line: chunk.line,
+      endLine: chunk.endLine,
+      content: chunk.content,
+      doc: chunk.doc,
+      score: Math.round(score * 100) / 100,
+    };
+  }
+
+  /** 只取带向量的块交给融合层。缺向量的块照样能经 BM25 一路进入结果。 */
+  private vectorBearingChunks(): { id: string; vector: number[] }[] {
+    const out: { id: string; vector: number[] }[] = [];
+    for (let i = 0; i < this.chunks.length; i++) {
+      const vector = this.chunks[i].vector;
+      if (vector && vector.length > 0) out.push({ id: String(i), vector });
+    }
+    return out;
+  }
+
+  private async runSearch(query: string, limit: number): Promise<CodebaseSymbolHit[]> {
+    const ranked = this.bm25Rank(query, limit);
+
+    // 语义一路是**惰性**的：这里只把它踢起来，本轮不等它。
+    // 两个原因——首次使用要下载/加载 25MB 模型，让搜索卡在模型上不可接受；
+    // 而且「没装上模型就搜不出东西」比「搜得不够聪明」糟糕得多。
+    // 后台补齐后，下一次搜索自然就用上了。
+    void this.ensureVectors();
+
+    const client = this.embedding?.client ?? null;
+    if (!client) return ranked.map((r) => this.toHit(this.chunks[r.idx], r.score));
+
+    let queryVector: number[] | null = null;
+    try {
+      const [vector] = await client.embedTexts([query]);
+      queryVector = vector ?? null;
+    } catch (err) {
+      // 查询向量算不出来只影响这一轮，BM25 结果照常返回
+      console.warn('[CodebaseService] 查询向量化失败，本轮回落到 BM25：', err);
+    }
+
+    const fused = hybridRetrieve({
+      queryVector,
+      chunks: this.vectorBearingChunks(),
+      bm25Ranking: ranked.map((r) => String(r.idx)),
+      limit,
     });
+
+    const scoreByIdx = new Map(ranked.map((r) => [r.idx, r.score]));
+    return fused.ids
+      .map((id) => Number(id))
+      .filter((idx) => Number.isInteger(idx) && idx >= 0 && idx < this.chunks.length)
+      .map((idx) => this.toHit(this.chunks[idx], scoreByIdx.get(idx) ?? 0));
+  }
+
+  // ── 语义向量（本地模型，惰性 + 后台） ──────────────────────────────────────
+
+  /** 装配本地 embedding 并缓存结果；失败也只尝试一次，不反复加载。 */
+  private ensureEmbedding(): Promise<LocalEmbeddingHandle> {
+    if (this.embedding) return Promise.resolve(this.embedding);
+    if (!this.embeddingInit) {
+      this.embeddingInit = this.embeddingLoader()
+        .then((handle) => {
+          this.embedding = handle;
+          console.log(`[CodebaseService] 语义检索：${handle.describe}`);
+          return handle;
+        })
+        .catch((err): LocalEmbeddingHandle => {
+          // createLocalEmbedding 自己吞掉了失败，但注入的实现（测试）可能抛。
+          // 照样降级，绝不把异常带进搜索路径。
+          const reason = err instanceof Error ? err.message : String(err);
+          const handle: LocalEmbeddingHandle = {
+            source: { kind: 'unavailable', reason },
+            client: null,
+            describe: `语义检索不可用（${reason}），使用 BM25 词法检索`,
+          };
+          this.embedding = handle;
+          return handle;
+        });
+    }
+    return this.embeddingInit;
+  }
+
+  /** 确保向量在后台补齐；同一时刻只跑一个向量化任务。 */
+  private ensureVectors(): Promise<void> {
+    return this.ensureEmbedding().then((handle) => {
+      if (!handle.client) return;
+      if (this.vectorizePromise) return this.vectorizePromise;
+      const promise = this.runVectorize(handle).finally(() => {
+        if (this.vectorizePromise === promise) this.vectorizePromise = null;
+      });
+      this.vectorizePromise = promise;
+      return promise;
+    });
+  }
+
+  /**
+   * 后台分批向量化。
+   *
+   * 分小批、每批之间让出事件循环，是为了这条后台任务不把主进程挤住：
+   * onnx 单次推理是 CPU 密集的同步循环，一次送太多条会让终端输出和 IPC 明显卡顿。
+   */
+  private async runVectorize(handle: LocalEmbeddingHandle): Promise<void> {
+    const client = handle.client;
+    if (!client) return;
+
+    const key = vectorKeyOf(handle.source);
+
+    // 换模型 → 旧向量整批作废。维度不同的向量混在一起会让粗排整体失效，
+    // 而外在表现只是「语义检索悄悄没了」，所以在这里主动清掉重算。
+    if (this.vectorKey && key && this.vectorKey !== key) {
+      for (const chunk of this.chunks) delete chunk.vector;
+      this.vectorKey = '';
+    }
+
+    // 并发重建会整体替换 chunks 数组，用引用比对判断本任务是否已过期
+    const target = this.chunks;
+    const pending = target.filter((c) => !c.vector || c.vector.length === 0);
+    if (pending.length === 0) {
+      if (this.vectorKey !== key) {
+        this.vectorKey = key;
+        this.scheduleSave();
+      }
+      return;
+    }
+
+    let done = 0;
+    for (let start = 0; start < pending.length; start += VECTORIZE_BATCH) {
+      if (this.chunks !== target) return;
+      const slice = pending.slice(start, start + VECTORIZE_BATCH);
+      let vectors: number[][];
+      try {
+        vectors = await client.embedTexts(slice.map(embeddingTextOf));
+      } catch (err) {
+        // 一次失败就整体放弃：无限重试只会反复刷日志、反复占满 CPU，
+        // 而语义检索本来就只是增强项。
+        console.warn('[CodebaseService] 向量化失败，语义检索回落到 BM25：', err);
+        return;
+      }
+      slice.forEach((chunk, i) => {
+        chunk.vector = vectors[i];
+      });
+      done += slice.length;
+      if (this.vectorKey !== key) this.vectorKey = key;
+      // 每批都落盘太频繁；攒几批存一次，中途退出也不会把已算好的向量全丢掉
+      if (done % (VECTORIZE_BATCH * 8) === 0) this.scheduleSave();
+      await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    }
+    this.scheduleSave();
   }
 
   /** 释放资源：把待写的索引落盘并停掉定时器（窗口关闭 / 应用退出时调用）。 */

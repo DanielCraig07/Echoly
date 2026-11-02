@@ -1344,3 +1344,9 @@ export {
   DEFAULT_EMBEDDING_CACHE_ENTRIES,
 } from './embedding.js';
 export type { EmbeddingBackend, EmbeddingClientOptions } from './embedding.js';
+export { createLocalEmbedding } from './localEmbedding.js';
+export type {
+  ExtractorFactory,
+  LocalEmbeddingHandle,
+  LocalEmbeddingOptions,
+} from './localEmbedding.js';

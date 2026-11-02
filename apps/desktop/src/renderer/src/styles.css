@@ -7585,6 +7585,12 @@ span.keybinding {
   background: var(--bg-hover);
 }
 
+/* 语义索引计数：可点击区域之外的弱提示，鼠标悬停给出完整状态（模型来源 / 关闭原因）。 */
+.index-semantic-count {
+  cursor: help;
+  border-bottom: 1px dotted var(--border);
+}
+
 .chat-mention-popover {
   position: absolute;
   bottom: calc(100% + 6px);

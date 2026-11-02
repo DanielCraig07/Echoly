@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { LocalFsBackend } from '@deepseek-ide/tools';
+import { EmbeddingClient, type LocalEmbeddingHandle } from '@deepseek-ide/llm';
 import { CodebaseService } from '../src/main/codebaseService';
 import { projectIndexDir } from '../src/main/projectConfig';
 
@@ -41,6 +42,57 @@ describe('CodebaseService', () => {
   let fakeWorkspace: any;
   let service: CodebaseService;
 
+  /**
+   * 测试默认注入的装配：语义一路关闭。
+   *
+   * 必须显式注入 —— 默认装配会去读环境变量、进而在首次搜索时尝试加载 / 下载真实的
+   * onnx 模型。用例既不该联网，也不该因为跑了一次单测就往 HuggingFace 缓存里塞 25MB。
+   */
+  const disabledEmbedding = async (): Promise<LocalEmbeddingHandle> => ({
+    source: { kind: 'unavailable', reason: '测试中已关闭' },
+    client: null,
+    describe: '测试中已关闭',
+  });
+
+  /**
+   * 关键字驱动的假 embedding：向量完全由文本里出现的词决定，
+   * 于是「语义召回」可以脱开真实模型被精确断言。
+   *
+   * `zzz` 是埋的暗号 —— 它不出现在任何被索引的文本里，只出现在查询里，
+   * 用来验证「词面对不上、但语义相近」的块也能被召回。
+   */
+  const makeKeywordEmbedding = (): { handle: LocalEmbeddingHandle; embedCalls: string[][] } => {
+    const embedCalls: string[][] = [];
+    const embed = async (texts: string[]): Promise<number[][]> => {
+      embedCalls.push([...texts]);
+      return texts.map((text) => {
+        const t = text.toLowerCase();
+        if (t.includes('zzz') || t.includes('gamma')) return [0, 0, 1];
+        if (t.includes('alpha')) return [1, 0, 0];
+        if (t.includes('beta')) return [0, 1, 0];
+        return [0, 0, 0];
+      });
+    };
+    return {
+      embedCalls,
+      handle: {
+        source: { kind: 'download', modelId: 'fake-model' },
+        client: new EmbeddingClient({ backend: { embed } }),
+        describe: '假模型（测试）',
+      },
+    };
+  };
+
+  /** 后台向量化是 fire-and-forget 的，用例需要等它补齐。 */
+  const waitForVectors = async (svc: CodebaseService, timeoutMs = 3000): Promise<void> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const s = svc.getStatus();
+      if ((s.vectorizedChunks ?? 0) >= s.totalSymbols && s.totalSymbols > 0) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'echoly-codebase-test-'));
     // 索引默认落在 ~/.echoly/indexes/<哈希>。测试里注入一个临时目录，
@@ -53,6 +105,7 @@ describe('CodebaseService', () => {
     service = new CodebaseService(
       () => fakeWorkspace,
       (root) => projectIndexDir(root, homeDir),
+      disabledEmbedding,
     );
   });
 
@@ -101,7 +154,11 @@ describe('CodebaseService', () => {
       getRoot: () => null,
       getBackend: () => null,
     };
-    const emptyService = new CodebaseService(() => emptyWorkspace as any);
+    const emptyService = new CodebaseService(
+      () => emptyWorkspace as any,
+      undefined,
+      disabledEmbedding,
+    );
     const status = await emptyService.buildIndex();
     expect(status.indexedFiles).toBe(0);
     const hits = await emptyService.search('test');
@@ -135,6 +192,7 @@ describe('CodebaseService', () => {
     const reopened = new CodebaseService(
       () => fakeWorkspace,
       (root) => projectIndexDir(root, homeDir),
+      disabledEmbedding,
     );
     const hits = await reopened.search('authenticateUser', 5);
     expect(hits.length).toBeGreaterThan(0);
@@ -240,6 +298,7 @@ describe('CodebaseService', () => {
     const reopened = new CodebaseService(
       () => fakeWorkspace,
       (root) => projectIndexDir(root, homeDir),
+      disabledEmbedding,
     );
     const hits = await reopened.search('authenticateUser', 5);
     expect(hits[0].name).toBe('authenticateUser');
@@ -275,5 +334,122 @@ describe('CodebaseService', () => {
     await service.buildIndex();
     const hits = await service.searchCached('authenticateUser', 5);
     expect(hits[0].name).toBe('authenticateUser');
+  });
+
+  it('recalls a chunk that has no lexical overlap with the query', async () => {
+    // 这就是「语义检索」要解决的问题：用户问「在哪里刷新 token」，
+    // 而代码里写的是 verifySession。字面对不上，BM25 一定搜不到。
+    fs.writeFileSync(
+      path.join(tmpDir, 'alpha.ts'),
+      'export function alphaFn() { return 1; }\n',
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'beta.ts'),
+      'export function betaFn() { return 2; }\n',
+      'utf-8',
+    );
+    fs.writeFileSync(
+      path.join(tmpDir, 'gamma.ts'),
+      'export function gammaFn() { return 3; }\n',
+      'utf-8',
+    );
+
+    const { handle } = makeKeywordEmbedding();
+    const semantic = new CodebaseService(
+      () => fakeWorkspace,
+      (root) => projectIndexDir(root, homeDir),
+      async () => handle,
+    );
+    await semantic.buildIndex();
+    await semantic.search('alpha', 5); // 触发后台向量化
+    await waitForVectors(semantic);
+    expect(semantic.getStatus().vectorizedChunks).toBe(semantic.getStatus().totalSymbols);
+
+    // 'zzz' 不在任何被索引的文本里 → BM25 一路必然为空，唯一能召回 gamma 的就是语义一路
+    const hits = await semantic.search('zzz', 5);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].filePath).toContain('gamma.ts');
+    expect(hits.some((h) => h.name === 'gammaFn')).toBe(true);
+  });
+
+  it('persists vectors so a restart does not recompute them', async () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'alpha.ts'),
+      'export function alphaFn() { return 1; }\n',
+      'utf-8',
+    );
+
+    const first = makeKeywordEmbedding();
+    const svc1 = new CodebaseService(
+      () => fakeWorkspace,
+      (root) => projectIndexDir(root, homeDir),
+      async () => first.handle,
+    );
+    await svc1.buildIndex();
+    await svc1.search('alpha', 5);
+    await waitForVectors(svc1);
+    await svc1.dispose();
+
+    const second = makeKeywordEmbedding();
+    const svc2 = new CodebaseService(
+      () => fakeWorkspace,
+      (root) => projectIndexDir(root, homeDir),
+      async () => second.handle,
+    );
+    await svc2.searchCached('alpha', 5);
+
+    // 向量从盘上读回来了
+    expect(svc2.getStatus().vectorizedChunks).toBeGreaterThan(0);
+    // 而且没有被重算：第二次装配只嵌入过查询词，没有嵌入过任何代码块
+    const reembeddedChunks = second.embedCalls.flat().filter((t) => t.includes('alphaFn'));
+    expect(reembeddedChunks).toEqual([]);
+  });
+
+  it('degrades to BM25 when the embedding loader throws', async () => {
+    fs.writeFileSync(
+      path.join(tmpDir, 'alpha.ts'),
+      'export function alphaFn() { return 1; }\n',
+      'utf-8',
+    );
+    const broken = new CodebaseService(
+      () => fakeWorkspace,
+      (root) => projectIndexDir(root, homeDir),
+      async () => {
+        throw new Error('模型下载失败');
+      },
+    );
+    await broken.buildIndex();
+
+    // 关键：语义一路挂掉之后，检索必须照常可用
+    const hits = await broken.search('alphaFn', 5);
+    expect(hits[0].name).toBe('alphaFn');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(broken.getStatus().embedding).toContain('不可用');
+    expect(broken.getStatus().vectorizedChunks).toBe(0);
+  });
+
+  it('honours ECHOLY_EMBEDDING_DISABLED=1 through the default loader', async () => {
+    vi.stubEnv('ECHOLY_EMBEDDING_DISABLED', '1');
+    try {
+      fs.writeFileSync(
+        path.join(tmpDir, 'alpha.ts'),
+        'export function alphaFn() { return 1; }\n',
+        'utf-8',
+      );
+      // 不注入装配，走真实的默认装配 —— 验证环境变量真的接到了装配层
+      const svc = new CodebaseService(
+        () => fakeWorkspace,
+        (root) => projectIndexDir(root, homeDir),
+      );
+      await svc.buildIndex();
+      const hits = await svc.search('alphaFn', 5);
+      expect(hits[0].name).toBe('alphaFn');
+      await new Promise((r) => setTimeout(r, 20));
+      expect(svc.getStatus().vectorizedChunks).toBe(0);
+      expect(svc.getStatus().embedding).toMatch(/已关闭/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
