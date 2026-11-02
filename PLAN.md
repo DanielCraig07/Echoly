@@ -130,6 +130,10 @@
 ### B1 语义索引（改走本地模型）
 
 - [ ] 扩展 `packages/llm/src/probe.ts`：探测 OpenAI 兼容 embedding 端点（保留，供未来网关开放时启用）
+- [x] `packages/tools/src/retrieval.ts`：余弦相似度 + 向量粗排 topK + RRF 融合（+14 单测）
+  - 关键约束：**维度不一致时抛错/返回空，绝不静默返回 0**。换模型、下载不完整、缓存残留旧向量
+    都会造成维度不匹配；静默返回 0 会让所有块相似度相同、排序退化成文件顺序 ——
+    搜索「看起来在工作」但结果全无关，且没有任何报错可查。
 - [ ] `@huggingface/transformers` + `bge-small-zh-v1.5`（q8）本地推理，模型缓存与下载进度
 - [ ] 向量粗排 topK 50 → BM25 精排 → RRF 融合
 - [ ] chunk 内容 hash 缓存 + 文件级 mtime/size 增量

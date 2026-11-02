@@ -31,6 +31,8 @@ export {
 export type { HtmlToMarkdownOptions, UrlCheckResult, UrlPolicy } from './web.js';
 export type { WebSearchHit } from './web.js';
 export { parseRuleFile, ruleAppliesTo, selectRulesForContext } from './rules.js';
+export { RRF_K, cosineSimilarity, rrfFuse, topKBySimilarity } from './retrieval.js';
+export type { ScoredChunk } from './retrieval.js';
 export type { ParsedRule, RuleMeta } from './rules.js';
 export type { RevertResult } from './checkpoint.js';
 export { resolveInWorkspace, assertRealPathInside, PathJailError, toPosixRel } from './pathJail.js';
