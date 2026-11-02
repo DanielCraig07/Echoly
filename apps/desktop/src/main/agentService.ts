@@ -428,6 +428,7 @@ export class AgentService {
 
         await runAgent({
           prompt: payload.prompt,
+          runId,
           workspaceRoot,
           backend,
           settings,

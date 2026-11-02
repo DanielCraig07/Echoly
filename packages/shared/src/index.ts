@@ -827,6 +827,14 @@ export interface PendingDiff {
   description?: string;
   originalTitle?: string;
   modifiedTitle?: string;
+  /**
+   * 产生这处改动的 Agent 轮次。
+   *
+   * 审阅面板据此把改动按「哪一轮」分组：连问三轮之后，一堆改动混在一张列表里
+   * 既看不出哪些是刚才那轮的，也没法只接受其中一轮。旧数据没有这个字段，
+   * 分组时归入「更早的改动」。
+   */
+  runId?: string;
 }
 
 /** 「撤销本轮 AI 改动」的状态摘要。 */

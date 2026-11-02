@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { PendingDiff } from '@deepseek-ide/shared';
-import { groupDiffsByFile, isNewFile } from '../src/renderer/src/services/reviewGrouping';
+import {
+  groupDiffsByBatch,
+  groupDiffsByFile,
+  isNewFile,
+  moveReviewFocus,
+} from '../src/renderer/src/services/reviewGrouping';
 
 const diff = (id: string, path: string, original = 'a', modified = 'b'): PendingDiff => ({
   id,
@@ -58,5 +63,85 @@ describe('isNewFile', () => {
 
   it('普通修改不算新建', () => {
     expect(isNewFile(diff('1', 'a.ts', 'x', 'y'))).toBe(false);
+  });
+});
+
+/**
+ * 批次分组与键盘导航。
+ *
+ * 批次的价值在于「连问三轮之后，还能只接受刚跑完那轮」—— 分组错了不会报错，
+ * 只会让人以为自己接受了 A 轮而实际把 B 轮一起接受进去。
+ */
+describe('groupDiffsByBatch', () => {
+  const withRun = (id: string, path: string, runId?: string): PendingDiff => ({
+    id,
+    path,
+    original: 'a',
+    modified: 'b',
+    runId,
+  });
+
+  it('按轮次分批，**最新的排在最前**', () => {
+    // 用户是在一轮跑完之后打开面板的，想看的首先是刚改完的东西
+    const batches = groupDiffsByBatch([
+      withRun('1', 'a.ts', 'run-1'),
+      withRun('2', 'b.ts', 'run-2'),
+      withRun('3', 'a.ts', 'run-2'),
+    ]);
+    expect(batches).toHaveLength(2);
+    expect(batches[0].runId).toBe('run-2');
+    expect(batches[1].runId).toBe('run-1');
+  });
+
+  it('标签按位置给（本轮 / 上一轮 / 更早），不暴露 runId', () => {
+    const batches = groupDiffsByBatch([
+      withRun('1', 'a.ts', 'r1'),
+      withRun('2', 'b.ts', 'r2'),
+      withRun('3', 'c.ts', 'r3'),
+      withRun('4', 'd.ts', 'r4'),
+    ]);
+    expect(batches.map((b) => b.label)).toEqual(['latest', 'previous', 'older', 'older']);
+  });
+
+  it('没有轮次标记的旧数据归到一个 null 批次', () => {
+    const batches = groupDiffsByBatch([withRun('1', 'a.ts'), withRun('2', 'b.ts', 'r2')]);
+    expect(batches.map((b) => b.runId)).toEqual(['r2', null]);
+    expect(batches[1].diffIds).toEqual(['1']);
+  });
+
+  it('批次内仍按文件分组，且带齐 diffIds', () => {
+    const batches = groupDiffsByBatch([
+      withRun('1', 'a.ts', 'r1'),
+      withRun('2', 'a.ts', 'r1'),
+      withRun('3', 'b.ts', 'r1'),
+    ]);
+    expect(batches[0].groups.map((g) => g.path)).toEqual(['a.ts', 'b.ts']);
+    expect(batches[0].diffIds).toEqual(['1', '2', '3']);
+  });
+
+  it('空输入得到空数组', () => {
+    expect(groupDiffsByBatch([])).toEqual([]);
+  });
+});
+
+describe('moveReviewFocus', () => {
+  it('J/K 逐项移动', () => {
+    expect(moveReviewFocus(0, 1, 3)).toBe(1);
+    expect(moveReviewFocus(1, -1, 3)).toBe(0);
+  });
+
+  it('两端截断，不循环（从末尾跳回开头会让人以为还有没看的）', () => {
+    expect(moveReviewFocus(2, 1, 3)).toBe(2);
+    expect(moveReviewFocus(0, -1, 3)).toBe(0);
+  });
+
+  it('还没选过时，J 从第一个开始、K 从最后一个开始', () => {
+    expect(moveReviewFocus(-1, 1, 3)).toBe(0);
+    expect(moveReviewFocus(-1, -1, 3)).toBe(2);
+  });
+
+  it('空列表返回 -1，调用方据此不做任何高亮', () => {
+    expect(moveReviewFocus(-1, 1, 0)).toBe(-1);
+    expect(moveReviewFocus(0, 1, 0)).toBe(-1);
   });
 });

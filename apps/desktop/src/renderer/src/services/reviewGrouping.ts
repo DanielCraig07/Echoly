@@ -55,6 +55,60 @@ export function isNewFile(diff: PendingDiff): boolean {
   return (diff.original ?? '') === '' && (diff.modified ?? '') !== '';
 }
 
+/**
+ * 键盘导航：把焦点索引移动 `delta` 步。
+ *
+ * **两端截断，不循环。** 从最后一个文件按 J 跳回第一个，在审阅这种「逐个看、
+ * 看完就过」的流程里很迷惑 —— 用户会以为还有没看过的东西。
+ * 空列表返回 -1，调用方据此不做任何渲染。
+ */
+export function moveReviewFocus(current: number, delta: number, count: number): number {
+  if (count <= 0) return -1;
+  const base = current < 0 ? (delta > 0 ? 0 : count - 1) : current + delta;
+  return Math.max(0, Math.min(count - 1, base));
+}
+
+/** 一个审阅批次 = 一轮 Agent 运行产生的全部改动。 */
+export interface ReviewBatch {
+  /** 轮次 id；旧数据没有标记时为 null */
+  runId: string | null;
+  /**
+   * 按位置给的标签，而不是显示原始 runId —— 一串 UUID 对用户没有意义。
+   * 用户真正需要区分的是「刚跑完这轮」与「之前留下的」。
+   */
+  label: 'latest' | 'previous' | 'older';
+  groups: ReviewFileGroup[];
+  diffIds: string[];
+}
+
+/**
+ * 按轮次分批。**最新的批次排在最前**：用户是在一轮跑完之后打开这个面板的，
+ * 想看的首先是刚改完的东西，而不是往上翻过历史。
+ */
+export function groupDiffsByBatch(diffs: readonly PendingDiff[]): ReviewBatch[] {
+  const order: (string | null)[] = [];
+  const byRun = new Map<string | null, PendingDiff[]>();
+
+  for (const diff of diffs) {
+    const key = diff.runId ?? null;
+    if (!byRun.has(key)) {
+      byRun.set(key, []);
+      order.push(key);
+    }
+    byRun.get(key)!.push(diff);
+  }
+
+  return order
+    .map((key) => byRun.get(key)!)
+    .reverse()
+    .map((batchDiffs, index) => ({
+      runId: batchDiffs[0]?.runId ?? null,
+      label: index === 0 ? 'latest' : index === 1 ? 'previous' : 'older',
+      groups: groupDiffsByFile(batchDiffs),
+      diffIds: batchDiffs.map((d) => d.id),
+    }));
+}
+
 function normalizePath(input: string): string {
   return (input ?? '').replace(/\\/g, '/').toLowerCase();
 }

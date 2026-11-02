@@ -78,6 +78,11 @@ export interface AgentRunOptions {
   mode?: AgentMode;
   modelProfile?: ModelProfile;
   planContext?: PlanContext;
+  /**
+   * 本次运行的标识。宿主（主进程）生成并持久化 —— 检查点回滚用的是同一个 id，
+   * 两边必须一致，否则「撤销本轮改动」会找不到对应的留底。
+   */
+  runId?: string;
   skillsText?: string;
   rulesText?: string;
   backend?: WorkspaceBackend;
@@ -546,6 +551,8 @@ export async function runAgent(
       original: diff.original,
       modified: diff.modified,
       description: diff.description,
+      // 打上轮次标记：审阅面板要靠它把「这轮改的」和上几轮分开。
+      runId: options.runId,
     };
     diffs.push(pending);
     onEvent({ type: 'pending_diff', diff: pending });
