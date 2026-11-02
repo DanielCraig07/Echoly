@@ -496,7 +496,7 @@ select:focus {
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif;
   color: rgba(255, 255, 255, 0.65);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 1.2px;
   background: rgba(255, 255, 255, 0.06);
@@ -542,7 +542,7 @@ select:focus {
 }
 
 .search-trigger-text {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -712,7 +712,7 @@ select:focus {
 
 .cmd-palette-input::placeholder {
   color: rgba(255, 255, 255, 0.35);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 [data-theme='light'] .cmd-palette-input::placeholder {
@@ -768,7 +768,7 @@ select:focus {
   background: transparent;
   border: none;
   color: rgba(255, 255, 255, 0.5);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   padding: 0 8px;
   border-radius: 4px;
@@ -837,7 +837,7 @@ select:focus {
   min-height: 120px;
   padding: 24px 16px;
   color: rgba(255, 255, 255, 0.45);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .cmd-spinner {
@@ -901,7 +901,7 @@ select:focus {
 }
 
 .cmd-category-tag {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 4px;
@@ -980,7 +980,7 @@ select:focus {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 1px;
   color: rgba(255, 255, 255, 0.7);
@@ -1097,7 +1097,7 @@ select:focus {
 
 .cmd-code-line-badge {
   color: var(--accent, #a78bfa);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   font-family: var(--font-mono);
   min-width: 34px;
@@ -1107,7 +1107,7 @@ select:focus {
 }
 
 .cmd-code-preview-text {
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: rgba(255, 255, 255, 0.72);
   white-space: nowrap;
@@ -1899,7 +1899,7 @@ body.resizing.resizing-row {
   border: none;
   border-radius: 6px;
   padding: 6px 10px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 450;
   color: rgba(255, 255, 255, 0.88);
   cursor: pointer;
@@ -1945,7 +1945,7 @@ body.resizing.resizing-row {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 1.5px;
   color: rgba(255, 255, 255, 0.65);
@@ -2205,7 +2205,7 @@ div.monaco-submenu:empty,
   max-width: 100% !important;
   box-sizing: border-box !important;
   border-radius: 6px !important;
-  font-size: 12.5px !important;
+  font-size: 13px !important;
   font-family: inherit !important;
   color: rgba(255, 255, 255, 0.9) !important;
   transition:
@@ -2229,7 +2229,7 @@ div.monaco-submenu:empty,
   justify-content: flex-start !important;
   text-align: left !important;
   gap: 8px !important;
-  font-size: 12.5px !important;
+  font-size: 13px !important;
   line-height: 1.2 !important;
   color: inherit !important;
   padding: 0 !important;
@@ -2315,7 +2315,7 @@ span.keybinding {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif !important;
-  font-size: 11.5px !important;
+  font-size: 12px !important;
   font-weight: 500 !important;
   letter-spacing: 1.5px !important;
   color: rgba(255, 255, 255, 0.65) !important;
@@ -2551,7 +2551,7 @@ span.keybinding {
 
 .find-folder-title {
   margin: 0;
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 600;
   color: #f8fafc;
   white-space: nowrap;
@@ -2559,7 +2559,7 @@ span.keybinding {
 
 .find-folder-path-tag {
   font-family: var(--font-mono, monospace);
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.55);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2675,7 +2675,7 @@ span.keybinding {
   gap: 8px;
   height: 140px;
   color: rgba(255, 255, 255, 0.45);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .find-folder-spinner {
@@ -2726,7 +2726,7 @@ span.keybinding {
 
 .find-folder-hit-name {
   font-family: var(--font-mono, monospace);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: #f8fafc;
   white-space: nowrap;
@@ -3639,7 +3639,7 @@ span.keybinding {
 }
 
 .project-history-branch-pill {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 500;
   font-family: var(--font-code, monospace);
   color: var(--primary, #38bdf8);
@@ -3868,7 +3868,7 @@ span.keybinding {
   border: none;
   background: transparent;
   color: var(--accent);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
@@ -4567,7 +4567,7 @@ span.keybinding {
 .md-code-pre code,
 .md-body pre code {
   font-family: ui-monospace, 'SF Mono', Monaco, Menlo, Consolas, monospace;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.55;
   color: #d4d4d8;
   background: transparent;
@@ -5082,7 +5082,7 @@ span.keybinding {
 
 .md-toc-item.level-2 {
   padding-left: 18px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .md-toc-item.level-3 {
@@ -5134,7 +5134,7 @@ span.keybinding {
 .md-toc-empty {
   padding: 18px 14px;
   text-align: center;
-  font-size: 11.5px;
+  font-size: 12px;
   color: #71717a;
 }
 
@@ -5272,7 +5272,7 @@ span.keybinding {
 }
 
 .tool-call-status-text {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
   font-weight: 500;
 }
@@ -5291,7 +5291,7 @@ span.keybinding {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--muted);
 }
@@ -5321,7 +5321,7 @@ span.keybinding {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -5335,7 +5335,7 @@ span.keybinding {
   background: var(--bg-code, rgba(0, 0, 0, 0.25));
   border: 1px solid var(--border);
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
@@ -5358,7 +5358,7 @@ span.keybinding {
   border: none;
   background: transparent;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 2px 6px;
   border-radius: 4px;
   cursor: pointer;
@@ -5386,7 +5386,7 @@ span.keybinding {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
   padding: 0 2px;
 }
@@ -5443,7 +5443,7 @@ span.keybinding {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -5594,7 +5594,7 @@ span.keybinding {
 .agent-timeline-diff-add {
   color: #4ade80;
   font-family: var(--font-mono, monospace);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   margin-left: 2px;
 }
@@ -5602,7 +5602,7 @@ span.keybinding {
 .agent-timeline-diff-del {
   color: #f87171;
   font-family: var(--font-mono, monospace);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   margin-left: 1px;
 }
@@ -5874,7 +5874,7 @@ span.keybinding {
 }
 
 .tool-inout-meta {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted, #71717a);
   font-weight: 500;
   flex-shrink: 0;
@@ -5883,7 +5883,7 @@ span.keybinding {
 .tool-inout-body {
   padding: 8px 12px;
   color: var(--text, #d4d4d8);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -6002,7 +6002,7 @@ span.keybinding {
   background: color-mix(in srgb, var(--bg-elevated, #222222) 65%, transparent);
   border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.6;
   color: var(--muted-strong, #cbd5e1);
   max-height: 320px;
@@ -6061,7 +6061,7 @@ span.keybinding {
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
@@ -6093,7 +6093,7 @@ span.keybinding {
   margin: 2px 0 2px 9px;
   padding: 6px 12px;
   border-left: 2px solid var(--border);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
   color: var(--muted);
   font-family: var(--font-mono);
@@ -6319,7 +6319,7 @@ span.keybinding {
 .chat-ref-chip-name {
   color: var(--text);
   font-weight: 600;
-  font-size: 11.5px;
+  font-size: 12px;
   letter-spacing: 0.01em;
   white-space: nowrap;
   overflow: hidden;
@@ -6406,7 +6406,7 @@ span.keybinding {
 .chat-code-ref-pill-name {
   color: var(--text);
   font-weight: 600;
-  font-size: 11.5px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -6573,7 +6573,7 @@ span.keybinding {
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: var(--font-mono, monospace);
   color: var(--accent);
   margin-bottom: 6px;
@@ -6682,7 +6682,7 @@ span.keybinding {
   border-radius: 4px;
   color: var(--text);
   font-family: var(--font-mono, monospace);
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.12s ease;
   display: inline-flex;
@@ -6718,7 +6718,7 @@ span.keybinding {
   box-shadow: none !important;
   color: var(--text);
   font-family: var(--font-mono, monospace);
-  font-size: 12.5px;
+  font-size: 13px;
   padding: 2px 4px;
 }
 
@@ -6818,7 +6818,7 @@ span.keybinding {
   padding: 1px 5px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--text) 12%, transparent);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--muted);
 }
@@ -6882,7 +6882,7 @@ span.keybinding {
 }
 
 .remote-dir-count-hint {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
 }
@@ -7057,7 +7057,7 @@ span.keybinding {
   padding: 6px 12px;
   background: color-mix(in srgb, var(--bg-card, rgba(0, 0, 0, 0.2)) 50%, transparent);
   border-top: 1px solid var(--border);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -7294,7 +7294,7 @@ span.keybinding {
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted, #94a3b8);
-  font-size: 11.5px;
+  font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
@@ -7784,7 +7784,7 @@ span.keybinding {
   bottom: 0;
   height: 24px;
   z-index: 3;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   margin-left: auto;
   padding: 0 8px 0 16px;
@@ -7937,7 +7937,7 @@ span.keybinding {
   padding: 3px 10px;
   background: rgba(0, 0, 0, 0.16);
   border-bottom: 1px solid var(--border);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
   min-height: 28px;
   box-sizing: border-box;
@@ -8092,7 +8092,7 @@ span.keybinding {
   padding: 4px 8px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: 12px;
   transition: background 0.1s ease;
 }
 
@@ -8366,7 +8366,7 @@ span.keybinding {
   cursor: pointer;
   white-space: nowrap;
   color: rgba(255, 255, 255, 0.75);
-  font-size: 11.5px;
+  font-size: 12px;
   background: transparent;
   border: none;
   outline: none;
@@ -8992,7 +8992,7 @@ span.keybinding {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--accent-light, #3794ff);
   flex-wrap: wrap;
   min-width: 0;
@@ -9014,7 +9014,7 @@ span.keybinding {
 }
 
 .preset-label {
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.5);
 }
 
@@ -9022,7 +9022,7 @@ span.keybinding {
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #e2e8f0;
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 3px 8px;
   border-radius: 4px;
   outline: none;
@@ -9064,7 +9064,7 @@ span.keybinding {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--accent-light, #3794ff);
@@ -9081,7 +9081,7 @@ span.keybinding {
 
 .edit-section-hint {
   margin: 0;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.45);
 }
@@ -9091,7 +9091,7 @@ span.keybinding {
   align-items: center;
   height: 32px;
   padding: 0 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.4;
   color: rgba(255, 255, 255, 0.45);
   background: rgba(0, 0, 0, 0.22);
@@ -9146,7 +9146,7 @@ span.keybinding {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   color: #f1f5f9;
-  font-size: 12.5px;
+  font-size: 13px;
   padding: 0 10px;
   outline: none;
   box-sizing: border-box;
@@ -9184,7 +9184,7 @@ span.keybinding {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: rgba(255, 255, 255, 0.8);
   cursor: pointer;
   user-select: none;
@@ -9378,7 +9378,7 @@ span.keybinding {
 }
 
 .thinking-pill {
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
   background: rgba(168, 85, 247, 0.15);
@@ -9433,7 +9433,7 @@ span.keybinding {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.45);
   flex-wrap: nowrap;
   min-width: 0;
@@ -9465,7 +9465,7 @@ span.keybinding {
 }
 
 .key-state {
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 1px 5px;
   border-radius: 3px;
   white-space: nowrap;
@@ -9592,7 +9592,7 @@ span.keybinding {
 .card-action-btn {
   padding: 5px 9px;
   border-radius: 5px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
@@ -9659,7 +9659,7 @@ span.keybinding {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 13.5px;
+  font-size: 14px;
   color: #f1f5f9;
 }
 
@@ -9764,7 +9764,7 @@ span.keybinding {
 }
 
 .perm-hint-bubble {
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.6);
   background: rgba(255, 255, 255, 0.035);
   padding: 8px 10px;
@@ -9781,7 +9781,7 @@ span.keybinding {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.6);
 }
 
@@ -9835,7 +9835,7 @@ span.keybinding {
 
 .skill-card-desc {
   margin: 0;
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.45);
   line-height: 1.4;
 }
@@ -9853,7 +9853,7 @@ span.keybinding {
   align-items: baseline;
   gap: 4px;
   padding: 10px 12px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.5);
   background: rgba(0, 0, 0, 0.22);
@@ -9912,7 +9912,7 @@ span.keybinding {
   border: none;
   border-radius: 0;
   color: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: left;
 }
 
@@ -9952,7 +9952,7 @@ span.keybinding {
 }
 
 .mcp-pill {
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 1px 6px;
   border-radius: 3px;
   white-space: nowrap;
@@ -9987,7 +9987,7 @@ span.keybinding {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
   white-space: nowrap;
@@ -10002,7 +10002,7 @@ span.keybinding {
 }
 
 .settings-modal .mcp-danger-btn {
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 3px 9px;
   border-radius: 5px;
   background: var(--bg-danger-btn);
@@ -10023,14 +10023,14 @@ span.keybinding {
 }
 
 .mcp-error-title {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--danger);
   margin-bottom: 4px;
 }
 
 .mcp-error-msg {
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--danger-text);
   word-break: break-word;
@@ -10068,7 +10068,7 @@ span.keybinding {
 }
 
 .mcp-field > span {
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.6);
 }
 
@@ -10082,7 +10082,7 @@ span.keybinding {
 
 .mcp-field textarea {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.5;
   resize: vertical;
 }
@@ -10165,7 +10165,7 @@ span.keybinding {
 .empty-sub {
   display: block;
   margin-top: 6px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.6;
   text-align: center;
   color: rgba(255, 255, 255, 0.45);
@@ -10501,7 +10501,7 @@ span.keybinding {
 
 .settings-inline-hint {
   margin: 6px 0 0;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--muted);
 }
@@ -10523,7 +10523,7 @@ span.keybinding {
 
 .mono-input {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .settings-check {
@@ -10794,7 +10794,7 @@ span.keybinding {
 
 .welcome-view-subtitle {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--muted);
   line-height: 1.5;
   max-width: 38em;
@@ -10905,7 +10905,7 @@ span.keybinding {
 
 .welcome-choice-title {
   font-weight: 600;
-  font-size: 14.5px;
+  font-size: 15px;
   color: var(--text-bright, #fff);
   letter-spacing: 0.01em;
 }
@@ -11087,7 +11087,7 @@ span.keybinding {
 }
 
 .welcome-recent-path {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -11602,7 +11602,7 @@ button.welcome-recent-remove:hover {
   box-sizing: border-box;
   background: transparent;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 13px;
   transition:
     background 0.1s ease,
     color 0.1s ease;
@@ -11653,7 +11653,7 @@ button.welcome-recent-remove:hover {
   white-space: nowrap;
   box-sizing: border-box;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 13px;
   transition:
     background 0.1s ease,
     color 0.1s ease;
@@ -12076,7 +12076,7 @@ body.db-col-resizing .db-data-cell {
   max-height: 132px;
   overflow: auto;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.6;
   white-space: pre;
   background: var(--bg-code);
@@ -12190,7 +12190,7 @@ body.db-col-resizing .db-data-cell {
   border: 1px solid var(--border-strong, var(--border));
   border-radius: 6px;
   box-shadow: var(--shadow-jump);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.55;
   pointer-events: none;
 }
@@ -12481,7 +12481,7 @@ body.db-col-resizing .db-data-cell {
    而不是又一堆与排序并列的独立功能。 */
 .tab-context-menu .menu-item.db-column-menu-sub-item {
   padding-left: 22px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .tab-context-menu .menu-item.db-column-menu-sub-item .menu-item-icon {
@@ -12577,7 +12577,7 @@ body.db-col-resizing .db-data-cell {
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -12612,7 +12612,7 @@ body.db-col-resizing .db-data-cell {
   min-height: 0;
   overflow: auto;
   padding: 12px 16px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 /* 确认弹窗里的「删的是哪一个」：名字与路径原样列出，让用户有机会发现点错了 */
@@ -12651,7 +12651,7 @@ body.db-col-resizing .db-data-cell {
 
 /* 确认弹窗里的 Markdown 比聊天区更紧凑：这是要读完就点按钮的场景，不该滚半天 */
 .db-confirm-modal .md-body {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
@@ -12677,7 +12677,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .db-confirm-typing-hint {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted);
   margin-bottom: 6px;
 }
@@ -13149,7 +13149,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .db-meta-row .db-meta-value {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text);
   font-family: var(--font-mono, ui-monospace, monospace);
   min-width: 0;
@@ -13179,7 +13179,7 @@ body.db-col-resizing .db-data-cell {
   max-width: 320px;
   height: 22px;
   padding: 0 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: var(--font-mono, ui-monospace, monospace);
   color: var(--text);
   background: var(--bg-input, var(--bg-code));
@@ -13244,7 +13244,7 @@ body.db-col-resizing .db-data-cell {
 
 .db-column-extra {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
   font-family: var(--font-mono, ui-monospace, monospace);
   white-space: nowrap;
@@ -13389,7 +13389,7 @@ body.db-col-resizing .db-data-cell {
   justify-content: center;
   gap: 6px;
   padding: 6px 12px;
-  font-size: 11.5px;
+  font-size: 12px;
   border-radius: 5px;
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
   background: var(--bg-button, rgba(255, 255, 255, 0.06));
@@ -13436,7 +13436,7 @@ body.db-col-resizing .db-data-cell {
   padding: 2px 6px;
   min-width: 24px;
   height: 22px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   font-family: inherit;
   border-radius: 4px;
@@ -13869,7 +13869,7 @@ body.db-col-resizing .db-data-cell {
 }
 
 .session-project-dropdown-badge {
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 1px 7px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
@@ -14122,7 +14122,7 @@ body.db-col-resizing .db-data-cell {
 
 .session-branch-filter-label {
   font-family: var(--font-code, monospace);
-  font-size: 11.5px;
+  font-size: 12px;
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -14134,7 +14134,7 @@ body.db-col-resizing .db-data-cell {
   display: inline-flex;
   align-items: center;
   gap: 3.5px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 500;
   font-family: var(--font-code, monospace);
   line-height: 1;
@@ -14777,7 +14777,7 @@ body.db-col-resizing .db-data-cell {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'PingFang SC', 'Segoe UI',
     sans-serif;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 1.5px;
   color: rgba(255, 255, 255, 0.65);
@@ -14891,7 +14891,7 @@ body.db-col-resizing .db-data-cell {
   border: none;
   outline: none;
   color: #e2e8f0;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   padding: 3px 8px;
   border-radius: 6px;
@@ -15626,7 +15626,7 @@ body.db-col-resizing .db-data-cell {
   margin: 0 4px !important;
   padding: 0 6px !important;
   min-width: 66px !important;
-  font-size: 11.5px !important;
+  font-size: 12px !important;
   line-height: 24px !important;
   height: 24px !important;
   color: var(--muted, rgba(255, 255, 255, 0.65)) !important;
@@ -16035,7 +16035,7 @@ body.db-col-resizing .db-data-cell {
   border-radius: 8px;
   padding: 10px 12px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
   margin: 0;
@@ -16209,7 +16209,7 @@ body.db-col-resizing .db-data-cell {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .clone-repo-footer {
@@ -16273,7 +16273,7 @@ body.db-col-resizing .db-data-cell {
 
 .ide-modal-desc {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
   color: var(--muted);
   max-width: 36em;
@@ -16308,7 +16308,7 @@ body.db-col-resizing .db-data-cell {
 .ide-modal-footer .ghost,
 .ide-modal-footer .primary,
 .ide-modal-footer button {
-  font-size: 12.5px;
+  font-size: 13px;
   padding: 7px 14px;
   border-radius: 8px;
 }
@@ -16385,7 +16385,7 @@ body.db-col-resizing .db-data-cell {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text);
   cursor: pointer;
   user-select: none;
@@ -16521,7 +16521,7 @@ button.ssh-server-remove:hover {
 
 .settings-section h3 {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
@@ -16595,11 +16595,11 @@ button.ssh-server-remove:hover {
 }
 
 .modern-open-ws-modal .welcome-choice-title {
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 .modern-open-ws-modal .welcome-choice-desc {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .open-ws-grid {
@@ -16666,7 +16666,7 @@ button.ssh-server-remove:hover {
 }
 
 .open-ws-card-desc {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
   line-height: 1.35;
@@ -16971,7 +16971,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .open-ws-recent-path {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -17080,7 +17080,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-bright, #fff);
   background: rgba(255, 255, 255, 0.03);
@@ -18409,7 +18409,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .ext-pill {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 999px;
@@ -18453,7 +18453,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 .ext-progress-stat {
   font-family: var(--font-mono);
   color: var(--accent);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .ext-progress-track {
@@ -18565,7 +18565,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .ext-item-name {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-bright);
   overflow: hidden;
@@ -19311,7 +19311,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   gap: 5px;
   padding: 2px 8px;
   border-radius: 12px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -19368,7 +19368,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   padding: 6px 10px;
   background: rgba(0, 0, 0, 0.35);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .term-prompt {
@@ -19416,7 +19416,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: none;
   color: #d1d5db;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
@@ -19450,7 +19450,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   margin-top: 8px;
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -19481,7 +19481,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   background: transparent;
   border: none;
   color: var(--accent);
-  font-size: 10.5px;
+  font-size: 11px;
   cursor: pointer;
   padding: 2px 8px;
   border-radius: 4px;
@@ -19502,7 +19502,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   padding: 1px 5px;
   border-radius: 4px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text);
   margin: 0 4px;
 }
@@ -19612,7 +19612,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 .model-card-provider-badge {
   padding: 1px 7px;
   border-radius: 10px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -19850,7 +19850,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   outline: none;
   cursor: pointer;
   appearance: none;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   padding: 0;
   line-height: 26px;
@@ -19883,7 +19883,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: 1px solid var(--border);
   border-radius: 13px;
   color: var(--text);
-  font-size: 11.5px;
+  font-size: 12px;
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
@@ -20134,7 +20134,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 /* 模型下拉里的 provider 徽章：未定义为独立类时会落到浏览器默认字号偏大，
    这里显式缩小并圆角，与列表项协调 */
 .chat-model-provider-badge {
-  font-size: 9.5px !important;
+  font-size: 10px !important;
   font-weight: 600;
   line-height: 1;
   padding: 2px 5px;
@@ -20143,7 +20143,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .chat-model-item-sub {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
   font-family: var(--font-mono);
   overflow: hidden;
@@ -20167,12 +20167,12 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 .chat-model-dropdown-menu.compact .chat-model-dropdown-item {
   gap: 12px;
   padding: 6px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.4;
 }
 
 .chat-model-dropdown-menu.compact .chat-model-item-title {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -20180,7 +20180,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .chat-model-dropdown-menu.compact .chat-model-check {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* ==========================================================================
@@ -20309,7 +20309,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .inline-ai-title {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--accent);
 }
@@ -20340,7 +20340,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
   padding: 8px 12px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text);
   outline: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
@@ -20363,7 +20363,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .inline-ai-submit-btn {
   padding: 6px 12px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   border-radius: 6px;
   border: none;
@@ -20394,7 +20394,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .inline-ai-tag {
-  font-size: 10.5px;
+  font-size: 11px;
   padding: 2px 6px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
@@ -20456,7 +20456,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .inline-ai-accept-btn {
   padding: 4px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   border-radius: 5px;
   border: none;
@@ -20472,7 +20472,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .inline-ai-reject-btn {
   padding: 4px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   border-radius: 5px;
   border: 1px solid var(--border);
@@ -20493,7 +20493,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--accent);
   background: rgba(56, 189, 248, 0.08);
   border-radius: 6px;
@@ -20530,7 +20530,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .status-sync-pill {
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 700;
   padding: 1px 4px;
   border-radius: 8px;
@@ -20595,7 +20595,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   justify-content: space-between;
   padding: 5px 8px;
   border-radius: 4px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   transition:
@@ -20651,7 +20651,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: none;
   border-radius: 4px;
   padding: 4px 12px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: filter 0.12s ease;
@@ -20667,7 +20667,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 4px;
   padding: 4px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   cursor: pointer;
   transition:
     background 0.12s ease,
@@ -20768,7 +20768,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .status-lang-picker-id {
-  font-size: 9.5px;
+  font-size: 10px;
   font-family: var(--font-mono);
   color: var(--muted);
 }
@@ -20902,7 +20902,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .git-more-menu-heading {
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--muted);
   font-weight: 600;
@@ -21558,7 +21558,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   padding: 8px 12px;
   margin-bottom: 16px;
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 11.5px;
+  font-size: 12px;
   color: #9ca3af;
 }
 
@@ -21636,14 +21636,14 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .switch-workspace-option-title {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 500;
   color: #ffffff;
   margin-bottom: 2px;
 }
 
 .switch-workspace-option-desc {
-  font-size: 11.5px;
+  font-size: 12px;
   color: #9ca3af;
 }
 
@@ -21770,7 +21770,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .confirm-delete-endpoint {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.45);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -21831,7 +21831,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   z-index: 999999;
   background: rgba(22, 23, 29, 0.94);
   color: #f1f5f9;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   line-height: 1.45;
   padding: 5px 10px;
@@ -21994,12 +21994,12 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   font-family: var(--font-mono, monospace);
   padding: 1px 7px;
   border-radius: 6px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .confirm-update-current-text {
   color: var(--muted, #94a3b8);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .confirm-update-body {
@@ -22010,7 +22010,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .confirm-update-notes-title {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--muted, #94a3b8);
   letter-spacing: 0.02em;
@@ -22023,7 +22023,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   padding: 12px 14px;
   max-height: 200px;
   overflow-y: auto;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.6;
   color: var(--text, #e2e8f0);
   white-space: pre-wrap;
@@ -22376,7 +22376,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .about-author-bio {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.65);
 }
@@ -22445,14 +22445,14 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 .about-feat-name {
-  font-size: 12.5px;
+  font-size: 13px;
   color: #e2e8f0;
   font-weight: 600;
 }
 
 .about-feat-desc {
   margin: 0;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.45);
 }
@@ -22480,7 +22480,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.8);
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 3px 10px;
   border-radius: 6px;
   cursor: pointer;
@@ -22826,7 +22826,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 
 .debug-var-type {
   color: #a1a1aa;
-  font-size: 10.5px;
+  font-size: 11px;
 }
 
 /* 底部面板模式切换标签按钮（终端 / 调试工作台 / 问题） */
@@ -23007,7 +23007,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 13px;
   padding: 7px 10px;
   outline: none;
   transition: all 0.15s ease;
@@ -23396,7 +23396,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   color: var(--text);
   cursor: pointer;
   text-align: left;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: none;
@@ -23428,7 +23428,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   border-radius: 8px;
   color: var(--text-bright, #ffffff) !important;
   padding: 8px 12px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-family: var(--font-mono, monospace);
   outline: none;
   transition:
