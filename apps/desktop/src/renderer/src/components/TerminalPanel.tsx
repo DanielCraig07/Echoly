@@ -1961,6 +1961,34 @@ export function TerminalPanel({
   // SSH 远程端口自动转发映射 remotePort -> localPort
   const [forwardedSshPorts, setForwardedSshPorts] = useState<Record<number, number>>({});
 
+  /**
+   * 与主进程对账已建立的端口转发。
+   *
+   * 本地这份 `forwardedSshPorts` 只是一份**缓存**（主进程里才是真相）。不主动同步的话，
+   * 面板重挂载（切标签、重开底部面板）就会把已有转发忘掉 —— 表现是「明明转发了，
+   * 界面却再次提出要转发」，而用户也没有任何地方能看到或关掉已经建好的隧道。
+   */
+  useEffect(() => {
+    if (terminalKind !== 'ssh') return;
+    let alive = true;
+    void window.ide
+      ?.listSshPortForwards?.()
+      .then((list) => {
+        if (!alive || !Array.isArray(list)) return;
+        setForwardedSshPorts((prev) => {
+          const next = { ...prev };
+          for (const item of list) {
+            if (item?.remotePort) next[item.remotePort] = item.localPort;
+          }
+          return next;
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [terminalKind]);
+
   // 终端检测到的网络端口映射 clientId -> number[]
   const [tabPorts, setTabPorts] = useState<Record<string, number[]>>({});
 
@@ -2629,6 +2657,32 @@ export function TerminalPanel({
                   </button>
                 );
               })}
+              {/* 已建立的转发要有办法关掉。没有这个按钮时，隧道建起来就只能等
+                  SSH 断开才消失 —— 而用户连它还在都不知道。 */}
+              {terminalKind === 'ssh' &&
+                allDetectedPorts
+                  .filter((port) => forwardedSshPorts[port])
+                  .map((port) => (
+                    <button
+                      key={`stop-${port}`}
+                      type="button"
+                      className="terminal-port-pill stop"
+                      title={t('terminal.portForwardStop', { port })}
+                      onClick={() => {
+                        void (async () => {
+                          await window.ide.stopSshPortForward?.(port);
+                          setForwardedSshPorts((prev) => {
+                            const next = { ...prev };
+                            delete next[port];
+                            return next;
+                          });
+                        })();
+                      }}
+                    >
+                      <IconClose size={9} />
+                      <span>:{port}</span>
+                    </button>
+                  ))}
             </div>
           )}
         </div>

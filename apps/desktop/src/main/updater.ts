@@ -37,6 +37,15 @@ const API_BASE = 'https://api.github.com';
 let feed: UpdateFeedConfig | null = null;
 let checked = false;
 
+/**
+ * 最近一次检查发现的可用更新。
+ *
+ * 为什么要留在主进程：确认弹窗是**瞬态**的，用户一关就没了 —— 而「发现有新版本」
+ * 这件事并不会因此失效。不留这份信息的话，用户关掉弹窗之后在设置页再也找不到
+ * 安装入口，只能重新点一次「检查更新」，等于把已经得到的结果丢了。
+ */
+let availableUpdate: { version: string; current: string; releaseNotes: string } | null = null;
+
 function configureUpdater(updateFeed: UpdateFeedConfig | null): void {
   feed = updateFeed;
   if (!feed) {
@@ -321,6 +330,13 @@ export function initUpdater(getUpdateFeed: () => UpdateFeedConfig | null): void 
       if (cfg.provider === 'github') {
         const result = await probeUpdate(cfg);
         checked = result.hasUpdate;
+        availableUpdate = result.hasUpdate
+          ? {
+              version: result.version ?? '',
+              current: result.current ?? '',
+              releaseNotes: result.releaseNotes || '',
+            }
+          : null;
         return {
           ok: true,
           hasUpdate: result.hasUpdate,
@@ -369,7 +385,13 @@ export function initUpdater(getUpdateFeed: () => UpdateFeedConfig | null): void 
     }
   });
 
-  ipcMain.handle('updater:getState', () => ({ checked, feed: feed ?? null }));
+  // `available` 是给界面用的（要不要显示「立即更新」）；`checked`/`feed` 保留原样，
+  // 免得动到已有的调用方。
+  ipcMain.handle('updater:getState', () => ({
+    checked,
+    feed: feed ?? null,
+    available: availableUpdate,
+  }));
 }
 
 export function quitAndInstallUpdate(): void {

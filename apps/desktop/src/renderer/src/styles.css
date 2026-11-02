@@ -20682,6 +20682,42 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   color: #f59e0b;
 }
 
+.status-jobs-hint.ok {
+  color: #10b981;
+}
+
+/* 顶栏菜单（Windows / Linux 才有：macOS 用系统菜单栏） */
+
+.titlebar-menubar {
+  padding: 0 6px;
+}
+
+.titlebar-menu-btn {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: var(--ui-font-size, 12px);
+  color: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.titlebar-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+/* 端口转发：停止按钮与已转发胶囊同一排，视觉上明确是「关掉这条」 */
+.terminal-port-pill.stop {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.terminal-port-pill.stop:hover {
+  background: rgba(248, 113, 113, 0.16);
+}
+
 .status-remote-form {
   padding: 4px 8px 6px;
   display: flex;

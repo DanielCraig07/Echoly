@@ -1618,7 +1618,14 @@ export interface TerminalCreateOptions {
   rows?: number;
 }
 
-export type AppMenuId = 'edit' | 'view' | 'window';
+/**
+ * 可以由**渲染层顶栏**弹出的菜单。
+ *
+ * 为什么需要这条通道：macOS 用系统菜单栏，而 Windows/Linux 把原生菜单行去掉了
+ * （`setApplicationMenu(null)`），菜单改由顶栏按钮弹出。少了 `file` 这一档，
+ * 这两个平台上「新建 / 打开文件夹 / 新建窗口」就整组够不到。
+ */
+export type AppMenuId = 'file' | 'edit' | 'view' | 'window';
 
 export type MenuCommand =
   | { type: 'save' }
@@ -1639,7 +1646,6 @@ export interface IpcApi {
   pickWorkspace: () => Promise<string | null>;
   openNewWindow: (targetPath?: string, sshAuth?: any) => Promise<void>;
   getSshAuthHandoff: (token: string) => Promise<any>;
-  getWorkspace: () => Promise<string | null>;
   getWorkspaceInfo: () => Promise<WorkspaceInfo>;
   setWorkspace: (root: string) => Promise<string>;
   // ── 多根工作区：附加文件夹 ────────────────────────────────────────────────
@@ -2042,8 +2048,17 @@ export interface IpcApi {
   }>;
   /** 确认后下载并安装：下载 → 打开安装包 → 退出当前应用。 */
   downloadUpdate: () => Promise<{ ok: boolean; detail?: string }>;
-  /** 获取更新状态 */
-  getUpdateState: () => Promise<{ checked: boolean; feed: unknown }>;
+  /**
+   * 获取更新状态。
+   *
+   * `available` 是「上次检查发现、但还没安装」的那个版本。设置页打开时会读它，
+   * 这样用户关掉确认弹窗之后仍然能找到安装入口。
+   */
+  getUpdateState: () => Promise<{
+    checked: boolean;
+    feed: unknown;
+    available?: { version: string; current: string; releaseNotes: string } | null;
+  }>;
   /** 更新下载进度事件：phase=download 时带 loaded/total/percent */
   onUpdateProgress: (
     cb: (progress: {

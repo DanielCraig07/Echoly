@@ -37,6 +37,12 @@ jobs:
       - name: ESLint Code Inspection
         run: npm run lint
 
+      # 「功能实现了、但界面上没有入口」这类问题，typecheck / lint / test / build 一条都拦不住
+      # （「没人调用」不是错误）。扩展市场和 AI 任务看板都这样瞒过过整轮检查，
+      # 所以把接线本身也做成门禁。
+      - name: UI Wiring Audit
+        run: npm run audit:wiring
+
       - name: Automated Unit Tests
         run: npm test
 

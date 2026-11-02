@@ -395,6 +395,15 @@ export function App() {
   const terminalNonce = useRef(0);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('explorer');
   useEffect(() => {
+    /**
+     * `agent-tasks` 是被**有意**停用的：面板本体（AgentTaskPanel，600 行）与渲染都在，
+     * 但这里把它弹回 explorer，所以界面上到不了它。
+     *
+     * 为什么要留这条注释：没有它，下一个人翻到这里会以为是漏了入口，顺手把守卫删掉 ——
+     * 那会重新放出一个没人验证过的面板。现状是「已实现、未启用」，这是一个待决定的状态，
+     * 不是 bug；`scripts/audit-ui-wiring.mjs` 里也按这个理由做了豁免。
+     * 真要启用：去掉这个守卫、在活动栏加一个入口，并补一次真机验证。
+     */
     if ((leftPanel as string) === 'agent-tasks') {
       setLeftPanel('explorer');
     }
@@ -4361,7 +4370,31 @@ export function App() {
       style={shellStyle}
     >
       <header className="titlebar">
-        <div className="titlebar-left" style={{ width: 70, WebkitAppRegion: 'drag' } as any}></div>
+        {/* macOS：这里只是给红绿灯按钮留出的拖动区。
+            Windows / Linux：原生菜单行被去掉了（见 index.ts 的 setApplicationMenu(null)），
+            所以菜单必须由顶栏弹出来 —— 这正是 `menu:popup` 那条通道存在的理由。
+            缺了它，这两个平台上「文件 / 编辑 / 查看」整组菜单是够不到的。 */}
+        {isMac ? (
+          <div className="titlebar-left" style={{ width: 70, WebkitAppRegion: 'drag' } as any} />
+        ) : (
+          <div
+            className="titlebar-left titlebar-menubar"
+            style={
+              { display: 'flex', alignItems: 'center', gap: 2, WebkitAppRegion: 'no-drag' } as any
+            }
+          >
+            {(['file', 'edit', 'view'] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                className="titlebar-menu-btn"
+                onClick={() => void window.ide.popupMenu?.(id)}
+              >
+                {t(`menu.${id}`)}
+              </button>
+            ))}
+          </div>
+        )}
         {/* 前进 / 后退：与 Cursor 同位置（紧邻红绿灯按钮之后）。 */}
         <div
           className="titlebar-nav"

@@ -431,9 +431,15 @@ function buildAppMenu(): ElectronMenu {
 }
 
 function popupAppMenu(id: AppMenuId, win: ElectronBrowserWindow): void {
-  const template =
-    id === 'edit' ? editMenuTemplate() : id === 'view' ? viewMenuTemplate() : windowMenuTemplate();
-  Menu.buildFromTemplate(template).popup({ window: win });
+  // 用表而不是三元链：菜单一多，三元链漏掉一档的表现是「点某个按钮弹出别的菜单」，
+  // 而且类型是 union，编译器不会提醒你漏了谁。
+  const templates: Record<AppMenuId, () => MenuItemConstructorOptions[]> = {
+    file: fileMenuTemplate,
+    edit: editMenuTemplate,
+    view: viewMenuTemplate,
+    window: windowMenuTemplate,
+  };
+  Menu.buildFromTemplate(templates[id]()).popup({ window: win });
 }
 
 function createWindow(

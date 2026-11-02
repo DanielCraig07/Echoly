@@ -347,6 +347,11 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     en: 'Connect to an SSH host first (the current workspace is local)',
   },
   'status.remoteOpen': { zh: '打开远端任务面板', en: 'Open remote jobs' },
+  'status.remoteProbing': { zh: '正在检查远端环境…', en: 'Checking remote environment…' },
+  'status.remoteReady': {
+    zh: '远端就绪：node {version}，工作目录将用到 {home}',
+    en: 'Remote ready: node {version}, home {home}',
+  },
   'status.copilotState': { zh: '状态', en: 'State' },
   'status.copilotRequests': { zh: '请求数', en: 'Requests' },
   'status.copilotAccepted': { zh: '已接受', en: 'Accepted' },
@@ -745,6 +750,10 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'terminal.portForwardOk': {
     zh: 'SSH 端口 :{port} 已建立本地隧道转发至 :{localPort}，点击在浏览器中打开',
     en: 'SSH port :{port} is tunneled to local port :{localPort} — click to open in browser',
+  },
+  'terminal.portForwardStop': {
+    zh: '停止到 :{port} 的转发（会关掉这条隧道）',
+    en: 'Stop forwarding to :{port} (closes the tunnel)',
   },
   'terminal.portForwardOffer': {
     zh: 'SSH 远程服务监听 :{port}，点击建立本地转发隧道并在浏览器中预览',

@@ -164,9 +164,6 @@ export function registerIpc(deps: {
     }),
   );
 
-  ipcMain.handle('workspace:get', (event) =>
-    run(event, () => registry.current().workspace.getRoot()),
-  );
   ipcMain.handle('workspace:getInfo', (event) =>
     run(event, () => registry.current().workspace.getInfo()),
   );

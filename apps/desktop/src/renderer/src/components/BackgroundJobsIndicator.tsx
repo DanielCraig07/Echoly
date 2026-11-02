@@ -59,6 +59,16 @@ export function BackgroundJobsIndicator() {
   const [unattended, setUnattended] = useState(false);
   const [busy, setBusy] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
+  // 投递前的远端体检结果。**在打开发表单那一刻就去查**，而不是等用户点投递 ——
+  // 「远端没装 node / 没连 SSH」这类问题拖到点击之后才报，用户会以为是投递失败，
+  // 而真正的原因（这台机器根本跑不了）本可以提前告诉他。
+  const [remoteProbe, setRemoteProbe] = useState<{
+    probing?: boolean;
+    ok?: boolean;
+    reason?: string;
+    nodeVersion?: string;
+    home?: string;
+  } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -110,6 +120,25 @@ export function BackgroundJobsIndicator() {
       clearInterval(timer);
     };
   }, [open, remoteJobs]);
+
+  useEffect(() => {
+    if (!remoteOpen) return;
+    let alive = true;
+    setRemoteProbe({ probing: true });
+    void window.ide
+      ?.probeRemoteAgent?.()
+      .then((result) => {
+        if (alive) setRemoteProbe(result ?? { ok: false, reason: '体检没有返回结果' });
+      })
+      .catch((err) => {
+        if (alive) {
+          setRemoteProbe({ ok: false, reason: err instanceof Error ? err.message : String(err) });
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [remoteOpen]);
 
   async function submitRemote(): Promise<void> {
     const text = prompt.trim();
@@ -206,11 +235,25 @@ export function BackgroundJobsIndicator() {
                 </label>
                 <div className="status-jobs-hint">{t('status.remoteUnattendedHint')}</div>
                 <div className="status-jobs-hint warn">{t('status.remoteCredential')}</div>
+                {remoteProbe?.probing && (
+                  <div className="status-jobs-hint">{t('status.remoteProbing')}</div>
+                )}
+                {remoteProbe && !remoteProbe.probing && remoteProbe.ok && (
+                  <div className="status-jobs-hint ok">
+                    {t('status.remoteReady', {
+                      version: remoteProbe.nodeVersion ?? '',
+                      home: remoteProbe.home ?? '',
+                    })}
+                  </div>
+                )}
+                {remoteProbe && !remoteProbe.probing && !remoteProbe.ok && (
+                  <div className="status-remote-error">{remoteProbe.reason}</div>
+                )}
                 {remoteError && <div className="status-remote-error">{remoteError}</div>}
                 <button
                   type="button"
                   className="status-goto-btn"
-                  disabled={busy || !prompt.trim()}
+                  disabled={busy || !prompt.trim() || remoteProbe?.ok === false}
                   onClick={() => void submitRemote()}
                 >
                   {busy ? t('status.remoteSubmitting') : t('status.remoteSubmit')}

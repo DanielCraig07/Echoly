@@ -149,6 +149,36 @@ export function SettingsModal({
     return () => unsub();
   }, []);
 
+  /**
+   * 打开设置页时把「上次检查发现的可用更新」捞回来。
+   *
+   * 确认弹窗是瞬态的：用户点「稍后」关掉之后，那条信息并没有失效，但界面上
+   * 再也没有地方能重新发起安装 —— 只能再点一次「检查更新」。所以这里读一下主进程
+   * 留下的记录，把弹窗恢复出来。
+   */
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void window.ide
+      .getUpdateState?.()
+      .then((state) => {
+        const available = state?.available;
+        if (!alive || !available?.version) return;
+        setPendingUpdate(
+          (prev) =>
+            prev ?? {
+              version: available.version,
+              notes: available.releaseNotes,
+              current: available.current,
+            },
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+
   const MODEL_PRESETS: Array<{
     /** 预设名与模型显示别名的字典 key —— 表是模块内的，存 key 才能在切语言后跟着变。 */
     labelKey: string;

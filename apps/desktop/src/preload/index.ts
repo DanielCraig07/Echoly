@@ -23,7 +23,6 @@ const api: IpcApi = {
   pickWorkspace: () => ipcRenderer.invoke('workspace:pick'),
   openNewWindow: (targetPath, sshAuth) => ipcRenderer.invoke('window:openNew', targetPath, sshAuth),
   getSshAuthHandoff: (token) => ipcRenderer.invoke('ssh:getAuthHandoff', token),
-  getWorkspace: () => ipcRenderer.invoke('workspace:get'),
   getWorkspaceInfo: () => ipcRenderer.invoke('workspace:getInfo'),
   setWorkspace: (root) => ipcRenderer.invoke('workspace:set', root),
   getWorkspaceFolders: () => ipcRenderer.invoke('workspace:getFolders'),
