@@ -180,4 +180,34 @@ describe('parseOpenVsxSearch', () => {
       'https://open-vsx.org/api/vscodevim/vim/1.27.2/file/vscodevim.vim-1.27.2.vsix',
     );
   });
+
+  it('平台专属扩展必须原样用注册表的下载地址，不能按通用规则重拼', () => {
+    // 真实数据：ms-python.debugpy 的下载地址里有一段平台路径（darwin-arm64），
+    // 而通用规则拼出来的是 `<ns>.<name>-<version>.vsix` —— 少了那段平台路径，
+    // 拼出来的地址在注册表上是 404（要到解压时才发现拿到的是错误页）。
+    const platformUrl =
+      'https://open-vsx.org/api/ms-python/debugpy/darwin-arm64/2026.6.0/file/ms-python.debugpy-2026.6.0@darwin-arm64.vsix';
+    const [ext] = parseOpenVsxSearch(
+      {
+        extensions: [
+          entry({
+            namespace: 'ms-python',
+            name: 'debugpy',
+            version: '2026.6.0',
+            files: { download: platformUrl },
+          }),
+        ],
+      },
+      'https://open-vsx.org',
+    );
+    expect(ext.downloadUrl).toBe(platformUrl);
+  });
+
+  it('files.download 不是绝对 http(s) 地址时退回拼接（相对路径别塞进 fetch）', () => {
+    for (const bad of ['/api/x/y/1/file/x.vsix', 'file:///tmp/x.vsix', 42, null]) {
+      expect(buildDownloadUrl('https://open-vsx.org', 'ns', 'n', '1.0.0', bad)).toBe(
+        'https://open-vsx.org/api/ns/n/1.0.0/file/ns.n-1.0.0.vsix',
+      );
+    }
+  });
 });
