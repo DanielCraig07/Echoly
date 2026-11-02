@@ -39,6 +39,7 @@ import { ChatPanel, type ChatPanelHandle } from './components/ChatPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TerminalPanel } from './components/TerminalPanel';
 import { ComposerModal } from './components/ComposerModal';
+import { ReviewPanel } from './components/ReviewPanel';
 import { DebugPanel } from './components/DebugPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { OpenWorkspaceModal } from './components/OpenWorkspaceModal';
@@ -250,6 +251,22 @@ export function App() {
   const [currentExtensionId, setCurrentExtensionId] = useState<string | null>(null);
   const [rightPanelTab, setRightPanelTab] = useState<'chat' | 'claude'>('chat'); // 右侧面板标签
   const [diffs, setDiffs] = useState<PendingDiff[]>([]);
+  const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
+
+  // Cmd/Ctrl+Shift+R 打开审阅面板。
+  // 放在应用层而不是 ChatPanel 内：审阅的是「本轮全部改动」，属于应用级动作，
+  // 不该只在聊天面板聚焦时才生效。没有改动时不拦截按键，避免吃掉别处的快捷键。
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'r') {
+        if (diffs.length === 0) return;
+        e.preventDefault();
+        setReviewPanelOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [diffs.length]);
   const [activeDiffId, setActiveDiffId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatSessionMessage[]>([]);
   const [sessionId, setSessionId] = useState(() => uid());
@@ -6315,6 +6332,14 @@ export function App() {
           </div>
         </div>
       )}
+      <ReviewPanel
+        open={reviewPanelOpen}
+        diffs={diffs}
+        onAccept={acceptDiff}
+        onReject={rejectDiff}
+        onClose={() => setReviewPanelOpen(false)}
+      />
+
       <ComposerModal
         open={composerOpen}
         onClose={() => setComposerOpen(false)}

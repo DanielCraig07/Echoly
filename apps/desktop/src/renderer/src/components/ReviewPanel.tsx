@@ -14,8 +14,6 @@ interface ReviewPanelProps {
   diffs: PendingDiff[];
   onAccept: (id: string) => void | Promise<void>;
   onReject: (id: string) => void | Promise<void>;
-  onAcceptAll: (ids: string[]) => void | Promise<void>;
-  onRejectAll: (ids: string[]) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -30,15 +28,7 @@ interface ReviewPanelProps {
  * 数据层（diffStore 的 accept/reject/acceptAll）由调用方注入，组件不直接碰 IPC，
  * 这样它既能在应用里用，也能在测试里单独渲染。
  */
-export function ReviewPanel({
-  open,
-  diffs,
-  onAccept,
-  onReject,
-  onAcceptAll,
-  onRejectAll,
-  onClose,
-}: ReviewPanelProps) {
+export function ReviewPanel({ open, diffs, onAccept, onReject, onClose }: ReviewPanelProps) {
   const { modalSize, handleResizeStart } = useModalResize({
     storageKey: 'echoly_review_panel_size',
     defaultWidth: 720,
