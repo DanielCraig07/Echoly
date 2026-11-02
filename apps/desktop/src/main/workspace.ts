@@ -52,6 +52,17 @@ export class WorkspaceService {
   private folderBackends = new Map<string, WorkspaceBackend>();
   private folderWatchers = new Map<string, fsSync.FSWatcher>();
 
+  /**
+   * 项目配置目录所用的「家目录」。**只为测试而存在**：默认走 `os.homedir()`，
+   * 但没有它就没法在测试里跑真实文件操作 —— 那会往用户真正的 `~/.echoly/` 里写东西。
+   * `projectConfig*` 那组函数本来就是收 `homeDir` 参数的，这里只是把它透传上来。
+   */
+  private readonly configHomeDir?: string;
+
+  constructor(opts: { configHomeDir?: string } = {}) {
+    this.configHomeDir = opts.configHomeDir;
+  }
+
   setChangeListener(cb: (info: WorkspaceInfo) => void): void {
     this.onChange = cb;
   }
@@ -314,7 +325,7 @@ export class WorkspaceService {
   resolveProjectConfigPath(relPath: string): string | null {
     const root = this.getRoot();
     if (!root) return null;
-    return projectConfigChildPath(root, relPath);
+    return projectConfigChildPath(root, relPath, this.configHomeDir);
   }
 
   /** 读取配置目录里的文件；不存在或读不了都返回 null（配置永远是可选的） */

@@ -3,6 +3,8 @@
 > 本清单跟踪本轮「能力补齐 + UI 对齐」的全部工作项。
 > 约定：每一项完成前必须通过 `npm run typecheck && npm test && npm run format:check`，
 > 涉及 UI 的改动还要跑 `npm run dev` 截图回归。
+> 另需 `npm run lint`（0 error）—— 它的 `react-hooks/rules-of-hooks` 是 error，
+> 专门拦「hook 写在提前 return 之后」这类只在运行时炸、typecheck 与测试都看不出来的问题。
 
 ## 0. 前置结论（已确认）
 
@@ -378,9 +380,17 @@
   - **诚实的边界**：Git、集成终端、代码库索引/语义检索、SSH、全局搜索
     仍然只作用于**主根**。它们各有自己的根概念，接进多根需要逐个改动并单独验证，
     不在本次交付范围。附加文件夹在本地工作区下可用；SSH 工作区不支持（会在切到远端时清空）。
-  - 单测：`apps/desktop/test/workspaceFolders.test.ts`（往返解析、id 稳定性、去重）。
+  - 单测两层：
+    1. `apps/desktop/test/workspaceFolders.test.ts` —— 纯逻辑（往返解析、id 稳定性、去重）。
+    2. `apps/desktop/test/workspaceMultiRoot.test.ts` —— **跑真实文件操作**（`WorkspaceService`
+       不依赖 electron，可在 vitest 里直接实例化；配置目录用临时家目录接住）。
+       覆盖的是最容易出错的「接线」而不是纯逻辑：写入有没有真的落到附加文件夹的磁盘上、
+       读回/exists/mkdir/remove 有没有按文件夹路由、路径回给渲染层时前缀有没有丢、
+       跨文件夹改名是否明确报错、文件夹被移除后是否报错而非退回主根、持久化与重开恢复。
+       没有这层，「纯逻辑全绿」和「功能真的能用」之间还是隔着一层。
 
-> **多根工作区待用户端到端验证**（沙箱内起不了 Electron，只过了单测与构建）：
+> **多根工作区待用户端到端验证**（沙箱内起不了 Electron，GUI 部分只过了构建）：
+> 文件操作这一层已由 `workspaceMultiRoot.test.ts` 在真实 fs 上覆盖；剩下的是**界面**：
 > 打开工作区 → 文件树空白处右键 → 「添加文件夹到工作区...」选中另一个目录 →
 > 展开它、打开并保存一个文件；重开应用后应仍在。右键该根节点可「从工作区中移除」，
 > 磁盘文件不受影响。已知未覆盖：Git / 终端 / 索引 / 全局搜索仍只看主根。
