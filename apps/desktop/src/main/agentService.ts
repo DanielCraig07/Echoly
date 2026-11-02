@@ -26,6 +26,7 @@ import { appendRunTrace, type WindowGetter } from './diffStore';
 import type { WindowRegistry } from './windowRegistry';
 import type { McpService } from './mcpService';
 import { RulesService } from './rulesService';
+import { collectDirectoryRules } from './directoryRules';
 import { createWebToolHost } from './webService';
 
 interface PendingConfirm {
@@ -363,6 +364,32 @@ export class AgentService {
 
         const rulesRes = await this.rulesService.getRules(workspaceRoot);
         let rulesText = rulesRes.content || undefined;
+
+        // 目录级规则：从工作区根逐级收集，与根目录的单文件规则并存。
+        //
+        // payload 里没有「当前聚焦文件」这个字段，只有 openFiles（按标签页顺序）。
+        // 与其赌哪一个是焦点文件，不如**把所有打开的文件都作为上下文**收集一遍再按路径去重 ——
+        // 多收几条同目录规则的成本可以忽略，而赌错焦点会让规则时有时无，那种不稳定更难排查。
+        try {
+          const openPaths = (payload.openFiles ?? []).map((file) => file.path);
+          const seenRules = new Set<string>();
+          const dirRules = [];
+          for (const openPath of openPaths.length > 0 ? openPaths : [undefined]) {
+            for (const rule of await collectDirectoryRules(workspaceRoot, openPath)) {
+              if (seenRules.has(rule.relPath)) continue;
+              seenRules.add(rule.relPath);
+              dirRules.push(rule);
+            }
+          }
+          if (dirRules.length > 0) {
+            const dirText =
+              `【目录级规则 (${dirRules.length} 条)】\n` +
+              dirRules.map((rule) => `--- ${rule.relPath} ---\n${rule.body}`).join('\n\n');
+            rulesText = rulesText ? `${rulesText}\n\n${dirText}` : dirText;
+          }
+        } catch {
+          // 规则收集失败不应阻断本轮对话：规则是增强，不是前置条件
+        }
 
         try {
           const memoryContent = await workspace.readProjectConfigFile('memory.json');
