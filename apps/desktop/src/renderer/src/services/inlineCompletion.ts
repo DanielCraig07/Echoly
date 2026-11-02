@@ -5,10 +5,28 @@ import {
   recordCompletionOutcome,
   recordCompletionRequest,
 } from './completionMetrics';
+import { attachRecentEditRecorder, getRecentEdits } from './recentEdits';
 
 let isRegistered = false;
 let completionTimeout: ReturnType<typeof setTimeout> | null = null;
 let isGhostActive = false;
+let editRecorderDisposable: monaco.IDisposable | null = null;
+
+/**
+ * 给所有模型挂上「最近编辑」记录。
+ *
+ * 除了已存在的模型，还要接住以后新建的（用户随时会开新文件）——
+ * 漏掉新建的那个，表现就是「新开的文件里补全明显变笨」，很难联想到是这个原因。
+ */
+function installRecentEditRecorder(): void {
+  if (editRecorderDisposable) return;
+  const owned: monaco.IDisposable[] = [];
+  for (const model of monaco.editor.getModels()) {
+    owned.push(attachRecentEditRecorder(model));
+  }
+  owned.push(monaco.editor.onDidCreateModel((model) => attachRecentEditRecorder(model)));
+  editRecorderDisposable = { dispose: () => owned.forEach((d) => d.dispose()) };
+}
 
 /**
  * 最近一次给出的建议，用来反推「用户接受了没有」。
@@ -81,6 +99,7 @@ function notifyGhostState(active: boolean) {
 export function registerAiInlineCompletions(): monaco.IDisposable | null {
   if (isRegistered) return null;
   isRegistered = true;
+  installRecentEditRecorder();
 
   try {
     return monaco.languages.registerInlineCompletionsProvider('*', {
@@ -124,7 +143,12 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
         const startedAt = Date.now();
         recordCompletionRequest();
         try {
-          const res = await window.ide?.completeCode?.({ prefix, suffix, language });
+          const res = await window.ide?.completeCode?.({
+            prefix,
+            suffix,
+            language,
+            recentEdits: getRecentEdits(model.uri.toString()),
+          });
           const latency = Date.now() - startedAt;
 
           if (token.isCancellationRequested) {

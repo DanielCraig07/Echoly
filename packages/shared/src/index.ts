@@ -1585,6 +1585,8 @@ export interface IpcApi {
     prefix: string;
     suffix: string;
     language?: string;
+    /** 最近的编辑（从旧到新），让补全知道用户「刚在改什么」而不仅是「停在哪」。 */
+    recentEdits?: { inserted: string; deleted: string }[];
   }) => Promise<{ completion: string }>;
   listSkills: () => Promise<SkillInfo[]>;
   openUserSkillsDir: () => Promise<string>;

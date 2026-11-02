@@ -15,11 +15,44 @@ export interface CompletionPromptInput {
   prefix: string;
   suffix: string;
   language?: string;
+  /** 最近的编辑，从旧到新。用来传达「我正在做什么」，而不只是「我停在哪里」。 */
+  recentEdits?: readonly { inserted: string; deleted: string }[];
 }
 
 /** 送进模型的前后缀长度上限。与调用方原来的取值一致。 */
 const MAX_PREFIX_CHARS = 2000;
 const MAX_SUFFIX_CHARS = 1000;
+
+/** 单侧编辑文本进提示词的长度上限，比渲染层记录的上限更紧。 */
+const MAX_EDIT_SIDE_CHARS = 160;
+
+/** 把一段编辑文本压成单行短句：上下文要的是意图，不是缩进细节。 */
+function condenseEditSide(text: string): string {
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= MAX_EDIT_SIDE_CHARS) return collapsed;
+  return `${collapsed.slice(0, MAX_EDIT_SIDE_CHARS)}…`;
+}
+
+/**
+ * 把最近编辑渲染成提示词里的一小段。
+ *
+ * 用「删了什么/加了什么」的 diff 形式而不是整段代码：整段代码会把当前切片淹掉，
+ * 而模型真正需要的是「他刚把 X 改成了 Y」这个动量。
+ */
+export function formatRecentEdits(
+  edits: readonly { inserted: string; deleted: string }[] | undefined,
+): string {
+  if (!edits || edits.length === 0) return '';
+  const lines = edits.map((edit, index) => {
+    const removed = condenseEditSide(edit.deleted);
+    const added = condenseEditSide(edit.inserted);
+    const parts: string[] = [];
+    if (removed) parts.push(`删除「${removed}」`);
+    if (added) parts.push(`插入「${added}」`);
+    return `${index + 1}. ${parts.join('，')}`;
+  });
+  return `\n用户最近的编辑（从旧到新，用来判断当前意图）：\n${lines.join('\n')}\n`;
+}
 
 export function buildCompletionPrompt(input: CompletionPromptInput): string {
   const language = input.language?.trim();
@@ -33,6 +66,7 @@ export function buildCompletionPrompt(input: CompletionPromptInput): string {
 - 无需补全时返回 {"insertText": ""}。
 - JSON 字符串里的换行写成 \\n，双引号写成 \\"。
 ${language ? `- 当前语言：${language}。\n` : ''}
+${formatRecentEdits(input.recentEdits)}
 前缀代码（光标之前）：
 ${input.prefix.slice(-MAX_PREFIX_CHARS)}
 

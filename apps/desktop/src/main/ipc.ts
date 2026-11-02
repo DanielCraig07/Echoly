@@ -486,6 +486,7 @@ export function registerIpc(deps: {
         prefix: string;
         suffix: string;
         language?: string;
+        recentEdits?: { inserted: string; deleted: string }[];
       },
     ) => {
       const client = getActiveLlmClient(settings);
@@ -493,6 +494,7 @@ export function registerIpc(deps: {
         prefix: payload.prefix,
         suffix: payload.suffix,
         language: payload.language,
+        recentEdits: payload.recentEdits,
       });
       const resp = await client.chat({
         messages: [{ role: 'user', content: prompt }],

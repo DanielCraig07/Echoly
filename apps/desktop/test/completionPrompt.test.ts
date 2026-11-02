@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildCompletionPrompt,
   extractFirstJsonObject,
+  formatRecentEdits,
   parseCompletionResponse,
   stripCodeFences,
 } from '../src/main/completionPrompt';
@@ -32,6 +33,19 @@ describe('buildCompletionPrompt', () => {
     expect(buildCompletionPrompt({ prefix: 'a', suffix: 'b' })).not.toContain('当前语言');
   });
 
+  it('带上最近编辑时写进提示词，没有时不出现该段落', () => {
+    const withEdits = buildCompletionPrompt({
+      prefix: 'a',
+      suffix: 'b',
+      recentEdits: [{ inserted: 'accountId', deleted: 'userId' }],
+    });
+    expect(withEdits).toContain('用户最近的编辑');
+    expect(withEdits).toContain('userId');
+
+    const without = buildCompletionPrompt({ prefix: 'a', suffix: 'b' });
+    expect(without).not.toContain('用户最近的编辑');
+  });
+
   it('超长前后缀按上限截断（保留靠近光标的部分）', () => {
     const prefix = 'x'.repeat(5000) + 'NEAR_CURSOR';
     const suffix = 'SUFFIX_HEAD' + 'y'.repeat(5000);
@@ -39,6 +53,36 @@ describe('buildCompletionPrompt', () => {
     expect(prompt).toContain('NEAR_CURSOR'); // 光标前的内容必须保留
     expect(prompt).toContain('SUFFIX_HEAD'); // 光标后的开头必须保留
     expect(prompt).not.toContain('x'.repeat(3000)); // 远端前缀被截掉
+  });
+});
+
+describe('formatRecentEdits', () => {
+  it('没有编辑时返回空串，不在提示词里留一个空标题', () => {
+    expect(formatRecentEdits(undefined)).toBe('');
+    expect(formatRecentEdits([])).toBe('');
+  });
+
+  it('用「删除/插入」的 diff 形式表达，而不是整段代码', () => {
+    const text = formatRecentEdits([{ inserted: 'accountId', deleted: 'userId' }]);
+    expect(text).toContain('删除「userId」');
+    expect(text).toContain('插入「accountId」');
+    expect(text).toContain('从旧到新');
+  });
+
+  it('纯插入不出现空的删除项', () => {
+    expect(formatRecentEdits([{ inserted: 'foo', deleted: '' }])).toBe(
+      '\n用户最近的编辑（从旧到新，用来判断当前意图）：\n1. 插入「foo」\n',
+    );
+  });
+
+  it('空白与换行被压成单行，超长截断', () => {
+    const text = formatRecentEdits([{ inserted: 'if (a) {\n  return 1;\n}', deleted: '' }]);
+    expect(text).toContain('if (a) { return 1; }');
+    expect(text).not.toContain('\n  return');
+
+    const long = formatRecentEdits([{ inserted: 'q'.repeat(500), deleted: '' }]);
+    expect(long).toContain('…');
+    expect(long.length).toBeLessThan(400);
   });
 });
 

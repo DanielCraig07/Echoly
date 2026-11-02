@@ -290,8 +290,12 @@ const api: IpcApi = {
     temperature?: number;
     maxTokens?: number;
   }) => ipcRenderer.invoke('ai:quickPrompt', payload),
-  completeCode: (payload: { prefix: string; suffix: string; language?: string }) =>
-    ipcRenderer.invoke('ai:completeCode', payload),
+  completeCode: (payload: {
+    prefix: string;
+    suffix: string;
+    language?: string;
+    recentEdits?: { inserted: string; deleted: string }[];
+  }) => ipcRenderer.invoke('ai:completeCode', payload),
   rulesGet: (workspaceRoot?: string) => ipcRenderer.invoke('rules:get', workspaceRoot),
   rulesSave: (content: string, workspaceRoot?: string) =>
     ipcRenderer.invoke('rules:save', content, workspaceRoot),
