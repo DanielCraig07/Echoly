@@ -129,17 +129,34 @@
 
 ### B1 语义索引（改走本地模型）
 
-- [ ] 扩展 `packages/llm/src/probe.ts`：探测 OpenAI 兼容 embedding 端点（保留，供未来网关开放时启用）
+- [x] 扩展 `packages/llm/src/probe.ts`：探测 OpenAI 兼容 embedding 端点（+7 单测）
+  - 逐个试候选模型名，返回「试过哪些、各自为什么失败 + 向量维度」，
+    好区分「网关没开通道」（503）与「模型名不在白名单」；`200` 但响应无向量也判失败。
+  - 应用侧暂不使用该端点（见下条：网关实测无 embedding 通道），保留探测是为网关开放后直接切换。
 - [x] `packages/tools/src/retrieval.ts`：余弦相似度 + 向量粗排 topK + RRF 融合（+14 单测）
   - 关键约束：**维度不一致时抛错/返回空，绝不静默返回 0**。换模型、下载不完整、缓存残留旧向量
     都会造成维度不匹配；静默返回 0 会让所有块相似度相同、排序退化成文件顺序 ——
     搜索「看起来在工作」但结果全无关，且没有任何报错可查。
 - [x] `packages/tools/src/embeddingSource.ts`：模型来源解析（本地目录优先 → 按需下载 → 不可用回落 BM25），
       支持 `ECHOLY_EMBEDDING_MODEL_DIR` / `ECHOLY_EMBEDDING_MODEL_ID` / `ECHOLY_EMBEDDING_DISABLED` 覆盖（+8 单测）
-- [ ] `@huggingface/transformers` 接入：按上面解析出的来源加载本地模型或按需下载 + 缓存
-- [ ] 向量粗排 topK 50 → BM25 精排 → RRF 融合
-- [ ] chunk 内容 hash 缓存 + 文件级 mtime/size 增量
-- [ ] 模型不可用时完全回落 BM25（绝不静默返回全 0 向量）
+- [x] `@huggingface/transformers` 接入：按上面解析出的来源加载本地模型或按需下载 + 缓存
+  - 装配层 `packages/llm/src/localEmbedding.ts`，模型加载通过 `ExtractorFactory` 注入（+7 单测）；
+    **惰性**：光 import 不会把 onnxruntime 拖起来，首次搜索才真的加载。
+- [x] `packages/llm/src/embedding.ts`：内容指纹缓存 + 批内去重 + 按批送模型 + 维度校验（+11 单测）
+- [x] `packages/tools/src/hybridSearch.ts`：双路召回编排（+9 单测）
+  - 向量粗排 topK 50 → BM25 精排 → RRF 融合；三条件缺一即回落纯 BM25 并带可读原因
+    （无查询向量 / 索引无向量 / 维度不一致）。
+- [x] 接入 `CodebaseService`：块级向量随索引落盘（Float32 → base64，约 2.7KB/块），
+      重启直接复用不重算；换模型按 `vectorKey` 整批作废旧向量；`codebase_search` 走双路召回（+5 单测）
+- [x] 模型不可用时完全回落 BM25（绝不静默返回全 0 向量）；降级原因进 `getStatus().embedding`，
+      检索面板显示语义向量计数
+
+> **待用户端到端验证**：沙箱内无法启动 Electron，真实 onnx 推理没跑通端到端。
+> 单测覆盖的是「注入假模型 + 真实 `EmbeddingClient` / 融合层」。
+> 请在真机上确认一次：打开工作区 → 搜索任意关键词（这会触发后台向量化）→
+> 检索面板的「语义向量 N/M 块」应增长到 N=M；然后问一个词面对不上的问题
+> （例如代码里叫 `verifySession`，你去搜「在哪里刷新 token」），应当能搜到那一块。
+> 若 N 长期为 0，把鼠标悬停在计数上看降级原因（模型未下载 / 加载失败 / 已通过环境变量关闭）。
 
 ### B2 补全能力
 
