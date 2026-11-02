@@ -844,6 +844,8 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'app.tabSourceControl': { zh: '版本控制', en: 'Source Control' },
   'app.tabMaven': { zh: 'Maven 管理', en: 'Maven' },
   'app.tabDatabase': { zh: '轻量数据库', en: 'Database' },
+  'app.tabExtensions': { zh: '扩展市场', en: 'Extensions' },
+  'app.addFolderToWorkspace': { zh: '添加文件夹到工作区...', en: 'Add Folder to Workspace...' },
   'app.locateCurrentFile': { zh: '定位当前文件 ({name})', en: 'Locate current file ({name})' },
   'app.locateCurrentFilePlain': { zh: '定位到当前打开的文件', en: 'Locate the current file' },
   'app.noOpenFile': { zh: '当前没有打开的文件', en: 'No file is currently open' },

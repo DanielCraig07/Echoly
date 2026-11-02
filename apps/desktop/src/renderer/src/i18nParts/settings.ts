@@ -337,12 +337,12 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
     en: 'One per line, e.g. wiki.corp.local',
   },
   'settings.general.keymap': {
-    zh: '快捷键操作习惯 (Keymap Preset)',
-    en: 'Keymap Preset',
+    zh: '快捷键方案（VS Code / IntelliJ / Vim）',
+    en: 'Keymap Preset (VS Code / IntelliJ / Vim)',
   },
   'settings.general.keymapDesc': {
-    zh: '选择您习惯的 IDE 键位方案。两套方案共用大部分快捷键（双击 Shift 全局搜索、Cmd/Ctrl+Alt+L 代码格式化、Alt+F12 切换终端等），差异在「打开文件」：VS Code 用 ⌘P，IntelliJ 用 ⌘⇧O。',
-    en: 'Pick the IDE keymap you are used to. Both presets share most shortcuts (double Shift for global search, Cmd/Ctrl+Alt+L to format, Alt+F12 for the terminal); they differ on opening files: VS Code uses ⌘P, IntelliJ uses ⌘⇧O.',
+    zh: '选择您习惯的 IDE 键位方案。VS Code 与 IntelliJ 共用大部分快捷键（双击 Shift 全局搜索、Cmd/Ctrl+Alt+L 代码格式化、Alt+F12 切换终端等），差异在「打开文件」：VS Code 用 ⌘P，IntelliJ 用 ⌘⇧O。选 **Vim** 则编辑器进入 Vim 键位（normal / insert / visual，右下角显示当前模式，Esc 回 normal）。',
+    en: 'Pick the IDE keymap you are used to. VS Code and IntelliJ share most shortcuts (double Shift for global search, Cmd/Ctrl+Alt+L to format, Alt+F12 for the terminal); they differ on opening files: VS Code uses ⌘P, IntelliJ uses ⌘⇧O. Choosing **Vim** switches the editor to Vim keybindings (normal / insert / visual, with the current mode shown bottom-right; Esc returns to normal).',
   },
   'settings.general.keymapVscode': {
     zh: 'VS Code 风格 (默认 - ⌘P 快速文件，⌘⇧P 命令面板)',

@@ -4786,6 +4786,28 @@ export function App() {
                     background: 'var(--border, rgba(255, 255, 255, 0.12))',
                   }}
                 />
+                {/* 扩展市场。放在分隔线之后：它与 Maven/数据库同属「工具箱」，
+                    而不是「文件/搜索/Git」那种基础导航。 */}
+                <button
+                  type="button"
+                  className={extensionPanelOpen ? 'active' : ''}
+                  onClick={() => setExtensionPanelOpen(true)}
+                  title={t('app.tabExtensions')}
+                  style={{ width: 28, height: 28, borderRadius: 6 }}
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M14 7h3a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v2a1 1 0 0 1-1 1h-3a2 2 0 0 1-4 0H7a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4V8a1 1 0 0 1 1-1h3a2 2 0 0 1 4 0z" />
+                  </svg>
+                </button>
                 {isMavenProject && (
                   <button
                     type="button"
@@ -4994,7 +5016,37 @@ export function App() {
                         </svg>
                       </button>
 
-                      {/* 4. 刷新文件树 */}
+                      {/* 4. 添加文件夹到工作区（多根） */}
+                      <button
+                        type="button"
+                        className="panel-action-btn"
+                        title={t('app.addFolderToWorkspace')}
+                        onClick={() => {
+                          void (async () => {
+                            const folders = await window.ide.addWorkspaceFolders();
+                            if (!folders) return;
+                            setTreeRefreshKey((k) => k + 1);
+                            showToast(t('app.addFolderToWorkspace'), undefined, 'success');
+                          })();
+                        }}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M3 7a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                          <line x1="12" y1="11" x2="12" y2="17" />
+                          <line x1="9" y1="14" x2="15" y2="14" />
+                        </svg>
+                      </button>
+
+                      {/* 5. 刷新文件树 */}
                       <button
                         type="button"
                         className="panel-action-btn"
@@ -5022,7 +5074,7 @@ export function App() {
                         </svg>
                       </button>
 
-                      {/* 5. 全部折叠 / 展开 */}
+                      {/* 6. 全部折叠 / 展开 */}
                       <button
                         type="button"
                         className="panel-action-btn"
