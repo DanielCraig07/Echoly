@@ -1587,7 +1587,11 @@ export interface IpcApi {
     language?: string;
     /** 最近的编辑（从旧到新），让补全知道用户「刚在改什么」而不仅是「停在哪」。 */
     recentEdits?: { inserted: string; deleted: string }[];
+    /** 本次请求的可寻址 id，配合 `cancelCompletion` 告诉主进程这次结果不用要了。 */
+    requestId?: string;
   }) => Promise<{ completion: string }>;
+  /** 取消一次尚未返回的补全请求，避免为一个已经没人要的结果白算一遍。 */
+  cancelCompletion: (requestId: string) => Promise<{ ok: boolean }>;
   listSkills: () => Promise<SkillInfo[]>;
   openUserSkillsDir: () => Promise<string>;
   /** 读工作区与用户目录下的自定义命令（`.echoly/commands` 等）。 */

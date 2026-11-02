@@ -22,6 +22,7 @@ import type {
 } from '@deepseek-ide/shared';
 import type { SettingsStore } from './settings';
 import { buildCompletionPrompt, parseCompletionResponse } from './completionPrompt';
+import { CompletionService } from './completionService';
 import type { SessionStore } from './sessions';
 import type { AgentService } from './agentService';
 import type { TerminalService } from './terminal';
@@ -478,6 +479,20 @@ export function registerIpc(deps: {
       }),
   );
 
+  const completions = new CompletionService({
+    run: async (request, signal) => {
+      const client = getActiveLlmClient(settings);
+      const prompt = buildCompletionPrompt(request);
+      const resp = await client.chat({
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        signal,
+      });
+      const parsed = parseCompletionResponse(resp.content || '');
+      return parsed?.insertText ?? '';
+    },
+  });
+
   ipcMain.handle(
     'ai:completeCode',
     async (
@@ -487,28 +502,35 @@ export function registerIpc(deps: {
         suffix: string;
         language?: string;
         recentEdits?: { inserted: string; deleted: string }[];
+        requestId?: string;
       },
     ) => {
-      const client = getActiveLlmClient(settings);
-      const prompt = buildCompletionPrompt({
-        prefix: payload.prefix,
-        suffix: payload.suffix,
-        language: payload.language,
-        recentEdits: payload.recentEdits,
-      });
-      const resp = await client.chat({
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.1,
-      });
-      const parsed = parseCompletionResponse(resp.content || '');
-      if (!parsed || !parsed.insertText) {
-        // 空建议与解析失败在这里合并成一个结果：调用方都只该显示「没有建议」。
-        // 但分开记一条日志，出问题时才分得清是「模型说不用补」还是「响应畸形」。
+      // 每次请求都要有一个可寻址的 id，否则用户继续打字时无从告诉主进程「这次不要了」。
+      // 没有 id 就退化成一次性随机值：语义上等于「不可取消」，行为与改造前一致。
+      const callerId = payload.requestId || `anon-${Math.random().toString(36).slice(2)}`;
+      try {
+        const { completion } = await completions.get(
+          {
+            prefix: payload.prefix,
+            suffix: payload.suffix,
+            language: payload.language,
+            recentEdits: payload.recentEdits,
+          },
+          callerId,
+        );
+        return { completion };
+      } catch {
+        // 被取消或网络失败，对渲染层都只是「这次没有建议」——
+        // 取消与否渲染层自己知道，不需要靠这里区分。
         return { completion: '' };
       }
-      return { completion: parsed.insertText };
     },
   );
+
+  ipcMain.handle('ai:cancelCompletion', (_e, requestId: string) => {
+    completions.cancel(requestId);
+    return { ok: true };
+  });
 
   ipcMain.handle('diff:accept', (e, id: string) =>
     run(e, () => registry.current().diffs.accept(id)),

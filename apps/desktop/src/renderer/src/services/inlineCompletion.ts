@@ -13,6 +13,9 @@ let isGhostActive = false;
 let editRecorderDisposable: monaco.IDisposable | null = null;
 let acceptNextLineDisposable: monaco.IDisposable | null = null;
 
+/** 补全请求的自增 id。主进程靠它认识「这次请求是哪一个」，才能按需中止。 */
+let completionRequestSeq = 0;
+
 /**
  * 给「逐行接受」绑一个键。
  *
@@ -164,12 +167,20 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
         const language = model.getLanguageId();
         const startedAt = Date.now();
         recordCompletionRequest();
+        const requestId = `cc-${(completionRequestSeq += 1)}`;
+        // 用户继续打字时 Monaco 会取消这个 token。此时主进程那边可能还在跑，
+        // 不告诉它一声，那一轮算力就白花了 —— 而且它占着并发闸门，
+        // 会让**真正需要**的那次请求排队等它。
+        const cancelSubscription = token.onCancellationRequested(() => {
+          void window.ide?.cancelCompletion?.(requestId);
+        });
         try {
           const res = await window.ide?.completeCode?.({
             prefix,
             suffix,
             language,
             recentEdits: getRecentEdits(model.uri.toString()),
+            requestId,
           });
           const latency = Date.now() - startedAt;
 
@@ -217,6 +228,8 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
           recordCompletionOutcome('failed', Date.now() - startedAt);
           notifyGhostState(false);
           return { items: [] };
+        } finally {
+          cancelSubscription.dispose();
         }
       },
       freeInlineCompletions: () => {

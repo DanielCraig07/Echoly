@@ -295,7 +295,10 @@ const api: IpcApi = {
     suffix: string;
     language?: string;
     recentEdits?: { inserted: string; deleted: string }[];
+    requestId?: string;
   }) => ipcRenderer.invoke('ai:completeCode', payload),
+  cancelCompletion: (requestId: string) =>
+    ipcRenderer.invoke('ai:cancelCompletion', requestId) as Promise<{ ok: boolean }>,
   rulesGet: (workspaceRoot?: string) => ipcRenderer.invoke('rules:get', workspaceRoot),
   rulesSave: (content: string, workspaceRoot?: string) =>
     ipcRenderer.invoke('rules:save', content, workspaceRoot),
