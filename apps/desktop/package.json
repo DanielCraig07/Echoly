@@ -34,6 +34,7 @@
     "katex": "^0.16.47",
     "mermaid": "^11.17.2",
     "monaco-editor": "^0.52.2",
+    "monaco-vim": "^0.4.4",
     "mysql2": "^3.24.4",
     "node-pty": "^1.1.0",
     "pg": "^8.23.0",
@@ -48,6 +49,8 @@
     "vscode-jsonrpc": "^9.0.2"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.8",
+    "@types/prismjs": "^1.26.6",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
     "@types/ssh2": "^1.15.5",
@@ -56,9 +59,7 @@
     "electron-builder": "^25.1.8",
     "electron-vite": "^3.0.0",
     "typescript": "^5.8.2",
-    "vite": "^6.2.1",
-    "@types/katex": "^0.16.8",
-    "@types/prismjs": "^1.26.6"
+    "vite": "^6.2.1"
   },
   "build": {
     "appId": "com.echoly.ide",

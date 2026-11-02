@@ -1738,12 +1738,13 @@ export function SettingsModal({
                       onChange={(e) =>
                         setSettings({
                           ...settings,
-                          keymapPreset: e.target.value as 'vscode' | 'intellij',
+                          keymapPreset: e.target.value as 'vscode' | 'intellij' | 'vim',
                         })
                       }
                     >
                       <option value="vscode">{t('settings.general.keymapVscode')}</option>
                       <option value="intellij">{t('settings.general.keymapIntellij')}</option>
+                      <option value="vim">{t('settings.general.keymapVim')}</option>
                     </select>
                   </div>
 

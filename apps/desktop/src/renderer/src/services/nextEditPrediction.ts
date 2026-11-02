@@ -80,6 +80,12 @@ export function formatProposalHint(edit: PredictedCodeEdit): string {
 export interface NextEditPredictionDeps {
   editor: Monaco.editor.IStandaloneCodeEditor;
   monaco: typeof Monaco;
+  /**
+   * 额外的上下文键名（例如 `echolyVimMode`）。给了就把 Esc 的生效条件收窄成
+   * 「建议可见且不在 vim 模式」—— 在 vim 里 Esc 是回 normal 模式，
+   * 被我们抢掉的话用户会以为 vim 坏了。
+   */
+  vimContextKey?: string;
   request: (payload: {
     context: string;
     firstLine: number;
@@ -226,7 +232,13 @@ export function registerNextEditPrediction(deps: NextEditPredictionDeps): { disp
     () => clearProposal(),
     'echolyNextEditVisible',
   );
-  editor.addCommand(monaco.KeyCode.Escape, () => clearProposal(), 'echolyNextEditVisible');
+  // Esc 的条件在 vim 模式下要再加一个否定项：那边 Esc 是「回 normal 模式」，
+  // 被这条规则抢掉会让用户以为 vim 坏了。两个条件都由 Monaco 的上下文键求值，
+  // 所以拼接表达式是安全的（不是字符串拼接用户输入）。
+  const escapeWhen = deps.vimContextKey
+    ? `echolyNextEditVisible && !${deps.vimContextKey}`
+    : 'echolyNextEditVisible';
+  editor.addCommand(monaco.KeyCode.Escape, () => clearProposal(), escapeWhen);
 
   schedule();
 

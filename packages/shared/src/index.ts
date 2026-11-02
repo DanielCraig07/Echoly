@@ -250,7 +250,7 @@ export interface AppSettings {
   /** 终端回滚缓存最大行数上限 (Scrollback lines)，默认 10000 行。 */
   terminalScrollback?: number;
   /** 键盘快捷键预设模式 ('vscode' | 'intellij')，默认 'vscode'。 */
-  keymapPreset?: 'vscode' | 'intellij';
+  keymapPreset?: 'vscode' | 'intellij' | 'vim';
   /** 是否允许 Agent 联网（web_search / fetch_url）。默认 true。 */
   webEnabled?: boolean;
   /**

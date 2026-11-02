@@ -339,7 +339,7 @@ export function App() {
    * VS Code 里「打开文件」是 Cmd+P，IntelliJ 里是 Cmd+Shift+O（Cmd+P 另有含义）。
    * 其余被两者共享的快捷键（Alt+F12 终端、Cmd+Alt+L 格式化、双击 Shift 全局搜索）始终生效。
    */
-  const [keymapPreset, setKeymapPreset] = useState<'vscode' | 'intellij'>(
+  const [keymapPreset, setKeymapPreset] = useState<'vscode' | 'intellij' | 'vim'>(
     DEFAULT_SETTINGS.keymapPreset ?? 'vscode',
   );
   // 全局快捷键监听挂载在 [activePath] 的 effect 里（见 onKey），不能为键位方案再挂一次；
@@ -5420,6 +5420,7 @@ export function App() {
               breakpoints={breakpoints}
               onToggleBreakpoint={handleToggleBreakpoint}
               formatOnSave={formatOnSave}
+              keymapPreset={keymapPreset}
               onForceLoadLargeFile={handleForceLoadLargeFile}
               onOpenBrowserTab={openBrowserTab}
             />

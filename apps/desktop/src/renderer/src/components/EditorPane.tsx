@@ -39,6 +39,7 @@ import {
 } from '../services/symbolNavigation';
 import { registerAiInlineCompletions } from '../services/inlineCompletion';
 import { registerNextEditPrediction } from '../services/nextEditPrediction';
+import { attachVimMode, type VimModeHandle } from '../services/vimMode';
 import type { CursorPos } from '../workspaceSession';
 import * as monaco from 'monaco-editor';
 import { GitBlameAnnotationGutter } from './GitBlameAnnotationGutter';
@@ -205,6 +206,12 @@ interface Props {
   onToggleBreakpoint?: (path: string, line: number, condition?: string) => void;
   formatOnSave?: boolean;
   onForceLoadLargeFile?: (path: string) => void;
+  /**
+   * 键位预设。`vim` 时启用 monaco-vim（右下角显示 normal / insert 模式）。
+   * 由 App 传入而不是在这里自己读设置：设置页改完之后必须立刻生效，
+   * 自己读一次设置只会锁死在窗口启动时的那一份。
+   */
+  keymapPreset?: 'vscode' | 'intellij' | 'vim';
 }
 
 const COMMON_FIND_OPTIONS: MonacoEditor.IEditorFindOptions = {
@@ -330,6 +337,7 @@ export function EditorPane({
   onToggleBreakpoint: controlledOnToggleBreakpoint,
   formatOnSave = false,
   onForceLoadLargeFile,
+  keymapPreset = 'vscode',
   onUpdateTabMeta,
   onOpenBrowserTab,
 }: Props) {
@@ -359,6 +367,9 @@ export function EditorPane({
     (isBrowserPath(active.path) || active.language === 'browser' || active.virtual?.browser)
   );
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  /** vim 模式的上下文键与句柄：预设关掉时必须真的卸掉，否则键位会一直留着。 */
+  const vimContextKeyRef = useRef<{ set(value: boolean): void } | null>(null);
+  const vimHandleRef = useRef<VimModeHandle | null>(null);
   const splitEditorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const formatOnSaveRef = useRef(formatOnSave);
   formatOnSaveRef.current = formatOnSave;
@@ -1337,6 +1348,39 @@ export function EditorPane({
   const [gitInlineDiffLine, setGitInlineDiffLine] = useState<number | null>(null);
   const [editorInstance, setEditorInstance] = useState<MonacoEditor.IStandaloneCodeEditor | null>(
     null,
+  );
+
+  /**
+   * vim 键位的挂载/卸载。
+   *
+   * 用 effect 而不是在 `onMount` 里一次性装上：设置页切到 vim（或切回去）之后
+   * 必须立刻生效，而 `onMount` 只跑一次。`editorInstance` 是 onMount 里 setState 出来的，
+   * 所以这里能拿到同一个编辑器实例。
+   */
+  useEffect(() => {
+    const handle = vimHandleRef.current;
+    const key = vimContextKeyRef.current;
+    if (keymapPreset !== 'vim') {
+      handle?.dispose();
+      vimHandleRef.current = null;
+      key?.set(false);
+      return;
+    }
+    const dom = editorInstance?.getDomNode();
+    if (!editorInstance || !dom) return;
+    handle?.dispose();
+    const next = attachVimMode(editorInstance, dom);
+    vimHandleRef.current = next;
+    // 只有真的挂上了才置位：初始化失败时 Esc 应当仍然归「忽略建议」那条规则。
+    key?.set(next !== null);
+  }, [editorInstance, keymapPreset]);
+
+  useEffect(
+    () => () => {
+      vimHandleRef.current?.dispose();
+      vimHandleRef.current = null;
+    },
+    [],
   );
   // 数据库连接类型缓存：db:// 虚拟标签只带 connectionId，需要它来决定标识符引号与库名限定
   const [dbConnections, setDbConnections] = useState<DbConnectionView[]>([]);
@@ -6543,9 +6587,16 @@ export function EditorPane({
                     setEditorInstance(ed);
                     registerAiInlineCompletions();
                     if (monaco) {
+                      // vim 模式下 Esc 要「回 normal」，不能被「忽略下一步编辑建议」抢走。
+                      // 用上下文键把这条互斥关系交给 Monaco 求值，而不是靠注册顺序碰运气。
+                      vimContextKeyRef.current = ed.createContextKey<boolean>(
+                        'echolyVimMode',
+                        false,
+                      );
                       registerNextEditPrediction({
                         editor: ed,
                         monaco,
+                        vimContextKey: 'echolyVimMode',
                         request: (payload) =>
                           window.ide?.predictNextEdit?.(payload) ?? Promise.resolve({ edit: null }),
                       });

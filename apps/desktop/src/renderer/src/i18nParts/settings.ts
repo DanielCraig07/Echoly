@@ -352,6 +352,10 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
     zh: 'IntelliJ IDEA 风格 (双击 Shift 全局搜索，⌘⌥L 格式化)',
     en: 'IntelliJ IDEA style (double Shift global search, ⌘⌥L format)',
   },
+  'settings.general.keymapVim': {
+    zh: 'Vim 键位 (normal / insert / visual，右下角显示当前模式)',
+    en: 'Vim keybindings (normal / insert / visual, mode shown bottom-right)',
+  },
   'settings.general.autosaveFull': {
     zh: '代码编辑自动保存到磁盘 (编辑停止约 0.8 秒后写入)',
     en: 'Auto-save edits to disk (written ~0.8s after typing stops)',
