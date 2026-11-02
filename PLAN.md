@@ -53,7 +53,8 @@
 
 ### A4 Review 面板
 
-- [ ] `components/ReviewPanel.tsx`：按文件分组 + 逐 hunk 接受/拒绝 + 侧边 diff
+- [x] `components/ReviewPanel.tsx`：按文件分组的审阅面板（整组/逐条接受拒绝、串行写盘、Esc 关闭、复用 useModalResize）
+- [ ] 接进 `App.tsx` 并绑定 `diffStore` 的 accept/reject/acceptAll；补逐 hunk 的 diff 预览
 - [x] `services/reviewGrouping.ts`：按文件聚合一轮改动（同文件多条合并、大小写/斜杠归一、首现次序）+8 单测
 - [ ] 与 Agent 会话绑定，每轮结束生成一个 review 批次
 - [ ] 键盘流：`Cmd+Shift+R` 打开、`J/K` 切文件、`Cmd+Enter` 全接受
