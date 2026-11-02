@@ -1337,6 +1337,95 @@ export async function probeLlm(options: ProbeLlmOptions = {}): Promise<{
     };
   }
 }
+/**
+ * 探测 OpenAI 兼容的 embedding 端点。
+ *
+ * 存在的意义是**把「网关有没有开 embedding」这件事问清楚**，而不是拿一句
+ * 「连接失败」盖过去。内网网关实测就是「对话通道开着、`/v1/embeddings` 一律 503」，
+ * 而这两件事的应对完全不同：前者要联系管理员，后者只能改用本地模型。
+ *
+ * 逐个试多个候选模型名，而不是猜一个：网关常只放行白名单里的某几个模型，
+ * 一次探测返回「试过哪些、各自为什么失败」比返回一个布尔值有用得多。
+ * 当前应用侧不使用这个端点（语义检索走本地模型），保留它是为网关开放后直接切换。
+ */
+export const DEFAULT_EMBEDDING_PROBE_MODELS = [
+  'text-embedding-3-small',
+  'text-embedding-ada-002',
+  'bge-m3',
+  'bge-large-zh-v1.5',
+] as const;
+
+export interface ProbeEmbeddingOptions {
+  baseUrl: string;
+  apiKey?: string;
+  fetchImpl?: typeof fetch;
+  /** 只试这一个模型；不给则依次试 `candidateModels`（或默认候选表）。 */
+  model?: string;
+  candidateModels?: readonly string[];
+}
+
+export interface ProbeEmbeddingResult {
+  ok: boolean;
+  detail: string;
+  /** 探测成功的模型名（ok 时给出） */
+  model?: string;
+  /** 向量维度。换模型会让维度变化，这正是上层要做维度校验的原因。 */
+  dimension?: number;
+  /** 每个候选模型的失败原因，便于区分「通道没开」与「模型名不对」 */
+  attempts: Array<{ model: string; error: string }>;
+}
+
+export async function probeEmbedding(
+  options: ProbeEmbeddingOptions,
+): Promise<ProbeEmbeddingResult> {
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const base = normalizeBaseUrl(options.baseUrl);
+  const candidates = options.model
+    ? [options.model]
+    : (options.candidateModels ?? DEFAULT_EMBEDDING_PROBE_MODELS);
+
+  const attempts: Array<{ model: string; error: string }> = [];
+
+  for (const model of candidates) {
+    try {
+      const res = await fetchImpl(`${base}/v1/embeddings`, {
+        method: 'POST',
+        headers: buildHeaders(options.apiKey),
+        body: JSON.stringify({ model, input: ['ping'] }),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        attempts.push({ model, error: formatLlmErrorMessage(res.status, text) });
+        continue;
+      }
+      const data = JSON.parse(text) as { data?: Array<{ embedding?: unknown }> };
+      const vector = data.data?.[0]?.embedding;
+      if (!Array.isArray(vector) || vector.length === 0) {
+        // 200 但没有向量：网关把请求转成了一个空壳响应。这种情况比 503 更隐蔽，
+        // 必须当成失败报出来，否则上层会「成功地」拿到一堆 undefined。
+        attempts.push({ model, error: '响应里没有向量（data[0].embedding 缺失或为空）' });
+        continue;
+      }
+      return {
+        ok: true,
+        detail: `连接成功；模型=${model}；维度=${vector.length}`,
+        model,
+        dimension: vector.length,
+        attempts,
+      };
+    } catch (err) {
+      attempts.push({ model, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  const tried = candidates.length ? candidates.join(', ') : '（无候选模型）';
+  return {
+    ok: false,
+    detail: `未找到可用的 embedding 模型，试过：${tried}`,
+    attempts,
+  };
+}
+
 export {
   EmbeddingClient,
   hashEmbeddingContent,
