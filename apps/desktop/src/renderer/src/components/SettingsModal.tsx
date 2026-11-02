@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   AppSettings,
@@ -20,6 +20,7 @@ import {
   APP_VERSION,
 } from '@deepseek-ide/shared';
 import { translateSegments, useI18n } from '../i18n';
+import { formatDocSourcesText, parseDocSourcesText } from '../services/docSources';
 import { EnvironmentSettingsSection } from './EnvironmentSettingsSection';
 import { useModalResize, ModalResizeHandle } from '../hooks/useModalResize';
 import echolyAppIcon from '../assets/echoly-icon.png';
@@ -93,6 +94,15 @@ export function SettingsModal({
     minHeight: 440,
   });
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  // 文档源：输入框文本单独存一份，不在每次击键时重新格式化 —— 用户正在输入的
+  // 半行地址不该被立刻规范化掉，否则光标位置会跳。
+  const [docSourcesText, setDocSourcesText] = useState('');
+  const [docSourceStatus, setDocSourceStatus] = useState<
+    { name: string; url: string; ok: boolean; entries: number; error?: string }[]
+  >([]);
+  const [checkingDocSources, setCheckingDocSources] = useState(false);
+  /** 本次「打开设置页」是否已经把外部配置灌进过输入框。见下方 effect 的说明。 */
+  const syncedDocSourcesRef = useRef<string | null>(null);
   const [probe, setProbe] = useState<string>('');
   const [probing, setProbing] = useState(false);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -476,6 +486,24 @@ export function SettingsModal({
     if (open && activeTab === 'mcp') void refreshMcpStatus();
   }, [open, activeTab]);
 
+  /**
+   * 打开设置页时把已保存的文档源灌进输入框。
+   *
+   * **只在打开那一次同步**（`syncedDocSourcesRef` 作哨兵）：之后 settings 的每次
+   * 变化都源自本输入框自己的 onChange，再回灌一次就会把用户正在输入的半行地址
+   * 规范化掉、光标也会跳走。
+   */
+  useEffect(() => {
+    if (!open) {
+      syncedDocSourcesRef.current = null;
+      return;
+    }
+    if (!settings || syncedDocSourcesRef.current !== null) return;
+    const serialized = formatDocSourcesText(settings.docSources);
+    syncedDocSourcesRef.current = serialized;
+    setDocSourcesText(serialized);
+  }, [open, settings]);
+
   if (!open || !settings) return null;
 
   async function save(): Promise<void> {
@@ -581,6 +609,26 @@ export function SettingsModal({
     cfg,
     status: mcpStatuses.find((s) => s.id === cfg.id),
   }));
+
+  /**
+   * 检查文档源。
+   *
+   * 先保存再检查：用户点了「检查」却没保存过的话，主进程读到的还是旧配置，
+   * 结果会与输入框里显示的内容对不上 —— 那种「明明填了却说没配」最难解释。
+   */
+  async function handleCheckDocSources(): Promise<void> {
+    if (!settings || checkingDocSources) return;
+    setCheckingDocSources(true);
+    try {
+      const next = await window.ide.saveSettings(settings);
+      setSettings(next);
+      setDocSourceStatus(await window.ide.docsStatus(true));
+    } catch {
+      setDocSourceStatus([]);
+    } finally {
+      setCheckingDocSources(false);
+    }
+  }
 
   async function checkUpdateNow(): Promise<void> {
     if (!settings || checking) return;
@@ -1794,6 +1842,76 @@ export function SettingsModal({
                       />
                       <span>{t('settings.general.blameInline')}</span>
                     </label>
+                  </div>
+
+                  {/* 隐私模式：不新增任何去向。声明写清楚「哪些会出去、哪些不会」——
+                      只给一个开关不说清楚，用户没法判断该不该开。 */}
+                  {/* 文档源：一行一条「名称|地址」。Agent 的 search_docs / read_doc
+                      用这些站点，read_doc 只放行这些站的同源地址。 */}
+                  <div className="setting-card" style={{ marginTop: 12 }}>
+                    <div className="setting-card-title">{t('settings.general.docSources')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      {t('settings.general.docSourcesDesc')}
+                    </div>
+                    <textarea
+                      style={{
+                        marginTop: 8,
+                        width: '100%',
+                        minHeight: 64,
+                        resize: 'vertical',
+                        padding: 8,
+                        fontSize: 'var(--ui-font-size, 12px)',
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text)',
+                        background: 'var(--bg-input)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 6,
+                        boxSizing: 'border-box',
+                      }}
+                      placeholder={'React 文档|https://react.dev\nVite 文档|https://vite.dev'}
+                      value={docSourcesText}
+                      onChange={(e) => {
+                        setDocSourcesText(e.target.value);
+                        setSettings({
+                          ...settings,
+                          docSources: parseDocSourcesText(e.target.value),
+                        });
+                      }}
+                    />
+                    <div
+                      style={{
+                        marginTop: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="panel-action-btn"
+                        disabled={checkingDocSources}
+                        onClick={() => void handleCheckDocSources()}
+                      >
+                        {checkingDocSources
+                          ? t('settings.general.docSourcesChecking')
+                          : t('settings.general.docSourcesCheck')}
+                      </button>
+                      {docSourceStatus.map((status) => (
+                        <span
+                          key={`${status.name}-${status.url}`}
+                          style={{ fontSize: 11, color: status.ok ? '#10b981' : '#f87171' }}
+                          title={status.error}
+                        >
+                          {status.ok
+                            ? t('settings.general.docSourceOk', {
+                                name: status.name,
+                                entries: status.entries,
+                              })
+                            : t('settings.general.docSourceFail', { name: status.name })}
+                        </span>
+                      ))}
+                    </div>
                   </div>
 
                   {/* 隐私模式：不新增任何去向。声明写清楚「哪些会出去、哪些不会」——

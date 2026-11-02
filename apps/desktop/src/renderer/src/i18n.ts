@@ -415,6 +415,10 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     zh: '要求联网检索（需在设置里开启联网，且未开启隐私模式）',
     en: 'Ask the agent to search the web (requires web access on and privacy mode off)',
   },
+  'chat.mentionDocsDesc': {
+    zh: '让 Agent 在你配置的文档源里检索（设置 → 文档源）',
+    en: 'Have the agent search your configured doc sources (Settings → Doc sources)',
+  },
   // 占位文案里「@ 引用上下文，/ 调用命令」是必须被用户看到的功能指引，
   // 中英文括号与顿号都不同，所以整句进字典
   'chat.placeholderAsk': {

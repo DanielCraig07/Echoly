@@ -28,6 +28,7 @@ import type { McpService } from './mcpService';
 import { RulesService } from './rulesService';
 import { collectDirectoryRules } from './directoryRules';
 import { formatRulesInjection } from './rulesInjection';
+import { createDocsToolHost } from './docsToolHost';
 import { createWebToolHost } from './webService';
 
 interface PendingConfirm {
@@ -452,6 +453,7 @@ export class AgentService {
               this.deps.settings.get().privacyMode !== true,
             allowedPrivateHosts: this.deps.settings.get().webAllowedHosts ?? [],
           }),
+          docs: createDocsToolHost(this.deps.settings.get()),
           // 编辑后自检：诊断来自「渲染层上报的 Monaco markers + 主进程 LSP 推送」的合并缓存。
           // 代码库检索走 searchCached 而不是 search：这个工具在工具循环里调用，
           // 在这里同步等一次冷启动全量索引会让模型看起来「卡住不动」。

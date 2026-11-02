@@ -112,6 +112,35 @@ export interface ToolContext {
    * 读到一句空结果只会换个说法再试一次。
    */
   web?: WebToolHost;
+  /**
+   * 宿主注入的文档源能力（用户配置站点的 `llms.txt` 索引）。
+   *
+   * 未配置来源时是 undefined —— `search_docs` / `read_doc` 会明确回报「尚未配置」，
+   * 而不是返回空结果：Agent 读到一句空结果只会换个说法再试一次，
+   * 读到「没配文档源」才会去改方案或告知用户。
+   */
+  docs?: {
+    search: (
+      query: string,
+      limit?: number,
+    ) => Promise<
+      {
+        source: string;
+        title: string;
+        url: string;
+        description?: string;
+        section?: string;
+      }[]
+    >;
+    read: (url: string) => Promise<{
+      ok: boolean;
+      url: string;
+      title?: string;
+      content?: string;
+      truncated?: boolean;
+      error?: string;
+    }>;
+  };
   backend: WorkspaceBackend;
   permissionMode: PermissionMode;
   /** 运行中实时读取权限（切换「允许所有」后立即生效） */
@@ -1119,6 +1148,15 @@ function webDisabled(toolName: string): ToolResult {
   };
 }
 
+function docsDisabled(toolName: string): ToolResult {
+  return {
+    content:
+      `${toolName} 不可用：尚未配置任何文档源（设置 → 文档源，填站点地址即可，` +
+      '例如 https://docs.example.com）。请告知用户这件事；也可以改用 web_search 临时查。',
+    isError: true,
+  };
+}
+
 function formatMcpArgsPreview(args: Record<string, unknown>): string {
   const entries = Object.entries(args);
   if (entries.length === 0) return '(无参数)';
@@ -1184,6 +1222,51 @@ export async function executeTool(
         const page = await ctx.web.fetchPage(args.url);
         if (!page.ok) {
           return { content: `抓取失败：${page.error ?? '未知原因'}`, isError: true };
+        }
+        const meta = [
+          `URL: ${page.url}`,
+          page.title ? `标题: ${page.title}` : null,
+          page.truncated ? '（内容超出上限，已截断）' : null,
+        ]
+          .filter(Boolean)
+          .join('\n');
+        return { content: `${meta}\n\n${page.content ?? ''}` };
+      }
+      case 'search_docs': {
+        const args = parseArgs<{ query: string; limit?: number }>(rawArgs);
+        if (!args.query || typeof args.query !== 'string') {
+          return {
+            content: 'Error: missing required "query" argument for search_docs',
+            isError: true,
+          };
+        }
+        if (!ctx.docs) return docsDisabled('search_docs');
+
+        const hits = await ctx.docs.search(args.query, args.limit);
+        if (hits.length === 0) {
+          return {
+            content: `文档源里没有匹配「${args.query}」的条目。换个说法再试，或改用 web_search。`,
+          };
+        }
+        const body = hits
+          .map((hit, index) => {
+            const head = `${index + 1}. ${hit.title}\n   ${hit.url}`;
+            const detail = [hit.section, hit.description].filter(Boolean).join(' · ');
+            return detail ? `${head}\n   ${detail}` : head;
+          })
+          .join('\n\n');
+        return { content: `文档检索「${args.query}」的结果：\n\n${body}` };
+      }
+      case 'read_doc': {
+        const args = parseArgs<{ url: string }>(rawArgs);
+        if (!args.url || typeof args.url !== 'string') {
+          return { content: 'Error: missing required "url" argument for read_doc', isError: true };
+        }
+        if (!ctx.docs) return docsDisabled('read_doc');
+
+        const page = await ctx.docs.read(args.url);
+        if (!page.ok) {
+          return { content: `读取文档失败：${page.error ?? '未知原因'}`, isError: true };
         }
         const meta = [
           `URL: ${page.url}`,

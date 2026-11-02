@@ -24,6 +24,7 @@ import type { SettingsStore } from './settings';
 import { buildCompletionPrompt, parseCompletionResponse } from './completionPrompt';
 import { CompletionService } from './completionService';
 import { buildNextEditPrompt, parseNextEditResponse } from './nextEditPrompt';
+import { checkDocsSources } from './docsToolHost';
 import type { SessionStore } from './sessions';
 import type { AgentService } from './agentService';
 import type { TerminalService } from './terminal';
@@ -532,6 +533,10 @@ export function registerIpc(deps: {
     completions.cancel(requestId);
     return { ok: true };
   });
+
+  ipcMain.handle('docs:status', (_e, force?: boolean) =>
+    checkDocsSources(settings.get(), undefined, { force: force === true }),
+  );
 
   // 预测单独一个缓存：它与补全不是同一类请求（上下文更长、结果更少），
   // 合用一个缓存会互相淘汰。

@@ -1,7 +1,7 @@
 import * as monaco from 'monaco-editor';
 import type { ChatAttachment } from '@deepseek-ide/shared';
 import { normalizePath } from './symbolNavigation';
-import { buildWebMentionContent, extractWebQuery } from './webMention';
+import { buildDocsMentionContent, buildWebMentionContent, extractWebQuery } from './webMention';
 
 /**
  * `@Git` / `@Terminal` / `@Problems` 展开出的附件正文。
@@ -162,6 +162,18 @@ async function resolveWebEnabled(deps: {
     // 读不到设置时按「不可联网」处理，并在正文里说明 —— 编一个「已联网」的
     // 状态会让模型去调不可用的工具，那比少联网更糟。
     return false;
+  }
+}
+
+/** 读取当前配置的文档源；读不到时按「尚未配置」处理并如实告知。 */
+async function resolveDocSources(): Promise<{ name: string; url: string }[]> {
+  try {
+    const settings = await window.ide?.getSettings?.();
+    return (settings?.docSources ?? []).filter(
+      (source) => source?.name?.trim() && source?.url?.trim(),
+    );
+  } catch {
+    return [];
   }
 }
 

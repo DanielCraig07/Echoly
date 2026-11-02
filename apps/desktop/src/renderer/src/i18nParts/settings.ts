@@ -364,6 +364,21 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
     zh: '光标所在行常驻显示 Git Blame (提交人、时间与提交摘要)',
     en: 'Always show Git Blame on the cursor line (author, time and commit summary)',
   },
+  'settings.general.docSources': {
+    zh: '文档源（Agent 的 search_docs / read_doc 用这些站点）',
+    en: 'Doc sources (used by the agent’s search_docs / read_doc)',
+  },
+  'settings.general.docSourcesDesc': {
+    zh: '一行一条，格式「名称|地址」。地址可以只写到站根，会自动去找该站的 llms.txt。read_doc 只放行这些站点的同源地址。',
+    en: 'One per line as “Name|URL”. A site root is enough — its llms.txt is fetched automatically. read_doc only allows same-origin URLs under these sites.',
+  },
+  'settings.general.docSourcesCheck': { zh: '检查', en: 'Check' },
+  'settings.general.docSourcesChecking': { zh: '检查中…', en: 'Checking…' },
+  'settings.general.docSourceOk': { zh: '{name}：{entries} 条', en: '{name}: {entries} entries' },
+  'settings.general.docSourceFail': {
+    zh: '{name}：不可用（悬停看原因）',
+    en: '{name}: unavailable (hover for reason)',
+  },
   'settings.general.privacyMode': {
     zh: '隐私模式（切断除模型端点之外的所有出网行为）',
     en: 'Privacy mode (cut all outbound traffic except your model endpoint)',

@@ -309,6 +309,17 @@ const api: IpcApi = {
     ipcRenderer.invoke('ai:predictNextEdit', payload) as Promise<{
       edit: { startLine: number; endLine: number; newText: string } | null;
     }>,
+  docsStatus: (force?: boolean) =>
+    ipcRenderer.invoke('docs:status', force) as Promise<
+      {
+        name: string;
+        url: string;
+        ok: boolean;
+        entries: number;
+        cachedAt: number | null;
+        error?: string;
+      }[]
+    >,
   rulesGet: (workspaceRoot?: string) => ipcRenderer.invoke('rules:get', workspaceRoot),
   rulesSave: (content: string, workspaceRoot?: string) =>
     ipcRenderer.invoke('rules:save', content, workspaceRoot),

@@ -322,6 +322,41 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'search_docs',
+      description:
+        'Search the user-configured documentation sources (their llms.txt indexes) and return ' +
+        'titles, URLs and descriptions. Prefer this over web_search for libraries and products ' +
+        'the user has already registered as doc sources — those indexes are curated and stable. ' +
+        'Follow up with read_doc to read a full page.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'What you are looking for' },
+          limit: { type: 'integer', description: 'Max results to return (default 8)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_doc',
+      description:
+        'Read a documentation page in full (HTML converted to Markdown). Use the URL returned by ' +
+        'search_docs, or any page under a configured doc source.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Absolute http/https URL of the doc page' },
+        },
+        required: ['url'],
+      },
+    },
+  },
 ];
 
 export const READONLY_TOOL_NAMES = new Set([
@@ -335,6 +370,8 @@ export const READONLY_TOOL_NAMES = new Set([
   'glob_files',
   'web_search',
   'fetch_url',
+  'search_docs',
+  'read_doc',
   'ask_user',
 ]);
 

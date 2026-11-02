@@ -104,6 +104,8 @@ export interface AgentRunOptions {
   codebaseSearch?: ToolContext['codebaseSearch'];
   /** 联网能力，宿主注入；未注入时 web_search / fetch_url 会明确报「未启用」。 */
   web?: ToolContext['web'];
+  /** 文档源能力，宿主注入；未配置来源时 search_docs / read_doc 会明确报「尚未配置」。 */
+  docs?: ToolContext['docs'];
   /**
    * 文件系统副作用的写前记录，宿主注入用于「撤销本轮 AI 改动」。
    * 未注入时工具照常工作，只是这一轮不可撤销。
@@ -576,6 +578,7 @@ export async function runAgent(
     getDiagnostics: options.getDiagnostics,
     codebaseSearch: options.codebaseSearch,
     web: options.web,
+    docs: options.docs,
     onFileMutation: options.onFileMutation,
     // 把取消信号交给工具层：没有它，一条长跑命令按「停止」不会真的停。
     signal,

@@ -261,6 +261,14 @@ export interface AppSettings {
    */
   webAllowedHosts?: string[];
   /**
+   * 文档源：用户显式登记的文档站点（配 `llms.txt` 的）。
+   *
+   * 与「允许联网」是两件事：联网开关针对的是**开放网络**（web_search 任意检索），
+   * 而这里是用户点名信任的几个站点，`read_doc` 只在这些站的同源地址上取页面。
+   * 所以它不受联网开关影响，但会被隐私模式（切断一切额外出网）拦住。
+   */
+  docSources?: { name: string; url: string }[];
+  /**
    * 隐私模式。开启后切断「除你配置的模型端点以外」的所有出网行为：
    * Agent 的联网工具关闭，语义检索不再按需下载模型（本地已放好的模型仍可用）。
    *
@@ -341,6 +349,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keymapPreset: 'vscode',
   webEnabled: true,
   webAllowedHosts: [],
+  docSources: [],
   privacyMode: false,
   formatOnSave: false,
   largeFileThresholdBytes: 2 * 1024 * 1024,
@@ -1609,6 +1618,17 @@ export interface IpcApi {
     language?: string;
     recentEdits?: { inserted: string; deleted: string }[];
   }) => Promise<{ edit: { startLine: number; endLine: number; newText: string } | null }>;
+  /** 检查各文档源是否可用（有没有 `llms.txt`、能解析出多少条目）。 */
+  docsStatus: (force?: boolean) => Promise<
+    {
+      name: string;
+      url: string;
+      ok: boolean;
+      entries: number;
+      cachedAt: number | null;
+      error?: string;
+    }[]
+  >;
   listSkills: () => Promise<SkillInfo[]>;
   openUserSkillsDir: () => Promise<string>;
   /** 读工作区与用户目录下的自定义命令（`.echoly/commands` 等）。 */

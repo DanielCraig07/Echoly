@@ -258,6 +258,12 @@ const SPECIAL_MENTION_STYLE: Record<
     border: 'rgba(96, 165, 250, 0.4)',
     bg: 'rgba(96, 165, 250, 0.08)',
   },
+  '@Docs': {
+    icon: '📚',
+    color: '#c084fc',
+    border: 'rgba(192, 132, 252, 0.4)',
+    bg: 'rgba(192, 132, 252, 0.08)',
+  },
 };
 
 function getProviderBadge(provider?: string) {
@@ -1095,6 +1101,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         title: '@Web',
         desc: t('chat.mentionWebDesc'),
         insertText: '@Web ',
+      },
+      {
+        id: 'special:docs',
+        type: 'special',
+        title: '@Docs',
+        desc: t('chat.mentionDocsDesc'),
+        insertText: '@Docs ',
       },
     );
 
