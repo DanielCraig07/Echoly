@@ -1597,6 +1597,17 @@ export interface IpcApi {
     workspaceRoot?: string,
   ) => Promise<{ ok: boolean; content?: string | null; filename?: string }>;
   rulesSave: (content: string, workspaceRoot?: string) => Promise<{ ok: boolean }>;
+  /** 当前生效的目录级规则（`.echoly/rules/*.md`）。返回来源与作用域，便于排查「规则为什么没生效」。 */
+  rulesListDirectory: (
+    workspaceRoot?: string,
+    openPaths?: string[],
+  ) => Promise<
+    Array<{
+      relPath: string;
+      body: string;
+      meta: { description?: string; globs: string[]; alwaysApply: boolean };
+    }>
+  >;
   cloneRepo: (req: GitCloneRequest) => Promise<GitCloneResult>;
   gitInit: () => Promise<GitOpResult>;
   gitStatus: () => Promise<GitStatusResult>;

@@ -41,6 +41,7 @@ import {
   type ProviderConfig,
 } from '@deepseek-ide/shared';
 import { RulesService } from './rulesService';
+import { collectDirectoryRules, type DirectoryRule } from './directoryRules';
 import { detectWorkspaceTechFromDisk } from './workspaceDetector';
 
 function getActiveLlmClient(settings: SettingsStore): UnifiedLlmClient {
@@ -398,6 +399,36 @@ export function registerIpc(deps: {
         console.warn('[rules:save] workspace.writeFile failed, fallback to rulesService:', err);
       }
       return rulesService.saveRules(content, root);
+    }),
+  );
+
+  // 列出当前生效的目录级规则。
+  //
+  // 返回的是「命中了哪几条、来自哪个文件、frontmatter 是什么」而不是拼好的正文 ——
+  // 这个接口的用途是让用户排查「我写的规则为什么没生效」，所以必须能看到来源与作用域，
+  // 一份拼好的文本恰恰把这两样都抹掉了。
+  ipcMain.handle('rules:list-directory', (e, wsRoot?: string, openPaths?: string[]) =>
+    run(e, async (): Promise<DirectoryRule[]> => {
+      let root = wsRoot;
+      if (!root) {
+        try {
+          root = registry.current().workspace.getRoot() || undefined;
+        } catch {
+          root = undefined;
+        }
+      }
+      if (!root) return [];
+
+      const seen = new Set<string>();
+      const collected: DirectoryRule[] = [];
+      for (const openPath of openPaths && openPaths.length > 0 ? openPaths : [undefined]) {
+        for (const rule of await collectDirectoryRules(root, openPath)) {
+          if (seen.has(rule.relPath)) continue;
+          seen.add(rule.relPath);
+          collected.push(rule);
+        }
+      }
+      return collected;
     }),
   );
 

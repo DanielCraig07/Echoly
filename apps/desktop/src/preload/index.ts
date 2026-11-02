@@ -295,6 +295,8 @@ const api: IpcApi = {
   rulesGet: (workspaceRoot?: string) => ipcRenderer.invoke('rules:get', workspaceRoot),
   rulesSave: (content: string, workspaceRoot?: string) =>
     ipcRenderer.invoke('rules:save', content, workspaceRoot),
+  rulesListDirectory: (workspaceRoot?: string, openPaths?: string[]) =>
+    ipcRenderer.invoke('rules:list-directory', workspaceRoot, openPaths),
   openExternal: (url: string) => ipcRenderer.invoke('system:openExternal', url),
 
   dbConnect: (options) => ipcRenderer.invoke('db:connect', options),

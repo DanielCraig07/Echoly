@@ -47,7 +47,8 @@
 - [ ] 三档注入：常驻 / 按当前文件 glob 命中 / 按 Agent 检索命中
 - [ ] 从工作区根逐级向下收集，子目录优先
 - [ ] `.echolyrules`、`.cursorrules` 保留为 alwaysApply 兼容
-- [ ] `ProjectMemoryModal` 增加「当前生效规则」视图
+- [x] IPC `rules:list-directory` + preload `rulesListDirectory` + `IpcApi` 类型（返回来源与作用域）
+- [ ] `ProjectMemoryModal` 消费 `rulesListDirectory` 渲染「当前生效规则」视图
 - [ ] 单测：globs 匹配、嵌套优先级、缓存失效
 
 ### A4 Review 面板
