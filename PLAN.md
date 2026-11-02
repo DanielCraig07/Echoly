@@ -172,6 +172,13 @@
         4 个文件因此被回退（`BranchDiffModal` / `TerminalPanel` /
         `ThreeWayMergeModal` / `chat/TurnRevertModal`），其中混着样式与属性两种用法，
         留待逐个判断后再迁移。
+  - [x] 第四步：把那 4 个被回退文件按调用点分类后补迁（`BranchDiffModal` 22 处、
+        `ThreeWayMergeModal` 15 处、`TerminalPanel` 1 处）。
+        **Monaco / xterm 的 `options` 对象必须保持数字**（`BranchDiffModal:632`、
+        `ThreeWayMergeModal:339/393/439/500`、`TerminalPanel:1057`、`TurnRevertModal:578`），
+        所以这次不是批量替换，而是先按「最近的 `style={{` / `options={{` 分界」
+        把每一处归类，再只改样式对象。`TurnRevertModal` 那唯一一处正好是 options，无需改动。
+        顺带修掉 `BranchDiffModal` 里漏掉的 `fontSize: 11.5`（半像素）。
 
 ### A6 Vim 模式
 

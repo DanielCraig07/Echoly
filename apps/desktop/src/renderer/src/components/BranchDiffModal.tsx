@@ -221,7 +221,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
               <path d="M13 6h3a2 2 0 0 1 2 2v7" />
               <line x1="6" y1="9" x2="6" y2="21" />
             </svg>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
+            <span style={{ fontSize: 'var(--ui-font-size, 12px)', fontWeight: 600, color: '#fff' }}>
               {t('git.branchDiffTitle')}
             </span>
           </div>
@@ -260,7 +260,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>
+            <span style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted, #888)' }}>
               {t('git.baseBranchLabel')}
             </span>
             <select
@@ -272,7 +272,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 color: '#fff',
                 padding: '3px 8px',
                 borderRadius: 4,
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 outline: 'none',
               }}
             >
@@ -306,7 +306,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>
+            <span style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted, #888)' }}>
               {t('git.targetBranchLabel')}
             </span>
             <select
@@ -318,7 +318,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 color: '#38bdf8',
                 padding: '3px 8px',
                 borderRadius: 4,
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 outline: 'none',
                 fontWeight: 500,
               }}
@@ -335,7 +335,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <span
               style={{
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 padding: '2px 8px',
                 borderRadius: 12,
                 background: 'rgba(16, 185, 129, 0.15)',
@@ -349,7 +349,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             </span>
             <span
               style={{
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 padding: '2px 8px',
                 borderRadius: 12,
                 background: 'rgba(239, 68, 68, 0.15)',
@@ -361,7 +361,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             >
               {t('git.behind', { n: behind })}
             </span>
-            <span style={{ fontSize: 11, color: 'var(--muted, #888)' }}>
+            <span style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted, #888)' }}>
               {t('git.changedFilesLabel', { n: files.length })}
             </span>
             <button
@@ -372,7 +372,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 alignItems: 'center',
                 gap: 5,
                 padding: '2px 9px',
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 borderRadius: 4,
                 cursor: files.length === 0 || isGeneratingPr ? 'not-allowed' : 'pointer',
               }}
@@ -414,14 +414,16 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 marginBottom: 6,
               }}
             >
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#34d399' }}>
+              <span
+                style={{ fontSize: 'var(--ui-font-size, 12px)', fontWeight: 600, color: '#34d399' }}
+              >
                 🎉 AI PR 摘要已生成（已复制到剪贴板）
               </span>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button
                   type="button"
                   className="panel-action-btn"
-                  style={{ fontSize: 11, padding: '2px 8px' }}
+                  style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '2px 8px' }}
                   onClick={() => void navigator.clipboard.writeText(prSummaryText)}
                   title="再次复制到剪贴板"
                 >
@@ -430,7 +432,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 <button
                   type="button"
                   className="panel-action-btn"
-                  style={{ fontSize: 11, padding: '2px 8px' }}
+                  style={{ fontSize: 'var(--ui-font-size, 12px)', padding: '2px 8px' }}
                   onClick={() => setPrSummaryText(null)}
                   title="关闭"
                 >
@@ -441,7 +443,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             <pre
               style={{
                 margin: 0,
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 lineHeight: 1.5,
                 whiteSpace: 'pre-wrap',
                 color: '#e2e8f0',
@@ -459,7 +461,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
               padding: '8px 14px',
               background: 'rgba(239, 68, 68, 0.12)',
               color: '#f87171',
-              fontSize: 12,
+              fontSize: 'var(--ui-font-size, 12px)',
               borderBottom: '1px solid rgba(239, 68, 68, 0.25)',
             }}
           >
@@ -484,7 +486,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
             <div
               style={{
                 padding: '6px 10px',
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: 600,
                 color: 'var(--muted, #888)',
                 borderBottom: '1px solid rgba(255,255,255,0.04)',
@@ -497,7 +499,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 style={{
                   padding: 20,
                   textAlign: 'center',
-                  fontSize: 11,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   color: 'var(--muted, #888)',
                 }}
               >
@@ -509,7 +511,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                 style={{
                   padding: 24,
                   textAlign: 'center',
-                  fontSize: 12,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   color: 'var(--muted, #888)',
                 }}
               >
@@ -528,7 +530,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
-                      fontSize: 11.5,
+                      fontSize: 'var(--ui-font-size, 12px)',
                       cursor: 'pointer',
                       background: isSelected ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
                       color: isSelected ? '#fff' : 'var(--text, #ddd)',
@@ -538,7 +540,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                   >
                     <span
                       style={{
-                        fontSize: 10,
+                        fontSize: 'var(--ui-font-size, 12px)',
                         fontWeight: 700,
                         padding: '0 4px',
                         borderRadius: 3,
@@ -572,7 +574,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                   padding: '6px 12px',
                   background: 'rgba(255, 255, 255, 0.02)',
                   borderBottom: '1px solid var(--border, rgba(255,255,255,0.06))',
-                  fontSize: 11,
+                  fontSize: 'var(--ui-font-size, 12px)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -600,7 +602,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                     justifyContent: 'center',
                     background: 'rgba(0,0,0,0.3)',
                     color: 'var(--muted, #888)',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                     zIndex: 2,
                   }}
                 >
@@ -731,7 +733,7 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: 'var(--muted, #888)',
-                    fontSize: 12,
+                    fontSize: 'var(--ui-font-size, 12px)',
                   }}
                 >
                   {t('git.selectFileHint')}

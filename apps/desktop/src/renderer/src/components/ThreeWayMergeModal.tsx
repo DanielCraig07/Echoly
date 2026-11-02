@@ -160,7 +160,7 @@ export function ThreeWayMergeModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span
               style={{
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 fontWeight: 700,
                 letterSpacing: '0.05em',
                 color: 'var(--text)',
@@ -170,7 +170,7 @@ export function ThreeWayMergeModal({
             </span>
             <span
               style={{
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: 'var(--muted)',
                 background: 'var(--bg-tertiary, #222)',
                 padding: '1px 6px',
@@ -181,7 +181,7 @@ export function ThreeWayMergeModal({
             </span>
             <span
               style={{
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 padding: '1px 6px',
                 borderRadius: 4,
                 background:
@@ -203,7 +203,9 @@ export function ThreeWayMergeModal({
               title={t('merge.acceptAllCurrentTitle')}
               onClick={() => handleBatchResolve('current')}
             >
-              <span style={{ fontSize: 11 }}>{t('merge.acceptAllCurrent')}</span>
+              <span style={{ fontSize: 'var(--ui-font-size, 12px)' }}>
+                {t('merge.acceptAllCurrent')}
+              </span>
             </button>
             <button
               type="button"
@@ -211,7 +213,9 @@ export function ThreeWayMergeModal({
               title={t('merge.acceptAllIncomingTitle')}
               onClick={() => handleBatchResolve('incoming')}
             >
-              <span style={{ fontSize: 11 }}>{t('merge.acceptAllIncoming')}</span>
+              <span style={{ fontSize: 'var(--ui-font-size, 12px)' }}>
+                {t('merge.acceptAllIncoming')}
+              </span>
             </button>
             <button
               type="button"
@@ -219,7 +223,7 @@ export function ThreeWayMergeModal({
               title={t('merge.keepBothTitle')}
               onClick={() => handleBatchResolve('both')}
             >
-              <span style={{ fontSize: 11 }}>{t('merge.keepBoth')}</span>
+              <span style={{ fontSize: 'var(--ui-font-size, 12px)' }}>{t('merge.keepBoth')}</span>
             </button>
             <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 4px' }} />
             <button
@@ -308,7 +312,7 @@ export function ThreeWayMergeModal({
                 justifyContent: 'space-between',
                 background: 'rgba(59, 130, 246, 0.1)',
                 borderBottom: '1px solid var(--border)',
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: '#60a5fa',
                 fontWeight: 600,
               }}
@@ -362,7 +366,7 @@ export function ThreeWayMergeModal({
                 justifyContent: 'space-between',
                 background: 'rgba(107, 114, 128, 0.1)',
                 borderBottom: '1px solid var(--border)',
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: '#9ca3af',
                 fontWeight: 600,
               }}
@@ -408,7 +412,7 @@ export function ThreeWayMergeModal({
                 justifyContent: 'space-between',
                 background: 'rgba(16, 185, 129, 0.1)',
                 borderBottom: '1px solid var(--border)',
-                fontSize: 11,
+                fontSize: 'var(--ui-font-size, 12px)',
                 color: '#34d399',
                 fontWeight: 600,
               }}
@@ -455,18 +459,20 @@ export function ThreeWayMergeModal({
               justifyContent: 'space-between',
               background: 'var(--bg-secondary, #181818)',
               borderBottom: '1px solid var(--border)',
-              fontSize: 11,
+              fontSize: 'var(--ui-font-size, 12px)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontWeight: 700, color: 'var(--text)' }}>
                 {t('merge.resultTitle')}
               </span>
-              <span style={{ color: 'var(--muted)', fontSize: 10 }}>{t('merge.resultHint')}</span>
+              <span style={{ color: 'var(--muted)', fontSize: 'var(--ui-font-size, 12px)' }}>
+                {t('merge.resultHint')}
+              </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {currentBlock && (
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                <span style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted)' }}>
                   {t('merge.currentChoice', { index: activeBlockIndex + 1, total: totalCount })}
                   <strong
                     style={{
@@ -517,7 +523,7 @@ export function ThreeWayMergeModal({
             flexShrink: 0,
           }}
         >
-          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+          <div style={{ fontSize: 'var(--ui-font-size, 12px)', color: 'var(--muted)' }}>
             {resolvedCount < totalCount
               ? t('merge.pendingNote', { n: totalCount - resolvedCount })
               : t('merge.allResolved')}
@@ -527,7 +533,7 @@ export function ThreeWayMergeModal({
               type="button"
               className="btn btn-secondary"
               onClick={onClose}
-              style={{ padding: '4px 12px', fontSize: 12 }}
+              style={{ padding: '4px 12px', fontSize: 'var(--ui-font-size, 12px)' }}
             >
               {t('merge.cancel')}
             </button>
@@ -537,7 +543,7 @@ export function ThreeWayMergeModal({
               onClick={handleSave}
               style={{
                 padding: '4px 16px',
-                fontSize: 12,
+                fontSize: 'var(--ui-font-size, 12px)',
                 background: 'var(--accent, #6366f1)',
                 color: '#fff',
                 fontWeight: 600,

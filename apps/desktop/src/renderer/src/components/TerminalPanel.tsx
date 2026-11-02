@@ -2553,7 +2553,7 @@ export function TerminalPanel({
                     {splitActiveId && isVisibleInSplit && (
                       <span
                         style={{
-                          fontSize: 9,
+                          fontSize: 'var(--ui-font-size, 12px)',
                           marginLeft: 3,
                           fontWeight: isFocused ? 600 : 400,
                           color: isFocused ? 'var(--text-bright, #fff)' : 'var(--muted)',
