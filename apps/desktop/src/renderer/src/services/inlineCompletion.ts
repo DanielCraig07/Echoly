@@ -11,6 +11,27 @@ let isRegistered = false;
 let completionTimeout: ReturnType<typeof setTimeout> | null = null;
 let isGhostActive = false;
 let editRecorderDisposable: monaco.IDisposable | null = null;
+let acceptNextLineDisposable: monaco.IDisposable | null = null;
+
+/**
+ * 给「逐行接受」绑一个键。
+ *
+ * 不必自己实现接受逻辑：Monaco 已经带了 `editor.action.inlineSuggest.acceptNextLine`，
+ * 只是没给默认键位，留给宿主编辑器决定。自己动手插文本反而要面对
+ * 「插入后如何让剩余建议继续显示」的难题，而 Monaco 内部本来就维护着这份状态。
+ *
+ * 选 `Alt+Enter` 而不是 Tab：Tab 已经是「接受全部」，再抢一次会让接受行为变得
+ * 取决于建议有几行 —— 那是很难解释、也很难排查的差异。这个键只在
+ * **建议可见时**（命令自带 precondition）才生效，所以不会挤掉编辑器里其他 Alt+Enter 用法。
+ */
+function installAcceptNextLineKeybinding(): void {
+  if (acceptNextLineDisposable) return;
+  acceptNextLineDisposable = monaco.editor.addKeybindingRule({
+    keybinding: monaco.KeyMod.Alt | monaco.KeyCode.Enter,
+    command: 'editor.action.inlineSuggest.acceptNextLine',
+    when: 'inlineSuggestionVisible',
+  });
+}
 
 /**
  * 给所有模型挂上「最近编辑」记录。
@@ -100,6 +121,7 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
   if (isRegistered) return null;
   isRegistered = true;
   installRecentEditRecorder();
+  installAcceptNextLineKeybinding();
 
   try {
     return monaco.languages.registerInlineCompletionsProvider('*', {

@@ -46,6 +46,14 @@ describe('buildCompletionPrompt', () => {
     expect(without).not.toContain('用户最近的编辑');
   });
 
+  it('明确鼓励多行补全，但要求「不确定时给最短的」', () => {
+    const prompt = buildCompletionPrompt({ prefix: 'a', suffix: 'b' });
+    expect(prompt).toContain('可以给出多行补全');
+    // 只写「鼓励多行」会把模型推向长篇大论，必须同时给出回退口径
+    expect(prompt).toContain('最短的合理补全');
+    expect(prompt).toContain('缩进');
+  });
+
   it('超长前后缀按上限截断（保留靠近光标的部分）', () => {
     const prefix = 'x'.repeat(5000) + 'NEAR_CURSOR';
     const suffix = 'SUFFIX_HEAD' + 'y'.repeat(5000);

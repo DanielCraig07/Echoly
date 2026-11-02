@@ -63,6 +63,8 @@ export function buildCompletionPrompt(input: CompletionPromptInput): string {
 
 规则：
 - insertText 只包含**光标处需要新增**的代码。不要重复前缀里已经有的内容，也不要重复后缀里已经有的内容。
+- 上下文足够明确时（例如刚写完一个 if 的条件、正在补一个函数体、写着一组并列的字段），
+  可以给出多行补全；不确定时给最短的合理补全。多行时保持与前缀一致的缩进。
 - 无需补全时返回 {"insertText": ""}。
 - JSON 字符串里的换行写成 \\n，双引号写成 \\"。
 ${language ? `- 当前语言：${language}。\n` : ''}
