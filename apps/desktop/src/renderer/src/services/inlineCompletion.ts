@@ -1,8 +1,63 @@
 import * as monaco from 'monaco-editor';
+import { isAiCompletionEnabled } from './completionEnabled';
+import {
+  recordCompletionAccepted,
+  recordCompletionOutcome,
+  recordCompletionRequest,
+} from './completionMetrics';
 
 let isRegistered = false;
 let completionTimeout: ReturnType<typeof setTimeout> | null = null;
 let isGhostActive = false;
+
+/**
+ * 最近一次给出的建议，用来反推「用户接受了没有」。
+ *
+ * Monaco 不会告诉我们用户按了 Tab —— 补全提供者只负责「给出建议」，
+ * 接受与否发生在编辑器的按键处理里，对我们是黑盒。唯一可靠的信号是
+ * **光标处真的插入了我们建议过的文本**，所以这里挂一个模型内容监听，
+ * 命中「同一位置 + 插入内容是建议的前缀」就记一次接受。
+ */
+let pendingAcceptance: { dispose: () => void } | null = null;
+
+function dropPendingAcceptance(): void {
+  const pending = pendingAcceptance;
+  pendingAcceptance = null;
+  pending?.dispose();
+}
+
+/**
+ * 监听「这条建议被接受」。
+ *
+ * 判定条件三条都要满足：插入发生在**同一行列**（排除在别处敲字）、
+ * 插入内容非空白、且是建议文本的**前缀**。
+ * 用前缀而不是全等：用户边看边敲下开头几个字符也是接受，
+ * 而整段补全被一次性应用是其中一个特例。
+ */
+function watchAcceptance(
+  model: monaco.editor.ITextModel,
+  position: monaco.Position,
+  suggestedText: string,
+): void {
+  dropPendingAcceptance();
+  const subscription = model.onDidChangeContent((event) => {
+    // 先摘掉自己再判断：在事件回调里 dispose 正在触发的订阅容易踩到重入问题
+    dropPendingAcceptance();
+    const accepted = event.changes.some(
+      (change) =>
+        change.text.length > 0 &&
+        change.text.trim().length > 0 &&
+        change.range.startLineNumber === position.lineNumber &&
+        change.range.startColumn === position.column &&
+        suggestedText.startsWith(change.text),
+    );
+    if (accepted) {
+      recordCompletionAccepted();
+      notifyGhostState(false);
+    }
+  });
+  pendingAcceptance = { dispose: () => subscription.dispose() };
+}
 
 function notifyGhostState(active: boolean) {
   if (isGhostActive === active) return;
@@ -19,6 +74,12 @@ function notifyGhostState(active: boolean) {
   }
 }
 
+/** 剔除模型有时仍会带上的 markdown 围栏。 */
+function stripFences(text: string): string {
+  if (!text.startsWith('```')) return text;
+  return text.replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '');
+}
+
 /**
  * 注册行内代码补全提供者 (Cursor Tab / Ghost Text)
  * 监听光标输入并向后台 LLM 发送上下文生成建议补全
@@ -30,6 +91,13 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
   try {
     return monaco.languages.registerInlineCompletionsProvider('*', {
       provideInlineCompletions: async (model, position, _context, token) => {
+        // 总开关在**每次响应前**读一次：关掉之后连 IPC 都不发，
+        // 而不是「请求照发、只是不显示」。见 completionEnabled.ts 的说明。
+        if (!isAiCompletionEnabled()) {
+          notifyGhostState(false);
+          return { items: [] };
+        }
+
         if (token.isCancellationRequested) {
           notifyGhostState(false);
           return { items: [] };
@@ -59,27 +127,36 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
         }
 
         const language = model.getLanguageId();
+        const startedAt = Date.now();
+        recordCompletionRequest();
         try {
           const res = await window.ide?.completeCode?.({ prefix, suffix, language });
-          if (!res?.completion || token.isCancellationRequested) {
+          const latency = Date.now() - startedAt;
+
+          if (token.isCancellationRequested) {
+            // 不加进延迟样本：这一段的耗时反映的是「用户多快又敲了一下」，
+            // 混进平均值会让延迟指标失去意义。
+            recordCompletionOutcome('cancelled');
             notifyGhostState(false);
             return { items: [] };
           }
 
-          let completionText = res.completion;
-          // 若包含 markdown 标记则剔除
-          if (completionText.startsWith('```')) {
-            completionText = completionText
-              .replace(/^```[a-zA-Z0-9_-]*\n?/, '')
-              .replace(/\n?```$/, '');
+          if (!res?.completion) {
+            recordCompletionOutcome('empty', latency);
+            notifyGhostState(false);
+            return { items: [] };
           }
 
+          const completionText = stripFences(res.completion);
           if (!completionText.trim()) {
+            recordCompletionOutcome('empty', latency);
             notifyGhostState(false);
             return { items: [] };
           }
 
+          recordCompletionOutcome('succeeded', latency);
           notifyGhostState(true);
+          watchAcceptance(model, position, completionText);
           return {
             items: [
               {
@@ -94,6 +171,7 @@ export function registerAiInlineCompletions(): monaco.IDisposable | null {
             ],
           };
         } catch {
+          recordCompletionOutcome('failed', Date.now() - startedAt);
           notifyGhostState(false);
           return { items: [] };
         }

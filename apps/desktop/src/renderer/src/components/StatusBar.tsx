@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { APP_VERSION, type GitCommitEntry, type GitStatusResult } from '@deepseek-ide/shared';
 import { useI18n } from '../i18n';
+import {
+  getCompletionMetrics,
+  resetCompletionMetrics,
+  subscribeCompletionMetrics,
+  type CompletionMetricsSnapshot,
+} from '../services/completionMetrics';
+import {
+  isAiCompletionEnabled,
+  setAiCompletionEnabled,
+  subscribeAiCompletionEnabled,
+} from '../services/completionEnabled';
 
 interface Props {
   branch?: string;
@@ -86,7 +97,7 @@ export function StatusBar({
   const { t } = useI18n();
   const hasChanges = Boolean(gitStatus?.entries?.length);
   const [activePopover, setActivePopover] = useState<
-    'lang' | 'goto' | 'indent' | 'encoding' | 'eol' | 'stats' | null
+    'lang' | 'goto' | 'indent' | 'encoding' | 'eol' | 'stats' | 'copilot' | null
   >(null);
   const [langSearch, setLangSearch] = useState('');
   const [targetLineInput, setTargetLineInput] = useState('');
@@ -95,7 +106,10 @@ export function StatusBar({
   const [currentEncoding, setCurrentEncoding] = useState(encoding);
   const [currentEol, setCurrentEol] = useState<'LF' | 'CRLF'>(eol);
   const [copilotActive, setCopilotActive] = useState(false);
-  const [copilotEnabled, setCopilotEnabled] = useState(true);
+  const [copilotEnabled, setCopilotEnabled] = useState(() => isAiCompletionEnabled());
+  const [completionStats, setCompletionStats] = useState<CompletionMetricsSnapshot>(() =>
+    getCompletionMetrics(),
+  );
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const gotoInputRef = useRef<HTMLInputElement>(null);
@@ -108,6 +122,20 @@ export function StatusBar({
     window.addEventListener('echoly:ghostTextState', handleGhostState);
     return () => window.removeEventListener('echoly:ghostTextState', handleGhostState);
   }, []);
+
+  // 开关本身的状态跟模块走：设置页/快捷键将来也能改它，这里必须跟着变
+  useEffect(
+    () => subscribeAiCompletionEnabled(() => setCopilotEnabled(isAiCompletionEnabled())),
+    [],
+  );
+
+  // 统计只在浮层打开时订阅。补全每次请求都会更新统计，
+  // 常驻订阅会让整条状态栏跟着每次补全重渲一遍 —— 那正是补全最不该被打扰的时刻。
+  useEffect(() => {
+    if (activePopover !== 'copilot') return;
+    setCompletionStats(getCompletionMetrics());
+    return subscribeCompletionMetrics(() => setCompletionStats(getCompletionMetrics()));
+  }, [activePopover]);
 
   const handleCheckUpdate = async () => {
     if (checkingUpdate) return;
@@ -618,38 +646,107 @@ export function StatusBar({
           )}
         </div>
 
-        {/* 7. AI 行内代码幽灵补全指示 */}
-        <button
-          type="button"
-          className={`status-item status-copilot-badge${copilotActive ? ' is-thinking' : ''}`}
-          onClick={() => {
-            const next = !copilotEnabled;
-            setCopilotEnabled(next);
-            onShowToast?.(next ? t('status.copilotOn') : t('status.copilotOff'), undefined, 'info');
-          }}
-          title={
-            copilotEnabled
-              ? copilotActive
-                ? t('status.copilotGenerating')
-                : t('status.copilotReady')
-              : t('status.copilotPaused')
-          }
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            opacity: copilotEnabled ? 1 : 0.6,
-          }}
-        >
-          <span
+        {/* 7. AI 行内代码幽灵补全：徽章本身是开关，点开浮层看统计 */}
+        <div className="status-popover-anchor">
+          <button
+            type="button"
+            className={`status-item status-copilot-badge${copilotActive ? ' is-thinking' : ''}`}
+            onClick={() => setActivePopover((v) => (v === 'copilot' ? null : 'copilot'))}
+            title={
+              copilotEnabled
+                ? copilotActive
+                  ? t('status.copilotGenerating')
+                  : t('status.copilotReady')
+                : t('status.copilotPaused')
+            }
             style={{
-              color: copilotActive ? '#38bdf8' : copilotEnabled ? '#10b981' : 'var(--text-muted)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              opacity: copilotEnabled ? 1 : 0.6,
             }}
           >
-            ✨
-          </span>
-          <span>Copilot</span>
-        </button>
+            <span
+              style={{
+                color: copilotActive ? '#38bdf8' : copilotEnabled ? '#10b981' : 'var(--text-muted)',
+              }}
+            >
+              ✨
+            </span>
+            <span>Copilot</span>
+          </button>
+          {activePopover === 'copilot' && (
+            <div className="status-popover" style={{ minWidth: 240 }}>
+              <div className="status-popover-header">
+                <span>{t('status.copilotTitle')}</span>
+              </div>
+              <div className="status-stats-grid">
+                <span className="status-stats-label">{t('status.copilotState')}</span>
+                <span className="status-stats-val">
+                  {copilotEnabled ? t('status.copilotOn') : t('status.copilotOff')}
+                </span>
+                <span className="status-stats-label">{t('status.copilotRequests')}</span>
+                <span className="status-stats-val">{completionStats.requested}</span>
+                <span className="status-stats-label">{t('status.copilotAccepted')}</span>
+                <span className="status-stats-val">
+                  {completionStats.accepted}
+                  {completionStats.succeeded > 0
+                    ? ` · ${Math.round(completionStats.acceptanceRate * 100)}%`
+                    : ''}
+                </span>
+                <span className="status-stats-label">{t('status.copilotLatency')}</span>
+                <span className="status-stats-val">
+                  {Math.round(completionStats.avgLatencyMs)}
+                  {t('status.copilotMsAvg')}
+                  {completionStats.p95LatencyMs > 0
+                    ? ` / ${Math.round(completionStats.p95LatencyMs)}${t('status.copilotMsP95')}`
+                    : ''}
+                </span>
+                <span className="status-stats-label">{t('status.copilotEmpty')}</span>
+                <span className="status-stats-val">
+                  {completionStats.empty}
+                  {completionStats.failed || completionStats.cancelled
+                    ? ` · ${t('status.copilotFailedCancelled', {
+                        failed: completionStats.failed,
+                        cancelled: completionStats.cancelled,
+                      })}`
+                    : ''}
+                </span>
+              </div>
+              <div
+                style={{
+                  padding: '4px 8px 6px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  className="panel-action-btn"
+                  onClick={() => {
+                    const next = !copilotEnabled;
+                    setAiCompletionEnabled(next);
+                    onShowToast?.(
+                      next ? t('status.copilotOn') : t('status.copilotOff'),
+                      undefined,
+                      'info',
+                    );
+                  }}
+                >
+                  {copilotEnabled ? t('status.copilotPause') : t('status.copilotResume')}
+                </button>
+                <button
+                  type="button"
+                  className="panel-action-btn"
+                  onClick={() => resetCompletionMetrics()}
+                >
+                  {t('status.copilotReset')}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* 8. 版本检查更新快捷入口 */}
         <button
