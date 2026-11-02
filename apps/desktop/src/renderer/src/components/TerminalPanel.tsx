@@ -2496,24 +2496,9 @@ export function TerminalPanel({
     >
       <div className="terminal-toolbar">
         <div className="terminal-toolbar-left">
-          <div className="terminal-brand">
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="terminal-brand-icon"
-            >
-              <polyline points="4 17 10 11 4 5" />
-              <line x1="12" y1="19" x2="20" y2="19" />
-            </svg>
-            <span className="terminal-brand-text">{t('terminal.brand')}</span>
-          </div>
-
+          {/* 这里原本是「终端」图标 + 文字。上面的面板类型切换行已经写着「终端」，
+              同一屏里重复标注同一个面板。去掉后这一行只剩「类型胶囊 + 会话标签」，
+              视觉层数从三层降到两层。 */}
           <span className={`terminal-kind-pill ${terminalKind === 'ssh' ? 'ssh' : 'local'}`}>
             {terminalKind === 'ssh' && <span className="terminal-kind-dot" />}
             {kindLabel}
