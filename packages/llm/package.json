@@ -13,7 +13,8 @@
     "probe": "tsx src/probe.ts"
   },
   "dependencies": {
-    "@deepseek-ide/shared": "*"
+    "@deepseek-ide/shared": "*",
+    "@huggingface/transformers": "^4.3.2"
   },
   "devDependencies": {
     "tsx": "^4.19.3",
