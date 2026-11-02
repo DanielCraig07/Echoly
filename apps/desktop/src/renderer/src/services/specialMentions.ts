@@ -1,6 +1,7 @@
 import * as monaco from 'monaco-editor';
 import type { ChatAttachment } from '@deepseek-ide/shared';
 import { normalizePath } from './symbolNavigation';
+import { buildWebMentionContent, extractWebQuery } from './webMention';
 
 /**
  * `@Git` / `@Terminal` / `@Problems` 展开出的附件正文。
@@ -71,13 +72,28 @@ export async function resolveSpecialMentions(
   prompt: string,
   deps: {
     getWorkspaceRoot: () => string | null;
+    /** 当前是否允许联网。不注入时读一次设置（联网开关 + 隐私模式）。 */
+    getWebEnabled?: () => Promise<boolean>;
   },
 ): Promise<ChatAttachment[]> {
   const out: ChatAttachment[] = [];
   const mentionsGit = /@Git\b/i.test(prompt);
   const mentionsTerminal = /@Terminal\b/i.test(prompt);
   const mentionsProblems = /@Problems\b/i.test(prompt);
-  if (!mentionsGit && !mentionsTerminal && !mentionsProblems) return out;
+  const mentionsWeb = /@Web\b/i.test(prompt);
+  if (!mentionsGit && !mentionsTerminal && !mentionsProblems && !mentionsWeb) return out;
+
+  if (mentionsWeb) {
+    const query = extractWebQuery(prompt);
+    const enabled = await resolveWebEnabled(deps);
+    out.push({
+      id: `special-web-${Date.now()}`,
+      name: '@Web',
+      type: 'file',
+      mimeType: 'text/plain',
+      content: buildWebMentionContent(query, enabled),
+    });
+  }
 
   if (mentionsGit) {
     const content = await buildGitContext();
@@ -126,6 +142,27 @@ export async function resolveSpecialMentions(
   }
 
   return out;
+}
+
+async function resolveWebEnabled(deps: {
+  getWebEnabled?: () => Promise<boolean>;
+}): Promise<boolean> {
+  if (deps.getWebEnabled) {
+    try {
+      return await deps.getWebEnabled();
+    } catch {
+      return false;
+    }
+  }
+  try {
+    const settings = await window.ide?.getSettings?.();
+    // 与主进程的判据保持一致：联网开关关掉、或隐私模式打开，都是不可联网
+    return settings?.webEnabled !== false && settings?.privacyMode !== true;
+  } catch {
+    // 读不到设置时按「不可联网」处理，并在正文里说明 —— 编一个「已联网」的
+    // 状态会让模型去调不可用的工具，那比少联网更糟。
+    return false;
+  }
 }
 
 /**

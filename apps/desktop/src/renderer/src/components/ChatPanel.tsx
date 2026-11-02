@@ -229,7 +229,7 @@ function formatFileSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** 特殊引用（@Git / @Terminal / @Problems）附件在气泡里的图标与配色。 */
+/** 特殊引用（@Git / @Terminal / @Problems / @Web）附件在气泡里的图标与配色。 */
 const SPECIAL_MENTION_STYLE: Record<
   string,
   { icon: string; color: string; border: string; bg: string }
@@ -251,6 +251,12 @@ const SPECIAL_MENTION_STYLE: Record<
     color: '#f87171',
     border: 'rgba(248, 113, 113, 0.4)',
     bg: 'rgba(248, 113, 113, 0.08)',
+  },
+  '@Web': {
+    icon: '🌐',
+    color: '#60a5fa',
+    border: 'rgba(96, 165, 250, 0.4)',
+    bg: 'rgba(96, 165, 250, 0.08)',
   },
 };
 
@@ -1060,7 +1066,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       });
     }
 
-    // 3. 特殊上下文选项 (@Git, @Terminal, @Problems)
+    // 3. 特殊上下文选项 (@Git, @Terminal, @Problems, @Web)
     list.push(
       {
         id: 'special:git',
@@ -1082,6 +1088,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         title: '@Problems',
         desc: t('chat.mentionProblemsDesc'),
         insertText: '@Problems ',
+      },
+      {
+        id: 'special:web',
+        type: 'special',
+        title: '@Web',
+        desc: t('chat.mentionWebDesc'),
+        insertText: '@Web ',
       },
     );
 
@@ -2154,7 +2167,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         : t('chat.analyzeAttachment'));
     const runMode = overrideMode ?? activeTab.mode;
 
-    // 展开 @Git / @Terminal / @Problems：这三个引用描述的是「此刻的状态」，
+    // 展开 @Git / @Terminal / @Problems / @Web：前三个描述的是「此刻的状态」，
     // 所以快照必须在提交这一刻取，而不是用户敲下 @ 的那一刻。
     const mentionAttachments = await resolveSpecialMentions(prompt, {
       getWorkspaceRoot: () => workspace,
