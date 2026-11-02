@@ -33,6 +33,8 @@ export type { WebSearchHit } from './web.js';
 export { parseRuleFile, ruleAppliesTo, selectRulesForContext } from './rules.js';
 export { RRF_K, cosineSimilarity, rrfFuse, topKBySimilarity } from './retrieval.js';
 export type { ScoredChunk } from './retrieval.js';
+export { DEFAULT_VECTOR_TOPK, hybridRetrieve } from './hybridSearch.js';
+export type { HybridChunk, HybridRetrieveInput, HybridRetrieveResult } from './hybridSearch.js';
 export {
   DEFAULT_EMBEDDING_MODEL_ID,
   REQUIRED_MODEL_FILES,
