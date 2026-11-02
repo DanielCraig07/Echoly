@@ -241,6 +241,20 @@ export async function downloadClaudeCodeExtension(
 /**
  * 执行下载（内部函数）
  */
+/**
+ * 下载任意一个 .vsix 到本地。
+ *
+ * 导出成通用下载器（原来只服务「下载 Claude Code」那一条路径）：扩展市场里
+ * 每个扩展的地址都不同，各自再写一遍 curl + 进度解析，只会多出若干份要同步维护的副本。
+ */
+export async function downloadVsix(
+  downloadUrl: string,
+  vsixPath: string,
+  onProgress?: (progress: { percent: number; downloaded: number; total: number }) => void,
+): Promise<string> {
+  return await downloadWithProgress(downloadUrl, vsixPath, onProgress);
+}
+
 async function downloadWithProgress(
   downloadUrl: string,
   vsixPath: string,

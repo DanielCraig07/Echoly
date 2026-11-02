@@ -817,3 +817,14 @@ export function createExtensionContext(extensionPath: string): ExtensionContext 
     },
   } as ExtensionContext;
 }
+
+export {
+  DEFAULT_OPEN_VSX_REGISTRY,
+  MAX_MARKETPLACE_PAGE_SIZE,
+  buildDownloadUrl,
+  buildSearchUrl,
+  isSafeExtensionId,
+  normalizeRegistryBase,
+  parseOpenVsxSearch,
+} from './openVsx';
+export type { MarketplaceExtension } from './openVsx';

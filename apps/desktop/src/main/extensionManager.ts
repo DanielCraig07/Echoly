@@ -12,12 +12,22 @@ import {
   loadExtension,
   loadExtensionFromVsix,
   downloadClaudeCodeExtension,
+  downloadVsix,
   type LoadedExtension,
 } from '@deepseek-ide/vscode-shim/src/extensionLoader';
+import {
+  buildSearchUrl,
+  isSafeExtensionId,
+  normalizeRegistryBase,
+  parseOpenVsxSearch,
+  type MarketplaceExtension,
+} from '@deepseek-ide/vscode-shim/src/openVsx';
 
 export interface ExtensionManagerOptions {
   workspaceRoot: string;
   onMessage?: (message: any) => void;
+  /** Open VSX 注册表地址。默认官方站；企业内网可以指向自建镜像。 */
+  registry?: string;
 }
 
 export class ExtensionManager {
@@ -27,9 +37,11 @@ export class ExtensionManager {
   private messageHandlers: Set<(message: any) => void> = new Set();
   private loadedExtensionPaths: Set<string> = new Set();
   private webviewViewProviders: Map<string, any> = new Map();
+  private readonly registry: string;
 
   constructor(options: ExtensionManagerOptions) {
     this.workspaceRoot = options.workspaceRoot;
+    this.registry = normalizeRegistryBase(options.registry);
     this.extensionsDir = path.join(app.getPath('userData'), 'extensions');
 
     if (options.onMessage) {
@@ -120,6 +132,69 @@ export class ExtensionManager {
       console.error('Failed to install Claude Code extension:', err);
       throw err;
     }
+  }
+
+  /**
+   * 在 Open VSX 上搜索扩展。
+   *
+   * 走注册表公开 API，不需要 token。失败时返回空列表 + 原因，而不是抛错 ——
+   * 市场搜不到不该让整个扩展面板变成错误页（已经装好的扩展仍然能用）。
+   */
+  async searchMarketplace(
+    query: string,
+    size = 20,
+  ): Promise<{ ok: boolean; extensions: MarketplaceExtension[]; error?: string }> {
+    const trimmed = query.trim();
+    if (!trimmed) return { ok: true, extensions: [] };
+
+    try {
+      const res = await fetch(buildSearchUrl(this.registry, trimmed, size), {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        return { ok: false, extensions: [], error: `注册表返回 ${res.status}` };
+      }
+      const payload = await res.json();
+      return { ok: true, extensions: parseOpenVsxSearch(payload, this.registry) };
+    } catch (err: any) {
+      // 内网/离线环境很常见，说清是网络问题而不是「没有这个扩展」
+      return { ok: false, extensions: [], error: `无法访问注册表：${err?.message ?? err}` };
+    }
+  }
+
+  /**
+   * 从市场安装一个扩展。
+   *
+   * id 会变成 `extensionsDir` 下的文件名与目录名，所以**先校验再用**：
+   * 含 `../` 的 id 能把解压目标指到扩展目录之外，而 `unzip -o` 会照做。
+   * 校验用注册表那一套严格规则（`isSafeExtensionId`），不在这里另写一遍。
+   */
+  async installFromMarketplace(extension: {
+    id: string;
+    downloadUrl: string;
+    version?: string;
+  }): Promise<void> {
+    if (!isSafeExtensionId(extension.id)) {
+      throw new Error(`扩展 id 不合法，已拒绝安装：${extension.id}`);
+    }
+    if (!/^https?:\/\//i.test(extension.downloadUrl ?? '')) {
+      throw new Error('下载地址不合法（必须是 http/https）');
+    }
+
+    const vsixPath = path.join(this.extensionsDir, `${extension.id}.vsix`);
+    const extractDir = path.join(this.extensionsDir, extension.id);
+
+    await downloadVsix(extension.downloadUrl, vsixPath, (progress) => {
+      this.broadcastToRenderers('extension:download-progress', progress);
+    });
+
+    const loaded = await loadExtensionFromVsix(vsixPath, extractDir);
+    await this.extensionHost.activateExtension(loaded);
+    this.loadedExtensionPaths.add(path.join(extractDir, 'extension'));
+
+    console.log(
+      `[ExtensionManager] 已从市场安装并激活：${extension.id} v${loaded.manifest.version}`,
+    );
   }
 
   /**
@@ -434,6 +509,24 @@ export class ExtensionManager {
         return { success: false, error: err.message };
       }
     });
+
+    // 市场搜索
+    ipcMain.handle('extension:marketplace-search', async (_event, query: string, size?: number) => {
+      return await this.searchMarketplace(query ?? '', size ?? 20);
+    });
+
+    // 从市场安装
+    ipcMain.handle(
+      'extension:install-from-marketplace',
+      async (_event, extension: { id: string; downloadUrl: string; version?: string }) => {
+        try {
+          await this.installFromMarketplace(extension);
+          return { success: true };
+        } catch (err: any) {
+          return { success: false, error: err.message };
+        }
+      },
+    );
 
     // 从路径加载扩展
     ipcMain.handle('extension:load-from-path', async (_event, extensionPath: string) => {

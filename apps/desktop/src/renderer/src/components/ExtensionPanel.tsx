@@ -28,6 +28,27 @@ declare global {
     extensions: {
       installClaudeCode(): Promise<{ success: boolean; error?: string }>;
       loadFromPath(extensionPath: string): Promise<{ success: boolean; error?: string }>;
+      searchMarketplace(
+        query: string,
+        size?: number,
+      ): Promise<{
+        ok: boolean;
+        error?: string;
+        extensions: {
+          id: string;
+          displayName: string;
+          description: string;
+          version: string;
+          downloadUrl: string;
+          downloads?: number;
+          rating?: number;
+        }[];
+      }>;
+      installFromMarketplace(extension: {
+        id: string;
+        downloadUrl: string;
+        version?: string;
+      }): Promise<{ success: boolean; error?: string }>;
       executeCommand(
         command: string,
         ...args: any[]
@@ -52,6 +73,22 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     downloaded: number;
     total: number;
   } | null>(null);
+  // 扩展市场（Open VSX）
+  const [marketQuery, setMarketQuery] = useState('');
+  const [marketResults, setMarketResults] = useState<
+    {
+      id: string;
+      displayName: string;
+      description: string;
+      version: string;
+      downloadUrl: string;
+      downloads?: number;
+      rating?: number;
+    }[]
+  >([]);
+  const [marketState, setMarketState] = useState<'idle' | 'searching' | 'done'>('idle');
+  const [marketError, setMarketError] = useState<string | null>(null);
+  const [installingId, setInstallingId] = useState<string | null>(null);
 
   const loadExtensions = useCallback(async () => {
     try {
@@ -111,6 +148,62 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     }
   };
 
+  /**
+   * 在市场里搜索。
+   *
+   * 网络失败只把错误显示在搜索区，不设全局 error ——
+   * 「注册表连不上」不该让已经装好的扩展、本地 VSIX 安装这些入口看起来也坏了。
+   */
+  const handleMarketSearch = async () => {
+    const query = marketQuery.trim();
+    if (!query || marketState === 'searching') return;
+    setMarketState('searching');
+    setMarketError(null);
+    try {
+      const res = await window.extensions.searchMarketplace(query, 20);
+      if (!res?.ok) {
+        setMarketResults([]);
+        setMarketError(res?.error || t('ext.marketFailed'));
+        return;
+      }
+      setMarketResults(res.extensions);
+    } catch (err: any) {
+      setMarketResults([]);
+      setMarketError(err?.message || t('ext.marketFailed'));
+    } finally {
+      setMarketState('done');
+    }
+  };
+
+  const handleMarketInstall = async (extension: {
+    id: string;
+    downloadUrl: string;
+    version: string;
+    displayName: string;
+  }) => {
+    if (installingId) return;
+    setInstallingId(extension.id);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const result = await window.extensions.installFromMarketplace({
+        id: extension.id,
+        downloadUrl: extension.downloadUrl,
+        version: extension.version,
+      });
+      if (result.success) {
+        await loadExtensions();
+        setSuccessMsg(t('ext.marketInstalled', { name: extension.displayName }));
+      } else {
+        setError(result.error || t('ext.installFailed'));
+      }
+    } catch (err: any) {
+      setError(err?.message || t('ext.installError'));
+    } finally {
+      setInstallingId(null);
+    }
+  };
+
   const handleLoadFromPath = async () => {
     setLoading(true);
     setError(null);
@@ -140,6 +233,17 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
   };
 
   const isClaudeInstalled = extensions.includes('Anthropic.claude-code');
+
+  /**
+   * 已加载判定：扩展自报的 id 可能是 `publisher.name`，也可能是别的写法，
+   * 所以按「id 相等 或 包含其中一段」宽松匹配 —— 装完之后按钮应当立刻变成「已安装」。
+   */
+  const isExtensionLoaded = (id: string) =>
+    extensions.some((loaded) => {
+      const normalized = loaded.toLowerCase();
+      const target = id.toLowerCase();
+      return normalized === target || normalized.includes(target) || target.includes(normalized);
+    });
 
   return (
     <div className="ext-panel-container">
@@ -263,6 +367,103 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
         >
           {t('ext.loadFromPath')}
         </button>
+      </div>
+
+      {/* 扩展市场（Open VSX） */}
+      <div className="ext-section">
+        <div className="ext-section-header">
+          <span className="ext-section-title">{t('ext.marketTitle')}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <input
+            type="text"
+            value={marketQuery}
+            placeholder={t('ext.marketPlaceholder')}
+            onChange={(e) => setMarketQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleMarketSearch();
+            }}
+            style={{
+              flex: 1,
+              padding: '6px 10px',
+              fontSize: 'var(--ui-font-size, 12px)',
+              color: 'var(--text)',
+              background: 'var(--bg-input)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              boxSizing: 'border-box',
+            }}
+          />
+          <button
+            type="button"
+            className="panel-standard-btn"
+            onClick={() => void handleMarketSearch()}
+            disabled={marketState === 'searching' || !marketQuery.trim()}
+          >
+            {marketState === 'searching' ? t('ext.marketSearching') : t('ext.marketSearch')}
+          </button>
+        </div>
+
+        {marketError && (
+          <div style={{ marginTop: 8, fontSize: 11, color: '#f87171' }}>{marketError}</div>
+        )}
+
+        {marketState === 'done' && !marketError && marketResults.length === 0 && (
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
+            {t('ext.marketEmpty')}
+          </div>
+        )}
+
+        {marketResults.map((item) => (
+          <div
+            key={item.id}
+            style={{
+              marginTop: 8,
+              padding: '8px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              background: 'var(--bg-elevated, #1e1e1e)',
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 'var(--ui-font-size, 12px)' }}>
+                {item.displayName}
+                <span style={{ color: 'var(--muted)', fontWeight: 400, marginLeft: 6 }}>
+                  v{item.version}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--muted)',
+                  marginTop: 2,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={item.description}
+              >
+                {item.description || item.id}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="panel-standard-btn"
+              disabled={installingId !== null || isExtensionLoaded(item.id)}
+              onClick={() => void handleMarketInstall(item)}
+            >
+              {isExtensionLoaded(item.id)
+                ? t('ext.installed')
+                : installingId === item.id
+                  ? t('ext.installing')
+                  : t('ext.marketInstall')}
+            </button>
+          </div>
+        ))}
       </div>
 
       {/* 已安装扩展列表 */}

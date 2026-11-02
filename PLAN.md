@@ -318,7 +318,17 @@
 
 ## C. 需独立立项
 
-- [ ] 扩展市场（Open VSX 或自建）
+- [x] 扩展市场（Open VSX）
+  - `packages/vscode-shim/src/openVsx.ts`：搜索响应解析 + 地址构造（纯逻辑，+18 单测）。
+    选 Open VSX 而不是微软 marketplace：后者的条款只允许 VS Code 及其官方衍生品拉取。
+  - 注册表地址可配（`ExtensionManagerOptions.registry`），企业内网可指向自建镜像。
+  - 安装复用已有链路：`downloadVsix` → `loadExtensionFromVsix` → `activateExtension`。
+    原来只有一个「下载 Claude Code」的入口，下载器抽成通用版本，避免每个扩展各写一份 curl。
+  - **安全边界**：扩展 id 会被拼进 `extensionsDir` 下的文件名与目录名，
+    含 `../` 的 id 能把解压目标指到目录之外（`unzip -o` 会照做）。
+    所以解析阶段就用严格规则校验 id，不合格的条目**整条丢弃**而不是清理后使用。
+  - 搜索失败只在搜索区显示原因，不设全局错误：注册表连不上不该让本地 VSIX
+    安装、已装扩展这些入口看起来也坏了。
 - [ ] 多根工作区（`workspace.ts` 为单根假设，改动面覆盖文件树/Git/终端/索引/SSH）
 - [ ] 云端后台 Agent
 - [ ] `.ipynb` 笔记本编辑

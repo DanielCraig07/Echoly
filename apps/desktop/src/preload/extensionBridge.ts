@@ -17,6 +17,35 @@ export interface ExtensionAPI {
   loadFromPath(extensionPath: string): Promise<{ success: boolean; error?: string }>;
 
   /**
+   * 在 Open VSX 注册表上搜索扩展
+   */
+  searchMarketplace(
+    query: string,
+    size?: number,
+  ): Promise<{
+    ok: boolean;
+    error?: string;
+    extensions: {
+      id: string;
+      displayName: string;
+      description: string;
+      version: string;
+      downloadUrl: string;
+      downloads?: number;
+      rating?: number;
+    }[];
+  }>;
+
+  /**
+   * 从市场安装并激活一个扩展
+   */
+  installFromMarketplace(extension: {
+    id: string;
+    downloadUrl: string;
+    version?: string;
+  }): Promise<{ success: boolean; error?: string }>;
+
+  /**
    * 执行扩展命令
    */
   executeCommand(
@@ -51,6 +80,14 @@ export function createExtensionAPI(): ExtensionAPI {
 
     async loadFromPath(extensionPath: string) {
       return ipcRenderer.invoke('extension:load-from-path', extensionPath);
+    },
+
+    async searchMarketplace(query: string, size?: number) {
+      return ipcRenderer.invoke('extension:marketplace-search', query, size);
+    },
+
+    async installFromMarketplace(extension: { id: string; downloadUrl: string; version?: string }) {
+      return ipcRenderer.invoke('extension:install-from-marketplace', extension);
     },
 
     async executeCommand(command: string, ...args: any[]) {

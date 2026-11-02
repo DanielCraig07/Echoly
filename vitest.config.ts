@@ -49,6 +49,7 @@ export default defineConfig({
       project('llm', 'packages/llm'),
       project('agent', 'packages/agent'),
       project('skills', 'packages/skills'),
+      project('vscode-shim', 'packages/vscode-shim'),
       project('desktop', 'apps/desktop'),
     ],
   },

@@ -39,6 +39,20 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
     en: 'Pick a downloaded VSCode extension package from disk and import it to run',
   },
   'ext.loadFromPath': { zh: '从路径载入…', en: 'Load from Path…' },
+  'ext.marketTitle': { zh: '扩展市场 (Open VSX)', en: 'Extension Marketplace (Open VSX)' },
+  'ext.marketPlaceholder': {
+    zh: '搜索扩展，例如 vim、python、prettier',
+    en: 'Search extensions, e.g. vim, python, prettier',
+  },
+  'ext.marketSearch': { zh: '搜索', en: 'Search' },
+  'ext.marketSearching': { zh: '搜索中…', en: 'Searching…' },
+  'ext.marketInstall': { zh: '安装', en: 'Install' },
+  'ext.marketFailed': {
+    zh: '注册表暂时不可用，稍后再试',
+    en: 'Registry unavailable, try again later',
+  },
+  'ext.marketEmpty': { zh: '没有找到匹配的扩展', en: 'No matching extensions' },
+  'ext.marketInstalled': { zh: '已安装并激活 {name}', en: 'Installed and activated {name}' },
   'ext.installedSection': { zh: '已安装的扩展', en: 'Installed Extensions' },
   'ext.empty': {
     zh: '暂未载入任何第三方扩展包，点击上方按钮即可一键添加',
