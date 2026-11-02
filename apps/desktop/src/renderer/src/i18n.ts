@@ -513,6 +513,19 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'tree.addToChat': { zh: '添加到聊天', en: 'Add to Chat' },
   'tree.addToNewChat': { zh: '在新对话中添加', en: 'Add to New Chat' },
   'tree.findInFolder': { zh: '在文件夹中查找...', en: 'Find in Folder...' },
+  'tree.addFolderToWorkspace': { zh: '添加文件夹到工作区...', en: 'Add Folder to Workspace...' },
+  'tree.removeFolderFromWorkspace': {
+    zh: '从工作区中移除文件夹',
+    en: 'Remove Folder from Workspace',
+  },
+  'tree.removeFolderConfirm': {
+    zh: '从工作区中移除',
+    en: 'Remove from Workspace',
+  },
+  'tree.removeFolderDetail': {
+    zh: '只是把这个文件夹从工作区里移除，磁盘上的文件不会被删除。',
+    en: 'This only removes the folder from the workspace. Files on disk are not deleted.',
+  },
   'tree.cut': { zh: '剪切', en: 'Cut' },
   'tree.copy': { zh: '复制', en: 'Copy' },
   'tree.paste': { zh: '粘贴', en: 'Paste' },

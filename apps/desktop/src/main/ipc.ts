@@ -167,7 +167,41 @@ export function registerIpc(deps: {
     run(event, () => registry.current().workspace.getInfo()),
   );
   ipcMain.handle('workspace:set', (event, root: string) =>
-    run(event, () => registry.current().workspace.setRoot(root)),
+    run(event, async () => {
+      const result = registry.current().workspace.setRoot(root);
+      // 附加文件夹是按工作区持久化的，打开之后要恢复回来（见 workspace-folders.json）。
+      // 放在 setRoot 之后：setRoot 会先清空上一份，避免把别的项目的文件夹带过来。
+      await registry.current().workspace.loadFolders();
+      return result;
+    }),
+  );
+  ipcMain.handle('workspace:getFolders', (event) =>
+    run(event, () => registry.current().workspace.getFolders()),
+  );
+  ipcMain.handle('workspace:setFolders', (event, absPaths: string[]) =>
+    run(event, async () => {
+      const folders = await registry.current().workspace.setFolders(absPaths ?? []);
+      search.invalidateCache();
+      return folders;
+    }),
+  );
+  ipcMain.handle('workspace:addFolders', async (event) =>
+    run(event, async () => {
+      const win = windowFromEvent(event);
+      const result = await dialog.showOpenDialog(win!, {
+        properties: ['openDirectory', 'multiSelections'],
+      });
+      if (result.canceled || !result.filePaths.length) return null;
+      const current = registry
+        .current()
+        .workspace.getFolders()
+        .map((f) => f.absPath);
+      const folders = await registry
+        .current()
+        .workspace.setFolders([...current, ...result.filePaths]);
+      search.invalidateCache();
+      return folders;
+    }),
   );
   ipcMain.handle('workspace:listDir', (event, relPath?: string) =>
     run(event, () => registry.current().workspace.listDir(relPath)),

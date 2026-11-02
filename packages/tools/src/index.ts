@@ -54,7 +54,13 @@ export {
 export type { EmbeddingSource, EmbeddingSourceOptions } from './embeddingSource.js';
 export type { ParsedRule, RuleMeta } from './rules.js';
 export type { RevertResult } from './checkpoint.js';
-export { resolveInWorkspace, assertRealPathInside, PathJailError, toPosixRel } from './pathJail.js';
+export {
+  MULTIROOT_PREFIX,
+  resolveInWorkspace,
+  assertRealPathInside,
+  PathJailError,
+  toPosixRel,
+} from './pathJail.js';
 export type { WorkspaceBackend, DirEntry, CommandResult, FileStat } from './backend.js';
 export { LocalFsBackend } from './backend.js';
 export {

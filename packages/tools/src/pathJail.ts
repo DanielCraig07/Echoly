@@ -2,6 +2,14 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 
+/**
+ * 多根工作区的逻辑前缀。
+ *
+ * 常量在这里定义、由桌面端复用：两边各写一份字符串迟早会对不上，
+ * 而对不上的后果是「保留前缀没被拦住」—— 正是这个常量要防的事。
+ */
+export const MULTIROOT_PREFIX = 'multiroot:';
+
 export class PathJailError extends Error {
   constructor(message: string) {
     super(message);
@@ -18,6 +26,14 @@ export class PathJailError extends Error {
  */
 export function resolveInWorkspace(workspaceRoot: string, relPath = '.'): string {
   const root = path.resolve(workspaceRoot);
+  // 多根工作区的逻辑前缀是**保留**的：它属于工作区服务的编址层，绝不该被当成
+  // 普通相对路径落到主根下 —— 那会造出一个名叫 `multiroot:xxx` 的真实文件，
+  // 而且写错了在界面上完全看不出来。这里挡住它，让泄漏变成一次明确的报错。
+  if (typeof relPath === 'string' && relPath.startsWith(MULTIROOT_PREFIX)) {
+    throw new PathJailError(
+      `逻辑路径前缀 ${MULTIROOT_PREFIX} 是保留的，不能当作工作区相对路径使用：${relPath}`,
+    );
+  }
   const target = path.resolve(root, relPath);
   const rel = path.relative(root, target);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {

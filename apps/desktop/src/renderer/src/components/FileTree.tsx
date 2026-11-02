@@ -195,6 +195,18 @@ function FileTreeContextMenu({ state, clipboard, gitStatus, onClose, onAction }:
     items.push(item('new-file', t('tree.newFile')));
     items.push(item('new-folder', t('tree.newFolder')));
   }
+  if (isBlank) {
+    items.push(sep('s-root'));
+    items.push(item('add-folder-to-workspace', t('tree.addFolderToWorkspace')));
+  }
+  // 附加文件夹的根节点（逻辑前缀 `multiroot:`）才给「移除」：
+  // 普通目录里出现这一项会让人以为能把任意目录从工作区踢出去。
+  if (node?.isDirectory && node.path.startsWith('multiroot:')) {
+    items.push(sep('s-remroot'));
+    items.push(
+      item('remove-folder-from-workspace', t('tree.removeFolderFromWorkspace'), { danger: true }),
+    );
+  }
   if (node) {
     items.push(item('open-terminal', t('tree.openTerminal')));
     items.push(sep('s1'));
@@ -1690,6 +1702,32 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           setExpandPath(parent === '.' ? null : parent);
           setInlineEdit({ mode: 'create-folder', parentPath: parent });
           bump();
+          break;
+        }
+        case 'add-folder-to-workspace': {
+          const folders = await window.ide.addWorkspaceFolders();
+          if (!folders) break;
+          bump();
+          window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+          break;
+        }
+        case 'remove-folder-from-workspace': {
+          if (!node) break;
+          const folderId = node.path.slice('multiroot:'.length).split('/')[0];
+          const ok = await confirm.confirm({
+            title: t('tree.removeFolderConfirm'),
+            content: t('tree.removeFolderDetail'),
+            details: [{ label: t('tree.labelPath'), value: node.name }],
+            tone: 'danger',
+            confirmLabel: t('tree.removeFolderConfirm'),
+          });
+          if (ok === null) return;
+          const folders = await window.ide.getWorkspaceFolders();
+          await window.ide.setWorkspaceFolders(
+            folders.filter((f) => f.id !== folderId).map((f) => f.absPath),
+          );
+          bump();
+          window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
           break;
         }
         case 'open-terminal':

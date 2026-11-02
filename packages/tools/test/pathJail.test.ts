@@ -28,6 +28,13 @@ describe('pathJail', () => {
     expect(() => resolveInWorkspace(root, '../other')).toThrow(PathJailError);
   });
 
+  it('rejects the reserved multiroot logical prefix', () => {
+    // 多根工作区的附加文件夹用 `multiroot:` 编址，这个前缀是保留的：
+    // 一旦被当成普通相对路径放行，主根下会凭空多出一个名叫 `multiroot:xxx` 的目录。
+    expect(() => resolveInWorkspace(root, 'multiroot:docs-abc123/src/a.ts')).toThrow(PathJailError);
+    expect(() => resolveInWorkspace(root, 'multiroot:')).toThrow(PathJailError);
+  });
+
   it('converts absolute path back to posix relative', () => {
     expect(toPosixRel(root, '/workspace/project/src/App.tsx')).toBe('src/App.tsx');
     expect(toPosixRel(root, '/workspace/project')).toBe('');

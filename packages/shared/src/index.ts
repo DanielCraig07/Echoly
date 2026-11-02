@@ -1415,10 +1415,25 @@ export type WorkspaceKind = 'local' | 'ssh';
  */
 export const NO_WORKSPACE_LABEL = '未打开工作区';
 
+/**
+ * 多根工作区里「主根之外」的一个附加文件夹。
+ *
+ * `path` 是它的逻辑路径前缀段（形如 `multiroot:<id>`），可以**原样**交给
+ * listDir / readFile / writeFile 这些接口，由工作区服务解析到对应文件夹。
+ */
+export interface WorkspaceFolderInfo {
+  id: string;
+  label: string;
+  path: string;
+  absPath: string;
+}
+
 export interface WorkspaceInfo {
   kind: WorkspaceKind;
   root: string | null;
   label: string;
+  /** 附加文件夹（多根工作区）。为空表示单根工作区。 */
+  folders?: WorkspaceFolderInfo[];
 }
 
 export interface SshConnectRequest {
@@ -1497,6 +1512,14 @@ export interface IpcApi {
   getWorkspace: () => Promise<string | null>;
   getWorkspaceInfo: () => Promise<WorkspaceInfo>;
   setWorkspace: (root: string) => Promise<string>;
+  // ── 多根工作区：附加文件夹 ────────────────────────────────────────────────
+  // 附加文件夹的编址见 WorkspaceFolderInfo。这一组只管「有哪些根」，
+  // 读写文件仍然走原来的 listDir/readFile/...，只是路径多了一层前缀。
+  getWorkspaceFolders: () => Promise<WorkspaceFolderInfo[]>;
+  /** 直接设置附加文件夹（绝对路径列表），返回归一化后的结果 */
+  setWorkspaceFolders: (absPaths: string[]) => Promise<WorkspaceFolderInfo[]>;
+  /** 弹目录选择框并把选中的目录追加为附加文件夹；取消返回 null */
+  addWorkspaceFolders: () => Promise<WorkspaceFolderInfo[] | null>;
   listDir: (relPath?: string) => Promise<FileTreeNode[]>;
   readFile: (relPath: string) => Promise<string>;
   /** 流式/分页读取指定行区间，用于大文件极速安全预览与防卡顿加载 */
