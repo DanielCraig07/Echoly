@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { app, BrowserWindow, type WebContents } from 'electron';
+import { app, BrowserWindow, Notification, type WebContents } from 'electron';
 import path from 'node:path';
 import type {
   AgentEvent,
@@ -8,6 +8,9 @@ import type {
   ChatMessage,
   ConfirmRequest,
   PermissionMode,
+  BackgroundJob,
+  BackgroundJobEntry,
+  BackgroundJobStatus,
   PlanContext,
   QueuedUserMessage,
 } from '@deepseek-ide/shared';
@@ -30,6 +33,14 @@ import { collectDirectoryRules } from './directoryRules';
 import { formatRulesInjection } from './rulesInjection';
 import { createDocsToolHost } from './docsToolHost';
 import { createWebToolHost } from './webService';
+import {
+  BackgroundJobStore,
+  appendEntry,
+  finalizeJob,
+  isFinished,
+  summarizePrompt,
+  summarizeText,
+} from './backgroundJobs';
 
 interface PendingConfirm {
   resolve: (result: boolean | string) => void;
@@ -41,6 +52,42 @@ function shouldAutoApproveConfirm(mode: PermissionMode, kind: ConfirmRequest['ki
   if (mode === 'allow_all_extreme') return true;
   if (mode === 'allow_all' && kind !== 'other') return true;
   return false;
+}
+
+/** 从 AgentEvent 推导出一条时间线条目；不关心的类型返回 null。 */
+function backgroundEntryFor(event: AgentEvent, now: number): BackgroundJobEntry | null {
+  switch (event.type) {
+    case 'assistant_message':
+      return event.content?.trim()
+        ? { at: now, kind: 'text', text: summarizeText(event.content, 120) }
+        : null;
+    case 'tool_result':
+      return { at: now, kind: 'tool', text: `${event.name}${event.isError ? '（失败）' : ''}` };
+    case 'pending_diff':
+      return { at: now, kind: 'text', text: `提出改动：${event.diff.path}` };
+    case 'confirm_request':
+      return { at: now, kind: 'status', text: `等待确认：${event.request.title}` };
+    case 'error':
+      return { at: now, kind: 'status', text: `错误：${summarizeText(event.message, 120)}` };
+    case 'done':
+      return {
+        at: now,
+        kind: 'status',
+        text: event.finalText === '(cancelled)' ? '已取消' : '已完成',
+      };
+    case 'status':
+      return event.status === 'cancelled' ? { at: now, kind: 'status', text: '已取消' } : null;
+    default:
+      return null;
+  }
+}
+
+/** 该事件是否终结了这一轮；是则返回终态。 */
+function terminalStatusFor(event: AgentEvent): Exclude<BackgroundJobStatus, 'running'> | null {
+  if (event.type === 'error') return 'error';
+  if (event.type === 'done') return event.finalText === '(cancelled)' ? 'cancelled' : 'done';
+  if (event.type === 'status' && event.status === 'cancelled') return 'cancelled';
+  return null;
 }
 
 interface PendingContinue {
@@ -100,19 +147,10 @@ export class AgentService {
       getWindow: WindowGetter;
       /** 进程级单例；未接入时 Agent 就是一台没有外部工具的本地 Agent。 */
       mcp?: McpService;
+      /** 后台任务登记簿；未接入时后台任务功能整体关闭（不影响正常对话）。 */
+      backgroundJobs?: BackgroundJobStore;
     },
   ) {}
-
-  private windowForRun(runId: string): BrowserWindow | null {
-    const wcId = this.runSenders.get(runId);
-    if (wcId != null) {
-      const owned = BrowserWindow.getAllWindows().find(
-        (w) => !w.isDestroyed() && w.webContents.id === wcId,
-      );
-      if (owned) return owned;
-    }
-    return this.deps.getWindow();
-  }
 
   /**
    * 把没等到步骤边界就被终结的追加消息报回界面。
@@ -135,10 +173,139 @@ export class AgentService {
     if (event.type !== 'token' && event.type !== 'thinking_token') {
       appendRunTrace(app.getPath('userData'), runId, JSON.stringify(event));
     }
-    const win = this.windowForRun(runId);
-    if (win && !win.isDestroyed()) {
+    for (const win of this.targetsForRun(runId)) {
       win.webContents.send('agent:event', { runId, ...event });
     }
+    this.recordBackgroundEvent(runId, event);
+  }
+
+  /**
+   * 事件该投给哪些窗口。
+   *
+   * 正常情况下只投给发起这一轮的那个窗口（多窗口下不能串台）。但后台任务的关键
+   * 恰恰是：**发起它的窗口可能已经关掉了** —— 这时投给剩下的所有窗口。
+   * 否则任务还在跑、却没有任何窗口收得到事件，界面看上去就像卡死了。
+   */
+  private targetsForRun(runId: string): BrowserWindow[] {
+    const wcId = this.runSenders.get(runId);
+    if (wcId != null) {
+      const owned = BrowserWindow.getAllWindows().find(
+        (w) => !w.isDestroyed() && w.webContents.id === wcId,
+      );
+      if (owned) return [owned];
+    }
+    return BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+  }
+
+  // ── 后台任务登记 ──────────────────────────────────────────────────────────
+
+  private get backgroundJobs(): BackgroundJobStore | undefined {
+    return this.deps.backgroundJobs;
+  }
+
+  /** 新起一轮时登记一条 running 记录。登记簿没接入就整体跳过。 */
+  private async registerBackgroundJob(runId: string, title: string, label: string): Promise<void> {
+    const store = this.backgroundJobs;
+    if (!store) return;
+    const job: BackgroundJob = {
+      id: runId,
+      title,
+      status: 'running',
+      workspaceLabel: label || undefined,
+      startedAt: Date.now(),
+      transcript: [],
+    };
+    await store.upsert(job);
+    this.broadcastBackgroundJobs();
+  }
+
+  /**
+   * 把事件写进任务时间线，并在终态时定稿 + 通知。
+   *
+   * 通知**只在应用不在前台时**发：用户正盯着这个窗口看的时候弹一条系统通知是噪音。
+   */
+  private recordBackgroundEvent(runId: string, event: AgentEvent): void {
+    const store = this.backgroundJobs;
+    if (!store) return;
+    const job = store.get(runId);
+    if (!job || isFinished(job.status)) return;
+
+    const now = Date.now();
+    const entry = backgroundEntryFor(event, now);
+    let next: BackgroundJob = entry
+      ? { ...job, transcript: appendEntry(job.transcript, entry) }
+      : job;
+
+    const terminal = terminalStatusFor(event);
+    if (terminal) {
+      next = finalizeJob(
+        next,
+        terminal,
+        {
+          summary: event.type === 'done' ? summarizeText(event.finalText) : undefined,
+          error: event.type === 'error' ? event.message : undefined,
+        },
+        now,
+      );
+    }
+
+    void store
+      .upsert(next)
+      .then(() => {
+        this.broadcastBackgroundJobs();
+        if (terminal) this.notifyBackgroundJob(next);
+      })
+      .catch(() => undefined);
+  }
+
+  private notifyBackgroundJob(job: BackgroundJob): void {
+    const focused = BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isFocused());
+    if (focused || !Notification.isSupported()) return;
+    try {
+      const title =
+        job.status === 'done'
+          ? '后台任务已完成'
+          : job.status === 'error'
+            ? '后台任务出错'
+            : '后台任务已取消';
+      new Notification({
+        title,
+        body: job.summary || job.error || job.title,
+      }).show();
+    } catch {
+      // 通知失败不值得影响任何事
+    }
+  }
+
+  private broadcastBackgroundJobs(): void {
+    const store = this.backgroundJobs;
+    if (!store) return;
+    const jobs = store.list();
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('backgroundJobs:changed', jobs);
+    }
+  }
+
+  listBackgroundJobs(): BackgroundJob[] {
+    return this.backgroundJobs?.list() ?? [];
+  }
+
+  async clearBackgroundJobs(): Promise<BackgroundJob[]> {
+    const store = this.backgroundJobs;
+    if (!store) return [];
+    const jobs = await store.clearFinished();
+    this.broadcastBackgroundJobs();
+    return jobs;
+  }
+
+  /** 打开某个任务：把焦点还给当初跑它的那个窗口。返回是否有窗口可去。 */
+  openBackgroundJob(id: string): boolean {
+    const targets = this.targetsForRun(id);
+    const win = targets[0] ?? null;
+    if (!win) return false;
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    return true;
   }
 
   private userSkillsDir(): string {
@@ -323,6 +490,15 @@ export class AgentService {
     if (sender && !sender.isDestroyed()) {
       this.runSenders.set(runId, sender.id);
     }
+    // 登记后台任务：即便用户不打算把它当后台任务用，这份记录也是「最近跑过什么」的
+    // 唯一凭据 —— 窗口一关，界面上的那点状态就什么都没有了。
+    let workspaceLabel = '';
+    try {
+      workspaceLabel = workspace.getInfo().label ?? '';
+    } catch {
+      workspaceLabel = '';
+    }
+    void this.registerBackgroundJob(runId, summarizePrompt(payload.prompt), workspaceLabel);
 
     const requestConfirm = async (req: {
       title: string;

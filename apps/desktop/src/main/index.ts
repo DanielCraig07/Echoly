@@ -10,6 +10,7 @@ import { SettingsStore } from './settings';
 import { applyPrivacyModeEnv } from './privacyMode';
 import { SessionStore } from './sessions';
 import { AgentService } from './agentService';
+import { BackgroundJobStore } from './backgroundJobs';
 import { TerminalService } from './terminal';
 import { GitService } from './gitService';
 import { SearchService } from './searchService';
@@ -595,11 +596,18 @@ app.whenReady().then(async () => {
   const search = new SearchService(resolveWorkspace);
   const mcpService = new McpService(settings);
   mcpServiceRef = mcpService;
+  // 后台任务登记簿落在 userData 下：任务跑完 / 应用重启之后，用户都还能回看结果。
+  // load() 必须在 AgentService 之前 await 完成，否则头几轮运行会落在「记录已加载」之前。
+  const backgroundJobs = new BackgroundJobStore(
+    join(app.getPath('userData'), 'background-jobs.json'),
+  );
+  await backgroundJobs.load();
   const agents = new AgentService({
     settings,
     registry: windowRegistry,
     getWindow: () => getActiveWindow(),
     mcp: mcpService,
+    backgroundJobs,
   });
 
   registerIpc({

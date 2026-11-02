@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { APP_VERSION, type GitCommitEntry, type GitStatusResult } from '@deepseek-ide/shared';
 import { useI18n } from '../i18n';
+import { BackgroundJobsIndicator } from './BackgroundJobsIndicator';
 import {
   getCompletionMetrics,
   resetCompletionMetrics,
@@ -653,7 +654,10 @@ export function StatusBar({
           )}
         </div>
 
-        {/* 7. AI 行内代码幽灵补全：徽章本身是开关，点开浮层看统计 */}
+        {/* 5. 后台任务：运行中的任务数 + 最近任务记录 */}
+        <BackgroundJobsIndicator />
+
+        {/* 6. AI 行内代码幽灵补全：徽章本身是开关，点开浮层看统计 */}
         <div className="status-popover-anchor">
           <button
             type="button"

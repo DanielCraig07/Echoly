@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AgentEvent,
   AppSettings,
+  BackgroundJob,
   ChatSession,
   DevToolsViewLayout,
   GitCloneRequest,
@@ -52,6 +53,9 @@ const api: IpcApi = {
   pickFile: (filters) => ipcRenderer.invoke('dialog:pickFile', filters),
   startAgent: (payload) => ipcRenderer.invoke('agent:start', payload),
   cancelAgent: (runId) => ipcRenderer.invoke('agent:cancel', runId),
+  listBackgroundJobs: () => ipcRenderer.invoke('backgroundJobs:list'),
+  clearBackgroundJobs: () => ipcRenderer.invoke('backgroundJobs:clear'),
+  openBackgroundJob: (id) => ipcRenderer.invoke('backgroundJobs:open', id),
   queueAgentMessage: (runId, message) => ipcRenderer.invoke('agent:queueMessage', runId, message),
   respondConfirm: (requestId, approved, answer) =>
     ipcRenderer.invoke('agent:respondConfirm', requestId, approved, answer),
@@ -149,6 +153,11 @@ const api: IpcApi = {
       cb(event);
     ipcRenderer.on('agent:event', listener);
     return () => ipcRenderer.removeListener('agent:event', listener);
+  },
+  onBackgroundJobsChanged: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, jobs: BackgroundJob[]) => cb(jobs);
+    ipcRenderer.on('backgroundJobs:changed', listener);
+    return () => ipcRenderer.removeListener('backgroundJobs:changed', listener);
   },
   onTerminalData: (cb) => {
     const listener = (_: Electron.IpcRendererEvent, payload: { id: string; data: string }) =>

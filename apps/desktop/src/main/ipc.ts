@@ -377,6 +377,11 @@ export function registerIpc(deps: {
   ipcMain.handle('agent:continue', (_e, runId: string) => agents.continueAgent(runId));
   ipcMain.handle('agent:stopContinue', (_e, runId: string) => agents.stopContinueAgent(runId));
   ipcMain.handle('agent:probe', (_e, options) => agents.probe(options));
+  // ── 后台任务（本地托管，见 BackgroundJob 注释） ──────────────────────────
+  // 列表是纯内存读，不必包 run()：它不依赖当前窗口的会话上下文。
+  ipcMain.handle('backgroundJobs:list', () => agents.listBackgroundJobs());
+  ipcMain.handle('backgroundJobs:clear', () => agents.clearBackgroundJobs());
+  ipcMain.handle('backgroundJobs:open', (_e, id: string) => agents.openBackgroundJob(id));
   ipcMain.handle('skills:list', (e) => run(e, () => agents.listSkills()));
   ipcMain.handle('skills:openUserDir', async () => {
     const dir = agents.openUserSkillsDir();

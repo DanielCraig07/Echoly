@@ -770,6 +770,38 @@ export type AgentRunStatus =
   | 'error'
   | 'cancelled';
 
+/**
+ * 后台 Agent 任务（本地托管）。
+ *
+ * 名字沿用 Cursor 的「后台 / 云端 Agent」，但要说清楚**它不是云端**：
+ * 本轮运行仍然发生在**这台机器上**，由主进程托管，因此它能在窗口关闭后继续跑，
+ * 但**应用退出就结束**（不像真正的云端 Agent 有远端 VM 接着跑）。
+ * 之所以仍然值得做：用户发出一个长任务后切走去做别的事，不需要一直盯着这个窗口。
+ */
+export type BackgroundJobStatus = 'running' | 'done' | 'error' | 'cancelled';
+
+/** 任务时间线里的一条（用于窗口重开后回放「刚刚发生了什么」） */
+export interface BackgroundJobEntry {
+  at: number;
+  kind: 'text' | 'tool' | 'status';
+  text: string;
+}
+
+export interface BackgroundJob {
+  /** 就是 runId，便于从任务回到那一轮对话 */
+  id: string;
+  /** 用户提示词的首行摘要 */
+  title: string;
+  status: BackgroundJobStatus;
+  workspaceLabel?: string;
+  startedAt: number;
+  endedAt?: number;
+  /** 结束时的收尾文本摘要 */
+  summary?: string;
+  error?: string;
+  transcript: BackgroundJobEntry[];
+}
+
 export type AgentEvent =
   | { type: 'status'; status: AgentRunStatus }
   | { type: 'token'; text: string }
@@ -1578,6 +1610,13 @@ export interface IpcApi {
     attachments?: ChatAttachment[];
   }) => Promise<{ runId: string }>;
   cancelAgent: (runId: string) => Promise<void>;
+  // ── 后台 Agent 任务（本地托管，见 BackgroundJob 注释） ────────────────────
+  /** 列出后台任务（新→旧）。运行中的排在最前。 */
+  listBackgroundJobs: () => Promise<BackgroundJob[]>;
+  /** 清空已结束的后台任务记录；运行中的不动 */
+  clearBackgroundJobs: () => Promise<BackgroundJob[]>;
+  /** 打开某个后台任务：聚焦工作区并让渲染层切到那一轮对话 */
+  openBackgroundJob: (id: string) => Promise<boolean>;
   /**
    * 向正在运行的一轮追加一条用户消息。返回 `false` 表示该轮已结束，
    * 调用方应改为发起新一轮（而不是把消息丢掉）。
@@ -1852,6 +1891,7 @@ export interface IpcApi {
   onAgentEvent: (cb: (event: AgentEvent & { runId: string }) => void) => () => void;
   onTerminalData: (cb: (payload: { id: string; data: string }) => void) => () => void;
   onTerminalExit: (cb: (payload: { id: string; exitCode: number }) => void) => () => void;
+  onBackgroundJobsChanged: (cb: (jobs: BackgroundJob[]) => void) => () => void;
   onWorkspaceChanged: (cb: (info: WorkspaceInfo) => void) => () => void;
   onFsChanged?: (cb: (data: { type: string; path?: string }) => void) => () => void;
   onGitCloneLog: (cb: (line: string) => void) => () => void;
