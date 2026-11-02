@@ -27,6 +27,7 @@ import type { WindowRegistry } from './windowRegistry';
 import type { McpService } from './mcpService';
 import { RulesService } from './rulesService';
 import { collectDirectoryRules } from './directoryRules';
+import { formatRulesInjection } from './rulesInjection';
 import { createWebToolHost } from './webService';
 
 interface PendingConfirm {
@@ -382,10 +383,11 @@ export class AgentService {
             }
           }
           if (dirRules.length > 0) {
-            const dirText =
-              `【目录级规则 (${dirRules.length} 条)】\n` +
-              dirRules.map((rule) => `--- ${rule.relPath} ---\n${rule.body}`).join('\n\n');
-            rulesText = rulesText ? `${rulesText}\n\n${dirText}` : dirText;
+            // 三档分流后再注入，而不是把收集到的规则整包塞进去：
+            // 一个团队仓库几十条规则很常见，全量注入会白吃掉一大截上下文，
+            // 而且带 globs 的规则会作用到与它无关的对话上。见 rulesInjection.ts。
+            const dirText = formatRulesInjection(dirRules, { changedPaths: openPaths });
+            if (dirText) rulesText = rulesText ? `${rulesText}\n\n${dirText}` : dirText;
           }
         } catch {
           // 规则收集失败不应阻断本轮对话：规则是增强，不是前置条件

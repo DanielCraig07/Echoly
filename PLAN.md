@@ -33,7 +33,11 @@
 - [x] 在 `packages/agent/src/index.ts` 注入 `ctx.web`（`AgentRunOptions.web` → `toolCtx.web`）
 - [x] `AppSettings.webEnabled` / `webAllowedHosts` + 默认值；`agentService` 用 `createWebToolHost` 组装
 - [x] 设置页 UI：联网总开关 + 「允许的内网主机」多行输入（常规分区）
-- [ ] 设置页联网总开关（默认关，会话内可临时开启）
+- [x] 设置页联网总开关（**实际按默认开做的**：`webEnabled` 默认 `true`，设置页可关）
+  - 原计划写的是「默认关 + 会话内临时开启」，实现时选了默认开：Agent 联网是用户
+    主动提问才会触发的能力，默认关会让「查一下这个库怎么用」直接失败，
+    而用户并不知道有个开关要先去打开。改成默认开 + 显式关 + 内网白名单，
+    并另加「隐私模式」一键切断所有额外出网（见下）。
 - [ ] `specialMentions.ts` 支持 `@Web`
 - [ ] `@Docs` 文档源管理（设置页维护站点 + 本地索引 + `search_docs` / `read_doc`）
 
@@ -43,13 +47,20 @@
 - [x] `main/directoryRules.ts`：扫描 `.echoly/rules/*.md`（兼容 `.cursor/rules`），从工作区根逐级向下收集，子目录规则排后即高优先级
 - [x] `collectDirectoryRules` 单测：层级顺序、兄弟目录隔离、越界路径、非规则文件过滤、空正文跳过（+8 单测）
 - [x] 接进 Agent 的 `rulesText` 组装：以所有已打开文件为上下文收集 + 按路径去重
-- [ ] 把三档分流结果接进 Agent 的 prompt 组装
-- [ ] 三档注入：常驻 / 按当前文件 glob 命中 / 按 Agent 检索命中
-- [ ] 从工作区根逐级向下收集，子目录优先
-- [ ] `.echolyrules`、`.cursorrules` 保留为 alwaysApply 兼容
+- [x] 把三档分流结果接进 Agent 的 prompt 组装（`main/rulesInjection.ts` + 10 单测）
+  - 原先收集到多少条就整包塞进 prompt：一个团队仓库几十条规则很常见，白吃一大截上下文，
+    且带 `globs` 的规则会作用到与它无关的对话上。
+  - 常驻 → 注入全文；`globs` 命中本次涉及文件 → 注入全文；两者都不是 → 只给
+    「有什么规则、讲什么、文件在哪」的索引，模型需要时自己 `read_file`。
+  - `globs` 明确的规则**不命中就整条不注入** —— 那是「只在这些文件上生效」的意思。
+    （放进索引会让索引长到没人看；`selectRulesForContext` 原本就是这个语义，有单测。）
+- [x] 从工作区根逐级向下收集，子目录优先（`main/directoryRules.ts`，排序即优先级）
+- [x] `.echolyrules`、`.cursorrules` 保留为 alwaysApply 兼容（`main/rulesService.ts` 单独读取并常驻注入）
 - [x] IPC `rules:list-directory` + preload `rulesListDirectory` + `IpcApi` 类型（返回来源与作用域）
 - [x] `ProjectMemoryModal` 消费 `rulesListDirectory` 渲染「当前生效规则」视图（可折叠，只读）
-- [ ] 单测：globs 匹配、嵌套优先级、缓存失效
+- [x] 单测：globs 匹配（`rules.test.ts`）、嵌套优先级（`directoryRules.test.ts`）
+  - 「缓存失效」无对应实现：规则每次对话都从磁盘读，没有缓存，也就没有失效问题。
+    代价是每轮多几次 `readdir`（已用 100 个文件的上限兜住）。
 
 ### A4 Review 面板
 
@@ -77,7 +88,7 @@
 - [x] `services/navigationHistory.ts`：浏览器式导航栈（中途跳转截断分支、重复跳转不堆记录、上限 50）+7 单测
 - [x] 标题栏前进/后退按钮 + 接上导航栈（监听 activePath 而非在 openFile 埋点）
 - [x] 底部面板：去掉 `TerminalPanel` 工具栏里重复的「终端」图标+文字（上一行已标注面板名）
-- [ ] 底部面板两行 tab 真正合并为一行（方案 A，已选）
+- [x] 底部面板两行 tab 真正合并为一行（方案 A，已选）
 
   **结构定位**：第一行在 `App.tsx:5480-5560`（`.bottom-panel-tab`，三个面板类型共用外壳）；
   第二行在 `TerminalPanel.tsx:2496+`（`.terminal-toolbar`，35px，类型胶囊 + 会话标签）。
@@ -108,7 +119,7 @@
 
   改 `--ui-font-size: 12px → 13px` 只会影响那 19 处，**几乎什么都看不见**。
 
-- [ ] 【重新定义】字号体系统一：不是改一个 token，而是收敛 ~1700 处声明
+- [x] 【重新定义】字号体系统一：不是改一个 token，而是收敛 ~1700 处声明
   - [x] 第一步：**159 处半像素值**（9.5 / 10.5 / 11.5 / 12.5 / 13.5 / 14.5px）归整到相邻整数档
         —— 半像素在不同缩放比下会被各自取整，同一界面出现大小不一的同类文字，
         外接屏与内建屏并排时尤其明显。取整规则统一向上（10.5→11、11.5→12…），保持可读性
