@@ -18291,14 +18291,17 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  /* 与 .session-modal-header 一致：原来是 16px 20px，整体比别处松一档 */
+  padding: 14px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
 
 .extension-modal-header h2 {
   margin: 0;
-  font-size: 18px;
+  /* 15px 是全应用弹窗标题那一档（见 .session-modal-title）。这里原来是 18px，
+     比别处大一整档 —— 单看一页不觉得，和别的弹窗来回切就很明显。 */
+  font-size: 15px;
   font-weight: 600;
   color: var(--text);
 }
@@ -18425,7 +18428,8 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .ext-hero-title {
-  font-size: 14px;
+  /* 正文档就是 --ui-font-size（13px）；卡片标题靠字重区分，不需要再大一档 */
+  font-size: var(--ui-font-size, 13px);
   font-weight: 700;
   color: var(--text-bright);
 }

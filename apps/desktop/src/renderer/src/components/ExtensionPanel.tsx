@@ -615,7 +615,9 @@ export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModa
         </header>
 
         {/* Body */}
-        <div className="ide-modal-body" style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+        {/* 不覆盖 padding：.ide-modal-body 的默认值是 18px 20px，与其它弹窗一致。
+            这里原本写死 20，比别处松一档。 */}
+        <div className="ide-modal-body" style={{ flex: 1, overflowY: 'auto' }}>
           <ExtensionPanel onOpenExtension={onOpenExtension} onClose={onClose} />
         </div>
 

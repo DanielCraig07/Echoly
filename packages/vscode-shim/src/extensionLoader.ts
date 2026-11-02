@@ -213,15 +213,17 @@ export async function downloadClaudeCodeExtension(
       console.log(
         `Downloading ${extensionId} from VS Code Marketplace... (尝试 ${attempt}/${maxRetries})`,
       );
-      return await downloadWithProgress(downloadUrl, vsixPath, onProgress);
+      // 第 2 次起续传：这个包有 122MB，重试从 0 开始意味着前面下的全部白费
+      // （日志里那次失败已经下到 75MB 了）。
+      return await downloadWithProgress(downloadUrl, vsixPath, onProgress, {
+        minBytes: CLAUDE_CODE_MIN_BYTES,
+        resume: attempt > 1,
+      });
     } catch (err: any) {
       lastError = err;
       console.error(`下载失败 (尝试 ${attempt}/${maxRetries}):`, err.message);
 
-      // 删除部分下载的文件
-      try {
-        await fs.unlink(vsixPath);
-      } catch {}
+      // **不删分片**：留着下一次续传。只有全部重试都失败时才清掉（见函数末尾）。
 
       // 如果不是最后一次尝试，等待后重试
       if (attempt < maxRetries) {
@@ -232,41 +234,156 @@ export async function downloadClaudeCodeExtension(
     }
   }
 
-  // 所有重试都失败了
+  // 全部重试都失败了：这才把分片清掉，免得留下一个半截的 .vsix 让人以为装过了
+  try {
+    await fs.unlink(vsixPath);
+  } catch {}
+
   throw new Error(
     `下载失败（已重试 ${maxRetries} 次）: ${lastError?.message}\n\n建议：\n1. 检查网络连接\n2. 使用"从路径加载"手动安装`,
   );
 }
 
 /**
+ * 只读文件开头的若干字节。
+ *
+ * 单独写这个而不是 `readFile().slice(0, 4)`：后者会把整个文件读进内存，
+ * 而我们只需要 4 个字节 —— 对一个一百多 MB 的 .vsix 是纯粹的浪费。
+ */
+async function readFirstBytes(filePath: string, count: number): Promise<Uint8Array> {
+  const handle = await fs.open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(count);
+    await handle.read(buffer, 0, count, 0);
+    return buffer;
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
  * 执行下载（内部函数）
  */
+/**
+ * 通用下载的最小体积。
+ *
+ * 只用来挡住「HTTP 错误页被当成 .vsix 存下来」这种情形（那种文件通常几百字节到几 KB）。
+ * **不要**拿它当「这个扩展该有多大」的判断 —— 扩展体积从几十 KB 到一百多 MB 都有。
+ */
+export const DOWNLOAD_MIN_BYTES = 1024;
+
+/** Claude Code 的 .vsix 至少这么大（它自带一整套 VS Code 运行时代码）。 */
+export const CLAUDE_CODE_MIN_BYTES = 50 * 1024 * 1024;
+
+/** ZIP 文件头：`PK\x03\x04`。.vsix 本质是 ZIP。 */
+const ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04];
+
+export interface VsixValidationInput {
+  size: number;
+  /** 文件开头若干字节（至少 4 个） */
+  header: Uint8Array;
+  minBytes: number;
+}
+
+/**
+ * 校验下载结果。
+ *
+ * 抽成纯函数是为了能被测到：原先这段校验**没有任何测试**，而它就藏在通用下载器里，
+ * 于是「Claude Code 至少 50MB」这条判据被带进了通用路径 ——
+ * 结果是从扩展市场安装任何小于 50MB 的扩展都会失败（也就是几乎所有扩展）。
+ * 纯函数 + 单测是唯一能让这种「共享路径里混进特定用途的假设」当场暴露的办法。
+ */
+export function validateVsix(
+  input: VsixValidationInput,
+): { ok: true } | { ok: false; reason: string } {
+  if (!Number.isFinite(input.size) || input.size <= 0) {
+    return { ok: false, reason: '下载的文件为空' };
+  }
+  if (input.size < input.minBytes) {
+    return {
+      ok: false,
+      reason: `下载的文件太小 (${(input.size / 1024).toFixed(1)}KB，至少需要 ${(input.minBytes / 1024).toFixed(1)}KB)，可能下载不完整`,
+    };
+  }
+  const header = input.header;
+  if (header.length < 4) return { ok: false, reason: '下载的文件不完整（读取不到文件头）' };
+  for (let i = 0; i < ZIP_SIGNATURE.length; i += 1) {
+    if (header[i] !== ZIP_SIGNATURE[i]) {
+      return { ok: false, reason: '下载的文件不是有效的 ZIP 文件（文件头损坏）' };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * curl 参数。
+ *
+ * 几个参数都不是「保险多写几个」，各自对应一类真实失败：
+ * - `--http1.1`：一百多 MB 的文件走 HTTP/2 时，CDN 中途 CANCEL 掉流是常见现象
+ *   （curl 退出码 92，日志是 `HTTP/2 stream ... was not closed cleanly`）。
+ *   降到 HTTP/1.1 是这类问题的标准解法。
+ * - `-f`：HTTP 4xx/5xx 直接失败，而不是把错误页写进 .vsix 再靠体积校验兜住。
+ * - `--retry*`：让 curl 自己重试瞬时断流。它比外层的「删掉重下」好得多 ——
+ *   外层重试是从 0 开始的，一百多 MB 白下。
+ * - `-C -`：续传。配合外层重试，第二次从已下载的字节继续。
+ */
+export function buildCurlArgs(input: {
+  downloadUrl: string;
+  vsixPath: string;
+  resume?: boolean;
+}): string[] {
+  const args = [
+    '-L',
+    '-f',
+    '--http1.1',
+    '--retry',
+    '3',
+    '--retry-delay',
+    '2',
+    '--retry-all-errors',
+    '--connect-timeout',
+    '30',
+  ];
+  if (input.resume) args.push('-C', '-');
+  args.push(input.downloadUrl, '-o', input.vsixPath);
+  return args;
+}
+
 /**
  * 下载任意一个 .vsix 到本地。
  *
  * 导出成通用下载器（原来只服务「下载 Claude Code」那一条路径）：扩展市场里
  * 每个扩展的地址都不同，各自再写一遍 curl + 进度解析，只会多出若干份要同步维护的副本。
+ *
+ * `minBytes` 默认只挡错误页；调用方如果有更强的判据（比如 Claude Code 那个 122MB 的包）
+ * 再自己传 —— **特定扩展的体积假设不能留在通用路径里**。
  */
 export async function downloadVsix(
   downloadUrl: string,
   vsixPath: string,
   onProgress?: (progress: { percent: number; downloaded: number; total: number }) => void,
+  opts: { minBytes?: number; resume?: boolean } = {},
 ): Promise<string> {
-  return await downloadWithProgress(downloadUrl, vsixPath, onProgress);
+  return await downloadWithProgress(downloadUrl, vsixPath, onProgress, opts);
 }
 
 async function downloadWithProgress(
   downloadUrl: string,
   vsixPath: string,
   onProgress?: (progress: { percent: number; downloaded: number; total: number }) => void,
+  opts: { minBytes?: number; resume?: boolean } = {},
 ): Promise<string> {
+  const minBytes = opts.minBytes ?? DOWNLOAD_MIN_BYTES;
   try {
     // 使用 curl 标准输出来解析进度（包含总大小）
     const { spawn } = require('child_process');
 
     return await new Promise<string>((resolve, reject) => {
       // 不使用静默模式，解析 curl 的进度输出
-      const curl = spawn('curl', ['-L', downloadUrl, '-o', vsixPath]);
+      const curl = spawn(
+        'curl',
+        buildCurlArgs({ downloadUrl, vsixPath, resume: opts.resume === true }),
+      );
 
       let totalSize = 0;
       let stderr = '';
@@ -325,29 +442,15 @@ async function downloadWithProgress(
         }
 
         try {
-          // 获取真实的文件大小
           const stat = await fs.stat(vsixPath);
           const actualSize = stat.size;
 
-          // 验证文件大小（Claude Code 扩展至少 50MB）
-          if (actualSize < 50 * 1024 * 1024) {
-            throw new Error(
-              `下载的文件太小 (${(actualSize / 1024 / 1024).toFixed(1)}MB)，可能下载不完整`,
-            );
-          }
+          // 只读前 4 个字节做文件头校验：以前是 readFile 读整份，
+          // 对一个 122MB 的包等于在主进程里凭空造一个 122MB 的 Buffer。
+          const header = await readFirstBytes(vsixPath, 4);
 
-          // 验证 ZIP 文件头（.vsix 是 ZIP 格式）
-          const buffer = await fs.readFile(vsixPath);
-          const zipSignature = buffer.slice(0, 4);
-          // ZIP 文件头: 50 4B 03 04 (PK\x03\x04)
-          if (
-            zipSignature[0] !== 0x50 ||
-            zipSignature[1] !== 0x4b ||
-            zipSignature[2] !== 0x03 ||
-            zipSignature[3] !== 0x04
-          ) {
-            throw new Error('下载的文件不是有效的 ZIP 文件（文件头损坏）');
-          }
+          const verdict = validateVsix({ size: actualSize, header, minBytes });
+          if (!verdict.ok) throw new Error(verdict.reason);
 
           // 最终进度 100%，使用真实文件大小
           if (onProgress) {
