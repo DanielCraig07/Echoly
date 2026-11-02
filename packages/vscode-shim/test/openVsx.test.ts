@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_OPEN_VSX_REGISTRY,
+  DEFAULT_RECOMMENDED_SIZE,
   MAX_MARKETPLACE_PAGE_SIZE,
   buildDownloadUrl,
+  buildRecommendedUrl,
   buildSearchUrl,
+  isAllowedIconUrl,
+  isPlatformAgnosticDownload,
   isSafeExtensionId,
   normalizeRegistryBase,
   parseOpenVsxSearch,
+  parseTargetPlatform,
 } from '../src/openVsx';
 
 /**
@@ -208,6 +213,115 @@ describe('parseOpenVsxSearch', () => {
       expect(buildDownloadUrl('https://open-vsx.org', 'ns', 'n', '1.0.0', bad)).toBe(
         'https://open-vsx.org/api/ns/n/1.0.0/file/ns.n-1.0.0.vsix',
       );
+    }
+  });
+});
+
+describe('buildRecommendedUrl', () => {
+  it('空 query + 按下载量倒序 —— 「推荐」要的是最热门的几个', () => {
+    const url = buildRecommendedUrl('https://open-vsx.org');
+    expect(url).toContain('query=&');
+    expect(url).toContain('sortBy=downloadCount');
+    expect(url).toContain('sortOrder=desc');
+    expect(url).toContain(`size=${DEFAULT_RECOMMENDED_SIZE}`);
+  });
+
+  it('普通搜索不带排序参数：用户敲了关键词就该按相关度走', () => {
+    const url = buildSearchUrl('https://open-vsx.org', 'python');
+    expect(url).not.toContain('sortBy=');
+  });
+
+  it('自定义注册表同样生效（内网镜像要能对齐）', () => {
+    expect(buildRecommendedUrl('https://internal.example.com/vsx')).toContain(
+      'https://internal.example.com/vsx/api/-/search?',
+    );
+  });
+});
+
+describe('平台构建识别', () => {
+  it('从注册表给的文件名后缀里读出平台', () => {
+    expect(
+      parseTargetPlatform(
+        'https://open-vsx.org/api/ms-python/debugpy/darwin-arm64/2026.6.0/file/ms-python.debugpy-2026.6.0@darwin-arm64.vsix',
+      ),
+    ).toBe('darwin-arm64');
+  });
+
+  it('通用构建没有平台后缀', () => {
+    expect(
+      parseTargetPlatform(
+        'https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.vsix',
+      ),
+    ).toBeUndefined();
+    expect(
+      isPlatformAgnosticDownload(
+        'https://open-vsx.org/api/ms-python/python/2026.4.0/file/ms-python.python-2026.4.0.vsix',
+      ),
+    ).toBe(true);
+  });
+
+  it('平台构建不算通用构建', () => {
+    expect(
+      isPlatformAgnosticDownload(
+        'https://open-vsx.org/api/Anthropic/claude-code/2.1.316/file/Anthropic.claude-code-2.1.316@alpine-arm64.vsix',
+      ),
+    ).toBe(false);
+  });
+
+  it('查询串不干扰后缀解析', () => {
+    expect(
+      parseTargetPlatform('https://open-vsx.org/api/x/y/1/file/x.y-1@linux-x64.vsix?token=abc'),
+    ).toBe('linux-x64');
+  });
+
+  it('解析结果进到 MarketplaceExtension 上，供渲染层标注', () => {
+    const [ext] = parseOpenVsxSearch(
+      {
+        extensions: [
+          entry({
+            files: {
+              download:
+                'https://open-vsx.org/api/ms-python/debugpy/darwin-arm64/2026.6.0/file/ms-python.debugpy-2026.6.0@darwin-arm64.vsix',
+            },
+          }),
+        ],
+      },
+      'https://open-vsx.org',
+    );
+    expect(ext.targetPlatform).toBe('darwin-arm64');
+  });
+});
+
+describe('isAllowedIconUrl', () => {
+  it('只放行配置的那个注册表上的图标', () => {
+    expect(
+      isAllowedIconUrl('https://open-vsx.org', 'https://open-vsx.org/api/x/y/1/file/i.png'),
+    ).toBe(true);
+    expect(isAllowedIconUrl('https://open-vsx.org', 'https://evil.example.com/i.png')).toBe(false);
+  });
+
+  it('挡住非 http(s) 协议', () => {
+    // file:// 读本地文件、data: 塞超长内容，都不该从「图标地址」这个入口进来
+    expect(isAllowedIconUrl('https://open-vsx.org', 'file:///etc/passwd')).toBe(false);
+    expect(isAllowedIconUrl('https://open-vsx.org', 'data:image/png;base64,AAAA')).toBe(false);
+  });
+
+  it('内网镜像的图标同样放行（origin 相同即可）', () => {
+    expect(
+      isAllowedIconUrl(
+        'https://internal.example.com/vsx/',
+        'https://internal.example.com/vsx/i.png',
+      ),
+    ).toBe(true);
+    // 同一个主机但换了端口 = 换了 origin，仍然拒绝
+    expect(
+      isAllowedIconUrl('https://internal.example.com', 'https://internal.example.com:8443/i.png'),
+    ).toBe(false);
+  });
+
+  it('空值与非字符串直接拒绝', () => {
+    for (const bad of ['', null, undefined, 42, {}]) {
+      expect(isAllowedIconUrl('https://open-vsx.org', bad)).toBe(false);
     }
   });
 });

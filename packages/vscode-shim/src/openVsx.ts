@@ -25,6 +25,15 @@ export interface MarketplaceExtension {
   downloads?: number;
   /** 平均评分（0-5），Open VSX 的字段名是 averageRating */
   rating?: number;
+  /**
+   * 产物针对的平台（`darwin-arm64` / `linux-x64` …）。
+   *
+   * 有值意味着**这份 .vsix 只适用于那个平台**。搜索接口不会按当前机器过滤
+   * （实测连 `targetPlatform` 查询参数都不生效），所以热门榜里会混进别的
+   * OS/架构的构建 —— 装上去轻则原生模块加载失败，重则直接崩。
+   * 渲染层据此标注，推荐列表据此过滤。
+   */
+  targetPlatform?: string;
 }
 
 export const DEFAULT_OPEN_VSX_REGISTRY = 'https://open-vsx.org';
@@ -60,14 +69,96 @@ export function normalizeRegistryBase(input?: string | null): string {
  * `includeAllVersions=false` 是必须的：默认会把同一扩展的每个历史版本都列一遍，
  * 结果里十条有九条是同一个扩展的旧版本。
  */
-export function buildSearchUrl(registryBase: string, query: string, size = 20): string {
+export function buildSearchUrl(
+  registryBase: string,
+  query: string,
+  size = 20,
+  sort?: { by: MarketplaceSortBy; order?: MarketplaceSortOrder },
+): string {
   const base = normalizeRegistryBase(registryBase);
   const params = new URLSearchParams({
     query,
     size: String(Math.max(1, Math.min(MAX_MARKETPLACE_PAGE_SIZE, size))),
     includeAllVersions: 'false',
   });
+  if (sort) {
+    params.set('sortBy', sort.by);
+    params.set('sortOrder', sort.order ?? 'desc');
+  }
   return `${base}/api/-/search?${params.toString()}`;
+}
+
+/** Open VSX 搜索接口支持的排序维度。 */
+export type MarketplaceSortBy = 'relevance' | 'timestamp' | 'downloadCount' | 'averageRating';
+export type MarketplaceSortOrder = 'asc' | 'desc';
+
+/** 推荐列表默认取几条 —— 与参考稿一致，一屏能看全，不用滚。 */
+export const DEFAULT_RECOMMENDED_SIZE = 8;
+
+/**
+ * 「推荐」用的搜索地址：空 query + 按下载量倒序。
+ *
+ * 为什么单独一条路径：`searchMarketplace` 会**主动拒掉空 query**（用户随手敲一下回车
+ * 不该刷出一屏噪音）。而推荐列表要的恰恰是「最热门的几个」——同一个接口，
+ * 相反的意图，所以不共用「有没有 query」这个判断。
+ */
+export function buildRecommendedUrl(registryBase: string, size = DEFAULT_RECOMMENDED_SIZE): string {
+  return buildSearchUrl(registryBase, '', size, { by: 'downloadCount', order: 'desc' });
+}
+
+/**
+ * 从下载地址里读出平台后缀。
+ *
+ * 注册表用文件名后缀区分平台构建：`Anthropic.claude-code-2.1.316@alpine-arm64.vsix`。
+ * 解析的是 **`files.download` 这个注册表给的真实地址**，不是从 id 猜的 ——
+ * 扩展作者怎么命名版本号我们管不着，但这个后缀是注册表自己拼上去的。
+ */
+export function parseTargetPlatform(downloadUrl: string): string | undefined {
+  const fileName = safeDecode(downloadUrl.split('?')[0].split('/').pop() ?? '');
+  const match = /@([^@/]+)\.vsix$/i.exec(fileName);
+  return match ? match[1] : undefined;
+}
+
+/**
+ * 是不是「通用构建」（不带平台后缀）。
+ *
+ * 推荐列表只收通用构建：那个列表是我们替用户挑的，挑一个在当前机器上装不了的
+ * 版本不是「少推一个」的问题，是「点了安装必然出问题」。宁可少几项。
+ */
+export function isPlatformAgnosticDownload(downloadUrl: string): boolean {
+  return parseTargetPlatform(downloadUrl) === undefined;
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    // 编解码失败时用原串：这里的用途是「找出 @platform 后缀」，
+    // 拿到一个没解码的名字顶多解析不出平台，不应该抛错打断整批结果。
+    return value;
+  }
+}
+
+/**
+ * 图标地址是否允许抓取。
+ *
+ * 图标要走主进程代理（渲染进程的 CSP 只允许 `img-src 'self' data:`，加载不了远端图），
+ * 而「主进程替渲染进程抓任意 URL」本身就是一个可以把内网端口当探针用的能力。
+ * 这里把范围锁死在**配置的那个注册表**上：图标本来就放在注册表里，
+ * 换一个来源没有正当理由。
+ */
+export function isAllowedIconUrl(registryBase: string, iconUrl: unknown): boolean {
+  if (typeof iconUrl !== 'string' || !iconUrl) return false;
+  let target: URL;
+  let base: URL;
+  try {
+    target = new URL(iconUrl);
+    base = new URL(normalizeRegistryBase(registryBase));
+  } catch {
+    return false;
+  }
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') return false;
+  return target.origin === base.origin;
 }
 
 /**
@@ -136,6 +227,8 @@ export function parseOpenVsxSearch(payload: unknown, registryBase: string): Mark
     if (homepage) out_extension.homepage = homepage;
     const iconUrl = asString(files.icon);
     if (iconUrl) out_extension.iconUrl = iconUrl;
+    const targetPlatform = parseTargetPlatform(out_extension.downloadUrl);
+    if (targetPlatform) out_extension.targetPlatform = targetPlatform;
     const downloads = asNumber(record.downloadCount);
     if (downloads !== undefined) out_extension.downloads = downloads;
     const rating = asNumber(record.averageRating);

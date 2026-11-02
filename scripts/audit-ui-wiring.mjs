@@ -52,6 +52,10 @@ const WAIVERS = {
   // 扩展的 webview 注册事件当前没有消费方；扩展面板走的是另一条链路。
   // 留着是因为它对应主进程确实会发的事件，删掉会让排查扩展问题时少一条线索。
   onExtensionWebviewRegistered: '扩展 webview 注册事件暂无消费方（主进程仍会发）',
+  // 扩展自己贡献的命令，目前没有任何界面能枚举出来（缺一条「列出已注册命令」的 IPC），
+  // 所以渲染层无处可调。这是既有缺口，不是本次新增的；补上它要先给扩展宿主加枚举接口，
+  // 属于独立的一件事，见 VERIFY.md 已知边界。
+  'extensions.executeCommand': '扩展贡献的命令暂无可执行入口（命令面板未接入扩展命令列表）',
 };
 
 /**
@@ -107,17 +111,36 @@ const apiEnd = preload.indexOf('\nconst ', apiStart + 10);
 const apiBody = preload.slice(apiStart, apiEnd);
 const apiKeys = [...apiBody.matchAll(/^ {2}([A-Za-z_][A-Za-z0-9_]*)\s*:/gm)].map((m) => m[1]);
 
+/**
+ * `extensionBridge.ts` 走 `contextBridge.exposeInMainWorld('extensions', …)`，
+ * 是**另一套** preload 对象，结构上不在 `api` 里 —— 最早那版审计只看 `index.ts`，
+ * 于是扩展那一整块（installClaudeCode / loadFromPath / searchMarketplace…）
+ * 从来没被这道检查覆盖过。这里把它一并收进来：那一块的入口本来就最容易丢。
+ */
+const bridge = read(path.join(root, 'apps/desktop/src/preload/extensionBridge.ts'));
+const bridgeStart = bridge.indexOf('export function createExtensionAPI()');
+const bridgeBody = bridge.slice(bridgeStart);
+const bridgeKeys = [...bridgeBody.matchAll(/^ {4}(?:async )?([A-Za-z_][A-Za-z0-9_]*)\s*\(/gm)].map(
+  (m) => m[1],
+);
+for (const key of bridgeKeys) apiKeys.push(`extensions.${key}`);
+
 const rendererText = rendererFiles.map(read).join('\n');
 const mainText = mainFiles.map(read).join('\n');
 for (const key of apiKeys) {
-  if (new RegExp(`\\.${key}\\b`).test(rendererText)) continue;
+  // `extensions.foo` 这种带点的键要整体匹配，否则 `.foo` 会被 extensions 面板之外的
+  // 同名方法（比如某个 `.getName()`）误判成「已经调用过」。
+  // 可选链也要算：「调用了」跟写成 `extensions.onMessage` 还是 `extensions?.onMessage`
+  // 没有关系，但后者少了 `?.` 的正则会漏判 —— 这正是扩展事件那两条被漏掉的原因。
+  const keyPattern = key.includes('.')
+    ? new RegExp(`\\b${key.split('.').join('\\??\\.')}\\b`)
+    : new RegExp(`\\.${key}\\b`);
+  if (keyPattern.test(rendererText)) continue;
   if (WAIVERS[key]) {
     notes.push(`[B] ${key}：未在渲染层调用（已豁免：${WAIVERS[key]}）`);
     continue;
   }
-  const where = new RegExp(`\\.${key}\\b`).test(mainText)
-    ? '（只在主进程里出现）'
-    : '（全仓只出现在 preload）';
+  const where = keyPattern.test(mainText) ? '（只在主进程里出现）' : '（全仓只出现在 preload）';
   problems.push(`[B] preload 方法在渲染层从未被调用：${key} ${where}`);
 }
 

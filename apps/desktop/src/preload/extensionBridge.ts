@@ -4,6 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
+import type { MarketplaceEntry } from '@deepseek-ide/shared';
 
 export interface ExtensionAPI {
   /**
@@ -25,16 +26,22 @@ export interface ExtensionAPI {
   ): Promise<{
     ok: boolean;
     error?: string;
-    extensions: {
-      id: string;
-      displayName: string;
-      description: string;
-      version: string;
-      downloadUrl: string;
-      downloads?: number;
-      rating?: number;
-    }[];
+    extensions: MarketplaceEntry[];
   }>;
+
+  /**
+   * 拉取推荐列表（热门扩展，按下载量倒序）
+   */
+  getRecommendedExtensions(size?: number): Promise<{
+    ok: boolean;
+    error?: string;
+    extensions: MarketplaceEntry[];
+  }>;
+
+  /**
+   * 取扩展图标的 data URL。抓不到返回 null（渲染层回退到首字母头像）。
+   */
+  getIconDataUrl(iconUrl: string): Promise<string | null>;
 
   /**
    * 从市场安装并激活一个扩展
@@ -84,6 +91,14 @@ export function createExtensionAPI(): ExtensionAPI {
 
     async searchMarketplace(query: string, size?: number) {
       return ipcRenderer.invoke('extension:marketplace-search', query, size);
+    },
+
+    async getRecommendedExtensions(size?: number) {
+      return ipcRenderer.invoke('extension:marketplace-recommended', size);
+    },
+
+    async getIconDataUrl(iconUrl: string) {
+      return ipcRenderer.invoke('extension:icon-data-url', iconUrl);
     },
 
     async installFromMarketplace(extension: { id: string; downloadUrl: string; version?: string }) {

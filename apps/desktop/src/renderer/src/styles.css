@@ -98,6 +98,12 @@
   --bg-tool: #faf6ef;
   --bg-danger-btn: #fde8eb;
   --border: #ddd0eb;
+  /* 「更强的边框」与「更亮的前景」原先只在 :root/暗色块里给过值。亮色主题下
+     :root 同样匹配，于是那两条暗色值继续生效 —— --text-bright 是 #ffffff
+     （白底白字）、--border-strong 是半透明白（等于没有边框）。
+     亮色里的「更亮」应该是**更深**，这里补齐。 */
+  --border-strong: #c2a9dd;
+  --text-bright: #150a20;
   --border-user: #9b7ec8;
   --border-assistant: #5aaf8a;
   --border-tool: #c9a86a;
@@ -18377,10 +18383,17 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   overflow: hidden;
 }
 
+/* ── 扩展面板 ──
+   结构：搜索框 → 分区（已安装 / 推荐或搜索结果）→ 本地安装兜底入口 → 日志。
+
+   行的排布对齐参考稿：图标 + 三行正文（标题/描述/发布者），操作按钮落在发布者那一行的
+   右侧。这样右边缘是齐的，一列按钮扫下来不用左右找。
+   全部走主题 token：旧版这里写死了 rgba(255,255,255,…) 与几个裸色值，亮色主题下
+   悬停、徽标、分隔线基本看不见。 */
 .ext-panel-container {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .ext-alert {
@@ -18411,59 +18424,108 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: none;
   color: inherit;
   cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
   opacity: 0.7;
-  font-size: var(--ui-font-size, 12px);
 }
 
-.ext-hero-card {
+.ext-alert-close:hover {
+  opacity: 1;
+}
+
+/* ── 搜索框 ── */
+.ext-search {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px;
-  background: linear-gradient(135deg, rgba(217, 119, 6, 0.1) 0%, rgba(245, 158, 11, 0.04) 100%);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  border-radius: 12px;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+  gap: 2px;
+  padding: 0 6px 0 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
-.ext-hero-card:hover {
-  border-color: rgba(245, 158, 11, 0.45);
-  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.08);
+.ext-search:focus-within {
+  border-color: var(--accent);
 }
 
-.ext-hero-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+.ext-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--ui-font-size, 13px);
+  font-family: inherit;
+  outline: none;
 }
 
-.ext-brand-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+.ext-search-input::placeholder {
+  color: var(--muted);
+}
+
+/* 清空 / 隐藏已安装。做成方形 hover 块，和左侧活动栏的图标手感一致 */
+.ext-search-icon {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.3);
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
-.ext-hero-title-row {
+.ext-search-icon:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.ext-search-icon.active {
+  color: var(--accent-light);
+  background: var(--accent-soft);
+}
+
+/* ── 进度 ── */
+.ext-progress-card {
+  padding: 10px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ext-progress-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  font-size: var(--ui-font-size, 12px);
+  margin-bottom: 8px;
 }
 
-.ext-hero-title {
-  /* 正文档就是 --ui-font-size（13px）；卡片标题靠字重区分，不需要再大一档 */
-  font-size: var(--ui-font-size, 13px);
-  font-weight: 700;
-  color: var(--text-bright);
+.ext-progress-stat {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ext-progress-track {
+  height: 6px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ext-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.2s ease;
 }
 
 .ext-pill {
@@ -18472,6 +18534,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   padding: 2px 7px;
   border-radius: 999px;
   letter-spacing: 0.02em;
+  flex-shrink: 0;
 }
 
 .ext-pill-official {
@@ -18480,172 +18543,259 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
-.ext-pill-active {
-  background: rgba(34, 197, 94, 0.18);
-  color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.35);
-}
-
-.ext-hero-desc {
-  font-size: var(--ui-font-size, 12px);
-  color: var(--muted);
-  margin-top: 3px;
-  line-height: 1.45;
-}
-
-.ext-progress-card {
-  padding: 12px 16px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-
-.ext-progress-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--ui-font-size, 12px);
-  margin-bottom: 8px;
-}
-
-.ext-progress-stat {
-  font-family: var(--font-mono);
-  color: var(--accent);
-  font-size: var(--ui-font-size, 12px);
-}
-
-.ext-progress-track {
-  width: 100%;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.ext-progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
-  border-radius: 999px;
-  transition: width 0.2s ease;
-}
-
-.ext-install-local-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  transition: border-color 0.15s ease;
-}
-
-.ext-install-local-card:hover {
-  border-color: var(--border-hover, var(--accent));
-}
-
-.ext-local-icon {
-  font-size: 20px;
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 8px;
-  border: 1px solid var(--border);
-}
-
+/* ── 分区 ── */
 .ext-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
 .ext-section-header {
   display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  padding: 4px 2px 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  text-align: left;
+}
+
+.ext-section-header:hover .ext-section-title {
+  color: var(--text);
+}
+
+.ext-section-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.ext-section-chevron.collapsed {
+  transform: rotate(-90deg);
 }
 
 .ext-section-title {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--text-bright);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: color 0.12s ease;
 }
 
+/* 计数做成胶囊而不是 (n)：括号计数在一排分区里几乎看不见 */
 .ext-section-count {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-light);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.ext-section-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px;
   font-size: var(--ui-font-size, 12px);
   color: var(--muted);
 }
 
-.ext-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 10px;
+.ext-note-error {
+  color: var(--danger);
 }
 
-.ext-item-card {
+/* ── 列表行 ── */
+.ext-rows {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  transition: all 0.15s ease;
+  flex-direction: column;
 }
 
-.ext-item-card:hover {
-  border-color: var(--border-hover, var(--accent));
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+/* 行之间用细分隔线；第一条不画 —— 它上面就是分区标题，再画一条会多出一道横杠 */
+.ext-row + .ext-row {
+  border-top: 1px solid var(--border);
 }
 
-.ext-item-info {
+.ext-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 2px;
 }
 
-.ext-item-icon {
-  font-size: 18px;
-  width: 32px;
-  height: 32px;
+.ext-row:hover {
+  background: var(--bg-hover);
+}
+
+.ext-row-icon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(56, 189, 248, 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  overflow: hidden;
 }
 
-.ext-item-name {
-  font-size: 13px;
+.ext-row-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ext-row-icon-letter {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.ext-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ext-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ext-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--ui-font-size, 13px);
   font-weight: 600;
-  color: var(--text-bright);
+  color: var(--text-bright, var(--text));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ext-item-meta {
+.ext-row-stats {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ext-row-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* 星级用 --warn：参考稿是橙色，这里用主题里的警示黄，亮色下同样成立 */
+.ext-row-rating svg {
+  color: var(--warn);
+}
+
+.ext-row-status {
+  display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  color: #4ade80;
-  margin-top: 2px;
+  color: var(--muted);
 }
 
-.ext-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #4ade80;
-  box-shadow: 0 0 4px rgba(74, 222, 128, 0.5);
+.ext-row-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ext-row-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 1px;
+}
+
+.ext-publisher {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--accent-light);
+}
+
+.ext-publisher-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ext-verified {
+  flex-shrink: 0;
+  /* 与发布者名同色：它修饰的是「这条来自谁」，不该自己抢眼 */
+  color: var(--accent-light);
+}
+
+.ext-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── 行内按钮 ── */
+.ext-btn {
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.ext-btn:hover:not(:disabled) {
+  background: var(--bg-hover-strong);
+  border-color: var(--border-strong, var(--border));
+}
+
+.ext-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ext-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.ext-btn-primary:hover:not(:disabled) {
+  background: var(--accent-2, var(--accent));
+  border-color: var(--accent-2, var(--accent));
 }
 
 .ext-empty-placeholder {
@@ -18663,6 +18813,48 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   text-align: center;
 }
 
+.ext-status-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--ok, #4ade80);
+}
+
+/* ── 本地 VSIX 兜底入口 ── */
+.ext-footer {
+  display: flex;
+}
+
+.ext-footer-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg-panel);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: var(--ui-font-size, 12px);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.ext-footer-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong, var(--border));
+}
+
+.ext-footer-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ── 日志 ── */
 .ext-logs-section {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -18687,7 +18879,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .ext-logs-toggle-btn:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-hover);
   color: var(--text);
 }
 

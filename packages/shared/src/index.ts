@@ -180,6 +180,29 @@ export interface LayoutSettings {
 
 export type UiTheme = 'dark' | 'light';
 
+/**
+ * 扩展市场里一条扩展的形状 —— 主进程解析注册表响应后的产物。
+ *
+ * 放在 shared 而不是各处再声明一份：这个形状跨了三个进程边界
+ * （主进程解析 → preload 转发 → 渲染层渲染）。三处各写一遍时最典型的坏结果是
+ * 「preload 声明的字段比主进程实际返回的少一个」：类型检查一路全绿，
+ * 运行时那个字段永远是 undefined，界面上表现为一个静默缺失的图标或数字。
+ */
+export interface MarketplaceEntry {
+  /** `publisher.name`，同时也是安装时的目录名（主进程会先校验再使用） */
+  id: string;
+  displayName: string;
+  description: string;
+  version: string;
+  downloadUrl: string;
+  downloads?: number;
+  rating?: number;
+  /** 远端图标地址。渲染层不能直接加载（CSP 只放行 data:），要走主进程代理 */
+  iconUrl?: string;
+  /** 有值表示这份构建只适用于那个平台（`darwin-arm64` …） */
+  targetPlatform?: string;
+}
+
 export interface AppSettings {
   /** Configured models list */
   models: ModelProfile[];

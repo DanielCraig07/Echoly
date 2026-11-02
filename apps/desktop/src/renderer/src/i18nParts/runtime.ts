@@ -21,7 +21,6 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   'ext.localLoadFailed': { zh: '加载本地扩展包失败', en: 'Failed to load local extension package' },
   'ext.localLoadError': { zh: '加载扩展时出错', en: 'Error while loading the extension' },
   'ext.official': { zh: '官方推荐', en: 'Official' },
-  'ext.installed': { zh: '✓ 已安装', en: '✓ Installed' },
   'ext.heroDesc': {
     zh: '深度整合 Anthropic 官方 Agent 编程助手，提供终端交互、代码重构与实时工程分析能力',
     en: 'Deeply integrates the official Anthropic Agent coding assistant with terminal interaction, code refactoring and real-time project analysis.',
@@ -38,15 +37,21 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
     zh: '支持直接从磁盘选取已下载的 VSCode 插件安装包导入运行',
     en: 'Pick a downloaded VSCode extension package from disk and import it to run',
   },
-  'ext.loadFromPath': { zh: '从路径载入…', en: 'Load from Path…' },
-  'ext.marketTitle': { zh: '扩展市场 (Open VSX)', en: 'Extension Marketplace (Open VSX)' },
-  'ext.marketPlaceholder': {
-    zh: '搜索扩展，例如 vim、python、prettier',
-    en: 'Search extensions, e.g. vim, python, prettier',
-  },
-  'ext.marketSearch': { zh: '搜索', en: 'Search' },
   'ext.marketSearching': { zh: '搜索中…', en: 'Searching…' },
   'ext.marketInstall': { zh: '安装', en: 'Install' },
+  // 新版面板（搜索框 + 分区列表）的文案。
+  // 刻意没用「更多」这种含糊词：分区名和过滤器的提示要能自己说清它管什么。
+  'ext.searchPlaceholder': { zh: '在扩展市场搜索', en: 'Search Extensions in Marketplace' },
+  'ext.sectionRecommended': { zh: '推荐', en: 'Recommended' },
+  'ext.sectionResults': { zh: '搜索结果', en: 'Search Results' },
+  'ext.hideInstalled': { zh: '隐藏已安装', en: 'Hide installed' },
+  'ext.showInstalled': { zh: '显示已安装', en: 'Show installed' },
+  'ext.clearSearch': { zh: '清空搜索', en: 'Clear search' },
+  'ext.recommendedFailed': { zh: '无法获取推荐列表', en: 'Could not load recommendations' },
+  'ext.loadingRecommended': { zh: '正在获取推荐…', en: 'Loading recommendations…' },
+  'ext.retry': { zh: '重试', en: 'Retry' },
+  'ext.downloadsLabel': { zh: '下载量', en: 'Downloads' },
+  'ext.ratingLabel': { zh: '评分', en: 'Rating' },
   'ext.marketFailed': {
     zh: '注册表暂时不可用，稍后再试',
     en: 'Registry unavailable, try again later',

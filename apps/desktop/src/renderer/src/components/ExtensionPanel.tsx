@@ -1,9 +1,19 @@
 /**
- * Extension Panel - 现代扩展与插件管理面板
- * 用于安装、管理和控制 VSCode / Claude 等核心扩展生态
+ * 扩展面板 —— 市场浏览与已安装管理。
+ *
+ * 布局对齐参考稿：顶部一个搜索框；下面按分区（已安装 / 推荐，搜索时换成搜索结果）
+ * 列出扩展，每条一行：图标 + 标题行（名称 + 右侧统计）+ 描述 + 发布者行（右侧操作）。
+ *
+ * 三个刻意的取舍，都是同一句话：「宁可少一个控件，也不要一个点不动的控件」。
+ *
+ * 1. **不做齿轮菜单。** 参考稿每条右下角有个齿轮，本应用没有「禁用 / 卸载」这两个能力，
+ *    挂一个点开是空的齿轮比不放更糟 —— 这正是之前那个「假的暂停补全按钮」的同类问题。
+ * 2. **推荐列表只收通用构建。** 见主进程 getRecommendedExtensions。
+ * 3. **搜索框右侧两个图标都有真实行为**：清空、隐藏已安装。参考稿那两个图标在这里
+ *    对应得上，所以保留；否则宁可不画。
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   useModalResize,
@@ -11,6 +21,14 @@ import {
   createSafeOverlayHandlers,
 } from '../hooks/useModalResize';
 import { useI18n } from '../i18n';
+import type { MarketplaceEntry } from '@deepseek-ide/shared';
+import {
+  formatDownloadCount,
+  formatRating,
+  friendlyExtensionName,
+  iconInitial,
+  publisherOf,
+} from '../services/extensionDisplay';
 
 export interface ExtensionPanelProps {
   onOpenExtension?: (extensionId: string) => void;
@@ -31,19 +49,11 @@ declare global {
       searchMarketplace(
         query: string,
         size?: number,
-      ): Promise<{
-        ok: boolean;
-        error?: string;
-        extensions: {
-          id: string;
-          displayName: string;
-          description: string;
-          version: string;
-          downloadUrl: string;
-          downloads?: number;
-          rating?: number;
-        }[];
-      }>;
+      ): Promise<{ ok: boolean; error?: string; extensions: MarketplaceEntry[] }>;
+      getRecommendedExtensions(
+        size?: number,
+      ): Promise<{ ok: boolean; error?: string; extensions: MarketplaceEntry[] }>;
+      getIconDataUrl(iconUrl: string): Promise<string | null>;
       installFromMarketplace(extension: {
         id: string;
         downloadUrl: string;
@@ -60,6 +70,131 @@ declare global {
   }
 }
 
+/** 输入停止多久之后真正去查注册表。太短会在连打时打出一串请求，太长会显得卡。 */
+const SEARCH_DEBOUNCE_MS = 400;
+
+/** 推荐列表要几条。与主进程默认值一致，改一处就够。 */
+const RECOMMENDED_COUNT = 8;
+
+/** Claude Code 的扩展 id。装没装、要不要合成推荐行都看它。 */
+const CLAUDE_CODE_ID = 'Anthropic.claude-code';
+
+/** 一行的全部展示数据。两种来源（已安装 / 市场条目）都先归一到这里再渲染。 */
+interface RowView {
+  key: string;
+  title: string;
+  description: string;
+  publisher: string;
+  /** 标题行右侧的统计（下载量 / 评分 / 状态） */
+  stats: React.ReactNode;
+  /** 发布者行右侧的操作按钮 */
+  actions: React.ReactNode;
+  iconUrl?: string;
+}
+
+/**
+ * 单行渲染。
+ *
+ * 图标三种情况：拿到了 data URL 用图片；有 iconUrl 但还没抓回来用首字母占位
+ * （不留空位，否则列表会随着图标陆续到位而跳动）；没有 iconUrl 直接用首字母。
+ */
+function ExtensionRow({ view, iconData }: { view: RowView; iconData?: string | null }) {
+  const initial = iconInitial(view.title);
+  return (
+    <div className="ext-row">
+      <div className="ext-row-icon">
+        {iconData ? (
+          <img src={iconData} alt="" draggable={false} />
+        ) : (
+          <span className="ext-row-icon-letter">{initial}</span>
+        )}
+      </div>
+      <div className="ext-row-body">
+        <div className="ext-row-top">
+          <span className="ext-row-name" title={view.title}>
+            {view.title}
+          </span>
+          <span className="ext-row-stats">{view.stats}</span>
+        </div>
+        {view.description && (
+          <div className="ext-row-desc" title={view.description}>
+            {view.description}
+          </div>
+        )}
+        <div className="ext-row-foot">
+          <span className="ext-publisher" title={view.publisher}>
+            <VerifiedBadge />
+            <span className="ext-publisher-name">{view.publisher}</span>
+          </span>
+          <span className="ext-row-actions">{view.actions}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 发布者前面的小徽标。
+ *
+ * 参考稿里是一个蓝色花结 + 对勾。这里画成同一个语义的简化形状：
+ * 它表达的是「这条来自注册表上的发布者」，不是「官方认证」——
+ * 本地 VSIX 装进来的扩展没有这个徽标，本来就不该有。
+ */
+function VerifiedBadge() {
+  return (
+    <svg
+      className="ext-verified"
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M12 2.6 14.5 5l3.4-.3.9 3.3 3 1.7-1.4 3.1 1.4 3.1-3 1.7-.9 3.3-3.4-.3L12 22.6 9.5 20.2l-3.4.3-.9-3.3-3-1.7L3.6 12.4 2.2 9.3l3-1.7.9-3.3 3.4.3z" />
+      <path d="m10.8 14.8-2.6-2.6 1.1-1.1 1.5 1.5 3.9-3.9 1.1 1.1z" fill="var(--bg-panel)" />
+    </svg>
+  );
+}
+
+/** 分区标题：可折叠，右侧一个计数徽标。 */
+function SectionHeader({
+  label,
+  count,
+  collapsed,
+  onToggle,
+}: {
+  label: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="ext-section-header"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+    >
+      <svg
+        className={`ext-section-chevron${collapsed ? ' collapsed' : ''}`}
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+      <span className="ext-section-title">{label}</span>
+      <span className="ext-section-count">{count}</span>
+    </button>
+  );
+}
+
 export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(false);
@@ -73,22 +208,34 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     downloaded: number;
     total: number;
   } | null>(null);
-  // 扩展市场（Open VSX）
+
+  // ── 市场：搜索与推荐 ──
   const [marketQuery, setMarketQuery] = useState('');
-  const [marketResults, setMarketResults] = useState<
-    {
-      id: string;
-      displayName: string;
-      description: string;
-      version: string;
-      downloadUrl: string;
-      downloads?: number;
-      rating?: number;
-    }[]
-  >([]);
+  const [marketResults, setMarketResults] = useState<MarketplaceEntry[]>([]);
   const [marketState, setMarketState] = useState<'idle' | 'searching' | 'done'>('idle');
   const [marketError, setMarketError] = useState<string | null>(null);
+  const [recommended, setRecommended] = useState<MarketplaceEntry[]>([]);
+  const [recommendedState, setRecommendedState] = useState<'idle' | 'loading' | 'done'>('idle');
+  const [recommendedError, setRecommendedError] = useState<string | null>(null);
   const [installingId, setInstallingId] = useState<string | null>(null);
+
+  // ── 视图状态 ──
+  const [hideInstalled, setHideInstalled] = useState(false);
+  const [installedCollapsed, setInstalledCollapsed] = useState(false);
+  const [marketCollapsed, setMarketCollapsed] = useState(false);
+
+  /**
+   * 图标 data URL 缓存，键是扩展 id。
+   *
+   * 放在组件里而不是每次都问主进程：列表每次重渲染（比如打字触发搜索）都会重排，
+   * 没有这层缓存就是每次重渲染都把整屏图标重新抓一遍。主进程那边还有一层持久缓存，
+   * 这层挡的是**同一次会话内的重复往返**。
+   */
+  const [iconData, setIconData] = useState<Record<string, string | null>>({});
+  /** 已经发过请求的 id。用 ref 而不是看 iconData：否则 effect 会被自己的写入重新触发。 */
+  const requestedIcons = useRef<Set<string>>(new Set());
+  /** 搜索序号。用户连打时多个请求会并发返回，只认最后一次。 */
+  const searchSeq = useRef(0);
 
   const loadExtensions = useCallback(async () => {
     try {
@@ -102,8 +249,30 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     }
   }, []);
 
+  /** 拉推荐列表。失败只影响这一个分区，不动全局 error。 */
+  const loadRecommended = useCallback(async () => {
+    if (!window.extensions?.getRecommendedExtensions) return;
+    setRecommendedState('loading');
+    setRecommendedError(null);
+    try {
+      const res = await window.extensions.getRecommendedExtensions(RECOMMENDED_COUNT);
+      if (!res?.ok) {
+        setRecommended([]);
+        setRecommendedError(res?.error || t('ext.recommendedFailed'));
+        return;
+      }
+      setRecommended(res.extensions);
+    } catch (err: any) {
+      setRecommended([]);
+      setRecommendedError(err?.message || t('ext.recommendedFailed'));
+    } finally {
+      setRecommendedState('done');
+    }
+  }, [t]);
+
   useEffect(() => {
     void loadExtensions();
+    void loadRecommended();
 
     const cleanup1 =
       window.extensions?.onMessage?.((message) => {
@@ -125,7 +294,48 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       cleanup2();
       cleanup3();
     };
-  }, [loadExtensions]);
+  }, [loadExtensions, loadRecommended]);
+
+  /**
+   * 图标抓取。
+   *
+   * 依赖只写两个列表：`iconData` 故意不进依赖 —— 这个 effect 会写它，
+   * 放进去就成自触发循环。去重靠 requestedIcons 这个 ref。
+   */
+  const visibleEntries = useMemo(
+    () => [...recommended, ...marketResults],
+    [recommended, marketResults],
+  );
+  useEffect(() => {
+    const pending = visibleEntries.filter(
+      (entry) => entry.iconUrl && !requestedIcons.current.has(entry.id),
+    );
+    if (pending.length === 0) return;
+    for (const entry of pending) requestedIcons.current.add(entry.id);
+    let cancelled = false;
+    void Promise.all(
+      pending.map(async (entry) => {
+        let data: string | null = null;
+        try {
+          data = await window.extensions.getIconDataUrl(entry.iconUrl!);
+        } catch {
+          // 图标抓不到不是错误，回退首字母即可
+          data = null;
+        }
+        return [entry.id, data] as const;
+      }),
+    ).then((pairs) => {
+      if (cancelled) return;
+      setIconData((prev) => {
+        const next = { ...prev };
+        for (const [id, data] of pairs) next[id] = data;
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visibleEntries]);
 
   const handleInstallClaudeCode = async () => {
     setLoading(true);
@@ -151,36 +361,50 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
   /**
    * 在市场里搜索。
    *
-   * 网络失败只把错误显示在搜索区，不设全局 error ——
+   * 网络失败只把错误显示在市场分区，不设全局 error ——
    * 「注册表连不上」不该让已经装好的扩展、本地 VSIX 安装这些入口看起来也坏了。
    */
-  const handleMarketSearch = async () => {
-    const query = marketQuery.trim();
-    if (!query || marketState === 'searching') return;
-    setMarketState('searching');
-    setMarketError(null);
-    try {
-      const res = await window.extensions.searchMarketplace(query, 20);
-      if (!res?.ok) {
+  const runMarketSearch = useCallback(
+    async (query: string) => {
+      const seq = ++searchSeq.current;
+      setMarketState('searching');
+      setMarketError(null);
+      try {
+        const res = await window.extensions.searchMarketplace(query, 20);
+        // 用户已经改了关键词，这一份结果作废 —— 不加这个会把旧结果盖在新结果上
+        if (seq !== searchSeq.current) return;
+        if (!res?.ok) {
+          setMarketResults([]);
+          setMarketError(res?.error || t('ext.marketFailed'));
+          return;
+        }
+        setMarketResults(res.extensions);
+      } catch (err: any) {
+        if (seq !== searchSeq.current) return;
         setMarketResults([]);
-        setMarketError(res?.error || t('ext.marketFailed'));
-        return;
+        setMarketError(err?.message || t('ext.marketFailed'));
+      } finally {
+        if (seq === searchSeq.current) setMarketState('done');
       }
-      setMarketResults(res.extensions);
-    } catch (err: any) {
-      setMarketResults([]);
-      setMarketError(err?.message || t('ext.marketFailed'));
-    } finally {
-      setMarketState('done');
-    }
-  };
+    },
+    [t],
+  );
 
-  const handleMarketInstall = async (extension: {
-    id: string;
-    downloadUrl: string;
-    version: string;
-    displayName: string;
-  }) => {
+  // 输入即搜（防抖）。参考稿的搜索框旁边没有搜索按钮，回车只是「别等了」的快捷键。
+  useEffect(() => {
+    const query = marketQuery.trim();
+    if (!query) {
+      searchSeq.current++;
+      setMarketResults([]);
+      setMarketState('idle');
+      setMarketError(null);
+      return;
+    }
+    const timer = setTimeout(() => void runMarketSearch(query), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [marketQuery, runMarketSearch]);
+
+  const handleMarketInstall = async (extension: MarketplaceEntry) => {
     if (installingId) return;
     setInstallingId(extension.id);
     setError(null);
@@ -221,7 +445,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       const result = await window.extensions.loadFromPath(filePath);
       if (result.success) {
         await loadExtensions();
-        setSuccessMsg(t('ext.localLoadOk', { name: filePath.split(/[/\\\\]/).pop() ?? '' }));
+        setSuccessMsg(t('ext.localLoadOk', { name: filePath.split(/[/\\]/).pop() ?? '' }));
       } else {
         setError(result.error || t('ext.localLoadFailed'));
       }
@@ -232,7 +456,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     }
   };
 
-  const isClaudeInstalled = extensions.includes('Anthropic.claude-code');
+  const isClaudeInstalled = extensions.includes(CLAUDE_CODE_ID);
 
   /**
    * 已加载判定：扩展自报的 id 可能是 `publisher.name`，也可能是别的写法，
@@ -245,9 +469,161 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       return normalized === target || normalized.includes(target) || target.includes(normalized);
     });
 
+  const showingResults = marketQuery.trim().length > 0;
+
+  /** 「已安装」分区的行。数据源是 id 字符串，所以标题/发布者从 id 推导。 */
+  const installedRows: RowView[] = useMemo(
+    () =>
+      extensions.map((id) => ({
+        key: id,
+        title: friendlyExtensionName(id),
+        description: '',
+        publisher: publisherOf(id),
+        stats: (
+          <span className="ext-row-status">
+            <span className="ext-status-dot" />
+            {t('ext.enabled')}
+          </span>
+        ),
+        actions: (
+          <button
+            type="button"
+            className="ext-btn"
+            onClick={() => onOpenExtension?.(id)}
+            title={t('ext.open')}
+          >
+            {t('ext.manage')}
+          </button>
+        ),
+      })),
+    // 「隐藏已安装」只作用于市场那一侧：在「已安装」分区里再按它过滤，
+    // 结果就是打开过滤器把这个分区清空 —— 那不是过滤，是自相矛盾。
+    [extensions, onOpenExtension, t],
+  );
+
+  /** 市场条目的行（推荐与搜索结果共用）。 */
+  const marketRow = useCallback(
+    (entry: MarketplaceEntry): RowView => {
+      const installed = isExtensionLoaded(entry.id);
+      const downloads = formatDownloadCount(entry.downloads);
+      const rating = formatRating(entry.rating);
+      return {
+        key: entry.id,
+        title: entry.displayName || friendlyExtensionName(entry.id),
+        description: entry.description,
+        publisher: publisherOf(entry.id),
+        iconUrl: entry.iconUrl,
+        stats: (
+          <>
+            {downloads && (
+              <span className="ext-row-stat" title={t('ext.downloadsLabel')}>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 3v11" />
+                  <polyline points="7.5 9.5 12 14 16.5 9.5" />
+                  <path d="M4.5 20h15" />
+                </svg>
+                {downloads}
+              </span>
+            )}
+            {rating && (
+              <span className="ext-row-stat ext-row-rating" title={t('ext.ratingLabel')}>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d="m12 3.6 2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9 6.8 19.7l1-5.8L3.5 9.8l5.9-.8z" />
+                </svg>
+                {rating}
+              </span>
+            )}
+          </>
+        ),
+        actions: installed ? (
+          <button
+            type="button"
+            className="ext-btn"
+            onClick={() => onOpenExtension?.(entry.id)}
+            title={t('ext.open')}
+          >
+            {t('ext.manage')}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="ext-btn ext-btn-primary"
+            disabled={installingId !== null}
+            onClick={() => void handleMarketInstall(entry)}
+          >
+            {installingId === entry.id ? t('ext.installing') : t('ext.marketInstall')}
+          </button>
+        ),
+      };
+    },
+    // 刻意不把 handleMarketInstall 放进依赖：它每次渲染都是新函数，放进去 useCallback 就白做了。
+    // 它读到的 installingId / t / loadExtensions 都在下面这几个依赖里，不会有陈旧闭包。
+    [installingId, extensions, onOpenExtension, t],
+  );
+
+  /**
+   * Claude Code 的推荐行。
+   *
+   * 它是本应用主推的扩展，但注册表上的热门条目是**平台专属构建**，会被推荐列表的
+   * 平台过滤挡掉（见主进程），所以这里手工合成一条，走的是专用安装通道。
+   * 装好之后它出现在「已安装」分区里，这一条自然消失。
+   */
+  const claudeRow: RowView = useMemo(
+    () => ({
+      key: CLAUDE_CODE_ID,
+      title: 'Claude Code',
+      description: t('ext.heroDesc'),
+      publisher: 'Anthropic',
+      stats: <span className="ext-pill ext-pill-official">{t('ext.official')}</span>,
+      actions: (
+        <button
+          type="button"
+          className="ext-btn ext-btn-primary"
+          onClick={handleInstallClaudeCode}
+          disabled={loading}
+        >
+          {loading ? t('ext.installing') : t('ext.installOnline')}
+        </button>
+      ),
+    }),
+    // handleInstallClaudeCode 同上：每次渲染都是新函数，不进依赖
+    [loading, t],
+  );
+
+  const recommendedRows = useMemo(
+    () => [
+      ...(isClaudeInstalled ? [] : [claudeRow]),
+      ...recommended.filter((e) => !hideInstalled || !isExtensionLoaded(e.id)).map(marketRow),
+    ],
+    // isExtensionLoaded 读的是 extensions，和 marketRow 一样都已在依赖里
+    [recommended, hideInstalled, extensions, marketRow, claudeRow, isClaudeInstalled],
+  );
+
+  const resultRows = useMemo(
+    () => marketResults.filter((e) => !hideInstalled || !isExtensionLoaded(e.id)).map(marketRow),
+    [marketResults, hideInstalled, extensions, marketRow],
+  );
+
+  const rows = showingResults ? resultRows : recommendedRows;
+  const marketLabel = showingResults ? t('ext.sectionResults') : t('ext.sectionRecommended');
+
   return (
     <div className="ext-panel-container">
-      {/* 提示横幅 */}
       {error && (
         <div className="ext-alert ext-alert-error">
           <svg
@@ -289,47 +665,61 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
         </div>
       )}
 
-      {/* 特色官方扩展 Hero 卡片 */}
-      <div className="ext-hero-card">
-        <div className="ext-hero-left">
-          <div className="ext-brand-avatar">
-            <span style={{ fontSize: 24 }}>⚡</span>
-          </div>
-          <div>
-            <div className="ext-hero-title-row">
-              <span className="ext-hero-title">Claude Code for VS Code</span>
-              <span className="ext-pill ext-pill-official">{t('ext.official')}</span>
-              {isClaudeInstalled && (
-                <span className="ext-pill ext-pill-active">{t('ext.installed')}</span>
-              )}
-            </div>
-            <p className="ext-hero-desc">{t('ext.heroDesc')}</p>
-          </div>
-        </div>
-
-        <div className="ext-hero-actions">
-          {isClaudeInstalled ? (
-            <button
-              type="button"
-              className="panel-standard-btn primary"
-              onClick={() => onOpenExtension?.('Anthropic.claude-code')}
+      {/* 搜索框：右侧两个图标分别是「清空」与「隐藏已安装」，都有实际行为 */}
+      <div className="ext-search">
+        <input
+          type="text"
+          className="ext-search-input"
+          value={marketQuery}
+          placeholder={t('ext.searchPlaceholder')}
+          onChange={(e) => setMarketQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && marketQuery.trim()) void runMarketSearch(marketQuery.trim());
+            if (e.key === 'Escape' && marketQuery) setMarketQuery('');
+          }}
+        />
+        {marketQuery && (
+          <button
+            type="button"
+            className="ext-search-icon"
+            onClick={() => setMarketQuery('')}
+            title={t('ext.clearSearch')}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
             >
-              {t('ext.open')}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="panel-standard-btn primary"
-              onClick={handleInstallClaudeCode}
-              disabled={loading}
-            >
-              {loading ? t('ext.installing') : t('ext.installOnline')}
-            </button>
-          )}
-        </div>
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
+        <button
+          type="button"
+          className={`ext-search-icon${hideInstalled ? ' active' : ''}`}
+          onClick={() => setHideInstalled((v) => !v)}
+          title={hideInstalled ? t('ext.showInstalled') : t('ext.hideInstalled')}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M3 5h18l-7 8v6l-4 2v-8z" />
+          </svg>
+        </button>
       </div>
 
-      {/* 下载进度条 */}
       {downloadProgress && (
         <div className="ext-progress-card">
           <div className="ext-progress-header">
@@ -346,171 +736,108 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
         </div>
       )}
 
-      {/* 本地 VSIX 加载入口卡片 */}
-      <div className="ext-install-local-card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div className="ext-local-icon">📦</div>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-bright)' }}>
-              {t('ext.localTitle')}
+      <div className="ext-section">
+        <SectionHeader
+          label={t('ext.installedSection')}
+          count={installedRows.length}
+          collapsed={installedCollapsed}
+          onToggle={() => setInstalledCollapsed((v) => !v)}
+        />
+        {!installedCollapsed &&
+          (installedRows.length === 0 ? (
+            <div className="ext-empty-placeholder">
+              <span style={{ fontSize: 26, opacity: 0.5 }}>🧩</span>
+              <span>{t('ext.empty')}</span>
             </div>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-              {t('ext.localDesc')}
+          ) : (
+            <div className="ext-rows">
+              {installedRows.map((view) => (
+                <ExtensionRow key={view.key} view={view} />
+              ))}
             </div>
-          </div>
-        </div>
+          ))}
+      </div>
+
+      <div className="ext-section">
+        <SectionHeader
+          label={marketLabel}
+          count={rows.length}
+          collapsed={marketCollapsed}
+          onToggle={() => setMarketCollapsed((v) => !v)}
+        />
+        {!marketCollapsed && (
+          <>
+            {showingResults && marketState === 'searching' && (
+              <div className="ext-section-note">{t('ext.marketSearching')}</div>
+            )}
+            {showingResults && marketError && (
+              <div className="ext-section-note ext-note-error">
+                {marketError}
+                <button
+                  type="button"
+                  className="ext-btn"
+                  onClick={() => void runMarketSearch(marketQuery.trim())}
+                >
+                  {t('ext.retry')}
+                </button>
+              </div>
+            )}
+            {!showingResults && recommendedError && (
+              <div className="ext-section-note ext-note-error">
+                {recommendedError}
+                <button type="button" className="ext-btn" onClick={() => void loadRecommended()}>
+                  {t('ext.retry')}
+                </button>
+              </div>
+            )}
+            {!showingResults && !recommendedError && recommendedState === 'loading' && (
+              <div className="ext-section-note">{t('ext.loadingRecommended')}</div>
+            )}
+            {!showingResults &&
+              !recommendedError &&
+              recommendedState === 'done' &&
+              rows.length === 0 && <div className="ext-section-note">{t('ext.marketEmpty')}</div>}
+            {showingResults && marketState === 'done' && !marketError && rows.length === 0 && (
+              <div className="ext-section-note">{t('ext.marketEmpty')}</div>
+            )}
+            {rows.length > 0 && (
+              <div className="ext-rows">
+                {rows.map((view) => (
+                  <ExtensionRow key={view.key} view={view} iconData={iconData[view.key]} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* 离线/内网场景的兜底入口。参考稿没有这一条，但它是本地 VSIX 唯一的入口 */}
+      <div className="ext-footer">
         <button
           type="button"
-          className="panel-standard-btn"
+          className="ext-footer-btn"
           onClick={handleLoadFromPath}
           disabled={loading}
+          title={t('ext.localDesc')}
         >
-          {t('ext.loadFromPath')}
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8" />
+            <path d="M2 4h20v4H2z" />
+            <line x1="10" y1="12" x2="14" y2="12" />
+          </svg>
+          <span>{t('ext.localTitle')}</span>
         </button>
       </div>
 
-      {/* 扩展市场（Open VSX） */}
-      <div className="ext-section">
-        <div className="ext-section-header">
-          <span className="ext-section-title">{t('ext.marketTitle')}</span>
-        </div>
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <input
-            type="text"
-            value={marketQuery}
-            placeholder={t('ext.marketPlaceholder')}
-            onChange={(e) => setMarketQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleMarketSearch();
-            }}
-            style={{
-              flex: 1,
-              padding: '6px 10px',
-              fontSize: 'var(--ui-font-size, 12px)',
-              color: 'var(--text)',
-              background: 'var(--bg-input)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              boxSizing: 'border-box',
-            }}
-          />
-          <button
-            type="button"
-            className="panel-standard-btn"
-            onClick={() => void handleMarketSearch()}
-            disabled={marketState === 'searching' || !marketQuery.trim()}
-          >
-            {marketState === 'searching' ? t('ext.marketSearching') : t('ext.marketSearch')}
-          </button>
-        </div>
-
-        {marketError && (
-          <div style={{ marginTop: 8, fontSize: 11, color: '#f87171' }}>{marketError}</div>
-        )}
-
-        {marketState === 'done' && !marketError && marketResults.length === 0 && (
-          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
-            {t('ext.marketEmpty')}
-          </div>
-        )}
-
-        {marketResults.map((item) => (
-          <div
-            key={item.id}
-            style={{
-              marginTop: 8,
-              padding: '8px 10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              background: 'var(--bg-elevated, #1e1e1e)',
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 'var(--ui-font-size, 12px)' }}>
-                {item.displayName}
-                <span style={{ color: 'var(--muted)', fontWeight: 400, marginLeft: 6 }}>
-                  v{item.version}
-                </span>
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: 'var(--muted)',
-                  marginTop: 2,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-                title={item.description}
-              >
-                {item.description || item.id}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="panel-standard-btn"
-              disabled={installingId !== null || isExtensionLoaded(item.id)}
-              onClick={() => void handleMarketInstall(item)}
-            >
-              {isExtensionLoaded(item.id)
-                ? t('ext.installed')
-                : installingId === item.id
-                  ? t('ext.installing')
-                  : t('ext.marketInstall')}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* 已安装扩展列表 */}
-      <div className="ext-section">
-        <div className="ext-section-header">
-          <span className="ext-section-title">{t('ext.installedSection')}</span>
-          <span className="ext-section-count">({extensions.length})</span>
-        </div>
-
-        {extensions.length === 0 ? (
-          <div className="ext-empty-placeholder">
-            <span style={{ fontSize: 26, opacity: 0.5 }}>🧩</span>
-            <span>{t('ext.empty')}</span>
-          </div>
-        ) : (
-          <div className="ext-grid">
-            {extensions.map((ext) => (
-              <div key={ext} className="ext-item-card">
-                <div className="ext-item-info">
-                  <div className="ext-item-icon">🧩</div>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="ext-item-name" title={ext}>
-                      {ext}
-                    </div>
-                    <div className="ext-item-meta">
-                      <span className="ext-status-dot" />
-                      <span>{t('ext.enabled')}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="ext-item-btns">
-                  <button
-                    type="button"
-                    className="panel-standard-btn"
-                    onClick={() => onOpenExtension?.(ext)}
-                  >
-                    {t('ext.manage')}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 消息与日志折叠栏 */}
       {messages.length > 0 && (
         <div className="ext-logs-section">
           <button

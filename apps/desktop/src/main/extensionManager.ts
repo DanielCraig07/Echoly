@@ -16,12 +16,23 @@ import {
   type LoadedExtension,
 } from '@deepseek-ide/vscode-shim/src/extensionLoader';
 import {
+  DEFAULT_RECOMMENDED_SIZE,
+  MAX_MARKETPLACE_PAGE_SIZE,
+  buildRecommendedUrl,
   buildSearchUrl,
+  isAllowedIconUrl,
+  isPlatformAgnosticDownload,
   isSafeExtensionId,
   normalizeRegistryBase,
   parseOpenVsxSearch,
   type MarketplaceExtension,
 } from '@deepseek-ide/vscode-shim/src/openVsx';
+import {
+  ICON_CACHE_LIMIT,
+  ICON_FETCH_TIMEOUT_MS,
+  MAX_ICON_BYTES,
+  toIconDataUrl,
+} from './extensionIcons';
 
 export interface ExtensionManagerOptions {
   workspaceRoot: string;
@@ -38,6 +49,13 @@ export class ExtensionManager {
   private loadedExtensionPaths: Set<string> = new Set();
   private webviewViewProviders: Map<string, any> = new Map();
   private readonly registry: string;
+  /**
+   * 图标 data URL 缓存。
+   *
+   * 列表每次重渲染都会问一遍图标，不缓存就是每次翻页都重新抓几十张图。
+   * 缓存的是**结果**（含 null）：抓失败的图标不该每次滚动都重试一遍。
+   */
+  private readonly iconCache = new Map<string, string | null>();
 
   constructor(options: ExtensionManagerOptions) {
     this.workspaceRoot = options.workspaceRoot;
@@ -160,6 +178,83 @@ export class ExtensionManager {
       // 内网/离线环境很常见，说清是网络问题而不是「没有这个扩展」
       return { ok: false, extensions: [], error: `无法访问注册表：${err?.message ?? err}` };
     }
+  }
+
+  /**
+   * 拉取「推荐」列表（热门扩展）。
+   *
+   * 与 searchMarketplace 的区别：那个是用户带着关键词来的，空 query 直接拒掉；
+   * 这个是替用户挑，走同一接口但按下载量倒序、空 query。
+   *
+   * 去重按 id：注册表偶尔会为同一扩展返回多个条目。
+   */
+  async getRecommendedExtensions(
+    size = DEFAULT_RECOMMENDED_SIZE,
+  ): Promise<{ ok: boolean; extensions: MarketplaceExtension[]; error?: string }> {
+    // 要 3 倍于目标条数：平台专属的条目会被筛掉，只按 size 要就会筛出不满一屏。
+    // 上限沿用注册表的单页上限，别把一个防御性常量复制成两份。
+    const requestSize = Math.min(MAX_MARKETPLACE_PAGE_SIZE, Math.max(size, size * 3));
+    try {
+      const res = await fetch(buildRecommendedUrl(this.registry, requestSize), {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        return { ok: false, extensions: [], error: `注册表返回 ${res.status}` };
+      }
+      const payload = await res.json();
+      const seen = new Set<string>();
+      const extensions: MarketplaceExtension[] = [];
+      for (const item of parseOpenVsxSearch(payload, this.registry)) {
+        // 见 isPlatformAgnosticDownload 的说明：推荐列表里放一份装不上的构建，
+        // 点安装必然出问题，不如少推一个。
+        if (!isPlatformAgnosticDownload(item.downloadUrl)) continue;
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        extensions.push(item);
+        if (extensions.length >= size) break;
+      }
+      return { ok: true, extensions };
+    } catch (err: any) {
+      return { ok: false, extensions: [], error: `无法访问注册表：${err?.message ?? err}` };
+    }
+  }
+
+  /**
+   * 抓一个扩展图标并转成 data URL（渲染进程的 CSP 只放行 `data:`）。
+   *
+   * 只有配置的那个注册表 origin 上的地址会被抓 —— 否则这个方法就是一个
+   * 「替渲染进程请求任意 URL」的探针。判定见 isAllowedIconUrl。
+   * 抓不到就返回 null，让渲染层回退到首字母头像：图标是装饰，不该让列表变红。
+   */
+  async getIconDataUrl(iconUrl: string): Promise<string | null> {
+    if (!isAllowedIconUrl(this.registry, iconUrl)) return null;
+    if (this.iconCache.has(iconUrl)) return this.iconCache.get(iconUrl) ?? null;
+
+    let dataUrl: string | null = null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ICON_FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(iconUrl, { signal: controller.signal });
+      // 先看声明的长度再读 body：不然一个几百 MB 的响应会先进内存再被丢弃。
+      // 声明值可能缺失或撒谎，所以 toIconDataUrl 里还会按实际字节数再判一次。
+      const declared = Number(res.headers.get('content-length') ?? '');
+      const oversize = Number.isFinite(declared) && declared > MAX_ICON_BYTES;
+      if (res.ok && !oversize) {
+        dataUrl = toIconDataUrl(
+          res.headers.get('content-type'),
+          new Uint8Array(await res.arrayBuffer()),
+        );
+      }
+    } catch {
+      // 超时/断网/非图片内容都在这里收敛成 null，不向上抛
+      dataUrl = null;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (this.iconCache.size >= ICON_CACHE_LIMIT) this.iconCache.clear();
+    this.iconCache.set(iconUrl, dataUrl);
+    return dataUrl;
   }
 
   /**
@@ -513,6 +608,16 @@ export class ExtensionManager {
     // 市场搜索
     ipcMain.handle('extension:marketplace-search', async (_event, query: string, size?: number) => {
       return await this.searchMarketplace(query ?? '', size ?? 20);
+    });
+
+    // 推荐列表（热门扩展）
+    ipcMain.handle('extension:marketplace-recommended', async (_event, size?: number) => {
+      return await this.getRecommendedExtensions(size);
+    });
+
+    // 扩展图标（主进程代理抓取，见 getIconDataUrl）
+    ipcMain.handle('extension:icon-data-url', async (_event, iconUrl: string) => {
+      return await this.getIconDataUrl(iconUrl);
     });
 
     // 从市场安装
