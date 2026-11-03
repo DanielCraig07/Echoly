@@ -212,7 +212,14 @@ const api: IpcApi = {
   onDownloadProgress: (cb) => {
     const listener = (
       _: Electron.IpcRendererEvent,
-      progress: { percent: number; downloaded: number; total: number },
+      progress: {
+        id: string;
+        name: string;
+        percent: number;
+        downloaded: number;
+        total: number;
+        done?: boolean;
+      },
     ) => cb(progress);
     ipcRenderer.on('extension:download-progress', listener);
     return () => ipcRenderer.removeListener('extension:download-progress', listener);

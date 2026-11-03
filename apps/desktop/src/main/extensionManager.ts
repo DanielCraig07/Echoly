@@ -39,6 +39,26 @@ import {
   toIconDataUrl,
 } from './extensionIcons';
 
+/**
+ * 下载进度的广播载荷。
+ *
+ * 比 `downloadVsix` 自己给的进度多了**身份**与**结束标记**：
+ * - `id`/`name`：面板里可以同时装几个扩展，不带身份的一条「正在下载…」说明不了任何事；
+ * - `done`：下载结束（成功或失败）后必须发一条，否则失败时那条进度条会一直挂在那里。
+ */
+export interface DownloadProgressPayload {
+  id: string;
+  name: string;
+  percent: number;
+  downloaded: number;
+  total: number;
+  done?: boolean;
+}
+
+/** Claude Code 的 id 与展示名（专用安装通道的进度也要能显示名字）。 */
+const CLAUDE_CODE_ID = 'Anthropic.claude-code';
+const CLAUDE_CODE_NAME = 'Claude Code';
+
 /** README 抓取上限：详情页是展示用的，没必要为一个说明文件拉几百 KB。 */
 const maxReadmeBytes = 512 * 1024;
 const maxReadmeChars = 200_000;
@@ -147,8 +167,7 @@ export class ExtensionManager {
 
       // 下载扩展，带进度回调
       const vsixPath = await downloadClaudeCodeExtension(this.extensionsDir, (progress) => {
-        // 广播下载进度到所有渲染进程
-        this.broadcastToRenderers('extension:download-progress', progress);
+        this.broadcastDownloadProgress({ ...progress, id: CLAUDE_CODE_ID, name: CLAUDE_CODE_NAME });
       });
 
       // 解压并加载
@@ -213,6 +232,11 @@ export class ExtensionManager {
       // 内网/离线环境很常见，说清是网络问题而不是「没有这个扩展」
       return { ok: false, extensions: [], error: `无法访问注册表：${err?.message ?? err}` };
     }
+  }
+
+  /** 广播一条下载进度（带扩展身份，见 downloadProgressPayload 的说明）。 */
+  private broadcastDownloadProgress(payload: DownloadProgressPayload): void {
+    this.broadcastToRenderers('extension:download-progress', payload);
   }
 
   /**
@@ -370,6 +394,8 @@ export class ExtensionManager {
     id: string;
     downloadUrl: string;
     version?: string;
+    /** 展示名，只用来在进度里显示「正在装什么」 */
+    displayName?: string;
   }): Promise<{ warning?: string }> {
     if (!isSafeExtensionId(extension.id)) {
       throw new Error(`扩展 id 不合法，已拒绝安装：${extension.id}`);
@@ -382,9 +408,24 @@ export class ExtensionManager {
     const vsixPath = path.join(this.extensionsDir, `${extension.id}.vsix`);
     const extractDir = path.join(this.extensionsDir, extension.id);
 
-    await downloadVsix(extension.downloadUrl, vsixPath, (progress) => {
-      this.broadcastToRenderers('extension:download-progress', progress);
-    });
+    // 进度必须带上是**哪个**扩展：面板里可以同时装好几个，
+    // 一条不带身份的「正在下载…」等于没说。
+    const progressId = { id: extension.id, name: extension.displayName || extension.id };
+    try {
+      await downloadVsix(extension.downloadUrl, vsixPath, (progress) => {
+        this.broadcastDownloadProgress({ ...progress, ...progressId });
+      });
+    } finally {
+      // 无论成功失败都要发一条「结束」：失败了还留着一条不动的进度条，
+      // 用户会以为它还在下载。
+      this.broadcastDownloadProgress({
+        ...progressId,
+        percent: 100,
+        downloaded: 0,
+        total: 0,
+        done: true,
+      });
+    }
 
     const loaded = await loadExtensionFromVsix(vsixPath, extractDir);
     this.loadedExtensionPaths.add(path.join(extractDir, 'extension'));
@@ -739,7 +780,10 @@ export class ExtensionManager {
     // 从市场安装
     ipcMain.handle(
       'extension:install-from-marketplace',
-      async (_event, extension: { id: string; downloadUrl: string; version?: string }) => {
+      async (
+        _event,
+        extension: { id: string; downloadUrl: string; version?: string; displayName?: string },
+      ) => {
         try {
           const { warning } = await this.installFromMarketplace(extension);
           return { success: true, ...(warning ? { warning } : {}) };

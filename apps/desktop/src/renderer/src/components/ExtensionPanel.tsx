@@ -79,6 +79,14 @@ const SEARCH_DEBOUNCE_MS = 400;
 const RECOMMENDED_COUNT = 8;
 
 /** 一行的全部展示数据。两种来源（已安装 / 市场条目）都先归一到这里再渲染。 */
+/** 一条下载中的进度（顶部卡片与行内进度共用）。 */
+interface DownloadState {
+  name: string;
+  percent: number;
+  downloaded: number;
+  total: number;
+}
+
 export interface RowView {
   key: string;
   /** 有 id 才开得了详情页（已安装列表里也有 id，但那是本机扩展，同样能开） */
@@ -102,10 +110,13 @@ export interface RowView {
 function ExtensionRow({
   view,
   iconData,
+  download,
   onOpenDetail,
 }: {
   view: RowView;
   iconData?: string | null;
+  /** 这个扩展正在下载时传入进度：那一行下面直接显示进度，而不是只留一个按钮 */
+  download?: DownloadState;
   onOpenDetail?: (view: RowView) => void;
 }) {
   const { t } = useI18n();
@@ -152,7 +163,18 @@ function ExtensionRow({
             <VerifiedBadge />
             <span className="ext-publisher-name">{view.publisher}</span>
           </span>
-          <span className="ext-row-actions">{view.actions}</span>
+          <span className="ext-row-actions">
+            {download ? (
+              <span className="ext-row-progress" title={`${download.percent.toFixed(1)}%`}>
+                <span className="ext-progress-track">
+                  <span className="ext-progress-bar" style={{ width: `${download.percent}%` }} />
+                </span>
+                <span className="ext-row-progress-pct">{download.percent.toFixed(1)}%</span>
+              </span>
+            ) : (
+              view.actions
+            )}
+          </span>
         </div>
       </div>
     </div>
@@ -229,11 +251,13 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<{
-    percent: number;
-    downloaded: number;
-    total: number;
-  } | null>(null);
+  /**
+   * 正在下载的扩展，按 id 收。
+   *
+   * 用表而不是单个对象：面板里可以同时装好几个，而一条没有身份的进度
+   * 既说不清在装什么，也放不下第二条。
+   */
+  const [downloads, setDownloads] = useState<Record<string, DownloadState>>({});
 
   // ── 市场：搜索与推荐 ──
   const [marketQuery, setMarketQuery] = useState('');
@@ -323,7 +347,22 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
 
     const cleanup3 =
       window.ide?.onDownloadProgress?.((progress) => {
-        setDownloadProgress(progress);
+        setDownloads((prev) => {
+          const next = { ...prev };
+          if (progress.done) {
+            // 结束（成功或失败）就摘掉：失败时留着一条不动的进度条，
+            // 看起来像还在下载
+            delete next[progress.id];
+            return next;
+          }
+          next[progress.id] = {
+            name: progress.name || progress.id,
+            percent: progress.percent,
+            downloaded: progress.downloaded,
+            total: progress.total,
+          };
+          return next;
+        });
       }) || (() => {});
 
     return () => {
@@ -609,6 +648,23 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
   );
 
   const rows = showingResults ? resultRows : recommendedRows;
+
+  /**
+   * 当前**没有对应行**的下载。
+   *
+   * 进度优先显示在它自己那一行下面；但安装也可能从详情页发起（那一行此刻不一定在
+   * 视野里），这种就退到顶部卡片里列一行。
+   * 只列一份，不做两处都显示 —— 同一个进度出现两次只会让人怀疑是不是装了两个。
+   */
+  const orphanDownloads = useMemo(() => {
+    const visible = new Set<string>();
+    for (const view of [...installedRows, ...rows]) {
+      if (view.extensionId) visible.add(view.extensionId.toLowerCase());
+    }
+    return Object.entries(downloads)
+      .filter(([id]) => !visible.has(id.toLowerCase()))
+      .map(([id, state]) => ({ id, ...state }));
+  }, [downloads, installedRows, rows]);
   const marketLabel = showingResults ? t('ext.sectionResults') : t('ext.sectionRecommended');
 
   return (
@@ -711,19 +767,28 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
         </button>
       </div>
 
-      {downloadProgress && (
+      {orphanDownloads.length > 0 && (
         <div className="ext-progress-card">
           <div className="ext-progress-header">
             <span style={{ fontWeight: 600 }}>{t('ext.downloading')}</span>
-            <span className="ext-progress-stat">
-              {downloadProgress.percent.toFixed(1)}% (
-              {(downloadProgress.downloaded / 1024 / 1024).toFixed(1)}MB /
-              {(downloadProgress.total / 1024 / 1024).toFixed(1)}MB)
-            </span>
           </div>
-          <div className="ext-progress-track">
-            <div className="ext-progress-bar" style={{ width: `${downloadProgress.percent}%` }} />
-          </div>
+          {/* 这些扩展当前没有可见的行（例如在详情页点的安装），所以在这里各占一行、带上名字 */}
+          {orphanDownloads.map((d) => (
+            <div key={d.id} className="ext-progress-item">
+              <div className="ext-progress-item-head">
+                <span className="ext-progress-name" title={d.name}>
+                  {d.name}
+                </span>
+                <span className="ext-progress-stat">
+                  {d.percent.toFixed(1)}% ({(d.downloaded / 1024 / 1024).toFixed(1)}MB /
+                  {(d.total / 1024 / 1024).toFixed(1)}MB)
+                </span>
+              </div>
+              <div className="ext-progress-track">
+                <div className="ext-progress-bar" style={{ width: `${d.percent}%` }} />
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -744,7 +809,12 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
             ) : (
               <div className="ext-rows">
                 {installedRows.map((view) => (
-                  <ExtensionRow key={view.key} view={view} onOpenDetail={onOpenDetail} />
+                  <ExtensionRow
+                    key={view.key}
+                    view={view}
+                    download={view.extensionId ? downloads[view.extensionId] : undefined}
+                    onOpenDetail={onOpenDetail}
+                  />
                 ))}
               </div>
             ))}
@@ -799,6 +869,7 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
                       key={view.key}
                       view={view}
                       iconData={iconData[view.key]}
+                      download={view.extensionId ? downloads[view.extensionId] : undefined}
                       onOpenDetail={onOpenDetail}
                     />
                   ))}

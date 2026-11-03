@@ -60,6 +60,8 @@ export interface ExtensionAPI {
     id: string;
     downloadUrl: string;
     version?: string;
+    /** 展示名，仅用于进度显示 */
+    displayName?: string;
   }): Promise<{ success: boolean; error?: string; warning?: string }>;
 
   /**

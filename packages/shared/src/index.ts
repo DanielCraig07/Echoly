@@ -2104,8 +2104,22 @@ export interface IpcApi {
   onGitCloneLog: (cb: (line: string) => void) => () => void;
   onGitBranchSwitched: (cb: (data: { branch: string }) => void) => () => void;
   onSshDisconnected?: (cb: (data: { host: string; username: string }) => void) => () => void;
+  /**
+   * 扩展下载进度。
+   *
+   * 载荷必须带扩展身份（`id`/`name`）：面板里可以同时装好几个，
+   * 一条不带身份的「正在下载…」既说不清在装什么，也放不下第二条。
+   * `done` 是结束标记（成功与失败都会发），界面据此摘掉那条进度。
+   */
   onDownloadProgress: (
-    cb: (progress: { percent: number; downloaded: number; total: number }) => void,
+    cb: (progress: {
+      id: string;
+      name: string;
+      percent: number;
+      downloaded: number;
+      total: number;
+      done?: boolean;
+    }) => void,
   ) => () => void;
   onExtensionWebviewRegistered: (cb: (data: { viewId: string }) => void) => () => void;
   extensionResolveWebview: (

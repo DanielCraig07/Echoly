@@ -18609,6 +18609,49 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   margin-bottom: 8px;
 }
 
+/* 顶部卡片里的每一条（一个扩展一行）。只在「那一行此刻不可见」时才用得上，见 orphanDownloads */
+.ext-progress-item + .ext-progress-item {
+  margin-top: 10px;
+}
+
+.ext-progress-item-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-size: 11px;
+}
+
+.ext-progress-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 行内进度：顶掉那一行的操作按钮，不额外占一行高度 */
+.ext-row-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 120px;
+}
+
+.ext-row-progress .ext-progress-track {
+  flex: 1;
+  height: 4px;
+}
+
+.ext-row-progress-pct {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .ext-progress-stat {
   font-size: 11px;
   color: var(--muted);
