@@ -81,6 +81,13 @@ export interface VSCodeShimOptions {
  */
 export class VSCodeShim {
   private commands = new Map<string, (...args: any[]) => any>();
+  /**
+   * 自定义编辑器提供者，按 viewType 收着。
+   *
+   * 收下来是为了让注册本身有意义（扩展据此认为自己可用，激活不失败）；
+   * 「打开 .xxx 文件时交给它渲染」是另一件事，本实现不做 —— 见 VERIFY.md 已知边界。
+   */
+  private customEditorProviders = new Map<string, { provider: any; options?: any }>();
   private disposables: vscode.Disposable[] = [];
   private workspaceRoot: string;
   private extensionPath: string;
@@ -261,6 +268,25 @@ export class VSCodeShim {
         },
         registerWebviewPanelSerializer(viewType: string, serializer: any) {
           return { dispose() {} };
+        },
+        /**
+         * 自定义编辑器（`CustomTextEditorProvider` / `CustomEditorProvider`）。
+         *
+         * 实测有真实扩展在 activate() 里**第一件事**就调它 —— `es6kr.claude-sessions`
+         * （Claude Code Sessions）就是：缺这个方法时整个扩展激活失败，
+         * 界面上显示「已安装，但激活失败：…is not a function」。
+         * 注册本身是有意义的（扩展据此认为自己可用），所以这里收下并返回一个
+         * 真的 Disposable；至于「打开 .xxx 文件时用这个编辑器渲染」——
+         * 那是另一件事，本实现不做（见 VERIFY.md 的已知边界）。
+         */
+        registerCustomEditorProvider(viewType: string, provider: any, options?: any) {
+          console.log(`Registered custom editor provider: ${viewType}`);
+          self.customEditorProviders.set(viewType, { provider, options });
+          return {
+            dispose() {
+              self.customEditorProviders.delete(viewType);
+            },
+          };
         },
         registerUriHandler(handler: any) {
           return { dispose() {} };
