@@ -67,9 +67,26 @@ const maxReadmeBytes = 512 * 1024;
 const maxReadmeChars = 200_000;
 const readmeFetchTimeoutMs = 10_000;
 
+/**
+ * 磁盘上的一条已安装扩展记录。
+ *
+ * 分开存 `dir` 与 `id` 是有原因的：**目录名不等于扩展 id**。Claude Code 装在
+ * `claude-code/` 下，但它的 id 由 package.json 决定（`Anthropic.claude-code`）。
+ * 宿主按 `${publisher}.${name}` 记扩展 —— 命令/视图的归属、`getLoadedExtensions`
+ * 也全是这个 id；而路径操作（读文件、删目录）用的必须是目录名。两边混用会得到
+ * 「装是装上了，但界面说它没激活、也没有视图可开」这种最难查的毛病。
+ */
+interface InstalledRecord {
+  /** 扩展目录名（文件路径用） */
+  dir: string;
+  /** 扩展 id：优先 manifest 的 `publisher.name`，缺了才退回目录名 */
+  id: string;
+  manifest: any;
+}
+
 /** 管理界面要的一条「已安装扩展」。 */
 export interface InstalledExtensionInfo {
-  /** `publisher.name`（也是目录名） */
+  /** `publisher.name`（扩展 id）。**注意它不一定是磁盘目录名**，见 InstalledRecord */
   id: string;
   displayName: string;
   version?: string;
@@ -172,33 +189,63 @@ export class ExtensionManager {
    */
   private async loadInstalledExtensions(): Promise<void> {
     try {
-      const entries = await fs.readdir(this.extensionsDir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          if (this.disabledExtensions.has(entry.name)) {
-            console.log(`Skipping disabled extension: ${entry.name}`);
-            continue;
-          }
-          const extensionPath = path.join(this.extensionsDir, entry.name, 'extension');
-
-          // 检查是否有 extension 子目录（.vsix 解压后的结构）
-          try {
-            await fs.access(path.join(extensionPath, 'package.json'));
-            console.log(`Auto-loading extension: ${entry.name}`);
-
-            // 异步加载，不阻塞启动
-            this.loadExtensionFromPath(extensionPath).catch((err) => {
-              console.error(`Failed to auto-load extension ${entry.name}:`, err.message);
-            });
-          } catch {
-            // 没有 extension 子目录，跳过
-          }
+      // 用扫描结果而不是裸 readdir：判「有没有被禁用」要用扩展 id，
+      // 而目录名可能是 `claude-code` 这种和 id 对不上的名字。
+      for (const record of await this.scanInstalledDirs()) {
+        if (this.disabledExtensions.has(record.id) || this.disabledExtensions.has(record.dir)) {
+          console.log(`Skipping disabled extension: ${record.id}`);
+          continue;
         }
+        console.log(`Auto-loading extension: ${record.id}`);
+        // 异步加载，不阻塞启动
+        this.loadExtensionFromPath(path.join(this.extensionsDir, record.dir, 'extension')).catch(
+          (err) => {
+            console.error(`Failed to auto-load extension ${record.id}:`, err.message);
+          },
+        );
       }
     } catch (err) {
       console.error('Failed to scan extensions directory:', err);
     }
+  }
+
+  /**
+   * 扫一遍扩展目录，建立「目录名 ↔ 扩展 id」的映射。
+   *
+   * 只在能读到 `extension/package.json` 时才算一条记录：半截安装的目录不该出现在
+   * 「已安装」列表里，也没有 id 可用于归属判断。
+   */
+  private async scanInstalledDirs(): Promise<InstalledRecord[]> {
+    const entries = await fs.readdir(this.extensionsDir, { withFileTypes: true }).catch(() => []);
+    const out: InstalledRecord[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const raw = await fs.readFile(
+          path.join(this.extensionsDir, entry.name, 'extension', 'package.json'),
+          'utf8',
+        );
+        const manifest = JSON.parse(raw);
+        const id =
+          manifest?.publisher && manifest?.name
+            ? `${manifest.publisher}.${manifest.name}`
+            : entry.name;
+        out.push({ dir: entry.name, id, manifest });
+      } catch {
+        // 半截安装 / 没有 package.json：跳过
+      }
+    }
+    return out;
+  }
+
+  /** 按扩展 id 找磁盘目录名；找不到再按目录名本身找一次（本地 VSIX 的目录名可能就是 id）。 */
+  private async resolveExtensionDir(id: string): Promise<string | null> {
+    const lower = id.toLowerCase();
+    const all = await this.scanInstalledDirs();
+    const hit =
+      all.find((r) => r.id.toLowerCase() === lower) ??
+      all.find((r) => r.dir.toLowerCase() === lower);
+    return hit?.dir ?? null;
   }
 
   /**
@@ -618,34 +665,22 @@ export class ExtensionManager {
    */
   async listInstalledExtensions(): Promise<InstalledExtensionInfo[]> {
     const loaded = new Set(this.extensionHost.getLoadedExtensions());
+    const registeredCommands = this.extensionHost.listExtensionCommands();
     const out: InstalledExtensionInfo[] = [];
 
-    // 不给 entries 标注类型：`fs.readdir(withFileTypes)` 在 @types/node 里返回的是
-    // `Dirent<string>[]`，而裸写 `Dirent[]` 会退化成 `Dirent<NonSharedBuffer>[]` —— 标了就报错。
-    const entries = await fs.readdir(this.extensionsDir, { withFileTypes: true }).catch(() => []);
-
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const id = entry.name;
-      const manifestPath = path.join(this.extensionsDir, id, 'extension', 'package.json');
-      let manifest: any;
-      try {
-        manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
-      } catch {
-        // 目录在但 package.json 读不出来（半截安装）：不算已安装，也不该让它把整份列表带崩
-        continue;
-      }
-      const enabled = !this.disabledExtensions.has(id);
+    // 走扫描而不是裸 readdir：列表里的 id 必须是**扩展 id**（宿主记的那个），
+    // 而目录名可能是 `claude-code` 这种和 id 对不上的名字。
+    for (const record of await this.scanInstalledDirs()) {
+      const { id, manifest } = record;
+      const enabled = !this.disabledExtensions.has(id) && !this.disabledExtensions.has(record.dir);
       out.push({
         id,
         displayName: manifest.displayName || manifest.name || id,
         version: manifest.version,
         enabled,
+        // `active` 与 `enabled` 是两回事：启用了的扩展也可能因为激活失败而没跑起来
         active: loaded.has(id),
-        commands: this.extensionHost
-          .listExtensionCommands()
-          .filter((c) => c.extensionId === id)
-          .map((c) => c.command),
+        commands: registeredCommands.filter((c) => c.extensionId === id).map((c) => c.command),
         views: this.extensionHost.listWebviewViewIds(id),
       });
     }
@@ -675,24 +710,13 @@ export class ExtensionManager {
   /** 扫一遍已安装扩展的 package.json，收集 `command → title`。 */
   private async readCommandTitles(): Promise<Map<string, string>> {
     const titles = new Map<string, string>();
-    const entries = await fs.readdir(this.extensionsDir, { withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      try {
-        const raw = await fs.readFile(
-          path.join(this.extensionsDir, entry.name, 'extension', 'package.json'),
-          'utf8',
-        );
-        const manifest = JSON.parse(raw);
-        const contributed = manifest?.contributes?.commands;
-        if (!Array.isArray(contributed)) continue;
-        for (const c of contributed) {
-          if (c && typeof c.command === 'string' && typeof c.title === 'string') {
-            titles.set(c.command, c.title);
-          }
+    for (const { manifest } of await this.scanInstalledDirs()) {
+      const contributed = manifest?.contributes?.commands;
+      if (!Array.isArray(contributed)) continue;
+      for (const c of contributed) {
+        if (c && typeof c.command === 'string' && typeof c.title === 'string') {
+          titles.set(c.command, c.title);
         }
-      } catch {
-        // 半截安装 / 没有 package.json：跳过即可，命令面板少一个标题不值得中断
       }
     }
     return titles;
@@ -710,14 +734,16 @@ export class ExtensionManager {
     enabled: boolean,
   ): Promise<{ ok: boolean; error?: string }> {
     if (!isSafeExtensionId(id)) return { ok: false, error: `扩展 id 不合法：${id}` };
-    const extensionPath = path.join(this.extensionsDir, id, 'extension');
+    // 目录名不一定等于 id（Claude Code 就装在 `claude-code/` 下），路径必须按目录名拼
+    const dir = await this.resolveExtensionDir(id);
+    if (!dir) return { ok: false, error: `找不到扩展目录：${id}` };
+    const extensionPath = path.join(this.extensionsDir, dir, 'extension');
 
     try {
       if (enabled) {
-        if (this.disabledExtensions.has(id)) {
-          this.disabledExtensions.delete(id);
-          await this.persistDisabledState();
-        }
+        if (this.disabledExtensions.delete(id)) await this.persistDisabledState();
+        // 兼容按目录名存下的旧值
+        if (this.disabledExtensions.delete(dir)) await this.persistDisabledState();
         if (!this.extensionHost.getLoadedExtensions().includes(id)) {
           await fs.access(path.join(extensionPath, 'package.json'));
           await this.loadExtensionFromPath(extensionPath);
@@ -730,8 +756,8 @@ export class ExtensionManager {
         await this.persistDisabledState();
       }
       await this.extensionHost.deactivateExtension(id);
-      this.loadedExtensionPaths.delete(path.join(extensionPath));
-      this.forgetExtensionViews(id);
+      this.loadedExtensionPaths.delete(extensionPath);
+      this.forgetExtensionViews(id, dir);
       return { ok: true };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? String(err) };
@@ -747,13 +773,17 @@ export class ExtensionManager {
   async uninstallExtension(id: string): Promise<{ ok: boolean; error?: string }> {
     if (!isSafeExtensionId(id)) return { ok: false, error: `扩展 id 不合法：${id}` };
 
+    const dir = await this.resolveExtensionDir(id);
+    if (!dir) return { ok: false, error: `找不到扩展目录：${id}` };
+
     try {
       await this.extensionHost.deactivateExtension(id);
-      this.loadedExtensionPaths.delete(path.join(this.extensionsDir, id, 'extension'));
-      this.forgetExtensionViews(id);
+      this.loadedExtensionPaths.delete(path.join(this.extensionsDir, dir, 'extension'));
+      this.forgetExtensionViews(id, dir);
 
-      await fs.rm(path.join(this.extensionsDir, id), { recursive: true, force: true });
-      await fs.rm(path.join(this.extensionsDir, `${id}.vsix`), { force: true });
+      await fs.rm(path.join(this.extensionsDir, dir), { recursive: true, force: true });
+      // vsix 与目录同名（Claude Code 是 `claude-code.vsix` / `claude-code/`）
+      await fs.rm(path.join(this.extensionsDir, `${dir}.vsix`), { force: true });
 
       // 卸载之后这条 id 不该再留在禁用名单里：重装一次就该能用
       if (this.disabledExtensions.delete(id)) await this.persistDisabledState();
@@ -770,8 +800,8 @@ export class ExtensionManager {
    * `viewOwners` 去找 —— 那本账已经空了。改为直接看 `viewOwners` 里剩下的归属
    * （扩展忘记 dispose 的情况）+ provider 表里带 extensionPath 的兜底。
    */
-  private forgetExtensionViews(id: string): void {
-    const extensionPath = path.join(this.extensionsDir, id, 'extension');
+  private forgetExtensionViews(id: string, dir?: string): void {
+    const extensionPath = path.join(this.extensionsDir, dir ?? id, 'extension');
     for (const [viewId, owner] of Array.from(this.viewOwners.entries())) {
       if (owner === id) this.viewOwners.delete(viewId);
     }
