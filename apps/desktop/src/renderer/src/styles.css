@@ -1334,6 +1334,10 @@ select:focus {
   justify-content: center;
   width: 26px;
   height: 26px;
+  /* 必须清零：全局 `button` 带 `padding: 6px 10px`，在 26px 的方框里
+     内容区只剩 4px 宽 —— 里面的 svg 会被压缩成一个小点。
+     这类「按钮尺寸写死但忘了清 padding」的坑，图标越小越看不出来。 */
+  padding: 0;
   margin-right: 2px;
   flex-shrink: 0;
   border: none;
@@ -18566,6 +18570,8 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   justify-content: center;
   width: 22px;
   height: 22px;
+  /* 同 .rail-menu-pin：不清 padding 的话 22px 的框里装不下图标 */
+  padding: 0;
   flex-shrink: 0;
   border: none;
   border-radius: 5px;
