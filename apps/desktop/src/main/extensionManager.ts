@@ -50,6 +50,7 @@ import {
 import { writeVscodeShimModule } from '@deepseek-ide/vscode-shim/src/vscodeShimModule';
 import {
   isDefaultPriority,
+  matchesContribution,
   pickCustomEditor,
   type CustomEditorCandidate,
   type CustomEditorContribution,
@@ -104,6 +105,14 @@ function offsetOf(text: string, position: { line: number; character: number }): 
  * 再长就会让「打开文件」这件事明显卡住，而那种情况下多半是真的失败了。
  */
 const CUSTOM_EDITOR_HTML_WAIT_MS = 2000;
+
+/**
+ * 等「启动时那批扩展加载完」的上限。
+ *
+ * 只在「有扩展声明认这个文件、但 provider 还没注册」时才会等，所以正常路径上
+ * 一次都不会触发。上限的作用是兜底：真有扩展卡住，也不该把「打开文件」一起拖住。
+ */
+const INITIAL_ACTIVATION_WAIT_MS = 5000;
 
 /** 协议处理里的纯文本响应头（错误信息要能直接看出来，不是一坨 HTML）。 */
 const TEXT_PLAIN_HEADERS = { 'content-type': 'text/plain; charset=utf-8' } as const;
@@ -233,6 +242,15 @@ export class ExtensionManager {
     }
   >();
   private customEditorSeq = 0;
+  /**
+   * 启动时那批自动加载的扩展，全部尘埃落定的那一刻。
+   *
+   * 扩展是**异步**加载的（不阻塞启动），而「这个文件该不该交给扩展」要等扩展注册好
+   * provider 才有答案 —— 两者撞在一起的结果是：应用刚起来那几秒里打开 .md，
+   * 明明装了 Office Viewer 也会被判成「没人认领」，退回内置编辑器。
+   * 会话恢复（重开应用时还原上次打开的文件）正好就落在这个窗口里。
+   */
+  private initialActivation: Promise<void> = Promise.resolve();
   /** 禁用列表的落盘位置 */
   private readonly stateFilePath: string;
 
@@ -459,6 +477,7 @@ export class ExtensionManager {
    * 自动加载已安装的扩展
    */
   private async loadInstalledExtensions(): Promise<void> {
+    const pending: Promise<unknown>[] = [];
     try {
       // 用扫描结果而不是裸 readdir：判「有没有被禁用」要用扩展 id，
       // 而目录名可能是 `claude-code` 这种和 id 对不上的名字。
@@ -468,15 +487,20 @@ export class ExtensionManager {
           continue;
         }
         console.log(`Auto-loading extension: ${record.id}`);
-        // 异步加载，不阻塞启动
-        this.loadExtensionFromPath(path.join(this.extensionsDir, record.dir, 'extension')).catch(
-          (err) => {
-            console.error(`Failed to auto-load extension ${record.id}:`, err.message);
-          },
+        // 异步加载，不阻塞启动 —— 但把 promise 收起来，见 initialActivation
+        pending.push(
+          this.loadExtensionFromPath(path.join(this.extensionsDir, record.dir, 'extension')).catch(
+            (err) => {
+              console.error(`Failed to auto-load extension ${record.id}:`, err.message);
+            },
+          ),
         );
       }
     } catch (err) {
       console.error('Failed to scan extensions directory:', err);
+    } finally {
+      // allSettled 而不是 all：一个扩展崩了不该让「等启动激活」永远挂着
+      this.initialActivation = Promise.allSettled(pending).then(() => undefined);
     }
   }
 
@@ -1186,17 +1210,45 @@ export class ExtensionManager {
    * 行为倒退。返回 null 表示用内置编辑器。
    */
   async matchCustomEditor(filePath: string): Promise<CustomEditorCandidate | null> {
-    const candidates = (await this.listCustomEditors()).filter(
+    let candidates = (await this.listCustomEditors()).filter(
       (candidate) => candidate.hasProvider && isDefaultPriority(candidate),
     );
+
+    /**
+     * 有人认这个文件、但 provider 还没注册上来 —— 多半是启动时的加载还没跑完。
+     *
+     * 这时候**等它一下**，而不是直接判「没人认领」：判错的表现是「装了 Office Viewer
+     * 却还是内置编辑器」，而用户完全无从判断这是竞态。只在这一种情况下等，
+     * 其它文件（没人认领）走的是上面那条零成本的路径。
+     */
+    if (candidates.length === 0) {
+      const relative = this.relativeToWorkspace(filePath);
+      const claimed = (await this.listCustomEditors()).filter(
+        (candidate) => isDefaultPriority(candidate) && matchesContribution(candidate, relative),
+      );
+      if (claimed.length > 0) {
+        await this.awaitInitialActivation();
+        candidates = (await this.listCustomEditors()).filter(
+          (candidate) => candidate.hasProvider && isDefaultPriority(candidate),
+        );
+      }
+    }
+
     if (candidates.length === 0) return null;
+    return pickCustomEditor(candidates, this.relativeToWorkspace(filePath));
+  }
+
+  /**
+   * 磁盘路径 → 相对工作区的路径。
+   *
+   * manifest 里的 glob 写成「双星 + 后缀」这种相对形状，拿绝对路径去比会全都不匹配。
+   * 不在工作区内的（被拖进来的单个文件）原样返回：双星段本来就能吃掉任意层目录，
+   * 比强行算出一个 `../../` 更靠谱。
+   */
+  private relativeToWorkspace(filePath: string): string {
     const root = this.workspaceRoot.replace(/\\/g, '/').replace(/\/+$/, '');
     const normalized = filePath.replace(/\\/g, '/');
-    // 匹配用**相对工作区**的路径：manifest 里写的是 `**/*.md` 这种相对 glob
-    const relative = normalized.startsWith(`${root}/`)
-      ? normalized.slice(root.length + 1)
-      : normalized;
-    return pickCustomEditor(candidates, relative);
+    return normalized.startsWith(`${root}/`) ? normalized.slice(root.length + 1) : normalized;
   }
 
   /**
@@ -1321,6 +1373,18 @@ export class ExtensionManager {
       url: buildWebviewUrl(panelKey, WEBVIEW_INDEX_PATH),
       preloadUrl: this.getWebviewPreloadUrl(),
     };
+  }
+
+  /**
+   * 等启动时那批扩展加载完（最多 `INITIAL_ACTIVATION_WAIT_MS`）。
+   *
+   * 有上限：真有个扩展卡住不动，也不该把「打开文件」这件事一起拖住。
+   */
+  private async awaitInitialActivation(): Promise<void> {
+    await Promise.race([
+      this.initialActivation,
+      new Promise((resolve) => setTimeout(resolve, INITIAL_ACTIVATION_WAIT_MS)),
+    ]);
   }
 
   /** 自定义编辑器的 `webview` 对象。与视图那份同源，只有 key 与消息集合不同。 */

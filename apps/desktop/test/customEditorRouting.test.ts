@@ -270,6 +270,18 @@ describe('自定义编辑器端到端（假扩展 + 真宿主）', () => {
     expect((globalThis as any).__demoEditor.disposed).toBe(true);
   });
 
+  /**
+   * 启动竞态：扩展是异步加载的，而「打开文件」可能比它先到。
+   *
+   * 会话恢复（重开应用时还原上次打开的文件）正好落在这个窗口里 —— 判错的表现就是
+   * 「装了 Office Viewer，重开应用后 .md 又是内置编辑器了」，而用户完全无从判断
+   * 这是竞态。这条**刻意不等** provider 注册，直接问。
+   */
+  it('扩展还没注册完就问也不许判「没人认领」', async () => {
+    const matched = await manager.matchCustomEditor(mdPath);
+    expect(matched?.viewType).toBe('demo.mdViewer');
+  });
+
   it('没有扩展认领的文件直接返回 null（交回内置编辑器）', async () => {
     await waitForProvider();
     expect(await manager.matchCustomEditor(path.join(base, 'note.txt'))).toBeNull();

@@ -84,7 +84,6 @@ import {
 import { EXTENSION_VIEW_PREFIX } from './components/ExtensionViewPanel';
 import {
   CUSTOM_EDITOR_PREFIX,
-  customEditorTabPath,
   filePathFromCustomEditorTab,
 } from './components/ExtensionEditorView';
 import { CLAUDE_CODE_ID, CLAUDE_CODE_VIEW_ID } from './services/claudeCode';
@@ -119,6 +118,7 @@ import {
   type CursorPos,
   type VirtualTabState,
 } from './workspaceSession';
+import { absolutePathOf, resolveCustomEditorClaim } from './services/customEditorRoute';
 import { useI18n } from './i18n';
 import { setupSymbolNavigation } from './services/symbolNavigation';
 import { setupDiagnosticsReporting } from './services/diagnosticsReporter';
@@ -315,6 +315,15 @@ export function App() {
   >([]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<'chat' | 'claude'>('chat'); // 右侧面板标签
+  /**
+   * 「刚刚揭示过右侧面板」的时间戳（0 = 没有）。
+   *
+   * 扩展列表点「打开」时，如果那个视图的家本来就在右侧面板里（Claude 的侧栏就是），
+   * 揭示的结果是屏幕上**什么都不变** —— 看起来就是「点了没反应」。
+   * 这个状态让面板闪一下，作为「你要的东西在这儿」的回应。
+   */
+  const [panelRevealAt, setPanelRevealAt] = useState(0);
+  const [panelHighlight, setPanelHighlight] = useState(false);
   const [diffs, setDiffs] = useState<PendingDiff[]>([]);
   const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
 
@@ -1180,17 +1189,63 @@ export function App() {
       }
 
       const restored: OpenTab[] = [];
+      /**
+       * 存下来的路径 → 恢复后实际的标签路径。
+       *
+       * 只为一件事：`activePath` 也要跟着跳。上次停在 `.md` 上，恢复之后那个标签变成
+       * 了 `ext://editor/…`，不映射的话「上次打开的那一页」就落空了。
+       */
+      const restoredRedirect = new Map<string, string>();
       for (const p of saved.paths) {
         try {
           // 防御性跳过虚拟路径：db:// / untitled: 不对应磁盘文件，pathExists 必然失败
           if (isVirtualPath(p)) continue;
-          const exists = await window.ide.pathExists(p);
+
+          /**
+           * 上一轮存的可能是自定义编辑器标签（`ext://editor/<编码后的绝对路径>`）。
+           * 无论哪种，先还原出**磁盘上的那个文件**，再问一次「它现在归谁」。
+           */
+          const isEditorTab = p.startsWith(CUSTOM_EDITOR_PREFIX);
+          const absolute = isEditorTab ? filePathFromCustomEditorTab(p) : absolutePathOf(p, root);
+          const normRoot = root.replace(/\\/g, '/').replace(/\/+$/, '');
+          const relative = absolute.startsWith(`${normRoot}/`)
+            ? absolute.slice(normRoot.length + 1)
+            : p;
+          const fallbackPath = isEditorTab ? relative : p;
+
+          /**
+           * **恢复也要走一遍路由**，不能一律当文本读回来。
+           *
+           * 不然就会出现一件很难理解的事：你把一个 .md 开着、重启应用，它是被
+           * 「恢复」出来的而不是被「打开」的 —— 于是绕过自定义编辑器，退回内置编辑器。
+           * 用户看到的是「Office Viewer 没生效」，而扩展本身完全正常。
+           */
+          const claim = await resolveCustomEditorClaim(
+            absolute,
+            (fallbackPath.split('/').pop() || fallbackPath) as string,
+          );
+          if (claim) {
+            restoredRedirect.set(p, claim.tabPath);
+            restored.push({
+              path: claim.tabPath,
+              content: '',
+              language: 'extension-editor',
+              dirty: false,
+              title: claim.title,
+              readOnly: true,
+            });
+            continue;
+          }
+
+          // 没人接管：按文本恢复。编辑器标签走到这里说明那个扩展已经不再接管了
+          // （被禁用 / 卸载 / 改了口径），退回内置编辑器比丢掉这个标签合理。
+          const exists = await window.ide.pathExists(fallbackPath);
           if (!exists) continue;
-          if (isImagePath(p)) {
+          if (isImagePath(fallbackPath)) {
             try {
-              const previewUrl = await window.ide.readFileDataUrl(p);
+              const previewUrl = await window.ide.readFileDataUrl(fallbackPath);
               restored.push({
-                path: p,
+                path: fallbackPath,
                 content: '',
                 language: 'image',
                 dirty: false,
@@ -1200,12 +1255,12 @@ export function App() {
               // skip unreadable images
             }
           } else {
-            const content = await window.ide.readFile(p);
+            const content = await window.ide.readFile(fallbackPath);
             restored.push({
-              path: p,
+              path: fallbackPath,
               content,
               savedContent: content,
-              language: languageFromPath(p),
+              language: languageFromPath(fallbackPath),
               dirty: false,
             });
           }
@@ -1215,9 +1270,11 @@ export function App() {
       }
 
       setTabs(restored);
+      const wantedActive =
+        (saved.activePath && restoredRedirect.get(saved.activePath)) ?? saved.activePath;
       const nextActive =
-        saved.activePath && restored.some((t) => t.path === saved.activePath)
-          ? saved.activePath
+        wantedActive && restored.some((t) => t.path === wantedActive)
+          ? wantedActive
           : restored.length > 0
             ? restored[restored.length - 1].path
             : null;
@@ -2482,31 +2539,31 @@ export function App() {
        * `openAnyway` 是给「用内置编辑器打开」和「扩展渲染失败后退回」用的 ——
        * 没有它就会来回弹：退回内置 → 又被路由到扩展。
        */
-      if (!openAnyway && window.ide.customEditorMatch) {
-        const absolutePath = path.startsWith('/') ? path : ws ? `${ws}/${path}` : path;
-        const claim = await window.ide.customEditorMatch(absolutePath).catch(() => null);
-        const matched = claim?.match;
-        if (matched) {
-          const tabPath = customEditorTabPath(absolutePath);
-          if (!tabsRef.current.some((tab) => tab.path === tabPath)) {
+      if (!openAnyway) {
+        const claim = await resolveCustomEditorClaim(
+          absolutePathOf(path, ws),
+          path.split('/').pop() || path,
+        );
+        if (claim) {
+          if (!tabsRef.current.some((tab) => tab.path === claim.tabPath)) {
             setTabs((prev) =>
-              prev.some((tab) => tab.path === tabPath)
+              prev.some((tab) => tab.path === claim.tabPath)
                 ? prev
                 : [
                     ...prev,
                     {
-                      path: tabPath,
+                      path: claim.tabPath,
                       content: '',
                       language: 'extension-editor',
                       dirty: false,
-                      title: matched.displayName || path.split('/').pop() || path,
+                      title: claim.title,
                       readOnly: true,
                     },
                   ],
             );
           }
-          setActivePath(tabPath);
-          activePathRef.current = tabPath;
+          setActivePath(claim.tabPath);
+          activePathRef.current = claim.tabPath;
           setScmDiff(null);
           setActiveDiffId(null);
           return;
@@ -3303,6 +3360,14 @@ export function App() {
    * 与「打开扩展详情」是两条路：详情页看的是市场资料（README/版本），这里看的是
    * 扩展真正跑起来的界面。装完扩展要「能用它」，靠的就是这个入口。
    */
+  /** 面板高亮 1.2 秒后自己收掉（与 styles.css 里 `panelAttention` 的时长一致）。 */
+  useEffect(() => {
+    if (!panelRevealAt) return;
+    setPanelHighlight(true);
+    const timer = setTimeout(() => setPanelHighlight(false), 1200);
+    return () => clearTimeout(timer);
+  }, [panelRevealAt]);
+
   const openExtensionView = useCallback(
     (viewId: string, title?: string) => {
       if (!viewId) return;
@@ -3325,6 +3390,8 @@ export function App() {
           return next;
         });
         setRightPanelTab('claude');
+        // 面板本来就开着且已经停在这个标签上时，上面两步都不会改变画面 —— 闪一下
+        setPanelRevealAt(Date.now());
         return;
       }
 
@@ -6113,7 +6180,7 @@ export function App() {
               />
             )}
             <aside
-              className="panel right-chat-panel"
+              className={`panel right-chat-panel${panelHighlight ? ' panel-attention' : ''}`}
               style={{
                 display: showChatPanel ? 'flex' : 'none',
               }}

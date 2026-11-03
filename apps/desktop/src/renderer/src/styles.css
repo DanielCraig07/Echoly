@@ -1802,6 +1802,39 @@ body.monaco-context-menu-active .middle-column {
   width: var(--chat-width, 300px);
   flex-shrink: 0;
   isolation: isolate;
+  position: relative;
+}
+
+/*
+  「你让我打开的那个东西就在这儿」——右侧面板的提示性闪一下。
+
+  为什么需要它：扩展列表点「打开」时，如果那个视图的家本来就在右侧面板里
+  （Claude 的侧栏就是），揭示它 = 屏幕上什么都不变。用户看到的是「点了没反应」，
+  而实际上界面已经正确。闪一下是给这件事一个可见的回应。
+  只闪不弹 toast：每次点「打开」都弹一句，比没反应更烦人。
+*/
+.panel-attention::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  animation: panelAttention 1.2s ease-out 1 forwards;
+}
+
+@keyframes panelAttention {
+  0% {
+    box-shadow: inset 0 0 0 2px var(--accent, #0a84ff);
+    opacity: 1;
+  }
+  70% {
+    box-shadow: inset 0 0 0 2px var(--accent, #0a84ff);
+    opacity: 1;
+  }
+  100% {
+    box-shadow: inset 0 0 0 2px transparent;
+    opacity: 0;
+  }
 }
 
 .splitter {
