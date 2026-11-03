@@ -427,7 +427,8 @@ export function BranchSwitchModal({ open, currentBranch, onClose, onSwitched }: 
           style={{
             padding: '10px 14px',
             borderBottom: '1px solid var(--border, rgba(255,255,255,0.06))',
-            background: 'var(--bg-input, rgba(0, 0, 0, 0.2))',
+            // 这条是「搜索分支」那一栏。--bg-input 与弹窗底色同值，等于没有底色
+            background: 'var(--bg-field)',
             display: 'flex',
             alignItems: 'center',
             gap: 10,

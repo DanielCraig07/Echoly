@@ -7,6 +7,11 @@
   --bg-elevated: #1e1e1e;
   --bg-panel: #141414;
   --bg-input: #141414;
+  /* 弹窗里的输入框/下拉框底色。为什么和 --bg-elevated 分开：
+     暗色下两者相同（弹窗也是 #141414）；亮色下弹窗本身是白的，
+     再用白就等于没底色 —— 那里要的是比白低一档的浅紫。
+     （面板里的输入框继续用 --bg-elevated：亮色面板是浅紫，白底才分得出来。） */
+  --bg-field: #1e1e1e;
   --bg-card: #1e1e1e;
   --bg-hover: rgba(255, 255, 255, 0.05);
   --bg-hover-strong: rgba(255, 255, 255, 0.09);
@@ -80,6 +85,7 @@
   --bg-elevated: #ffffff;
   --bg-panel: #f1ecf7;
   --bg-input: #ffffff;
+  --bg-field: #f1ecf7;
   --bg-hover: #e8dff3;
   --bg-hover-strong: #ddd0ef;
   --bg-code: #f3eef9;
@@ -1627,6 +1633,31 @@ select:focus {
 .git-new-branch button,
 .git-panel > button {
   font-size: var(--ui-font-size, 12px);
+}
+
+/* 提交信息输入框。
+   原来这段样式写在 GitPanel 的内联 style 里，底色用的是 `var(--bg-lighter, #12161c)`
+   —— 而 `--bg-lighter` 这个 token **哪里都没有定义**，于是实际渲染成 #12161c：
+   比面板底色（#141414）还暗，看起来像一个「洞」而不是一个输入框。
+   搬进 CSS 的同时换成有定义、且两套主题都做过分档的 --bg-elevated。 */
+.git-commit-input {
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  /* 右侧 106px 留给浮在框里的「AI 生成提交信息」按钮 */
+  padding: 4px 106px 4px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 4px;
+  color: var(--text);
+  outline: none;
+  font-size: var(--ui-font-size, 12px);
+}
+
+.git-commit-input:focus {
+  border-color: #007fd4 !important;
+  outline: 1px solid #007fd4 !important;
+  outline-offset: -1px !important;
 }
 
 .git-commit-box {
@@ -23912,8 +23943,9 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 .git-modal-input {
   width: 100%;
   box-sizing: border-box;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--border);
+  /* 原来是 rgba(0,0,0,0.25)：暗色下几乎看不见，亮色下又变成一块灰 */
+  background: var(--bg-field);
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: 6px;
   color: var(--text);
   font-size: 13px;

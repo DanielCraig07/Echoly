@@ -271,8 +271,9 @@ export function FileHistoryModal({ filePath, onClose, onPreviewDiff }: Props) {
             onKeyDown={handleKeyDown}
             style={{
               flex: 1,
-              background: '#0d0d0d',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
+              // 写死的 #0d0d0d 在亮色主题下是一块黑框
+              background: 'var(--bg-field)',
+              border: '1px solid var(--border-strong, var(--border))',
               borderRadius: 6,
               padding: '7px 12px',
               fontSize: 12.5,

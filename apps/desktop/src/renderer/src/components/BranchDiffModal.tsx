@@ -267,9 +267,11 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
               value={baseBranch}
               onChange={(e) => setBaseBranch(e.target.value)}
               style={{
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                color: '#fff',
+                // 下拉框在这个弹窗里也算输入控件：用 --bg-field 而不是写死的 6% 白
+                // （亮色主题下 6% 白等于没有底色，而文字还是 #fff）
+                background: 'var(--bg-field)',
+                border: '1px solid var(--border-strong, var(--border))',
+                color: 'var(--text)',
                 padding: '3px 8px',
                 borderRadius: 4,
                 fontSize: 'var(--ui-font-size, 12px)',
@@ -313,8 +315,9 @@ export function BranchDiffModal({ open, currentBranch, onClose }: Props) {
               value={targetBranch}
               onChange={(e) => setTargetBranch(e.target.value)}
               style={{
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
+                background: 'var(--bg-field)',
+                border: '1px solid var(--border-strong, var(--border))',
+                // 目标分支保持它自己的强调色（这是语义色，不是底色）
                 color: '#38bdf8',
                 padding: '3px 8px',
                 borderRadius: 4,

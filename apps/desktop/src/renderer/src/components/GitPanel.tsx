@@ -2092,20 +2092,10 @@ export function GitPanel({
         }}
       >
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          {/* 样式在 .git-commit-input 里（含底色）：原来内联那份用的是未定义的
+              `--bg-lighter`，回退值比面板还暗，看着像一个洞 */}
           <input
             className="git-commit-input"
-            style={{
-              width: '100%',
-              height: 32,
-              boxSizing: 'border-box',
-              padding: '4px 106px 4px 10px',
-              background: 'var(--bg-lighter, #12161c)',
-              border: '1px solid var(--border)',
-              borderRadius: 4,
-              color: 'var(--text)',
-              outline: 'none',
-              fontSize: 'var(--ui-font-size, 12px)',
-            }}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder={t('git.commitPlaceholder', {
@@ -2238,8 +2228,9 @@ export function GitPanel({
                 top: 36,
                 right: 0,
                 zIndex: 1000,
-                background: 'var(--bg-lighter, #252526)',
-                border: '1px solid var(--border)',
+                // 同 --bg-lighter 的问题：这个 token 没定义，亮色主题下会是一块深灰
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-strong, var(--border))',
                 borderRadius: 6,
                 boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                 width: 140,
