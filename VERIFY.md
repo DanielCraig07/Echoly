@@ -19,12 +19,12 @@
 | ---------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | `npx prettier --check .`           | 全部 ok                              | 格式漂移                                                                                                                   |
 | `npm run typecheck`                | 退出码 0                             | 类型错误（含各 workspace）                                                                                                 |
-| `npm run lint`                     | **0 error**（会有 99 条 warning）    | `react-hooks/rules-of-hooks` 是 error，专拦「hook 写在提前 return 之后」这类只在运行时炸、typecheck 与测试都看不出来的问题 |
+| `npm run lint`                     | **0 error**（会有 96 条 warning）    | `react-hooks/rules-of-hooks` 是 error，专拦「hook 写在提前 return 之后」这类只在运行时炸、typecheck 与测试都看不出来的问题 |
 | `npm test`                         | **5021 passed / 139 files**          | 逻辑回归                                                                                                                   |
 | `npm run build -w @echoly/desktop` | 构建成功                             | 打包期才会暴露的问题（含 runner 打包）                                                                                     |
 | `npm run audit:wiring`             | `✓ 没有发现「有实现、没入口」的接线` | **「功能做了但界面上够不到」** —— 这类问题其他门禁全拦不住：代码合法、类型正确、单测全绿，只是没人调用它                   |
 
-关于 warning：99 条全是 `no-unused-vars`（历史遗留的未使用导入/局部变量），**不是**本次改动引入的。
+关于 warning：96 条全是 `no-unused-vars`（历史遗留的未使用导入/局部变量），**不是**本次改动引入的。
 （数量会随「删掉一段没人读的状态」这类清理小幅下降 —— 比如 `currentExtensionId` 只被写、从来没被读过。）
 这批是刻意留在 `warn` 级别的，没有批量清理 —— 逐个删未使用的代码有误删「有意留的脚手架」的风险，
 收益也不对等。真要清，建议单独一个提交、并且只清未使用的 **import**。

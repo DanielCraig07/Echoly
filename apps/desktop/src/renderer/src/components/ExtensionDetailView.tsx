@@ -116,10 +116,11 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
         window.extensions.getExtensionDetail(extensionId),
         window.extensions.listInstalled?.() ?? Promise.resolve(undefined),
         // 可选链：老版本 preload 上没有这个方法时不该把整页拖垮
-        window.ide.listCustomEditors?.() ?? Promise.resolve([]),
+        window.ide.listCustomEditors?.() ?? Promise.resolve({ success: false, editors: [] }),
       ]);
+      // 按扩展 id 过滤：这一份是全机扫到的贡献，详情页只关心当前这个扩展
       setCustomEditors(
-        (editors ?? []).filter(
+        (editors?.editors ?? []).filter(
           (entry) => entry.extensionId.toLowerCase() === extensionId.toLowerCase(),
         ),
       );

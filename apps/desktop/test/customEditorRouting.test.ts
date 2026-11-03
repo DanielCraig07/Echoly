@@ -227,9 +227,9 @@ describe('自定义编辑器端到端（假扩展 + 真宿主）', () => {
     expect(opened.ok).toBe(true);
     if (!opened.ok) return;
 
-    const index = await manager.handleWebviewRequest(opened.url);
+    const index = await (manager as any).handleWebviewRequest(opened.url);
     expect(index.status).toBe(200);
-    const bundle = await manager.handleWebviewRequest(
+    const bundle = await (manager as any).handleWebviewRequest(
       `echoly-webview://ext/${encodeURIComponent(opened.panelKey)}/webview/index.js`,
     );
     expect(bundle.status).toBe(200);
@@ -241,7 +241,7 @@ describe('自定义编辑器端到端（假扩展 + 真宿主）', () => {
     expect(opened.ok).toBe(true);
     if (!opened.ok) return;
 
-    const escaped = await manager.handleWebviewRequest(
+    const escaped = await (manager as any).handleWebviewRequest(
       `echoly-webview://ext/${encodeURIComponent(opened.panelKey)}/../../../etc/passwd`,
     );
     expect(escaped.status).not.toBe(200);
@@ -252,7 +252,10 @@ describe('自定义编辑器端到端（假扩展 + 真宿主）', () => {
     const opened = await manager.openCustomEditor(mdPath);
     expect(opened.ok).toBe(true);
 
-    const result = await manager.extensionHost.executeCommand('demo.mdViewer.save', '# Edited\n');
+    const result = await (manager as any).extensionHost.executeCommand(
+      'demo.mdViewer.save',
+      '# Edited\n',
+    );
     expect(result).toBe(true);
     expect(await readFile(mdPath, 'utf8')).toBe('# Edited\n');
   });
