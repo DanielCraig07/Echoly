@@ -27,6 +27,86 @@ const createApi = () => {
 const pick = (obj: any, path: string): any =>
   path.split('.').reduce((acc, key) => (acc == null ? acc : acc[key]), obj);
 
+describe('命令 / 视图的归属登记（禁用与卸载靠它）', () => {
+  /**
+   * 为什么需要这套登记：扩展在 activate() 里调 registerCommand / registerWebviewViewProvider
+   * 时**不会自报家门**。禁用与卸载却必须知道「这些命令与视图是哪个扩展注册的」，
+   * 才能把它们一起摘掉 —— 否则一个被停用的扩展的命令还留在命令面板里，点下去毫无反应。
+   *
+   * 归属靠「activate 期间设 activeExtensionId」推断，所以这里按真实调用顺序测：
+   * 设 id → 注册 → 清 id。
+   */
+  const setup = () => {
+    const registrations: { viewId: string; extensionId?: string }[] = [];
+    const shim = new VSCodeShim({
+      workspaceRoot: '/tmp/x',
+      extensionPath: '/tmp/x',
+      onCommand: async () => undefined,
+      onMessage: () => {},
+      onWebviewViewRegister: (viewId, _provider, _path, _options, extensionId) =>
+        registrations.push({ viewId, extensionId }),
+    });
+    return { shim, api: shim.createAPI() as any, registrations };
+  };
+
+  it('激活期间注册的命令与视图都记在当次激活的扩展名下', () => {
+    const { shim, api, registrations } = setup();
+
+    shim.activeExtensionId = 'a.demo';
+    api.commands.registerCommand('a.demo.doThing', () => 1);
+    api.window.registerWebviewViewProvider('a.demoView', { resolveWebviewView() {} });
+    shim.activeExtensionId = undefined;
+
+    expect(shim.listCommands()).toEqual([{ command: 'a.demo.doThing', extensionId: 'a.demo' }]);
+    expect(shim.listWebviewViewIds('a.demo')).toEqual(['a.demoView']);
+    // 宿主（manager）也要能拿到归属，它另有 provider 表要一起清
+    expect(registrations).toEqual([{ viewId: 'a.demoView', extensionId: 'a.demo' }]);
+  });
+
+  it('dropExtensionRegistrations 只摘掉指定扩展的，不碰别人的', () => {
+    const { shim, api } = setup();
+
+    shim.activeExtensionId = 'a.demo';
+    api.commands.registerCommand('a.demo.cmd', () => 1);
+    api.window.registerWebviewViewProvider('a.demoView', {});
+    shim.activeExtensionId = 'b.other';
+    api.commands.registerCommand('b.other.cmd', () => 2);
+    api.window.registerWebviewViewProvider('b.otherView', {});
+    shim.activeExtensionId = undefined;
+
+    const droppedViews = shim.dropExtensionRegistrations('a.demo');
+
+    expect(droppedViews).toEqual(['a.demoView']);
+    expect(shim.listCommands()).toEqual([{ command: 'b.other.cmd', extensionId: 'b.other' }]);
+    expect(shim.listWebviewViewIds('a.demo')).toEqual([]);
+    expect(shim.listWebviewViewIds('b.other')).toEqual(['b.otherView']);
+    // 命令是真被摘了：执行它不再有响应
+    return expect(shim.executeCommand('a.demo.cmd')).resolves.toBeUndefined();
+  });
+
+  it('扩展自己 dispose 掉注册项之后，归属表也不该留残渣', () => {
+    const { shim, api } = setup();
+
+    shim.activeExtensionId = 'a.demo';
+    const cmd = api.commands.registerCommand('a.demo.cmd', () => 1);
+    const view = api.window.registerWebviewViewProvider('a.demoView', {});
+    shim.activeExtensionId = undefined;
+
+    cmd.dispose();
+    view.dispose();
+
+    // 没清干净的话，禁用/卸载会去摘一个本就不存在的项，或反过来漏摘
+    expect(shim.listCommands()).toEqual([]);
+    expect(shim.listWebviewViewIds('a.demo')).toEqual([]);
+  });
+
+  it('activate 之外注册的命令没有归属（不该被算到某个扩展头上）', () => {
+    const { shim, api } = setup();
+    api.commands.registerCommand('builtin.cmd', () => 1);
+    expect(shim.listCommands()).toEqual([{ command: 'builtin.cmd', extensionId: undefined }]);
+  });
+});
+
 describe('vscode API 表面', () => {
   it('registerCustomEditorProvider 在位，且返回真的 Disposable', () => {
     const api = createApi();
