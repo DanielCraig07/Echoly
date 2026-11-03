@@ -1337,23 +1337,35 @@ select:focus {
   margin-right: 2px;
   flex-shrink: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
+  /* 未固定时压暗：默认状态下它是「可以做的事」，不该和面板名抢注意力 */
   color: var(--muted);
+  opacity: 0.55;
   cursor: pointer;
   transition:
     background 0.12s ease,
-    color 0.12s ease;
+    color 0.12s ease,
+    opacity 0.12s ease;
 }
 
 .rail-menu-pin:hover {
   color: var(--text);
   background: var(--bg-hover-strong);
+  opacity: 1;
 }
 
-/* 已固定的图钉保持实色：一眼看出哪几个在活动栏上，不用挨个回忆 */
+/* 已固定的图钉用强调色**加实底**：只差一档灰度的话，滑过去很难看出
+   「这个已经在活动栏上了」—— 而那正是这个按钮唯一要传达的信息。 */
 .rail-menu-pin.pinned {
-  color: var(--text);
+  color: var(--accent-light);
+  background: var(--accent-soft);
+  opacity: 1;
+}
+
+.rail-menu-pin.pinned:hover {
+  background: var(--accent-soft);
+  color: var(--accent-light);
 }
 
 .activity-pill {
@@ -18980,6 +18992,14 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   color: var(--text);
 }
 
+/* 定宽居中。
+   宽编辑器下把内容拉满整屏的后果是：正文贴左边、右栏贴右边，中间空出一大片 ——
+   两边都不挨着，读起来要来回甩头。这条上限让「正文 + 右栏」始终是一整块。 */
+.ext-detail-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
 .ext-detail-head {
   display: flex;
   gap: 20px;
@@ -19078,7 +19098,27 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .ext-detail-readme {
   /* README 是别人写的 markdown，宽度收一收才好读（一行 90+ 字读起来很累） */
-  max-width: 88ch;
+  max-width: 78ch;
+  /* .md-body 的行距是给聊天气泡调的，用在整篇文章上太松：一屏看不了几行 */
+  line-height: 1.65;
+}
+
+.ext-detail-readme p {
+  margin: 8px 0;
+}
+
+.ext-detail-readme h2 {
+  margin: 22px 0 8px;
+}
+
+.ext-detail-readme h3 {
+  margin: 18px 0 6px;
+}
+
+/* 表格：README 里常是「字段说明」表，第一列（id / 名字）不该被挤成三行 */
+.ext-detail-readme table th:first-child,
+.ext-detail-readme table td:first-child {
+  white-space: nowrap;
 }
 
 /* 右栏：元信息。窄屏（编辑器分栏）时自动落到正文下面 */

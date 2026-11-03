@@ -267,12 +267,18 @@ export function ActivityBar({
                     : t('app.railPinPanel')
                 }
               >
-                {/* 实心图钉。描边版在这个尺寸下只剩一个十字，认不出是什么；
-                    实心块 + 一根针才有辨识度（VS Code 的图钉也是实心的）。
-                    头刻意画得宽一点：13px 的细头会被抗锯齿糊成一个点。 */}
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M8 2.5h8l-1 6.5 3 3H6l3-3z" />
-                  <path d="M11 12h2v4.5l-1 3-1-3z" />
+                {/* 实心图钉。
+                    两个尺寸上的取舍都是量出来的：24 格缩到 13px、16 格缩到 16px 时，
+                    头的两条斜边会被抗锯齿糊掉，只剩一根竖线。16 格 + 18px 显示、
+                    并且把头画宽，才在按钮里读得出是「图钉」而不是一个点。 */}
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d="M5.6 1.4h4.8a1 1 0 0 1 1 1v.7h-.7l-.6 3.5 2.4 2.1a.7.7 0 0 1-.45 1.25H8.7v4.2a.7.7 0 0 1-1.4 0V9.95H3.95a.7.7 0 0 1-.45-1.25l2.4-2.1-.6-3.5h-.7v-.7a1 1 0 0 1 1-1z" />
                 </svg>
               </button>
             </div>

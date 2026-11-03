@@ -14,6 +14,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useI18n } from '../i18n';
 import type { MarketplaceDetailEntry } from '@deepseek-ide/shared';
+import { stripRawHtml } from '../services/extensionReadme';
 import {
   formatDownloadCount,
   formatRating,
@@ -29,6 +30,9 @@ import {
  * 各写一个字面量迟早会漂移成两个不同的字符串。
  */
 export const EXTENSION_DETAIL_PREFIX = 'ext://detail/';
+
+/** 走专用安装通道的那个扩展 id。原因见组件里的 usesDedicatedChannel。 */
+const CLAUDE_CODE_ID = 'Anthropic.claude-code';
 
 /** 面板订阅这个事件来刷新已安装列表。 */
 export const EXTENSION_INSTALLED_EVENT = 'echoly:extension-installed';
@@ -129,10 +133,31 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
     };
   }, [detail?.iconUrl]);
 
+  /**
+   * Claude Code 走专用安装通道。
+   *
+   * 它在注册表上只有**平台专属构建**（`@darwin-arm64` / `@alpine-arm64` …），
+   * 而注册表搜索接口不按当前机器过滤 —— 走通用的 installFromMarketplace 有可能
+   * 在 macOS 上装到 alpine 的包。专用通道按本机去 VS Code 市场取对应构建。
+   */
+  const usesDedicatedChannel = extensionId.toLowerCase() === CLAUDE_CODE_ID.toLowerCase();
+
   const handleInstall = async () => {
-    if (!detail || installing) return;
+    if (installing) return;
     setInstalling(true);
     try {
+      if (usesDedicatedChannel) {
+        const res = await window.extensions.installClaudeCode();
+        if (res.success) {
+          setInstalled(true);
+          onShowToast?.(t('ext.claudeInstalled'), 'success');
+          window.dispatchEvent(new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: extensionId }));
+        } else {
+          onShowToast?.(res.error || t('ext.installFailed'), 'error');
+        }
+        return;
+      }
+      if (!detail) return;
       const res = await window.extensions.installFromMarketplace({
         id: detail.id,
         downloadUrl: detail.downloadUrl,
@@ -170,183 +195,194 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
 
   return (
     <div className="ext-detail">
-      <header className="ext-detail-head">
-        <div className="ext-detail-icon">
-          {iconData ? (
-            <img src={iconData} alt="" draggable={false} />
-          ) : (
-            <span className="ext-row-icon-letter">{iconInitial(title)}</span>
-          )}
-        </div>
-        <div className="ext-detail-headinfo">
-          <h1 className="ext-detail-title">{title}</h1>
-          <div className="ext-detail-meta">
-            <span className="ext-publisher">
-              <svg
-                className="ext-verified"
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path d="M12 2.6 14.5 5l3.4-.3.9 3.3 3 1.7-1.4 3.1 1.4 3.1-3 1.7-.9 3.3-3.4-.3L12 22.6 9.5 20.2l-3.4.3-.9-3.3-3-1.7L3.6 12.4 2.2 9.3l3-1.7.9-3.3 3.4.3z" />
-              </svg>
-              <span className="ext-publisher-name">{publisher}</span>
-            </span>
-            {detail?.downloads !== undefined && (
-              <span className="ext-detail-stat">
+      <div className="ext-detail-shell">
+        <header className="ext-detail-head">
+          <div className="ext-detail-icon">
+            {iconData ? (
+              <img src={iconData} alt="" draggable={false} />
+            ) : (
+              <span className="ext-row-icon-letter">{iconInitial(title)}</span>
+            )}
+          </div>
+          <div className="ext-detail-headinfo">
+            <h1 className="ext-detail-title">{title}</h1>
+            <div className="ext-detail-meta">
+              <span className="ext-publisher">
                 <svg
-                  width="13"
-                  height="13"
+                  className="ext-verified"
+                  width="11"
+                  height="11"
                   viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
+                  fill="currentColor"
                   aria-hidden="true"
                 >
-                  <path d="M12 3v11" />
-                  <polyline points="7.5 9.5 12 14 16.5 9.5" />
-                  <path d="M4.5 20h15" />
+                  <path d="M12 2.6 14.5 5l3.4-.3.9 3.3 3 1.7-1.4 3.1 1.4 3.1-3 1.7-.9 3.3-3.4-.3L12 22.6 9.5 20.2l-3.4.3-.9-3.3-3-1.7L3.6 12.4 2.2 9.3l3-1.7.9-3.3 3.4.3z" />
                 </svg>
-                {formatDownloadCount(detail.downloads)}
+                <span className="ext-publisher-name">{publisher}</span>
               </span>
-            )}
-            {detail?.rating !== undefined && (
-              <span className="ext-detail-stat ext-row-rating" title={t('ext.ratingLabel')}>
-                {ratingStars(detail.rating)} {formatRating(detail.rating)}
-              </span>
-            )}
-          </div>
-          {detail?.description && <p className="ext-detail-desc">{detail.description}</p>}
-
-          <div className="ext-detail-actions">
-            {state === 'failed' && (
-              <button type="button" className="ext-btn" onClick={() => void load()}>
-                {t('ext.retry')}
-              </button>
-            )}
-            {state !== 'failed' &&
-              (installed ? (
-                <button
-                  type="button"
-                  className="ext-btn ext-btn-primary"
-                  onClick={() => {
-                    // 「已安装」之后唯一能做的事是打开它 —— 本应用没有禁用/卸载，
-                    // 所以这里不摆一个点了没反应的按钮
-                    window.dispatchEvent(
-                      new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: extensionId }),
-                    );
-                    onShowToast?.(t('extDetail.openedInPanel'), 'info');
-                  }}
-                >
-                  {t('ext.installedSection')}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="ext-btn ext-btn-primary"
-                  disabled={installing || state === 'loading' || !detail}
-                  onClick={() => void handleInstall()}
-                >
-                  {installing ? t('ext.installing') : t('ext.marketInstall')}
-                </button>
-              ))}
-          </div>
-        </div>
-      </header>
-
-      <div className="ext-detail-body">
-        <main className="ext-detail-main">
-          {state === 'loading' && <div className="ext-detail-note">{t('extDetail.loading')}</div>}
-          {state === 'failed' && <div className="ext-detail-note ext-note-error">{error}</div>}
-          {showEmptyReadme && <div className="ext-detail-note">{t('extDetail.noReadme')}</div>}
-          {readme.trim() && (
-            <div className="md-body ext-detail-readme">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{readme}</ReactMarkdown>
+              {detail?.downloads !== undefined && (
+                <span className="ext-detail-stat">
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 3v11" />
+                    <polyline points="7.5 9.5 12 14 16.5 9.5" />
+                    <path d="M4.5 20h15" />
+                  </svg>
+                  {formatDownloadCount(detail.downloads)}
+                </span>
+              )}
+              {detail?.rating !== undefined && (
+                <span className="ext-detail-stat ext-row-rating" title={t('ext.ratingLabel')}>
+                  {ratingStars(detail.rating)} {formatRating(detail.rating)}
+                </span>
+              )}
             </div>
-          )}
-        </main>
+            {detail?.description && <p className="ext-detail-desc">{detail.description}</p>}
 
-        <aside className="ext-detail-aside">
-          {detail && (
-            <>
-              <section className="ext-detail-block">
-                <h2>{t('extDetail.installation')}</h2>
-                <dl>
-                  <dt>{t('extDetail.identifier')}</dt>
-                  <dd className="ext-detail-mono">{detail.id}</dd>
-                  <dt>{t('extDetail.version')}</dt>
-                  <dd>{detail.version}</dd>
-                  {detail.timestamp && (
-                    <>
-                      <dt>{t('extDetail.lastUpdated')}</dt>
-                      <dd>{formatTimestamp(detail.timestamp)}</dd>
-                    </>
-                  )}
-                  {detail.size !== undefined && (
-                    <>
-                      <dt>{t('extDetail.size')}</dt>
-                      <dd>{formatSize(detail.size)}</dd>
-                    </>
-                  )}
-                </dl>
-              </section>
-
-              <section className="ext-detail-block">
-                <h2>{t('extDetail.marketplace')}</h2>
-                <dl>
-                  {detail.downloads !== undefined && (
-                    <>
-                      <dt>{t('extDetail.installs')}</dt>
-                      <dd>{detail.downloads.toLocaleString()}</dd>
-                    </>
-                  )}
-                  {detail.rating !== undefined && (
-                    <>
-                      <dt>{t('extDetail.rating')}</dt>
-                      <dd>{formatRating(detail.rating)}</dd>
-                    </>
-                  )}
-                  {detail.reviewCount !== undefined && (
-                    <>
-                      <dt>{t('extDetail.reviews')}</dt>
-                      <dd>{detail.reviewCount.toLocaleString()}</dd>
-                    </>
-                  )}
-                </dl>
-              </section>
-
-              {detail.categories && detail.categories.length > 0 && (
-                <section className="ext-detail-block">
-                  <h2>{t('extDetail.categories')}</h2>
-                  <div className="ext-detail-chips">
-                    {detail.categories.map((c) => (
-                      <span key={c} className="ext-detail-chip">
-                        {c}
-                      </span>
-                    ))}
-                  </div>
-                </section>
+            <div className="ext-detail-actions">
+              {state === 'failed' && (
+                <button type="button" className="ext-btn" onClick={() => void load()}>
+                  {t('ext.retry')}
+                </button>
               )}
+              {state !== 'failed' &&
+                (installed ? (
+                  <button
+                    type="button"
+                    className="ext-btn ext-btn-primary"
+                    onClick={() => {
+                      // 「已安装」之后唯一能做的事是打开它 —— 本应用没有禁用/卸载，
+                      // 所以这里不摆一个点了没反应的按钮
+                      window.dispatchEvent(
+                        new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: extensionId }),
+                      );
+                      onShowToast?.(t('extDetail.openedInPanel'), 'info');
+                    }}
+                  >
+                    {t('ext.installedSection')}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="ext-btn ext-btn-primary"
+                    disabled={
+                      installing || state === 'loading' || (!detail && !usesDedicatedChannel)
+                    }
+                    onClick={() => void handleInstall()}
+                  >
+                    {installing
+                      ? t('ext.installing')
+                      : usesDedicatedChannel
+                        ? t('ext.installOnline')
+                        : t('ext.marketInstall')}
+                  </button>
+                ))}
+            </div>
+          </div>
+        </header>
 
-              {(resources.length > 0 || detail.license) && (
+        <div className="ext-detail-body">
+          <main className="ext-detail-main">
+            {state === 'loading' && <div className="ext-detail-note">{t('extDetail.loading')}</div>}
+            {state === 'failed' && <div className="ext-detail-note ext-note-error">{error}</div>}
+            {showEmptyReadme && <div className="ext-detail-note">{t('extDetail.noReadme')}</div>}
+            {readme.trim() && (
+              <div className="md-body ext-detail-readme">
+                {/* README 里的原始 HTML 先剥掉再渲染，理由见 services/extensionReadme */}
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripRawHtml(readme)}</ReactMarkdown>
+              </div>
+            )}
+          </main>
+
+          <aside className="ext-detail-aside">
+            {detail && (
+              <>
                 <section className="ext-detail-block">
-                  <h2>{t('extDetail.resources')}</h2>
-                  <div className="ext-detail-links">
-                    {resources.map((r) => (
-                      <a key={r.href} href={r.href} target="_blank" rel="noreferrer">
-                        {r.label}
-                      </a>
-                    ))}
-                    {detail.license && <span className="ext-detail-license">{detail.license}</span>}
-                  </div>
+                  <h2>{t('extDetail.installation')}</h2>
+                  <dl>
+                    <dt>{t('extDetail.identifier')}</dt>
+                    <dd className="ext-detail-mono">{detail.id}</dd>
+                    <dt>{t('extDetail.version')}</dt>
+                    <dd>{detail.version}</dd>
+                    {detail.timestamp && (
+                      <>
+                        <dt>{t('extDetail.lastUpdated')}</dt>
+                        <dd>{formatTimestamp(detail.timestamp)}</dd>
+                      </>
+                    )}
+                    {detail.size !== undefined && (
+                      <>
+                        <dt>{t('extDetail.size')}</dt>
+                        <dd>{formatSize(detail.size)}</dd>
+                      </>
+                    )}
+                  </dl>
                 </section>
-              )}
-            </>
-          )}
-        </aside>
+
+                <section className="ext-detail-block">
+                  <h2>{t('extDetail.marketplace')}</h2>
+                  <dl>
+                    {detail.downloads !== undefined && (
+                      <>
+                        <dt>{t('extDetail.installs')}</dt>
+                        <dd>{detail.downloads.toLocaleString()}</dd>
+                      </>
+                    )}
+                    {detail.rating !== undefined && (
+                      <>
+                        <dt>{t('extDetail.rating')}</dt>
+                        <dd>{formatRating(detail.rating)}</dd>
+                      </>
+                    )}
+                    {detail.reviewCount !== undefined && (
+                      <>
+                        <dt>{t('extDetail.reviews')}</dt>
+                        <dd>{detail.reviewCount.toLocaleString()}</dd>
+                      </>
+                    )}
+                  </dl>
+                </section>
+
+                {detail.categories && detail.categories.length > 0 && (
+                  <section className="ext-detail-block">
+                    <h2>{t('extDetail.categories')}</h2>
+                    <div className="ext-detail-chips">
+                      {detail.categories.map((c) => (
+                        <span key={c} className="ext-detail-chip">
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {(resources.length > 0 || detail.license) && (
+                  <section className="ext-detail-block">
+                    <h2>{t('extDetail.resources')}</h2>
+                    <div className="ext-detail-links">
+                      {resources.map((r) => (
+                        <a key={r.href} href={r.href} target="_blank" rel="noreferrer">
+                          {r.label}
+                        </a>
+                      ))}
+                      {detail.license && (
+                        <span className="ext-detail-license">{detail.license}</span>
+                      )}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+          </aside>
+        </div>
       </div>
     </div>
   );

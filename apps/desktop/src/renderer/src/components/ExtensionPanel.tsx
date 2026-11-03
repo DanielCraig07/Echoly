@@ -39,7 +39,6 @@ export interface ExtensionPanelProps {
 declare global {
   interface Window {
     extensions: {
-      installClaudeCode(): Promise<{ success: boolean; error?: string }>;
       loadFromPath(extensionPath: string): Promise<{ success: boolean; error?: string }>;
       searchMarketplace(
         query: string,
@@ -49,6 +48,8 @@ declare global {
         size?: number,
       ): Promise<{ ok: boolean; error?: string; extensions: MarketplaceEntry[] }>;
       getIconDataUrl(iconUrl: string): Promise<string | null>;
+      /** Claude Code 的专用安装通道（它是平台专属构建，走注册表会装错平台）。消费者是详情页 */
+      installClaudeCode(): Promise<{ success: boolean; error?: string }>;
       getExtensionDetail(id: string): Promise<{
         ok: boolean;
         error?: string;
@@ -76,9 +77,6 @@ const SEARCH_DEBOUNCE_MS = 400;
 
 /** 推荐列表要几条。与主进程默认值一致，改一处就够。 */
 const RECOMMENDED_COUNT = 8;
-
-/** Claude Code 的扩展 id。装没装、要不要合成推荐行都看它。 */
-const CLAUDE_CODE_ID = 'Anthropic.claude-code';
 
 /** 一行的全部展示数据。两种来源（已安装 / 市场条目）都先归一到这里再渲染。 */
 export interface RowView {
@@ -376,27 +374,6 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
     };
   }, [visibleEntries]);
 
-  const handleInstallClaudeCode = async () => {
-    setLoading(true);
-    setError(null);
-    setSuccessMsg(null);
-    setDownloadProgress(null);
-    try {
-      const result = await window.extensions.installClaudeCode();
-      if (result.success) {
-        await loadExtensions();
-        setSuccessMsg(t('ext.claudeInstalled'));
-      } else {
-        setError(result.error || t('ext.installFailed'));
-      }
-    } catch (err: any) {
-      setError(err.message || t('ext.installError'));
-    } finally {
-      setLoading(false);
-      setDownloadProgress(null);
-    }
-  };
-
   /**
    * 在市场里搜索。
    *
@@ -499,8 +476,6 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
       setLoading(false);
     }
   };
-
-  const isClaudeInstalled = extensions.includes(CLAUDE_CODE_ID);
 
   /**
    * 已加载判定：扩展自报的 id 可能是 `publisher.name`，也可能是别的写法，
@@ -622,43 +597,10 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
     [installingId, extensions, onOpenExtension, t],
   );
 
-  /**
-   * Claude Code 的推荐行。
-   *
-   * 它是本应用主推的扩展，但注册表上的热门条目是**平台专属构建**，会被推荐列表的
-   * 平台过滤挡掉（见主进程），所以这里手工合成一条，走的是专用安装通道。
-   * 装好之后它出现在「已安装」分区里，这一条自然消失。
-   */
-  const claudeRow: RowView = useMemo(
-    () => ({
-      key: CLAUDE_CODE_ID,
-      extensionId: CLAUDE_CODE_ID,
-      title: 'Claude Code',
-      description: t('ext.heroDesc'),
-      publisher: 'Anthropic',
-      stats: <span className="ext-pill ext-pill-official">{t('ext.official')}</span>,
-      actions: (
-        <button
-          type="button"
-          className="ext-btn ext-btn-primary"
-          onClick={handleInstallClaudeCode}
-          disabled={loading}
-        >
-          {loading ? t('ext.installing') : t('ext.installOnline')}
-        </button>
-      ),
-    }),
-    // handleInstallClaudeCode 同上：每次渲染都是新函数，不进依赖
-    [loading, t],
-  );
-
   const recommendedRows = useMemo(
-    () => [
-      ...(isClaudeInstalled ? [] : [claudeRow]),
-      ...recommended.filter((e) => !hideInstalled || !isExtensionLoaded(e.id)).map(marketRow),
-    ],
+    () => recommended.filter((e) => !hideInstalled || !isExtensionLoaded(e.id)).map(marketRow),
     // isExtensionLoaded 读的是 extensions，和 marketRow 一样都已在依赖里
-    [recommended, hideInstalled, extensions, marketRow, claudeRow, isClaudeInstalled],
+    [recommended, hideInstalled, extensions, marketRow],
   );
 
   const resultRows = useMemo(

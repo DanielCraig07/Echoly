@@ -4852,7 +4852,10 @@ export function EditorPane({
         !(
           isBrowserPath(activePath) ||
           active?.language === 'browser' ||
-          active?.virtual?.browser
+          active?.virtual?.browser ||
+          // 扩展详情是虚拟路径（`ext://detail/ms-python.python`），按 '/' 切出来是
+          // 「ext: > detail > ms-python.python」这种没有意义的面包屑
+          activePath.startsWith(EXTENSION_DETAIL_PREFIX)
         ) && (
           <div className="editor-breadcrumb">
             <div className="editor-breadcrumb-crumbs">

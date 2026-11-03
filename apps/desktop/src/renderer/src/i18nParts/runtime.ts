@@ -20,11 +20,6 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   },
   'ext.localLoadFailed': { zh: '加载本地扩展包失败', en: 'Failed to load local extension package' },
   'ext.localLoadError': { zh: '加载扩展时出错', en: 'Error while loading the extension' },
-  'ext.official': { zh: '官方推荐', en: 'Official' },
-  'ext.heroDesc': {
-    zh: '深度整合 Anthropic 官方 Agent 编程助手，提供终端交互、代码重构与实时工程分析能力',
-    en: 'Deeply integrates the official Anthropic Agent coding assistant with terminal interaction, code refactoring and real-time project analysis.',
-  },
   'ext.open': { zh: '打开扩展', en: 'Open Extension' },
   'ext.installing': { zh: '安装中…', en: 'Installing…' },
   'ext.installOnline': { zh: '一键在线安装', en: 'One-click Online Install' },
