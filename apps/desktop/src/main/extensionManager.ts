@@ -18,15 +18,18 @@ import {
 import {
   DEFAULT_RECOMMENDED_SIZE,
   MAX_MARKETPLACE_PAGE_SIZE,
+  buildDetailUrl,
   buildReadmeCandidates,
   buildRecommendedUrl,
   buildSearchUrl,
+  decidePlatformDownload,
   isAllowedIconUrl,
   isPlatformAgnosticDownload,
   isSafeExtensionId,
   normalizeRegistryBase,
   parseOpenVsxDetail,
   parseOpenVsxSearch,
+  parseTargetPlatform,
   splitExtensionId,
   type MarketplaceDetail,
   type MarketplaceExtension,
@@ -423,6 +426,8 @@ export class ExtensionManager {
     }
 
     await this.vscodeShimReady;
+    // 平台专属扩展要先挑出**本机能用的那一份**，见 resolveDownloadForThisMachine
+    const resolved = await this.resolveDownloadForThisMachine(extension.id, extension.downloadUrl);
     const vsixPath = path.join(this.extensionsDir, `${extension.id}.vsix`);
     const extractDir = path.join(this.extensionsDir, extension.id);
 
@@ -430,7 +435,7 @@ export class ExtensionManager {
     // 一条不带身份的「正在下载…」等于没说。
     const progressId = { id: extension.id, name: extension.displayName || extension.id };
     try {
-      await downloadVsix(extension.downloadUrl, vsixPath, (progress) => {
+      await downloadVsix(resolved.downloadUrl, vsixPath, (progress) => {
         this.broadcastDownloadProgress({ ...progress, ...progressId });
       });
     } finally {
@@ -455,11 +460,61 @@ export class ExtensionManager {
       console.log(
         `[ExtensionManager] 已从市场安装并激活：${extension.id} v${loaded.manifest.version}`,
       );
-      return {};
+      return resolved.warning ? { warning: resolved.warning } : {};
     } catch (err: any) {
       console.warn(`[ExtensionManager] ${extension.id} 已安装但激活失败：`, err);
-      return { warning: `已安装，但激活失败：${err?.message ?? err}` };
+      const reason = `已安装，但激活失败：${err?.message ?? err}`;
+      // 平台对不上往往就是激活失败的原因，两句都留着，省得下一次再去查
+      return { warning: resolved.warning ? `${reason}（${resolved.warning}）` : reason };
     }
+  }
+
+  /**
+   * 挑出**本机能用的**那个构建。
+   *
+   * 搜索接口不返回 `targetPlatform`（实测是 null），但 `files.download` 的文件名里
+   * 带着平台后缀 —— Claude Code 就是 `…@alpine-arm64.vsix`。
+   * 于是「搜索结果那一行的安装按钮」会去下一个给 Alpine（musl）用的包，
+   * 而用户可能正在 macOS 上点它。装上之后能不能跑，要等激活时才知道。
+   *
+   * 处理方式：地址里没有平台后缀（通用构建）或者本来就是本机平台的，直接用；
+   * 否则按平台路径问注册表要本机那一份。注册表也没有的话就照原样装，
+   * 但把这件事写进安装结果 —— 「装上了但用不了」不该是一句没有线索的报错。
+   *
+   * 刻意**不**在这里抛错：平台专属的扩展里也有纯 JS 的，装在别的平台上照样能用。
+   * 把「可能不适用」当成「一定不能用」，会让本来能装的扩展装不上。
+   */
+  private async resolveDownloadForThisMachine(
+    id: string,
+    downloadUrl: string,
+  ): Promise<{ downloadUrl: string; warning?: string }> {
+    const decision = decidePlatformDownload(downloadUrl, process.platform, process.arch);
+    if (decision.kind !== 'needs-local-build') return { downloadUrl };
+    const { wantedPlatform, givenPlatform } = decision;
+
+    try {
+      const res = await fetch(buildDetailUrl(this.registry, id, wantedPlatform), {
+        headers: { Accept: 'application/json' },
+      });
+      if (res.ok) {
+        const detail = parseOpenVsxDetail(await res.json(), this.registry);
+        if (detail && parseTargetPlatform(detail.downloadUrl) === wantedPlatform) {
+          console.log(
+            `[ExtensionManager] ${id} 改用 ${wantedPlatform} 构建：${detail.downloadUrl}`,
+          );
+          return { downloadUrl: detail.downloadUrl };
+        }
+      }
+    } catch (err: any) {
+      console.warn(
+        `[ExtensionManager] 查 ${id} 的 ${wantedPlatform} 构建失败：`,
+        err?.message ?? err,
+      );
+    }
+    return {
+      downloadUrl,
+      warning: `注册表没有 ${wantedPlatform} 的构建，装的是 ${givenPlatform} 那一份，可能加载不了原生模块`,
+    };
   }
 
   /**

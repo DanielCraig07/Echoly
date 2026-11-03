@@ -3,7 +3,9 @@ import {
   DEFAULT_OPEN_VSX_REGISTRY,
   DEFAULT_RECOMMENDED_SIZE,
   MAX_MARKETPLACE_PAGE_SIZE,
+  buildDetailUrl,
   buildDownloadUrl,
+  decidePlatformDownload,
   buildReadmeCandidates,
   buildReadmeUrl,
   buildRecommendedUrl,
@@ -16,6 +18,7 @@ import {
   normalizeRegistryBase,
   parseOpenVsxSearch,
   parseTargetPlatform,
+  registryTargetPlatform,
 } from '../src/openVsx';
 
 /**
@@ -453,5 +456,61 @@ describe('详情解析（parseOpenVsxDetail / buildReadmeUrl / splitExtensionId�
       'https://open-vsx.org/api/ms-python/python/2026.4.0/file/README.md',
       'https://open-vsx.org/api/ms-python/python/latest/file/README.md',
     ]);
+  });
+});
+
+/**
+ * 平台专属构建的定位。
+ *
+ * 现场：搜索接口**不返回** `targetPlatform`（实测是 null），但 `files.download` 的
+ * 文件名里带着平台后缀 —— Claude Code 是 `…@alpine-arm64.vsix`。
+ * 于是搜索结果那一行的「安装」会下一个给 Alpine（musl）用的包，
+ * 而用户可能正在 macOS 上点它。
+ * 这两条钉住「怎么认出本机平台」和「怎么问注册表要那一份」。
+ */
+describe('平台专属构建（registryTargetPlatform / buildDetailUrl）', () => {
+  it('认识注册表那套 os-arch 命名', () => {
+    expect(registryTargetPlatform('darwin', 'arm64')).toBe('darwin-arm64');
+    expect(registryTargetPlatform('win32', 'x64')).toBe('win32-x64');
+    expect(registryTargetPlatform('linux', 'arm64')).toBe('linux-arm64');
+  });
+
+  it('认不出来就返回 undefined —— 不猜一个平台出来', () => {
+    expect(registryTargetPlatform('freebsd', 'x64')).toBeUndefined();
+    expect(registryTargetPlatform('darwin', 'ia32')).toBeUndefined();
+  });
+
+  it('认出「这份是给别的平台的」，该去问本机那一份', () => {
+    // 现场：搜索接口不返回 targetPlatform，Claude Code 的 files.download 是 alpine 那一份
+    const alpine =
+      'https://open-vsx.org/api/Anthropic/claude-code/alpine-arm64/2.1.317/file/Anthropic.claude-code-2.1.317@alpine-arm64.vsix';
+    expect(decidePlatformDownload(alpine, 'darwin', 'arm64')).toEqual({
+      kind: 'needs-local-build',
+      wantedPlatform: 'darwin-arm64',
+      givenPlatform: 'alpine-arm64',
+    });
+    // 本来就是本机那一份：不动
+    const darwin = alpine.replace(/alpine-arm64/g, 'darwin-arm64');
+    expect(decidePlatformDownload(darwin, 'darwin', 'arm64')).toEqual({ kind: 'as-is' });
+    // 通用构建：不动（绝大多数扩展都是这一类）
+    expect(
+      decidePlatformDownload(
+        'https://open-vsx.org/api/vscodevim/vim/1.27.2/file/vim.vsix',
+        'darwin',
+        'arm64',
+      ),
+    ).toEqual({ kind: 'as-is' });
+    // 认不出本机平台：也不动 —— 不猜
+    expect(decidePlatformDownload(alpine, 'freebsd', 'x64')).toEqual({ kind: 'unknown-platform' });
+  });
+
+  it('带平台段时是那一个平台的详情地址', () => {
+    expect(buildDetailUrl('https://open-vsx.org', 'Anthropic.claude-code', 'darwin-arm64')).toBe(
+      'https://open-vsx.org/api/Anthropic/claude-code/darwin-arm64',
+    );
+    // 不带平台段就是原来的默认详情地址
+    expect(buildDetailUrl('https://open-vsx.org/', 'ms-python.python')).toBe(
+      'https://open-vsx.org/api/ms-python/python',
+    );
   });
 });

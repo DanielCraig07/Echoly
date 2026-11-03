@@ -19,7 +19,11 @@ import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import { downloadVsix, loadExtensionFromVsix } from '../packages/vscode-shim/src/extensionLoader';
 import { ExtensionHost } from '../packages/vscode-shim/src/extensionHost';
-import { buildDownloadUrl } from '../packages/vscode-shim/src/openVsx';
+import {
+  buildDetailUrl,
+  buildDownloadUrl,
+  decidePlatformDownload,
+} from '../packages/vscode-shim/src/openVsx';
 import { writeVscodeShimModule } from '../packages/vscode-shim/src/vscodeShimModule';
 
 const registry = 'https://open-vsx.org';
@@ -36,13 +40,29 @@ async function main() {
   });
   if (!metaRes.ok) throw new Error(`注册表返回 ${metaRes.status}`);
   const meta = (await metaRes.json()) as { version: string; files?: { download?: string } };
-  const downloadUrl = buildDownloadUrl(
-    registry,
-    namespace,
-    name,
-    meta.version,
-    meta.files?.download,
-  );
+  let downloadUrl = buildDownloadUrl(registry, namespace, name, meta.version, meta.files?.download);
+
+  // 平台专属扩展要挑本机那一份 —— 和主进程 installFromMarketplace 同一套判断。
+  // 不这么做，这个脚本放 Claude Code 会去下 alpine 的包，然后报一个和平台无关的激活错误。
+  const decision = decidePlatformDownload(downloadUrl, process.platform, process.arch);
+  if (decision.kind === 'needs-local-build') {
+    const platformRes = await fetch(
+      buildDetailUrl(registry, extensionId, decision.wantedPlatform),
+      {
+        headers: { Accept: 'application/json' },
+      },
+    );
+    const platformMeta = platformRes.ok
+      ? ((await platformRes.json()) as { version?: string; files?: { download?: string } })
+      : null;
+    if (platformMeta?.files?.download) {
+      console.log(
+        `→ ${extensionId} 是平台专属构建（默认给的是 ${decision.givenPlatform}），` +
+          `改用 ${decision.wantedPlatform}`,
+      );
+      downloadUrl = platformMeta.files.download;
+    }
+  }
   console.log(`→ 下载 ${extensionId}@${meta.version}`);
 
   // 2) 下载（与主进程同一个函数，含重试与断点续传）

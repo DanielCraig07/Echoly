@@ -162,6 +162,28 @@ export function isPlatformAgnosticDownload(downloadUrl: string): boolean {
   return parseTargetPlatform(downloadUrl) === undefined;
 }
 
+/**
+ * 当前机器对应的注册表平台标识（`darwin-arm64` / `win32-x64` …）。
+ *
+ * 注册表按「os-arch」给平台命名，和 VS Code 的 `targetPlatform` 是同一套。
+ * 认不出来的组合返回 undefined —— **不猜**：猜错等于把「只适用于别的平台」的包
+ * 当成能用的包，而失败要等到解压加载时才看得出来。
+ */
+const KNOWN_TARGET_PLATFORMS = new Set([
+  'darwin-arm64',
+  'darwin-x64',
+  'linux-x64',
+  'linux-arm64',
+  'linux-armhf',
+  'win32-x64',
+  'win32-arm64',
+]);
+
+export function registryTargetPlatform(platform: string, arch: string): string | undefined {
+  const candidate = `${platform}-${arch}`;
+  return KNOWN_TARGET_PLATFORMS.has(candidate) ? candidate : undefined;
+}
+
 function safeDecode(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -328,6 +350,49 @@ export function buildReadmeCandidates(
   out.push(buildReadmeUrl(registryBase, id, version));
   if (version !== LATEST_REF) out.push(buildReadmeUrl(registryBase, id, LATEST_REF));
   return [...new Set(out)];
+}
+
+/**
+ * 这个下载地址能不能直接装到本机。
+ *
+ * 搜索接口**不返回** `targetPlatform`（实测是 null），平台只能从
+ * `files.download` 的文件名后缀读出来 —— 于是「搜索结果那一行的安装按钮」
+ * 会去下一个给 Alpine（musl）用的包，而用户可能正在 macOS 上点它。
+ * 这个函数只做判断，网络那一半（按平台再问一次注册表）留给调用方。
+ */
+export type PlatformDownloadDecision =
+  /** 通用构建，或者本来就是本机平台那一份 —— 直接用 */
+  | { kind: 'as-is' }
+  /** 注册表把这份挂在了别的平台下：该去问本机平台那一份 */
+  | { kind: 'needs-local-build'; wantedPlatform: string; givenPlatform: string }
+  /** 连本机是什么平台都认不出来 —— 别猜，照原样装 */
+  | { kind: 'unknown-platform' };
+
+export function decidePlatformDownload(
+  downloadUrl: string,
+  platform: string,
+  arch: string,
+): PlatformDownloadDecision {
+  const wantedPlatform = registryTargetPlatform(platform, arch);
+  if (!wantedPlatform) return { kind: 'unknown-platform' };
+  const givenPlatform = parseTargetPlatform(downloadUrl);
+  if (!givenPlatform || givenPlatform === wantedPlatform) return { kind: 'as-is' };
+  return { kind: 'needs-local-build', wantedPlatform, givenPlatform };
+}
+
+/**
+ * 详情地址。带上 `targetPlatform` 就是**那一个平台**的详情。
+ *
+ * 注册表把同一扩展不同平台的文件分开挂：`/api/Anthropic/claude-code/darwin-arm64`
+ * 给的 `files.download` 就是 darwin 那一份。
+ * `?targetPlatform=` 查询参数是**不生效**的（实测三个取值返回的都是同一份），
+ * 所以只能走路径段。
+ */
+export function buildDetailUrl(registryBase: string, id: string, targetPlatform?: string): string {
+  const base = normalizeRegistryBase(registryBase);
+  const [namespace, name] = id.split('.');
+  const suffix = targetPlatform ? `/${encodeURIComponent(targetPlatform)}` : '';
+  return `${base}/api/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}${suffix}`;
 }
 
 /** 从 `publisher.name` 拆出注册表 API 需要的两段。id 不合法时返回 null。 */
