@@ -404,6 +404,85 @@ export async function downloadVsix(
   return await downloadWithProgress(downloadUrl, vsixPath, onProgress, opts);
 }
 
+/** 一条进度更新。单位统一成字节，百分数是**整份文件**的，不是本次传输的。 */
+export interface CurlProgress {
+  percent: number;
+  downloaded: number;
+  total: number;
+}
+
+/** 跨 chunk 的解析状态：续传起点 + 上一条已发出的进度（用于去重）。 */
+export interface CurlProgressState {
+  /** 续传起点（字节）。为 0 表示这次是从头下的 */
+  offset: number;
+  last?: CurlProgress;
+}
+
+/**
+ * curl 进度表的一行。
+ *
+ * ```
+ *   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+ *   6 9504k    6  576k    0     0   310k      0  0:00:30  0:00:01  0:00:29  310k
+ * ```
+ *
+ * 四个取数点：百分比、总量（带 k/M/G 单位）、已下载量（同）。中间的 `% Xferd`
+ * 是上传进度，这里恒为 0，只用来占位对齐。
+ */
+const CURL_PROGRESS_LINE = /^\s*(\d+)\s+([\d.]+)([kMG]?)\s+\d+\s+([\d.]+)([kMG]?)\s+/;
+
+/** 续传提示行。curl 会在进度表之前单独打一条，带断开时已经落盘的字节数。 */
+const CURL_RESUME_LINE = /Resuming transfer from byte position (\d+)/;
+
+/** curl 的体积单位。没有后缀就是字节（小文件时 curl 不写单位）。 */
+const CURL_SIZE_UNITS: Record<string, number> = { '': 1, k: 1024, M: 1024 ** 2, G: 1024 ** 3 };
+
+/**
+ * 吃进一段 curl 的 stderr，吐出这一段的进度（没有新信息时返回 undefined）。
+ *
+ * **必须按 `\r` 切分**：curl 的进度表是在原地刷新的，每条更新之间是回车不是换行。
+ * 只按 `\n` 切的话，整段下载的所有更新会粘成一行，而带 `^` 锚定的正则
+ * 只在行首匹配一次 —— 表现就是进度条停在第一个百分比上再也不动。
+ * （这也是它以前「15% 卡住」的现场原因。）
+ *
+ * 续传时 curl 报的 `% Received` 与总量都只算**剩余的那一段**
+ * （实测：从 753664 字节续传 10485760 字节的文件，curl 报的总量是 9732096）。
+ * 所以这里把起点加回去，百分比才是相对整份文件的 —— 否则重试一次，
+ * 进度条就会从 40% 掉回 0%。
+ */
+export function readCurlProgress(
+  chunk: string,
+  state: CurlProgressState,
+): CurlProgress | undefined {
+  let latest: CurlProgress | undefined;
+  for (const line of chunk.split(/[\r\n]+/)) {
+    const resume = CURL_RESUME_LINE.exec(line);
+    if (resume) {
+      state.offset = Number(resume[1]) || 0;
+      continue;
+    }
+    const match = CURL_PROGRESS_LINE.exec(line);
+    if (!match) continue;
+    const remainingTotal = Math.floor(Number(match[2]) * (CURL_SIZE_UNITS[match[3]] ?? 1));
+    const received = Math.floor(Number(match[4]) * (CURL_SIZE_UNITS[match[5]] ?? 1));
+    const downloaded = state.offset + received;
+    const total = remainingTotal > 0 ? state.offset + remainingTotal : downloaded * 2;
+    const percent = total > 0 ? Math.min(Math.round((downloaded / total) * 100), 100) : 0;
+    latest = { percent, downloaded, total };
+  }
+  if (!latest) return undefined;
+  // curl 每秒刷十条左右，内容相同的更新没必要再灌一遍 IPC
+  if (
+    state.last &&
+    state.last.percent === latest.percent &&
+    state.last.downloaded === latest.downloaded
+  ) {
+    return undefined;
+  }
+  state.last = latest;
+  return latest;
+}
+
 async function downloadWithProgress(
   downloadUrl: string,
   vsixPath: string,
@@ -422,50 +501,18 @@ async function downloadWithProgress(
         buildCurlArgs({ downloadUrl, vsixPath, resume: opts.resume === true }),
       );
 
-      let totalSize = 0;
       let stderr = '';
+      const progressState: CurlProgressState = { offset: 0 };
 
       // curl 的进度输出在 stderr
       curl.stderr.on('data', (data: Buffer) => {
         const chunk = data.toString();
         stderr += chunk;
 
-        // 解析 curl 进度输出格式：
-        // "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current"
-        // "                                 Dload  Upload   Total   Spent    Left  Speed"
-        // "  7  100M    7 7500k    0     0   531k      0  0:03:13  0:00:14  0:02:59  880k"
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          // 匹配进度行：开头是百分比，然后是总大小、百分比、已下载大小
-          // 使用 \s+ 来匹配一个或多个空格
-          const match = line.match(/^\s*(\d+)\s+([\d.]+)([kMG]?)\s+\d+\s+([\d.]+)([kMG]?)\s+/);
-          if (match) {
-            const percent = parseInt(match[1]);
-            const totalSizeNum = parseFloat(match[2]);
-            const totalUnit = match[3] || '';
-            const downloadedNum = parseFloat(match[4]);
-            const downloadedUnit = match[5] || '';
-
-            // 转换单位为字节
-            const unitMultiplier: any = { '': 1, k: 1024, M: 1024 * 1024, G: 1024 * 1024 * 1024 };
-            const newTotalSize = Math.floor(totalSizeNum * (unitMultiplier[totalUnit] || 1));
-            const downloaded = Math.floor(downloadedNum * (unitMultiplier[downloadedUnit] || 1));
-
-            // 更新总大小（只在有效时更新）
-            if (newTotalSize > 0) {
-              totalSize = newTotalSize;
-            }
-
-            // 报告进度（即使是 0% 也报告，便于 UI 显示"下载中"状态）
-            if (onProgress) {
-              onProgress({
-                percent: Math.min(percent, 100),
-                downloaded,
-                total: totalSize > 0 ? totalSize : downloaded * 2, // 如果总大小未知，估算为已下载的2倍
-              });
-            }
-          }
-        }
+        // 解析见 readCurlProgress：按 \r 切分、续传时把起点加回去。
+        // 0% 也要报一条，UI 得先知道「在下载」才谈得上进度。
+        const update = readCurlProgress(chunk, progressState);
+        if (update && onProgress) onProgress(update);
       });
 
       curl.on('error', (err: Error) => {

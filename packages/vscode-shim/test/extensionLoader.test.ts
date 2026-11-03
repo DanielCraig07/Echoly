@@ -3,6 +3,7 @@ import {
   CLAUDE_CODE_MIN_BYTES,
   DOWNLOAD_MIN_BYTES,
   buildCurlArgs,
+  readCurlProgress,
   validateVsix,
 } from '../src/extensionLoader';
 
@@ -102,5 +103,75 @@ describe('buildCurlArgs', () => {
     const resume = buildCurlArgs({ downloadUrl: 'u', vsixPath: 'p', resume: true });
     expect(resume).toContain('-C');
     expect(resume.join(' ')).toContain('-C -');
+  });
+});
+
+/**
+ * curl 进度解析。
+ *
+ * 这里有两条**实测**（macOS 自带 curl 8.x，stderr 接管道）：
+ * 1. 进度表的每条更新之间是 `\r`，不是 `\n`。只按 `\n` 切会把整段下载粘成一行，
+ *    而带 `^` 锚定的正则只在这行行首命中一次 —— 进度条就永远停在第一个百分比。
+ * 2. 续传时 curl 报的总量与已下载量只算**剩余那一段**。实测从 753664 字节续传
+ *    10485760 字节的文件，curl 报的总量是 9732096（= 10485760 - 753664），
+ *    百分比也是相对剩余量算的（32% 对应整份文件的 37%）。
+ */
+describe('readCurlProgress', () => {
+  const header =
+    '  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n' +
+    '                                 Dload  Upload   Total   Spent    Left  Speed\n';
+
+  it('按 \r 切分，取到的是最后一条更新而不是第一条', () => {
+    const chunk =
+      header +
+      '\r  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0' +
+      '\r  6 9504k    6  576k    0     0   310k      0  0:00:30  0:00:01  0:00:29  310k' +
+      '\r 31 9504k   31 3007k    0     0  1022k      0  0:00:09  0:00:02  0:00:07 1022k';
+    const state = { offset: 0 };
+    const first = readCurlProgress(chunk, state);
+    // 一次 chunk 里有多条更新时只发最后一条：中间那些已经被后面的覆盖了
+    // 32% 是按字节数算出来的（3007k / 9504k），不是抄 curl 那一列 —— 它截断过
+    expect(first!.percent).toBe(32);
+    expect(first!.downloaded).toBe(3007 * 1024);
+    expect(first!.total).toBe(9504 * 1024);
+  });
+
+  it('续传时把起点加回去，百分比相对整份文件', () => {
+    const state = { offset: 0 };
+    readCurlProgress('** Resuming transfer from byte position 753664\n', state);
+    expect(state.offset).toBe(753664);
+    // 实测那一条：整份 10485760，剩下 9732096，本次已收 3007k
+    const update = readCurlProgress(' 31 9504k   31 3007k    0     0  1022k      0\n', state);
+    expect(update!.total).toBe(10485760);
+    expect(update!.downloaded).toBe(753664 + 3007 * 1024);
+    // 只算剩余量的话这里只有 32%，看起来就像「重试一次进度条掉回去了」
+    expect(update!.percent).toBe(37);
+  });
+
+  it('内容没变的更新不重复发（curl 每秒刷十条）', () => {
+    const state = { offset: 0 };
+    const line = ' 31 9504k   31 3007k    0     0  1022k      0  0:00:09\n';
+    expect(readCurlProgress(line, state)?.percent).toBe(32);
+    expect(readCurlProgress(line, state)).toBeUndefined();
+    expect(
+      readCurlProgress('\r 32 9504k   32 3119k    0     0  1039k      0\n', state)?.percent,
+    ).toBe(33);
+  });
+
+  it('总量未知时（第一行全是 0）不把百分比算成 NaN', () => {
+    const state = { offset: 0 };
+    const update = readCurlProgress(
+      '\r  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0',
+      state,
+    );
+    expect(update!.percent).toBe(0);
+    expect(update!.total).toBe(0);
+  });
+
+  it('没有进度行时返回 undefined（报错行之类的不该被当成进度）', () => {
+    const state = { offset: 0 };
+    expect(readCurlProgress('curl: (56) The requested URL returned error: 404\n', state)).toBe(
+      undefined,
+    );
   });
 });
