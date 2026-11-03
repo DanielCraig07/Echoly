@@ -18527,8 +18527,12 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   align-items: center;
   gap: 2px;
   padding: 0 6px 0 10px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
+  /* 底色用 --bg-elevated 而不是 --bg-input：暗色主题下这两个 token 都是 #141414，
+     和面板底色一模一样，输入框整个糊进背景里（亮色下 --bg-input 是白的，也不够分）。
+     --bg-elevated 两套主题都给的是「比面板高一档」的值，正是输入框需要的层次。 */
+  background: var(--bg-elevated);
+  /* 边框也跟着提一档：只靠底色的话，两档灰之间的差在低亮度屏上几乎看不出 */
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: 8px;
 }
 
