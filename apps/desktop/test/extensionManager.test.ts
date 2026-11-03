@@ -64,9 +64,44 @@ describe('ExtensionManager：目录名 ≠ 扩展 id', () => {
     // 半截安装：有目录、没有 package.json —— 不该被算成已安装
     await mkdir(path.join(extensionsDir, 'half.broken', 'extension'), { recursive: true });
 
+    // 一个**真的会被激活**的扩展：main 里注册命令，manifest 里给标题。
+    // 只有它才能验证「命令有没有带上归属、标题有没有从 manifest 取到」这条链路。
+    await seedExtension(extensionsDir, 'demo.cmds', {
+      name: 'cmds',
+      publisher: 'demo',
+      displayName: 'Demo Commands',
+      version: '3.0.0',
+      main: './extension.js',
+      contributes: { commands: [{ command: 'demo.cmds.say', title: 'Say Hello' }] },
+    });
+    await writeFile(
+      path.join(extensionsDir, 'demo.cmds', 'extension', 'extension.js'),
+      `function activate() {
+  const vscode = require('vscode');
+  vscode.commands.registerCommand('demo.cmds.say', () => 'hello');
+}
+module.exports = { activate };
+`,
+      'utf8',
+    );
+
     manager = new ExtensionManager({ workspaceRoot: base, registry: 'https://open-vsx.org' });
     await manager.initialize();
   });
+
+  /**
+   * 自动加载是**故意异步**的（不阻塞启动），所以断言「激活好了没」要等一等。
+   * 轮询而不是 sleep 固定时长：慢机器上固定时长会变成随机失败。
+   */
+  async function waitForActive(id: string, timeoutMs = 5000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const hit = (await manager.listInstalledExtensions()).find((e) => e.id === id);
+      if (hit?.active) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error(`扩展 ${id} 在 ${timeoutMs}ms 内没有激活`);
+  }
 
   afterEach(async () => {
     await rm(base, { recursive: true, force: true });
@@ -74,7 +109,7 @@ describe('ExtensionManager：目录名 ≠ 扩展 id', () => {
 
   it('列表用扩展 id，且忽略半截安装的目录', async () => {
     const list = await manager.listInstalledExtensions();
-    expect(list.map((e) => e.id)).toEqual(['Anthropic.claude-code', 'foo.bar']);
+    expect(list.map((e) => e.id)).toEqual(['Anthropic.claude-code', 'demo.cmds', 'foo.bar']);
     const claude = list.find((e) => e.id === 'Anthropic.claude-code')!;
     expect(claude.displayName).toBe('Claude Code');
     expect(claude.version).toBe('2.0.0');
@@ -107,7 +142,33 @@ describe('ExtensionManager：目录名 ≠ 扩展 id', () => {
     expect(existsSync(path.join(extensionsDir, 'claude-code.vsix'))).toBe(false);
     // 别的扩展不能被误伤
     expect(existsSync(path.join(extensionsDir, 'foo.bar'))).toBe(true);
-    expect((await manager.listInstalledExtensions()).map((e) => e.id)).toEqual(['foo.bar']);
+    expect((await manager.listInstalledExtensions()).map((e) => e.id)).toEqual([
+      'demo.cmds',
+      'foo.bar',
+    ]);
+  });
+
+  it('真激活一个扩展：它的命令带上归属，标题从 manifest 取到', async () => {
+    await waitForActive('demo.cmds');
+
+    const hit = (await manager.listInstalledExtensions()).find((e) => e.id === 'demo.cmds')!;
+    // 归属必须记在扩展 id 名下，否则禁用/卸载时无从摘起
+    expect(hit.commands).toEqual([{ command: 'demo.cmds.say', title: 'Say Hello' }]);
+
+    // 命令面板拿到的也是同一份（含标题）
+    expect(await manager.listExtensionCommands()).toEqual([
+      { command: 'demo.cmds.say', extensionId: 'demo.cmds', title: 'Say Hello' },
+    ]);
+
+    // 执行得通，禁用它之后命令就不该再在列表里
+    expect(await manager.executeCommand('demo.cmds.say')).toBe('hello');
+    await manager.setExtensionEnabled('demo.cmds', false);
+    expect((await manager.listExtensionCommands()).map((c) => c.command)).not.toContain(
+      'demo.cmds.say',
+    );
+    const disabled = (await manager.listInstalledExtensions()).find((e) => e.id === 'demo.cmds')!;
+    expect(disabled.enabled).toBe(false);
+    expect(disabled.commands).toEqual([]);
   });
 
   it('卸载一个不存在的 id 会明确失败，而不是静默成功', async () => {
