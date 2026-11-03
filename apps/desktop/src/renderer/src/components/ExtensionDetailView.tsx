@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm';
 import { useI18n } from '../i18n';
 import type { MarketplaceDetailEntry } from '@deepseek-ide/shared';
 import { stripRawHtml } from '../services/extensionReadme';
+import { CLAUDE_CODE_ID } from '../services/claudeCode';
 import {
   formatDownloadCount,
   formatRating,
@@ -30,9 +31,6 @@ import {
  * 各写一个字面量迟早会漂移成两个不同的字符串。
  */
 export const EXTENSION_DETAIL_PREFIX = 'ext://detail/';
-
-/** 走专用安装通道的那个扩展 id。原因见组件里的 usesDedicatedChannel。 */
-const CLAUDE_CODE_ID = 'Anthropic.claude-code';
 
 /** 面板订阅这个事件来刷新已安装列表。 */
 export const EXTENSION_INSTALLED_EVENT = 'echoly:extension-installed';

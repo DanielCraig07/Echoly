@@ -26,11 +26,14 @@ import {
 } from '../services/extensionDisplay';
 
 export interface ExtensionPanelProps {
-  onOpenExtension?: (extensionId: string) => void;
   /**
    * 打开扩展详情（在编辑器区开一个标签，不是弹窗）。
    * 传 RowView 而不是精简的 id/名字：调用方要用到标题做标签名，
    * 重新声明一个更窄的形状只会让两边慢慢对不上。
+   *
+   * 「已安装」那一行的「管理」按钮也走这条 —— 它以前走的是另一个回调，
+   * 那个回调打开的是右侧 AI 区（见 App.tsx 的说明），于是点任何一个已安装扩展的
+   * 「管理」都会弹出一个跟这个扩展毫无关系的对话面板。
    */
   onOpenDetail?: (row: RowView) => void;
   onClose?: () => void;
@@ -243,7 +246,7 @@ function SectionHeader({
   );
 }
 
-export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanelProps = {}) {
+export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(false);
   const [extensions, setExtensions] = useState<string[]>([]);
@@ -532,32 +535,38 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
   /** 「已安装」分区的行。数据源是 id 字符串，所以标题/发布者从 id 推导。 */
   const installedRows: RowView[] = useMemo(
     () =>
-      extensions.map((id) => ({
-        key: id,
-        extensionId: id,
-        title: friendlyExtensionName(id),
-        description: '',
-        publisher: publisherOf(id),
-        stats: (
-          <span className="ext-row-status">
-            <span className="ext-status-dot" />
-            {t('ext.enabled')}
-          </span>
-        ),
-        actions: (
+      extensions.map((id) => {
+        // 先有 row 再有按钮：按钮点开的就是这一行自己的详情页，
+        // 和「点名字/图标」走的是同一个入口（详情页里有安装状态、README、元信息）。
+        const row: RowView = {
+          key: id,
+          extensionId: id,
+          title: friendlyExtensionName(id),
+          description: '',
+          publisher: publisherOf(id),
+          stats: (
+            <span className="ext-row-status">
+              <span className="ext-status-dot" />
+              {t('ext.enabled')}
+            </span>
+          ),
+          actions: null,
+        };
+        row.actions = (
           <button
             type="button"
             className="ext-btn"
-            onClick={() => onOpenExtension?.(id)}
-            title={t('ext.open')}
+            onClick={() => onOpenDetail?.(row)}
+            title={t('extDetail.openTab')}
           >
             {t('ext.manage')}
           </button>
-        ),
-      })),
+        );
+        return row;
+      }),
     // 「隐藏已安装」只作用于市场那一侧：在「已安装」分区里再按它过滤，
     // 结果就是打开过滤器把这个分区清空 —— 那不是过滤，是自相矛盾。
-    [extensions, onOpenExtension, t],
+    [extensions, onOpenDetail, t],
   );
 
   /** 市场条目的行（推荐与搜索结果共用）。 */
@@ -566,7 +575,7 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
       const installed = isExtensionLoaded(entry.id);
       const downloads = formatDownloadCount(entry.downloads);
       const rating = formatRating(entry.rating);
-      return {
+      const row: RowView = {
         key: entry.id,
         extensionId: entry.id,
         title: entry.displayName || friendlyExtensionName(entry.id),
@@ -614,8 +623,8 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
           <button
             type="button"
             className="ext-btn"
-            onClick={() => onOpenExtension?.(entry.id)}
-            title={t('ext.open')}
+            onClick={() => onOpenDetail?.(row)}
+            title={t('extDetail.openTab')}
           >
             {t('ext.manage')}
           </button>
@@ -630,10 +639,11 @@ export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanel
           </button>
         ),
       };
+      return row;
     },
     // 刻意不把 handleMarketInstall 放进依赖：它每次渲染都是新函数，放进去 useCallback 就白做了。
     // 它读到的 installingId / t / loadExtensions 都在下面这几个依赖里，不会有陈旧闭包。
-    [installingId, extensions, onOpenExtension, t],
+    [installingId, extensions, onOpenDetail, t],
   );
 
   const recommendedRows = useMemo(

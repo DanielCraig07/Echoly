@@ -77,7 +77,11 @@ import {
 import { RunWidget } from './components/RunWidget';
 import { ExtensionPanel } from './components/ExtensionPanel';
 import { ActivityBar } from './components/ActivityBar';
-import { EXTENSION_DETAIL_PREFIX } from './components/ExtensionDetailView';
+import {
+  EXTENSION_DETAIL_PREFIX,
+  EXTENSION_INSTALLED_EVENT,
+} from './components/ExtensionDetailView';
+import { CLAUDE_CODE_ID, CLAUDE_CODE_VIEW_ID } from './services/claudeCode';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { PanelChevron } from './components/PanelChevron';
 import { GitPanel } from './components/GitPanel';
@@ -284,9 +288,15 @@ export function App() {
   const [cloneOpen, setCloneOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
   const [isSshDisconnected, setIsSshDisconnected] = useState(false);
-  const [claudePanelOpen, setClaudePanelOpen] = useState(false);
+  /**
+   * 右侧面板要不要露出「Claude」标签。
+   *
+   * 判据是「Claude Code 扩展到底在不在」：这个标签渲染的是它提供的侧栏视图。
+   * 以前这个开关被接在扩展面板的「管理」按钮上 —— 点**任何**一个已安装扩展的
+   * 「管理」都会把它设成 true，于是弹出一个跟那个扩展毫无关系的对话面板。
+   */
+  const [claudeTabAvailable, setClaudeTabAvailable] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [currentExtensionId, setCurrentExtensionId] = useState<string | null>(null);
   const [rightPanelTab, setRightPanelTab] = useState<'chat' | 'claude'>('chat'); // 右侧面板标签
   const [diffs, setDiffs] = useState<PendingDiff[]>([]);
   const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
@@ -1742,19 +1752,45 @@ export function App() {
    * 以前这里是弹窗组件的内联回调，弹窗关掉之后自然就没有「关闭弹窗」这一步了；
    * 顺带确保右侧面板是展开的，否则点了「管理」什么都不会发生。
    */
-  const handleOpenExtension = useCallback(
-    (extId: string) => {
-      setCurrentExtensionId(extId);
-      setClaudePanelOpen(true);
-      setRightPanelTab('claude');
-      if (layoutRef.current.chatPanelExpanded === false) {
-        const next = { ...layoutRef.current, chatPanelExpanded: true };
-        setLayout(next);
-        persistLayout(next);
+  /**
+   * 「Claude」标签什么时候出现。
+   *
+   * 两个来源，缺一不可：
+   * - **启动时的探测**：如果扩展在渲染层挂载之前就激活完了（它注册视图时那条广播
+   *   已经过去了），只订阅事件会永远收不到，标签也就永远不出现；
+   * - **注册事件**：扩展是刚装上的/刚激活的，这时列表还是旧的，得靠事件补上。
+   *
+   * 判据取「已加载的扩展里有 Claude Code」而不是「本机上有没有这个目录」：
+   * 装坏了、没激活起来的扩展不该换来一个点开是空的标签。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const probe = async () => {
+      try {
+        const result = await window.extensions?.getLoadedExtensions?.();
+        if (cancelled || !result?.success) return;
+        const loaded = result.extensions ?? [];
+        if (loaded.some((id) => id.toLowerCase() === CLAUDE_CODE_ID.toLowerCase())) {
+          setClaudeTabAvailable(true);
+        }
+      } catch {
+        // 探测失败就当没装：宁可晚一点出现，也不要出现一个空的 Claude 面板
       }
-    },
-    [persistLayout],
-  );
+    };
+    void probe();
+
+    const unsubscribe = window.ide?.onExtensionWebviewRegistered?.(({ viewId }) => {
+      if (viewId === CLAUDE_CODE_VIEW_ID) setClaudeTabAvailable(true);
+    });
+    // 刚装完就再探一次：这时候 getLoadedExtensions 才是最新的一份
+    const onInstalled = () => void probe();
+    window.addEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+      window.removeEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+    };
+  }, []);
 
   /** 活动栏上的固定列表（跟着 layout 一起持久化）。 */
   const handlePinnedChange = useCallback(
@@ -5279,10 +5315,7 @@ export function App() {
                 }}
               >
                 <ErrorBoundary>
-                  <ExtensionPanel
-                    onOpenExtension={handleOpenExtension}
-                    onOpenDetail={openExtensionDetail}
-                  />
+                  <ExtensionPanel onOpenDetail={openExtensionDetail} />
                 </ErrorBoundary>
               </div>
               <div
@@ -5831,8 +5864,8 @@ export function App() {
                 display: showChatPanel ? 'flex' : 'none',
               }}
             >
-              {/* 右侧面板标签切换（仅在打开了 Claude 扩展等多面板时显示，默认隐藏单标签的 AI 对话） */}
-              {claudePanelOpen && (
+              {/* 右侧面板标签切换（Claude Code 扩展在场时才显示，默认隐藏单标签的 AI 对话） */}
+              {claudeTabAvailable && (
                 <div className="right-panel-tabs">
                   <button
                     className={`right-panel-tab ${rightPanelTab === 'chat' ? 'active' : ''}`}
@@ -5888,7 +5921,7 @@ export function App() {
                 </ErrorBoundary>
               )}
 
-              {rightPanelTab === 'claude' && claudePanelOpen && (
+              {rightPanelTab === 'claude' && claudeTabAvailable && (
                 <div style={{ height: '100%', overflow: 'hidden' }}>
                   <ClaudeChatPanel viewId="claudeVSCodeSidebar" workspace={workspace} />
                 </div>
