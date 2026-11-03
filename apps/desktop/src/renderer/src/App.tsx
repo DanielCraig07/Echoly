@@ -6428,6 +6428,10 @@ export function App() {
                 它自己那个面板** —— 选中「AI 对话」时这一行不出现，别让两个面板的
                 东西混在一屏里。
 
+                样式刻意照抄 ChatPanel 的 `.chat-tab-item`：两处都是「一行可增可减的
+                标签」，长得不一样只会让人以为是两种东西（早先那版加了
+                `text-transform: uppercase` 和字距，看起来像一排徽章）。
+
                 开头是「Claude Code」那一栏、还是其中某个会话，都算还在这个面板里；
                 会话全关掉之后这一行自然消失（也就不需要「新建」按钮了，扩展界面上
                 本来就有「+」）。
@@ -6447,12 +6451,12 @@ export function App() {
                     const label = duplicated ? `${base} ${index + 1}` : base;
                     const isActive = rightPanelTab === panelTab.panelId;
                     return (
-                      <span
+                      <div
                         key={panelTab.panelId}
                         className={`right-panel-session ${isActive ? 'active' : ''}`}
                         role="button"
                         tabIndex={0}
-                        title={base}
+                        title={isActive ? base : t('chat.tabInactiveTitle', { title: base })}
                         onClick={() => setRightPanelTab(panelTab.panelId)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ')
@@ -6460,19 +6464,20 @@ export function App() {
                         }}
                       >
                         {/* 会话气泡图标：与扩展自己那条会话栏上的图标同一个语义 */}
-                        <svg
-                          className="right-panel-session-icon"
-                          width="13"
-                          height="13"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.9"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.4 8.9 8.9 0 0 1-3.8-.9L3 21l1.9-5.4a8.4 8.4 0 0 1-.9-3.9A8.4 8.4 0 0 1 12.5 3.3 8.4 8.4 0 0 1 21 11.5Z" />
-                        </svg>
+                        <span className="right-panel-session-icon" aria-hidden="true">
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10a9.96 9.96 0 0 1-4.587-1.11L3 22l1.11-4.413A9.96 9.96 0 0 1 2 12 10 10 0 0 1 12 2z" />
+                          </svg>
+                        </span>
                         <span className="right-panel-session-label">{label}</span>
                         {/*
                           关闭 = 让扩展真的 dispose 那个面板（`panel.onDidDispose`）。
@@ -6482,102 +6487,102 @@ export function App() {
                         <button
                           type="button"
                           className="right-panel-session-close"
-                          title={t('common.close')}
+                          title={t('chat.tabClose')}
                           onClick={(e) => {
                             e.stopPropagation();
                             void window.ide?.extensionDisposePanel?.(panelTab.panelId);
                           }}
                         >
-                          ×
+                          <svg width="9" height="9" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M1.293 1.293a1 1 0 0 1 1.414 0L8 6.586l5.293-5.293a1 1 0 1 1 1.414 1.414L9.414 8l5.293 5.293a1 1 0 0 1-1.414 1.414L8 9.414l-5.293 5.293a1 1 0 0 1-1.414-1.414L6.586 8 1.293 2.707a1 1 0 0 1 0-1.414z" />
+                          </svg>
                         </button>
-                      </span>
+                      </div>
                     );
                   })}
                 </div>
               )}
 
-              {/* 根据标签显示不同内容 */}
-              {rightPanelTab === 'chat' && (
-                <ErrorBoundary title={t('errorBoundary.panelTitle', { name: t('panel.chat') })}>
-                  <ChatPanel
-                    key={`${workspaceInfo.kind}-${workspace || 'none'}-${chatResetKey}`}
-                    ref={chatRef}
-                    workspace={workspace}
-                    workspaceInfo={workspaceInfo}
-                    openFiles={openFilesForChat}
-                    selection={editorSelection}
-                    cursor={
-                      activePath
-                        ? { path: activePath, line: cursorLine, column: cursorCol }
-                        : undefined
-                    }
-                    onPendingDiff={onPendingDiff}
-                    sessionMessages={messages}
-                    onMessagesChange={setMessages}
-                    onSessionChange={setSessionId}
-                    permissionMode={permissionMode}
-                    onPermissionModeChange={(m) => void changePermissionMode(m)}
-                    contextWindowTokens={contextWindowTokens}
-                    diffs={diffs}
-                    onAcceptAllDiffs={handleChatAcceptAllDiffs}
-                    onRejectAllDiffs={handleChatRejectAllDiffs}
-                    onRevertTurn={handleChatRevertTurn}
-                    onSelectDiff={handleChatSelectDiff}
-                    onOpenFile={handleChatOpenFile}
-                    onOpenSettings={handleOpenSettings}
-                    onSwitchWorkspace={handleSwitchWorkspacePath}
-                    models={models}
-                    activeModelId={activeModelId}
-                    onActiveModelChange={handleActiveModelChange}
-                    recentWorkspaces={recentWorkspaces}
-                    gitBranch={gitStatus?.branch}
-                  />
-                </ErrorBoundary>
-              )}
-
               {/*
-                这一栏渲染的就是扩展**自己的**界面（`registerWebviewViewProvider` 给的那份），
-                和编辑器区那个「打开扩展视图」是同一个组件、同一份 HTML。
+                内容区：所有 webview 层都**留在布局里**，只切可见性 —— 见下面
+                `.right-panel-webview` 的注释，这里用 `position: absolute` 叠在一起，
+                而不是靠 `display: none` 把没选中的那些藏掉。
 
-                以前这里挂的是自造的 `ClaudeChatPanel`：一个长得像聊天框、实际跑我们
-                自己 Agent 的壳 —— 跟扩展没有半点关系，用户在里面发的消息也到不了
-                Claude Code。现在换成扩展界面，这一栏才算真的「Claude 扩展」。
+                ChatPanel 仍然是按需挂载（它自己那套订阅不便宜），但它跟这些层是
+                兄弟：`.right-panel-content` 是 flex 列，ChatPanel 占 `flex: 1`，
+                webview 层绝对定位铺满整块。
               */}
-              {claudeTabAvailable && (
-                /*
-                  用 display 隐藏而不是卸载：切到「AI 对话」再切回来时，卸载会让扩展
-                  重新走一遍 resolve、重新 attach 一次（日志里那条 engine_ui_attach
-                  一打就是好几遍），已经聊到一半的会话也就断了。
-                  与旁边的 ChatPanel 同一套做法 —— 它也是保持挂载、只切换显隐。
-                */
-                <div
-                  style={{
-                    height: '100%',
-                    overflow: 'hidden',
-                    display: rightPanelTab === 'claude' ? 'block' : 'none',
-                  }}
-                >
-                  <ExtensionViewPanel viewId={CLAUDE_CODE_VIEW_ID} />
-                </div>
-              )}
+              <div className="right-panel-content">
+                {rightPanelTab === 'chat' && (
+                  <ErrorBoundary title={t('errorBoundary.panelTitle', { name: t('panel.chat') })}>
+                    <ChatPanel
+                      key={`${workspaceInfo.kind}-${workspace || 'none'}-${chatResetKey}`}
+                      ref={chatRef}
+                      workspace={workspace}
+                      workspaceInfo={workspaceInfo}
+                      openFiles={openFilesForChat}
+                      selection={editorSelection}
+                      cursor={
+                        activePath
+                          ? { path: activePath, line: cursorLine, column: cursorCol }
+                          : undefined
+                      }
+                      onPendingDiff={onPendingDiff}
+                      sessionMessages={messages}
+                      onMessagesChange={setMessages}
+                      onSessionChange={setSessionId}
+                      permissionMode={permissionMode}
+                      onPermissionModeChange={(m) => void changePermissionMode(m)}
+                      contextWindowTokens={contextWindowTokens}
+                      diffs={diffs}
+                      onAcceptAllDiffs={handleChatAcceptAllDiffs}
+                      onRejectAllDiffs={handleChatRejectAllDiffs}
+                      onRevertTurn={handleChatRevertTurn}
+                      onSelectDiff={handleChatSelectDiff}
+                      onOpenFile={handleChatOpenFile}
+                      onOpenSettings={handleOpenSettings}
+                      onSwitchWorkspace={handleSwitchWorkspacePath}
+                      models={models}
+                      activeModelId={activeModelId}
+                      onActiveModelChange={handleActiveModelChange}
+                      recentWorkspaces={recentWorkspaces}
+                      gitBranch={gitStatus?.branch}
+                    />
+                  </ErrorBoundary>
+                )}
 
-              {/*
-                扩展开出来的面板（Claude 的「+」新会话）。全部**常驻挂载**、只切显隐：
-                webview 一卸载就整个重载，会话与草稿全丢 —— 与上面那一栏同一套做法。
-                面板和扩展视图共用一份 HTML，viewId 就是 panelId。
-              */}
-              {extensionPanelTabs.map((panelTab) => (
-                <div
-                  key={panelTab.panelId}
-                  style={{
-                    height: '100%',
-                    overflow: 'hidden',
-                    display: rightPanelTab === panelTab.panelId ? 'block' : 'none',
-                  }}
-                >
-                  <ExtensionViewPanel viewId={panelTab.panelId} />
-                </div>
-              ))}
+                {/*
+                  这一栏渲染的就是扩展**自己的**界面（`registerWebviewViewProvider` 给的那份），
+                  和编辑器区那个「打开扩展视图」是同一个组件、同一份 HTML。
+
+                  以前这里挂的是自造的 `ClaudeChatPanel`：一个长得像聊天框、实际跑我们
+                  自己 Agent 的壳 —— 跟扩展没有半点关系，用户在里面发的消息也到不了
+                  Claude Code。现在换成扩展界面，这一栏才算真的「Claude 扩展」。
+                */}
+                {claudeTabAvailable && (
+                  <div
+                    className="right-panel-webview"
+                    data-active={rightPanelTab === 'claude' ? 'true' : 'false'}
+                  >
+                    <ExtensionViewPanel viewId={CLAUDE_CODE_VIEW_ID} />
+                  </div>
+                )}
+
+                {/*
+                  扩展开出来的面板（Claude 的「+」新会话）。全部**常驻挂载**、只切显隐：
+                  webview 一卸载就整个重载，会话与草稿全丢 —— 与上面那一栏同一套做法。
+                  面板和扩展视图共用一份 HTML，viewId 就是 panelId。
+                */}
+                {extensionPanelTabs.map((panelTab) => (
+                  <div
+                    key={panelTab.panelId}
+                    className="right-panel-webview"
+                    data-active={rightPanelTab === panelTab.panelId ? 'true' : 'false'}
+                  >
+                    <ExtensionViewPanel viewId={panelTab.panelId} />
+                  </div>
+                ))}
+              </div>
             </aside>
           </>
         )}
