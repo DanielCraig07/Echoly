@@ -3,7 +3,7 @@
  * 管理 VSCode 扩展的加载、激活和通信
  */
 
-import { BrowserWindow, ipcMain, net, protocol, session } from 'electron';
+import { BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from 'electron';
 import { EXTENSION_WEBVIEW_PARTITION } from '@deepseek-ide/shared';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -113,6 +113,23 @@ const CUSTOM_EDITOR_HTML_WAIT_MS = 2000;
  * 一次都不会触发。上限的作用是兜底：真有扩展卡住，也不该把「打开文件」一起拖住。
  */
 const INITIAL_ACTIVATION_WAIT_MS = 5000;
+
+/**
+ * 官方的 `filters` 是 `{ Images: ['png','jpg'], Text: ['txt'] }`，
+ * electron 要的是 `[{ name: 'Images', extensions: ['png'] }]`。
+ *
+ * 翻错的表现不是报错，而是「对话框里什么都选不了」——那种最难查。
+ * 扩展名去掉前导点（官方两种写法都有）。
+ */
+function toElectronFilters(filters: any): { name: string; extensions: string[] }[] {
+  if (!filters || typeof filters !== 'object') return [];
+  return Object.entries(filters)
+    .map(([name, exts]) => ({
+      name,
+      extensions: Array.isArray(exts) ? exts.map((e: any) => String(e).replace(/^\./, '')) : [],
+    }))
+    .filter((entry) => entry.extensions.length > 0);
+}
 
 /** 协议处理里的纯文本响应头（错误信息要能直接看出来，不是一坨 HTML）。 */
 const TEXT_PLAIN_HEADERS = { 'content-type': 'text/plain; charset=utf-8' } as const;
@@ -272,6 +289,14 @@ export class ExtensionManager {
       onWebviewViewRegister: this.handleWebviewViewRegister.bind(this),
       // 自定义编辑器保存时走这条路（Office Viewer 改 markdown 就是）
       onApplyEdit: this.applyWorkspaceEdit.bind(this),
+      // 「跟用户说话」的那几条：提示 / 系统对话框 / 打开外链。
+      // 没有它们，扩展的错误提示会被丢掉、对话框会被当成「用户取消」——
+      // 用户看到的就是「按钮点了没反应」。
+      onNotify: (level, message) => this.notifyRenderer(level, message),
+      onOpenDialog: (options) => this.showOpenDialog(options),
+      onSaveDialog: (options) => this.showSaveDialog(options),
+      onQuickPick: (items, options) => this.showQuickPick(items, options),
+      onOpenExternal: (url) => this.openExternal(url),
     });
 
     // 把 `vscode` 模块落到扩展目录旁（ESM 扩展只能靠真模块解析，require 补丁拦不住）。
@@ -1271,6 +1296,25 @@ export class ExtensionManager {
   }
 
   /**
+   * 声明认这个文件、但**当前被禁用**的扩展（没有就返回 null）。
+   *
+   * 只用于给用户一句解释。禁用是用户自己做的选择，但要让他看得见后果：
+   * 「这个文件本来归 Office Viewer，你已经把它禁用了」比默默用内置编辑器强得多。
+   */
+  private async findDisabledClaimant(filePath: string): Promise<string | undefined> {
+    if (this.disabledExtensions.size === 0) return undefined;
+    const relative = this.relativeToWorkspace(filePath);
+    for (const candidate of await this.listCustomEditors()) {
+      if (candidate.hasProvider) continue;
+      if (!isDefaultPriority(candidate)) continue;
+      if (!matchesContribution(candidate, relative)) continue;
+      if (!this.disabledExtensions.has(candidate.extensionId)) continue;
+      return candidate.extensionId;
+    }
+    return undefined;
+  }
+
+  /**
    * 打开一个自定义编辑器：建面板 → 调扩展的 resolve* → 把 HTML 交给协议。
    *
    * 两种 provider 接口都要支持，实测各占一半：
@@ -1811,8 +1855,116 @@ export class ExtensionManager {
   /**
    * 处理扩展发送的命令
    */
+  /**
+   * 扩展 → 用户的一条提示（`window.show{Information,Warning,Error}Message`）。
+   *
+   * 广播给渲染层弹 toast。以前这三个方法只往 `onMessage` 丢一条消息，而渲染层
+   * **没人听** —— 扩展说「保存失败」「这个文件没有权限」全都石沉大海。
+   */
+  private notifyRenderer(level: 'info' | 'warning' | 'error', message: string): void {
+    console.log(`[extension:notify] ${level}: ${message}`);
+    this.broadcastToRenderers('extension:notify', { level, message });
+  }
+
+  /**
+   * 扩展要的「打开文件」对话框。
+   *
+   * 返回 `fsPath` 数组（官方形状），用户取消时返回 undefined —— 那是正常语义，
+   * 不是错误。过滤器要先把官方的 `{Images: ['png']}` 翻成 electron 的
+   * `{name, extensions}`，翻错的表现是「对话框里什么都选不了」。
+   */
+  private async showOpenDialog(options: any): Promise<string[] | undefined> {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win) return undefined;
+    const filters = toElectronFilters(options?.filters);
+    const result = await dialog.showOpenDialog(win, {
+      title: options?.title,
+      defaultPath: options?.defaultUri?.fsPath,
+      properties: [
+        options?.canSelectMany ? 'multiSelections' : 'openFile',
+        ...(options?.canSelectFolders ? (['openDirectory'] as const) : []),
+        ...(options?.canSelectFiles === false && !options?.canSelectFolders
+          ? ([] as const)
+          : ([] as const)),
+      ] as any,
+      filters: filters.length > 0 ? filters : undefined,
+    });
+    if (result.canceled || result.filePaths.length === 0) return undefined;
+    return result.filePaths;
+  }
+
+  /** 扩展要的「保存到哪」对话框。返回 fsPath。 */
+  private async showSaveDialog(options: any): Promise<string | undefined> {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win) return undefined;
+    const filters = toElectronFilters(options?.filters);
+    const result = await dialog.showSaveDialog(win, {
+      title: options?.title,
+      defaultPath: options?.defaultUri?.fsPath,
+      filters: filters.length > 0 ? filters : undefined,
+    });
+    return result.canceled || !result.filePath ? undefined : result.filePath;
+  }
+
+  /**
+   * 扩展要的「选一个」。
+   *
+   * 用系统消息框的按钮凑：`showQuickPick` 在扩展里绝大多数是「是/否」这种确认
+   * （Office Viewer 的 `confirm` 就是），按钮语义完全对得上。
+   * 返回**原样的 item**（官方就是这个语义），取消返回 undefined。
+   */
+  private async showQuickPick(items: any[], options?: any): Promise<any> {
+    const win = BrowserWindow.getAllWindows()[0];
+    if (!win || items.length === 0) return undefined;
+    const labels = items.map((item) => String(item?.label ?? item));
+    const result = await dialog.showMessageBox(win, {
+      type: 'question',
+      title: options?.title,
+      message: options?.placeHolder || options?.title || labels[0],
+      buttons: labels.slice(0, 6),
+      cancelId: -1,
+      noLink: true,
+    });
+    if (result.response < 0 || result.response >= items.length) return undefined;
+    return items[result.response];
+  }
+
+  /** 用系统浏览器打开链接。以前 `env.openExternal` 返回 true 却什么都没做。 */
+  private async openExternal(url: string): Promise<boolean> {
+    if (!/^https?:/i.test(url)) return false;
+    try {
+      await shell.openExternal(url);
+      return true;
+    } catch (err) {
+      console.error('[extension] openExternal 失败：', err);
+      return false;
+    }
+  }
+
+  /**
+   * 扩展执行命令。
+   *
+   * 分三种去处，不能一概「广播就完事」：
+   * 1. **主进程自己能做的**（开发者工具、在文件管理器里显示）就地做掉；
+   * 2. **编辑器的事**（保存、打开某个文件）广播给渲染层 —— 只有它知道标签与缓冲区；
+   * 3. 其余的广播出去（命令面板 / 未来的快捷键都能接）。
+   *
+   * Office Viewer 的工具栏按钮几乎全落在这三类里：保存、导出后保存、
+   * 「用 VS Code 编辑」（`vscode.openWith`）、`revealFileInOS`。
+   * 以前一律只是广播，而**渲染层没人听** —— 点下去自然毫无反应。
+   */
   private async handleCommand(command: string, ...args: any[]): Promise<any> {
     console.log(`Extension command: ${command}`, args);
+
+    if (command === 'workbench.action.toggleDevTools') {
+      BrowserWindow.getAllWindows()[0]?.webContents.toggleDevTools();
+      return undefined;
+    }
+    if (command === 'revealFileInOS') {
+      const target = args[0]?.fsPath ?? args[0];
+      if (typeof target === 'string') shell.showItemInFolder(target);
+      return undefined;
+    }
 
     // 将命令广播到所有渲染进程
     this.broadcastToRenderers('extension:command', { command, args });
@@ -1997,6 +2149,13 @@ export class ExtensionManager {
                 displayName: candidate.displayName,
               }
             : null,
+          /**
+           * 「本该由它渲染，但它被禁用了」。
+           *
+           * 没有这一条，用户看到的就是「装了 Office Viewer 却一直用内置编辑器」，
+           * 而且**永远猜不到**原因是我们把那个扩展禁用过 —— 界面上不会给任何提示。
+           */
+          disabledClaimant: candidate ? undefined : await this.findDisabledClaimant(filePath),
         };
       } catch (err: any) {
         return { success: false, error: err?.message ?? String(err), match: null };

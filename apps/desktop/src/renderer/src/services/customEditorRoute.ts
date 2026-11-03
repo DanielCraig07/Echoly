@@ -10,6 +10,7 @@
  */
 
 import { customEditorTabPath } from '../components/ExtensionEditorView';
+import { showGlobalToast } from './toast';
 
 export interface CustomEditorClaim {
   /** 虚拟标签路径（`ext://editor/<编码后的绝对路径>`）。 */
@@ -39,6 +40,24 @@ export function absolutePathOf(path: string, workspace: string | null | undefine
 const CLAIM_RETRY_DELAYS_MS = [0, 400, 1200, 2500];
 
 /**
+ * 已经提示过「这个扩展被禁用了」的扩展 id。
+ *
+ * 每打开一个 .md 都弹一次同一条提示会很烦；但完全不说又会让用户以为插件坏了 ——
+ * 所以整个会话里每个扩展只提醒一次。
+ */
+const warnedDisabledExtensions = new Set<string>();
+
+function warnDisabledClaimant(extensionId: string | undefined): void {
+  if (!extensionId || warnedDisabledExtensions.has(extensionId)) return;
+  warnedDisabledExtensions.add(extensionId);
+  showGlobalToast(
+    `扩展 ${extensionId} 已禁用，这个文件用内置编辑器打开`,
+    'warn',
+    '想用它的编辑器：在扩展面板里启用它',
+  );
+}
+
+/**
  * 问主进程「这个文件归谁」。
  *
  * 拿不到答案一律返回 null（交回内置编辑器），不抛：这条路是「打开文件」的前置检查，
@@ -56,7 +75,10 @@ export async function resolveCustomEditorClaim(
       const claim = await window.ide.customEditorMatch(absolutePath);
       const matched = claim?.match;
       // 主进程答出来了（哪怕是「没人认领」）—— 这就是答案，重试没有意义
-      if (!matched) return null;
+      if (!matched) {
+        warnDisabledClaimant(claim?.disabledClaimant);
+        return null;
+      }
       return {
         tabPath: customEditorTabPath(absolutePath),
         title: matched.displayName || fallbackTitle,

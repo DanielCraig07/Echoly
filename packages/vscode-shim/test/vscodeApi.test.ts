@@ -380,3 +380,83 @@ describe('WorkspaceEdit → applyEdit 真的交给宿主', () => {
     await expect(api.workspace.applyEdit(edit)).resolves.toBe(false);
   });
 });
+
+describe('扩展「跟用户说话」的那几条路（宿主注入）', () => {
+  /**
+   * 这一组全是被 Office Viewer 的工具栏逼出来的：它的每个按钮最终都落到
+   * 「弹提示 / 开对话框 / 打开外链」这三件事上。以前这些方法一律返回 undefined
+   * 或什么都不做 —— 从用户视角看就是「点下去毫无反应」，很容易误判成插件坏了。
+   */
+  const createApiWithUi = (ui: Record<string, any>) => {
+    const shim = new VSCodeShim({
+      workspaceRoot: '/tmp/echoly-shim-test',
+      extensionPath: '/tmp/echoly-shim-test',
+      onCommand: async () => undefined,
+      onMessage: () => {},
+      ...ui,
+    });
+    return shim.createAPI() as any;
+  };
+
+  it('showErrorMessage 走注入的提示通道，而不是发一条没人听的消息', async () => {
+    const seen: any[] = [];
+    const api = createApiWithUi({
+      onNotify: (level: string, message: string) => seen.push([level, message]),
+    });
+    await api.window.showErrorMessage('保存失败');
+    expect(seen).toEqual([['error', '保存失败']]);
+  });
+
+  it('没注入提示通道时退回 onMessage（纯 Node 验证脚本走那条）', async () => {
+    const messages: any[] = [];
+    const shim = new VSCodeShim({
+      workspaceRoot: '/tmp/echoly-shim-test',
+      extensionPath: '/tmp/echoly-shim-test',
+      onCommand: async () => undefined,
+      onMessage: (m: any) => messages.push(m),
+    });
+    await (shim.createAPI() as any).window.showWarningMessage('注意');
+    expect(messages[0]).toMatchObject({ type: 'warning', message: '注意' });
+  });
+
+  it('打开/保存对话框把结果交回扩展（取消 = undefined，那是正常语义）', async () => {
+    const api = createApiWithUi({
+      onOpenDialog: async () => ['/tmp/pic.png'],
+      onSaveDialog: async () => undefined,
+    });
+    await expect(api.window.showOpenDialog({ canSelectMany: false })).resolves.toEqual([
+      '/tmp/pic.png',
+    ]);
+    await expect(api.window.showSaveDialog({})).resolves.toBeUndefined();
+  });
+
+  it('showQuickPick 返回**原样的 item**，并接受 Promise 形式的列表', async () => {
+    const api = createApiWithUi({ onQuickPick: async (items: any[]) => items[1] });
+    const picked = await api.window.showQuickPick(
+      Promise.resolve([{ label: '是' }, { label: '否' }]),
+    );
+    expect(picked).toEqual({ label: '否' });
+  });
+
+  it('withProgress 真的把任务跑起来（以前直接返回 undefined）', async () => {
+    const api = createApiWithUi({});
+    const result = await api.window.withProgress(
+      { location: 15 },
+      async (progress: any, token: any) => {
+        expect(typeof progress.report).toBe('function');
+        expect(token.isCancellationRequested).toBe(false);
+        return 'done';
+      },
+    );
+    expect(result).toBe('done');
+  });
+
+  it('env.openExternal 真的交给宿主打开（不再谎报成功）', async () => {
+    const opened: string[] = [];
+    const api = createApiWithUi({
+      onOpenExternal: async (url: string) => (opened.push(url), true),
+    });
+    await expect(api.env.openExternal(api.Uri.parse('https://example.com/a'))).resolves.toBe(true);
+    expect(opened).toEqual(['https://example.com/a']);
+  });
+});

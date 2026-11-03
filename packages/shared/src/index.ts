@@ -2156,6 +2156,8 @@ export interface IpcApi {
     success: boolean;
     error?: string;
     match: { viewType: string; extensionId: string; displayName?: string } | null;
+    /** 本该由它渲染、但被禁用了的扩展（用来给用户一句解释） */
+    disabledClaimant?: string;
   }>;
   /** 所有能被路由的自定义编辑器（含 selector 里的文件模式） */
   listCustomEditors: () => Promise<{
@@ -2188,6 +2190,23 @@ export interface IpcApi {
   customEditorDispose: (panelKey: string) => Promise<{ success: boolean }>;
   /** 扩展 → 自定义编辑器界面 */
   onCustomEditorMessage: (cb: (data: { panelKey: string; message: unknown }) => void) => () => void;
+
+  /**
+   * 扩展要跟用户说一句话（`window.show{Information,Warning,Error}Message`）。
+   *
+   * 以前这三条消息发到主进程就断了 —— 渲染层没人听，扩展的「保存失败」「没有权限」
+   * 等于没说，用户看到的只是「按钮点了没反应」。现在弹成 toast。
+   */
+  onExtensionNotify: (
+    cb: (data: { level: 'info' | 'warning' | 'error'; message: string }) => void,
+  ) => () => void;
+  /**
+   * 扩展执行了编辑器相关的命令（`workbench.action.files.save`、`vscode.open*` …）。
+   *
+   * 只有渲染层知道标签与缓冲区，所以这些命令要落到这边执行。
+   * Office Viewer 工具栏上的「保存」「用内置编辑器编辑」走的就是这条路。
+   */
+  onExtensionCommand: (cb: (data: { command: string; args: unknown[] }) => void) => () => void;
 
   /**
    * 把当前主题的 `--vscode-*` 变量推给主进程。

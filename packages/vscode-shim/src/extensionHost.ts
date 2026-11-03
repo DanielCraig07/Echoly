@@ -21,6 +21,18 @@ export interface ExtensionHostOptions {
   ) => void;
   /** 落盘 WorkspaceEdit（自定义编辑器的保存路径）。没给时 applyEdit 返回 false。 */
   onApplyEdit?: (edit: import('./index').WorkspaceEditDescriptor) => Promise<boolean>;
+  /**
+   * 扩展要「跟用户说话」的那几条路：提示、系统对话框、打开外链。
+   *
+   * 都由宿主实现（主进程里有 electron 的 dialog / shell），shim 自己不去 require ——
+   * 它还要能在纯 Node 里跑（`npm run verify:extension`）。
+   */
+  onNotify?: (level: 'info' | 'warning' | 'error', message: string) => void;
+  onOpenDialog?: (options: any) => Promise<string[] | undefined>;
+  onSaveDialog?: (options: any) => Promise<string | undefined>;
+  onQuickPick?: (items: any[], options?: any) => Promise<any>;
+  onInputBox?: (options: any) => Promise<string | undefined>;
+  onOpenExternal?: (url: string) => Promise<boolean>;
 }
 
 export class ExtensionHost {
@@ -38,6 +50,12 @@ export class ExtensionHost {
       onMessage: options.onMessage,
       onWebviewViewRegister: options.onWebviewViewRegister,
       onApplyEdit: options.onApplyEdit,
+      onNotify: options.onNotify,
+      onOpenDialog: options.onOpenDialog,
+      onSaveDialog: options.onSaveDialog,
+      onQuickPick: options.onQuickPick,
+      onInputBox: options.onInputBox,
+      onOpenExternal: options.onOpenExternal,
     });
 
     // 立即注入 vscode 模块到全局，确保任何扩展 require('vscode') 时都能找到

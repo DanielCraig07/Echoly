@@ -705,20 +705,6 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
   // 「扩展自带的 webview 界面」那几条（extView.*）不在这里：它已经和 Claude 解耦，
   // 任何贡献视图的扩展都用同一套文案，放在 runtime.ts 的扩展面板分区里。
   // ══════════════════════════════════════════
-  'ext.claudeUnknownError': { zh: '未知错误', en: 'Unknown error' },
-  'ext.claudeChatEmptyTitle': { zh: '开始与 Claude 对话', en: 'Start chatting with Claude' },
-  'ext.claudeChatEmptyHint': {
-    zh: '输入消息开始对话，Claude 将帮助你完成编程任务',
-    en: 'Type a message to begin — Claude will help you with coding tasks',
-  },
-  'ext.claudeChatPlaceholder': {
-    zh: '输入消息... (Enter 发送，Shift+Enter 换行)',
-    en: 'Type a message... (Enter to send, Shift+Enter for a newline)',
-  },
-  'ext.claudeChatSend': { zh: '发送', en: 'Send' },
-  'ext.claudeChatError': { zh: '错误: {msg}', en: 'Error: {msg}' },
-  'ext.claudeChatSendFailed': { zh: '发送消息失败', en: 'Failed to send the message' },
-
   // ══════════════════════════════════════════
   // 终端 AI 命令生成条（TerminalAiKBar）
   // ══════════════════════════════════════════

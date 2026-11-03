@@ -314,5 +314,16 @@ describe('自定义编辑器端到端（假扩展 + 真宿主）', () => {
     await waitForProvider();
     await manager.setExtensionEnabled('demo.editor', false);
     expect(await manager.matchCustomEditor(mdPath)).toBeNull();
+    /**
+     * 而且要**说得出原因**：这个文件本该由它渲染，只是被禁用了。
+     *
+     * 没有这一条，用户看到的是「装了 Office Viewer 却一直用内置编辑器」，
+     * 界面上没有任何提示，永远猜不到是自己禁用过它。
+     */
+    expect(await (manager as any).findDisabledClaimant(mdPath)).toBe('demo.editor');
+    // 别的文件（没人认领）不该被牵连
+    expect(
+      await (manager as any).findDisabledClaimant(path.join(base, 'note.txt')),
+    ).toBeUndefined();
   });
 });

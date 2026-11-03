@@ -20,7 +20,7 @@
 | `npx prettier --check .`           | 全部 ok                              | 格式漂移                                                                                                                   |
 | `npm run typecheck`                | 退出码 0                             | 类型错误（含各 workspace）                                                                                                 |
 | `npm run lint`                     | **0 error**（会有 96 条 warning）    | `react-hooks/rules-of-hooks` 是 error，专拦「hook 写在提前 return 之后」这类只在运行时炸、typecheck 与测试都看不出来的问题 |
-| `npm test`                         | **5024 passed / 139 files**          | 逻辑回归                                                                                                                   |
+| `npm test`                         | **5023 passed / 139 files**          | 逻辑回归                                                                                                                   |
 | `npm run build -w @echoly/desktop` | 构建成功                             | 打包期才会暴露的问题（含 runner 打包）                                                                                     |
 | `npm run audit:wiring`             | `✓ 没有发现「有实现、没入口」的接线` | **「功能做了但界面上够不到」** —— 这类问题其他门禁全拦不住：代码合法、类型正确、单测全绿，只是没人调用它                   |
 
@@ -33,12 +33,12 @@
 
 | 范围                 | 用例数 |
 | -------------------- | ------ |
-| apps/desktop         | 4461   |
+| apps/desktop         | 4460   |
 | packages/tools       | 229    |
 | packages/llm         | 126    |
 | packages/agent       | 92     |
 | packages/skills      | 20     |
-| packages/vscode-shim | 85     |
+| packages/vscode-shim | 91     |
 | packages/runner      | 11     |
 
 ## 2. 已自动验证（可以随时重跑）
@@ -450,19 +450,59 @@ npm run verify:readme -- ms-python.python  # 换一个通用扩展对照
 （一边在对话，另一边还停在引导页）。手动点右侧那个标签仍然可以，只是不再由「打开 /
 星芒」替你打开。
 
+### 第五轮：Office Viewer 的按钮 + Claude 那一栏
+
+**先说一件事实**：`~/Library/Application Support/Echoly/extensions-state.json` 里
+`cweijan.vscode-office` 一度是**禁用**状态（17:22 写进去的，日志里 17:22:59 那条
+`Deactivating extension` 就是它）。禁用之后它当然不再认领任何文件 —— 这是当时
+「点一下就退出 md 预览」的直接原因。这一轮加了两条，让这件事**不再静默**：
+
+- 文件被某个**已禁用**的扩展声明认领时，主进程在匹配结果里带上 `disabledClaimant`，
+  界面弹一次提示：「扩展 X 已禁用，这个文件用内置编辑器打开」。回归测试钉住了
+  `findDisabledClaimant`（按文件区分，别的文件不受牵连）。
+- 扩展的提示（`showErrorMessage` 等）现在真的弹成 toast —— 见下。
+
+**扩展「跟用户说话」的那几条路原来是断的。** 主进程把扩展的提示转发出去之后
+**渲染层没人听**；`showOpenDialog` / `showSaveDialog` / `showQuickPick` / `withProgress`
+一律 `return undefined`（等于用户点了取消）；`env.openExternal` 返回 `true` 却什么都不做。
+Office Viewer 工具栏上的每个按钮最终都落在这些上面 —— 从用户视角看就是「点了没反应」。
+现在这些都由宿主实现：
+
+| 扩展调用                                                             | 现在变成                                                                                     |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `show{Information,Warning,Error}Message`                             | 渲染层的 toast（错误 / 警告 / 信息三档）                                                     |
+| `showOpenDialog` / `showSaveDialog`                                  | 真的系统对话框（官方 filters → electron filters）                                            |
+| `showQuickPick`                                                      | 系统消息框的按钮（扩展里绝大多数是「是 / 否」确认）                                          |
+| `withProgress`                                                       | **真的把任务跑起来**（以前直接 resolve(undefined)）                                          |
+| `env.openExternal`                                                   | `shell.openExternal`，真的用浏览器打开                                                       |
+| `commands.executeCommand('workbench.action.files.save' / 'saveAll')` | 渲染层保存对应标签；**扩展编辑器标签跳过** —— 它的内容早由扩展写进磁盘，再写一次会把文件清空 |
+| `commands.executeCommand('vscode.openWith' / 'vscode.open')`         | 用内置编辑器打开（Office Viewer 的「用 VS Code 编辑」按钮）                                  |
+| `toggleDevTools` / `revealFileInOS`                                  | 主进程直接做                                                                                 |
+
+离线复验（真扩展）：激活 → `note.md` → `cweijan.markdownViewer` → 面板打开 ok。
+
+**右侧「Claude 扩展」那一栏。** 以前挂的是自造的 `ClaudeChatPanel` —— 一个长得像聊天框、
+实际跑我们自己 Agent 的壳，跟 Claude Code 扩展没有半点关系（用户在它里面发的消息到不了
+Claude）。现在它渲染的就是**扩展自己的界面**（`registerWebviewViewProvider` 给的那份，
+和编辑器区「打开扩展视图」同一个组件、同一份 HTML）。那个自造组件已经删掉，连带着它
+的 7 条文案和一段只属于它的样式。
+
+标题栏的星芒图标与扩展列表的「打开」都改成**展开右侧面板并切到 Claude**，
+不再在编辑器区开标签 —— 同一份 webview 只留一个实例。
+
 ### 需要你在真机上确认的
 
-1. **完全退出应用再启动**（不是关窗口）。这一轮改了**主进程**，光靠渲染层热更新不生效 ——
-   上面「打开了没反应」这一条里，一半的原因就是这种「渲染层是新的、主进程还是旧的」的错配。
-2. 打开一个 `.md`：应由 Office Viewer 的所见即所得编辑器打开（标签标题是文件本身，
-   编辑器区是扩展的界面）。用它改一行、保存，关掉重开看内容在不在。
-   （若这个 `.md` 之前就以文本标签开着，先关掉它再打开。）
-3. **重启之后再看一眼那个 `.md` 还在不在、还是不是扩展编辑器** —— 这条专门验会话恢复。
-4. 扩展列表点 Claude 的「打开」，或点**标题栏上的 Claude 星芒图标**：右侧面板切到
-   Claude 标签（编辑器区**不再**多一个同名标签）；面板本来就是收起的话，它会展开。
-   星芒图标只在 Claude Code 装着时出现，再点一次收起面板。
-5. 用一个 `.md` 验一下「扩展编辑器不再闪」：打开后画面应该是稳定的，不抖不重载；
-   关标签再打开一次，内容还在。
+1. **完全退出应用再启动**（不是关窗口）。这几轮改了**主进程**，光靠渲染层热更新不生效。
+2. **先看 Office Viewer 是不是「启用」状态**（扩展面板里那一行）。它一度被禁用过 ——
+   禁用时打开 `.md` 会弹一句「扩展 … 已禁用」，照着提示启用即可。
+3. 打开一个 `.md`：应由 Office Viewer 的编辑器打开（哪怕是已经开着的文本标签，也会
+   就地换成扩展编辑器）。改一行、保存、关掉重开，看内容在不在；
+   重启应用后它还得是扩展编辑器（这条专验会话恢复）。
+4. 在 md 预览里点几个按钮：保存 / 导出 / 插入图片 / 切换主题。不该再「退出预览」；
+   需要选文件或选目录的，应该真的弹出系统对话框。
+5. 扩展列表点 Claude 的「打开」，或点**标题栏上的 Claude 星芒图标**：右侧面板展开并切到
+   Claude 那一栏，里面是**扩展自己的界面**（不再是那个自造的聊天壳）；
+   编辑器区不再多标签。星芒再点一次收起面板。
 6. 切一次主题（亮/暗）：已打开的扩展界面应立刻跟着变，不再是一块对不上的灰。
 
 ## 5. 建议顺序

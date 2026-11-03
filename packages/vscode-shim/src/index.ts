@@ -492,6 +492,28 @@ export interface VSCodeShimOptions {
    * shim 还要能在纯 Node 里跑（`npm run verify:extension`），那里没有 electron。
    */
   clipboard?: { readText(): Promise<string>; writeText(text: string): Promise<void> };
+  /**
+   * 扩展要弹提示（`window.show{Information,Warning,Error}Message`）。
+   *
+   * 以前这三个只往 `onMessage` 丢一条消息，而**渲染层根本没人听** —— 于是扩展说
+   * 「保存失败」「没有权限」全都石沉大海，用户看到的只是「按钮点了没反应」。
+   * 宿主现在把它变成一条 toast。
+   */
+  onNotify?: (level: 'info' | 'warning' | 'error', message: string) => void;
+  /**
+   * 系统对话框（打开 / 保存 / 选择）。
+   *
+   * Office Viewer 的「插入图片」「导出 PDF」全走这三个。以前一律返回 undefined
+   * （等于用户点了取消），按钮点下去毫无反应 —— 看起来就像插件坏了。
+   * 返回 undefined 仍然表示「用户取消」，那是正常语义，不是失败。
+   */
+  onOpenDialog?: (options: any) => Promise<string[] | undefined>;
+  onSaveDialog?: (options: any) => Promise<string | undefined>;
+  onQuickPick?: (items: any[], options?: any) => Promise<any>;
+  /** 让用户输入一行文本（系统没有这种对话框，没实现时等于「取消」）。 */
+  onInputBox?: (options: any) => Promise<string | undefined>;
+  /** 用系统浏览器打开链接（`env.openExternal`）。以前返回 true 但什么都没做。 */
+  onOpenExternal?: (url: string) => Promise<boolean>;
 }
 
 /**
@@ -545,6 +567,12 @@ export class VSCodeShim {
     readText(): Promise<string>;
     writeText(text: string): Promise<void>;
   };
+  private notifyHandler?: (level: 'info' | 'warning' | 'error', message: string) => void;
+  private openDialogHandler?: (options: any) => Promise<string[] | undefined>;
+  private saveDialogHandler?: (options: any) => Promise<string | undefined>;
+  private quickPickHandler?: (items: any[], options?: any) => Promise<any>;
+  private inputBoxHandler?: (options: any) => Promise<string | undefined>;
+  private openExternalHandler?: (url: string) => Promise<boolean>;
   private onWebviewViewRegisterHandler?: (
     viewId: string,
     provider: any,
@@ -561,6 +589,12 @@ export class VSCodeShim {
     this.onWebviewViewRegisterHandler = options.onWebviewViewRegister;
     this.onApplyEditHandler = options.onApplyEdit;
     this.clipboardHandler = options.clipboard;
+    this.notifyHandler = options.onNotify;
+    this.openDialogHandler = options.onOpenDialog;
+    this.saveDialogHandler = options.onSaveDialog;
+    this.quickPickHandler = options.onQuickPick;
+    this.inputBoxHandler = options.onInputBox;
+    this.openExternalHandler = options.onOpenExternal;
   }
 
   /**
@@ -599,17 +633,32 @@ export class VSCodeShim {
 
       // Window API
       window: {
+        /**
+         * 三个提示。
+         *
+         * 以前只往 `onMessage` 丢一条消息，而宿主那边转发出去之后**渲染层没人听** ——
+         * 扩展说「保存失败」等于没说。现在由宿主弹成 toast。
+         * 装了 notify 就交给它，没装才退回原来的通道（纯 Node 验证脚本走那条）。
+         */
         showInformationMessage(message: string, ...items: any[]) {
-          self.onMessageHandler({ type: 'info', message, items });
+          if (self.notifyHandler) self.notifyHandler('info', String(message));
+          else self.onMessageHandler({ type: 'info', message, items });
           return Promise.resolve(undefined);
         },
         showWarningMessage(message: string, ...items: any[]) {
-          self.onMessageHandler({ type: 'warning', message, items });
+          if (self.notifyHandler) self.notifyHandler('warning', String(message));
+          else self.onMessageHandler({ type: 'warning', message, items });
           return Promise.resolve(undefined);
         },
         showErrorMessage(message: string, ...items: any[]) {
-          self.onMessageHandler({ type: 'error', message, items });
+          if (self.notifyHandler) self.notifyHandler('error', String(message));
+          else self.onMessageHandler({ type: 'error', message, items });
           return Promise.resolve(undefined);
+        },
+        /** 状态栏上的一次性消息（有超时的那个）。当一条 toast 处理。 */
+        setStatusBarMessage(message: string) {
+          self.notifyHandler?.('info', String(message));
+          return { dispose() {} };
         },
         createOutputChannel(name: string, options?: any) {
           const logChannel = {
@@ -777,29 +826,52 @@ export class VSCodeShim {
         createTreeView() {
           return {} as any;
         },
-        showQuickPick() {
-          return Promise.resolve(undefined);
+        /**
+         * 选择列表 / 输入框 / 文件对话框 / 带进度的任务。
+         *
+         * 这四样以前一律「返回 undefined」= 用户点了取消。后果是 Office Viewer 的
+         * 「插入图片」「导出 PDF」「选择导出目录」点下去**毫无反应** ——
+         * 从用户视角看就是插件坏了，而实际上是我们把它的对话框吞了。
+         * 现在交给宿主用系统对话框实现（没注入时仍然退回「取消」，语义不变）。
+         */
+        showQuickPick(items: any, options?: any) {
+          if (!self.quickPickHandler) return Promise.resolve(undefined);
+          // 官方允许传 Promise / Thenable，先解开再交给宿主
+          return Promise.resolve(items)
+            .then((resolved) => self.quickPickHandler!(resolved ?? [], options))
+            .catch(() => undefined);
         },
         showInputBox(options?: any) {
-          // 简化实现：返回空字符串表示用户取消
-          // 实际使用中可以通过 IPC 调用主进程的 dialog
-          console.log('showInputBox called:', options);
-          return Promise.resolve(undefined);
+          // 系统对话框没有「输入一行文本」这种形态；宿主没实现就还是「取消」
+          return Promise.resolve(self.inputBoxHandler ? self.inputBoxHandler(options) : undefined);
         },
-        withProgress() {
-          return Promise.resolve(undefined as any);
-        },
-        setStatusBarMessage() {
-          return { dispose() {} };
+        withProgress(_options?: any, task?: any) {
+          if (typeof task !== 'function') return Promise.resolve(undefined as any);
+          const token = {
+            isCancellationRequested: false,
+            onCancellationRequested: () => ({ dispose() {} }),
+          };
+          // 进度本身不画到界面上（没有对应的 UI），但**任务要真的跑** ——
+          // 以前这里直接 resolve(undefined)，导出这种「跑起来才有结果」的功能
+          // 就永远停在原地。
+          return Promise.resolve(task({ report() {} }, token)) as Promise<any>;
         },
         showWorkspaceFolderPick() {
-          return Promise.resolve(undefined);
+          return Promise.resolve(
+            self.workspaceRoot
+              ? { uri: ShimUri.file(self.workspaceRoot), name: 'workspace', index: 0 }
+              : undefined,
+          );
         },
-        showOpenDialog() {
-          return Promise.resolve(undefined);
+        showOpenDialog(options?: any) {
+          return Promise.resolve(
+            self.openDialogHandler ? self.openDialogHandler(options) : undefined,
+          );
         },
-        showSaveDialog() {
-          return Promise.resolve(undefined);
+        showSaveDialog(options?: any) {
+          return Promise.resolve(
+            self.saveDialogHandler ? self.saveDialogHandler(options) : undefined,
+          );
         },
         terminals: [],
         activeTerminal: undefined,
@@ -1118,8 +1190,16 @@ export class VSCodeShim {
         remoteName: '',
         shell: process.env.SHELL || '/bin/bash',
         uiKind: 2, // UIKind.Desktop（官方取值：Web = 1，Desktop = 2）
-        openExternal() {
-          return Promise.resolve(true);
+        /**
+         * 用系统浏览器打开链接。
+         *
+         * 以前无条件返回 `true` 却什么都不做 —— 扩展以为链接打开了，用户什么都没看到。
+         * 现在是真打开（扩展界面的「Learn more」「主页」这类全走这里）。
+         */
+        openExternal(target: any) {
+          const url = typeof target === 'string' ? target : String(target?.toString?.() ?? target);
+          if (!self.openExternalHandler) return Promise.resolve(true);
+          return self.openExternalHandler(url);
         },
         asExternalUri(target: vscode.Uri) {
           return Promise.resolve(target);

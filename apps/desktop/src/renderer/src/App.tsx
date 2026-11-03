@@ -81,14 +81,13 @@ import {
   EXTENSION_DETAIL_PREFIX,
   EXTENSION_INSTALLED_EVENT,
 } from './components/ExtensionDetailView';
-import { EXTENSION_VIEW_PREFIX } from './components/ExtensionViewPanel';
+import { EXTENSION_VIEW_PREFIX, ExtensionViewPanel } from './components/ExtensionViewPanel';
 import {
   CUSTOM_EDITOR_PREFIX,
   filePathFromCustomEditorTab,
 } from './components/ExtensionEditorView';
 import { CLAUDE_CODE_ID, CLAUDE_CODE_VIEW_ID } from './services/claudeCode';
 import { buildVscodeThemeVars, readAppTokens } from './services/vscodeTheme';
-import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { PanelChevron } from './components/PanelChevron';
 import { GitPanel } from './components/GitPanel';
 import { SearchPanel } from './components/SearchPanel';
@@ -3376,14 +3375,26 @@ export function App() {
        * 到时候把这张「视图 → 面板」的对应关系扩成一张表即可。
        */
       /**
-       * Claude 的界面**开在编辑器区**（和「打开」其它扩展的界面同一条路）。
+       * Claude 的界面**开在右侧面板**，不开编辑器标签。
        *
-       * 顺手把右侧面板切回 AI 对话：同一份界面只留一个地方。右侧那个「Claude 扩展」
-       * 标签渲染的是同一份 webview，两边同时活着就是用户说的「为什么会有两个」，
-       * 而且两份各自持有状态（一边在对话，另一边还停在引导页）。
-       * 用户手动点右侧那个标签仍然可以 —— 只是不再由这里替他打开。
+       * 它本来就是个侧栏形态的界面，塞进编辑器会摊成一大片空白；而且右侧那一栏
+       * 现在渲染的就是同一份扩展界面 —— 两边同时开就是同一份 webview 的两个实例
+       * （各自持有状态），也就是最早那个「为什么会有两个」。
+       *
+       * 不判断 `claudeTabAvailable`：用户点得到「打开」就说明这个视图在，
+       * 而那个判据（启动时探一次 + 等注册事件）本身可能落空。
        */
-      if (viewId === CLAUDE_CODE_VIEW_ID) setRightPanelTab('chat');
+      if (viewId === CLAUDE_CODE_VIEW_ID) {
+        setClaudeTabAvailable(true);
+        setLayout((prev) => {
+          if (prev.chatPanelExpanded !== false) return prev;
+          const next = { ...prev, chatPanelExpanded: true };
+          persistLayout(next);
+          return next;
+        });
+        setRightPanelTab('claude');
+        return;
+      }
 
       openVirtualTab(
         `${EXTENSION_VIEW_PREFIX}${viewId}`,
@@ -3435,6 +3446,58 @@ export function App() {
     window.addEventListener('echoly:custom-editor-fallback', handler);
     return () => window.removeEventListener('echoly:custom-editor-fallback', handler);
   }, [closeTabDirect, openFile, showToast, t]);
+
+  /**
+   * 扩展要跟用户说话 —— 弹成 toast。
+   *
+   * 以前这条路是断的：扩展调 `window.showErrorMessage('保存失败')`，消息发到主进程
+   * 就没了下文。用户看到的只是「按钮点了没反应」，连个原因都没有。
+   */
+  useEffect(() => {
+    const unsubscribe = window.ide.onExtensionNotify?.(({ level, message }) => {
+      if (!message) return;
+      showGlobalToast(message, level === 'error' ? 'error' : level === 'warning' ? 'warn' : 'info');
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  /**
+   * 扩展执行了「编辑器的事」——只有这边知道标签与缓冲区。
+   *
+   * Office Viewer 工具栏上的按钮基本都落到这里：保存（它自己已经用 WorkspaceEdit
+   * 落过盘，所以对扩展编辑器**什么都不用做**）、「用内置编辑器编辑」
+   * （`vscode.openWith(uri, 'default')`）。
+   */
+  useEffect(() => {
+    const unsubscribe = window.ide.onExtensionCommand?.(({ command, args }) => {
+      const first = (args?.[0] as any)?.fsPath ?? args?.[0];
+      if (
+        command === 'workbench.action.files.save' ||
+        command === 'workbench.action.files.saveAll'
+      ) {
+        const targets =
+          command === 'workbench.action.files.saveAll'
+            ? tabsRef.current
+            : tabsRef.current.filter((tab) => tab.path === activePathRef.current);
+        // 扩展编辑器没有文本缓冲区：内容早就由扩展自己写进磁盘了，
+        // 这里再写一次会把文件清空 —— 那是数据丢失，不是「保存」。
+        for (const tab of targets) {
+          if (tab.path.startsWith(CUSTOM_EDITOR_PREFIX)) continue;
+          void saveTab(tab);
+        }
+        return;
+      }
+      if (command === 'vscode.open' || command === 'vscode.openWith') {
+        if (typeof first !== 'string') return;
+        // 'default' = 用内置编辑器打开（Office Viewer 的「用 VS Code 编辑」就是这个）
+        const builtin = command === 'vscode.openWith' && (args?.[1] ?? 'default') === 'default';
+        void openFile(first, undefined, undefined, undefined, { openAnyway: builtin });
+        return;
+      }
+      // 其余命令已经由命令面板那条路覆盖（`extension:command` 也会喂给它）
+    });
+    return () => unsubscribe?.();
+  }, [openFile, saveTab]);
 
   /** 当前打开着的脚本相对路径：面板底部据此标出「已打开」 */
   const openScriptPaths = useMemo(
@@ -4542,23 +4605,21 @@ export function App() {
     ['--bottom-height' as string]: `${isWelcomeShell ? 0 : layout.bottomHeight}px`,
   } as CSSProperties;
 
-  /** Claude 那个界面在编辑器区的标签路径（一个视图一个标签）。 */
-  const claudeViewTabPath = `${EXTENSION_VIEW_PREFIX}${CLAUDE_CODE_VIEW_ID}`;
-
   /**
-   * 标题栏上那个 Claude 图标 = Claude 界面的开关。
+   * 标题栏上那个 Claude 图标 = 右侧 Claude 那一栏的开关。
    *
-   * 点开：在编辑器区打开它（和扩展列表的「打开」同一条路），并让右侧面板切回
-   * AI 对话 —— 同一份界面只留一份。
-   * 再点：把那个标签关掉。
+   * 点开：展开右侧面板并切到 Claude（和扩展列表的「打开」同一条路）；
+   * 再点：收起面板。语义与旁边的 AI 面板开关一致。
    */
   const toggleClaudeView = useCallback(() => {
-    if (tabsRef.current.some((tab) => tab.path === claudeViewTabPath)) {
-      closeTabDirect(claudeViewTabPath);
+    if (showChatPanel && rightPanelTab === 'claude') {
+      const next = { ...layout, chatPanelExpanded: false };
+      setLayout(next);
+      persistLayout(next);
       return;
     }
     openExtensionView(CLAUDE_CODE_VIEW_ID);
-  }, [claudeViewTabPath, closeTabDirect, openExtensionView]);
+  }, [showChatPanel, rightPanelTab, layout, persistLayout, openExtensionView]);
 
   const ideActions: CommandAction[] = [
     {
@@ -4974,7 +5035,7 @@ export function App() {
           </button>
 
           {/*
-            Claude Code 装好之后的常驻入口：点一下在编辑器区打开它的界面，再点关掉。
+            Claude Code 装好之后的常驻入口：点一下在右侧面板打开它的界面，再点收起。
 
             只在它真的在场时出现（`claudeTabAvailable` 由扩展加载状态驱动）——
             没装却摆一个点不动的图标，和以前那个假的暂停补全按钮是一回事。
@@ -4983,7 +5044,7 @@ export function App() {
             <button
               type="button"
               className={`layout-toggle-btn claude-entry-btn${
-                tabs.some((tab) => tab.path === claudeViewTabPath) ? ' active' : ''
+                showChatPanel && rightPanelTab === 'claude' ? ' active' : ''
               }`}
               title={t('app.claudeEntry')}
               onClick={toggleClaudeView}
@@ -6279,9 +6340,17 @@ export function App() {
                 </ErrorBoundary>
               )}
 
+              {/*
+                这一栏渲染的就是扩展**自己的**界面（`registerWebviewViewProvider` 给的那份），
+                和编辑器区那个「打开扩展视图」是同一个组件、同一份 HTML。
+
+                以前这里挂的是自造的 `ClaudeChatPanel`：一个长得像聊天框、实际跑我们
+                自己 Agent 的壳 —— 跟扩展没有半点关系，用户在里面发的消息也到不了
+                Claude Code。现在换成扩展界面，这一栏才算真的「Claude 扩展」。
+              */}
               {rightPanelTab === 'claude' && claudeTabAvailable && (
                 <div style={{ height: '100%', overflow: 'hidden' }}>
-                  <ClaudeChatPanel viewId="claudeVSCodeSidebar" workspace={workspace} />
+                  <ExtensionViewPanel viewId={CLAUDE_CODE_VIEW_ID} />
                 </div>
               )}
             </aside>

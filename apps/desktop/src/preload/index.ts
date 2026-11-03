@@ -237,6 +237,20 @@ const api: IpcApi = {
     ipcRenderer.invoke('extension:custom-editor-post', panelKey, message),
   customEditorDispose: (panelKey) =>
     ipcRenderer.invoke('extension:custom-editor-dispose', panelKey),
+  onExtensionNotify: (cb) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      data: { level: 'info' | 'warning' | 'error'; message: string },
+    ) => cb(data);
+    ipcRenderer.on('extension:notify', listener);
+    return () => ipcRenderer.removeListener('extension:notify', listener);
+  },
+  onExtensionCommand: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { command: string; args: unknown[] }) =>
+      cb(data);
+    ipcRenderer.on('extension:command', listener);
+    return () => ipcRenderer.removeListener('extension:command', listener);
+  },
   onCustomEditorMessage: (cb) => {
     const listener = (_: Electron.IpcRendererEvent, data: { panelKey: string; message: unknown }) =>
       cb(data);
