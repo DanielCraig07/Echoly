@@ -515,6 +515,32 @@ readRemoteFile`：把 SSH 会话接成传输层。这三个方法**刻意不加 
     同时按既有惯例清空 `editorRef`（主 `<Editor>` 已被换成单元视图，避免后续入口
     拿已销毁实例把内容写回上一个标签）。
 
+- [x] 自定义编辑器接线（扩展真正「作用于文件」）+ 三处界面问题
+  - **自定义编辑器**（`contributes.customEditors`）：以前只把注册收下、什么都不做，
+    于是装了 Office Viewer、打开 `.md` 还是内置编辑器 —— 用户看到的是「插件没作用」。
+    现在两条 provider 接口都接上了：`resolveCustomTextEditor`（markdown）与
+    `openCustomDocument` + `resolveCustomEditor`（表格/压缩包/图片）。面板按文件建
+    （同一个 viewType 可以同时开好几份），HTML 交给 `echoly-webview://` 协议端出，
+    保存走 `WorkspaceEdit` → `applyEdit` → 真的落盘。
+    `option` 优先级的编辑器（图片/HTML 预览）**不主动抢文件**，与 VS Code 一致。
+  - 挖出来两个「静默断链」，一起修了：
+    1. shim 的 `Uri` 缺 `with()`。Office Viewer 的 `handleMarkdown` 一上来就
+       `uri.with({...})`，而它在调用处**没有 await** —— 异常不冒泡，只留一条
+       unhandledRejection，界面上就是「点了没反应」。补了成型的 `ShimUri`。
+    2. `extensions.getExtension(id)` 对任何 id 都返回假对象。扩展在模块顶层找
+       `vscode.git`，假对象的 `exports.getAPI` 不是函数（`?.` 拦不住），直接 TypeError。
+       官方的语义是「没装就 undefined」，而那正是扩展 `if (!git) return` 期望的分支。
+       新增登记簿，`loadExtension` 读完 manifest 就登记（早于模块加载）。
+  - **两个同名标签**：扩展界面标签改用视图自己的名字（详情页仍用扩展名）；
+    Claude 侧栏已经有「正式的家」（右侧「Claude 扩展」标签），点「打开」改为揭示它，
+    不再在编辑器区开第二个实例。
+  - **扩展界面颜色对不上**：扩展界面里的颜色全是 `var(--vscode-*)`，
+    在 VS Code 里由宿主注入。现在渲染进程把自有 token 翻成这批变量推给主进程，
+    主进程以 `<link>` 注进每一份扩展 HTML，切主题时原地热更新。
+  - 顺手修掉一个回归：抽 `useExtensionWebview` 时 `ExtensionViewPanel` 里
+    「向主进程要地址」的 effect 被一起删了，面板会永远停在转圈上。是
+    `npm run audit:wiring` 报「`extensionResolveWebview` 从未被调用」抓出来的。
+
 ## 执行顺序
 
 1. **第一轮**：A1 → A5（除字号）→ A3

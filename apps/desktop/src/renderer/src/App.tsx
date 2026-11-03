@@ -82,6 +82,11 @@ import {
   EXTENSION_INSTALLED_EVENT,
 } from './components/ExtensionDetailView';
 import { EXTENSION_VIEW_PREFIX } from './components/ExtensionViewPanel';
+import {
+  CUSTOM_EDITOR_PREFIX,
+  customEditorTabPath,
+  filePathFromCustomEditorTab,
+} from './components/ExtensionEditorView';
 import { CLAUDE_CODE_ID, CLAUDE_CODE_VIEW_ID } from './services/claudeCode';
 import { buildVscodeThemeVars, readAppTokens } from './services/vscodeTheme';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
@@ -2386,7 +2391,20 @@ export function App() {
   }
 
   const openFile = useCallback(
-    async (rawPath: string, line?: number, col?: number, endLine?: number) => {
+    async (
+      rawPath: string,
+      line?: number,
+      col?: number,
+      endLine?: number,
+      /**
+       * 强制用内置编辑器打开。
+       *
+       * 用户在命令面板里选「用内置编辑器打开」、或者扩展渲染失败退回时用 ——
+       * 没有这个开关，「退回内置」会被路由规则原样弹回扩展编辑器，来回弹。
+       */
+      opts?: { openAnyway?: boolean },
+    ) => {
+      const openAnyway = opts?.openAnyway === true;
       setScmDiff(null);
       setActiveDiffId(null);
       const ws = workspaceRef.current;
@@ -2457,6 +2475,44 @@ export function App() {
         setActivePath(path);
         return;
       }
+      /**
+       * 扩展的自定义编辑器优先（Office Viewer 这类）。
+       *
+       * 放在**读文件之前**：xlsx / docx 当文本读出来是乱码，还会白等一次 IO。
+       * `openAnyway` 是给「用内置编辑器打开」和「扩展渲染失败后退回」用的 ——
+       * 没有它就会来回弹：退回内置 → 又被路由到扩展。
+       */
+      if (!openAnyway && window.ide.customEditorMatch) {
+        const absolutePath = path.startsWith('/') ? path : ws ? `${ws}/${path}` : path;
+        const claim = await window.ide.customEditorMatch(absolutePath).catch(() => null);
+        const matched = claim?.match;
+        if (matched) {
+          const tabPath = customEditorTabPath(absolutePath);
+          if (!tabsRef.current.some((tab) => tab.path === tabPath)) {
+            setTabs((prev) =>
+              prev.some((tab) => tab.path === tabPath)
+                ? prev
+                : [
+                    ...prev,
+                    {
+                      path: tabPath,
+                      content: '',
+                      language: 'extension-editor',
+                      dirty: false,
+                      title: matched.displayName || path.split('/').pop() || path,
+                      readOnly: true,
+                    },
+                  ],
+            );
+          }
+          setActivePath(tabPath);
+          activePathRef.current = tabPath;
+          setScmDiff(null);
+          setActiveDiffId(null);
+          return;
+        }
+      }
+
       let content = '';
       let isFileTooLarge = false;
       try {
@@ -3250,6 +3306,28 @@ export function App() {
   const openExtensionView = useCallback(
     (viewId: string, title?: string) => {
       if (!viewId) return;
+
+      /**
+       * Claude 的侧栏视图已经有一个「正式的家」：右侧面板里的「Claude 扩展」标签。
+       *
+       * 再在编辑器区开一份，就是同一份界面的第二个实例 —— 用户看到的是
+       * 「为什么会有两个」，而且两份 webview 各自持有状态（一边开始对话，另一边还是
+       * 空的引导页）。所以这里不是「再开一个」，而是**揭示已有的那个**。
+       *
+       * 判据用视图 id 而不是扩展 id：将来别的扩展也可能把自己的视图贡献到右侧面板，
+       * 到时候把这张「视图 → 面板」的对应关系扩成一张表即可。
+       */
+      if (viewId === CLAUDE_CODE_VIEW_ID && claudeTabAvailable) {
+        setLayout((prev) => {
+          if (prev.chatPanelExpanded !== false) return prev;
+          const next = { ...prev, chatPanelExpanded: true };
+          persistLayout(next);
+          return next;
+        });
+        setRightPanelTab('claude');
+        return;
+      }
+
       openVirtualTab(
         `${EXTENSION_VIEW_PREFIX}${viewId}`,
         '',
@@ -3258,7 +3336,7 @@ export function App() {
         false,
       );
     },
-    [openVirtualTab, t],
+    [openVirtualTab, t, claudeTabAvailable, persistLayout],
   );
 
   /**
@@ -3276,6 +3354,30 @@ export function App() {
     window.addEventListener('echoly:open-extension-view', handler);
     return () => window.removeEventListener('echoly:open-extension-view', handler);
   }, [openExtensionView]);
+
+  /**
+   * 扩展编辑器打不开 → 退回内置编辑器。
+   *
+   * 由 `ExtensionEditorView` 发起（它拿不到 App 的关标签/开文件能力，只能发事件）。
+   * 关掉那个虚拟标签再按绝对路径正常打开一次 —— 带 `openAnyway`，否则会被
+   * 路由规则原样弹回扩展编辑器，来回弹。
+   */
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ tabPath?: string; filePath?: string; reason?: string }>)
+        .detail;
+      if (!detail?.tabPath || !detail.filePath) return;
+      showToast(
+        t('extEditor.fallbackToast', { name: t('extEditor.fallbackName') }),
+        detail.reason ? t('extEditor.fallbackDetail', { msg: detail.reason }) : undefined,
+        'warn',
+      );
+      closeTabDirect(detail.tabPath);
+      void openFile(detail.filePath, undefined, undefined, undefined, { openAnyway: true });
+    };
+    window.addEventListener('echoly:custom-editor-fallback', handler);
+    return () => window.removeEventListener('echoly:custom-editor-fallback', handler);
+  }, [closeTabDirect, openFile, showToast, t]);
 
   /** 当前打开着的脚本相对路径：面板底部据此标出「已打开」 */
   const openScriptPaths = useMemo(
@@ -4579,8 +4681,33 @@ export function App() {
    * 分开放是有意的：`ideActions` 里的 id 被快捷键映射按字符串查找（见上面的 keydown
    * 处理），往里混进运行期才出现的扩展命令会让那套映射变得依赖扩展装没装。
    */
+  /**
+   * 「用内置编辑器打开」只在当前标签**是扩展编辑器**时出现。
+   *
+   * 一个只在特定上下文里有意义的命令，列在命令面板里却点了没反应，比不列更糟 ——
+   * 所以它是条件项，而不是常驻项。
+   */
+  const builtinEditorAction: CommandAction[] = activePath?.startsWith(CUSTOM_EDITOR_PREFIX)
+    ? [
+        {
+          id: 'cmd-open-with-builtin-editor',
+          title: t('extEditor.openWithBuiltin'),
+          category: t('cmd.categoryView'),
+          handler: () => {
+            const filePath = filePathFromCustomEditorTab(activePath);
+            window.dispatchEvent(
+              new CustomEvent('echoly:custom-editor-fallback', {
+                detail: { tabPath: activePath, filePath },
+              }),
+            );
+          },
+        },
+      ]
+    : [];
+
   const paletteActions: CommandAction[] = [
     ...ideActions,
+    ...builtinEditorAction,
     ...extensionCommands.map((c) => ({
       // 前缀避免与内置 id 撞车：扩展命令 id 是 `publisher.name` 形状，理论上不会撞，
       // 但面板的 key 与快捷键查找都靠 id，加个前缀就不用去赌。

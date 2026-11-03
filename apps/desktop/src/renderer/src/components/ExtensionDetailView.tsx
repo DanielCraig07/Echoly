@@ -84,6 +84,23 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
     commands: { command: string; title: string }[];
     views: { id: string; name: string }[];
   } | null>(null);
+  /**
+   * 这个扩展**接管了哪些文件**（`contributes.customEditors`）。
+   *
+   * 单独取一次而不是塞进 `installedInfo`：这一份是「主进程扫到的贡献 + 当前有没有
+   * 注册 provider」，和已安装列表的扫描不是一回事。用户在问「为什么这个插件
+   * 对我的 .md 没作用」时，答案就在这张表里 —— 要么这里列着 `*.md`（那它该起作用），
+   * 要么它压根不认这个后缀。
+   */
+  const [customEditors, setCustomEditors] = useState<
+    {
+      viewType: string;
+      displayName?: string;
+      priority?: string;
+      patterns: string[];
+      hasProvider: boolean;
+    }[]
+  >([]);
   const [installing, setInstalling] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
@@ -95,10 +112,17 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
     setState('loading');
     setError(null);
     try {
-      const [res, listed] = await Promise.all([
+      const [res, listed, editors] = await Promise.all([
         window.extensions.getExtensionDetail(extensionId),
         window.extensions.listInstalled?.() ?? Promise.resolve(undefined),
+        // 可选链：老版本 preload 上没有这个方法时不该把整页拖垮
+        window.ide.listCustomEditors?.() ?? Promise.resolve([]),
       ]);
+      setCustomEditors(
+        (editors ?? []).filter(
+          (entry) => entry.extensionId.toLowerCase() === extensionId.toLowerCase(),
+        ),
+      );
       /**
        * 匹配用「相等 或 互相包含」：扩展自报的 id 与注册表里的 id 大小写、后缀
        * 偶有出入，严格相等会让一个明明装好的扩展显示成「未安装」。
@@ -447,7 +471,9 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
                   现在每个视图一行（各自能打开）、每条命令一行（各自能运行）。
                 */}
             {installedInfo &&
-              (installedInfo.views.length > 0 || installedInfo.commands.length > 0) &&
+              (installedInfo.views.length > 0 ||
+                installedInfo.commands.length > 0 ||
+                customEditors.length > 0) &&
               installedInfo.enabled && (
                 <section className="ext-detail-block">
                   <h2>{t('extDetail.contributions')}</h2>
@@ -488,6 +514,28 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
                             >
                               {t('extDetail.run')}
                             </button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {customEditors.length > 0 && (
+                    <>
+                      <h3 className="ext-detail-subhead">{t('extDetail.customEditors')}</h3>
+                      {/*
+                        列出「文件后缀 → 谁来画」。这就是「装了 Office Viewer，打开 .md
+                        却是内置编辑器」这个问题的可见答案：要么它认这个后缀（那说明没接上），
+                        要么它不认（那说明本来就轮不到它）。
+                      */}
+                      <div className="ext-detail-command-list">
+                        {customEditors.map((editor) => (
+                          <div key={editor.viewType} className="ext-detail-command-row">
+                            <span title={editor.viewType}>
+                              {(editor.displayName || editor.viewType) +
+                                (editor.hasProvider ? '' : ` ${t('extDetail.customEditorIdle')}`)}
+                              {' — '}
+                              {editor.patterns.join(', ')}
+                            </span>
                           </div>
                         ))}
                       </div>
