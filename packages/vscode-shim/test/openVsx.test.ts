@@ -4,6 +4,7 @@ import {
   DEFAULT_RECOMMENDED_SIZE,
   MAX_MARKETPLACE_PAGE_SIZE,
   buildDownloadUrl,
+  buildReadmeCandidates,
   buildReadmeUrl,
   buildRecommendedUrl,
   buildSearchUrl,
@@ -381,5 +382,76 @@ describe('详情解析（parseOpenVsxDetail / buildReadmeUrl / splitExtensionId�
     expect(buildReadmeUrl('https://open-vsx.org', 'ms-python.python', '2026.4.0')).toBe(
       'https://open-vsx.org/api/ms-python/python/2026.4.0/file/README.md',
     );
+  });
+
+  it('详情里的 files.readme 会被收下（平台专属扩展唯一的正确地址）', () => {
+    const d = parseOpenVsxDetail(
+      entry({
+        files: {
+          download:
+            'https://open-vsx.org/api/Anthropic/claude-code/alpine-arm64/2.1.317/file/a.vsix',
+          readme:
+            'https://open-vsx.org/api/Anthropic/claude-code/alpine-arm64/2.1.317/file/README.md',
+        },
+      }),
+      'https://open-vsx.org',
+    );
+    expect(d!.readmeUrl).toBe(
+      'https://open-vsx.org/api/Anthropic/claude-code/alpine-arm64/2.1.317/file/README.md',
+    );
+  });
+
+  it('别处的 files.readme 一律不收（主进程要照着它去 fetch）', () => {
+    const d = parseOpenVsxDetail(
+      entry({ files: { readme: 'https://evil.example.com/README.md' } }),
+      'https://open-vsx.org',
+    );
+    expect(d!.readmeUrl).toBeUndefined();
+  });
+
+  /**
+   * 这三条候选是**实跑 open-vsx.org 得出的**（2026-11）：
+   * `Anthropic.claude-code` 的 `/2.1.317/file/README.md` 是 404，
+   * 平台路径那条与 `/latest/file/README.md` 都是 200。
+   * 详情页原来只拼版本号那条，于是「注册表没有提供这个扩展的说明文档」。
+   */
+  it('候选顺序：注册表给的 → 版本号 → latest', () => {
+    expect(
+      buildReadmeCandidates(
+        'https://open-vsx.org',
+        'Anthropic.claude-code',
+        '2.1.317',
+        'https://open-vsx.org/api/Anthropic/claude-code/alpine-arm64/2.1.317/file/README.md',
+      ),
+    ).toEqual([
+      'https://open-vsx.org/api/Anthropic/claude-code/alpine-arm64/2.1.317/file/README.md',
+      'https://open-vsx.org/api/Anthropic/claude-code/2.1.317/file/README.md',
+      'https://open-vsx.org/api/Anthropic/claude-code/latest/file/README.md',
+    ]);
+  });
+
+  it('没有 files.readme 时退到版本号 + latest，且不重复', () => {
+    expect(buildReadmeCandidates('https://open-vsx.org', 'ms-python.python', '2026.4.0')).toEqual([
+      'https://open-vsx.org/api/ms-python/python/2026.4.0/file/README.md',
+      'https://open-vsx.org/api/ms-python/python/latest/file/README.md',
+    ]);
+    // 本身就在 latest 上时不该再拼一条一模一样的
+    expect(buildReadmeCandidates('https://open-vsx.org', 'ms-python.python', 'latest')).toEqual([
+      'https://open-vsx.org/api/ms-python/python/latest/file/README.md',
+    ]);
+  });
+
+  it('候选里不收别处的地址（origin 再核一遍）', () => {
+    expect(
+      buildReadmeCandidates(
+        'https://open-vsx.org',
+        'ms-python.python',
+        '2026.4.0',
+        'https://evil.example.com/README.md',
+      ),
+    ).toEqual([
+      'https://open-vsx.org/api/ms-python/python/2026.4.0/file/README.md',
+      'https://open-vsx.org/api/ms-python/python/latest/file/README.md',
+    ]);
   });
 });

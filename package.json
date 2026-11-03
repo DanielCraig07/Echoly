@@ -35,7 +35,8 @@
     "sync-version": "node scripts/sync-version.js",
     "release": "node scripts/release.js",
     "test:coverage": "vitest run --coverage",
-    "verify:extension": "npx vite-node scripts/verify-extension-install.mts"
+    "verify:extension": "npx vite-node scripts/verify-extension-install.mts",
+    "verify:readme": "npx vite-node scripts/verify-extension-readme.mts"
   },
   "engines": {
     "node": ">=20"

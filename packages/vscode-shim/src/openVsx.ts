@@ -60,6 +60,15 @@ export interface MarketplaceDetail extends MarketplaceExtension {
   reviewCount?: number;
   /** 该扩展声明支持的编辑器版本 */
   engines?: Record<string, string>;
+  /**
+   * 注册表给的 README 地址（`files.readme`）。
+   *
+   * 详情页以前是拿 `版本` 拼地址去抓 README 的，对**平台专属**扩展会 404：
+   * Open VSX 把这类扩展的文件挂在平台路径下
+   * （`/api/Anthropic/claude-code/alpine-arm64/2.1.317/file/README.md`），
+   * 而不是 `/{version}/file/README.md`。注册表自己给了地址就用它。
+   */
+  readmeUrl?: string;
 }
 
 /** 搜索一页的条数上限。注册表侧也有限制，这里只做防御性收敛。 */
@@ -172,11 +181,21 @@ function safeDecode(value: string): string {
  * 换一个来源没有正当理由。
  */
 export function isAllowedIconUrl(registryBase: string, iconUrl: unknown): boolean {
-  if (typeof iconUrl !== 'string' || !iconUrl) return false;
+  return isRegistryOriginUrl(registryBase, iconUrl);
+}
+
+/**
+ * 地址是不是「配置的那个注册表」上的 http(s) 资源。
+ *
+ * 主进程会替渲染进程去抓图标和 README —— 那就是一个「拿内网端口当探针」的能力。
+ * 所以范围锁死在注册表 origin 上：这些文件本来就放在注册表里，换来源没有正当理由。
+ */
+export function isRegistryOriginUrl(registryBase: string, url: unknown): boolean {
+  if (typeof url !== 'string' || !url) return false;
   let target: URL;
   let base: URL;
   try {
-    target = new URL(iconUrl);
+    target = new URL(url);
     base = new URL(normalizeRegistryBase(registryBase));
   } catch {
     return false;
@@ -240,6 +259,11 @@ export function parseOpenVsxDetail(
     : [];
   if (categories.length > 0) detail.categories = categories;
 
+  // README 地址：只认注册表自己给的、且**同一个 origin** 的那一个。
+  // 这个地址会变成主进程的一次 fetch，所以来源必须锁死（判定同图标）。
+  const readmeUrl = asString(((record.files ?? {}) as Record<string, unknown>).readme);
+  if (isRegistryOriginUrl(registryBase, readmeUrl)) detail.readmeUrl = readmeUrl;
+
   const reviewCount = asNumber(record.reviewCount);
   if (reviewCount !== undefined) detail.reviewCount = reviewCount;
   if (record.verified === true) detail.verified = true;
@@ -270,10 +294,40 @@ export function parseOpenVsxDetail(
 /** 详情页要抓的 README。注册表把它当普通文件放在 `/file/` 下。 */
 export const README_FILE_NAME = 'README.md';
 
-export function buildReadmeUrl(registryBase: string, id: string, version: string): string {
+/** `buildReadmeUrl` 的「最新版本」引用。见 buildReadmeCandidates 里对它的说明。 */
+export const LATEST_REF = 'latest';
+
+export function buildReadmeUrl(registryBase: string, id: string, ref: string): string {
   const base = normalizeRegistryBase(registryBase);
   const [namespace, name] = id.split('.');
-  return `${base}/api/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/${encodeURIComponent(version)}/file/${README_FILE_NAME}`;
+  return `${base}/api/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/${encodeURIComponent(ref)}/file/${README_FILE_NAME}`;
+}
+
+/**
+ * README 的候选地址，**按成功率从高到低**排。
+ *
+ * 三条都实测过（open-vsx.org，2026-11）：
+ * - `files.readme`（注册表自己给的）：平台专属扩展唯一的正确地址，
+ *   例如 `Anthropic.claude-code` 是 `/api/Anthropic/claude-code/alpine-arm64/{v}/file/README.md`。
+ * - `/{version}/file/README.md`：通用扩展一直是这条，能用。
+ * - `/latest/file/README.md`：注册表只为**当前版本**保留文件，
+ *   平台专属扩展带上版本号（哪怕版本对得上）会 404 —— 例如
+ *   `/api/Anthropic/claude-code/2.1.317/file/README.md` 是 404，`latest` 那条是 200。
+ *
+ * 去重后返回，调用方按顺序试，第一条拿到正文的就用。
+ */
+export function buildReadmeCandidates(
+  registryBase: string,
+  id: string,
+  version: string,
+  readmeUrl?: string,
+): string[] {
+  const out: string[] = [];
+  // 不信任传进来的地址：这里再核一遍 origin（它是主进程要去 fetch 的 URL）
+  if (readmeUrl && isRegistryOriginUrl(registryBase, readmeUrl)) out.push(readmeUrl);
+  out.push(buildReadmeUrl(registryBase, id, version));
+  if (version !== LATEST_REF) out.push(buildReadmeUrl(registryBase, id, LATEST_REF));
+  return [...new Set(out)];
 }
 
 /** 从 `publisher.name` 拆出注册表 API 需要的两段。id 不合法时返回 null。 */

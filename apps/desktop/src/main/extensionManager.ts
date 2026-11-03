@@ -18,7 +18,7 @@ import {
 import {
   DEFAULT_RECOMMENDED_SIZE,
   MAX_MARKETPLACE_PAGE_SIZE,
-  buildReadmeUrl,
+  buildReadmeCandidates,
   buildRecommendedUrl,
   buildSearchUrl,
   isAllowedIconUrl,
@@ -318,18 +318,36 @@ export class ExtensionManager {
   /**
    * 抓 README 正文。
    *
-   * 地址是从**校验过的 id 与版本号**拼出来的，不是从渲染层传进来的任意 URL ——
-   * 这个方法是主进程代渲染层发请求，能抓什么必须由这里说了算。
+   * 地址来自**校验过的 id / 版本号**，以及注册表自己在详情里给的 `files.readme`，
+   * 不是渲染层传进来的任意 URL —— 这个方法是主进程代渲染层发请求，
+   * 能抓什么必须由这里说了算（候选地址一律过 isRegistryOriginUrl）。
    * 注册表会 302 到这个文件的 CDN，所以这里跟随重定向（fetch 默认行为）；
    * 能跳到哪去由配置的注册表决定，属于用户自己的信任边界。
+   *
+   * 逐个试 `buildReadmeCandidates` 给的地址：平台专属扩展（Claude Code 就是）
+   * 的文件挂在平台路径下，只拼 `/{version}/file/README.md` 会 404，
+   * 详情页于是显示「注册表没有提供说明文档」—— 而它其实有。
    */
-  private async fetchReadme(detail: MarketplaceExtension): Promise<string | undefined> {
+  private async fetchReadme(detail: MarketplaceDetail): Promise<string | undefined> {
+    const candidates = buildReadmeCandidates(
+      this.registry,
+      detail.id,
+      detail.version,
+      detail.readmeUrl,
+    );
+    for (const url of candidates) {
+      const text = await this.fetchReadmeText(url);
+      if (text) return text;
+    }
+    return undefined;
+  }
+
+  /** 抓一个 README 地址。抓不到（404 / 超时 / 空）都返回 undefined，交给下一个候选。 */
+  private async fetchReadmeText(url: string): Promise<string | undefined> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), readmeFetchTimeoutMs);
     try {
-      const res = await fetch(buildReadmeUrl(this.registry, detail.id, detail.version), {
-        signal: controller.signal,
-      });
+      const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) return undefined;
       const stated = Number(res.headers.get('content-length') ?? '');
       if (Number.isFinite(stated) && stated > maxReadmeBytes) return undefined;
