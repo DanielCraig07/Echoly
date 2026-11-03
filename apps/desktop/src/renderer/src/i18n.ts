@@ -897,7 +897,6 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     zh: 'Claude Code（打开 / 收起）',
     en: 'Claude Code (open / close)',
   },
-  'app.newClaudeSession': { zh: '新会话', en: 'New session' },
   'app.jumpedToLine': { zh: '已跳转到第 {line} 行', en: 'Jumped to line {line}' },
   'app.languageChanged': { zh: '语言模式已切换为 {lang}', en: 'Language mode set to {lang}' },
   'app.copyHint': { zh: '复制提示内容', en: 'Copy prompt content' },

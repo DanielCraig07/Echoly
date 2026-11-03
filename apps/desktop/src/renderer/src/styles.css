@@ -19391,8 +19391,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   flex-shrink: 0;
 }
 
-.right-panel-session,
-.right-panel-session-new {
+.right-panel-session {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -19415,8 +19414,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
     border-color 0.12s ease;
 }
 
-.right-panel-session:hover,
-.right-panel-session-new:hover {
+.right-panel-session:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
@@ -19437,11 +19435,6 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.right-panel-session-new {
-  padding-left: 8px;
-  color: var(--muted);
 }
 
 .right-panel-session-close {

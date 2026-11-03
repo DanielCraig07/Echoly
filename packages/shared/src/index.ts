@@ -2207,13 +2207,6 @@ export interface IpcApi {
    * Office Viewer 工具栏上的「保存」「用内置编辑器编辑」走的就是这条路。
    */
   onExtensionCommand: (cb: (data: { command: string; args: unknown[] }) => void) => () => void;
-  /**
-   * 让渲染层主动执行一个扩展命令（走扩展自己注册的那个处理函数）。
-   *
-   * 右侧面板那条会话栏上的「新建」用的就是它：`claude-vscode.newConversation`
-   * 是扩展自己注册的命令，交给它去开新会话，我们这边不去猜会话是怎么建的。
-   */
-  executeExtensionCommand: (command: string, ...args: unknown[]) => Promise<unknown>;
 
   /**
    * 把当前主题的 `--vscode-*` 变量推给主进程。

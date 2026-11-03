@@ -4708,6 +4708,16 @@ export function App() {
   const effectiveWidths = isWelcomeShell
     ? { explorerWidth: 0, chatWidth: 0 }
     : computeEffectiveLayoutWidths(layout, shellWidth);
+  /**
+   * 当前选中的是不是「Claude 这个面板」—— 包括它自己的那一栏（`claude`）
+   * 和它开出来的会话（`panel:…`）。
+   *
+   * 用来决定第二行（会话列表）显不显示：会话只属于它自己那个面板，
+   * 选中「AI 对话」时不该看到 Claude 的会话。
+   */
+  const showingClaudePanel =
+    rightPanelTab === 'claude' || extensionPanelTabs.some((tab) => tab.panelId === rightPanelTab);
+
   const shellStyle = {
     ['--explorer-width' as string]: `${effectiveWidths.explorerWidth}px`,
     ['--chat-width' as string]: `${effectiveWidths.chatWidth}px`,
@@ -6414,45 +6424,16 @@ export function App() {
               )}
 
               {/*
-                扩展开出来的会话（Claude 点「+」就是它）单独占一行。
+                扩展开出来的会话（Claude 点「+」就是它）单独占一行，而且**只属于
+                它自己那个面板** —— 选中「AI 对话」时这一行不出现，别让两个面板的
+                东西混在一屏里。
 
-                为什么和上面那排标签分开：上面两个是「面板」（一个 AI 对话、一个扩展侧栏），
-                是**固定的一对**；这里是**可增可减**的会话，长得也不一样（带图标和关闭按钮）。
-                挤在同一行里，用户根本分不清哪个是面板、哪个是会话。
-
-                标题由扩展给，会话有名字之后扩展会推一条新的过来（见 onExtensionPanelTitle）。
+                开头是「Claude Code」那一栏、还是其中某个会话，都算还在这个面板里；
+                会话全关掉之后这一行自然消失（也就不需要「新建」按钮了，扩展界面上
+                本来就有「+」）。
               */}
-              {(claudeTabAvailable || extensionPanelTabs.length > 0) && (
+              {showingClaudePanel && extensionPanelTabs.length > 0 && (
                 <div className="right-panel-sessions">
-                  {/*
-                    与扩展自己那条会话栏上的「新建」是同一个动作：让扩展去开一个新会话。
-                    扩展会把新会话开成一个新面板 → 转成这里的一个新标签（见下面的事件接线）。
-                    禁用/没激活时按钮不出现，避免摆一个点不动的图标。
-                  */}
-                  {claudeTabAvailable && (
-                    <button
-                      type="button"
-                      className="right-panel-session-new"
-                      title={t('app.newClaudeSession')}
-                      onClick={() => {
-                        void window.ide?.executeExtensionCommand?.('claude-vscode.newConversation');
-                      }}
-                    >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                      >
-                        <line x1="12" y1="5" x2="12" y2="19" />
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                      </svg>
-                      {t('app.newClaudeSession')}
-                    </button>
-                  )}
                   {extensionPanelTabs.map((panelTab, index) => {
                     /*
                       会话还没起名字时扩展给的标题是同一个（「Claude Code」），
