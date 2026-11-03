@@ -20,7 +20,7 @@
 | `npx prettier --check .`           | 全部 ok                              | 格式漂移                                                                                                                   |
 | `npm run typecheck`                | 退出码 0                             | 类型错误（含各 workspace）                                                                                                 |
 | `npm run lint`                     | **0 error**（会有 96 条 warning）    | `react-hooks/rules-of-hooks` 是 error，专拦「hook 写在提前 return 之后」这类只在运行时炸、typecheck 与测试都看不出来的问题 |
-| `npm test`                         | **5026 passed / 139 files**          | 逻辑回归                                                                                                                   |
+| `npm test`                         | **5027 passed / 139 files**          | 逻辑回归                                                                                                                   |
 | `npm run build -w @echoly/desktop` | 构建成功                             | 打包期才会暴露的问题（含 runner 打包）                                                                                     |
 | `npm run audit:wiring`             | `✓ 没有发现「有实现、没入口」的接线` | **「功能做了但界面上够不到」** —— 这类问题其他门禁全拦不住：代码合法、类型正确、单测全绿，只是没人调用它                   |
 
@@ -33,7 +33,7 @@
 
 | 范围                 | 用例数 |
 | -------------------- | ------ |
-| apps/desktop         | 4463   |
+| apps/desktop         | 4464   |
 | packages/tools       | 229    |
 | packages/llm         | 126    |
 | packages/agent       | 92     |
@@ -526,6 +526,35 @@ Claude）。现在它渲染的就是**扩展自己的界面**（`registerWebview
 
 离线复验（真扩展）：`setWorkspaceRoot(项目)` 之后
 `workspaceFolders[0].uri.fsPath` 与 `process.cwd()` 都变成该项目，两个扩展照常激活。
+
+### 第七轮：一条消息投递 6 次 + 「Claude 扩展」改名
+
+**界面发回的消息被投递了 N 遍。** 主进程日志里一眼能看出来：
+
+```
+Received message from webview: {"type":"request",…,"request":{"type":"engine_ui_attach"…   ← 同一秒 6 条
+Received message from webview: {"type":"request",…,"request":{"type":"webview_focused"}…  ← 同一秒 5 条
+```
+
+原因是 `resolveWebviewView` **每解析一次就往 `webviewMessageHandlers` 里再加一个回调**，
+而旧界面的回调没人摘 —— 扩展那边的 Disposable 只在**停用扩展**时才 dispose，
+对「界面重开一次」来说太晚了。切一次右侧标签（React 重挂载）就多一份。
+
+扩展因此重复 attach、重复建会话，或者把重复的那几次当成冲突丢掉 —— 表现出来就是
+「点了没反应」这种最难查的样子（比如点「+」不新增会话）。
+现在解析视图前先把该 viewId 的旧回调清掉；渲染层也改成**保持挂载、只切显隐**，
+不再因为切换标签把 Claude 的界面整个卸载重来。
+回归测试：`extensionManager.test.ts` 的「重新解析视图之后，一条消息只投递一次」。
+
+另外补了两行日志，方便下次定位「某个按钮到底有没有到主进程」：
+
+```
+[webview→扩展] claudeVSCodeSidebar: request/newSession
+```
+
+（只记类型不记载荷 —— 载荷里有对话内容。）
+
+**「Claude 扩展」改名「Claude Code」**（右侧面板那一栏的标签）。
 
 ### 需要你在真机上确认的
 

@@ -135,6 +135,8 @@ module.exports = { activate };
         '</body></html>';
       view.webview.onDidReceiveMessage((m) => {
         globalThis.__echolyDemoGot = m;
+        // 投递次数也要记：界面重开之后旧回调必须被摘掉，否则一次操作扩展收到 N 遍
+        globalThis.__echolyDemoGotCount = (globalThis.__echolyDemoGotCount || 0) + 1;
       });
     },
   });
@@ -252,6 +254,24 @@ module.exports = { activate };
       expect(manager.getWebviewUrl('demo.viewPane')).toBe(
         'echoly-webview://ext/demo.viewPane/index.html',
       );
+    });
+
+    /**
+     * 界面重开（切标签 / React 重挂载）之后，旧界面的消息回调必须被摘掉。
+     *
+     * 实测：主进程日志里一次 `engine_ui_attach` 会打出 6 条、`webview_focused` 5 条 ——
+     * 扩展那边每个请求都收到好几份，于是重复 attach、重复建会话，或者把重复的那几次
+     * 当成冲突丢掉。表现出来是「点了没反应」这种最难查的样子（比如点「+」不新增会话）。
+     */
+    it('重新解析视图之后，一条消息只投递一次', async () => {
+      await resolveDemoView();
+      // 第二次解析 = 界面重开一份
+      await (manager as any).resolveWebviewView('demo.viewPane');
+
+      (globalThis as any).__echolyDemoGotCount = 0;
+      (manager as any).deliverWebviewMessage('demo.viewPane', { type: 'demo', content: 1 });
+
+      expect((globalThis as any).__echolyDemoGotCount).toBe(1);
     });
 
     it('扩展的 CSP 用的是我们的 origin（cspSource 不再是一个不对的串）', async () => {

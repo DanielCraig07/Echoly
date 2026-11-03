@@ -892,7 +892,7 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'app.maximizePanel': { zh: '最大化面板高度', en: 'Maximize panel height' },
   'app.collapsePanel': { zh: '折叠面板', en: 'Collapse panel' },
   'app.chatTab': { zh: 'AI 对话', en: 'AI Chat' },
-  'app.claudeTab': { zh: 'Claude 扩展', en: 'Claude' },
+  'app.claudeTab': { zh: 'Claude Code', en: 'Claude Code' },
   'app.claudeEntry': {
     zh: 'Claude Code（打开 / 收起）',
     en: 'Claude Code (open / close)',

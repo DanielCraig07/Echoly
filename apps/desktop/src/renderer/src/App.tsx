@@ -6354,8 +6354,20 @@ export function App() {
                 自己 Agent 的壳 —— 跟扩展没有半点关系，用户在里面发的消息也到不了
                 Claude Code。现在换成扩展界面，这一栏才算真的「Claude 扩展」。
               */}
-              {rightPanelTab === 'claude' && claudeTabAvailable && (
-                <div style={{ height: '100%', overflow: 'hidden' }}>
+              {claudeTabAvailable && (
+                /*
+                  用 display 隐藏而不是卸载：切到「AI 对话」再切回来时，卸载会让扩展
+                  重新走一遍 resolve、重新 attach 一次（日志里那条 engine_ui_attach
+                  一打就是好几遍），已经聊到一半的会话也就断了。
+                  与旁边的 ChatPanel 同一套做法 —— 它也是保持挂载、只切换显隐。
+                */
+                <div
+                  style={{
+                    height: '100%',
+                    overflow: 'hidden',
+                    display: rightPanelTab === 'claude' ? 'block' : 'none',
+                  }}
+                >
                   <ExtensionViewPanel viewId={CLAUDE_CODE_VIEW_ID} />
                 </div>
               )}

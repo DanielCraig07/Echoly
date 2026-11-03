@@ -121,6 +121,24 @@ const INITIAL_ACTIVATION_WAIT_MS = 5000;
  * 翻错的表现不是报错，而是「对话框里什么都选不了」——那种最难查。
  * 扩展名去掉前导点（官方两种写法都有）。
  */
+/**
+ * 一条 webview → 扩展的消息「叫什么」。
+ *
+ * 扩展习惯包一层（`{type:'from-webview', content:{…}}` 或
+ * `{type:'request', request:{type:'newSession'}}`），所以里外都看一眼 ——
+ * 只看外层永远只能看到 `request` 这一种，等于没记。
+ */
+function describeWebviewMessage(message: any): string {
+  const outer = typeof message?.type === 'string' ? message.type : typeof message;
+  const inner =
+    typeof message?.request?.type === 'string'
+      ? `/${message.request.type}`
+      : typeof message?.content?.type === 'string'
+        ? `/${message.content.type}`
+        : '';
+  return `${outer}${inner}`;
+}
+
 function toElectronFilters(filters: any): { name: string; extensions: string[] }[] {
   if (!filters || typeof filters !== 'object') return [];
   return Object.entries(filters)
@@ -495,6 +513,14 @@ export class ExtensionManager {
    * 这是「界面能用」的另一半：没有它，面板画得出来但点任何按钮都没反应。
    */
   deliverWebviewMessage(viewId: string, message: any): void {
+    /**
+     * 记一行「界面点了什么」。
+     *
+     * 扩展界面里的按钮点了没反应时，最先要回答的问题就是「这一下到底有没有到主进程」。
+     * 没有这行日志，只能靠猜。只记类型不记载荷（载荷里有对话内容）。
+     */
+    console.log(`[webview→扩展] ${viewId}: ${describeWebviewMessage(message)}`);
+
     const handlers = this.webviewMessageHandlers.get(viewId);
     if (!handlers || handlers.size === 0) {
       console.warn(`[ExtensionManager] 视图 ${viewId} 没有注册 onDidReceiveMessage，消息被丢弃`);
@@ -1583,6 +1609,7 @@ export class ExtensionManager {
 
   /** 界面里的操作 → 自定义编辑器扩展的 onDidReceiveMessage。 */
   deliverCustomEditorMessage(panelKey: string, message: any): void {
+    console.log(`[webview→扩展] ${panelKey}: ${describeWebviewMessage(message)}`);
     const panel = this.customEditorPanels.get(panelKey);
     if (!panel) {
       console.warn(`[ExtensionManager] 自定义编辑器面板不存在：${panelKey}`);
@@ -1701,6 +1728,19 @@ export class ExtensionManager {
     }
 
     const { provider } = providerInfo;
+
+    /**
+     * 重新解析一个视图 = 换了一份界面，**旧界面的消息回调必须先摘掉**。
+     *
+     * 不摘的后果不是「多收几条」那么轻：每个请求都会被投递 N 遍 —— 主进程日志里
+     * 一次 `engine_ui_attach` 打出 6 条、`webview_focused` 打出 5 条就是这个。
+     * 扩展那边于是会重复 attach、重复建会话，或者把重复的那几次当成冲突丢掉，
+     * 表现出来是「点了没反应」这种最难查的样子（比如点「+」不新增会话）。
+     *
+     * `onDidReceiveMessage` 返回的 Disposable 会被扩展塞进 `context.subscriptions`，
+     * 那是在**停用扩展**时才 dispose 的 —— 对「界面重开一次」这件事来说太晚了。
+     */
+    this.webviewMessageHandlers.delete(viewId);
 
     // 创建模拟的 webviewView 对象
     let htmlContent = '';
