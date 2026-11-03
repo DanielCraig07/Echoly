@@ -2024,6 +2024,11 @@ export class ExtensionManager {
       reveal: () => {
         this.broadcastToRenderers('extension:panel-revealed', { panelId });
       },
+      setTitle: (nextTitle: string) => {
+        const info = this.webviewPanels.get(panelId);
+        if (info) info.title = nextTitle;
+        this.broadcastToRenderers('extension:panel-title', { panelId, title: nextTitle });
+      },
       dispose: () => {
         this.webviewPanels.delete(panelId);
         this.webviewHtml.delete(panelId);

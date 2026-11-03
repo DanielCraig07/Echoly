@@ -494,6 +494,18 @@ module.exports = { activate };
       expect(hoisted.fetched).toHaveLength(1);
     });
 
+    it('扩展改面板标题时登记表跟着更新（标签不会永远叫「Claude Code」）', () => {
+      const backend = (manager as any).createExtensionWebviewPanel({
+        viewType: 'demo.panelType',
+        title: 'Claude Code',
+      });
+      backend.setHtml('<html></html>');
+      expect((manager as any).webviewPanels.get(backend.panelId)?.title).toBe('Claude Code');
+
+      backend.setTitle('Fix the resize bug');
+      expect((manager as any).webviewPanels.get(backend.panelId)?.title).toBe('Fix the resize bug');
+    });
+
     it('界面发回来的消息投给扩展的 onDidReceiveMessage', async () => {
       const { panelId } = await waitForPanel();
       delete (globalThis as any).__echolyPanelGot;

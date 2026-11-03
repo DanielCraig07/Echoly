@@ -314,7 +314,24 @@ export function App() {
     { command: string; extensionId?: string; title?: string }[]
   >([]);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState<'chat' | 'claude'>('chat'); // 右侧面板标签
+  /**
+   * 右侧面板当前选中的标签。
+   *
+   * `'chat'` 是自带的 AI 对话、`'claude'` 是扩展的侧栏界面，其余值是
+   * **扩展自己开出来的 webview 面板**（`panel:…`）—— 它们也住在右侧面板里，
+   * 与「Claude Code」那一栏并列成多个会话标签（见 extensionPanelTabs）。
+   */
+  const [rightPanelTab, setRightPanelTab] = useState<string>('chat');
+  /**
+   * 扩展开出来的面板标签（Claude 点「+」新会话就是它），按打开顺序排。
+   *
+   * 放在右侧面板而不是编辑器区：用户的预期是「在 AI 那一栏里多一个会话」，
+   * 而且右侧面板是**常驻挂载**的 —— 切标签不会把 webview 卸载重载，
+   * 会话与草稿不会丢（编辑器区只有当前标签是活的）。
+   */
+  const [extensionPanelTabs, setExtensionPanelTabs] = useState<
+    { panelId: string; title: string }[]
+  >([]);
   const [diffs, setDiffs] = useState<PendingDiff[]>([]);
   const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
 
@@ -420,13 +437,6 @@ export function App() {
   // Paths currently being discarded: within suppression window, Monaco's onChange
   // will NOT trigger auto-save or mark dirty, preventing discarded files from being saved back.
   const suppressAutoSaveUntilRef = useRef<Map<string, number>>(new Map());
-  /**
-   * 正在打开的「扩展面板」标签 id（`panel:…`）。
-   *
-   * 面板和普通扩展视图共用 `ext://view/<id>` 这条路径，但只有面板在关闭时要
-   * 反过来通知扩展（`panel.onDidDispose`）。用这张表把两者分开。
-   */
-  const extensionPanelIdsRef = useRef<Set<string>>(new Set());
   const shellRef = useRef<HTMLDivElement>(null);
   const [shellWidth, setShellWidth] = useState<number>(0);
   const middleColRef = useRef<HTMLDivElement>(null);
@@ -3181,20 +3191,6 @@ export function App() {
   const closeConfirmQueueRef = useRef<OpenTab[]>([]);
 
   const closeTabDirect = useCallback((path: string) => {
-    /**
-     * 关掉的是扩展 webview 面板的标签 → 得告诉扩展「这个面板没了」。
-     *
-     * 不告诉它的后果不是「留个野标签」那么轻：Claude Code 用 `panel.onDidDispose`
-     * 把会话从 `sessionPanels` 里注销。漏掉这一下，扩展会一直认为那个会话已经开在
-     * 某个面板里，再点同一会话就什么都不发生（侧栏也不给开）。
-     */
-    if (path.startsWith(EXTENSION_VIEW_PREFIX)) {
-      const viewId = path.slice(EXTENSION_VIEW_PREFIX.length);
-      if (extensionPanelIdsRef.current.has(viewId)) {
-        extensionPanelIdsRef.current.delete(viewId);
-        void window.ide?.extensionDisposePanel?.(viewId);
-      }
-    }
     setScmDiff((prev) => (prev?.path === path ? null : prev));
     setTabs((prev) => {
       const next = prev.filter((t) => t.path !== path);
@@ -3475,40 +3471,66 @@ export function App() {
   }, [openExtensionView]);
 
   /**
-   * 扩展自己开了一个 webview 面板（`window.createWebviewPanel`）→ 在编辑器区开一个标签。
+   * 扩展自己开了一个 webview 面板（`window.createWebviewPanel`）→ 在右侧 AI 面板里
+   * 多一个会话标签。
    *
    * 这是 Claude Code 的「+」（新会话）真正落地的地方：扩展判定新会话该开在面板里，
    * 于是 new 面板、把 HTML 塞进来。以前 shim 里这个 API 是空壳 —— HTML 被丢掉、
    * 标签不出现，而扩展那边已经把会话记成「在面板里」并把侧栏清空，
    * 用户看到的就是「点 + 没生效，当前窗口却被重置了」。
+   *
+   * 放右侧面板而不是编辑器区：用户要的是「AI 那一栏里多一个会话」，
+   * 而且右侧面板常驻挂载，切标签不会把会话卸载重来。
    */
+  const showExtensionPanel = useCallback(
+    (panelId: string) => {
+      setExtensionPanelTabs((prev) =>
+        prev.some((tab) => tab.panelId === panelId) ? prev : [...prev, { panelId, title: '' }],
+      );
+      setRightPanelTab(panelId);
+      setLayout((prev) => {
+        if (prev.chatPanelExpanded !== false) return prev;
+        const next = { ...prev, chatPanelExpanded: true };
+        persistLayout(next);
+        return next;
+      });
+    },
+    [persistLayout],
+  );
+
   useEffect(() => {
     const offOpen = window.ide?.onExtensionPanelOpened?.((data) => {
       if (!data?.panelId) return;
-      extensionPanelIdsRef.current.add(data.panelId);
-      openVirtualTab(
-        `${EXTENSION_VIEW_PREFIX}${data.panelId}`,
-        '',
-        data.title || t('extView.tabTitle'),
-        'extension-view',
-        false,
+      setExtensionPanelTabs((prev) =>
+        prev.some((tab) => tab.panelId === data.panelId)
+          ? prev
+          : [...prev, { panelId: data.panelId, title: data.title || '' }],
+      );
+      showExtensionPanel(data.panelId);
+    });
+    const offTitle = window.ide?.onExtensionPanelTitle?.((data) => {
+      if (!data?.panelId) return;
+      setExtensionPanelTabs((prev) =>
+        prev.map((tab) => (tab.panelId === data.panelId ? { ...tab, title: data.title } : tab)),
       );
     });
     const offClose = window.ide?.onExtensionPanelClosed?.((data) => {
       if (!data?.panelId) return;
-      extensionPanelIdsRef.current.delete(data.panelId);
-      closeTabDirect(`${EXTENSION_VIEW_PREFIX}${data.panelId}`);
+      setExtensionPanelTabs((prev) => prev.filter((tab) => tab.panelId !== data.panelId));
+      // 关掉的正好是当前那一个 → 退回到扩展的侧栏那一栏，别留一个空白面板
+      setRightPanelTab((current) => (current === data.panelId ? 'claude' : current));
     });
     const offReveal = window.ide?.onExtensionPanelRevealed?.((data) => {
       if (!data?.panelId) return;
-      setActivePath(`${EXTENSION_VIEW_PREFIX}${data.panelId}`);
+      showExtensionPanel(data.panelId);
     });
     return () => {
       offOpen?.();
+      offTitle?.();
       offClose?.();
       offReveal?.();
     };
-  }, [openVirtualTab, closeTabDirect, t]);
+  }, [showExtensionPanel]);
 
   /**
    * 扩展编辑器打不开 → 退回内置编辑器。
@@ -6372,7 +6394,7 @@ export function App() {
               }}
             >
               {/* 右侧面板标签切换（Claude Code 扩展在场时才显示，默认隐藏单标签的 AI 对话） */}
-              {claudeTabAvailable && (
+              {(claudeTabAvailable || extensionPanelTabs.length > 0) && (
                 <div className="right-panel-tabs">
                   <button
                     className={`right-panel-tab ${rightPanelTab === 'chat' ? 'active' : ''}`}
@@ -6380,12 +6402,64 @@ export function App() {
                   >
                     {t('app.chatTab')}
                   </button>
-                  <button
-                    className={`right-panel-tab ${rightPanelTab === 'claude' ? 'active' : ''}`}
-                    onClick={() => setRightPanelTab('claude')}
-                  >
-                    {t('app.claudeTab')}
-                  </button>
+                  {claudeTabAvailable && (
+                    <button
+                      className={`right-panel-tab ${rightPanelTab === 'claude' ? 'active' : ''}`}
+                      onClick={() => setRightPanelTab('claude')}
+                    >
+                      {t('app.claudeTab')}
+                    </button>
+                  )}
+                  {/*
+                    扩展开出来的会话（Claude 点「+」就是它）。标题由扩展给，
+                    会话有名字之后扩展会推一条新的过来（见 onExtensionPanelTitle）。
+                  */}
+                  {extensionPanelTabs.map((panelTab, index) => {
+                    /*
+                      会话还没起名字时扩展给的标题是同一个（「Claude Code」），
+                      几个标签会长得一模一样 —— 重名时补一个序号，至少分得清。
+                    */
+                    const base = panelTab.title || t('app.claudeTab');
+                    const duplicated =
+                      extensionPanelTabs.filter(
+                        (other) => (other.title || t('app.claudeTab')) === base,
+                      ).length > 1;
+                    const label = duplicated ? `${base} ${index + 1}` : base;
+                    return (
+                      <span
+                        key={panelTab.panelId}
+                        className={`right-panel-tab right-panel-tab-closable ${
+                          rightPanelTab === panelTab.panelId ? 'active' : ''
+                        }`}
+                        role="button"
+                        tabIndex={0}
+                        title={base}
+                        onClick={() => setRightPanelTab(panelTab.panelId)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ')
+                            setRightPanelTab(panelTab.panelId);
+                        }}
+                      >
+                        <span className="right-panel-tab-label">{label}</span>
+                        {/*
+                        关闭 = 让扩展真的 dispose 那个面板（`panel.onDidDispose`）。
+                        只从界面上摘掉的话，扩展会一直以为会话还开在面板里，
+                        之后再点同一会话就什么都不发生。
+                      */}
+                        <button
+                          type="button"
+                          className="right-panel-tab-close"
+                          title={t('common.close')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void window.ide?.extensionDisposePanel?.(panelTab.panelId);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
               )}
 
@@ -6453,6 +6527,24 @@ export function App() {
                   <ExtensionViewPanel viewId={CLAUDE_CODE_VIEW_ID} />
                 </div>
               )}
+
+              {/*
+                扩展开出来的面板（Claude 的「+」新会话）。全部**常驻挂载**、只切显隐：
+                webview 一卸载就整个重载，会话与草稿全丢 —— 与上面那一栏同一套做法。
+                面板和扩展视图共用一份 HTML，viewId 就是 panelId。
+              */}
+              {extensionPanelTabs.map((panelTab) => (
+                <div
+                  key={panelTab.panelId}
+                  style={{
+                    height: '100%',
+                    overflow: 'hidden',
+                    display: rightPanelTab === panelTab.panelId ? 'block' : 'none',
+                  }}
+                >
+                  <ExtensionViewPanel viewId={panelTab.panelId} />
+                </div>
+              ))}
             </aside>
           </>
         )}

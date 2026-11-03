@@ -279,6 +279,12 @@ const api: IpcApi = {
     ipcRenderer.on('extension:panel-closed', listener);
     return () => ipcRenderer.removeListener('extension:panel-closed', listener);
   },
+  onExtensionPanelTitle: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { panelId: string; title: string }) =>
+      cb(data);
+    ipcRenderer.on('extension:panel-title', listener);
+    return () => ipcRenderer.removeListener('extension:panel-title', listener);
+  },
   onExtensionPanelRevealed: (cb) => {
     const listener = (_: Electron.IpcRendererEvent, data: { panelId: string }) => cb(data);
     ipcRenderer.on('extension:panel-revealed', listener);

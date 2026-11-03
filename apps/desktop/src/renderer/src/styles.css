@@ -19370,6 +19370,56 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   font-weight: 500;
 }
 
+/**
+ * 扩展开出来的会话标签（Claude 点「+」新会话）：多一个关闭按钮。
+ *
+ * 标签条要能横向滚动 —— 开三四个会话之后 300px 宽的面板一行放不下，
+ * 挤成两行会把下面的界面顶下去。`min-width: 0` 是 flex 里出省略号的前提。
+ */
+.right-panel-tabs {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.right-panel-tab-closable {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 6px 8px 6px 12px;
+  user-select: none;
+}
+
+.right-panel-tab-label {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.right-panel-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.right-panel-tab-close:hover {
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 1;
+}
+
 /* Claude Panel styles */
 .claude-panel {
   display: flex;

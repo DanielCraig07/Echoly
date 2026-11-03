@@ -375,17 +375,6 @@ export function EditorPane({
     active &&
     (isBrowserPath(active.path) || active.language === 'browser' || active.virtual?.browser)
   );
-  /**
-   * 已打开的扩展视图 / 扩展面板标签（`ext://view/<id>`）。
-   *
-   * 它们要**全部保持挂载**（见下面那段渲染）：webview 一旦被卸载就会整个重载，
-   * 会话、草稿、滚动位置全都丢 —— VS Code 给面板加 `retainContextWhenHidden`
-   * 正是为了这个。内置浏览器标签是同一个道理，早就这么做了。
-   */
-  const extensionViewTabs = useMemo(
-    () => tabs.filter((t) => t.path.startsWith(EXTENSION_VIEW_PREFIX)),
-    [tabs],
-  );
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   /** vim 模式的上下文键与句柄：预设关掉时必须真的卸掉，否则键位会一直留着。 */
   const vimContextKeyRef = useRef<{ set(value: boolean): void } | null>(null);
@@ -5257,26 +5246,6 @@ export function EditorPane({
             </div>
           );
         })}
-        {/* 常驻挂载所有已打开的扩展视图/面板标签：切走再切回来不重载，会话不丢 */}
-        {extensionViewTabs.map((viewTab) => {
-          const isThisTabActive = active?.path === viewTab.path;
-          return (
-            <div
-              key={viewTab.path}
-              style={{
-                display: isThisTabActive ? 'block' : 'none',
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                zIndex: isThisTabActive ? 5 : -1,
-                pointerEvents: isThisTabActive ? 'auto' : 'none',
-              }}
-            >
-              <ExtensionViewPanel viewId={viewTab.path.slice(EXTENSION_VIEW_PREFIX.length)} />
-            </div>
-          );
-        })}
         {/* Floating Add-to-Chat prompt when selection is present */}
         {selectedText.trim().length > 0 &&
           active?.path &&
@@ -5761,11 +5730,16 @@ export function EditorPane({
             extensionId={active.path.slice(EXTENSION_DETAIL_PREFIX.length)}
             onShowToast={onShowToast}
           />
-        ) : active && active.path.startsWith(EXTENSION_VIEW_PREFIX) /**
-           * 扩展视图/面板**不在这里渲染** —— 它们由上面那批「常驻挂载」的容器负责，
-           * 这样切标签不会把 webview 卸载重载（会话/草稿会丢）。
-           * 这里返回 null 只是让下面那些分支不再命中。
-           */ ? null : active && active.path.startsWith(CUSTOM_EDITOR_PREFIX) ? (
+        ) : active && active.path.startsWith(EXTENSION_VIEW_PREFIX) ? (
+          <ExtensionViewPanel
+            /**
+             * 同样按路径当 key：一个视图标签切到另一个视图时让它整个重建，
+             * 否则新视图会沿用上一个视图已经解析好的 HTML 文件。
+             */
+            key={active.path}
+            viewId={active.path.slice(EXTENSION_VIEW_PREFIX.length)}
+          />
+        ) : active && active.path.startsWith(CUSTOM_EDITOR_PREFIX) ? (
           <ExtensionEditorView
             /**
              * 按标签路径当 key：同一个 viewType 会对多个文件各开一份面板，

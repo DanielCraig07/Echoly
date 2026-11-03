@@ -2239,6 +2239,13 @@ export interface IpcApi {
   ) => () => void;
   /** 面板被关掉了（扩展自己 dispose，或标签被关）。渲染层据此关掉同名标签。 */
   onExtensionPanelClosed: (cb: (data: { panelId: string }) => void) => () => void;
+  /**
+   * 扩展改了面板标题（`panel.title = …`）。
+   *
+   * Claude 的会话名是**后生成的**（第一条消息之后），不推过去标签就永远叫
+   * 「Claude Code」，多个会话分不清谁是谁。
+   */
+  onExtensionPanelTitle: (cb: (data: { panelId: string; title: string }) => void) => () => void;
   /** 扩展要求把这个面板的标签切到前面（`panel.reveal()`）。 */
   onExtensionPanelRevealed: (cb: (data: { panelId: string }) => void) => () => void;
   /** 关闭面板标签 → 触发扩展的 `panel.onDidDispose`（不触发的话扩展会一直以为它还开着） */

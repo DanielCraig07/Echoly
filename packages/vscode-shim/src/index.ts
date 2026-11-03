@@ -483,6 +483,13 @@ export interface WebviewPanelBackend {
   readonly cspSource: string;
   /** 用户切到这个面板的标签时调（`panel.reveal()`）。 */
   reveal(): void;
+  /**
+   * 扩展改了面板标题（`panel.title = …`）。
+   *
+   * 不是可有可无：Claude 的会话是**先开标签、后起名字**的（第一条消息之后才生成标题），
+   * 标题不推过去，标签就永远停在「Claude Code」上，几个会话长得一模一样。
+   */
+  setTitle?(title: string): void;
   /** 面板被关掉时清理宿主这边的东西。 */
   dispose(): void;
 }
@@ -900,10 +907,17 @@ export class VSCodeShim {
             cspSource: backend.cspSource,
           };
 
+          let panelTitle = title;
           return {
             webview,
             viewType,
-            title,
+            get title() {
+              return panelTitle;
+            },
+            set title(value: string) {
+              panelTitle = String(value ?? '');
+              backend.setTitle?.(panelTitle);
+            },
             viewColumn: showOptions?.viewColumn ?? 1,
             options: panelOptions,
             iconPath: undefined,

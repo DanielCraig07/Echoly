@@ -524,6 +524,32 @@ describe('createWebviewPanel 真的开成一个面板（Claude 的「+」走这�
     expect(revealed).toEqual([1]);
   });
 
+  it('panel.title 的改动会推给宿主（Claude 的会话名是后生成的）', () => {
+    const titles: string[] = [];
+    const shim = new VSCodeShim({
+      workspaceRoot: '/tmp/x',
+      extensionPath: '/tmp/x',
+      onCommand: async () => undefined,
+      onMessage: () => {},
+      onWebviewPanel: () => ({
+        panelId: 'panel:demo:2',
+        cspSource: 'echoly-webview://ext',
+        setHtml: () => {},
+        asWebviewUri: () => '',
+        postMessage: () => true,
+        reveal: () => {},
+        dispose: () => {},
+        setTitle: (title: string) => titles.push(title),
+      }),
+    });
+    const api = shim.createAPI() as any;
+    const panel = api.window.createWebviewPanel('demo.panel', 'Claude Code', 1);
+
+    panel.title = 'Fix the resize bug';
+    expect(panel.title).toBe('Fix the resize bug');
+    expect(titles).toEqual(['Fix the resize bug']);
+  });
+
   it('界面发回来的消息投到 onDidReceiveMessage；摘掉订阅之后不再投', () => {
     const { shim, api } = setup();
     const panel = api.window.createWebviewPanel('demo.panel', 'Demo', 1);

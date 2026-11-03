@@ -577,19 +577,25 @@ Received message from webview: {"type":"request",…,"request":{"type":"webview_
    右侧那一栏渲染的正是侧栏那份界面，所以走的是后一条。
 
 现在把 `WebviewPanel` 补全成真的：扩展 `createWebviewPanel` → 主进程登记 →
-渲染层在编辑器区开一个标签。面板和「视图」共用同一套协议与消息通道，
-只是多了一张「谁开的」的登记表；资源走 `-/abs/<base64url>`（面板的 HTML 是扩展
-自己拼的，拿不到扩展目录）。关标签时回推 `panel.onDidDispose`，扩展才会把会话从
-`sessionPanels` 里注销。编辑器区的扩展视图/面板标签改成**常驻挂载、只切显隐**
-（照内置浏览器标签的做法）—— webview 一卸载就整个重载，会话与草稿全丢。
+渲染层**在右侧 AI 面板里多一个会话标签**（`AI 对话` / `Claude Code` 旁边，带关闭按钮）。
+放右侧面板而不是编辑器区，是因为用户要的就是「AI 那一栏里多一个会话」；
+而且右侧面板是常驻挂载的（只切显隐），切标签不会把 webview 卸载重载 ——
+编辑器区只有当前标签是活的，切走再切回来会话就没了。
+
+面板和「视图」共用同一套协议与消息通道，只是多了一张「谁开的」的登记表；
+资源走 `-/abs/<base64url>`（面板的 HTML 是扩展自己拼的，拿不到扩展目录）。
+关标签（那个 ×）时回推 `panel.onDidDispose`，扩展才会把会话从 `sessionPanels` 里注销；
+标题也会跟着扩展走（`panel.title = …` → 标签改名）—— Claude 的会话名是第一条消息
+之后才生成的，不推的话几个标签永远都叫「Claude Code」。
 
 同时把发给 Claude 侧栏那份界面的状态里 `openNewInTab` 改成 `true`（只动这一个布尔），
-于是点「+」会走 `claude-vscode.editor.open` → 真开一个新面板标签，侧栏不再被清空。
+于是点「+」会走 `claude-vscode.editor.open` → 扩展真开一个新面板 → 右侧面板多一个标签，
+侧栏那一栏（当前会话）不被清空。
 
 离线复验（假扩展，真链路）：扩展 `createWebviewPanel` → 主进程登记 → 生成的 HTML 里
 资源是协议地址且注入了 `acquireVsCodeApi` → 协议能取到 `-/abs/` 那个文件 →
-界面发回的消息投到扩展的 `onDidReceiveMessage` → 关面板触发 `onDidDispose`。
-回归测试在 `vscodeApi.test.ts` 与 `extensionManager.test.ts`。
+界面发回的消息投到扩展的 `onDidReceiveMessage` → 改标题推给宿主 →
+关面板触发 `onDidDispose`。回归测试在 `vscodeApi.test.ts` 与 `extensionManager.test.ts`。
 
 已知边界：**禁用/卸载一个扩展时，它已经打开的面板标签不会被自动关掉**（面板的归属
 没法可靠地回溯到扩展）—— 那种标签会停在一个不再响应的界面上，手动关掉即可。
@@ -610,8 +616,11 @@ Received message from webview: {"type":"request",…,"request":{"type":"webview_
 6. 切一次主题（亮/暗）：已打开的扩展界面应立刻跟着变，不再是一块对不上的灰。
 7. **拖动**右栏与编辑器之间的分隔条（也可以试试左右/上下两条）：松手之后
    `resizing` 状态要立刻释放（鼠标样式回到普通箭头、再移动鼠标不该继续改宽度）。
-8. 在右侧 Claude 面板里点**「+」**：应在编辑器区**新开一个标签**并显示一个新的
-   Claude 会话，右侧那一栏的当前对话**不该被清空**。标签切走再切回来，会话内容还在。
+8. 在右侧 Claude 面板里点**「+」**：右侧面板的标签条上应多出一个会话标签
+   （`Claude Code` 旁边，带 ×），当前那一栏的对话**不该被清空**；
+   在该标签里发一条消息，会话有名字之后标签标题应跟着变。
+   切到「AI 对话」再切回来，会话内容还在。点标签上的 × 能关掉它；
+   关掉之后扩展那边也不该再认为它开着（再点同一会话应能重新打开）。
 
 ## 5. 建议顺序
 
