@@ -191,7 +191,10 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
         onShowToast?.(t('ext.commandRunFailed', { command }), 'error');
       }
     } catch (err: any) {
+      // 提示面向用户，原因留给控制台：只说「执行失败」他还能去查日志，
+      // 把一坨 stack 塞进 toast 反而看不清是哪条命令挂的
       onShowToast?.(t('ext.commandRunFailed', { command }), 'error');
+      console.error('[ExtensionDetailView] 执行扩展命令失败：', command, err);
     }
   };
 
