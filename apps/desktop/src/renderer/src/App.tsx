@@ -83,6 +83,7 @@ import {
 } from './components/ExtensionDetailView';
 import { EXTENSION_VIEW_PREFIX } from './components/ExtensionViewPanel';
 import { CLAUDE_CODE_ID, CLAUDE_CODE_VIEW_ID } from './services/claudeCode';
+import { buildVscodeThemeVars, readAppTokens } from './services/vscodeTheme';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { PanelChevron } from './components/PanelChevron';
 import { GitPanel } from './components/GitPanel';
@@ -1603,6 +1604,18 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', uiTheme);
+  }, [uiTheme]);
+
+  /**
+   * 把主题变量推给主进程 —— 扩展界面里的颜色全是 `var(--vscode-…)`，那些变量
+   * 在 VS Code 里由宿主注入，我们得自己给（详细原因见 services/vscodeTheme）。
+   *
+   * 紧跟在上面那个 setAttribute 的 effect 之后：那边刚把属性写上去，这里读 `:root`
+   * 拿到的才是**新**主题的值。放在别的时机读会拿到旧值，扩展界面就会以旧主题上色。
+   * 主进程收到后会广播给已打开的界面，所以切主题不需要重开标签。
+   */
+  useEffect(() => {
+    void window.ide.setWebviewTheme?.(buildVscodeThemeVars(readAppTokens()));
   }, [uiTheme]);
 
   useEffect(() => {

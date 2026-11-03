@@ -23,6 +23,15 @@ import { contextBridge, ipcRenderer } from 'electron';
 const HOST_MESSAGE_CHANNEL = 'echoly-ext-host-message';
 /** 页面 → 宿主。 */
 const GUEST_MESSAGE_CHANNEL = 'echoly-ext-message';
+/**
+ * 宿主 → 页面：主题变量。
+ *
+ * 单独一条通道，**不**混进 HOST_MESSAGE_CHANNEL：那条上的载荷是要转发给扩展页面的
+ * `{type:'from-extension',…}`，把主题也塞进去，扩展那边会收到一条它不认识的消息。
+ */
+const THEME_MESSAGE_CHANNEL = 'echoly-ext-theme';
+/** 主题样式元素的 id，注入的那份 HTML 里也是它（用于热更新时原地改）。 */
+const THEME_STYLE_ID = 'echoly-ext-theme-runtime';
 
 const bridge = {
   post(message: unknown): void {
@@ -32,6 +41,33 @@ const bridge = {
     ipcRenderer.on(HOST_MESSAGE_CHANNEL, (_event, data) => callback(data));
   },
 };
+
+/**
+ * 主题热更新：把宿主推来的变量写进一个样式元素。
+ *
+ * 页面初次加载时用的那张表是主进程在 HTML 里 `<link>` 进来的（见 WEBVIEW_THEME_PATH），
+ * 这里只管「已经打开的界面在用户切主题后立刻跟着变」。
+ * 只更新同一个元素的 textContent，不重复插新元素 —— 插进去的每个 `<style>` 都要过一遍
+ * 扩展自己的 CSP，而且越插越多。
+ */
+function applyTheme(vars: Record<string, string>): void {
+  if (!vars || typeof vars !== 'object') return;
+  const body = Object.entries(vars)
+    .filter(([name, value]) => name && typeof value === 'string' && value.length > 0)
+    .map(([name, value]) => `${name.startsWith('--') ? name : `--vscode-${name}`}:${value};`)
+    .join('');
+  if (!body) return;
+
+  let style = document.getElementById(THEME_STYLE_ID) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement('style');
+    style.id = THEME_STYLE_ID;
+    document.head.appendChild(style);
+  }
+  style.textContent = `:root{${body}}`;
+}
+
+ipcRenderer.on(THEME_MESSAGE_CHANNEL, (_event, vars) => applyTheme(vars));
 
 if (process.contextIsolated) {
   contextBridge.exposeInMainWorld('__echolyWebviewBridge', bridge);

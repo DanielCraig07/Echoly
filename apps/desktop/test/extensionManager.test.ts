@@ -305,6 +305,33 @@ module.exports = { activate };
       expect(await status('https://example.com/x')).toBe(400);
     });
 
+    it('页面里带上了主题样式表（扩展的界面全靠 --vscode-* 上色）', async () => {
+      const html = await resolveDemoView();
+      expect(html).toContain('/__echoly-theme.css');
+    });
+
+    it('主题变量由渲染进程推过来，协议按 CSS 端出去', async () => {
+      manager.setWebviewTheme({ 'editor-background': '#123456', 'font-size': '13px' });
+
+      const response = await (manager as any).handleWebviewRequest(
+        'echoly-webview://ext/demo.viewPane/__echoly-theme.css',
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain('text/css');
+      const css = await response.text();
+      expect(css).toContain('--vscode-editor-background:#123456;');
+      expect(css).toContain('--vscode-font-size:13px;');
+      // 空值绝不能写进去：`--x:;` 会让 var() 整条声明作废
+      manager.setWebviewTheme({ 'editor-background': '', 'font-size': '13px' });
+      const again = await (
+        await (manager as any).handleWebviewRequest(
+          'echoly-webview://ext/demo.viewPane/__echoly-theme.css',
+        )
+      ).text();
+      expect(again).not.toContain('--vscode-editor-background');
+      expect(again).toContain('--vscode-font-size:13px;');
+    });
+
     it('界面发回的消息能送到扩展的 onDidReceiveMessage', async () => {
       await resolveDemoView();
       delete (globalThis as any).__echolyDemoGot;

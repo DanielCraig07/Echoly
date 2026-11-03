@@ -230,6 +230,13 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('extension:webview-registered', listener);
   },
   extensionResolveWebview: (viewId) => ipcRenderer.invoke('extension:resolve-webview', viewId),
+  setWebviewTheme: (vars) => ipcRenderer.invoke('extension:set-webview-theme', vars),
+  onWebviewTheme: (cb: (data: { vars: Record<string, string> }) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { vars: Record<string, string> }) =>
+      cb(data);
+    ipcRenderer.on('extension:webview-theme', listener);
+    return () => ipcRenderer.removeListener('extension:webview-theme', listener);
+  },
   extensionWebviewPost: (viewId, message) =>
     ipcRenderer.invoke('extension:webview-post', viewId, message),
   onExtensionWebviewMessage: (cb) => {

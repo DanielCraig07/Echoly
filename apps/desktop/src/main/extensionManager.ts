@@ -3,7 +3,7 @@
  * 管理 VSCode 扩展的加载、激活和通信
  */
 
-import { ipcMain, net, protocol, session } from 'electron';
+import { BrowserWindow, ipcMain, net, protocol, session } from 'electron';
 import { EXTENSION_WEBVIEW_PARTITION } from '@deepseek-ide/shared';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -12,6 +12,7 @@ import { app } from 'electron';
 import {
   EXTENSION_WEBVIEW_SCHEME,
   WEBVIEW_INDEX_PATH,
+  WEBVIEW_THEME_PATH,
   buildWebviewOrigin,
   buildWebviewUrl,
   extractFsPath,
@@ -169,6 +170,14 @@ export class ExtensionManager {
   private webviewMessageHandlers = new Map<string, Set<(message: any) => void>>();
   /** `<webview>` 的访客 preload（`file://` URL）。渲染进程不知道主进程的目录布局，由这里给。 */
   private webviewPreloadUrl = '';
+  /**
+   * 注入给扩展界面的 `--vscode-*` 变量（渲染进程算好之后推过来）。
+   *
+   * 为什么不在这里自己算：颜色要跟着**当前主题**走（应用有暗/亮两套），而主题是
+   * 渲染进程的状态 —— 它读 `:root` 上的实际值最准，主进程只能猜。
+   * 渲染进程启动时推一次、切主题时再推一次。
+   */
+  private webviewThemeVars: Record<string, string> = {};
   /** 禁用列表的落盘位置 */
   private readonly stateFilePath: string;
 
@@ -265,6 +274,12 @@ export class ExtensionManager {
     }
 
     const { viewId, relPath } = parsed;
+    if (relPath === WEBVIEW_THEME_PATH) {
+      return new Response(this.buildThemeCss(), {
+        status: 200,
+        headers: { 'content-type': 'text/css; charset=utf-8' },
+      });
+    }
     if (relPath === WEBVIEW_INDEX_PATH) {
       const html = this.webviewHtml.get(viewId);
       if (html === undefined) {
@@ -306,6 +321,54 @@ export class ExtensionManager {
   /** 扩展视图的初始地址（渲染进程拿它当 `<webview src>`）。 */
   getWebviewUrl(viewId: string): string {
     return buildWebviewUrl(viewId, WEBVIEW_INDEX_PATH);
+  }
+
+  /** 主题变量样式表的地址（渲染进程可以拿它做热更新）。 */
+  getWebviewThemeUrl(viewId: string): string {
+    return buildWebviewUrl(viewId, WEBVIEW_THEME_PATH);
+  }
+
+  /**
+   * 渲染进程推过来的 `--vscode-*` 变量。存下来给之后生成的 HTML 用，
+   * 同时广播出去，让**已经打开**的扩展界面也立刻换色（不用重开标签）。
+   */
+  setWebviewTheme(vars: Record<string, string>): void {
+    this.webviewThemeVars = vars ?? {};
+    this.broadcastToRenderers('extension:webview-theme', { vars: this.webviewThemeVars });
+  }
+
+  /**
+   * 生成主题 CSS。
+   *
+   * 空值不写：写一个空值比不写更糟 —— CSS 变量为空会让 `var(...)` 解析成一个
+   * 无效值，声明整个作废，而扩展那边看起来就是「这块没上色」，很难查。
+   */
+  private buildThemeCss(): string {
+    const lines: string[] = [];
+    for (const [name, value] of Object.entries(this.webviewThemeVars)) {
+      if (typeof value !== 'string' || value.length === 0) continue;
+      // 渲染进程给的是 VS Code 那半边名字（`editor-background`）；也接受已经带前缀的写法，
+      // 免得两边约定悄悄漂移成「我发 --vscode-x 你给 x 加了第二层前缀」。
+      const property = name.startsWith('--') ? name : `--vscode-${name}`;
+      // 只放行变量名该有的字符：这是一张会写进别人页面的样式表
+      if (!/^--[A-Za-z0-9_-]+$/.test(property)) continue;
+      lines.push(`${property}:${value};`);
+    }
+    return `/* 由 Echoly 注入：扩展界面的 --vscode-* 主题变量 */\n:root{${lines.join('')}}\n`;
+  }
+
+  /**
+   * 把主题样式表的 `<link>` 塞进扩展页面的 `<head>`。
+   *
+   * 放在 head 末尾（扩展自己的 `<style>` 之后）：自定义属性只比「谁最后定义」——
+   * 扩展那边还有一段 `<style id="…-font-configuration">` 也是定义变量的，
+   * 我们排在后面才能盖住它的默认值。
+   */
+  private injectThemeLink(html: string, viewId: string): string {
+    const link = `<link rel="stylesheet" href="${this.getWebviewThemeUrl(viewId)}">`;
+    if (html.includes('</head>')) return html.replace('</head>', `${link}</head>`);
+    // 没有 head（理论上不会）就退到内联样式，至少别让界面是裸的
+    return `<style>${this.buildThemeCss().replace(/^:root/, ':root')}</style>${html}`;
   }
 
   /** `<webview>` 的访客 preload 地址（file:// URL）。 */
@@ -1143,6 +1206,9 @@ export class ExtensionManager {
           htmlContent = htmlContent.replace('</head>', `${runtimeScript}</head>`);
         }
 
+        // 主题变量当成一张样式表引进来（见 WEBVIEW_THEME_PATH 的注释）
+        htmlContent = this.injectThemeLink(htmlContent, viewId);
+
         // 存进内存，等协议处理器按 `/index.html` 取。
         // 以前是写到 userData 再走 file://，那条路加载不了 module script（文件还留在磁盘上）。
         this.webviewHtml.set(viewId, htmlContent);
@@ -1367,6 +1433,12 @@ export class ExtensionManager {
       }
     });
 
+    // 渲染进程推主题变量（`:root` 上的实际值只有它有）
+    ipcMain.handle('extension:set-webview-theme', async (_event, vars: Record<string, string>) => {
+      this.setWebviewTheme(vars ?? {});
+      return { success: true };
+    });
+
     // 扩展界面里的用户操作 → 扩展的 onDidReceiveMessage
     ipcMain.handle('extension:webview-post', async (_event, viewId: string, message: any) => {
       try {
@@ -1382,10 +1454,11 @@ export class ExtensionManager {
    * 广播消息到所有渲染进程
    */
   private broadcastToRenderers(channel: string, data: any): void {
-    const { BrowserWindow } = require('electron');
-    BrowserWindow.getAllWindows().forEach((window: any) => {
+    // 用顶部的 import，而不是函数里再 require('electron')：
+    // 后者在测试里绕不过 vi.mock('electron')，一条广播就能把整条链路带崩。
+    for (const window of BrowserWindow.getAllWindows()) {
       window.webContents.send(channel, data);
-    });
+    }
   }
 
   /**

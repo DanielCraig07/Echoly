@@ -20,8 +20,8 @@ export interface InstalledExtension {
   active: boolean;
   /** 它注册的命令（带标题）。详情页据此列出「贡献的命令」并直接运行。 */
   commands: { command: string; title: string }[];
-  /** 它注册的视图 id 列表（每个都能在编辑器区打开）。 */
-  views: string[];
+  /** 它注册的视图：id + 展示名（名来自 contributes.views，用于标签标题） */
+  views: { id: string; name: string }[];
 }
 
 export interface ExtensionAPI {

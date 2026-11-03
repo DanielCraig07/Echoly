@@ -4521,6 +4521,11 @@ export function EditorPane({
                   : tab.path.split('/').pop() || tab.path);
               const gitMeta = getTabGitMeta(tab.path, gitStatus?.entries);
               const isActive = tab.path === activePath;
+              /** 没有文本缓冲区的虚拟标签（扩展详情 / 扩展界面 / 浏览器）。 */
+              const isVirtualSurface =
+                isBrowser ||
+                tab.path.startsWith(EXTENSION_DETAIL_PREFIX) ||
+                tab.path.startsWith(EXTENSION_VIEW_PREFIX);
               return (
                 <button
                   key={tab.path}
@@ -4604,7 +4609,12 @@ export function EditorPane({
                   >
                     {fileName}
                   </span>
-                  {tab.readOnly && (
+                  {/*
+                    「只读」徽标只对**真的有一份文本缓冲区**的标签有意义。
+                    扩展详情页 / 扩展界面 / 内置浏览器这些虚拟标签里没有可编辑的文本，
+                    挂一个「只读」等于说了一句废话，还占了标签的宽度。
+                  */}
+                  {tab.readOnly && !isVirtualSurface && (
                     <span
                       style={{
                         fontSize: 10,

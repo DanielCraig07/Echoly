@@ -54,8 +54,8 @@ interface InstalledExtensionRow {
   active: boolean;
   /** 它注册的命令（带标题） */
   commands: { command: string; title: string }[];
-  /** 它注册的视图 id 列表 */
-  views: string[];
+  /** 它注册的视图（id + 展示名） */
+  views: { id: string; name: string }[];
 }
 
 declare global {
@@ -674,7 +674,12 @@ export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
                   // 不是这个扩展的说明页 —— 「能真正用上它」靠的就是这一步。
                   window.dispatchEvent(
                     new CustomEvent('echoly:open-extension-view', {
-                      detail: { viewId: ext.views[0], title: ext.displayName || ext.id },
+                      detail: {
+                        viewId: ext.views[0].id,
+                        // 用视图自己的名字当标签：不然它和「扩展详情」那个标签一模一样，
+                        // 顶栏会出现两个同名的标签，分不清哪个是哪个
+                        title: ext.views[0].name || ext.displayName || ext.id,
+                      },
                     }),
                   )
                 }

@@ -2145,6 +2145,15 @@ export interface IpcApi {
     preloadUrl?: string;
     error?: string;
   }>;
+  /**
+   * 把当前主题的 `--vscode-*` 变量推给主进程。
+   *
+   * 扩展界面里的颜色全部写成 `var(--vscode-…)`，这些变量在 VS Code 里由宿主注入。
+   * 渲染进程读 `:root` 上的实际值最准（应用有暗/亮两套主题），所以由它算、主进程存。
+   */
+  setWebviewTheme: (vars: Record<string, string>) => Promise<{ success: boolean }>;
+  /** 主题变化（已打开的扩展界面据此立刻换色，不用重开标签） */
+  onWebviewTheme: (cb: (data: { vars: Record<string, string> }) => void) => () => void;
   /** 扩展界面里的操作 → 扩展的 onDidReceiveMessage */
   extensionWebviewPost: (
     viewId: string,

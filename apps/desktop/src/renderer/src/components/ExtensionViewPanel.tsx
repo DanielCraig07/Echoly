@@ -31,6 +31,8 @@ export const EXTENSION_VIEW_PREFIX = 'ext://view/';
 /** 访客 preload 里用的通道名，必须与 webviewGuest.ts / extensionManager 里的一致。 */
 const GUEST_MESSAGE_CHANNEL = 'echoly-ext-message';
 const HOST_MESSAGE_CHANNEL = 'echoly-ext-host-message';
+/** 主题变量走单独一条通道，别和扩展自己的消息混在一起（见 webviewGuest.ts） */
+const THEME_MESSAGE_CHANNEL = 'echoly-ext-theme';
 
 // Electron webview 标签类型声明
 declare global {
@@ -134,6 +136,24 @@ export function ExtensionViewPanel({ viewId, onClose }: ExtensionViewPanelProps)
 
     return () => unsubscribe?.();
   }, [viewId]);
+
+  /**
+   * 用户切主题时，已经打开的扩展界面立刻跟着换色。
+   *
+   * 首屏那次不用管：样式表是主进程写进 HTML 的 `<link>`。
+   */
+  useEffect(() => {
+    const unsubscribe = window.ide.onWebviewTheme?.(({ vars }) => {
+      const webview = webviewRef.current;
+      if (!webview || !readyRef.current) return;
+      try {
+        webview.send(THEME_MESSAGE_CHANNEL, vars);
+      } catch (err) {
+        console.error('[ExtensionViewPanel] 推送主题到扩展界面失败：', err);
+      }
+    });
+    return () => unsubscribe?.();
+  }, []);
 
   /** 页面就绪 + 页面 → 扩展 + 加载失败提示。依赖 src：`<webview>` 挂上来才有 ref。 */
   useEffect(() => {

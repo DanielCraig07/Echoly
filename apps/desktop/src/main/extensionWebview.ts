@@ -36,6 +36,15 @@ const ABS_PREFIX = '-/abs/';
 /** 视图初始 HTML 在协议里的固定路径。 */
 export const WEBVIEW_INDEX_PATH = 'index.html';
 
+/**
+ * 主题变量样式表在协议里的固定路径。
+ *
+ * 走**链接**而不是内联 `<style>`：扩展页面自己的 CSP 是
+ * `style-src ${cspSource} 'unsafe-inline'`，`cspSource` 就是我们这个 origin ——
+ * 链接一定能加载；而内联样式要靠 `'unsafe-inline'`，不是每个扩展都给。
+ */
+export const WEBVIEW_THEME_PATH = '__echoly-theme.css';
+
 /** `echoly-webview://ext` —— 也就是该页面的 origin，扩展的 CSP 里 `'self'` 指的就是它。 */
 export function buildWebviewOrigin(): string {
   return `${EXTENSION_WEBVIEW_SCHEME}://${EXTENSION_WEBVIEW_HOST}`;

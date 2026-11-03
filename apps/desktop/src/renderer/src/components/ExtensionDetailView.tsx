@@ -82,7 +82,7 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
     enabled: boolean;
     active: boolean;
     commands: { command: string; title: string }[];
-    views: string[];
+    views: { id: string; name: string }[];
   } | null>(null);
   const [installing, setInstalling] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -174,11 +174,15 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
 
   /** 打开某个指定的扩展视图（编辑器区新开一个标签，由 App 接管）。 */
   const handleOpenView = (viewId?: string) => {
-    const target = viewId ?? installedInfo?.views?.[0];
+    const target = installedInfo?.views?.find((v) => v.id === viewId) ?? installedInfo?.views?.[0];
     if (!target) return;
     window.dispatchEvent(
       new CustomEvent('echoly:open-extension-view', {
-        detail: { viewId: target, title: installedInfo?.displayName || title },
+        detail: {
+          viewId: target.id,
+          // 与已安装列表那条保持同一个规则：标签用视图名，不用扩展名
+          title: target.name || installedInfo?.displayName || title,
+        },
       }),
     );
   };
@@ -455,15 +459,15 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
                             （claude-manager 就有两个），只露一个等于另一个永远点不到。
                           */}
                       <div className="ext-detail-view-list">
-                        {installedInfo.views.map((viewId) => (
+                        {installedInfo.views.map((view) => (
                           <button
-                            key={viewId}
+                            key={view.id}
                             type="button"
                             className="ext-btn ext-btn-primary"
-                            onClick={() => handleOpenView(viewId)}
-                            title={t('ext.openViewTitle')}
+                            onClick={() => handleOpenView(view.id)}
+                            title={view.id}
                           >
-                            {t('ext.openView')} {viewId}
+                            {t('ext.openView')} {view.name}
                           </button>
                         ))}
                       </div>
