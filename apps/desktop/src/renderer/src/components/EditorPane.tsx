@@ -5022,9 +5022,9 @@ export function EditorPane({
                       autoFocus
                       style={{
                         width: '100%',
-                        background: 'var(--bg-editor, #141414)',
+                        background: 'var(--bg-field-inset)',
                         color: 'var(--text)',
-                        border: '1px solid var(--border)',
+                        border: '1px solid var(--border-strong, var(--border))',
                         borderRadius: 4,
                         padding: '4px 7px',
                         fontSize: 11,
@@ -6252,8 +6252,8 @@ export function EditorPane({
                       height: 22,
                       fontSize: 11,
                       padding: '0 6px',
-                      background: 'var(--bg-tertiary, #222)',
-                      border: '1px solid var(--border)',
+                      background: 'var(--bg-elevated)',
+                      border: '1px solid var(--border-strong, var(--border))',
                       borderRadius: 4,
                       color: 'var(--text, #fff)',
                       outline: 'none',

@@ -888,9 +888,9 @@ export function MavenPanel({
             autoFocus
             style={{
               flex: 1,
-              background: 'rgba(0,0,0,0.3)',
+              background: 'var(--bg-elevated)',
               color: 'var(--text-bright,#fff)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--border-strong, var(--border))',
               borderRadius: 4,
               padding: '4px 8px',
               fontSize: 'var(--ui-font-size, 12px)',
@@ -1051,9 +1051,9 @@ export function MavenPanel({
                   onChange={(e) => setSelectedModulePath(e.target.value)}
                   style={{
                     width: '100%',
-                    background: 'var(--bg-input,#222)',
+                    background: 'var(--bg-elevated)',
                     color: 'var(--text)',
-                    border: '1px solid var(--border)',
+                    border: '1px solid var(--border-strong, var(--border))',
                     borderRadius: 4,
                     padding: '4px 6px',
                     fontSize: 'var(--ui-font-size, 12px)',

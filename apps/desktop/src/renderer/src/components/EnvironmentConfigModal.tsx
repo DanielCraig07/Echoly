@@ -849,11 +849,11 @@ export function EnvironmentConfigModal({
                       placeholder="/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home"
                       style={{
                         flex: 1,
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        background: 'var(--bg-field)',
+                        border: '1px solid var(--border-strong, var(--border))',
                         borderRadius: 6,
                         padding: '6px 12px',
-                        color: '#ffffff',
+                        color: 'var(--text)',
                         fontSize: 'var(--ui-font-size, 12px)',
                         fontFamily: 'monospace',
                         outline: 'none',
@@ -1068,11 +1068,11 @@ export function EnvironmentConfigModal({
                       placeholder={t('env.mvnPathPlaceholder')}
                       style={{
                         flex: 1,
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        background: 'var(--bg-field)',
+                        border: '1px solid var(--border-strong, var(--border))',
                         borderRadius: 6,
                         padding: '6px 12px',
-                        color: '#ffffff',
+                        color: 'var(--text)',
                         fontSize: 'var(--ui-font-size, 12px)',
                         fontFamily: 'monospace',
                         outline: 'none',

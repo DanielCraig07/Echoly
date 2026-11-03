@@ -1136,9 +1136,9 @@ export function AgentTaskPanel({
             }}
             placeholder={t('task.goalPlaceholder')}
             style={{
-              background: 'var(--bg-editor, #141414)',
+              background: 'var(--bg-elevated)',
               color: 'var(--text)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--border-strong, var(--border))',
               borderRadius: 4,
               padding: '5px 8px',
               fontSize: 'var(--ui-font-size, 12px)',
@@ -1412,9 +1412,9 @@ export function AgentTaskPanel({
                 placeholder={t('task.stepPlaceholder')}
                 style={{
                   flex: 1,
-                  background: 'var(--bg-editor, #141414)',
+                  background: 'var(--bg-elevated)',
                   color: 'var(--text)',
-                  border: '1px solid var(--border)',
+                  border: '1px solid var(--border-strong, var(--border))',
                   borderRadius: 4,
                   padding: '4px 7px',
                   fontSize: 11,

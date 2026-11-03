@@ -948,7 +948,7 @@ export function DbConsoleView({
                 fontSize: 11,
                 borderRadius: 4,
                 border: '1px solid var(--border)',
-                background: 'var(--bg-tertiary, #141414)',
+                background: 'var(--bg-elevated)',
                 color: 'var(--text)',
                 outline: 'none',
               }}
@@ -1124,7 +1124,7 @@ export function DbConsoleView({
                 fontSize: 11,
                 borderRadius: 4,
                 border: '1px solid var(--border)',
-                background: 'var(--bg-tertiary, #141414)',
+                background: 'var(--bg-elevated)',
                 color: 'var(--text)',
                 outline: 'none',
               }}

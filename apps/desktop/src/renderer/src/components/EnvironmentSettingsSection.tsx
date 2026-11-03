@@ -1380,8 +1380,8 @@ export function EnvironmentSettingsSection({
                 placeholder="/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home"
                 style={{
                   flex: 1,
-                  background: 'var(--bg-input, rgba(0,0,0,0.2))',
-                  border: '1px solid var(--border)',
+                  background: 'var(--bg-field)',
+                  border: '1px solid var(--border-strong, var(--border))',
                   borderRadius: 6,
                   padding: '6px 12px',
                   color: 'var(--text-bright)',
@@ -1649,8 +1649,8 @@ export function EnvironmentSettingsSection({
                   placeholder={t('envs.settingsPathPlaceholder')}
                   style={{
                     flex: 1,
-                    background: 'var(--bg-input, rgba(0,0,0,0.2))',
-                    border: '1px solid var(--border)',
+                    background: 'var(--bg-field)',
+                    border: '1px solid var(--border-strong, var(--border))',
                     borderRadius: 6,
                     padding: '6px 12px',
                     color: 'var(--text-bright)',
@@ -1735,8 +1735,8 @@ export function EnvironmentSettingsSection({
                 placeholder={t('envs.mvnPathPlaceholder')}
                 style={{
                   flex: 1,
-                  background: 'var(--bg-input, rgba(0,0,0,0.2))',
-                  border: '1px solid var(--border)',
+                  background: 'var(--bg-field)',
+                  border: '1px solid var(--border-strong, var(--border))',
                   borderRadius: 6,
                   padding: '6px 12px',
                   color: 'var(--text-bright)',
@@ -1866,8 +1866,8 @@ export function EnvironmentSettingsSection({
                   style={{
                     width: '100%',
                     boxSizing: 'border-box',
-                    background: 'var(--bg-input, #18181b)',
-                    border: '1px solid var(--border)',
+                    background: 'var(--bg-field)',
+                    border: '1px solid var(--border-strong, var(--border))',
                     borderRadius: 5,
                     color: 'var(--text-bright, #fff)',
                     padding: '8px 10px',
@@ -1951,8 +1951,8 @@ export function EnvironmentSettingsSection({
                   style={{
                     width: '100%',
                     boxSizing: 'border-box',
-                    background: 'var(--bg-input, #18181b)',
-                    border: '1px solid var(--border)',
+                    background: 'var(--bg-field)',
+                    border: '1px solid var(--border-strong, var(--border))',
                     borderRadius: 5,
                     color: 'var(--text-bright, #fff)',
                     padding: '8px 10px',
@@ -1987,8 +1987,8 @@ export function EnvironmentSettingsSection({
                     style={{
                       width: '100%',
                       boxSizing: 'border-box',
-                      background: 'var(--bg-input, #18181b)',
-                      border: '1px solid var(--border)',
+                      background: 'var(--bg-field)',
+                      border: '1px solid var(--border-strong, var(--border))',
                       borderRadius: 5,
                       color: 'var(--text-bright, #fff)',
                       padding: '8px 10px',
@@ -2021,8 +2021,8 @@ export function EnvironmentSettingsSection({
                     style={{
                       width: '100%',
                       boxSizing: 'border-box',
-                      background: 'var(--bg-input, #18181b)',
-                      border: '1px solid var(--border)',
+                      background: 'var(--bg-field)',
+                      border: '1px solid var(--border-strong, var(--border))',
                       borderRadius: 5,
                       color: 'var(--text-bright, #fff)',
                       padding: '8px 10px',

@@ -325,8 +325,8 @@ export function ComposerModal({
             placeholder={t('composer.placeholder')}
             style={{
               width: '100%',
-              background: 'rgba(0, 0, 0, 0.25)',
-              border: '1px solid var(--border, rgba(255,255,255,0.1))',
+              background: 'var(--bg-field)',
+              border: '1px solid var(--border-strong, var(--border))',
               borderRadius: 8,
               padding: '10px 12px',
               color: 'var(--text, #fff)',

@@ -1106,9 +1106,9 @@ export function DbTableDataView({
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
-                background: 'var(--bg-panel, #1e1e1e)',
+                background: 'var(--bg-elevated)',
                 color: 'var(--text)',
-                border: '1px solid var(--border)',
+                border: '1px solid var(--border-strong, var(--border))',
                 borderRadius: 4,
                 padding: '3px 8px',
                 fontSize: 11,

@@ -360,7 +360,7 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
                 height: '100%',
                 padding: '12px 14px',
                 boxSizing: 'border-box',
-                background: 'var(--bg-editor, #1e1e1e)',
+                background: 'var(--bg-field)',
                 color: 'var(--text, #e2e8f0)',
                 border: 'none',
                 outline: 'none',

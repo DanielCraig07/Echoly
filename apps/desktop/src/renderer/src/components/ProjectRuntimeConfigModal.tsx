@@ -774,7 +774,7 @@ export function ProjectRuntimeConfigModal({
                       );
                     }}
                     style={{
-                      background: 'rgba(255, 255, 255, 0.08)',
+                      background: 'var(--bg-field)',
                       color: 'var(--text-bright, #fff)',
                       border: '1px solid var(--border)',
                       borderRadius: 4,

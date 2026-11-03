@@ -1672,12 +1672,12 @@ export function RunWidget({
               onChange={(e) => setFilterText(e.target.value)}
               style={{
                 width: '100%',
-                background: '#0d0d0d',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
+                background: 'var(--bg-field)',
+                border: '1px solid var(--border-strong, var(--border))',
                 borderRadius: 5,
                 padding: '4px 8px',
                 fontSize: 11.5,
-                color: '#ffffff',
+                color: 'var(--text)',
                 outline: 'none',
                 boxSizing: 'border-box',
               }}
@@ -1846,12 +1846,12 @@ export function RunWidget({
                   value={newConfigName}
                   onChange={(e) => setNewConfigName(e.target.value)}
                   style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                    background: 'var(--bg-field)',
+                    border: '1px solid var(--border-strong, var(--border))',
                     borderRadius: 4,
                     padding: '4px 8px',
                     fontSize: 11,
-                    color: '#fff',
+                    color: 'var(--text)',
                     outline: 'none',
                   }}
                 />
@@ -1861,12 +1861,12 @@ export function RunWidget({
                   value={newConfigCommand}
                   onChange={(e) => setNewConfigCommand(e.target.value)}
                   style={{
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                    background: 'var(--bg-field)',
+                    border: '1px solid var(--border-strong, var(--border))',
                     borderRadius: 4,
                     padding: '4px 8px',
                     fontSize: 11,
-                    color: '#fff',
+                    color: 'var(--text)',
                     outline: 'none',
                     fontFamily: 'var(--font-mono, monospace)',
                   }}

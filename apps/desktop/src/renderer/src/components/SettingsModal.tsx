@@ -1839,8 +1839,8 @@ export function SettingsModal({
                             fontSize: 'var(--ui-font-size, 12px)',
                             fontFamily: 'var(--font-mono)',
                             color: 'var(--text)',
-                            background: 'var(--bg-input)',
-                            border: '1px solid var(--border)',
+                            background: 'var(--bg-field)',
+                            border: '1px solid var(--border-strong, var(--border))',
                             borderRadius: 6,
                             boxSizing: 'border-box',
                           }}
@@ -1894,8 +1894,8 @@ export function SettingsModal({
                         fontSize: 'var(--ui-font-size, 12px)',
                         fontFamily: 'var(--font-mono)',
                         color: 'var(--text)',
-                        background: 'var(--bg-input)',
-                        border: '1px solid var(--border)',
+                        background: 'var(--bg-field)',
+                        border: '1px solid var(--border-strong, var(--border))',
                         borderRadius: 6,
                         boxSizing: 'border-box',
                       }}

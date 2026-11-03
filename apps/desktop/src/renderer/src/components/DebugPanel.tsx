@@ -605,11 +605,11 @@ export function DebugPanel({
                       }}
                       style={{
                         width: '100%',
-                        background: 'rgba(0,0,0,0.3)',
+                        background: 'var(--bg-elevated)',
                         border: '1px solid var(--accent)',
                         borderRadius: 4,
                         padding: '3px 6px',
-                        color: '#fff',
+                        color: 'var(--text)',
                         fontSize: 'var(--ui-font-size, 12px)',
                       }}
                     />
