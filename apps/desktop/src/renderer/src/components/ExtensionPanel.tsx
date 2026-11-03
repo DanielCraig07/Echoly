@@ -52,7 +52,9 @@ interface InstalledExtensionRow {
   version?: string;
   enabled: boolean;
   active: boolean;
-  commands: string[];
+  /** 它注册的命令（带标题） */
+  commands: { command: string; title: string }[];
+  /** 它注册的视图 id 列表 */
   views: string[];
 }
 

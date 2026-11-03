@@ -18831,6 +18831,42 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   color: var(--muted);
 }
 
+/* ── 详情页「贡献的功能」区 ── */
+.ext-detail-subhead {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* 视图按钮带 viewId，可能很长：换行而不是把侧栏撑破 */
+.ext-detail-view-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ext-detail-command-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.ext-detail-command-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ext-detail-command-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── 行内按钮 ── */
 .ext-btn {
   padding: 3px 10px;

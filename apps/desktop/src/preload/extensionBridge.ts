@@ -18,7 +18,9 @@ export interface InstalledExtension {
   version?: string;
   enabled: boolean;
   active: boolean;
-  commands: string[];
+  /** 它注册的命令（带标题）。详情页据此列出「贡献的命令」并直接运行。 */
+  commands: { command: string; title: string }[];
+  /** 它注册的视图 id 列表（每个都能在编辑器区打开）。 */
   views: string[];
 }
 

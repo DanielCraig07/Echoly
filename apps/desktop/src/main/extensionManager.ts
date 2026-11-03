@@ -94,8 +94,8 @@ export interface InstalledExtensionInfo {
   enabled: boolean;
   /** 此刻是否已经加载并激活 */
   active: boolean;
-  /** 它注册的命令 id 列表 */
-  commands: string[];
+  /** 它注册的命令（带人类可读标题，供详情页直接列出来运行） */
+  commands: { command: string; title: string }[];
   /** 它注册的 webview 视图 id 列表（非空才有「打开视图」可点） */
   views: string[];
 }
@@ -666,6 +666,7 @@ export class ExtensionManager {
   async listInstalledExtensions(): Promise<InstalledExtensionInfo[]> {
     const loaded = new Set(this.extensionHost.getLoadedExtensions());
     const registeredCommands = this.extensionHost.listExtensionCommands();
+    const titles = await this.readCommandTitles();
     const out: InstalledExtensionInfo[] = [];
 
     // 走扫描而不是裸 readdir：列表里的 id 必须是**扩展 id**（宿主记的那个），
@@ -680,7 +681,9 @@ export class ExtensionManager {
         enabled,
         // `active` 与 `enabled` 是两回事：启用了的扩展也可能因为激活失败而没跑起来
         active: loaded.has(id),
-        commands: registeredCommands.filter((c) => c.extensionId === id).map((c) => c.command),
+        commands: registeredCommands
+          .filter((c) => c.extensionId === id)
+          .map((c) => ({ command: c.command, title: titles.get(c.command) || c.command })),
         views: this.extensionHost.listWebviewViewIds(id),
       });
     }

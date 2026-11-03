@@ -81,6 +81,7 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
     version?: string;
     enabled: boolean;
     active: boolean;
+    commands: { command: string; title: string }[];
     views: string[];
   } | null>(null);
   const [installing, setInstalling] = useState(false);
@@ -119,6 +120,7 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
           version: hit.version,
           enabled: hit.enabled,
           active: hit.active,
+          commands: hit.commands ?? [],
           views: hit.views ?? [],
         });
       } else {
@@ -170,15 +172,27 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
    */
   const usesDedicatedChannel = extensionId.toLowerCase() === CLAUDE_CODE_ID.toLowerCase();
 
-  /** 打开这个扩展自己贡献的界面（编辑器区新开一个标签，由 App 接管）。 */
-  const handleOpenView = () => {
-    const viewId = installedInfo?.views?.[0];
-    if (!viewId) return;
+  /** 打开某个指定的扩展视图（编辑器区新开一个标签，由 App 接管）。 */
+  const handleOpenView = (viewId?: string) => {
+    const target = viewId ?? installedInfo?.views?.[0];
+    if (!target) return;
     window.dispatchEvent(
       new CustomEvent('echoly:open-extension-view', {
-        detail: { viewId, title: installedInfo?.displayName || title },
+        detail: { viewId: target, title: installedInfo?.displayName || title },
       }),
     );
+  };
+
+  /** 运行扩展贡献的命令。失败要说出来 —— 点了没反应最容易让人以为界面卡了。 */
+  const handleRunCommand = async (command: string) => {
+    try {
+      const res = await window.extensions.executeCommand(command);
+      if (res && res.success === false) {
+        onShowToast?.(t('ext.commandRunFailed', { command }), 'error');
+      }
+    } catch (err: any) {
+      onShowToast?.(t('ext.commandRunFailed', { command }), 'error');
+    }
   };
 
   /** 启用 / 禁用。做完重拉一次详情，按钮文案与状态跟着变。 */
@@ -362,7 +376,7 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
                         className="ext-btn ext-btn-primary"
                         disabled={busy || !installedInfo?.enabled}
                         title={t('ext.openViewTitle')}
-                        onClick={handleOpenView}
+                        onClick={() => handleOpenView()}
                       >
                         {t('ext.openView')}
                       </button>
@@ -441,6 +455,61 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
                     )}
                   </dl>
                 </section>
+
+                {/*
+                  「这个扩展到底能干什么」—— 装完之后的入口都列在这里。
+                  以前一个扩展只露一个「已安装」徽章，贡献的视图与命令一个都点不到；
+                  现在每个视图一行（各自能打开）、每条命令一行（各自能运行）。
+                */}
+                {installedInfo &&
+                  (installedInfo.views.length > 0 || installedInfo.commands.length > 0) &&
+                  installedInfo.enabled && (
+                    <section className="ext-detail-block">
+                      <h2>{t('extDetail.contributions')}</h2>
+                      {installedInfo.views.length > 0 && (
+                        <>
+                          <h3 className="ext-detail-subhead">{t('extDetail.views')}</h3>
+                          {/*
+                            列出**全部**视图而不是只给第一个：一个扩展可以贡献好几个
+                            （claude-manager 就有两个），只露一个等于另一个永远点不到。
+                          */}
+                          <div className="ext-detail-view-list">
+                            {installedInfo.views.map((viewId) => (
+                              <button
+                                key={viewId}
+                                type="button"
+                                className="ext-btn ext-btn-primary"
+                                onClick={() => handleOpenView(viewId)}
+                                title={t('ext.openViewTitle')}
+                              >
+                                {t('ext.openView')} {viewId}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {installedInfo.commands.length > 0 && (
+                        <>
+                          <h3 className="ext-detail-subhead">{t('extDetail.commands')}</h3>
+                          {/* 不用 dl：`.ext-detail-block dl` 是两列网格，塞按钮进去会错位 */}
+                          <div className="ext-detail-command-list">
+                            {installedInfo.commands.map((c) => (
+                              <div key={c.command} className="ext-detail-command-row">
+                                <span title={c.command}>{c.title}</span>
+                                <button
+                                  type="button"
+                                  className="ext-btn"
+                                  onClick={() => void handleRunCommand(c.command)}
+                                >
+                                  {t('extDetail.run')}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </section>
+                  )}
 
                 <section className="ext-detail-block">
                   <h2>{t('extDetail.marketplace')}</h2>
