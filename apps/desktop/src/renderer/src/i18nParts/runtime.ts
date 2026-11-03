@@ -39,6 +39,7 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   },
   'ext.marketSearching': { zh: '搜索中…', en: 'Searching…' },
   'ext.marketInstall': { zh: '安装', en: 'Install' },
+
   // 新版面板（搜索框 + 分区列表）的文案。
   // 刻意没用「更多」这种含糊词：分区名和过滤器的提示要能自己说清它管什么。
   'ext.searchPlaceholder': { zh: '在扩展市场搜索', en: 'Search Extensions in Marketplace' },
@@ -93,13 +94,6 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   'ext.logs': { zh: '扩展通信日志 ({n})', en: 'Extension Logs ({n})' },
   'ext.collapse': { zh: '▲ 收起', en: '▲ Collapse' },
   'ext.expand': { zh: '▼ 展开', en: '▼ Expand' },
-  'ext.modalTitle': { zh: '扩展与插件管理 (Extensions)', en: 'Extensions & Plugins (Extensions)' },
-  'ext.modalDesc': {
-    zh: '管理 VSCode 插件生态、Claude AI 扩展及本地 VSIX 安装包',
-    en: 'Manage the VSCode plugin ecosystem, Claude AI extensions and local VSIX packages',
-  },
-  'ext.closeEsc': { zh: '关闭 (Esc)', en: 'Close (Esc)' },
-
   // ── Maven 面板 (MavenPanel) ─────────────────────────────────────────
   'maven.goalClean': {
     zh: '清理上一次构建生成的文件 (target 目录)',

@@ -168,6 +168,31 @@ export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
   deny_all: '不允许任何操作',
 };
 
+/**
+ * 左侧栏能显示的面板。
+ *
+ * 放在 shared 而不是渲染层：它要进 `LayoutSettings`（活动栏固定了哪些面板要跟着设置
+ * 一起持久化），而 LayoutSettings 是主进程与渲染层共用的。定义只写一份，
+ * 两边各自再声明一遍必然会出现「多一个 / 少一个」。
+ */
+export type LeftPanelId =
+  | 'explorer'
+  | 'search'
+  | 'git'
+  | 'extensions'
+  | 'maven'
+  | 'database'
+  /** 面板已实现但被有意停用（见接线审计的豁免），不出现在活动栏与菜单里 */
+  | 'agent-tasks';
+
+/**
+ * 默认固定在活动栏上的面板。
+ *
+ * 活动栏上是常驻的跨项目入口；Maven / 数据库这类按需用到的默认收进 chevron 菜单
+ * ——菜单里仍然是完整清单，每一行都能固定回来，所以「收起」不等于「藏起来」。
+ */
+export const DEFAULT_PINNED_PANELS: LeftPanelId[] = ['explorer', 'search', 'git', 'extensions'];
+
 export interface LayoutSettings {
   explorerWidth: number;
   chatWidth: number;
@@ -176,6 +201,8 @@ export interface LayoutSettings {
   bottomPanelExpanded?: boolean;
   chatPanelExpanded?: boolean;
   bottomActiveTab?: 'terminal' | 'diff';
+  /** 活动栏上固定的面板（顺序不参与渲染，见 leftPanels 的说明） */
+  pinnedPanels?: LeftPanelId[];
 }
 
 export type UiTheme = 'dark' | 'light';
@@ -332,6 +359,7 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   bottomPanelExpanded: false,
   chatPanelExpanded: true,
   bottomActiveTab: 'terminal',
+  pinnedPanels: [...DEFAULT_PINNED_PANELS],
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {

@@ -188,8 +188,73 @@ function checkEnum(unionName, setterName, waiverPrefix) {
   }
 }
 
-checkEnum('LeftPanel', 'setLeftPanel', 'LeftPanel:');
 checkEnum('BottomTab', 'setBottomTab', 'BottomTab:');
+
+// ── D2. 左侧面板：数据驱动之后的入口判定 ────────────────────────────────────
+//
+// 活动栏与「更多面板」菜单现在都从 LEFT_PANEL_DEFS 渲染，App.tsx 里不再有
+// `setLeftPanel('explorer')` 这种字面量 —— 直接沿用上面那套会**全部误报成没有入口**。
+// 所以左侧面板这一维单独判：一个取值算「够得着」，要么 App.tsx 里显式设过它，
+// 要么它在面板定义表里且没被标 hidden（表里每一条都会渲染成菜单里可点的一行）。
+//
+// 联合类型改成从 shared 读（面板 id 进了 LayoutSettings）；**读不到就直接失败**，
+// 不能像原来那样 `return` —— 那种「悄悄什么都没检查」正是这道审计要防的事。
+function leftPanelIdValues() {
+  const sharedText = read(path.join(root, 'packages/shared/src/index.ts'));
+  const m = sharedText.match(/export type LeftPanelId =([^;]+);/);
+  if (!m) return null;
+  return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);
+}
+
+function panelDefsFromTable() {
+  const text = read(path.join(root, 'apps/desktop/src/renderer/src/services/leftPanels.ts'));
+  const start = text.indexOf('export const LEFT_PANEL_DEFS');
+  if (start < 0) return null;
+  const body = text.slice(start, text.indexOf('];', start));
+  const reachable = new Set();
+  const hidden = new Set();
+  // 每个 `id: 'x'` 开始一段，直到下一个 id —— 段内的 hidden:true 属于这一条
+  for (const chunk of body.split(/(?=\bid:\s*')/).slice(1)) {
+    const id = chunk.match(/id:\s*'([^']+)'/)?.[1];
+    if (!id) continue;
+    // 不要求 hidden 独占一行：表被 prettier 压成一行时，用「行首」去判会漏，
+    // 而漏判的后果是「hidden 的面板」被算成可达 —— 这道检查就白做了。
+    (/\bhidden:\s*true/.test(chunk) ? hidden : reachable).add(id);
+  }
+  return { reachable, hidden };
+}
+
+{
+  const values = leftPanelIdValues();
+  const defs = panelDefsFromTable();
+  const appText = read(path.join(root, 'apps/desktop/src/renderer/src/App.tsx'));
+  const explicit = new Set([...appText.matchAll(/setLeftPanel\(\s*'([^']+)'/g)].map((m) => m[1]));
+  if (!values) {
+    problems.push('[D] 读不到 LeftPanelId 联合类型（shared/src/index.ts）—— 这一维没有真的在检查');
+  } else if (!defs) {
+    problems.push('[D] 读不到 LEFT_PANEL_DEFS（services/leftPanels.ts）—— 这一维没有真的在检查');
+  } else {
+    for (const value of values) {
+      if (explicit.has(value) || defs.reachable.has(value)) continue;
+      const key = `LeftPanel:${value}`;
+      if (PANEL_WAIVERS[key] || PANEL_WAIVERS[value]) {
+        notes.push(
+          `[D] LeftPanel = '${value}'：没有入口（已豁免：${PANEL_WAIVERS[key] ?? PANEL_WAIVERS[value]}）`,
+        );
+        continue;
+      }
+      if (defs.hidden.has(value)) {
+        problems.push(
+          `[D] LeftPanel 的取值 '${value}' 在面板表里被标成 hidden 且别处没人设置它 —— 那它就真的进不去`,
+        );
+        continue;
+      }
+      problems.push(
+        `[D] LeftPanel 的取值 '${value}' 既不在面板表里、也没人 setLeftPanel —— 面板做完了却点不到`,
+      );
+    }
+  }
+}
 
 // ── 报告 ───────────────────────────────────────────────────────────────────
 console.log(

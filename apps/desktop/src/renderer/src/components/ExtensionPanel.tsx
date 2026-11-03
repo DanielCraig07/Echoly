@@ -14,12 +14,6 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import {
-  useModalResize,
-  ModalResizeHandle,
-  createSafeOverlayHandlers,
-} from '../hooks/useModalResize';
 import { useI18n } from '../i18n';
 import type { MarketplaceEntry } from '@deepseek-ide/shared';
 import {
@@ -33,12 +27,6 @@ import {
 export interface ExtensionPanelProps {
   onOpenExtension?: (extensionId: string) => void;
   onClose?: () => void;
-}
-
-export interface ExtensionModalProps {
-  open: boolean;
-  onClose: () => void;
-  onOpenExtension: (extensionId: string) => void;
 }
 
 declare global {
@@ -665,7 +653,9 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
         </div>
       )}
 
-      {/* 搜索框：右侧两个图标分别是「清空」与「隐藏已安装」，都有实际行为 */}
+      {/* 搜索框：右侧两个图标分别是「清空」与「隐藏已安装」，都有实际行为。
+          它和进度条留在滚动区之外 —— 面板现在常驻左侧栏，列表滚到底部时
+          搜索框跟着滚走会很难用。 */}
       <div className="ext-search">
         <input
           type="text"
@@ -736,196 +726,90 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
         </div>
       )}
 
-      <div className="ext-section">
-        <SectionHeader
-          label={t('ext.installedSection')}
-          count={installedRows.length}
-          collapsed={installedCollapsed}
-          onToggle={() => setInstalledCollapsed((v) => !v)}
-        />
-        {!installedCollapsed &&
-          (installedRows.length === 0 ? (
-            <div className="ext-empty-placeholder">
-              <span style={{ fontSize: 26, opacity: 0.5 }}>🧩</span>
-              <span>{t('ext.empty')}</span>
-            </div>
-          ) : (
-            <div className="ext-rows">
-              {installedRows.map((view) => (
-                <ExtensionRow key={view.key} view={view} />
-              ))}
-            </div>
-          ))}
-      </div>
-
-      <div className="ext-section">
-        <SectionHeader
-          label={marketLabel}
-          count={rows.length}
-          collapsed={marketCollapsed}
-          onToggle={() => setMarketCollapsed((v) => !v)}
-        />
-        {!marketCollapsed && (
-          <>
-            {showingResults && marketState === 'searching' && (
-              <div className="ext-section-note">{t('ext.marketSearching')}</div>
-            )}
-            {showingResults && marketError && (
-              <div className="ext-section-note ext-note-error">
-                {marketError}
-                <button
-                  type="button"
-                  className="ext-btn"
-                  onClick={() => void runMarketSearch(marketQuery.trim())}
-                >
-                  {t('ext.retry')}
-                </button>
+      <div className="ext-panel-scroll">
+        <div className="ext-section">
+          <SectionHeader
+            label={t('ext.installedSection')}
+            count={installedRows.length}
+            collapsed={installedCollapsed}
+            onToggle={() => setInstalledCollapsed((v) => !v)}
+          />
+          {!installedCollapsed &&
+            (installedRows.length === 0 ? (
+              <div className="ext-empty-placeholder">
+                <span style={{ fontSize: 26, opacity: 0.5 }}>🧩</span>
+                <span>{t('ext.empty')}</span>
               </div>
-            )}
-            {!showingResults && recommendedError && (
-              <div className="ext-section-note ext-note-error">
-                {recommendedError}
-                <button type="button" className="ext-btn" onClick={() => void loadRecommended()}>
-                  {t('ext.retry')}
-                </button>
-              </div>
-            )}
-            {!showingResults && !recommendedError && recommendedState === 'loading' && (
-              <div className="ext-section-note">{t('ext.loadingRecommended')}</div>
-            )}
-            {!showingResults &&
-              !recommendedError &&
-              recommendedState === 'done' &&
-              rows.length === 0 && <div className="ext-section-note">{t('ext.marketEmpty')}</div>}
-            {showingResults && marketState === 'done' && !marketError && rows.length === 0 && (
-              <div className="ext-section-note">{t('ext.marketEmpty')}</div>
-            )}
-            {rows.length > 0 && (
+            ) : (
               <div className="ext-rows">
-                {rows.map((view) => (
-                  <ExtensionRow key={view.key} view={view} iconData={iconData[view.key]} />
+                {installedRows.map((view) => (
+                  <ExtensionRow key={view.key} view={view} />
                 ))}
               </div>
-            )}
-          </>
-        )}
-      </div>
+            ))}
+        </div>
 
-      {/* 离线/内网场景的兜底入口。参考稿没有这一条，但它是本地 VSIX 唯一的入口 */}
-      <div className="ext-footer">
-        <button
-          type="button"
-          className="ext-footer-btn"
-          onClick={handleLoadFromPath}
-          disabled={loading}
-          title={t('ext.localDesc')}
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8" />
-            <path d="M2 4h20v4H2z" />
-            <line x1="10" y1="12" x2="14" y2="12" />
-          </svg>
-          <span>{t('ext.localTitle')}</span>
-        </button>
-      </div>
-
-      {messages.length > 0 && (
-        <div className="ext-logs-section">
-          <button
-            type="button"
-            className="ext-logs-toggle-btn"
-            onClick={() => setShowLogs(!showLogs)}
-          >
-            <span>{t('ext.logs', { n: messages.length })}</span>
-            <span>{showLogs ? t('ext.collapse') : t('ext.expand')}</span>
-          </button>
-
-          {showLogs && (
-            <div className="ext-logs-content">
-              {messages.map((msg, idx) => (
-                <div key={idx} className="ext-log-line">
-                  <span className="ext-log-type">[{msg.type}]</span>
-                  <span className="ext-log-text">{JSON.stringify(msg)}</span>
+        <div className="ext-section">
+          <SectionHeader
+            label={marketLabel}
+            count={rows.length}
+            collapsed={marketCollapsed}
+            onToggle={() => setMarketCollapsed((v) => !v)}
+          />
+          {!marketCollapsed && (
+            <>
+              {showingResults && marketState === 'searching' && (
+                <div className="ext-section-note">{t('ext.marketSearching')}</div>
+              )}
+              {showingResults && marketError && (
+                <div className="ext-section-note ext-note-error">
+                  {marketError}
+                  <button
+                    type="button"
+                    className="ext-btn"
+                    onClick={() => void runMarketSearch(marketQuery.trim())}
+                  >
+                    {t('ext.retry')}
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+              {!showingResults && recommendedError && (
+                <div className="ext-section-note ext-note-error">
+                  {recommendedError}
+                  <button type="button" className="ext-btn" onClick={() => void loadRecommended()}>
+                    {t('ext.retry')}
+                  </button>
+                </div>
+              )}
+              {!showingResults && !recommendedError && recommendedState === 'loading' && (
+                <div className="ext-section-note">{t('ext.loadingRecommended')}</div>
+              )}
+              {!showingResults &&
+                !recommendedError &&
+                recommendedState === 'done' &&
+                rows.length === 0 && <div className="ext-section-note">{t('ext.marketEmpty')}</div>}
+              {showingResults && marketState === 'done' && !marketError && rows.length === 0 && (
+                <div className="ext-section-note">{t('ext.marketEmpty')}</div>
+              )}
+              {rows.length > 0 && (
+                <div className="ext-rows">
+                  {rows.map((view) => (
+                    <ExtensionRow key={view.key} view={view} iconData={iconData[view.key]} />
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
-      )}
-    </div>
-  );
-}
 
-/**
- * 现代模态框封装，支持上下左右全向拖拽调整尺寸与持久化
- */
-export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModalProps) {
-  const { t } = useI18n();
-  const { modalSize, handleResizeStart } = useModalResize({
-    storageKey: 'echoly_extension_modal_size',
-    defaultWidth: 760,
-    defaultHeight: 580,
-    minWidth: 540,
-    minHeight: 420,
-  });
-
-  useEffect(() => {
-    if (!open) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [open, onClose]);
-
-  if (!open || typeof document === 'undefined') return null;
-
-  const safeOverlay = createSafeOverlayHandlers(onClose);
-
-  return createPortal(
-    <div className="settings-overlay" {...safeOverlay}>
-      <div
-        className="ide-modal modern-extension-modal"
-        style={{
-          width: modalSize.width,
-          height: modalSize.height,
-          maxWidth: '96vw',
-          maxHeight: '94vh',
-          position: 'relative',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <header className="ide-modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 18 }}>🧩</span>
-            <div>
-              <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: 'var(--text-bright)' }}>
-                {t('ext.modalTitle')}
-              </h2>
-              <p className="ide-modal-desc" style={{ marginTop: 2 }}>
-                {t('ext.modalDesc')}
-              </p>
-            </div>
-          </div>
+        {/* 离线/内网场景的兜底入口。参考稿没有这一条，但它是本地 VSIX 唯一的入口 */}
+        <div className="ext-footer">
           <button
             type="button"
-            className="panel-action-btn"
-            onClick={onClose}
-            title={t('ext.closeEsc')}
+            className="ext-footer-btn"
+            onClick={handleLoadFromPath}
+            disabled={loading}
+            title={t('ext.localDesc')}
           >
             <svg
               width="14"
@@ -933,25 +817,42 @@ export function ExtensionModal({ open, onClose, onOpenExtension }: ExtensionModa
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
+              <path d="M21 8v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8" />
+              <path d="M2 4h20v4H2z" />
+              <line x1="10" y1="12" x2="14" y2="12" />
             </svg>
+            <span>{t('ext.localTitle')}</span>
           </button>
-        </header>
-
-        {/* Body */}
-        {/* 不覆盖 padding：.ide-modal-body 的默认值是 18px 20px，与其它弹窗一致。
-            这里原本写死 20，比别处松一档。 */}
-        <div className="ide-modal-body" style={{ flex: 1, overflowY: 'auto' }}>
-          <ExtensionPanel onOpenExtension={onOpenExtension} onClose={onClose} />
         </div>
 
-        {/* 右下角全向拖拽手柄 */}
-        <ModalResizeHandle onMouseDown={handleResizeStart} />
+        {messages.length > 0 && (
+          <div className="ext-logs-section">
+            <button
+              type="button"
+              className="ext-logs-toggle-btn"
+              onClick={() => setShowLogs(!showLogs)}
+            >
+              <span>{t('ext.logs', { n: messages.length })}</span>
+              <span>{showLogs ? t('ext.collapse') : t('ext.expand')}</span>
+            </button>
+
+            {showLogs && (
+              <div className="ext-logs-content">
+                {messages.map((msg, idx) => (
+                  <div key={idx} className="ext-log-line">
+                    <span className="ext-log-type">[{msg.type}]</span>
+                    <span className="ext-log-text">{JSON.stringify(msg)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }

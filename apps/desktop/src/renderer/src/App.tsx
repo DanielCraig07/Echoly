@@ -25,6 +25,8 @@ import type {
 } from '@deepseek-ide/shared';
 import {
   DEFAULT_LAYOUT,
+  DEFAULT_PINNED_PANELS,
+  type LeftPanelId,
   DEFAULT_SETTINGS,
   DEFAULT_MODELS,
   NO_WORKSPACE_LABEL,
@@ -73,7 +75,8 @@ import {
   type CommandAction,
 } from './components/TopSearchBar';
 import { RunWidget } from './components/RunWidget';
-import { ExtensionModal } from './components/ExtensionPanel';
+import { ExtensionPanel } from './components/ExtensionPanel';
+import { ActivityBar } from './components/ActivityBar';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { PanelChevron } from './components/PanelChevron';
 import { GitPanel } from './components/GitPanel';
@@ -124,7 +127,11 @@ import {
 } from './services/dbQueryScripts';
 
 type ResizeAxis = 'explorer' | 'chat' | 'bottom';
-type LeftPanel = 'explorer' | 'search' | 'git' | 'maven' | 'database' | 'agent-tasks';
+/**
+ * 左侧面板 id。定义在 shared —— 它要进 LayoutSettings（活动栏固定了哪些面板要持久化），
+ * 而 LayoutSettings 是主进程与渲染层共用的。这里只是给渲染层一个短名字。
+ */
+type LeftPanel = LeftPanelId;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(n)));
@@ -276,7 +283,6 @@ export function App() {
   const [cloneOpen, setCloneOpen] = useState(false);
   const [sshOpen, setSshOpen] = useState(false);
   const [isSshDisconnected, setIsSshDisconnected] = useState(false);
-  const [extensionPanelOpen, setExtensionPanelOpen] = useState(false);
   const [claudePanelOpen, setClaudePanelOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [currentExtensionId, setCurrentExtensionId] = useState<string | null>(null);
@@ -395,16 +401,13 @@ export function App() {
   const terminalNonce = useRef(0);
   const [leftPanel, setLeftPanel] = useState<LeftPanel>('explorer');
   /**
-   * 活动栏末尾 chevron 的展开状态：Maven / 数据库这两个「领域面板」默认收在里面。
+   * 活动栏上固定了哪些面板。
    *
-   * 收起它们的理由：这一排图标是每次打开侧栏都会看的东西，而 Maven 只在 Maven 项目里
-   * 有意义、数据库更是与语言无关的独立工具，平铺出来会让第一眼全是平时不点的图标。
-   *
-   * 收起的前提是**入口仍然在**：chevron 常驻可见、提示文案里写清里面是什么
-   * （不是含糊的「更多」），展开一次点击就到；并且当左侧正停在收起的那一组里时
-   * chevron 会自己高亮，避免出现「人已经在面板里、入口却看不见」的错位。
+   * 存的是用户的选择（进 LayoutSettings 一起持久化），渲染前由 ActivityBar
+   * 按当前项目上下文收敛 —— Maven 在非 Maven 项目里被过滤掉，但用户的选择留着，
+   * 切回 Maven 项目时它自己回来。
    */
-  const [railExpanded, setRailExpanded] = useState(false);
+  const pinnedPanels = layout.pinnedPanels ?? DEFAULT_PINNED_PANELS;
   useEffect(() => {
     /**
      * `agent-tasks` 是被**有意**停用的：面板本体（AgentTaskPanel，600 行）与渲染都在，
@@ -1712,6 +1715,55 @@ export function App() {
       void window.ide.saveSettings({ layout: next });
     }, 300);
   }, []);
+
+  /**
+   * 切到某个左侧面板，并确保侧栏是展开的。
+   *
+   * 为什么要在意「展开」：快捷键（⌘⇧X）与活动栏的「更多面板」菜单都可能在侧栏折叠时
+   * 被触发，此时只改 leftPanel 的话用户看到的是「按了没反应」——面板确实切了，
+   * 但那一列根本没显示出来。
+   */
+  const focusLeftPanel = useCallback(
+    (id: LeftPanelId) => {
+      setLeftPanel(id);
+      if (layoutRef.current.leftPanelExpanded === false) {
+        const next = { ...layoutRef.current, leftPanelExpanded: true };
+        setLayout(next);
+        persistLayout(next);
+      }
+    },
+    [persistLayout],
+  );
+
+  /**
+   * 打开某个已装扩展的界面（右侧面板的 Claude/扩展标签）。
+   *
+   * 以前这里是弹窗组件的内联回调，弹窗关掉之后自然就没有「关闭弹窗」这一步了；
+   * 顺带确保右侧面板是展开的，否则点了「管理」什么都不会发生。
+   */
+  const handleOpenExtension = useCallback(
+    (extId: string) => {
+      setCurrentExtensionId(extId);
+      setClaudePanelOpen(true);
+      setRightPanelTab('claude');
+      if (layoutRef.current.chatPanelExpanded === false) {
+        const next = { ...layoutRef.current, chatPanelExpanded: true };
+        setLayout(next);
+        persistLayout(next);
+      }
+    },
+    [persistLayout],
+  );
+
+  /** 活动栏上的固定列表（跟着 layout 一起持久化）。 */
+  const handlePinnedChange = useCallback(
+    (next: LeftPanelId[]) => {
+      const merged = { ...layoutRef.current, pinnedPanels: next };
+      setLayout(merged);
+      persistLayout(merged);
+    },
+    [persistLayout],
+  );
 
   // ── 调试断点工作区隔离与持久化 ──
   const getBreakpointsStorageKey = useCallback((ws?: string | null) => {
@@ -4104,10 +4156,25 @@ export function App() {
         ideActions.find((a) => a.id === 'cmd-new-terminal')?.handler();
         return;
       }
-      // Cmd+Shift+B / Cmd+Shift+E -> 展开/折叠左侧边栏
-      if (ctrl && e.shiftKey && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'e')) {
+      // Cmd+Shift+B -> 展开/折叠左侧边栏
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();
         ideActions.find((a) => a.id === 'cmd-toggle-sidebar')?.handler();
+        return;
+      }
+      // Cmd+Shift+E / Cmd+Shift+X -> 切到「文件 / 扩展」面板。
+      // 这两个组合键**必须**真的生效：活动栏的「更多面板」菜单里把快捷键印在名字旁边了，
+      // 印一个按不出效果的组合键，和挂一个点不动的按钮是一回事。
+      // （Cmd+Shift+E 原先也是「折叠侧栏」的别名，现在让给「文件」—— 与 VS Code 一致；
+      //   折叠侧栏仍可用 Cmd+Shift+B。）
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        focusLeftPanel('explorer');
+        return;
+      }
+      if (ctrl && e.shiftKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        focusLeftPanel('extensions');
         return;
       }
       // Cmd+Alt+B -> 打开内置浏览器
@@ -4138,19 +4205,6 @@ export function App() {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [activePath]);
-
-  useEffect(() => {
-    if (!extensionPanelOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        setExtensionPanelOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [extensionPanelOpen]);
 
   // Keep side-panel widths in sync with the app window's actual size (see
   // computeEffectiveLayoutWidths) instead of only reacting to splitter drags.
@@ -4742,179 +4796,13 @@ export function App() {
         {showLeftPanel && (
           <>
             <aside className="panel left-side-panel">
-              {/*
-                活动栏：图标收进一个圆角容器，选中项是圆角高亮，末尾一个 chevron。
-
-                两条自我约束：
-                1. **chevron 后面必须有东西。** 它是「更多面板」的入口而不是装饰；
-                   一个点不动的 chevron，和之前那个「假的暂停补全按钮」是同一类东西。
-                   当前数据库面板不依赖项目类型、永远存在，所以它恒有内容。
-                2. **chevron 展开的东西不藏着状态。** Maven / 数据库默认收起；
-                   若当前正停在其中一个上，chevron 会高亮（告诉用户「你正在看的那个在这儿」），
-                   而不是偷偷把入口显示出来 —— 否则「收起」这个动作的含义就说不清了。
-              */}
-              <div className="idea-sidebar-tabs">
-                <div className="activity-pill">
-                  <button
-                    type="button"
-                    className={leftPanel === 'explorer' ? 'active' : ''}
-                    onClick={() => setLeftPanel('explorer')}
-                    title={t('app.tabFiles')}
-                  >
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                    >
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                      <line x1="16" y1="13" x2="8" y2="13" />
-                      <line x1="16" y1="17" x2="8" y2="17" />
-                      <polyline points="10 9 9 9 8 9" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className={leftPanel === ('search' as any) ? 'active' : ''}
-                    title={t('app.tabSearch')}
-                    onClick={() => setLeftPanel('search' as any)}
-                  >
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                    >
-                      <circle cx="11" cy="11" r="8" />
-                      <path d="m21 21-4.3-4.3" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    className={leftPanel === 'git' ? 'active' : ''}
-                    onClick={() => setLeftPanel('git')}
-                    title={t('app.tabSourceControl')}
-                  >
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                    >
-                      <circle cx="18" cy="18" r="3" />
-                      <circle cx="6" cy="6" r="3" />
-                      <path d="M13 6h3a2 2 0 0 1 2 2v7" />
-                      <line x1="6" y1="9" x2="6" y2="21" />
-                    </svg>
-                  </button>
-                  {/* 扩展市场与「文件 / 搜索 / Git」同属跨项目入口，所以放在同一组；
-                      Maven / 数据库是领域面板，收进 chevron 后面。 */}
-                  <button
-                    type="button"
-                    className={extensionPanelOpen ? 'active' : ''}
-                    onClick={() => setExtensionPanelOpen(true)}
-                    title={t('app.tabExtensions')}
-                  >
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M14 7h3a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v2a1 1 0 0 1-1 1h-3a2 2 0 0 1-4 0H7a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4V8a1 1 0 0 1 1-1h3a2 2 0 0 1 4 0z" />
-                    </svg>
-                  </button>
-
-                  {railExpanded && isMavenProject && (
-                    <button
-                      type="button"
-                      className={leftPanel === 'maven' ? 'active' : ''}
-                      onClick={() => setLeftPanel('maven')}
-                      title={t('app.tabMaven')}
-                    >
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M4 19V5.5L12 13.5L20 5.5V19" />
-                      </svg>
-                    </button>
-                  )}
-                  {railExpanded && (
-                    <button
-                      type="button"
-                      className={leftPanel === 'database' ? 'active' : ''}
-                      onClick={() => setLeftPanel('database')}
-                      title={t('app.tabDatabase')}
-                    >
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <ellipse cx="12" cy="5" rx="9" ry="3" />
-                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-                      </svg>
-                    </button>
-                  )}
-
-                  {/* chevron 不写成条件渲染：数据库面板不依赖项目类型，永远存在，
-                      所以它后面恒有内容。真到了「一个都没有」的那天，
-                      这里要跟着变成条件渲染，否则就是个点不动的死按钮。 */}
-                  <button
-                    type="button"
-                    className={`activity-more${railExpanded ? ' expanded' : ''}${
-                      !railExpanded && (leftPanel === 'maven' || leftPanel === 'database')
-                        ? ' active'
-                        : ''
-                    }`}
-                    onClick={() => setRailExpanded((v) => !v)}
-                    title={
-                      railExpanded
-                        ? t('app.railCollapse')
-                        : leftPanel === 'maven' || leftPanel === 'database'
-                          ? t('app.railExpandCurrent')
-                          : t('app.railExpand')
-                    }
-                  >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
+              <ActivityBar
+                active={leftPanel}
+                pinned={pinnedPanels}
+                isMavenProject={isMavenProject}
+                onSelect={focusLeftPanel}
+                onPinnedChange={handlePinnedChange}
+              />
 
               <div
                 className="explorer-wrapper"
@@ -5356,6 +5244,21 @@ export function App() {
                     openScriptPaths={openScriptPaths}
                     onShowToast={showToast}
                   />
+                </ErrorBoundary>
+              </div>
+              <div
+                className="extensions-panel-wrapper"
+                style={{
+                  display: leftPanel === 'extensions' ? 'flex' : 'none',
+                  minHeight: 0,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  height: '100%',
+                  width: '100%',
+                }}
+              >
+                <ErrorBoundary>
+                  <ExtensionPanel onOpenExtension={handleOpenExtension} />
                 </ErrorBoundary>
               </div>
               <div
@@ -5982,22 +5885,6 @@ export function App() {
         }}
         onSaved={applySettings}
         onShowToast={showToast}
-      />
-
-      {/* 扩展管理面板 */}
-      <ExtensionModal
-        open={extensionPanelOpen}
-        onClose={() => setExtensionPanelOpen(false)}
-        onOpenExtension={(extId) => {
-          setCurrentExtensionId(extId);
-          setExtensionPanelOpen(false);
-          setClaudePanelOpen(true);
-          setRightPanelTab('claude'); // 切换到 Claude 标签
-          // 展开右侧面板
-          if (layout.chatPanelExpanded === false) {
-            setLayout({ ...layout, chatPanelExpanded: true });
-          }
-        }}
       />
 
       <OpenWorkspaceModal
