@@ -1359,16 +1359,15 @@ select:focus {
 .activity-pill {
   display: flex;
   align-items: center;
-  /* 整组图标居中，而不是左对齐 / chevron 顶到最右。
-     容器仍然撑满整行：展开 Maven / 数据库时容器轮廓不动，
-     只有里面这一组重新居中，视觉上比「容器跟着内容变宽」稳。 */
+  /* 整组图标居中。容器撑满整行只是为了给「居中」一个参照系 ——
+     它本身不画底色、不画边框：这一排是导航，不是一张卡片，
+     压一层底会让整个侧栏顶部多出一块明显比周围亮的区域。
+     选中/悬停的高亮仍然保留（那才是「我在哪」的提示）。 */
   justify-content: center;
   gap: 2px;
   flex: 1;
   min-width: 0;
   padding: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
   border-radius: 10px;
 }
 
@@ -18450,6 +18449,12 @@ button.open-ws-action-icon-btn.remove-btn:hover {
      面板是常驻的而不是弹窗，滚动必须发生在内部 —— 让整列滚走会把搜索框也带走。 */
   height: 100%;
   min-height: 0;
+  /* `min-width: 0` 不是可选项：这个容器是 flex 项，默认的 `min-width: auto` 是
+     「不小于内容的最小宽度」，而描述行是 nowrap —— 于是整块面板会被文字顶得比侧栏还宽，
+     右侧的按钮和统计被挤出可视区（表现为「文字被切掉、安装按钮不见了」）。
+     实测：外框 420px 时容器被顶到 676px。 */
+  min-width: 0;
+  width: 100%;
   padding: 2px 10px 10px;
 }
 
@@ -18519,12 +18524,23 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   flex: 1;
   min-width: 0;
   height: 30px;
+  /* 全局的 `input` 规则带 8px/10px 内边距，会把 30px 的行高顶开 */
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--text);
   font-size: var(--ui-font-size, 13px);
   font-family: inherit;
   outline: none;
+}
+
+/* 焦点态只由外层容器表达。
+   全局 `input:focus` 用 !important 画了一圈蓝描边，外层 .ext-search 的 :focus-within
+   又画一圈边框，两圈蓝框套在一起。这里把输入框自己那圈按同优先级、同样 !important 关掉
+   （不是改全局规则 —— 别处的输入框仍然需要那圈焦点提示）。 */
+.ext-search-input:focus {
+  border-color: transparent !important;
+  outline: none !important;
 }
 
 .ext-search-input::placeholder {

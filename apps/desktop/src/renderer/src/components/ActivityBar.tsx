@@ -86,11 +86,13 @@ const PANEL_ICONS: Record<LeftPanelId, React.ReactNode> = {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M14 7h3a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v2a1 1 0 0 1-1 1h-3a2 2 0 0 1-4 0H7a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4V8a1 1 0 0 1 1-1h3a2 2 0 0 1 4 0z" />
+      {/* 拼图块。旧的那条路径在 18px 下渲染成一个认不出的四瓣花 ——
+          「扩展」这个图标必须一眼就是拼图，否则用户只能靠位置记它。 */}
+      <path d="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 1 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 1 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 1 1 5.4 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 1 0 0-5z" />
     </svg>
   ),
   maven: (
@@ -265,18 +267,12 @@ export function ActivityBar({
                     : t('app.railPinPanel')
                 }
               >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M9 4h6l-.7 5.2 3.2 2.6H6.5l3.2-2.6z" />
-                  <line x1="12" y1="11.8" x2="12" y2="20" />
+                {/* 实心图钉。描边版在这个尺寸下只剩一个十字，认不出是什么；
+                    实心块 + 一根针才有辨识度（VS Code 的图钉也是实心的）。
+                    头刻意画得宽一点：13px 的细头会被抗锯齿糊成一个点。 */}
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M8 2.5h8l-1 6.5 3 3H6l3-3z" />
+                  <path d="M11 12h2v4.5l-1 3-1-3z" />
                 </svg>
               </button>
             </div>
