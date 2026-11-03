@@ -70,7 +70,15 @@
 在 `ExtensionHost` 里激活。默认用 `christian-kohler.npm-intellisense`（约 1.2MB）。
 纯 Node 就能跑：`vscode` 模块的注入是 `Module.prototype.require` 打补丁，不需要 Electron。
 
-这条脚本第一次跑就抓出三个真问题（都已修）：
+它现在还顺带验「禁用 / 卸载」的前提：激活后 `ExtensionHost.listExtensionCommands()`
+列出的每条命令都必须记在**这个扩展**名下（没有归属就无从摘起），
+再 deactivate 一次，断言该扩展的命令与视图全部被摘干净 —— 实测：
+
+- `es6kr.claude-sessions`：24 条命令，全部归属正确，停用后归零；
+- `vishalguptax.claude-manager`：9 条命令 + 2 个视图（`claudeCodeManager.view` /
+  `claudeCodeManager.secondaryView`），停用后同样归零。
+
+这条脚本第一次跑还抓出三个真问题（都已修）：
 
 1. `main` 不带 `.js` 的扩展加载不了主模块 —— 实测 `"./out/src/extension"` 被判成「文件不存在」，
    而这几乎覆盖所有 TypeScript 编译出来的扩展；

@@ -105,6 +105,36 @@ async function main() {
   console.log(
     `\n命令注册：${registered.length > 0 ? registered.join(', ') : '（该扩展没有注册命令）'}`,
   );
+
+  // 6) 归属登记 + 摘除。这一对是「禁用 / 卸载」正确性的核心：
+  //    命令面板列的是 host.listExtensionCommands()，禁用时要靠 dropExtensionRegistrations
+  //    把该扩展注册的命令与视图一起摘掉。这里在真扩展上验一遍「摘干净」这个不变量。
+  const extId = `${loaded.manifest.publisher}.${loaded.manifest.name}`;
+  const commandsWhileActive = host.listExtensionCommands();
+  const viewsWhileActive = host.listWebviewViewIds(extId);
+  console.log(
+    `→ 归属登记：命令 ${
+      commandsWhileActive.length > 0
+        ? commandsWhileActive.map((c) => `${c.command}（${c.extensionId ?? '无归属'}）`).join(', ')
+        : '（无）'
+    } / 视图 ${viewsWhileActive.length > 0 ? viewsWhileActive.join(', ') : '（无）'}`,
+  );
+  // activate 期间注册的东西必须都带上归属，否则禁用时无从摘起
+  const unowned = commandsWhileActive.filter((c) => c.extensionId !== extId);
+  if (unowned.length > 0) {
+    throw new Error(`这些命令没有记在 ${extId} 名下：${unowned.map((c) => c.command).join(', ')}`);
+  }
+
+  await host.deactivateExtension(extId);
+  const leftovers = host.listExtensionCommands().filter((c) => c.extensionId === extId);
+  const leftoverViews = host.listWebviewViewIds(extId);
+  if (leftovers.length > 0 || leftoverViews.length > 0) {
+    throw new Error(
+      `停用后仍有残留：命令 [${leftovers.map((c) => c.command).join(', ')}] / 视图 [${leftoverViews.join(', ')}]`,
+    );
+  }
+  console.log('✓ 停用后该扩展的命令与视图都已摘掉（禁用的前提）');
+
   await fs.rm(workDir, { recursive: true, force: true });
   console.log('\n✓ 扩展安装链路（下载 → 解压加载 → 激活）全部通过');
 }

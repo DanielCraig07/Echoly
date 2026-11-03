@@ -109,16 +109,21 @@ export class ExtensionHost {
       }
     }
 
-    // 清理订阅
+    // 清理订阅。
+    // 先判 dispose 是不是函数：`context.subscriptions` 是个约定俗成的数组，扩展往里塞
+    // **任何东西**都不会被拦（实测 es6kr.claude-sessions 塞进了非 Disposable 的值）。
+    // 直接 `sub.dispose()` 会抛 `is not a function` —— 被 catch 住，但每次停用都刷一屏
+    // 红字，看起来像 shim 坏了，其实是扩展自己的问题。
     const context = this.extensionContexts.get(extensionId);
     if (context) {
-      context.subscriptions.forEach((sub) => {
+      for (const sub of context.subscriptions) {
+        if (typeof sub?.dispose !== 'function') continue;
         try {
           sub.dispose();
         } catch (err) {
           console.error(`Error disposing subscription:`, err);
         }
-      });
+      }
     }
 
     // 命令与视图注册也要摘掉：扩展已经停了，留着它的命令只会点出一个空响应
