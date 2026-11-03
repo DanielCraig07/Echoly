@@ -460,3 +460,119 @@ describe('扩展「跟用户说话」的那几条路（宿主注入）', () => {
     expect(opened).toEqual(['https://example.com/a']);
   });
 });
+
+describe('createWebviewPanel 真的开成一个面板（Claude 的「+」走这里）', () => {
+  /**
+   * 以前 `createWebviewPanel` 是个**空壳**：`webview.html = …` 被丢掉、
+   * 面板不会出现在界面上。Claude Code 点「+」（新会话）正好走这条 ——
+   * 于是标签不出现，而扩展那边已经把会话记成「开在面板里」并把侧栏清空。
+   * 从用户视角看就是「点 + 没生效，当前窗口却被重置了」。
+   *
+   * 这里钉住的是「shim 把 VS Code 的 API 形状摆对」这件事：HTML 真的交给宿主、
+   * 消息双向通、关面板会触发 onDidDispose（不触发扩展会一直以为它还开着）。
+   */
+  const setup = () => {
+    const htmls: string[] = [];
+    const posted: unknown[] = [];
+    const uriRequests: string[] = [];
+    const revealed: number[] = [];
+    const disposed: number[] = [];
+    const shim = new VSCodeShim({
+      workspaceRoot: '/tmp/x',
+      extensionPath: '/tmp/x',
+      onCommand: async () => undefined,
+      onMessage: () => {},
+      onWebviewPanel: () => ({
+        panelId: 'panel:demo:1',
+        cspSource: 'echoly-webview://ext',
+        setHtml: (html: string) => htmls.push(html),
+        asWebviewUri: (uri: any) => {
+          uriRequests.push(String(uri?.fsPath ?? uri));
+          return 'echoly-webview://ext/panel:demo:1/-/abs/AAA';
+        },
+        postMessage: (message: any) => {
+          posted.push(message);
+          return true;
+        },
+        reveal: () => revealed.push(1),
+        dispose: () => disposed.push(1),
+      }),
+    });
+    const api = shim.createAPI() as any;
+    return { shim, api, htmls, posted, uriRequests, revealed, disposed };
+  };
+
+  it('webview.html → 宿主；asWebviewUri / cspSource / postMessage / reveal 都接上', () => {
+    const { api, htmls, posted, uriRequests, revealed } = setup();
+    const panel = api.window.createWebviewPanel('demo.panel', 'Demo', 1, { enableScripts: true });
+
+    panel.webview.html = '<html>hi</html>';
+    expect(htmls).toEqual(['<html>hi</html>']);
+    expect(panel.viewType).toBe('demo.panel');
+    expect(panel.viewColumn).toBe(1);
+
+    expect(panel.webview.asWebviewUri(api.Uri.file('/tmp/x/webview/index.js'))).toBe(
+      'echoly-webview://ext/panel:demo:1/-/abs/AAA',
+    );
+    expect(uriRequests).toEqual(['/tmp/x/webview/index.js']);
+    expect(panel.webview.cspSource).toBe('echoly-webview://ext');
+
+    void panel.webview.postMessage({ hello: 1 });
+    expect(posted).toEqual([{ hello: 1 }]);
+
+    panel.reveal();
+    expect(revealed).toEqual([1]);
+  });
+
+  it('界面发回来的消息投到 onDidReceiveMessage；摘掉订阅之后不再投', () => {
+    const { shim, api } = setup();
+    const panel = api.window.createWebviewPanel('demo.panel', 'Demo', 1);
+    const seen: unknown[] = [];
+    const sub = panel.webview.onDidReceiveMessage((message: any) => seen.push(message));
+
+    expect(shim.deliverPanelMessage('panel:demo:1', { from: 'guest' })).toBe(true);
+    expect(seen).toEqual([{ from: 'guest' }]);
+    // 不认识的 panelId 要明确说「不是我的」，宿主据此判断没人认领
+    expect(shim.deliverPanelMessage('panel:other:9', {})).toBe(false);
+
+    sub.dispose();
+    shim.deliverPanelMessage('panel:demo:1', { from: 'guest-2' });
+    expect(seen).toEqual([{ from: 'guest' }]);
+  });
+
+  it('关面板触发 onDidDispose 并清掉 backend（扩展据此注销会话）', () => {
+    const { shim, api, disposed } = setup();
+    const panel = api.window.createWebviewPanel('demo.panel', 'Demo', 1);
+    let disposedCalls = 0;
+    panel.onDidDispose(() => {
+      disposedCalls += 1;
+    });
+
+    // 宿主侧（渲染层关了标签）调的这条路
+    expect(shim.disposePanel('panel:demo:1')).toBe(true);
+    expect(disposedCalls).toBe(1);
+    expect(disposed).toEqual([1]);
+    // 重复关不重复触发
+    expect(shim.disposePanel('panel:demo:1')).toBe(false);
+    expect(disposedCalls).toBe(1);
+
+    // 扩展自己 dispose 也一样（两次都算，callback 只跑一次）
+    const panel2 = api.window.createWebviewPanel('demo.panel', 'Demo', 1);
+    let calls2 = 0;
+    panel2.onDidDispose(() => {
+      calls2 += 1;
+    });
+    panel2.dispose();
+    panel2.dispose();
+    expect(calls2).toBe(1);
+  });
+
+  it('宿主没实现面板时退回空壳：不抛，扩展的后续代码还能跑', () => {
+    const api = createApi();
+    const panel = api.window.createWebviewPanel('demo.panel', 'Demo', 1);
+    expect(() => {
+      panel.webview.html = '<html></html>';
+      panel.dispose();
+    }).not.toThrow();
+  });
+});

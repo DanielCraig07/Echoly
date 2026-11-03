@@ -420,6 +420,13 @@ export function App() {
   // Paths currently being discarded: within suppression window, Monaco's onChange
   // will NOT trigger auto-save or mark dirty, preventing discarded files from being saved back.
   const suppressAutoSaveUntilRef = useRef<Map<string, number>>(new Map());
+  /**
+   * 正在打开的「扩展面板」标签 id（`panel:…`）。
+   *
+   * 面板和普通扩展视图共用 `ext://view/<id>` 这条路径，但只有面板在关闭时要
+   * 反过来通知扩展（`panel.onDidDispose`）。用这张表把两者分开。
+   */
+  const extensionPanelIdsRef = useRef<Set<string>>(new Set());
   const shellRef = useRef<HTMLDivElement>(null);
   const [shellWidth, setShellWidth] = useState<number>(0);
   const middleColRef = useRef<HTMLDivElement>(null);
@@ -3174,6 +3181,20 @@ export function App() {
   const closeConfirmQueueRef = useRef<OpenTab[]>([]);
 
   const closeTabDirect = useCallback((path: string) => {
+    /**
+     * 关掉的是扩展 webview 面板的标签 → 得告诉扩展「这个面板没了」。
+     *
+     * 不告诉它的后果不是「留个野标签」那么轻：Claude Code 用 `panel.onDidDispose`
+     * 把会话从 `sessionPanels` 里注销。漏掉这一下，扩展会一直认为那个会话已经开在
+     * 某个面板里，再点同一会话就什么都不发生（侧栏也不给开）。
+     */
+    if (path.startsWith(EXTENSION_VIEW_PREFIX)) {
+      const viewId = path.slice(EXTENSION_VIEW_PREFIX.length);
+      if (extensionPanelIdsRef.current.has(viewId)) {
+        extensionPanelIdsRef.current.delete(viewId);
+        void window.ide?.extensionDisposePanel?.(viewId);
+      }
+    }
     setScmDiff((prev) => (prev?.path === path ? null : prev));
     setTabs((prev) => {
       const next = prev.filter((t) => t.path !== path);
@@ -3452,6 +3473,42 @@ export function App() {
     window.addEventListener('echoly:open-extension-view', handler);
     return () => window.removeEventListener('echoly:open-extension-view', handler);
   }, [openExtensionView]);
+
+  /**
+   * 扩展自己开了一个 webview 面板（`window.createWebviewPanel`）→ 在编辑器区开一个标签。
+   *
+   * 这是 Claude Code 的「+」（新会话）真正落地的地方：扩展判定新会话该开在面板里，
+   * 于是 new 面板、把 HTML 塞进来。以前 shim 里这个 API 是空壳 —— HTML 被丢掉、
+   * 标签不出现，而扩展那边已经把会话记成「在面板里」并把侧栏清空，
+   * 用户看到的就是「点 + 没生效，当前窗口却被重置了」。
+   */
+  useEffect(() => {
+    const offOpen = window.ide?.onExtensionPanelOpened?.((data) => {
+      if (!data?.panelId) return;
+      extensionPanelIdsRef.current.add(data.panelId);
+      openVirtualTab(
+        `${EXTENSION_VIEW_PREFIX}${data.panelId}`,
+        '',
+        data.title || t('extView.tabTitle'),
+        'extension-view',
+        false,
+      );
+    });
+    const offClose = window.ide?.onExtensionPanelClosed?.((data) => {
+      if (!data?.panelId) return;
+      extensionPanelIdsRef.current.delete(data.panelId);
+      closeTabDirect(`${EXTENSION_VIEW_PREFIX}${data.panelId}`);
+    });
+    const offReveal = window.ide?.onExtensionPanelRevealed?.((data) => {
+      if (!data?.panelId) return;
+      setActivePath(`${EXTENSION_VIEW_PREFIX}${data.panelId}`);
+    });
+    return () => {
+      offOpen?.();
+      offClose?.();
+      offReveal?.();
+    };
+  }, [openVirtualTab, closeTabDirect, t]);
 
   /**
    * 扩展编辑器打不开 → 退回内置编辑器。

@@ -266,6 +266,25 @@ const api: IpcApi = {
   },
   extensionWebviewPost: (viewId, message) =>
     ipcRenderer.invoke('extension:webview-post', viewId, message),
+  onExtensionPanelOpened: (cb) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      data: { panelId: string; title: string; viewType?: string },
+    ) => cb(data);
+    ipcRenderer.on('extension:panel-opened', listener);
+    return () => ipcRenderer.removeListener('extension:panel-opened', listener);
+  },
+  onExtensionPanelClosed: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { panelId: string }) => cb(data);
+    ipcRenderer.on('extension:panel-closed', listener);
+    return () => ipcRenderer.removeListener('extension:panel-closed', listener);
+  },
+  onExtensionPanelRevealed: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { panelId: string }) => cb(data);
+    ipcRenderer.on('extension:panel-revealed', listener);
+    return () => ipcRenderer.removeListener('extension:panel-revealed', listener);
+  },
+  extensionDisposePanel: (panelId) => ipcRenderer.invoke('extension:dispose-panel', panelId),
   onExtensionWebviewMessage: (cb) => {
     const listener = (_: Electron.IpcRendererEvent, data: { viewId: string; message: unknown }) =>
       cb(data);

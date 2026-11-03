@@ -91,6 +91,17 @@ function toPosix(value: string): string {
  * 在扩展目录外 → `-/abs/<base64url>`。后者不像相对路径那样受目录约束，
  * 所以解析时会单独放行（它只可能来自扩展自己调 asWebviewUri）。
  */
+/**
+ * 把一个**不在扩展目录里**的绝对路径编进协议地址（不走扩展目录的相对路径）。
+ *
+ * webview 面板（`window.createWebviewPanel`）的资源地址要现算，而那时我们不一定
+ * 拿得到扩展目录 —— 面板的 HTML 是扩展在自己的代码里拼的，`asWebviewUri` 收到的是
+ * 绝对路径。直接编成 `-/abs/<base64url>`，协议处理器那边会单独放行这一种。
+ */
+export function toAbsWebviewResourcePath(fsPath: string): string {
+  return `${ABS_PREFIX}${encodeAbsPath(fsPath)}`;
+}
+
 export function toWebviewResourcePath(extensionRoot: string, fsPath: string): string {
   const root = toPosix(extensionRoot).replace(/\/+$/, '');
   const target = toPosix(fsPath);

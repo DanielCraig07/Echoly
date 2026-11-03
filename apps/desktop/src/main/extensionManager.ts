@@ -18,6 +18,7 @@ import {
   extractFsPath,
   parseWebviewRequest,
   resolveWebviewFilePath,
+  toAbsWebviewResourcePath,
   toWebviewResourcePath,
 } from './extensionWebview';
 import { ExtensionHost } from '@deepseek-ide/vscode-shim/src/extensionHost';
@@ -81,6 +82,13 @@ export interface DownloadProgressPayload {
 /** Claude Code 的 id 与展示名（专用安装通道的进度也要能显示名字）。 */
 const CLAUDE_CODE_ID = 'Anthropic.claude-code';
 const CLAUDE_CODE_NAME = 'Claude Code';
+
+/**
+ * Claude Code 侧栏视图的 id（右侧 AI 面板里那一栏渲染的就是它）。
+ *
+ * 单独拿出来是因为下面要按它改写一条状态（见 `withPanelNewConversation`）。
+ */
+const CLAUDE_CODE_VIEW_ID = 'claudeVSCodeSidebar';
 
 /**
  * 行列位置 → 字符偏移（按 `\n` 切）。
@@ -261,6 +269,25 @@ export class ExtensionManager {
    */
   private resourceRoots = new Map<string, string>();
   /**
+   * 已开出去的 webview 面板（`window.createWebviewPanel`）：panelId → 元信息。
+   *
+   * 「面板」和「视图」在协议层是一回事（一个 key + 一份 HTML + 一个资源根），
+   * 区别只在谁开的：视图是扩展注册 provider 由我们 resolve，面板是扩展自己
+   * new 出来、自己把 HTML 塞进来的（Claude 的「+」新会话就是后者）。
+   */
+  private webviewPanels = new Map<string, { title: string; viewType: string }>();
+  /** 面板 id 的自增序号（`panel:<viewType>:<n>`，同一 viewType 可以开多个）。 */
+  private panelSeq = 0;
+  /**
+   * 面板的资源根目录**哨兵**。
+   *
+   * 面板拿不到扩展目录（HTML 在扩展代码里拼，`asWebviewUri` 只给绝对路径），
+   * 所以面板的资源一律编成 `-/abs/<base64url>`；协议处理器对这条前缀直接放行。
+   * 这里塞一个**不存在**的目录当根：万一有人用相对路径请求面板资源，
+   * 归一化之后会落在它下面、`fs.access` 自然失败 —— 不会变成「能读本机任意文件」。
+   */
+  private static readonly PANEL_ROOT_SENTINEL = '/__echoly-webview-panel__';
+  /**
    * 已打开的自定义编辑器面板：panelKey → 运行时。
    *
    * key 用 `editor:<序号>` 而不是 viewType：同一个 viewType 可以对多个文件各开一个
@@ -315,6 +342,11 @@ export class ExtensionManager {
       onSaveDialog: (options) => this.showSaveDialog(options),
       onQuickPick: (items, options) => this.showQuickPick(items, options),
       onOpenExternal: (url) => this.openExternal(url),
+      // 扩展开一个 webview 面板（Claude Code 的「+」新会话走这里）。
+      // 以前这个 API 在 shim 里是空壳：HTML 被丢掉、标签不出现，而扩展那边
+      // 已经把会话记成「在面板里」，于是侧栏被清空 —— 用户看到的就是
+      // 「点 + 没生效，当前窗口却被重置了」。现在真的开成一个编辑器标签。
+      onWebviewPanel: (spec) => this.createExtensionWebviewPanel(spec),
     });
 
     // 把 `vscode` 模块落到扩展目录旁（ESM 扩展只能靠真模块解析，require 补丁拦不住）。
@@ -520,6 +552,15 @@ export class ExtensionManager {
      * 没有这行日志，只能靠猜。只记类型不记载荷（载荷里有对话内容）。
      */
     console.log(`[webview→扩展] ${viewId}: ${describeWebviewMessage(message)}`);
+
+    /**
+     * 面板的回调存在 shim 那边（`webview.onDidReceiveMessage` 是扩展在面板对象上注册的），
+     * 所以这里走 shim 投递，而不是主进程这张 handler 表。
+     */
+    if (this.webviewPanels.has(viewId)) {
+      this.extensionHost.deliverPanelMessage(viewId, message);
+      return;
+    }
 
     const handlers = this.webviewMessageHandlers.get(viewId);
     if (!handlers || handlers.size === 0) {
@@ -1722,6 +1763,14 @@ export class ExtensionManager {
    * 解析 WebviewView（返回 HTML 内容）
    */
   async resolveWebviewView(viewId: string): Promise<string> {
+    /**
+     * 面板的 HTML 是扩展自己塞进来的（`webview.html = …`），已经注入过运行时与主题，
+     * 直接给渲染层用 —— 不需要（也没有）provider 可 resolve。
+     */
+    if (this.webviewPanels.has(viewId)) {
+      return this.webviewHtml.get(viewId) ?? '';
+    }
+
     const providerInfo = this.webviewViewProviders.get(viewId);
     if (!providerInfo) {
       throw new Error(`No WebviewView provider registered for: ${viewId}`);
@@ -1786,7 +1835,10 @@ export class ExtensionManager {
        * 的 message 事件 data 就是什么」，而扩展自己会包一层 `{type:'from-extension'}`。
        */
       postMessage: (message: any) => {
-        this.broadcastToRenderers('extension:webview-message', { viewId, message });
+        this.broadcastToRenderers('extension:webview-message', {
+          viewId,
+          message: this.withPanelNewConversation(viewId, message),
+        });
         return Promise.resolve(true);
       },
       /**
@@ -1861,6 +1913,125 @@ export class ExtensionManager {
     }
 
     return htmlContent;
+  }
+
+  /**
+   * 把「新会话开在面板里」这条语义补给 Claude 的**侧栏**界面。
+   *
+   * 背景：扩展用 `openNewInTab`（= 「这个界面是不是一个编辑器面板」）决定点「+」时
+   * 干什么 —— 面板模式下发给扩展、开一个新标签；侧栏模式下则**就地新建一个会话**，
+   * 于是当前对话被清空。我们的右侧面板渲染的就是侧栏那份界面，所以用户点「+」看到的
+   * 是「没新增会话，当前窗口却被重置了」。
+   *
+   * 现在把发给这个界面的状态里的 `openNewInTab` 改成 true：点「+」会走
+   * `claude-vscode.editor.open` → 扩展真正开一个 webview 面板 → 我们把它变成
+   * 编辑器里的一个标签（见 createExtensionWebviewPanel）。侧栏本身不再被清空。
+   *
+   * 只动这一个布尔值，别的状态原样透传 —— Claude 的会话状态很脆，
+   * 「顺手修正」别的字段迟早会踩到它。
+   */
+  private withPanelNewConversation(viewId: string, message: any): any {
+    if (viewId !== CLAUDE_CODE_VIEW_ID) return message;
+    const payload = message?.message;
+    if (!payload || typeof payload !== 'object') return message;
+
+    /**
+     * 这份状态会在三条消息里出现（界面读的是同一个字段）：
+     * - `request.update_state`（扩展主动推的）；
+     * - `response.init_response`（界面 `init` 之后拿到的初始状态）；
+     * - 以及极少数直接把 state 放在载荷顶层的形状。
+     */
+    const patch = (container: any): any => {
+      const state = container?.state;
+      if (!state || typeof state !== 'object' || state.openNewInTab === true) return container;
+      return { ...container, state: { ...state, openNewInTab: true } };
+    };
+
+    const next: any = { ...payload };
+    let changed = false;
+    if (next.request) {
+      const patched = patch(next.request);
+      if (patched !== next.request) {
+        next.request = patched;
+        changed = true;
+      }
+    }
+    if (next.response) {
+      const patched = patch(next.response);
+      if (patched !== next.response) {
+        next.response = patched;
+        changed = true;
+      }
+    }
+    if (!next.request && !next.response) {
+      const patched = patch(next);
+      if (patched !== next) {
+        Object.assign(next, patched);
+        changed = true;
+      }
+    }
+    return changed ? { ...message, message: next } : message;
+  }
+
+  /**
+   * 扩展调 `window.createWebviewPanel`：真的把它变成一个编辑器标签。
+   *
+   * 和「视图」共用同一套协议与消息通道 —— 对一个 webview 来说，
+   * 「谁开的」在协议层没有区别：一个 key、一份 HTML、一个资源根、一组回调。
+   *
+   * 时序：扩展先 new 面板、再设 `webview.html`（有的扩展也会先 postMessage）。
+   * 所以「开标签」这件事发生在 setHtml 里，而不是这里 —— 这里只把 backend 交出去。
+   */
+  private createExtensionWebviewPanel(spec: {
+    viewType: string;
+    title: string;
+    options?: any;
+    extensionId?: string;
+  }): import('@deepseek-ide/vscode-shim/src/index').WebviewPanelBackend {
+    this.panelSeq += 1;
+    // viewType 可能带点/斜杠（`claude-code.panel`），只保留 id 安全字符当命名空间
+    const safeType = String(spec.viewType || 'panel').replace(/[^A-Za-z0-9_.-]/g, '_');
+    const panelId = `panel:${safeType}:${this.panelSeq}`;
+    const title = spec.title || 'Extension';
+
+    this.webviewPanels.set(panelId, { title, viewType: spec.viewType });
+    // 面板的资源一律走 `-/abs/`（见 PANEL_ROOT_SENTINEL 的注释）
+    this.resourceRoots.set(panelId, ExtensionManager.PANEL_ROOT_SENTINEL);
+
+    return {
+      panelId,
+      cspSource: buildWebviewOrigin(),
+      setHtml: (html: string) => {
+        // 与视图同源：注入 webview 运行时（acquireVsCodeApi）与主题表
+        const withRuntime = this.injectThemeLink(this.injectRuntimeScript(html ?? ''), panelId);
+        this.webviewHtml.set(panelId, withRuntime);
+        this.broadcastToRenderers('extension:webview-registered', { viewId: panelId });
+        // 渲染层收到这条就开一个编辑器标签，标签里是上面这份 HTML
+        this.broadcastToRenderers('extension:panel-opened', {
+          panelId,
+          title,
+          viewType: spec.viewType,
+        });
+      },
+      asWebviewUri: (uri: any) => {
+        // 面板拿不到扩展目录，用绝对路径形式（协议处理器单独放行）
+        return buildWebviewUrl(panelId, toAbsWebviewResourcePath(extractFsPath(uri)));
+      },
+      postMessage: (message: any) => {
+        this.broadcastToRenderers('extension:webview-message', { viewId: panelId, message });
+        return true;
+      },
+      reveal: () => {
+        this.broadcastToRenderers('extension:panel-revealed', { panelId });
+      },
+      dispose: () => {
+        this.webviewPanels.delete(panelId);
+        this.webviewHtml.delete(panelId);
+        this.resourceRoots.delete(panelId);
+        this.webviewMessageHandlers.delete(panelId);
+        this.broadcastToRenderers('extension:panel-closed', { panelId });
+      },
+    };
   }
 
   /**
@@ -2260,6 +2431,12 @@ export class ExtensionManager {
       return { success: true };
     });
 
+    // 关掉扩展 webview 面板的标签：要触发扩展的 `panel.onDidDispose`，
+    // 否则扩展会一直以为「这个会话已经开在某个面板里」，之后再点什么都不发生。
+    ipcMain.handle('extension:dispose-panel', async (_event, panelId: string) => {
+      return { success: this.extensionHost.disposePanel(panelId) };
+    });
+
     // 渲染进程推主题变量（`:root` 上的实际值只有它有）
     ipcMain.handle('extension:set-webview-theme', async (_event, vars: Record<string, string>) => {
       this.setWebviewTheme(vars ?? {});
@@ -2297,6 +2474,8 @@ export class ExtensionManager {
     this.webviewHtml.clear();
     this.webviewMessageHandlers.clear();
     this.resourceRoots.clear();
+    this.webviewPanels.clear();
+    this.webviewHtml.clear();
     for (const panelKey of Array.from(this.customEditorPanels.keys())) {
       this.disposeCustomEditor(panelKey);
     }

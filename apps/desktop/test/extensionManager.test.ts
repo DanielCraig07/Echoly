@@ -147,6 +147,51 @@ module.exports = { activate };
       'utf8',
     );
 
+    // 一个「真的会开 webview 面板」的扩展（`window.createWebviewPanel`）。
+    // Claude Code 的「+」（新会话）走的就是这条 —— 以前 shim 里这个 API 是空壳，
+    // HTML 被丢掉、标签不出现，而扩展那边已经把会话记成「开在面板里」。
+    await seedExtension(extensionsDir, 'demo.panel', {
+      name: 'panel',
+      publisher: 'demo',
+      displayName: 'Demo Panel',
+      version: '1.0.0',
+      main: './extension.js',
+    });
+    await mkdir(path.join(extensionsDir, 'demo.panel', 'extension', 'webview'), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(extensionsDir, 'demo.panel', 'extension', 'webview', 'index.js'),
+      '/* fake panel bundle */\n',
+      'utf8',
+    );
+    await writeFile(
+      path.join(extensionsDir, 'demo.panel', 'extension', 'extension.js'),
+      // 刻意不写反斜杠转义（外层是模板字符串，会被吃掉一层）
+      `function activate(context) {
+  const vscode = require('vscode');
+  const panel = vscode.window.createWebviewPanel('demo.panelType', 'Demo Panel', 1, {
+    enableScripts: true,
+  });
+  const bundle = vscode.Uri.joinPath(context.extensionUri, 'webview', 'index.js');
+  const scriptUri = panel.webview.asWebviewUri(bundle);
+  panel.webview.html =
+    '<html><head></head><body>' +
+    '<script id="demo-panel-bundle" nonce="panel9" src="' + scriptUri + '" type="module"></script>' +
+    '</body></html>';
+  panel.webview.onDidReceiveMessage((m) => {
+    globalThis.__echolyPanelGot = m;
+  });
+  panel.onDidDispose(() => {
+    globalThis.__echolyPanelDisposed = true;
+  });
+  context.subscriptions.push(panel);
+}
+module.exports = { activate };
+`,
+      'utf8',
+    );
+
     manager = new ExtensionManager({ workspaceRoot: base, registry: 'https://open-vsx.org' });
     await manager.initialize();
   });
@@ -185,6 +230,7 @@ module.exports = { activate };
     expect(list.map((e) => e.id)).toEqual([
       'Anthropic.claude-code',
       'demo.cmds',
+      'demo.panel',
       'demo.view',
       'foo.bar',
     ]);
@@ -222,6 +268,7 @@ module.exports = { activate };
     expect(existsSync(path.join(extensionsDir, 'foo.bar'))).toBe(true);
     expect((await manager.listInstalledExtensions()).map((e) => e.id)).toEqual([
       'demo.cmds',
+      'demo.panel',
       'demo.view',
       'foo.bar',
     ]);
@@ -401,5 +448,133 @@ module.exports = { activate };
     const res = await manager.uninstallExtension('nobody.nothing');
     expect(res.ok).toBe(false);
     expect(res.error).toContain('nobody.nothing');
+  });
+  describe('扩展 webview 面板（window.createWebviewPanel）', () => {
+    /**
+     * 面板与「视图」在协议层是一回事（一个 key + 一份 HTML + 一个资源根），
+     * 区别只在谁开的：视图是扩展注册 provider、由我们 resolve；面板是扩展自己
+     * new 出来、自己把 HTML 塞进来的。Claude Code 的「+」（新会话）走后者 ——
+     * 以前这个 API 在 shim 里是空壳，表现是「点 + 没生效，当前窗口却被重置了」。
+     */
+    async function waitForPanel(): Promise<{ panelId: string; html: string }> {
+      return waitFor('扩展把面板开出来', async () => {
+        const panels = (manager as any).webviewPanels as Map<string, unknown>;
+        const panelId = [...panels.keys()].find((k) => k.startsWith('panel:demo.panelType:'));
+        if (!panelId) return undefined;
+        const html = (await (manager as any).resolveWebviewView(panelId)) as string;
+        return html ? { panelId, html } : undefined;
+      });
+    }
+
+    it('面板的资源地址走协议（绝对路径形式），HTML 里也注入了运行时', async () => {
+      const { panelId, html } = await waitForPanel();
+
+      // 路径里每一段都逐段 encode（panelId 里的 `:` 会变成 %3A），协议处理器再解回来
+      const encodedId = encodeURIComponent(panelId);
+      // 面板拿不到扩展目录（HTML 是扩展自己拼的），所以资源编成 `-/abs/<base64url>`
+      expect(html).toContain(`echoly-webview://ext/${encodedId}/-/abs/`);
+      expect(html).not.toContain('file://');
+      // 与视图同源：acquireVsCodeApi 必须注入，否则扩展的 bundle 一上来就挂
+      expect(html).toContain('acquireVsCodeApi');
+      // URL 里的 key 就是 panelId，协议处理器据此找到资源根
+      expect(manager.getWebviewUrl(panelId)).toBe(`echoly-webview://ext/${encodedId}/index.html`);
+    });
+
+    it('面板的资源能通过协议取到（`-/abs/` 那条前缀被单独放行）', async () => {
+      const { panelId } = await waitForPanel();
+      hoisted.fetched.length = 0;
+
+      const response = await (manager as any).handleWebviewRequest(
+        `echoly-webview://ext/${encodeURIComponent(panelId)}/-/abs/${Buffer.from(
+          path.join(extensionsDir, 'demo.panel', 'extension', 'webview', 'index.js'),
+          'utf8',
+        ).toString('base64url')}`,
+      );
+      expect(response.status).toBe(200);
+      expect(hoisted.fetched).toHaveLength(1);
+    });
+
+    it('界面发回来的消息投给扩展的 onDidReceiveMessage', async () => {
+      const { panelId } = await waitForPanel();
+      delete (globalThis as any).__echolyPanelGot;
+
+      manager.deliverWebviewMessage(panelId, { type: 'from-panel', value: 7 });
+
+      expect((globalThis as any).__echolyPanelGot).toEqual({ type: 'from-panel', value: 7 });
+    });
+
+    it('关面板（标签被关）会触发扩展的 onDidDispose 并清掉登记', async () => {
+      const { panelId } = await waitForPanel();
+      delete (globalThis as any).__echolyPanelDisposed;
+
+      expect((manager as any).extensionHost.disposePanel(panelId)).toBe(true);
+
+      // 不触发的话扩展会一直以为「这个会话已经开在某个面板里」，之后点什么都不发生
+      expect((globalThis as any).__echolyPanelDisposed).toBe(true);
+      expect((manager as any).webviewPanels.has(panelId)).toBe(false);
+      expect((manager as any).resourceRoots.has(panelId)).toBe(false);
+    });
+  });
+
+  describe('Claude 侧栏的「+」按面板语义走', () => {
+    /**
+     * 扩展用 `openNewInTab`（= 「这个界面是不是编辑器面板」）决定点「+」干什么：
+     * 面板模式下发给扩展、开一个新标签；侧栏模式下**就地新建会话**，当前对话被清空。
+     * 我们的右侧面板渲染的正是侧栏那份界面，所以要把这个字段改成 true ——
+     * 否则用户点「+」看到的就是「没新增会话，当前窗口却被重置了」。
+     */
+    it('侧栏状态里的 openNewInTab 被改成 true（request / response 两种包装都覆盖）', () => {
+      const call = (message: any) =>
+        (manager as any).withPanelNewConversation('claudeVSCodeSidebar', message);
+
+      const pushed = {
+        type: 'from-extension',
+        message: {
+          type: 'request',
+          requestId: '',
+          request: { type: 'update_state', state: { openNewInTab: false, cwd: '/x' } },
+        },
+      };
+      expect(call(pushed).message.request.state).toEqual({ openNewInTab: true, cwd: '/x' });
+
+      const init = {
+        type: 'from-extension',
+        message: {
+          type: 'response',
+          requestId: 'r1',
+          response: { type: 'init_response', state: { openNewInTab: false } },
+        },
+      };
+      expect(call(init).message.response.state.openNewInTab).toBe(true);
+    });
+
+    it('只动这一个字段：别的视图、别的消息原样透传', () => {
+      const other = {
+        type: 'from-extension',
+        message: {
+          type: 'request',
+          request: { type: 'update_state', state: { openNewInTab: false } },
+        },
+      };
+      // 别的视图不改
+      expect((manager as any).withPanelNewConversation('demo.viewPane', other)).toBe(other);
+      // 不是状态类的消息不改
+      const other2 = {
+        type: 'from-extension',
+        message: { type: 'request', request: { type: 'something_else' } },
+      };
+      expect((manager as any).withPanelNewConversation('claudeVSCodeSidebar', other2)).toBe(other2);
+      // 已经是 true 的不重复包装（对象要原样返回）
+      const already = {
+        type: 'from-extension',
+        message: {
+          type: 'request',
+          request: { type: 'update_state', state: { openNewInTab: true } },
+        },
+      };
+      expect((manager as any).withPanelNewConversation('claudeVSCodeSidebar', already)).toBe(
+        already,
+      );
+    });
   });
 });

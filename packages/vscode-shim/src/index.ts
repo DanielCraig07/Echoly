@@ -463,6 +463,30 @@ function makeLanguagesNamespace(): any {
   });
 }
 
+/**
+ * 宿主（Echoly 主进程）为实现一个扩展的 `WebviewPanel` 提供的能力。
+ *
+ * 为什么要把这一整块交给宿主：面板的 HTML 要按我们自己的协议端出去、消息要在
+ * 「扩展 ↔ 界面」之间来回，这两件事都只有宿主知道怎么办（协议名、渲染层的通道）。
+ * shim 自己不去拼这些 —— 它还要能在纯 Node 里跑。
+ */
+export interface WebviewPanelBackend {
+  /** 宿主分配的稳定 id；渲染层用它开标签、拼资源地址。 */
+  panelId: string;
+  /** 扩展设了 `webview.html`。宿主负责注入运行时/主题，并把标签开出来。 */
+  setHtml(html: string): void;
+  /** `webview.asWebviewUri(uri)`。 */
+  asWebviewUri(uri: any): string;
+  /** `webview.postMessage(message)`：扩展 → 界面。 */
+  postMessage(message: any): Promise<boolean> | boolean | void;
+  /** 拼进扩展页面 CSP 的源。 */
+  readonly cspSource: string;
+  /** 用户切到这个面板的标签时调（`panel.reveal()`）。 */
+  reveal(): void;
+  /** 面板被关掉时清理宿主这边的东西。 */
+  dispose(): void;
+}
+
 export interface VSCodeShimOptions {
   workspaceRoot: string;
   extensionPath: string;
@@ -514,6 +538,23 @@ export interface VSCodeShimOptions {
   onInputBox?: (options: any) => Promise<string | undefined>;
   /** 用系统浏览器打开链接（`env.openExternal`）。以前返回 true 但什么都没做。 */
   onOpenExternal?: (url: string) => Promise<boolean>;
+  /**
+   * 扩展调 `window.createWebviewPanel(...)`。
+   *
+   * 以前这一整个 API 是个**空壳**：返回一个 html setter 什么都不做的假面板。
+   * Claude Code 的「+」（新会话）走的正是它 —— 于是点下去什么都不会发生，
+   * 会话却被扩展记成「已经在面板里打开了」，侧栏跟着被清空。
+   * 现在宿主真的把它变成一个编辑器标签（返回 backend 由宿主实现）。
+   *
+   * 没给这个回调时退回原来的空壳行为：面板不会出现，但扩展的代码不会因此炸。
+   */
+  onWebviewPanel?: (spec: {
+    viewType: string;
+    title: string;
+    options?: any;
+    /** 创建时正在 activate 的扩展 id（可能为空，例如命令是异步触发的）。 */
+    extensionId?: string;
+  }) => WebviewPanelBackend;
 }
 
 /**
@@ -580,6 +621,24 @@ export class VSCodeShim {
     options?: any,
     extensionId?: string,
   ) => void;
+  private onWebviewPanelHandler?: VSCodeShimOptions['onWebviewPanel'];
+  /**
+   * 已经开出去的 webview 面板，按宿主给的 panelId 存着。
+   *
+   * 存它是为了两个方向的消息：
+   * - 界面 → 扩展：宿主收到访客页面的消息后调 `deliverPanelMessage` 投到这里的回调；
+   * - 关标签 → 扩展：`disposePanel` 触发 `panel.onDidDispose`，扩展据此清掉
+   *   「这个会话在面板里」的记录。
+   */
+  private webviewPanels = new Map<
+    string,
+    {
+      messageHandlers: Set<(message: any) => void>;
+      disposeCallbacks: Set<() => void>;
+      backend: WebviewPanelBackend;
+      disposed: boolean;
+    }
+  >();
 
   constructor(options: VSCodeShimOptions) {
     this.workspaceRoot = options.workspaceRoot;
@@ -595,6 +654,57 @@ export class VSCodeShim {
     this.quickPickHandler = options.onQuickPick;
     this.inputBoxHandler = options.onInputBox;
     this.openExternalHandler = options.onOpenExternal;
+    this.onWebviewPanelHandler = options.onWebviewPanel;
+  }
+
+  /**
+   * 把界面发回来的一条消息投给对应面板的回调。
+   *
+   * 返回 false 表示这个 panelId 不是本 shim 开出去的（宿主据此判断「没人认领」）。
+   */
+  deliverPanelMessage(panelId: string, message: any): boolean {
+    const entry = this.webviewPanels.get(panelId);
+    if (!entry || entry.disposed) return false;
+    entry.messageHandlers.forEach((handler) => {
+      try {
+        handler(message);
+      } catch (err) {
+        console.error('[VSCodeShim] 面板消息回调抛错：', err);
+      }
+    });
+    return true;
+  }
+
+  /**
+   * 关掉一个面板（渲染层把标签关了）。
+   *
+   * 必须触发 `panel.onDidDispose`：扩展用它在 `sessionPanels` 里注销这个会话，
+   * 不触发的话扩展会一直以为「这个会话已经开在某个面板里」，之后再点就什么都不发生。
+   */
+  disposePanel(panelId: string): boolean {
+    const entry = this.webviewPanels.get(panelId);
+    if (!entry) return false;
+    this.closePanel(panelId);
+    return true;
+  }
+
+  private closePanel(panelId: string): void {
+    const entry = this.webviewPanels.get(panelId);
+    if (!entry || entry.disposed) return;
+    entry.disposed = true;
+    this.webviewPanels.delete(panelId);
+    try {
+      entry.backend.dispose();
+    } catch (err) {
+      console.error('[VSCodeShim] 面板 backend.dispose 抛错：', err);
+    }
+    entry.disposeCallbacks.forEach((callback) => {
+      try {
+        callback();
+      } catch (err) {
+        console.error('[VSCodeShim] 面板 onDidDispose 回调抛错：', err);
+      }
+    });
   }
 
   /**
@@ -706,30 +816,114 @@ export class VSCodeShim {
           };
           return logChannel;
         },
+        /**
+         * 扩展开一个 webview 面板（编辑器标签形态的界面）。
+         *
+         * Claude Code 的「+」（新会话）就是走这里：扩展判定「新会话该开在面板里」，
+         * 于是 new 一个面板、把 HTML 塞进来。以前这整个方法是个空壳 ——
+         * HTML 被丢掉、面板不会出现，而扩展那边已经把会话记成「在面板里」，
+         * 侧栏因此被清空：用户看到的正是「点 + 没生效，当前窗口却被重置了」。
+         *
+         * 现在真正的实现在宿主（backend），shim 只负责把 VS Code 的 API 形状摆对。
+         */
         createWebviewPanel(viewType: string, title: string, showOptions: any, options?: any) {
-          return {
-            webview: {
-              html: '',
-              onDidReceiveMessage: () => ({ dispose() {} }),
-              postMessage(message: any) {
-                self.onMessageHandler({ type: 'webview', viewType, message });
-                return Promise.resolve(true);
-              },
-              asWebviewUri(uri: vscode.Uri) {
-                return uri;
-              },
-              options: {},
-              cspSource: '',
-            },
+          const backend = self.onWebviewPanelHandler?.({
             viewType,
             title,
-            options: options || {},
-            onDidDispose: () => ({ dispose() {} }),
-            onDidChangeViewState: () => ({ dispose() {} }),
-            reveal() {},
-            dispose() {},
+            options,
+            extensionId: self.activeExtensionId,
+          });
+          if (!backend) {
+            // 宿主没实现（纯 Node 验证脚本）：退回空壳，别让扩展的后续代码炸
+            return {
+              webview: {
+                html: '',
+                onDidReceiveMessage: () => ({ dispose() {} }),
+                postMessage(message: any) {
+                  self.onMessageHandler({ type: 'webview', viewType, message });
+                  return Promise.resolve(true);
+                },
+                asWebviewUri(uri: vscode.Uri) {
+                  return uri;
+                },
+                options: {},
+                cspSource: '',
+              },
+              viewType,
+              title,
+              options: options || {},
+              onDidDispose: () => ({ dispose() {} }),
+              onDidChangeViewState: () => ({ dispose() {} }),
+              reveal() {},
+              dispose() {},
+              active: true,
+              visible: true,
+            } as any;
+          }
+
+          const entry = {
+            messageHandlers: new Set<(message: any) => void>(),
+            disposeCallbacks: new Set<() => void>(),
+            backend,
+            disposed: false,
+          };
+          self.webviewPanels.set(backend.panelId, entry);
+          let panelOptions: any = options || {};
+
+          const webview = {
+            set html(value: string) {
+              backend.setHtml(String(value ?? ''));
+            },
+            get html() {
+              return '';
+            },
+            get options() {
+              return panelOptions;
+            },
+            set options(value: any) {
+              panelOptions = value;
+            },
+            onDidReceiveMessage(callback: (message: any) => void) {
+              entry.messageHandlers.add(callback);
+              return {
+                dispose() {
+                  entry.messageHandlers.delete(callback);
+                },
+              };
+            },
+            postMessage(message: any) {
+              return Promise.resolve(backend.postMessage(message)).then(() => true);
+            },
+            asWebviewUri(uri: vscode.Uri) {
+              return backend.asWebviewUri(uri);
+            },
+            cspSource: backend.cspSource,
+          };
+
+          return {
+            webview,
+            viewType,
+            title,
+            viewColumn: showOptions?.viewColumn ?? 1,
+            options: panelOptions,
+            iconPath: undefined,
             active: true,
             visible: true,
+            reveal() {
+              backend.reveal();
+            },
+            dispose() {
+              self.closePanel(backend.panelId);
+            },
+            onDidDispose(callback: () => void) {
+              entry.disposeCallbacks.add(callback);
+              return {
+                dispose() {
+                  entry.disposeCallbacks.delete(callback);
+                },
+              };
+            },
+            onDidChangeViewState: () => ({ dispose() {} }),
           } as any;
         },
         activeTextEditor: undefined,

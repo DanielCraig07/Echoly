@@ -33,6 +33,18 @@ export interface ExtensionHostOptions {
   onQuickPick?: (items: any[], options?: any) => Promise<any>;
   onInputBox?: (options: any) => Promise<string | undefined>;
   onOpenExternal?: (url: string) => Promise<boolean>;
+  /**
+   * 扩展开 webview 面板（`window.createWebviewPanel`）。
+   *
+   * Claude Code 的「+」（新会话）走这里。宿主把它变成编辑器里一个真的标签；
+   * 见 vscode-shim 里 WebviewPanelBackend 的注释。
+   */
+  onWebviewPanel?: (spec: {
+    viewType: string;
+    title: string;
+    options?: any;
+    extensionId?: string;
+  }) => import('./index').WebviewPanelBackend;
 }
 
 export class ExtensionHost {
@@ -56,6 +68,7 @@ export class ExtensionHost {
       onQuickPick: options.onQuickPick,
       onInputBox: options.onInputBox,
       onOpenExternal: options.onOpenExternal,
+      onWebviewPanel: options.onWebviewPanel,
     });
 
     // 立即注入 vscode 模块到全局，确保任何扩展 require('vscode') 时都能找到
@@ -64,6 +77,20 @@ export class ExtensionHost {
     this.injectVscodeModule(vscodeAPI);
     this.injectWindowPolyfills();
     console.log('[ExtensionHost] VSCode 模块已全局注入');
+  }
+
+  /**
+   * 界面发回来一条消息 → 投给对应面板注册的回调。
+   *
+   * 返回 false 表示这个 panelId 不是扩展开的（宿主据此决定「没人认领」）。
+   */
+  deliverPanelMessage(panelId: string, message: any): boolean {
+    return this.shim.deliverPanelMessage(panelId, message);
+  }
+
+  /** 关标签 → 触发扩展的 `panel.onDidDispose`（见 shim 里 disposePanel 的注释）。 */
+  disposePanel(panelId: string): boolean {
+    return this.shim.disposePanel(panelId);
   }
 
   /**

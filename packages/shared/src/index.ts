@@ -2226,6 +2226,23 @@ export interface IpcApi {
   onExtensionWebviewMessage: (
     cb: (data: { viewId: string; message: unknown }) => void,
   ) => () => void;
+  /**
+   * 扩展调 `window.createWebviewPanel` 开了一个面板 —— 渲染层据此开一个编辑器标签。
+   *
+   * 面板和视图共用同一条协议与消息通道，`panelId` 就是那个 key。
+   * Claude Code 的「+」（新会话）走的就是这条：以前这个 API 在 shim 里是空壳，
+   * 标签不出现、扩展却已经认为会话开在了面板里 —— 用户看到的是「点 + 没反应，
+   * 当前窗口却被重置」。
+   */
+  onExtensionPanelOpened: (
+    cb: (data: { panelId: string; title: string; viewType?: string }) => void,
+  ) => () => void;
+  /** 面板被关掉了（扩展自己 dispose，或标签被关）。渲染层据此关掉同名标签。 */
+  onExtensionPanelClosed: (cb: (data: { panelId: string }) => void) => () => void;
+  /** 扩展要求把这个面板的标签切到前面（`panel.reveal()`）。 */
+  onExtensionPanelRevealed: (cb: (data: { panelId: string }) => void) => () => void;
+  /** 关闭面板标签 → 触发扩展的 `panel.onDidDispose`（不触发的话扩展会一直以为它还开着） */
+  extensionDisposePanel: (panelId: string) => Promise<{ success: boolean }>;
   /** 检查更新（仅探测，不下载）。返回是否需更新 + 版本说明。 */
   checkUpdate: () => Promise<{
     ok: boolean;
