@@ -161,6 +161,15 @@ export class VSCodeShim {
    */
   activeExtensionId?: string;
   /**
+   * 当前正在 activate 的扩展的**磁盘目录**。
+   *
+   * 与 activeExtensionId 同时设置。为什么不能继续用 `this.extensionPath`：
+   * 它被构造成工作区根目录（ExtensionHost 那边传的是 workspaceRoot），
+   * 而注册 webview 视图时真正需要的是扩展自己的目录 —— 视图的资源、消息归属
+   * 都挂在那个目录上。传错的后果是界面的资源地址全错（以前只能靠 `-/abs/` 兜底）。
+   */
+  activeExtensionPath?: string;
+  /**
    * 自定义编辑器提供者，按 viewType 收着。
    *
    * 收下来是为了让注册本身有意义（扩展据此认为自己可用，激活不失败）；
@@ -348,7 +357,7 @@ export class VSCodeShim {
             self.onWebviewViewRegisterHandler(
               viewId,
               provider,
-              self.extensionPath,
+              self.activeExtensionPath ?? self.extensionPath,
               options,
               self.activeExtensionId,
             );
@@ -584,8 +593,24 @@ export class VSCodeShim {
         file(path: string) {
           return { fsPath: path, scheme: 'file', toString: () => path } as vscode.Uri;
         },
+        /**
+         * 把若干路径片段接到一个 Uri 后面。
+         *
+         * 以前这里直接 `return uri`（把片段全丢了）。后果不是「少一个功能」而是
+         * **整个界面起不来**：扩展用 `Uri.joinPath(extensionUri, 'webview', 'index.js')`
+         * 定位自己的 bundle，拿回来的却是扩展根目录，于是界面标签里的 script src
+         * 指向一个目录，浏览器报「webview/index.js could not be fetched」。
+         * Claude Code 的面板就是这么挂的（owner 之前那版只能靠正则硬改 Claude 的
+         * src 来救，还得写死版本号）。
+         */
         joinPath(uri: vscode.Uri, ...paths: string[]) {
-          return uri;
+          const base = (uri as any)?.fsPath ?? String(uri);
+          const fsPath = require('path').join(base, ...paths);
+          return {
+            fsPath,
+            scheme: (uri as any)?.scheme ?? 'file',
+            toString: () => fsPath,
+          } as vscode.Uri;
         },
         from(components: any) {
           return {} as vscode.Uri;

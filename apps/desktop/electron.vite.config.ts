@@ -42,8 +42,18 @@ export default defineConfig({
       }),
     ],
     build: {
-      lib: {
-        entry: resolve('src/preload/index.ts'),
+      // 两个入口：
+      // - `index` 是主窗口的 preload（暴露 window.ide / window.extensions）；
+      // - `webview-guest` 是扩展界面那个 `<webview>` 的 preload，只搭一条消息桥。
+      //   它必须单独成包：主窗口那份会把整套 API 也挂到访客页面上，既没必要，
+      //   也让「这个页面是扩展的、不是我们自己的」这件事变得看不清。
+      rollupOptions: {
+        input: {
+          index: resolve('src/preload/index.ts'),
+          'webview-guest': resolve('src/preload/webviewGuest.ts'),
+        },
+        // 文件名必须可预测：主进程按 `../preload/webview-guest.js` 找它
+        output: { format: 'cjs', entryFileNames: '[name].js' },
       },
     },
   },

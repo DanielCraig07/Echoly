@@ -230,6 +230,14 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('extension:webview-registered', listener);
   },
   extensionResolveWebview: (viewId) => ipcRenderer.invoke('extension:resolve-webview', viewId),
+  extensionWebviewPost: (viewId, message) =>
+    ipcRenderer.invoke('extension:webview-post', viewId, message),
+  onExtensionWebviewMessage: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { viewId: string; message: unknown }) =>
+      cb(data);
+    ipcRenderer.on('extension:webview-message', listener);
+    return () => ipcRenderer.removeListener('extension:webview-message', listener);
+  },
   checkUpdate: () => ipcRenderer.invoke('updater:check'),
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   getUpdateState: () => ipcRenderer.invoke('updater:getState'),

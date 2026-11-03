@@ -68,6 +68,9 @@ export class ExtensionHost {
         // 扩展注册命令/视图时不会自报家门：在它跑起来之前把「现在是谁」记下，
         // shim 那边注册时就顺手记到归属表里。禁用/卸载要按这份归属去摘。
         this.shim.activeExtensionId = extensionId;
+        // 扩展目录也要一起记：注册 webview 视图时要按它算资源地址，
+        // 而 shim 自己的 extensionPath 是工作区根目录（见 activeExtensionPath 的注释）
+        this.shim.activeExtensionPath = extension.extensionPath;
         await extension.mainModule.activate(context);
         console.log(`[activateExtension] Extension ${extensionId} activated successfully`);
       } catch (err) {
@@ -75,6 +78,7 @@ export class ExtensionHost {
         throw err;
       } finally {
         this.shim.activeExtensionId = undefined;
+        this.shim.activeExtensionPath = undefined;
       }
     } else if (extension.mainModuleError) {
       // 声明了 main 却没加载起来：这是**失败**，不是「这个扩展没有 activate」。

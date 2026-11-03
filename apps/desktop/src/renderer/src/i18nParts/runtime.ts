@@ -150,10 +150,6 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   'extView.loadFailedDetail': { zh: '加载失败：{msg}', en: 'Failed to load: {msg}' },
   'extView.unknownError': { zh: '未知错误', en: 'Unknown error' },
   'extView.close': { zh: '关闭', en: 'Close' },
-  'extView.preparing': { zh: '正在准备扩展界面…', en: 'Preparing the extension UI…' },
-  'extView.waitingHtml': { zh: '等待扩展界面的 HTML…', en: 'Waiting for the extension UI HTML…' },
-  'extView.fileLabel': { zh: '文件：{name}', en: 'File: {name}' },
-  'extView.notSet': { zh: '（未设置）', en: '(not set)' },
 
   'ext.logs': { zh: '扩展通信日志 ({n})', en: 'Extension Logs ({n})' },
   'ext.collapse': { zh: '▲ 收起', en: '▲ Collapse' },

@@ -3,10 +3,22 @@
  * 管理 VSCode 扩展的加载、激活和通信
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, net, protocol, session } from 'electron';
+import { EXTENSION_WEBVIEW_PARTITION } from '@deepseek-ide/shared';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { pathToFileURL } from 'node:url';
 import { app } from 'electron';
+import {
+  EXTENSION_WEBVIEW_SCHEME,
+  WEBVIEW_INDEX_PATH,
+  buildWebviewOrigin,
+  buildWebviewUrl,
+  extractFsPath,
+  parseWebviewRequest,
+  resolveWebviewFilePath,
+  toWebviewResourcePath,
+} from './extensionWebview';
 import { ExtensionHost } from '@deepseek-ide/vscode-shim/src/extensionHost';
 import {
   loadExtension,
@@ -61,6 +73,9 @@ export interface DownloadProgressPayload {
 /** Claude Code 的 id 与展示名（专用安装通道的进度也要能显示名字）。 */
 const CLAUDE_CODE_ID = 'Anthropic.claude-code';
 const CLAUDE_CODE_NAME = 'Claude Code';
+
+/** 协议处理里的纯文本响应头（错误信息要能直接看出来，不是一坨 HTML）。 */
+const TEXT_PLAIN_HEADERS = { 'content-type': 'text/plain; charset=utf-8' } as const;
 
 /** README 抓取上限：详情页是展示用的，没必要为一个说明文件拉几百 KB。 */
 const maxReadmeBytes = 512 * 1024;
@@ -138,6 +153,22 @@ export class ExtensionManager {
   private readonly iconCache = new Map<string, string | null>();
   /** vscode shim 写盘的一次性任务，见 ensureVscodeShim */
   private vscodeShimReady: Promise<void> | null = null;
+  /**
+   * viewId → 该视图的初始 HTML。
+   *
+   * 协议处理器按 `/<viewId>/index.html` 从这里取。不复用磁盘文件（以前那版写
+   * `webview-<viewId>.html`）是因为 `file://` 页面加载不了 module script，
+   * 而扩展的 bundle 几乎全是 `<script type="module">`（详见 extensionWebview.ts）。
+   */
+  private webviewHtml = new Map<string, string>();
+  /**
+   * viewId → 扩展注册的 `onDidReceiveMessage` 回调。
+   *
+   * 没有它，用户在这个界面里点任何东西都石沉大海 —— 面板能画出来但完全不能用。
+   */
+  private webviewMessageHandlers = new Map<string, Set<(message: any) => void>>();
+  /** `<webview>` 的访客 preload（`file://` URL）。渲染进程不知道主进程的目录布局，由这里给。 */
+  private webviewPreloadUrl = '';
   /** 禁用列表的落盘位置 */
   private readonly stateFilePath: string;
 
@@ -178,10 +209,128 @@ export class ExtensionManager {
     // 注册 IPC 处理器
     this.registerIpcHandlers();
 
+    // 扩展 webview 的资源协议。必须在任何扩展激活**之前**就位：
+    // 扩展在 activate 里注册视图时就会调 asWebviewUri 拼地址（见 registerWebviewProtocol）。
+    this.registerWebviewProtocol();
+
     console.log(`Extension Manager initialized. Extensions dir: ${this.extensionsDir}`);
 
     // 自动加载所有已安装的扩展
     await this.loadInstalledExtensions();
+  }
+
+  /**
+   * 注册 `echoly-webview://` 协议，并算出访客 preload 的地址。
+   *
+   * 为什么不是 `file://`：扩展的 bundle 是 `<script type="module">`，
+   * Chromium 禁止从 `file://` 加载 module script，而且 `file://` 路径里的空格也是坏的。
+   * 详见 extensionWebview.ts 顶部的说明。
+   *
+   * 注册到**两个** session：主窗口用默认 session，而扩展视图的 `<webview>` 带
+   * `partition="persist:claude-extension"`，那是另一个 session —— 只注册默认的那个，
+   * 视图进程里就取不到任何资源，报的还是会话内 404。
+   */
+  private registerWebviewProtocol(): void {
+    this.webviewPreloadUrl = pathToFileURL(
+      path.join(__dirname, '../preload/webview-guest.js'),
+    ).toString();
+
+    const handler = (request: { url: string }) => this.handleWebviewRequest(request.url);
+    const targets: { protocol: typeof protocol }[] = [
+      { protocol: session.defaultSession.protocol },
+      { protocol: session.fromPartition(EXTENSION_WEBVIEW_PARTITION).protocol },
+    ];
+    for (const target of targets) {
+      try {
+        target.protocol.handle(EXTENSION_WEBVIEW_SCHEME, handler);
+      } catch (err: any) {
+        // 「已注册」是重启窗口时的正常情况（主进程不重启，但 initialize 可能再跑一次）
+        console.warn('[ExtensionManager] 注册 webview 协议失败：', err?.message ?? err);
+      }
+    }
+  }
+
+  /**
+   * 响应 `echoly-webview://ext/<viewId>/<relPath>`。
+   *
+   * - `/<viewId>/index.html` → 之前 resolveWebviewView 生成并存下的 HTML；
+   * - 其余路径 → 扩展目录里的真实文件（扩展的 bundle / CSS / 字体 / 图片）。
+   *
+   * 取不到就回 404，不抛异常：一个找不到的字体不该让整个渲染进程看到一个协议错误。
+   */
+  private async handleWebviewRequest(rawUrl: string): Promise<Response> {
+    const parsed = parseWebviewRequest(rawUrl);
+    if (!parsed) {
+      return new Response('bad request', { status: 400, headers: TEXT_PLAIN_HEADERS });
+    }
+
+    const { viewId, relPath } = parsed;
+    if (relPath === WEBVIEW_INDEX_PATH) {
+      const html = this.webviewHtml.get(viewId);
+      if (html === undefined) {
+        return new Response(
+          `no html for view "${viewId}" — 该视图还没有被 resolve 过（先调用 extension:resolve-webview）`,
+          { status: 404, headers: TEXT_PLAIN_HEADERS },
+        );
+      }
+      return new Response(html, {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      });
+    }
+
+    const providerInfo = this.webviewViewProviders.get(viewId);
+    if (!providerInfo) {
+      return new Response(`no provider for view "${viewId}"`, {
+        status: 404,
+        headers: TEXT_PLAIN_HEADERS,
+      });
+    }
+
+    const filePath = resolveWebviewFilePath(providerInfo.extensionPath, relPath);
+    if (!filePath) {
+      // 目录穿越（或路径形状不对）：明确 403，不要静默 404 —— 静默会让人以为是文件不存在
+      return new Response('forbidden', { status: 403, headers: TEXT_PLAIN_HEADERS });
+    }
+
+    try {
+      await fs.access(filePath);
+    } catch {
+      console.warn(`[ExtensionManager] webview 资源不存在：${viewId} → ${relPath}`);
+      return new Response('not found', { status: 404, headers: TEXT_PLAIN_HEADERS });
+    }
+    // net.fetch 会带上正确的 content-type 并流式返回，不必自己判断扩展名
+    return net.fetch(pathToFileURL(filePath).toString());
+  }
+
+  /** 扩展视图的初始地址（渲染进程拿它当 `<webview src>`）。 */
+  getWebviewUrl(viewId: string): string {
+    return buildWebviewUrl(viewId, WEBVIEW_INDEX_PATH);
+  }
+
+  /** `<webview>` 的访客 preload 地址（file:// URL）。 */
+  getWebviewPreloadUrl(): string {
+    return this.webviewPreloadUrl;
+  }
+
+  /**
+   * 扩展页面发回来的消息 → 交给注册这个视图的扩展。
+   *
+   * 这是「界面能用」的另一半：没有它，面板画得出来但点任何按钮都没反应。
+   */
+  deliverWebviewMessage(viewId: string, message: any): void {
+    const handlers = this.webviewMessageHandlers.get(viewId);
+    if (!handlers || handlers.size === 0) {
+      console.warn(`[ExtensionManager] 视图 ${viewId} 没有注册 onDidReceiveMessage，消息被丢弃`);
+      return;
+    }
+    for (const handler of Array.from(handlers)) {
+      try {
+        handler(message);
+      } catch (err) {
+        console.error(`[ExtensionManager] 处理视图 ${viewId} 的消息时出错：`, err);
+      }
+    }
   }
 
   /**
@@ -811,9 +960,21 @@ export class ExtensionManager {
     for (const [viewId, entry] of Array.from(this.webviewViewProviders.entries())) {
       // 归属表已经空了，只能按 extensionPath 认：一个扩展的视图都写在它自己的目录下
       if (entry?.extensionPath === extensionPath) {
-        this.webviewViewProviders.delete(viewId);
+        this.dropViewRuntime(viewId);
       }
     }
+  }
+
+  /**
+   * 忘掉一个视图的运行时（provider / HTML / 消息回调）。
+   *
+   * 少了 HTML 与消息回调这两本账，卸载之后那个标签还能打开、还留着上一个扩展的界面，
+   * 而且它发回来的消息会打到已经停掉的扩展上。
+   */
+  private dropViewRuntime(viewId: string): void {
+    this.webviewViewProviders.delete(viewId);
+    this.webviewHtml.delete(viewId);
+    this.webviewMessageHandlers.delete(viewId);
   }
 
   /** 读禁用列表。文件损坏/不存在都当「没有禁用任何扩展」，不阻断启动。 */
@@ -876,43 +1037,56 @@ export class ExtensionManager {
       set options(value: any) {
         webviewOptions = value;
       },
-      onDidReceiveMessage: (callback: any) => {
-        // 返回 Disposable
-        return { dispose() {} };
+      /**
+       * 扩展注册「界面发回消息」的回调。
+       *
+       * 真实 Vitest 里 VS Code 会把 webview 的消息投递到这些回调；我们必须照做，
+       * 否则面板能画出来但完全点不动（详见 deliverWebviewMessage）。
+       */
+      onDidReceiveMessage: (callback: (message: any) => void) => {
+        let set = this.webviewMessageHandlers.get(viewId);
+        if (!set) {
+          set = new Set();
+          this.webviewMessageHandlers.set(viewId, set);
+        }
+        set.add(callback);
+        return {
+          dispose: () => {
+            set?.delete(callback);
+          },
+        };
       },
+      /**
+       * 扩展 → 界面。载荷原样转发给渲染进程，由它 postMessage 进访客页面。
+       *
+       * 注意**不能**在这里拆包：VS Code 的契约就是「postMessage 收到什么，页面
+       * 的 message 事件 data 就是什么」，而扩展自己会包一层 `{type:'from-extension'}`。
+       */
       postMessage: (message: any) => {
-        console.log('[WebviewView] postMessage:', message);
-        // 这里可以将消息转发到渲染进程
         this.broadcastToRenderers('extension:webview-message', { viewId, message });
         return Promise.resolve(true);
       },
+      /**
+       * 扩展把自己目录里的文件变成界面可访问的地址。
+       *
+       * 返回 `echoly-webview://ext/<viewId>/<relPath>`，由本进程的协议处理器提供内容。
+       * **不能**返回 `file://`：扩展的 bundle 是 module script，Chromium 禁止从
+       * `file://` 加载它（Claude Code 的面板就是在这里报「index.js could not be fetched」）。
+       */
       asWebviewUri: (uri: any) => {
-        // 将 VSCode URI 转换为 file:// URL
-        // uri 可能是字符串或对象，需要提取路径
-        let filePath: string;
-        if (typeof uri === 'string') {
-          filePath = uri;
-        } else if (uri && typeof uri === 'object') {
-          filePath = uri.fsPath || uri.path || String(uri);
-        } else {
-          filePath = String(uri);
-        }
-
-        // 确保路径是绝对路径
-        if (!filePath.startsWith('/')) {
-          // 如果是相对路径，拼接扩展目录
-          const providerInfo = this.webviewViewProviders.get(viewId);
-          if (providerInfo && providerInfo.extensionPath) {
-            filePath = require('path').join(providerInfo.extensionPath, filePath);
-          }
-        }
-
-        // 转换为 file:// URL
-        const fileUrl = `file://${filePath}`;
-        console.log('[asWebviewUri] Convert:', uri, '->', fileUrl);
-        return fileUrl;
+        const fsPath = extractFsPath(uri);
+        const root = this.webviewViewProviders.get(viewId)?.extensionPath ?? '';
+        const relPath = root ? toWebviewResourcePath(root, fsPath) : '';
+        const url = buildWebviewUrl(viewId, relPath);
+        return url;
       },
-      cspSource: 'self',
+      /**
+       * 扩展把它拼进自己页面的 CSP（`style-src ${cspSource}` 之类）。
+       *
+       * 页面 origin 就是 `echoly-webview://ext`，所以 `'self'` 恰好等于「同源资源」——
+       * 不必去编一个假的 cdn 主机名。CSP 只认这个场景，页面本身在 webview 里。
+       */
+      cspSource: buildWebviewOrigin(),
     };
 
     const mockWebviewView = {
@@ -936,98 +1110,42 @@ export class ExtensionManager {
           `[resolveWebviewView] Final HTML length for ${viewId}: ${htmlContent?.length || 0}`,
         );
 
-        // 修复 Claude 扩展的资源路径
-        // 将 <link href="file:///.../extension" 替换为 file:///.../extension/webview/index.css
-        // 将 <script src="file:///.../extension" 替换为 file:///.../extension/webview/index.js
-        const path = require('path');
-        const extensionDirPath = path.join(
-          providerInfo.extensionPath,
-          'extensions',
-          'Anthropic.claude-code-2.1.234@darwin-arm64',
-          'extension',
-        );
-        const extensionDirUrl = `file://${extensionDirPath}`;
+        // 这里**不再**改写扩展自己拼的地址。
+        //
+        // 以前那版把 Claude Code 的 `<script src>` 硬改成
+        // `<extDir>/webview/index.js` 的 file:// 地址，而且扩展目录里写死了版本号
+        // （`Anthropic.claude-code-2.1.234@darwin-arm64`）—— 既只对这一个扩展有用，
+        // 又必然在某次升级后失效，最后的表现就是面板里一句
+        // 「webview/index.js could not be fetched」。
+        //
+        // 现在扩展调 asWebviewUri 拿到的就是 echoly-webview:// 地址，协议处理器负责
+        // 把文件端出去（含空格与 module script，见 extensionWebview.ts）。
+        // 我们只需要做一件事：把 webview 运行时（acquireVsCodeApi）注入进去。
 
-        console.log(`[resolveWebviewView] Fixing resource paths for: ${extensionDirUrl}`);
-
-        // 替换 link 标签
-        htmlContent = htmlContent.replace(
-          new RegExp(
-            `<link([^>]*?)href="${extensionDirUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"([^>]*?)>`,
-            'g',
-          ),
-          `<link$1href="file://${extensionDirPath}/webview/index.css"$2>`,
-        );
-
-        // 替换 script 标签
-        htmlContent = htmlContent.replace(
-          new RegExp(
-            `<script([^>]*?)src="${extensionDirUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"([^>]*?)>`,
-            'g',
-          ),
-          `<script$1src="file://${extensionDirPath}/webview/index.js"$2>`,
-        );
-
-        console.log(
-          `[resolveWebviewView] HTML after path fix, length: ${htmlContent?.length || 0}`,
-        );
-
-        // 提取 nonce 值
+        // 把 webview 运行时（acquireVsCodeApi）注入进去。
+        //
+        // VS Code 里这个函数由 webview 宿主运行时提供，不是扩展自己的代码 —— 少了它
+        // 扩展的 bundle 一上来就 `acquireVsCodeApi is not defined`。nonce 必须与
+        // 扩展页面自己的 CSP `script-src 'nonce-...'` 对上，所以 nonce 从它那儿取。
         const nonceMatch = htmlContent.match(/nonce-([a-f0-9]+)/);
         const nonce = nonceMatch ? nonceMatch[1] : '';
-        console.log(`[resolveWebviewView] Extracted nonce: ${nonce}`);
+        const runtimeScript = this.buildWebviewRuntimeScript(nonce);
 
-        // 注入 VSCode webview API（使用相同的 nonce）
-        const vscodeApiScript = `
-<script nonce="${nonce}">
-(function() {
-  let state = {};
-  window.acquireVsCodeApi = function() {
-    return {
-      postMessage: function(message) {
-        console.log('[VSCode API] postMessage:', message);
-        // TODO: 通过 IPC 转发消息到扩展
-        window.parent.postMessage(message, '*');
-      },
-      getState: function() {
-        return state;
-      },
-      setState: function(newState) {
-        state = newState;
-        return newState;
-      }
-    };
-  };
-  console.log('[VSCode API] acquireVsCodeApi injected');
-})();
-</script>`;
-
-        // 在第一个 script 标签前注入 API（确保最先执行）
+        // 插在第一个 nonce script 之前：扩展自己的脚本可能会在很靠前的位置同步读
+        // window.CLAUDE_PANEL_STARTED 之类的全局量，晚一步就白搭。
         const firstScriptMatch = htmlContent.match(/<script[^>]*nonce/);
         if (firstScriptMatch) {
           htmlContent = htmlContent.replace(
             firstScriptMatch[0],
-            `${vscodeApiScript}\n    ${firstScriptMatch[0]}`,
+            `${runtimeScript}\n    ${firstScriptMatch[0]}`,
           );
         } else {
-          // 如果找不到 script 标签，就在 head 结束前注入
-          htmlContent = htmlContent.replace('</head>', `${vscodeApiScript}</head>`);
+          htmlContent = htmlContent.replace('</head>', `${runtimeScript}</head>`);
         }
 
-        // 调试：保存 HTML 并打印预览
-        console.log(
-          `[resolveWebviewView] HTML preview:\n${htmlContent.substring(0, 500)}\n...\n${htmlContent.substring(Math.max(0, htmlContent.length - 200))}`,
-        );
-
-        try {
-          const fs = require('fs');
-          const { app } = require('electron');
-          const tmpPath = path.join(app.getPath('userData'), `webview-${viewId}.html`);
-          fs.writeFileSync(tmpPath, htmlContent, 'utf8');
-          console.log(`[resolveWebviewView] HTML saved to: ${tmpPath}`);
-        } catch (err) {
-          console.error('[resolveWebviewView] Failed to save HTML:', err);
-        }
+        // 存进内存，等协议处理器按 `/index.html` 取。
+        // 以前是写到 userData 再走 file://，那条路加载不了 module script（文件还留在磁盘上）。
+        this.webviewHtml.set(viewId, htmlContent);
       } catch (err) {
         console.error(`Error resolving WebviewView ${viewId}:`, err);
         throw err;
@@ -1035,6 +1153,44 @@ export class ExtensionManager {
     }
 
     return htmlContent;
+  }
+
+  /**
+   * 注入给扩展页面的最小 webview 运行时。
+   *
+   * 两件事：
+   * 1. `acquireVsCodeApi()` —— 扩展的 bundle 一上来就调它，没有就整个挂掉；
+   * 2. 接上消息桥的两端：
+   *    - 出：页面 `postMessage` → 访客 preload → 渲染进程 → 主进程 → 扩展的 onDidReceiveMessage；
+   *    - 入：扩展 `postMessage` → 主进程 → 渲染进程 → 页面里的一个 message 事件。
+   */
+  private buildWebviewRuntimeScript(nonce: string): string {
+    return `
+<script nonce="${nonce}">
+(function() {
+  var bridge = window.__echolyWebviewBridge;
+  var state = {};
+
+  // 宿主 → 页面。用 window.postMessage 而不是 new MessageEvent：
+  // 扩展页面里那层包装会检查 event.source 是不是自己的祖先窗口（Claude Code 用它的
+  // sBn() 做这件事）。window.postMessage 派发出来的 source 正好是 window 自己，能过；
+  // 手动构造的 MessageEvent 的 source 是 null，会被它当成别的窗口的消息丢掉。
+  if (bridge && typeof bridge.onMessage === 'function') {
+    bridge.onMessage(function(data) { window.postMessage(data, '*'); });
+  }
+
+  window.acquireVsCodeApi = function() {
+    return {
+      postMessage: function(message) {
+        if (bridge && typeof bridge.post === 'function') bridge.post(message);
+        else console.warn('[echoly] webview 消息桥不可用，这条消息被丢弃：', message);
+      },
+      getState: function() { return state; },
+      setState: function(next) { state = next; return state; }
+    };
+  };
+})();
+</script>`;
   }
 
   /**
@@ -1083,6 +1239,9 @@ export class ExtensionManager {
       `[ExtensionManager] WebviewView provider registered: ${viewId}, extensionPath: ${extensionPath}`,
     );
     if (extensionId) this.viewOwners.set(viewId, extensionId);
+    // 重新注册同一个 viewId（重装/重启扩展）时先丢掉上一份 HTML：留着的话
+    // 界面会渲染上一个版本生成的那份，而里面的资源地址已经对不上了。
+    this.webviewHtml.delete(viewId);
     this.webviewViewProviders.set(viewId, { provider, options, extensionPath });
 
     // 通知渲染进程有新的 webview 可用
@@ -1192,13 +1351,27 @@ export class ExtensionManager {
       return await this.uninstallExtension(id);
     });
 
-    // 解析 WebviewView
+    // 解析 WebviewView：生成 HTML 并给出它在 echoly-webview:// 下的地址
     ipcMain.handle('extension:resolve-webview', async (_event, viewId: string) => {
       try {
-        const html = await this.resolveWebviewView(viewId);
-        // 返回真实写入路径（渲染进程不应硬编码 userData 目录）
-        const filePath = path.join(app.getPath('userData'), `webview-${viewId}.html`);
-        return { success: true, html, filePath };
+        await this.resolveWebviewView(viewId);
+        return {
+          success: true,
+          // url 是 `<webview src>` 要用的；preload 是访客侧的脚本（消息桥的一半），
+          // 它的位置只有主进程知道，所以一并给渲染进程。
+          url: this.getWebviewUrl(viewId),
+          preloadUrl: this.getWebviewPreloadUrl(),
+        };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    });
+
+    // 扩展界面里的用户操作 → 扩展的 onDidReceiveMessage
+    ipcMain.handle('extension:webview-post', async (_event, viewId: string, message: any) => {
+      try {
+        this.deliverWebviewMessage(viewId, message);
+        return { success: true };
       } catch (err: any) {
         return { success: false, error: err.message };
       }
@@ -1221,6 +1394,18 @@ export class ExtensionManager {
   async dispose(): Promise<void> {
     await this.extensionHost.dispose();
     this.messageHandlers.clear();
+    this.webviewHtml.clear();
+    this.webviewMessageHandlers.clear();
+    for (const target of [
+      session.defaultSession.protocol,
+      session.fromPartition(EXTENSION_WEBVIEW_PARTITION).protocol,
+    ]) {
+      try {
+        target.unhandle(EXTENSION_WEBVIEW_SCHEME);
+      } catch {
+        // 没注册过 / 已经摘掉了：都不是问题
+      }
+    }
   }
 }
 

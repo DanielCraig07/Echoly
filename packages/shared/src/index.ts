@@ -193,6 +193,15 @@ export type LeftPanelId =
  */
 export const DEFAULT_PINNED_PANELS: LeftPanelId[] = ['explorer', 'search', 'git', 'extensions'];
 
+/**
+ * 扩展 webview 用的 session 分区名。
+ *
+ * 主进程要按它把 `echoly-webview://` 协议注册到**这个** session 上，渲染进程要把它写进
+ * `<webview partition>`：两边写的不是同一个串，视图进程里就取不到任何资源。
+ * 所以放在 shared 里共用，而不是各写一份字面量。
+ */
+export const EXTENSION_WEBVIEW_PARTITION = 'persist:echoly-extview';
+
 export interface LayoutSettings {
   explorerWidth: number;
   chatWidth: number;
@@ -2122,9 +2131,29 @@ export interface IpcApi {
     }) => void,
   ) => () => void;
   onExtensionWebviewRegistered: (cb: (data: { viewId: string }) => void) => () => void;
-  extensionResolveWebview: (
+  /**
+   * 解析一个扩展视图：主进程生成它的 HTML 并给出访问地址。
+   *
+   * `url` 是 `<webview src>` 要用的（`echoly-webview://ext/<viewId>/index.html`），
+   * `preloadUrl` 是访客侧的消息桥脚本 —— 它的位置只有主进程知道，所以一并带回来。
+   * 以前返回的是 `html` + 一个 userData 下的 `filePath`，那条 file:// 的路加载不了
+   * module script（扩展的 bundle 基本都是），扩展界面因此整个起不来。
+   */
+  extensionResolveWebview: (viewId: string) => Promise<{
+    success: boolean;
+    url?: string;
+    preloadUrl?: string;
+    error?: string;
+  }>;
+  /** 扩展界面里的操作 → 扩展的 onDidReceiveMessage */
+  extensionWebviewPost: (
     viewId: string,
-  ) => Promise<{ success: boolean; html?: string; filePath?: string; error?: string }>;
+    message: unknown,
+  ) => Promise<{ success: boolean; error?: string }>;
+  /** 扩展 → 扩展界面。载荷原样进访客页面的 message 事件 */
+  onExtensionWebviewMessage: (
+    cb: (data: { viewId: string; message: unknown }) => void,
+  ) => () => void;
   /** 检查更新（仅探测，不下载）。返回是否需更新 + 版本说明。 */
   checkUpdate: () => Promise<{
     ok: boolean;

@@ -27,6 +27,33 @@ const createApi = () => {
 const pick = (obj: any, path: string): any =>
   path.split('.').reduce((acc, key) => (acc == null ? acc : acc[key]), obj);
 
+describe('Uri.joinPath 真的拼路径（扩展界面的资源全靠它）', () => {
+  /**
+   * 这条以前是坏的：`joinPath` 直接 `return uri`，把片段全丢了。
+   *
+   * 后果不是「少一个功能」而是**整个扩展界面起不来** —— 扩展用
+   * `Uri.joinPath(extensionUri, 'webview', 'index.js')` 定位自己的 bundle，
+   * 拿回来的是扩展根目录，于是界面里的 script src 指向一个目录，浏览器报
+   * 「webview/index.js could not be fetched」（Claude Code 的面板就是这么挂的）。
+   */
+  it('把片段接到 uri 后面，而不是原样返回', () => {
+    const api = createApi();
+    const base = api.Uri.file('/tmp/ext');
+
+    const joined = api.Uri.joinPath(base, 'webview', 'index.js');
+    expect(joined.fsPath).toBe('/tmp/ext/webview/index.js');
+    // 原 uri 不能被就地改掉：同一个 extensionUri 后面还会被用
+    expect(base.fsPath).toBe('/tmp/ext');
+  });
+
+  it('结果能直接当 asWebviewUri 的输入（也就是能进 <script src>）', () => {
+    const api = createApi();
+    const uri = api.Uri.joinPath(api.Uri.file('/tmp/ext'), 'webview', 'index.js');
+    // 扩展那边会写 `src="${asWebviewUri(uri)}"`，所以这里断言的是「取得到路径」
+    expect(String(uri.fsPath)).toMatch(/index\.js$/);
+  });
+});
+
 describe('命令 / 视图的归属登记（禁用与卸载靠它）', () => {
   /**
    * 为什么需要这套登记：扩展在 activate() 里调 registerCommand / registerWebviewViewProvider

@@ -20,15 +20,38 @@ import { McpService } from './mcpService';
 import { SshSessionManager } from './ssh/SshSessionManager';
 import { WindowRegistry } from './windowRegistry';
 import { initializeExtensionManager, disposeExtensionManager } from './extensionManager';
+import { EXTENSION_WEBVIEW_SCHEME } from './extensionWebview';
 import { initUpdater, quitAndInstallUpdate } from './updater';
 import type { AppMenuId, MenuCommand } from '@deepseek-ide/shared';
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme } = electron;
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, protocol } = electron;
 type MenuItemConstructorOptions = electron.MenuItemConstructorOptions;
 type ElectronBrowserWindow = electron.BrowserWindow;
 type ElectronMenu = electron.Menu;
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+
+/**
+ * 扩展 webview 的资源协议要在 app ready **之前**声明特权，之后声明无效。
+ *
+ * 为什么需要它：扩展的界面 bundle 是 `<script type="module">`，而 Chromium 禁止从
+ * `file://` 加载 module script（来源是 null，模块请求按 CORS 处理，file: 不在允许的
+ * 协议里）——Claude Code 的面板因此在界面里报「webview/index.js could not be fetched」。
+ * 注册成 standard + secure + corsEnabled 的自定义协议之后，页面有正常 origin，
+ * module script / CSS / 字体都能加载（真正发内容的是 extensionManager 里的协议处理器）。
+ */
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: EXTENSION_WEBVIEW_SCHEME,
+    privileges: {
+      standard: true, // 有正常的 origin（`echoly-webview://ext`），CSP 的 'self' 才成立
+      secure: true, // 当作安全上下文，否则 WebCrypto / module 等能力会被降级
+      corsEnabled: true, // module script 的请求要过 CORS，不开这个必然失败
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+]);
 
 // 全局未捕获异常与 Promise Rejection 防护，避免第三方扩展或 webview 异常直接退出主进程
 process.on('uncaughtException', (err) => {

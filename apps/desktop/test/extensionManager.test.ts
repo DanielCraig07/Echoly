@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -16,11 +17,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * 这两个入口一个提供 userData 路径、一个注册 IPC，都不参与被测逻辑。
  */
 
-const hoisted = vi.hoisted(() => ({ userDataRoot: '' }));
+const hoisted = vi.hoisted(() => ({ userDataRoot: '', fetched: [] as string[] }));
 vi.mock('electron', () => ({
   app: { getPath: () => hoisted.userDataRoot },
   ipcMain: { handle: () => {} },
   BrowserWindow: { getAllWindows: () => [] },
+  // net.fetch 是协议处理器读磁盘文件的方式；这里只记下它请求了哪个文件
+  net: {
+    fetch: async (url: string) => {
+      hoisted.fetched.push(url);
+      return new Response(`RESOURCE:${url}`, {
+        status: 200,
+        headers: { 'content-type': 'application/javascript' },
+      });
+    },
+  },
+  protocol: {},
+  session: {
+    defaultSession: { protocol: { handle: () => {}, unhandle: () => {} } },
+    fromPartition: () => ({ protocol: { handle: () => {}, unhandle: () => {} } }),
+  },
 }));
 
 const { ExtensionManager } = await import('../src/main/extensionManager');
@@ -85,22 +101,77 @@ module.exports = { activate };
       'utf8',
     );
 
+    // 一个注册 webview 视图的扩展：它用 Uri.joinPath(extensionUri,'webview','index.js')
+    // 定位自己的 bundle —— 这正是 Claude Code 的做法，也是以前整套挂掉的地方。
+    await seedExtension(extensionsDir, 'demo.view', {
+      name: 'view',
+      publisher: 'demo',
+      displayName: 'Demo View',
+      version: '1.0.0',
+      main: './extension.js',
+    });
+    await mkdir(path.join(extensionsDir, 'demo.view', 'extension', 'webview'), { recursive: true });
+    await writeFile(
+      path.join(extensionsDir, 'demo.view', 'extension', 'webview', 'index.js'),
+      '/* fake bundle */\n',
+      'utf8',
+    );
+    await writeFile(
+      path.join(extensionsDir, 'demo.view', 'extension', 'extension.js'),
+      // 注意：这里是写进磁盘的 JS 源码，不要出现反斜杠转义 —— 外层是模板字符串，
+      // 反斜杠会先被模板字符串吃掉一层，写出来的文件反而语法错误。
+      `function activate(context) {
+  const vscode = require('vscode');
+  vscode.window.registerWebviewViewProvider('demo.viewPane', {
+    resolveWebviewView(view) {
+      const bundle = vscode.Uri.joinPath(context.extensionUri, 'webview', 'index.js');
+      const scriptUri = view.webview.asWebviewUri(bundle);
+      const csp = "default-src 'none'; style-src " + view.webview.cspSource +
+        "; script-src 'nonce-abc123';";
+      view.webview.html = '<html><head>' +
+        '<meta http-equiv="Content-Security-Policy" content="' + csp + '">' +
+        '</head><body>' +
+        '<script id="demo-bundle" nonce="abc123" src="' + scriptUri + '" type="module"></script>' +
+        '</body></html>';
+      view.webview.onDidReceiveMessage((m) => {
+        globalThis.__echolyDemoGot = m;
+      });
+    },
+  });
+  context.subscriptions.push({ dispose() {} });
+}
+module.exports = { activate };
+`,
+      'utf8',
+    );
+
     manager = new ExtensionManager({ workspaceRoot: base, registry: 'https://open-vsx.org' });
     await manager.initialize();
   });
 
   /**
-   * 自动加载是**故意异步**的（不阻塞启动），所以断言「激活好了没」要等一等。
+   * 轮询等待一个条件成立。自动加载是**故意异步**的（不阻塞启动），
+   * 而 `active` 在 `loadedExtensions.set` 那一刻就为真 —— 比 activate() 跑完还早，
+   * 所以「等激活好了」不能只看 active，要等真正在意的那件事出现。
    * 轮询而不是 sleep 固定时长：慢机器上固定时长会变成随机失败。
    */
-  async function waitForActive(id: string, timeoutMs = 5000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
+  async function waitFor<T>(what: string, probe: () => Promise<T | undefined>): Promise<T> {
+    const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
-      const hit = (await manager.listInstalledExtensions()).find((e) => e.id === id);
-      if (hit?.active) return;
+      const value = await probe();
+      if (value !== undefined) return value;
       await new Promise((r) => setTimeout(r, 25));
     }
-    throw new Error(`扩展 ${id} 在 ${timeoutMs}ms 内没有激活`);
+    throw new Error(`等了 5 秒，${what} 还是没有出现`);
+  }
+
+  /** 等到扩展注册好它贡献的命令（注册发生在 activate() 里，比 active 晚）。 */
+  async function waitForCommands(id: string, timeoutMs = 5000) {
+    void timeoutMs;
+    return waitFor(`扩展 ${id} 的命令`, async () => {
+      const hit = (await manager.listInstalledExtensions()).find((e) => e.id === id);
+      return hit && hit.commands.length > 0 ? hit : undefined;
+    });
   }
 
   afterEach(async () => {
@@ -109,7 +180,12 @@ module.exports = { activate };
 
   it('列表用扩展 id，且忽略半截安装的目录', async () => {
     const list = await manager.listInstalledExtensions();
-    expect(list.map((e) => e.id)).toEqual(['Anthropic.claude-code', 'demo.cmds', 'foo.bar']);
+    expect(list.map((e) => e.id)).toEqual([
+      'Anthropic.claude-code',
+      'demo.cmds',
+      'demo.view',
+      'foo.bar',
+    ]);
     const claude = list.find((e) => e.id === 'Anthropic.claude-code')!;
     expect(claude.displayName).toBe('Claude Code');
     expect(claude.version).toBe('2.0.0');
@@ -144,14 +220,117 @@ module.exports = { activate };
     expect(existsSync(path.join(extensionsDir, 'foo.bar'))).toBe(true);
     expect((await manager.listInstalledExtensions()).map((e) => e.id)).toEqual([
       'demo.cmds',
+      'demo.view',
       'foo.bar',
     ]);
   });
 
-  it('真激活一个扩展：它的命令带上归属，标题从 manifest 取到', async () => {
-    await waitForActive('demo.cmds');
+  describe('扩展界面（echoly-webview:// 协议）', () => {
+    /**
+     * 让视图的 provider 真正跑一遍 resolve，并把 HTML 生成出来。
+     *
+     * 重试到成功为止：`active` 为真时 activate() 可能还在跑，
+     * 这时候 provider 还没注册（「No WebviewView provider registered」）。
+     */
+    async function resolveDemoView(): Promise<string> {
+      return waitFor('视图 provider 注册完成', async () => {
+        try {
+          return (await (manager as any).resolveWebviewView('demo.viewPane')) as string;
+        } catch {
+          return undefined;
+        }
+      });
+    }
 
-    const hit = (await manager.listInstalledExtensions()).find((e) => e.id === 'demo.cmds')!;
+    it('扩展界面里的资源地址是协议地址，不再是 file://', async () => {
+      const html = await resolveDemoView();
+
+      // file:// 加载不了 module script（扩展的 bundle 基本都是），
+      // 而且 file:// 路径里的空格是坏的 —— 所以这里必须是自定义协议。
+      expect(html).toContain('echoly-webview://ext/demo.viewPane/webview/index.js');
+      expect(html).not.toContain('file://');
+      expect(manager.getWebviewUrl('demo.viewPane')).toBe(
+        'echoly-webview://ext/demo.viewPane/index.html',
+      );
+    });
+
+    it('扩展的 CSP 用的是我们的 origin（cspSource 不再是一个不对的串）', async () => {
+      const html = await resolveDemoView();
+      expect(html).toContain('style-src echoly-webview://ext;');
+    });
+
+    it('注入的运行时在位，且沿用了扩展自己的 nonce（否则会被它的 CSP 拦掉）', async () => {
+      const html = await resolveDemoView();
+      expect(html).toContain('__echolyWebviewBridge');
+      expect(html).toContain('acquireVsCodeApi');
+      expect(html).toMatch(/<script nonce="abc123">\s*\(function\(\)/);
+    });
+
+    it('协议处理器：/index.html 回注入后的 HTML，其余路径回磁盘上的文件', async () => {
+      const html = await resolveDemoView();
+      hoisted.fetched.length = 0;
+
+      const indexResponse = await (manager as any).handleWebviewRequest(
+        'echoly-webview://ext/demo.viewPane/index.html',
+      );
+      expect(indexResponse.status).toBe(200);
+      expect(await indexResponse.text()).toBe(html);
+
+      const assetResponse = await (manager as any).handleWebviewRequest(
+        'echoly-webview://ext/demo.viewPane/webview/index.js',
+      );
+      expect(assetResponse.status).toBe(200);
+      // 走的是 net.fetch(真实文件)，而不是返回一段假的字符串
+      const expectedFile = pathToFileURL(
+        path.join(extensionsDir, 'demo.view', 'extension', 'webview', 'index.js'),
+      ).toString();
+      expect(hoisted.fetched).toEqual([expectedFile]);
+    });
+
+    it('协议处理器：穿越路径 403、未知视图 404、不是本协议 400', async () => {
+      await resolveDemoView();
+      const status = async (url: string) =>
+        (await (manager as any).handleWebviewRequest(url)).status;
+
+      // 百分号编码的 `..` 是唯一能穿过 URL 解析的形态（字面 `..` 会被 URL 解析器
+      // 直接折叠掉，连视图 id 都对不上）—— 我们自己的守卫必须挡住解码之后的那份。
+      expect(await status('echoly-webview://ext/demo.viewPane/%2e%2e%2f%2e%2e%2fetc/passwd')).toBe(
+        403,
+      );
+      // 字面 `..` 被 URL 解析器折叠成另一个视图 id，取不到东西 —— 关键是**不能 200**
+      expect(await status('echoly-webview://ext/demo.viewPane/../../../../etc/passwd')).not.toBe(
+        200,
+      );
+      expect(await status('echoly-webview://ext/nobody.view/index.html')).toBe(404);
+      expect(await status('https://example.com/x')).toBe(400);
+    });
+
+    it('界面发回的消息能送到扩展的 onDidReceiveMessage', async () => {
+      await resolveDemoView();
+      delete (globalThis as any).__echolyDemoGot;
+
+      manager.deliverWebviewMessage('demo.viewPane', { type: 'hello', n: 7 });
+
+      // 没有这一半，面板画得出来但点任何东西都没反应
+      expect((globalThis as any).__echolyDemoGot).toEqual({ type: 'hello', n: 7 });
+    });
+
+    it('扩展停用后，它的视图运行时（HTML / 消息回调）一起被忘掉', async () => {
+      await resolveDemoView();
+      await manager.setExtensionEnabled('demo.view', false);
+
+      const response = await (manager as any).handleWebviewRequest(
+        'echoly-webview://ext/demo.viewPane/index.html',
+      );
+      expect(response.status).toBe(404);
+      delete (globalThis as any).__echolyDemoGot;
+      manager.deliverWebviewMessage('demo.viewPane', { type: 'after-disable' });
+      expect((globalThis as any).__echolyDemoGot).toBeUndefined();
+    });
+  });
+
+  it('真激活一个扩展：它的命令带上归属，标题从 manifest 取到', async () => {
+    const hit = await waitForCommands('demo.cmds');
     // 归属必须记在扩展 id 名下，否则禁用/卸载时无从摘起
     expect(hit.commands).toEqual([{ command: 'demo.cmds.say', title: 'Say Hello' }]);
 
