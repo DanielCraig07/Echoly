@@ -68,10 +68,6 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   'extDetail.resHomepage': { zh: '主页', en: 'Homepage' },
   'extDetail.resRepository': { zh: '仓库', en: 'Repository' },
   'extDetail.resIssues': { zh: '问题反馈', en: 'Issues' },
-  'extDetail.openedInPanel': {
-    zh: '已安装的扩展在左侧「已安装的扩展」里查看',
-    en: 'Installed extensions are listed under "Installed Extensions" on the left',
-  },
   'ext.ratingLabel': { zh: '评分', en: 'Rating' },
   'ext.marketFailed': {
     zh: '注册表暂时不可用，稍后再试',
@@ -111,6 +107,50 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   },
   'ext.enabled': { zh: '已启用', en: 'Enabled' },
   'ext.manage': { zh: '管理', en: 'Manage' },
+  // ── 已安装扩展的管理动作（禁用/启用/卸载/打开视图） ────────────────
+  // 刻意把它们从「安装」那条链路里分出来：安装是一次性的，而这几个是装完之后
+  // 长期会用到的开关，文案要能独立说清各自做什么。
+  'ext.disable': { zh: '禁用', en: 'Disable' },
+  'ext.enable': { zh: '启用', en: 'Enable' },
+  'ext.disabled': { zh: '已禁用', en: 'Disabled' },
+  'ext.uninstall': { zh: '卸载', en: 'Uninstall' },
+  'ext.disabledToast': { zh: '已禁用 {name}', en: 'Disabled {name}' },
+  'ext.enabledToast': { zh: '已启用 {name}', en: 'Enabled {name}' },
+  'ext.toggleFailed': {
+    zh: '操作失败：{msg}',
+    en: 'Action failed: {msg}',
+  },
+  'ext.uninstallTitle': { zh: '卸载扩展', en: 'Uninstall Extension' },
+  'ext.uninstallConfirm': {
+    zh: '即将从本机删除 **{name}** 的扩展文件。之后可以随时在扩展市场重新安装。',
+    en: 'This will remove the extension files for **{name}** from this machine. You can reinstall it from the marketplace later.',
+  },
+  'ext.uninstallFailed': { zh: '卸载失败：{msg}', en: 'Failed to uninstall: {msg}' },
+  'ext.uninstalledToast': { zh: '已卸载 {name}', en: 'Uninstalled {name}' },
+  'ext.openView': { zh: '打开', en: 'Open' },
+  'ext.openViewTitle': {
+    zh: '打开这个扩展贡献的界面',
+    en: 'Open the view contributed by this extension',
+  },
+  'ext.commandRunFailed': {
+    zh: '无法执行扩展命令 {command}',
+    en: 'Could not run the extension command {command}',
+  },
+
+  // ── 扩展自带的 webview 界面（ExtensionViewPanel） ──────────────────
+  // 任何扩展贡献的视图都用这套文案，不再带 Claude 字样。
+  'extView.tabTitle': { zh: '扩展界面', en: 'Extension View' },
+  'extView.loading': { zh: '正在加载扩展界面…', en: 'Loading the extension UI…' },
+  'extView.loadUiFailed': { zh: '无法加载扩展界面', en: 'Failed to load the extension UI' },
+  'extView.loadFailed': { zh: '加载失败', en: 'Failed to load' },
+  'extView.loadFailedDetail': { zh: '加载失败：{msg}', en: 'Failed to load: {msg}' },
+  'extView.unknownError': { zh: '未知错误', en: 'Unknown error' },
+  'extView.close': { zh: '关闭', en: 'Close' },
+  'extView.preparing': { zh: '正在准备扩展界面…', en: 'Preparing the extension UI…' },
+  'extView.waitingHtml': { zh: '等待扩展界面的 HTML…', en: 'Waiting for the extension UI HTML…' },
+  'extView.fileLabel': { zh: '文件：{name}', en: 'File: {name}' },
+  'extView.notSet': { zh: '（未设置）', en: '(not set)' },
+
   'ext.logs': { zh: '扩展通信日志 ({n})', en: 'Extension Logs ({n})' },
   'ext.collapse': { zh: '▲ 收起', en: '▲ Collapse' },
   'ext.expand': { zh: '▼ 展开', en: '▼ Expand' },

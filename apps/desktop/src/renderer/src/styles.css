@@ -18814,9 +18814,21 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 .ext-row-actions {
   display: flex;
   align-items: center;
+  /* 已安装的行最多有四个按钮（打开/管理/禁用/卸载），窄面板下换行比挤成一条好读 */
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+/* 禁用态：圆点转灰、文字压暗。绿色圆点会读成「正在跑」，与状态相反 */
+.ext-row-status.is-disabled .ext-status-dot {
+  background: var(--muted);
+}
+
+.ext-row-status.is-disabled {
+  color: var(--muted);
 }
 
 /* ── 行内按钮 ── */

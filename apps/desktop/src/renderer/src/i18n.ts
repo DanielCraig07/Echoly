@@ -780,6 +780,7 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'cmd.categoryWorkspace': { zh: '工作区', en: 'Workspace' },
   'cmd.categoryRemote': { zh: '远程', en: 'Remote' },
   'cmd.categoryWindow': { zh: '窗口', en: 'Window' },
+  'cmd.categoryExtension': { zh: '扩展', en: 'Extensions' },
   'cmd.openComposer': {
     zh: 'Composer: 多文件智能重构协同编辑 (⌘I)',
     en: 'Composer: multi-file refactor editor (⌘I)',

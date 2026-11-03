@@ -81,6 +81,7 @@ import {
   EXTENSION_DETAIL_PREFIX,
   EXTENSION_INSTALLED_EVENT,
 } from './components/ExtensionDetailView';
+import { EXTENSION_VIEW_PREFIX } from './components/ExtensionViewPanel';
 import { CLAUDE_CODE_ID, CLAUDE_CODE_VIEW_ID } from './services/claudeCode';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { PanelChevron } from './components/PanelChevron';
@@ -296,6 +297,16 @@ export function App() {
    * 「管理」都会把它设成 true，于是弹出一个跟那个扩展毫无关系的对话面板。
    */
   const [claudeTabAvailable, setClaudeTabAvailable] = useState(false);
+  /**
+   * 扩展自己贡献的命令（注册进命令面板）。
+   *
+   * 以前这类命令是「注册了但无处可点」—— 扩展调 registerCommand 之后，命令面板里
+   * 根本列不出来。这里把宿主登记的命令拉过来，顶部搜索框的「命令」模式才能执行它们。
+   * 装着哪些扩展、各自注册了什么，只有主进程知道，所以每次扩展有变动都要重拉一次。
+   */
+  const [extensionCommands, setExtensionCommands] = useState<
+    { command: string; extensionId?: string; title?: string }[]
+  >([]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<'chat' | 'claude'>('chat'); // 右侧面板标签
   const [diffs, setDiffs] = useState<PendingDiff[]>([]);
@@ -1792,6 +1803,34 @@ export function App() {
     };
   }, []);
 
+  /**
+   * 拉取扩展命令列表。
+   *
+   * 三个触发点：挂载时拉一次、装完扩展拉一次、扩展注册了视图/命令后拉一次 ——
+   * 少任何一个都会出现「刚装的扩展，命令面板里还是看不到它的命令」。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await window.extensions?.listCommands?.();
+        if (cancelled || !res?.success) return;
+        setExtensionCommands(res.commands ?? []);
+      } catch {
+        // 拿不到就当没有扩展命令：命令面板里少几条，不该影响其它命令
+      }
+    };
+    void load();
+    const onInstalled = () => void load();
+    window.addEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+    const unsubscribe = window.ide?.onExtensionWebviewRegistered?.(() => void load());
+    return () => {
+      cancelled = true;
+      window.removeEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+      unsubscribe?.();
+    };
+  }, []);
+
   /** 活动栏上的固定列表（跟着 layout 一起持久化）。 */
   const handlePinnedChange = useCallback(
     (next: LeftPanelId[]) => {
@@ -3189,6 +3228,42 @@ export function App() {
     [openVirtualTab],
   );
 
+  /**
+   * 在编辑器区打开某个扩展自己贡献的界面（webview 视图）。
+   *
+   * 与「打开扩展详情」是两条路：详情页看的是市场资料（README/版本），这里看的是
+   * 扩展真正跑起来的界面。装完扩展要「能用它」，靠的就是这个入口。
+   */
+  const openExtensionView = useCallback(
+    (viewId: string, title?: string) => {
+      if (!viewId) return;
+      openVirtualTab(
+        `${EXTENSION_VIEW_PREFIX}${viewId}`,
+        '',
+        title || t('extView.tabTitle'),
+        'extension-view',
+        false,
+      );
+    },
+    [openVirtualTab, t],
+  );
+
+  /**
+   * 别处（已安装列表 / 详情页）请求打开扩展视图时走这个事件。
+   *
+   * 用 window 事件是因为发起方在面板与详情页两个组件里、拿不到 App 的打开标签能力；
+   * 这和 EXTENSION_INSTALLED_EVENT 是同一套做法，避免为了传一个回调层层穿透 props。
+   */
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ viewId?: string; title?: string }>).detail;
+      if (!detail?.viewId) return;
+      openExtensionView(detail.viewId, detail.title);
+    };
+    window.addEventListener('echoly:open-extension-view', handler);
+    return () => window.removeEventListener('echoly:open-extension-view', handler);
+  }, [openExtensionView]);
+
   /** 当前打开着的脚本相对路径：面板底部据此标出「已打开」 */
   const openScriptPaths = useMemo(
     () =>
@@ -4485,6 +4560,45 @@ export function App() {
     },
   ];
 
+  /**
+   * 命令面板实际展示的动作 = 内置命令 + 扩展贡献的命令。
+   *
+   * 分开放是有意的：`ideActions` 里的 id 被快捷键映射按字符串查找（见上面的 keydown
+   * 处理），往里混进运行期才出现的扩展命令会让那套映射变得依赖扩展装没装。
+   */
+  const paletteActions: CommandAction[] = [
+    ...ideActions,
+    ...extensionCommands.map((c) => ({
+      // 前缀避免与内置 id 撞车：扩展命令 id 是 `publisher.name` 形状，理论上不会撞，
+      // 但面板的 key 与快捷键查找都靠 id，加个前缀就不用去赌。
+      id: `ext-cmd:${c.command}`,
+      title: c.title || c.command,
+      category: t('cmd.categoryExtension'),
+      handler: () => {
+        const run = window.extensions?.executeCommand;
+        if (!run) return;
+        void run(c.command)
+          .then((res) => {
+            // 扩展没激活 / 命令抛错都会走 failure。提示一句，免得点了没反应还以为是卡了。
+            if (res && res.success === false) {
+              showToast(
+                t('ext.commandRunFailed', { command: c.command }),
+                res.error || undefined,
+                'error',
+              );
+            }
+          })
+          .catch((err: any) => {
+            showToast(
+              t('ext.commandRunFailed', { command: c.command }),
+              err?.message || undefined,
+              'error',
+            );
+          });
+      },
+    })),
+  ];
+
   return (
     <div
       className={`app-shell${isWelcomeShell ? ' welcome-shell' : ''}`}
@@ -4841,7 +4955,7 @@ export function App() {
           <TopSearchBar
             ref={searchRef}
             enabled={!!workspace}
-            actions={ideActions}
+            actions={paletteActions}
             activePath={activePath || undefined}
             onOpenFile={(path, line) => void openFile(path, line)}
           />

@@ -700,18 +700,12 @@ export const miscDict: Record<string, { zh: string; en: string }> = {
   'problems.fix': { zh: '⚡️ AI 修复', en: '⚡️ AI Fix' },
 
   // ══════════════════════════════════════════
-  // Claude 扩展面板（ClaudePanel / ClaudeChatPanel）
+  // Claude 对话面板（ClaudeChatPanel）
+  //
+  // 「扩展自带的 webview 界面」那几条（extView.*）不在这里：它已经和 Claude 解耦，
+  // 任何贡献视图的扩展都用同一套文案，放在 runtime.ts 的扩展面板分区里。
   // ══════════════════════════════════════════
-  'ext.claudeLoading': { zh: '加载 Claude 插件...', en: 'Loading the Claude extension...' },
-  'ext.claudeLoadUiFailed': { zh: '无法加载扩展界面', en: 'Failed to load the extension UI' },
-  'ext.claudeLoadFailed': { zh: '加载失败', en: 'Failed to load' },
-  'ext.claudeLoadFailedDetail': { zh: '加载失败: {msg}', en: 'Failed to load: {msg}' },
   'ext.claudeUnknownError': { zh: '未知错误', en: 'Unknown error' },
-  'ext.claudeClose': { zh: '关闭', en: 'Close' },
-  'ext.claudePreparing': { zh: '准备加载...', en: 'Preparing to load...' },
-  'ext.claudeWaitingHtml': { zh: '等待加载 HTML 文件...', en: 'Waiting for the HTML file...' },
-  'ext.claudeFileLabel': { zh: 'File: {name}', en: 'File: {name}' },
-  'ext.claudeNotSet': { zh: '(未设置)', en: '(not set)' },
   'ext.claudeChatEmptyTitle': { zh: '开始与 Claude 对话', en: 'Start chatting with Claude' },
   'ext.claudeChatEmptyHint': {
     zh: '输入消息开始对话，Claude 将帮助你完成编程任务',

@@ -6,6 +6,22 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { MarketplaceDetailEntry, MarketplaceEntry } from '@deepseek-ide/shared';
 
+/**
+ * 一条「已安装扩展」。
+ *
+ * 与主进程 `InstalledExtensionInfo` 对应：这里只关心界面要用到的字段。
+ * `views` 非空时详情页才给「打开视图」入口 —— 扩展没贡献视图时点了也没内容。
+ */
+export interface InstalledExtension {
+  id: string;
+  displayName: string;
+  version?: string;
+  enabled: boolean;
+  active: boolean;
+  commands: string[];
+  views: string[];
+}
+
 export interface ExtensionAPI {
   /**
    * 安装 Claude Code 扩展
@@ -78,6 +94,27 @@ export interface ExtensionAPI {
   getLoadedExtensions(): Promise<{ success: boolean; extensions?: string[] }>;
 
   /**
+   * 已安装扩展的登记表：版本、启用状态、贡献的命令与视图。
+   *
+   * 管理界面（禁用/启用/卸载/打开视图）吃这一份 —— `getLoadedExtensions` 只给 id，
+   * 不够判断「能禁用吗、有视图可开吗」。`active` 与 `enabled` 是两回事：
+   * 启用了的扩展也可能因为激活失败而没跑起来。
+   */
+  listInstalled(): Promise<{ success: boolean; extensions?: InstalledExtension[]; error?: string }>;
+
+  /** 所有扩展贡献的命令（命令面板用）。 */
+  listCommands(): Promise<{
+    success: boolean;
+    commands?: { command: string; extensionId?: string }[];
+  }>;
+
+  /** 启用 / 禁用扩展。启用会就地激活，不必重启。 */
+  setEnabled(id: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
+
+  /** 卸载扩展：停用并删除本地文件。 */
+  uninstall(id: string): Promise<{ ok: boolean; error?: string }>;
+
+  /**
    * 监听扩展命令
    */
   onCommand(callback: (data: { command: string; args: any[] }) => void): () => void;
@@ -127,6 +164,22 @@ export function createExtensionAPI(): ExtensionAPI {
 
     async getLoadedExtensions() {
       return ipcRenderer.invoke('extension:get-loaded');
+    },
+
+    async listInstalled() {
+      return ipcRenderer.invoke('extension:list-installed');
+    },
+
+    async listCommands() {
+      return ipcRenderer.invoke('extension:list-commands');
+    },
+
+    async setEnabled(id: string, enabled: boolean) {
+      return ipcRenderer.invoke('extension:set-enabled', id, enabled);
+    },
+
+    async uninstall(id: string) {
+      return ipcRenderer.invoke('extension:uninstall', id);
     },
 
     onCommand(callback: (data: { command: string; args: any[] }) => void) {

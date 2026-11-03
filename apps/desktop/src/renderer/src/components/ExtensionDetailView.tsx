@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm';
 import { useI18n } from '../i18n';
 import type { MarketplaceDetailEntry } from '@deepseek-ide/shared';
 import { stripRawHtml } from '../services/extensionReadme';
+import { DbConfirmModal } from './DbConfirmModal';
 import { CLAUDE_CODE_ID } from '../services/claudeCode';
 import {
   formatDownloadCount,
@@ -73,7 +74,18 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
   const [error, setError] = useState<string | null>(null);
   const [iconData, setIconData] = useState<string | null>(null);
   const [installed, setInstalled] = useState(false);
+  /** 已安装时的完整信息（启用状态、贡献的视图）——决定「打开/禁用/卸载」谁能点。 */
+  const [installedInfo, setInstalledInfo] = useState<{
+    id: string;
+    displayName: string;
+    version?: string;
+    enabled: boolean;
+    active: boolean;
+    views: string[];
+  } | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
 
   const title = detail?.displayName || friendlyExtensionName(extensionId);
   const publisher = publisherOf(extensionId);
@@ -82,18 +94,36 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
     setState('loading');
     setError(null);
     try {
-      const [res, loaded] = await Promise.all([
+      const [res, listed] = await Promise.all([
         window.extensions.getExtensionDetail(extensionId),
-        window.extensions.getLoadedExtensions?.() ?? Promise.resolve(undefined),
+        window.extensions.listInstalled?.() ?? Promise.resolve(undefined),
       ]);
-      if (loaded?.success && loaded.extensions) {
-        const target = extensionId.toLowerCase();
-        setInstalled(
-          loaded.extensions.some((e) => {
-            const id = e.toLowerCase();
-            return id === target || id.includes(target) || target.includes(id);
-          }),
-        );
+      /**
+       * 匹配用「相等 或 互相包含」：扩展自报的 id 与注册表里的 id 大小写、后缀
+       * 偶有出入，严格相等会让一个明明装好的扩展显示成「未安装」。
+       */
+      const target = extensionId.toLowerCase();
+      const matchId = (e: string) => {
+        const id = e.toLowerCase();
+        return id === target || id.includes(target) || target.includes(id);
+      };
+      const hit =
+        listed?.success && listed.extensions
+          ? listed.extensions.find((e) => matchId(e.id))
+          : undefined;
+      if (hit) {
+        setInstalled(true);
+        setInstalledInfo({
+          id: hit.id,
+          displayName: hit.displayName || friendlyExtensionName(hit.id),
+          version: hit.version,
+          enabled: hit.enabled,
+          active: hit.active,
+          views: hit.views ?? [],
+        });
+      } else {
+        setInstalled(false);
+        setInstalledInfo(null);
       }
       if (!res?.ok || !res.detail) {
         setState('failed');
@@ -140,6 +170,71 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
    */
   const usesDedicatedChannel = extensionId.toLowerCase() === CLAUDE_CODE_ID.toLowerCase();
 
+  /** 打开这个扩展自己贡献的界面（编辑器区新开一个标签，由 App 接管）。 */
+  const handleOpenView = () => {
+    const viewId = installedInfo?.views?.[0];
+    if (!viewId) return;
+    window.dispatchEvent(
+      new CustomEvent('echoly:open-extension-view', {
+        detail: { viewId, title: installedInfo?.displayName || title },
+      }),
+    );
+  };
+
+  /** 启用 / 禁用。做完重拉一次详情，按钮文案与状态跟着变。 */
+  const handleToggleEnabled = async () => {
+    if (!installedInfo || busy) return;
+    const next = !installedInfo.enabled;
+    setBusy(true);
+    try {
+      const res = await window.extensions.setEnabled(installedInfo.id, next);
+      if (res?.ok) {
+        onShowToast?.(
+          next
+            ? t('ext.enabledToast', { name: installedInfo.displayName })
+            : t('ext.disabledToast', { name: installedInfo.displayName }),
+          'success',
+        );
+        await load();
+      } else {
+        onShowToast?.(
+          t('ext.toggleFailed', { msg: res?.error || t('extView.unknownError') }),
+          'error',
+        );
+      }
+    } catch (err: any) {
+      onShowToast?.(t('ext.toggleFailed', { msg: err?.message || String(err) }), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 卸载：确认后调主进程，成功就把本地状态也置回「未安装」。 */
+  const handleUninstall = async () => {
+    setConfirmUninstall(false);
+    if (!installedInfo) return;
+    setBusy(true);
+    const name = installedInfo.displayName;
+    try {
+      const res = await window.extensions.uninstall(installedInfo.id);
+      if (res?.ok) {
+        onShowToast?.(t('ext.uninstalledToast', { name }), 'success');
+        // 通知面板刷新：它那边还挂着这个扩展的一行
+        window.dispatchEvent(new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: extensionId }));
+        await load();
+      } else {
+        onShowToast?.(
+          t('ext.uninstallFailed', { msg: res?.error || t('extView.unknownError') }),
+          'error',
+        );
+      }
+    } catch (err: any) {
+      onShowToast?.(t('ext.uninstallFailed', { msg: err?.message || String(err) }), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleInstall = async () => {
     if (installing) return;
     setInstalling(true);
@@ -150,6 +245,8 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
           setInstalled(true);
           onShowToast?.(t('ext.claudeInstalled'), 'success');
           window.dispatchEvent(new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: extensionId }));
+          // 重拉一次：安装动作本身不知道扩展贡献了哪些视图，得从登记表读回来
+          await load();
         } else {
           onShowToast?.(res.error || t('ext.installFailed'), 'error');
         }
@@ -167,6 +264,7 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
         // 左侧面板是另一个组件，靠事件通知它刷新已安装列表 ——
         // 否则刚装完的扩展在面板里还是「安装」按钮，两边说的不是一回事。
         window.dispatchEvent(new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: detail.id }));
+        await load();
       } else {
         onShowToast?.(res.error || t('ext.installFailed'), 'error');
       }
@@ -253,20 +351,39 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
               )}
               {state !== 'failed' &&
                 (installed ? (
-                  <button
-                    type="button"
-                    className="ext-btn ext-btn-primary"
-                    onClick={() => {
-                      // 「已安装」之后唯一能做的事是打开它 —— 本应用没有禁用/卸载，
-                      // 所以这里不摆一个点了没反应的按钮
-                      window.dispatchEvent(
-                        new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: extensionId }),
-                      );
-                      onShowToast?.(t('extDetail.openedInPanel'), 'info');
-                    }}
-                  >
-                    {t('ext.installedSection')}
-                  </button>
+                  <>
+                    {/*
+                      「打开」只在扩展确实贡献了视图时出现 —— 没有视图的扩展（纯命令类）
+                      摆一个点了没反应的按钮，跟以前那个假的暂停补全按钮是一回事。
+                    */}
+                    {(installedInfo?.views?.length ?? 0) > 0 && (
+                      <button
+                        type="button"
+                        className="ext-btn ext-btn-primary"
+                        disabled={busy || !installedInfo?.enabled}
+                        title={t('ext.openViewTitle')}
+                        onClick={handleOpenView}
+                      >
+                        {t('ext.openView')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="ext-btn"
+                      disabled={busy}
+                      onClick={() => void handleToggleEnabled()}
+                    >
+                      {installedInfo?.enabled ? t('ext.disable') : t('ext.enable')}
+                    </button>
+                    <button
+                      type="button"
+                      className="ext-btn"
+                      disabled={busy}
+                      onClick={() => setConfirmUninstall(true)}
+                    >
+                      {t('ext.uninstall')}
+                    </button>
+                  </>
                 ) : (
                   <button
                     type="button"
@@ -382,6 +499,25 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
           </aside>
         </div>
       </div>
+      <DbConfirmModal
+        isOpen={confirmUninstall}
+        title={t('ext.uninstallTitle')}
+        content={t('ext.uninstallConfirm', { name: installedInfo?.displayName || title })}
+        details={
+          installedInfo
+            ? [
+                { label: t('extDetail.identifier'), value: installedInfo.id },
+                ...(installedInfo.version
+                  ? [{ label: t('extDetail.version'), value: installedInfo.version }]
+                  : []),
+              ]
+            : undefined
+        }
+        tone="danger"
+        confirmLabel={t('ext.uninstall')}
+        onConfirm={() => void handleUninstall()}
+        onCancel={() => setConfirmUninstall(false)}
+      />
     </div>
   );
 }

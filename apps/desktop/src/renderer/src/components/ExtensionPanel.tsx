@@ -17,6 +17,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useI18n } from '../i18n';
 import type { MarketplaceDetailEntry, MarketplaceEntry } from '@deepseek-ide/shared';
 import { EXTENSION_INSTALLED_EVENT } from './ExtensionDetailView';
+import { DbConfirmModal } from './DbConfirmModal';
 import {
   formatDownloadCount,
   formatRating,
@@ -37,6 +38,22 @@ export interface ExtensionPanelProps {
    */
   onOpenDetail?: (row: RowView) => void;
   onClose?: () => void;
+}
+
+/**
+ * 一条「已安装扩展」的展示数据。
+ *
+ * 与主进程 `InstalledExtensionInfo` 对应。`enabled` 与 `active` 是两回事：
+ * 启用了的扩展也可能因为激活失败而没跑起来，管理界面要能区分这两种状态。
+ */
+interface InstalledExtensionRow {
+  id: string;
+  displayName: string;
+  version?: string;
+  enabled: boolean;
+  active: boolean;
+  commands: string[];
+  views: string[];
 }
 
 declare global {
@@ -69,6 +86,21 @@ declare global {
         ...args: any[]
       ): Promise<{ success: boolean; result?: any; error?: string }>;
       getLoadedExtensions(): Promise<{ success: boolean; extensions?: string[] }>;
+      /** 已安装扩展的登记表（版本 / 启用状态 / 贡献的命令与视图） */
+      listInstalled(): Promise<{
+        success: boolean;
+        extensions?: InstalledExtensionRow[];
+        error?: string;
+      }>;
+      /** 所有扩展贡献的命令（命令面板用） */
+      listCommands(): Promise<{
+        success: boolean;
+        commands?: { command: string; extensionId?: string; title?: string }[];
+      }>;
+      /** 启用 / 禁用；启用会就地激活 */
+      setEnabled(id: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
+      /** 卸载：停用并删除本地文件 */
+      uninstall(id: string): Promise<{ ok: boolean; error?: string }>;
       onCommand(callback: (data: { command: string; args: any[] }) => void): () => void;
       onMessage(callback: (message: any) => void): () => void;
     };
@@ -249,7 +281,14 @@ function SectionHeader({
 export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(false);
+  /** 已安装扩展的 id 列表（只用来判断市场里的条目「装没装」）。 */
   const [extensions, setExtensions] = useState<string[]>([]);
+  /** 已安装扩展的完整信息（管理动作要靠它）。 */
+  const [installed, setInstalled] = useState<InstalledExtensionRow[]>([]);
+  /** 正在执行管理动作（禁用/启用/卸载）的扩展 id，用来禁掉它自己的按钮。 */
+  const [busyId, setBusyId] = useState<string | null>(null);
+  /** 待确认卸载的扩展；非空时弹确认框。 */
+  const [confirmUninstall, setConfirmUninstall] = useState<InstalledExtensionRow | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -292,15 +331,76 @@ export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
 
   const loadExtensions = useCallback(async () => {
     try {
+      // 优先用带状态的登记表；它还没接线时（旧 preload）退回旧的 id 列表，
+      // 至少不把「已安装」分区整块弄没。
+      if (window.extensions?.listInstalled) {
+        const result = await window.extensions.listInstalled();
+        if (result.success && result.extensions) {
+          setInstalled(result.extensions);
+          // 市场条目的「已安装」判定用 id 列表：禁用了也仍然是「已安装」。
+          setExtensions(result.extensions.map((e) => e.id));
+          return;
+        }
+      }
       if (!window.extensions?.getLoadedExtensions) return;
       const result = await window.extensions.getLoadedExtensions();
       if (result.success && result.extensions) {
         setExtensions(result.extensions);
+        setInstalled([]);
       }
     } catch (err: any) {
       console.error('Failed to load extensions:', err);
     }
   }, []);
+
+  /**
+   * 启用 / 禁用。启用会就地激活，所以做完立刻重拉一次列表把状态刷新出来。
+   */
+  const handleToggleEnabled = useCallback(
+    async (ext: InstalledExtensionRow) => {
+      if (busyId) return;
+      setBusyId(ext.id);
+      try {
+        const res = await window.extensions.setEnabled(ext.id, !ext.enabled);
+        if (res?.ok) {
+          setSuccessMsg(
+            ext.enabled
+              ? t('ext.disabledToast', { name: ext.displayName })
+              : t('ext.enabledToast', { name: ext.displayName }),
+          );
+          await loadExtensions();
+        } else {
+          setError(t('ext.toggleFailed', { msg: res?.error || t('extView.unknownError') }));
+        }
+      } catch (err: any) {
+        setError(t('ext.toggleFailed', { msg: err?.message || String(err) }));
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [busyId, loadExtensions, t],
+  );
+
+  /** 卸载：先弹确认（会删本地文件），确认后调主进程并刷新列表。 */
+  const performUninstall = useCallback(async () => {
+    const ext = confirmUninstall;
+    setConfirmUninstall(null);
+    if (!ext) return;
+    setBusyId(ext.id);
+    try {
+      const res = await window.extensions.uninstall(ext.id);
+      if (res?.ok) {
+        setSuccessMsg(t('ext.uninstalledToast', { name: ext.displayName }));
+        await loadExtensions();
+      } else {
+        setError(t('ext.uninstallFailed', { msg: res?.error || t('extView.unknownError') }));
+      }
+    } catch (err: any) {
+      setError(t('ext.uninstallFailed', { msg: err?.message || String(err) }));
+    } finally {
+      setBusyId(null);
+    }
+  }, [confirmUninstall, loadExtensions, t]);
 
   /** 拉推荐列表。失败只影响这一个分区，不动全局 error。 */
   const loadRecommended = useCallback(async () => {
@@ -532,41 +632,86 @@ export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
 
   const showingResults = marketQuery.trim().length > 0;
 
-  /** 「已安装」分区的行。数据源是 id 字符串，所以标题/发布者从 id 推导。 */
+  /**
+   * 「已安装」分区的行。
+   *
+   * 每条给出四个入口：打开（这个扩展贡献的界面，没有视图就没有这个按钮）、
+   * 管理（详情页）、禁用/启用、卸载。禁用与卸载以前根本不存在 ——
+   * 装错一个扩展就只能去手删 userData 目录。
+   */
   const installedRows: RowView[] = useMemo(
     () =>
-      extensions.map((id) => {
+      installed.map((ext) => {
         // 先有 row 再有按钮：按钮点开的就是这一行自己的详情页，
         // 和「点名字/图标」走的是同一个入口（详情页里有安装状态、README、元信息）。
         const row: RowView = {
-          key: id,
-          extensionId: id,
-          title: friendlyExtensionName(id),
-          description: '',
-          publisher: publisherOf(id),
+          key: ext.id,
+          extensionId: ext.id,
+          title: ext.displayName || friendlyExtensionName(ext.id),
+          description: ext.version ? `v${ext.version}` : '',
+          publisher: publisherOf(ext.id),
           stats: (
-            <span className="ext-row-status">
+            <span className={`ext-row-status${ext.enabled ? '' : ' is-disabled'}`}>
               <span className="ext-status-dot" />
-              {t('ext.enabled')}
+              {ext.enabled ? t('ext.enabled') : t('ext.disabled')}
             </span>
           ),
           actions: null,
         };
+        const busy = busyId === ext.id;
         row.actions = (
-          <button
-            type="button"
-            className="ext-btn"
-            onClick={() => onOpenDetail?.(row)}
-            title={t('extDetail.openTab')}
-          >
-            {t('ext.manage')}
-          </button>
+          <>
+            {ext.views.length > 0 && (
+              <button
+                type="button"
+                className="ext-btn ext-btn-primary"
+                disabled={busy}
+                title={t('ext.openViewTitle')}
+                onClick={() =>
+                  // 打开的是扩展自己注册的视图（在编辑器区开一个标签），
+                  // 不是这个扩展的说明页 —— 「能真正用上它」靠的就是这一步。
+                  window.dispatchEvent(
+                    new CustomEvent('echoly:open-extension-view', {
+                      detail: { viewId: ext.views[0], title: ext.displayName || ext.id },
+                    }),
+                  )
+                }
+              >
+                {t('ext.openView')}
+              </button>
+            )}
+            <button
+              type="button"
+              className="ext-btn"
+              disabled={busy}
+              onClick={() => onOpenDetail?.(row)}
+              title={t('extDetail.openTab')}
+            >
+              {t('ext.manage')}
+            </button>
+            <button
+              type="button"
+              className="ext-btn"
+              disabled={busy}
+              onClick={() => void handleToggleEnabled(ext)}
+            >
+              {ext.enabled ? t('ext.disable') : t('ext.enable')}
+            </button>
+            <button
+              type="button"
+              className="ext-btn"
+              disabled={busy}
+              onClick={() => setConfirmUninstall(ext)}
+            >
+              {t('ext.uninstall')}
+            </button>
+          </>
         );
         return row;
       }),
     // 「隐藏已安装」只作用于市场那一侧：在「已安装」分区里再按它过滤，
     // 结果就是打开过滤器把这个分区清空 —— 那不是过滤，是自相矛盾。
-    [extensions, onOpenDetail, t],
+    [installed, onOpenDetail, t, busyId, handleToggleEnabled],
   );
 
   /** 市场条目的行（推荐与搜索结果共用）。 */
@@ -940,6 +1085,32 @@ export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
           </div>
         )}
       </div>
+
+      {/*
+        卸载确认。复用数据库那套确认弹窗（它本来就是通用确认框，只是名字带 db）：
+        卸载会删本地文件，必须让用户看清删的是哪一个，而不是一个 window.confirm。
+      */}
+      <DbConfirmModal
+        isOpen={confirmUninstall !== null}
+        title={t('ext.uninstallTitle')}
+        content={t('ext.uninstallConfirm', {
+          name: confirmUninstall?.displayName || confirmUninstall?.id || '',
+        })}
+        details={
+          confirmUninstall
+            ? [
+                { label: t('extDetail.identifier'), value: confirmUninstall.id },
+                ...(confirmUninstall.version
+                  ? [{ label: t('extDetail.version'), value: confirmUninstall.version }]
+                  : []),
+              ]
+            : undefined
+        }
+        tone="danger"
+        confirmLabel={t('ext.uninstall')}
+        onConfirm={() => void performUninstall()}
+        onCancel={() => setConfirmUninstall(null)}
+      />
     </div>
   );
 }

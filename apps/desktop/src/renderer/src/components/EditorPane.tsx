@@ -22,6 +22,7 @@ import {
 } from '../utils';
 import { BrowserViewPane } from './browser/BrowserViewPane';
 import { EXTENSION_DETAIL_PREFIX, ExtensionDetailView } from './ExtensionDetailView';
+import { EXTENSION_VIEW_PREFIX, ExtensionViewPanel } from './ExtensionViewPanel';
 import { RenderFileTreeIcon } from './FileTree';
 import { translateSegments, useI18n, type Translate } from '../i18n';
 import {
@@ -4853,9 +4854,10 @@ export function EditorPane({
           isBrowserPath(activePath) ||
           active?.language === 'browser' ||
           active?.virtual?.browser ||
-          // 扩展详情是虚拟路径（`ext://detail/ms-python.python`），按 '/' 切出来是
-          // 「ext: > detail > ms-python.python」这种没有意义的面包屑
-          activePath.startsWith(EXTENSION_DETAIL_PREFIX)
+          // 扩展详情 / 扩展界面是虚拟路径（`ext://detail/…`、`ext://view/…`），
+          // 按 '/' 切出来是「ext: > detail > …」这种没有意义的面包屑
+          activePath.startsWith(EXTENSION_DETAIL_PREFIX) ||
+          activePath.startsWith(EXTENSION_VIEW_PREFIX)
         ) && (
           <div className="editor-breadcrumb">
             <div className="editor-breadcrumb-crumbs">
@@ -5710,6 +5712,15 @@ export function EditorPane({
             key={active.path}
             extensionId={active.path.slice(EXTENSION_DETAIL_PREFIX.length)}
             onShowToast={onShowToast}
+          />
+        ) : active && active.path.startsWith(EXTENSION_VIEW_PREFIX) ? (
+          <ExtensionViewPanel
+            /**
+             * 同样按路径当 key：一个视图标签切到另一个视图时让它整个重建，
+             * 否则新视图会沿用上一个视图已经解析好的 HTML 文件。
+             */
+            key={active.path}
+            viewId={active.path.slice(EXTENSION_VIEW_PREFIX.length)}
           />
         ) : active && active.virtual?.dbStructure ? (
           <DbStructureView

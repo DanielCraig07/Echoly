@@ -15,6 +15,8 @@ export interface ExtensionHostOptions {
     provider: any,
     extensionPath: string,
     options?: any,
+    /** 注册它的扩展 id。禁用/卸载时要按它把视图一起摘掉 */
+    extensionId?: string,
   ) => void;
 }
 
@@ -63,11 +65,16 @@ export class ExtensionHost {
     if (extension.mainModule && typeof extension.mainModule.activate === 'function') {
       try {
         console.log(`[activateExtension] 调用 activate() 函数...`);
+        // 扩展注册命令/视图时不会自报家门：在它跑起来之前把「现在是谁」记下，
+        // shim 那边注册时就顺手记到归属表里。禁用/卸载要按这份归属去摘。
+        this.shim.activeExtensionId = extensionId;
         await extension.mainModule.activate(context);
         console.log(`[activateExtension] Extension ${extensionId} activated successfully`);
       } catch (err) {
         console.error(`[activateExtension] Failed to activate extension ${extensionId}:`, err);
         throw err;
+      } finally {
+        this.shim.activeExtensionId = undefined;
       }
     } else if (extension.mainModuleError) {
       // 声明了 main 却没加载起来：这是**失败**，不是「这个扩展没有 activate」。
@@ -114,8 +121,24 @@ export class ExtensionHost {
       });
     }
 
+    // 命令与视图注册也要摘掉：扩展已经停了，留着它的命令只会点出一个空响应
+    const droppedViews = this.shim.dropExtensionRegistrations(extensionId);
+    if (droppedViews.length > 0) {
+      console.log(`[deactivateExtension] ${extensionId} 摘掉视图：${droppedViews.join(', ')}`);
+    }
+
     this.loadedExtensions.delete(extensionId);
     this.extensionContexts.delete(extensionId);
+  }
+
+  /** 扩展注册的命令（带归属）。命令面板用它列出「扩展命令」。 */
+  listExtensionCommands(): { command: string; extensionId?: string }[] {
+    return this.shim.listCommands();
+  }
+
+  /** 某个扩展注册了哪些视图。 */
+  listWebviewViewIds(extensionId: string): string[] {
+    return this.shim.listWebviewViewIds(extensionId);
   }
 
   /**

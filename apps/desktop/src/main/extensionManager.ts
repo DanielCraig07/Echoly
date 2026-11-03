@@ -67,6 +67,22 @@ const maxReadmeBytes = 512 * 1024;
 const maxReadmeChars = 200_000;
 const readmeFetchTimeoutMs = 10_000;
 
+/** 管理界面要的一条「已安装扩展」。 */
+export interface InstalledExtensionInfo {
+  /** `publisher.name`（也是目录名） */
+  id: string;
+  displayName: string;
+  version?: string;
+  /** 用户有没有禁用它 */
+  enabled: boolean;
+  /** 此刻是否已经加载并激活 */
+  active: boolean;
+  /** 它注册的命令 id 列表 */
+  commands: string[];
+  /** 它注册的 webview 视图 id 列表（非空才有「打开视图」可点） */
+  views: string[];
+}
+
 export interface ExtensionManagerOptions {
   workspaceRoot: string;
   onMessage?: (message: any) => void;
@@ -81,6 +97,20 @@ export class ExtensionManager {
   private messageHandlers: Set<(message: any) => void> = new Set();
   private loadedExtensionPaths: Set<string> = new Set();
   private webviewViewProviders: Map<string, any> = new Map();
+  /**
+   * viewId → 注册它的扩展 id。
+   *
+   * 卸载/禁用时要按它把视图一起摘掉：扩展已经不在磁盘上了（或已被停用），
+   * 留着 provider 只会让面板里那个标签打开一片空白。
+   */
+  private viewOwners: Map<string, string> = new Map();
+  /**
+   * 被用户禁用的扩展 id（持久化）。
+   *
+   * 存在 userData 而不是扩展目录里：卸载是「删目录」，而禁用必须挺过重启 ——
+   * 把状态文件放进 extensionsDir 会让目录扫描把它当成一个扩展。
+   */
+  private disabledExtensions: Set<string> = new Set();
   private readonly registry: string;
   /**
    * 图标 data URL 缓存。
@@ -91,11 +121,14 @@ export class ExtensionManager {
   private readonly iconCache = new Map<string, string | null>();
   /** vscode shim 写盘的一次性任务，见 ensureVscodeShim */
   private vscodeShimReady: Promise<void> | null = null;
+  /** 禁用列表的落盘位置 */
+  private readonly stateFilePath: string;
 
   constructor(options: ExtensionManagerOptions) {
     this.workspaceRoot = options.workspaceRoot;
     this.registry = normalizeRegistryBase(options.registry);
     this.extensionsDir = path.join(app.getPath('userData'), 'extensions');
+    this.stateFilePath = path.join(app.getPath('userData'), 'extensions-state.json');
 
     if (options.onMessage) {
       this.messageHandlers.add(options.onMessage);
@@ -122,6 +155,9 @@ export class ExtensionManager {
     // 确保扩展目录存在
     await fs.mkdir(this.extensionsDir, { recursive: true });
 
+    // 先读禁用列表，再扫目录：不然被禁用的扩展会在启动时被加载一遍
+    await this.loadDisabledState();
+
     // 注册 IPC 处理器
     this.registerIpcHandlers();
 
@@ -140,6 +176,10 @@ export class ExtensionManager {
 
       for (const entry of entries) {
         if (entry.isDirectory()) {
+          if (this.disabledExtensions.has(entry.name)) {
+            console.log(`Skipping disabled extension: ${entry.name}`);
+            continue;
+          }
           const extensionPath = path.join(this.extensionsDir, entry.name, 'extension');
 
           // 检查是否有 extension 子目录（.vsix 解压后的结构）
@@ -570,6 +610,204 @@ export class ExtensionManager {
   }
 
   /**
+   * 已安装扩展的登记表（面板与详情页的管理界面都吃这一份）。
+   *
+   * 与 `getLoadedExtensions` 的区别：那个只返回「活着的」id 字符串，够用来判断
+   * 「装没装」；管理界面还要知道版本、是启用还是禁用、贡献了哪些命令与视图 ——
+   * 否则「禁用」「打开视图」这些按钮就没有落点。
+   */
+  async listInstalledExtensions(): Promise<InstalledExtensionInfo[]> {
+    const loaded = new Set(this.extensionHost.getLoadedExtensions());
+    const out: InstalledExtensionInfo[] = [];
+
+    // 不给 entries 标注类型：`fs.readdir(withFileTypes)` 在 @types/node 里返回的是
+    // `Dirent<string>[]`，而裸写 `Dirent[]` 会退化成 `Dirent<NonSharedBuffer>[]` —— 标了就报错。
+    const entries = await fs.readdir(this.extensionsDir, { withFileTypes: true }).catch(() => []);
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const id = entry.name;
+      const manifestPath = path.join(this.extensionsDir, id, 'extension', 'package.json');
+      let manifest: any;
+      try {
+        manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      } catch {
+        // 目录在但 package.json 读不出来（半截安装）：不算已安装，也不该让它把整份列表带崩
+        continue;
+      }
+      const enabled = !this.disabledExtensions.has(id);
+      out.push({
+        id,
+        displayName: manifest.displayName || manifest.name || id,
+        version: manifest.version,
+        enabled,
+        active: loaded.has(id),
+        commands: this.extensionHost
+          .listExtensionCommands()
+          .filter((c) => c.extensionId === id)
+          .map((c) => c.command),
+        views: this.extensionHost.listWebviewViewIds(id),
+      });
+    }
+
+    // 稳定排序：列表每次刷新都换顺序的话，「禁用」按钮会跑到别处去
+    return out.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  /**
+   * 所有由扩展贡献的命令（命令面板用）。
+   *
+   * 只给命令 id 是不够用的：命令面板里列出一串 `claude-code.something` 用户看不懂。
+   * 命令的**人类可读名字**写在扩展 package.json 的 `contributes.commands[].title` 里，
+   * 所以这里顺手把每个扩展的 title 读出来配上；读不到就退回命令 id。
+   */
+  async listExtensionCommands(): Promise<
+    { command: string; extensionId?: string; title?: string }[]
+  > {
+    const registered = this.extensionHost.listExtensionCommands();
+    const titles = await this.readCommandTitles();
+    return registered.map((c) => ({
+      ...c,
+      title: titles.get(c.command) || c.command,
+    }));
+  }
+
+  /** 扫一遍已安装扩展的 package.json，收集 `command → title`。 */
+  private async readCommandTitles(): Promise<Map<string, string>> {
+    const titles = new Map<string, string>();
+    const entries = await fs.readdir(this.extensionsDir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const raw = await fs.readFile(
+          path.join(this.extensionsDir, entry.name, 'extension', 'package.json'),
+          'utf8',
+        );
+        const manifest = JSON.parse(raw);
+        const contributed = manifest?.contributes?.commands;
+        if (!Array.isArray(contributed)) continue;
+        for (const c of contributed) {
+          if (c && typeof c.command === 'string' && typeof c.title === 'string') {
+            titles.set(c.command, c.title);
+          }
+        }
+      } catch {
+        // 半截安装 / 没有 package.json：跳过即可，命令面板少一个标题不值得中断
+      }
+    }
+    return titles;
+  }
+
+  /**
+   * 启用 / 禁用扩展。
+   *
+   * 禁用 = 调 deactivate（扩展自己的清理逻辑会跑）+ 摘掉它注册的命令与视图 +
+   * 记进禁用列表（重启后不再加载）。启用 = 反过来，并且**就地激活**，
+   * 不必等下次启动 —— 用户点「启用」的意思就是现在就要能用。
+   */
+  async setExtensionEnabled(
+    id: string,
+    enabled: boolean,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!isSafeExtensionId(id)) return { ok: false, error: `扩展 id 不合法：${id}` };
+    const extensionPath = path.join(this.extensionsDir, id, 'extension');
+
+    try {
+      if (enabled) {
+        if (this.disabledExtensions.has(id)) {
+          this.disabledExtensions.delete(id);
+          await this.persistDisabledState();
+        }
+        if (!this.extensionHost.getLoadedExtensions().includes(id)) {
+          await fs.access(path.join(extensionPath, 'package.json'));
+          await this.loadExtensionFromPath(extensionPath);
+        }
+        return { ok: true };
+      }
+
+      if (!this.disabledExtensions.has(id)) {
+        this.disabledExtensions.add(id);
+        await this.persistDisabledState();
+      }
+      await this.extensionHost.deactivateExtension(id);
+      this.loadedExtensionPaths.delete(path.join(extensionPath));
+      this.forgetExtensionViews(id);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? String(err) };
+    }
+  }
+
+  /**
+   * 卸载扩展：停用 → 删掉解压目录与 .vsix。
+   *
+   * 先 deactivate 再删文件：扩展的 deactivate() 里可能有落盘动作（写状态、关连接），
+   * 文件先没了它就只能抛错。删不掉就把真实原因返回给界面，不假装成功。
+   */
+  async uninstallExtension(id: string): Promise<{ ok: boolean; error?: string }> {
+    if (!isSafeExtensionId(id)) return { ok: false, error: `扩展 id 不合法：${id}` };
+
+    try {
+      await this.extensionHost.deactivateExtension(id);
+      this.loadedExtensionPaths.delete(path.join(this.extensionsDir, id, 'extension'));
+      this.forgetExtensionViews(id);
+
+      await fs.rm(path.join(this.extensionsDir, id), { recursive: true, force: true });
+      await fs.rm(path.join(this.extensionsDir, `${id}.vsix`), { force: true });
+
+      // 卸载之后这条 id 不该再留在禁用名单里：重装一次就该能用
+      if (this.disabledExtensions.delete(id)) await this.persistDisabledState();
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: `卸载失败：${err?.message ?? err}` };
+    }
+  }
+
+  /**
+   * 把某个扩展注册的全部视图从 manager 的两本账里摘掉（归属表 + provider 表）。
+   *
+   * shim 那边的归属表在 `deactivateExtension` 里已经摘过了，所以这里**不能**再靠
+   * `viewOwners` 去找 —— 那本账已经空了。改为直接看 `viewOwners` 里剩下的归属
+   * （扩展忘记 dispose 的情况）+ provider 表里带 extensionPath 的兜底。
+   */
+  private forgetExtensionViews(id: string): void {
+    const extensionPath = path.join(this.extensionsDir, id, 'extension');
+    for (const [viewId, owner] of Array.from(this.viewOwners.entries())) {
+      if (owner === id) this.viewOwners.delete(viewId);
+    }
+    for (const [viewId, entry] of Array.from(this.webviewViewProviders.entries())) {
+      // 归属表已经空了，只能按 extensionPath 认：一个扩展的视图都写在它自己的目录下
+      if (entry?.extensionPath === extensionPath) {
+        this.webviewViewProviders.delete(viewId);
+      }
+    }
+  }
+
+  /** 读禁用列表。文件损坏/不存在都当「没有禁用任何扩展」，不阻断启动。 */
+  private async loadDisabledState(): Promise<void> {
+    try {
+      const raw = JSON.parse(await fs.readFile(this.stateFilePath, 'utf8'));
+      const list = Array.isArray(raw?.disabled) ? raw.disabled : [];
+      this.disabledExtensions = new Set(list.filter((v: unknown) => typeof v === 'string'));
+    } catch {
+      this.disabledExtensions = new Set();
+    }
+  }
+
+  private async persistDisabledState(): Promise<void> {
+    const payload = JSON.stringify(
+      { disabled: Array.from(this.disabledExtensions).sort() },
+      null,
+      2,
+    );
+    try {
+      await fs.writeFile(this.stateFilePath, payload, 'utf8');
+    } catch (err: any) {
+      console.error('[ExtensionManager] 写扩展状态文件失败：', err?.message ?? err);
+    }
+  }
+
+  /**
    * 获取已加载的扩展列表
    */
   getLoadedExtensions(): string[] {
@@ -806,10 +1044,12 @@ export class ExtensionManager {
     provider: any,
     extensionPath: string,
     options?: any,
+    extensionId?: string,
   ): void {
     console.log(
       `[ExtensionManager] WebviewView provider registered: ${viewId}, extensionPath: ${extensionPath}`,
     );
+    if (extensionId) this.viewOwners.set(viewId, extensionId);
     this.webviewViewProviders.set(viewId, { provider, options, extensionPath });
 
     // 通知渲染进程有新的 webview 可用
@@ -889,6 +1129,34 @@ export class ExtensionManager {
     // 获取已加载的扩展
     ipcMain.handle('extension:get-loaded', async () => {
       return { success: true, extensions: this.getLoadedExtensions() };
+    });
+
+    // 已安装扩展的登记表（带版本 / 启用状态 / 贡献的命令与视图）
+    ipcMain.handle('extension:list-installed', async () => {
+      try {
+        return { success: true, extensions: await this.listInstalledExtensions() };
+      } catch (err: any) {
+        return { success: false, error: err.message, extensions: [] };
+      }
+    });
+
+    // 所有扩展贡献的命令（命令面板据此列出「扩展命令」）
+    ipcMain.handle('extension:list-commands', async () => {
+      try {
+        return { success: true, commands: await this.listExtensionCommands() };
+      } catch (err: any) {
+        return { success: false, error: err?.message ?? String(err), commands: [] };
+      }
+    });
+
+    // 启用 / 禁用
+    ipcMain.handle('extension:set-enabled', async (_event, id: string, enabled: boolean) => {
+      return await this.setExtensionEnabled(id, enabled);
+    });
+
+    // 卸载
+    ipcMain.handle('extension:uninstall', async (_event, id: string) => {
+      return await this.uninstallExtension(id);
     });
 
     // 解析 WebviewView

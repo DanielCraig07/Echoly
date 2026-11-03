@@ -134,6 +134,8 @@ export interface VSCodeShimOptions {
     provider: any,
     extensionPath: string,
     options?: any,
+    /** 注册它的扩展 id。禁用/卸载时要按它把这些视图一起摘掉 */
+    extensionId?: string,
   ) => void;
 }
 
@@ -142,6 +144,22 @@ export interface VSCodeShimOptions {
  */
 export class VSCodeShim {
   private commands = new Map<string, (...args: any[]) => any>();
+  /**
+   * 命令 → 注册它的扩展 id。
+   *
+   * 为什么需要：命令面板要能列出「这个扩展贡献了哪些命令」，禁用/卸载时还要把它们
+   * 一起摘掉 —— 否则一个被禁用的扩展的命令还留在面板里，点下去毫无反应。
+   */
+  private commandOwners = new Map<string, string>();
+  /** 视图 id → 注册它的扩展 id（同上）。 */
+  private viewOwners = new Map<string, string>();
+  /**
+   * 当前正在 activate 的扩展 id。
+   *
+   * 扩展在 activate() 里注册命令/视图时不会自报家门，只能在调用它之前把「现在是谁」
+   * 记下来，注册时顺手记到归属表里。由 ExtensionHost 在 activate 前后设置与清空。
+   */
+  activeExtensionId?: string;
   /**
    * 自定义编辑器提供者，按 viewType 收着。
    *
@@ -159,6 +177,7 @@ export class VSCodeShim {
     provider: any,
     extensionPath: string,
     options?: any,
+    extensionId?: string,
   ) => void;
 
   constructor(options: VSCodeShimOptions) {
@@ -180,9 +199,11 @@ export class VSCodeShim {
       commands: {
         registerCommand(command: string, callback: (...args: any[]) => any) {
           self.commands.set(command, callback);
+          if (self.activeExtensionId) self.commandOwners.set(command, self.activeExtensionId);
           return {
             dispose() {
               self.commands.delete(command);
+              self.commandOwners.delete(command);
             },
           };
         },
@@ -322,10 +343,21 @@ export class VSCodeShim {
         },
         registerWebviewViewProvider(viewId: string, provider: any, options?: any) {
           console.log(`Registered WebviewView provider: ${viewId}`);
+          if (self.activeExtensionId) self.viewOwners.set(viewId, self.activeExtensionId);
           if (self.onWebviewViewRegisterHandler) {
-            self.onWebviewViewRegisterHandler(viewId, provider, self.extensionPath, options);
+            self.onWebviewViewRegisterHandler(
+              viewId,
+              provider,
+              self.extensionPath,
+              options,
+              self.activeExtensionId,
+            );
           }
-          return { dispose() {} };
+          return {
+            dispose() {
+              self.viewOwners.delete(viewId);
+            },
+          };
         },
         registerWebviewPanelSerializer(viewType: string, serializer: any) {
           return { dispose() {} };
@@ -871,6 +903,44 @@ export class VSCodeShim {
   /**
    * 执行命令
    */
+  /** 所有由扩展注册的命令（带归属）。命令面板据此列出「扩展命令」。 */
+  listCommands(): { command: string; extensionId?: string }[] {
+    return Array.from(this.commands.keys()).map((command) => ({
+      command,
+      extensionId: this.commandOwners.get(command),
+    }));
+  }
+
+  /** 某个扩展注册了哪些视图 id。 */
+  listWebviewViewIds(extensionId: string): string[] {
+    return Array.from(this.viewOwners.entries())
+      .filter(([, owner]) => owner === extensionId)
+      .map(([viewId]) => viewId);
+  }
+
+  /**
+   * 摘掉一个扩展的全部注册（命令 + 视图）。禁用与卸载都要走这一步。
+   *
+   * 返回被摘掉的 viewId 列表：manager 那边另有一份 provider 映射要一起清，
+   * 这里只负责 shim 自己的两本账。
+   */
+  dropExtensionRegistrations(extensionId: string): string[] {
+    for (const [command, owner] of Array.from(this.commandOwners.entries())) {
+      if (owner === extensionId) {
+        this.commands.delete(command);
+        this.commandOwners.delete(command);
+      }
+    }
+    const droppedViews: string[] = [];
+    for (const [viewId, owner] of Array.from(this.viewOwners.entries())) {
+      if (owner === extensionId) {
+        droppedViews.push(viewId);
+        this.viewOwners.delete(viewId);
+      }
+    }
+    return droppedViews;
+  }
+
   async executeCommand(command: string, ...args: any[]) {
     const handler = this.commands.get(command);
     if (handler) {
@@ -885,6 +955,8 @@ export class VSCodeShim {
   dispose() {
     this.disposables.forEach((d) => d.dispose());
     this.commands.clear();
+    this.commandOwners.clear();
+    this.viewOwners.clear();
   }
 }
 

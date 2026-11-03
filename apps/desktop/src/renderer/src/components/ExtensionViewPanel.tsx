@@ -1,10 +1,26 @@
 /**
- * Claude Extension Webview Panel
- * 显示 Claude Code 扩展的侧边栏 UI
+ * 扩展自带的 webview 视图 —— 在编辑器区打开的「扩展界面」标签。
+ *
+ * 一个扩展装好之后，除了「已安装」这个状态，它自己贡献的界面得有个入口能用 ——
+ * 这才是「插件真正接入应用」。视图的来源是扩展的 `contributes.views`：
+ * 激活时它调 `registerWebviewViewProvider` 注册一个 provider，主进程拿这个 provider
+ * 生成一份 HTML 落盘，这里用一个 `<webview>` 把它挂上来。
+ *
+ * 这个组件**不认识 Claude**：视图 id 由调用方给（面板/详情页按该扩展贡献的 views 决定
+ * 开哪一个）。以前它叫 ClaudePanel、默认视图 id 写死成 `claudeVSCodeSidebar`，
+ * 于是除了 Claude Code 之外的扩展即使注册了视图也没有任何地方能显示它们。
  */
 
 import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
+
+/**
+ * 扩展视图标签的虚拟路径前缀：`ext://view/<viewId>`。
+ *
+ * 与 `EXTENSION_DETAIL_PREFIX` 同一套路：打开方（面板/详情页）与渲染方（编辑器）
+ * 都要用它，各写一份字面量迟早漂移成两个不同的字符串。
+ */
+export const EXTENSION_VIEW_PREFIX = 'ext://view/';
 
 // Electron webview 标签类型声明
 declare global {
@@ -20,12 +36,13 @@ declare global {
   }
 }
 
-interface ClaudePanelProps {
-  viewId?: string;
+interface ExtensionViewPanelProps {
+  /** 扩展贡献的视图 id（注册时那个 `viewId`）。 */
+  viewId: string;
   onClose?: () => void;
 }
 
-export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudePanelProps) {
+export function ExtensionViewPanel({ viewId, onClose }: ExtensionViewPanelProps) {
   const { t } = useI18n();
   const [html, setHtml] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -36,33 +53,30 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
   useEffect(() => {
     let isMounted = true;
 
-    // 请求解析 webview
+    // 向主进程要这个视图的 HTML：provider 已经注册过才会拿到内容，
+    // 扩展没激活起来 / 视图 id 不对时主进程会回一个 error，由下面转成可见的提示。
     const loadWebview = async () => {
       try {
         setLoading(true);
         setError('');
 
-        console.log(`[ClaudePanel] Resolving webview: ${viewId}`);
         const result = await window.ide.extensionResolveWebview(viewId);
 
         if (!isMounted) return;
 
         if (result.success && result.html) {
-          console.log(`[ClaudePanel] Got HTML content, length: ${result.html.length}`);
-          console.log(`[ClaudePanel] HTML preview:`, result.html.substring(0, 200));
           setHtml(result.html);
 
-          // 使用主进程返回的真实 userData 路径（不再硬编码旧品牌目录）
+          // 使用主进程返回的真实 userData 路径（不硬编码品牌目录）
           const filePath = result.filePath || '';
           setHtmlFile(filePath ? `file://${filePath}` : '');
-          console.log(`[ClaudePanel] Webview file path:`, filePath);
         } else {
-          setError(result.error || t('ext.claudeLoadUiFailed'));
+          setError(result.error || t('extView.loadUiFailed'));
         }
       } catch (err: any) {
         if (!isMounted) return;
-        console.error('[ClaudePanel] Error loading webview:', err);
-        setError(err.message || t('ext.claudeLoadFailed'));
+        console.error('[ExtensionViewPanel] Error loading webview:', err);
+        setError(err.message || t('extView.loadFailed'));
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -75,7 +89,9 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
     return () => {
       isMounted = false;
     };
-  }, [viewId]);
+    // t 进去会随语言切换重跑一次请求；代价是可以接受的（一次 IPC），换来切语言后
+    // 错误文案也一起变。viewId 才是真正决定拉哪一份 HTML 的东西。
+  }, [viewId, t]);
 
   // 监听 webview 加载和消息
   useEffect(() => {
@@ -83,16 +99,16 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
     if (!webview || !htmlFile) return;
 
     const handleLoad = () => {
-      console.log('[ClaudePanel] webview loaded successfully');
+      console.log('[ExtensionViewPanel] webview loaded successfully');
     };
 
     const handleError = (e: any) => {
-      console.error('[ClaudePanel] webview error:', e);
-      setError(t('ext.claudeLoadFailedDetail', { msg: e.message || t('ext.claudeUnknownError') }));
+      console.error('[ExtensionViewPanel] webview error:', e);
+      setError(t('extView.loadFailedDetail', { msg: e.message || t('extView.unknownError') }));
     };
 
     const handleConsole = (e: any) => {
-      console.log('[ClaudePanel webview]', e.message);
+      console.log('[ExtensionViewPanel webview]', e.message);
     };
 
     webview.addEventListener('did-finish-load', handleLoad);
@@ -104,14 +120,14 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
       webview.removeEventListener('did-fail-load', handleError);
       webview.removeEventListener('console-message', handleConsole);
     };
-  }, [htmlFile]);
+  }, [htmlFile, t]);
 
   if (loading) {
     return (
       <div className="claude-panel loading">
         <div className="loading-spinner">
           <div className="spinner"></div>
-          <div>{t('ext.claudeLoading')}</div>
+          <div>{t('extView.loading')}</div>
         </div>
       </div>
     );
@@ -125,7 +141,7 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
           <div className="error-text">{error}</div>
           {onClose && (
             <button className="btn-close" onClick={onClose}>
-              {t('ext.claudeClose')}
+              {t('extView.close')}
             </button>
           )}
         </div>
@@ -136,7 +152,7 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
   if (!htmlFile && !loading && !error) {
     return (
       <div className="claude-panel loading">
-        <div>{t('ext.claudePreparing')}</div>
+        <div>{t('extView.preparing')}</div>
       </div>
     );
   }
@@ -156,9 +172,9 @@ export function ClaudePanel({ viewId = 'claudeVSCodeSidebar', onClose }: ClaudeP
           />
         ) : (
           <div style={{ padding: '20px', color: 'var(--text-secondary)' }}>
-            {t('ext.claudeWaitingHtml')}
+            {t('extView.waitingHtml')}
             <div style={{ marginTop: '10px', fontSize: '12px' }}>
-              {t('ext.claudeFileLabel', { name: htmlFile || t('ext.claudeNotSet') })}
+              {t('extView.fileLabel', { name: htmlFile || t('extView.notSet') })}
             </div>
           </div>
         )}
