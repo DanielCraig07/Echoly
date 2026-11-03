@@ -583,8 +583,20 @@ app.whenReady().then(async () => {
     },
   };
 
-  // 初始化扩展管理器（后台初始化，不阻塞 UI）
-  setTimeout(async () => {
+  /**
+   * 初始化扩展管理器（后台跑，不阻塞 UI）。
+   *
+   * **不再延迟 2 秒。** 以前这里 `setTimeout(…, 2000)`，理由是「避免阻塞主窗口启动」，
+   * 但那 2 秒制造了一个很难查的窗口期：渲染层一挂载就会问扩展的事（会话恢复问
+   * 「这个文件归谁」、启动时推主题变量、拉命令列表），而那会儿处理器根本还没注册，
+   * 主进程日志里就是一排 `No handler registered`。后果不是「晚两秒生效」——
+   * 会话恢复问不到答案，`.md` 就被当成普通文本恢复，之后点它只是切前台，
+   * 用户看到的是「装了 Office Viewer 却一直不生效」。
+   *
+   * 现在立刻开始（依然 `void`，不 await，UI 照样不被阻塞）：管理器的 IPC 处理器
+   * 在它构造时就注册好了（见 ExtensionManager 的构造函数）。
+   */
+  void (async () => {
     try {
       const workspaceRoot = app.getPath('userData'); // 默认工作区
       await initializeExtensionManager({
@@ -600,7 +612,7 @@ app.whenReady().then(async () => {
     } catch (err) {
       console.error('Failed to initialize Extension Manager:', err);
     }
-  }, 2000); // 延迟2秒初始化，避免阻塞主窗口启动
+  })();
 
   // macOS 使用系统菜单栏；Windows/Linux 去掉原生菜单行，由顶栏弹出
   if (process.platform === 'darwin') {

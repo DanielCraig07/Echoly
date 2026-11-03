@@ -86,10 +86,14 @@ describe('customEditors：谁接管这个文件', () => {
 
 // ── 端到端：拿真扩展宿主跑一个假扩展 ─────────────────────────────────────────
 
-const hoisted = vi.hoisted(() => ({ userDataRoot: '' }));
+const hoisted = vi.hoisted(() => ({ userDataRoot: '', handledChannels: [] as string[] }));
 vi.mock('electron', () => ({
   app: { getPath: () => hoisted.userDataRoot },
-  ipcMain: { handle: () => {} },
+  ipcMain: {
+    handle: (channel: string) => {
+      hoisted.handledChannels.push(channel);
+    },
+  },
   BrowserWindow: { getAllWindows: () => [] },
   net: { fetch: async () => new Response('RESOURCE', { status: 200 }) },
   protocol: {},
@@ -280,6 +284,25 @@ describe('自定义编辑器端到端（假扩展 + 真宿主）', () => {
   it('扩展还没注册完就问也不许判「没人认领」', async () => {
     const matched = await manager.matchCustomEditor(mdPath);
     expect(matched?.viewType).toBe('demo.mdViewer');
+  });
+
+  /**
+   * 处理器必须在**构造完成时**就注册好。
+   *
+   * 踩过一次：主进程「窗口先起来、扩展管理器延迟 2 秒初始化」，而渲染层一挂载就会
+   * 问扩展的事（会话恢复问「这个文件归谁」、启动时推主题变量、拉命令列表）。
+   * 那 2 秒里这些 invoke 全部落到 `No handler registered`（主进程日志里有一排），
+   * 后果不是「晚两秒生效」而是**又静默又持久**：会话恢复问不到答案，`.md` 被当成
+   * 普通文本恢复，之后点它只是切前台 —— 用户看到的是「装了 Office Viewer 却一直
+   * 不生效」。所以这条钉的是「构造完就有处理器」，不是「initialize 之后有」。
+   */
+  it('构造完成时扩展的 IPC 处理器已经注册好了（不必等 initialize）', () => {
+    hoisted.handledChannels.length = 0;
+    const fresh = new ExtensionManager({ workspaceRoot: base, registry: 'https://open-vsx.org' });
+    void fresh.initialize();
+    expect(hoisted.handledChannels).toContain('extension:custom-editor-match');
+    expect(hoisted.handledChannels).toContain('extension:set-webview-theme');
+    expect(hoisted.handledChannels).toContain('extension:get-loaded');
   });
 
   it('没有扩展认领的文件直接返回 null（交回内置编辑器）', async () => {

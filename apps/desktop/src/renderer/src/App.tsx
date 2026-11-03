@@ -315,15 +315,6 @@ export function App() {
   >([]);
   const [composerOpen, setComposerOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<'chat' | 'claude'>('chat'); // 右侧面板标签
-  /**
-   * 「刚刚揭示过右侧面板」的时间戳（0 = 没有）。
-   *
-   * 扩展列表点「打开」时，如果那个视图的家本来就在右侧面板里（Claude 的侧栏就是），
-   * 揭示的结果是屏幕上**什么都不变** —— 看起来就是「点了没反应」。
-   * 这个状态让面板闪一下，作为「你要的东西在这儿」的回应。
-   */
-  const [panelRevealAt, setPanelRevealAt] = useState(0);
-  const [panelHighlight, setPanelHighlight] = useState(false);
   const [diffs, setDiffs] = useState<PendingDiff[]>([]);
   const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
 
@@ -2489,6 +2480,54 @@ export function App() {
         if (requiresExactPathMatch(tp) || requiresExactPathMatch(normPath)) return false;
         return tp.endsWith('/' + normPath) || normPath.endsWith('/' + tp);
       });
+      /**
+       * 扩展的自定义编辑器优先（Office Viewer 这类）。
+       *
+       * 放在**读文件之前**：xlsx / docx 当文本读出来是乱码，还会白等一次 IO。
+       * 也放在「这个文件已经开着」的判断**之前**，因为标签可能是一份过期的文本标签：
+       * 上一版应用（或者扩展还没加载完的那几秒）把 `.md` 当普通文本打开过，之后点它
+       * 只会「切前台」，用户看到的就是「装了 Office Viewer 却一直不生效」。
+       * 只要那份文本标签**不是用户改过的**（没 dirty），就换成扩展的编辑器。
+       *
+       * `openAnyway` 是给「用内置编辑器打开」和「扩展渲染失败后退回」用的 ——
+       * 没有它就会来回弹：退回内置 → 又被路由到扩展。
+       */
+      if (!openAnyway) {
+        const claim = await resolveCustomEditorClaim(
+          absolutePathOf(path, ws),
+          path.split('/').pop() || path,
+        );
+        if (claim) {
+          setTabs((prev) => {
+            // 已经有扩展编辑器标签了：什么都不用动
+            if (prev.some((t) => t.path === claim.tabPath)) return prev;
+            const replacement = {
+              path: claim.tabPath,
+              content: '',
+              language: 'extension-editor',
+              dirty: false,
+              title: claim.title,
+              readOnly: true,
+            };
+            // 过期的文本标签**就地**换掉（同位置，标签不会跳来跳去）；改过的不动
+            const staleIndex = prev.findIndex(
+              (t) => t.path === existingTab?.path && !t.dirty && t.language !== 'extension-editor',
+            );
+            if (staleIndex >= 0) {
+              const copy = [...prev];
+              copy[staleIndex] = replacement;
+              return copy;
+            }
+            return [...prev, replacement];
+          });
+          setActivePath(claim.tabPath);
+          activePathRef.current = claim.tabPath;
+          setScmDiff(null);
+          setActiveDiffId(null);
+          return;
+        }
+      }
+
       if (existingTab) {
         setActivePath(existingTab.path);
         activePathRef.current = existingTab.path;
@@ -2532,44 +2571,6 @@ export function App() {
         setActivePath(path);
         return;
       }
-      /**
-       * 扩展的自定义编辑器优先（Office Viewer 这类）。
-       *
-       * 放在**读文件之前**：xlsx / docx 当文本读出来是乱码，还会白等一次 IO。
-       * `openAnyway` 是给「用内置编辑器打开」和「扩展渲染失败后退回」用的 ——
-       * 没有它就会来回弹：退回内置 → 又被路由到扩展。
-       */
-      if (!openAnyway) {
-        const claim = await resolveCustomEditorClaim(
-          absolutePathOf(path, ws),
-          path.split('/').pop() || path,
-        );
-        if (claim) {
-          if (!tabsRef.current.some((tab) => tab.path === claim.tabPath)) {
-            setTabs((prev) =>
-              prev.some((tab) => tab.path === claim.tabPath)
-                ? prev
-                : [
-                    ...prev,
-                    {
-                      path: claim.tabPath,
-                      content: '',
-                      language: 'extension-editor',
-                      dirty: false,
-                      title: claim.title,
-                      readOnly: true,
-                    },
-                  ],
-            );
-          }
-          setActivePath(claim.tabPath);
-          activePathRef.current = claim.tabPath;
-          setScmDiff(null);
-          setActiveDiffId(null);
-          return;
-        }
-      }
-
       let content = '';
       let isFileTooLarge = false;
       try {
@@ -3360,14 +3361,6 @@ export function App() {
    * 与「打开扩展详情」是两条路：详情页看的是市场资料（README/版本），这里看的是
    * 扩展真正跑起来的界面。装完扩展要「能用它」，靠的就是这个入口。
    */
-  /** 面板高亮 1.2 秒后自己收掉（与 styles.css 里 `panelAttention` 的时长一致）。 */
-  useEffect(() => {
-    if (!panelRevealAt) return;
-    setPanelHighlight(true);
-    const timer = setTimeout(() => setPanelHighlight(false), 1200);
-    return () => clearTimeout(timer);
-  }, [panelRevealAt]);
-
   const openExtensionView = useCallback(
     (viewId: string, title?: string) => {
       if (!viewId) return;
@@ -3382,29 +3375,15 @@ export function App() {
        * 判据用视图 id 而不是扩展 id：将来别的扩展也可能把自己的视图贡献到右侧面板，
        * 到时候把这张「视图 → 面板」的对应关系扩成一张表即可。
        */
-      if (viewId === CLAUDE_CODE_VIEW_ID) {
-        /**
-         * 不判断 `claudeTabAvailable` 再决定走哪条路。
-         *
-         * 用户能点到「打开」，就说明这个视图确实在 —— 它的判据（启动时探一次 +
-         * 等注册事件）本身就可能落空：扩展是异步加载的，探针跑在激活完成之前就会
-         * 得到「没装」的答案，而注册事件也可能早于渲染层订阅。判空的结果是回退到
-         * 「在编辑器区开一个扩展界面标签」—— 那正是 Claude 侧栏最不该去的地方
-         * （它的界面是按侧栏宽度设计的，塞进编辑器会变成一大片空白）。
-         * 所以这里直接认定它可用。
-         */
-        setClaudeTabAvailable(true);
-        setLayout((prev) => {
-          if (prev.chatPanelExpanded !== false) return prev;
-          const next = { ...prev, chatPanelExpanded: true };
-          persistLayout(next);
-          return next;
-        });
-        setRightPanelTab('claude');
-        // 面板本来就开着且已经停在这个标签上时，上面两步都不会改变画面 —— 闪一下
-        setPanelRevealAt(Date.now());
-        return;
-      }
+      /**
+       * Claude 的界面**开在编辑器区**（和「打开」其它扩展的界面同一条路）。
+       *
+       * 顺手把右侧面板切回 AI 对话：同一份界面只留一个地方。右侧那个「Claude 扩展」
+       * 标签渲染的是同一份 webview，两边同时活着就是用户说的「为什么会有两个」，
+       * 而且两份各自持有状态（一边在对话，另一边还停在引导页）。
+       * 用户手动点右侧那个标签仍然可以 —— 只是不再由这里替他打开。
+       */
+      if (viewId === CLAUDE_CODE_VIEW_ID) setRightPanelTab('chat');
 
       openVirtualTab(
         `${EXTENSION_VIEW_PREFIX}${viewId}`,
@@ -4563,29 +4542,23 @@ export function App() {
     ['--bottom-height' as string]: `${isWelcomeShell ? 0 : layout.bottomHeight}px`,
   } as CSSProperties;
 
+  /** Claude 那个界面在编辑器区的标签路径（一个视图一个标签）。 */
+  const claudeViewTabPath = `${EXTENSION_VIEW_PREFIX}${CLAUDE_CODE_VIEW_ID}`;
+
   /**
-   * 标题栏上那个 Claude 图标：把右侧面板切到 Claude 那一栏，再点一次收起来。
+   * 标题栏上那个 Claude 图标 = Claude 界面的开关。
    *
-   * 为什么要有这个入口：Claude 的界面是按**侧栏宽度**设计的，塞进编辑器会摊成
-   * 一大片空白（扩展列表里的「打开」以前就是那样）。所以「用 Claude」的正确入口
-   * 应该是「把右侧面板切到它」这件事本身，而不是去开一个编辑器标签。
-   * 与已有的 AI 面板开关同一套语义：开着且正停在 Claude 上 = 再点就收起来。
+   * 点开：在编辑器区打开它（和扩展列表的「打开」同一条路），并让右侧面板切回
+   * AI 对话 —— 同一份界面只留一份。
+   * 再点：把那个标签关掉。
    */
-  const toggleClaudePanel = useCallback(() => {
-    if (showChatPanel && rightPanelTab === 'claude') {
-      const next = { ...layout, chatPanelExpanded: false };
-      setLayout(next);
-      persistLayout(next);
+  const toggleClaudeView = useCallback(() => {
+    if (tabsRef.current.some((tab) => tab.path === claudeViewTabPath)) {
+      closeTabDirect(claudeViewTabPath);
       return;
     }
-    setLayout((prev) => {
-      if (prev.chatPanelExpanded !== false) return prev;
-      const next = { ...prev, chatPanelExpanded: true };
-      persistLayout(next);
-      return next;
-    });
-    setRightPanelTab('claude');
-  }, [showChatPanel, rightPanelTab, layout, persistLayout]);
+    openExtensionView(CLAUDE_CODE_VIEW_ID);
+  }, [claudeViewTabPath, closeTabDirect, openExtensionView]);
 
   const ideActions: CommandAction[] = [
     {
@@ -5001,7 +4974,7 @@ export function App() {
           </button>
 
           {/*
-            Claude Code 装好之后的常驻入口。
+            Claude Code 装好之后的常驻入口：点一下在编辑器区打开它的界面，再点关掉。
 
             只在它真的在场时出现（`claudeTabAvailable` 由扩展加载状态驱动）——
             没装却摆一个点不动的图标，和以前那个假的暂停补全按钮是一回事。
@@ -5010,10 +4983,10 @@ export function App() {
             <button
               type="button"
               className={`layout-toggle-btn claude-entry-btn${
-                showChatPanel && rightPanelTab === 'claude' ? ' active' : ''
+                tabs.some((tab) => tab.path === claudeViewTabPath) ? ' active' : ''
               }`}
               title={t('app.claudeEntry')}
-              onClick={toggleClaudePanel}
+              onClick={toggleClaudeView}
             >
               {/*
                 星芒（Claude 的标志形状）+ 它自己的橙 —— 这个图标要一眼认出来是什么，
@@ -6244,7 +6217,7 @@ export function App() {
               />
             )}
             <aside
-              className={`panel right-chat-panel${panelHighlight ? ' panel-attention' : ''}`}
+              className="panel right-chat-panel"
               style={{
                 display: showChatPanel ? 'flex' : 'none',
               }}

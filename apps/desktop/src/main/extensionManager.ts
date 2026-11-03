@@ -278,6 +278,18 @@ export class ExtensionManager {
     // 在构造时就发起，但真正等它的是 ensureVscodeShim —— 安装/加载扩展前都会 await 一次，
     // 免得「刚好在写盘那一刻点安装」这种竞态。
     this.vscodeShimReady = this.ensureVscodeShim();
+
+    /**
+     * IPC 处理器在**构造时**就注册，不等 `initialize()`。
+     *
+     * 踩过一次：主进程是「窗口先起来、扩展管理器延迟 2 秒再初始化」的，而渲染层
+     * 一挂载就会问扩展的事（会话恢复问「这个文件归谁」、启动时推主题变量、拉命令列表）。
+     * 那 2 秒里这些 invoke 全部落到「No handler registered」上 —— 主进程日志里
+     * 留着一排这样的报错。后果不是「晚两秒才生效」，而是**又静默又持久**：
+     * 会话恢复问不到答案，.md 就被当成普通文本恢复，之后点它只是切前台，
+     * 用户看到的是「装了 Office Viewer 却一直不生效」。
+     */
+    this.registerIpcHandlers();
   }
 
   /**
@@ -290,8 +302,7 @@ export class ExtensionManager {
     // 先读禁用列表，再扫目录：不然被禁用的扩展会在启动时被加载一遍
     await this.loadDisabledState();
 
-    // 注册 IPC 处理器
-    this.registerIpcHandlers();
+    // IPC 处理器在构造函数里已经注册过了（见那里的注释），这里不重复注册
 
     // 扩展 webview 的资源协议。必须在任何扩展激活**之前**就位：
     // 扩展在 activate 里注册视图时就会调 asWebviewUri 拼地址（见 registerWebviewProtocol）。
@@ -1234,8 +1245,16 @@ export class ExtensionManager {
       }
     }
 
-    if (candidates.length === 0) return null;
-    return pickCustomEditor(candidates, this.relativeToWorkspace(filePath));
+    if (candidates.length === 0) {
+      console.log(`[customEditor] 没人认领 ${filePath}`);
+      return null;
+    }
+    const picked = pickCustomEditor(candidates, this.relativeToWorkspace(filePath));
+    console.log(
+      `[customEditor] ${filePath} → ${picked ? picked.viewType : '内置编辑器'}` +
+        `（候选 ${candidates.length} 个）`,
+    );
+    return picked;
   }
 
   /**
@@ -1340,6 +1359,7 @@ export class ExtensionManager {
         );
       }
     } catch (err: any) {
+      console.error(`[customEditor] ${candidate.viewType} 渲染 ${filePath} 失败：`, err);
       this.disposeCustomEditor(panelKey);
       return { ok: false, error: `扩展渲染失败：${err?.message ?? err}` };
     }
@@ -1359,11 +1379,17 @@ export class ExtensionManager {
     }
 
     if (!html) {
+      console.error(
+        `[customEditor] ${candidate.viewType} 在 ${CUSTOM_EDITOR_HTML_WAIT_MS}ms 内没有设置 webview.html（${filePath}）`,
+      );
       this.disposeCustomEditor(panelKey);
       return { ok: false, error: `扩展没有给出界面内容：${candidate.viewType}` };
     }
 
     this.webviewHtml.set(panelKey, this.injectThemeLink(this.injectRuntimeScript(html), panelKey));
+    console.log(
+      `[customEditor] ${candidate.viewType} 打开 ${filePath}（面板 ${panelKey}，${html.length} 字节）`,
+    );
 
     return {
       ok: true,

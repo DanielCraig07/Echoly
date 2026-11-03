@@ -20,7 +20,7 @@
 | `npx prettier --check .`           | 全部 ok                              | 格式漂移                                                                                                                   |
 | `npm run typecheck`                | 退出码 0                             | 类型错误（含各 workspace）                                                                                                 |
 | `npm run lint`                     | **0 error**（会有 96 条 warning）    | `react-hooks/rules-of-hooks` 是 error，专拦「hook 写在提前 return 之后」这类只在运行时炸、typecheck 与测试都看不出来的问题 |
-| `npm test`                         | **5023 passed / 139 files**          | 逻辑回归                                                                                                                   |
+| `npm test`                         | **5024 passed / 139 files**          | 逻辑回归                                                                                                                   |
 | `npm run build -w @echoly/desktop` | 构建成功                             | 打包期才会暴露的问题（含 runner 打包）                                                                                     |
 | `npm run audit:wiring`             | `✓ 没有发现「有实现、没入口」的接线` | **「功能做了但界面上够不到」** —— 这类问题其他门禁全拦不住：代码合法、类型正确、单测全绿，只是没人调用它                   |
 
@@ -33,7 +33,7 @@
 
 | 范围                 | 用例数 |
 | -------------------- | ------ |
-| apps/desktop         | 4460   |
+| apps/desktop         | 4461   |
 | packages/tools       | 229    |
 | packages/llm         | 126    |
 | packages/agent       | 92     |
@@ -400,6 +400,55 @@ npm run verify:readme -- ms-python.python  # 换一个通用扩展对照
   会落空（扩展异步加载，启动探针可能跑在激活之前；注册事件也可能早于渲染层订阅），
   一旦判空就回退到「在编辑器区开一个扩展界面标签」—— 正是最不该去的地方。
   用户点得到「打开」就说明视图在，直接认定可用即可。
+
+### 第四轮：Office Viewer「不生效」的真凶（这次有日志证据）
+
+前面几轮一直在渲染层找原因，其实是**主进程的时序**问题。证据在应用自己的日志里
+（`~/Library/Logs/Echoly/main.log`）：
+
+```
+15:48:04.696 [error] Error occurred in handler for 'extension:set-webview-theme':
+              Error: No handler registered for 'extension:set-webview-theme'
+15:48:04.697 [error] Error occurred in handler for 'extension:get-loaded':
+              Error: No handler registered for 'extension:get-loaded'
+15:48:04.697 [error] Error occurred in handler for 'extension:list-commands': ...
+15:48:04.719 [info]  Extension Manager initialized. Extensions dir: …
+```
+
+主进程是「窗口先起来、扩展管理器 `setTimeout(…, 2000)` 之后再初始化」的，而**渲染层一
+挂载就会问扩展的事**。那 2 秒里所有 `invoke` 都落到「No handler registered」上。
+后果不是「晚两秒生效」，而是**又静默又持久**：
+
+- 会话恢复问「这个文件归谁」→ 拿不到答案 → `.md` 被当成普通文本恢复；
+- 之后在文件树里点它，命中「这个标签已经开着」，只是切前台 —— 于是**永远**走不到
+  扩展编辑器。用户看到的就是「装了 Office Viewer 却一直不生效」。
+
+这也解释了为什么它时好时坏：直接打开一个**没有**开着的 `.md`（且在 2 秒之后）是通的，
+所以第一轮验证时它是好的；一旦那个 `.md` 被文本标签占住，就再也回不来了。
+
+四处改动：
+
+1. **IPC 处理器提前到管理器构造时注册**（`ExtensionManager` 构造函数），不再等
+   `initialize()`。回归测试钉住了这一条：「构造完成时扩展的 IPC 处理器已经注册好了」。
+2. **主进程不再延迟 2 秒**（依然 `void`，不 await，UI 不被阻塞）。
+3. 渲染层兜底：`resolveCustomEditorClaim` 只在 `invoke` **抛错**（不是「查到了没人认领」）
+   时按 0 / 400 / 1200 / 2500ms 重试。
+4. `openFile` 的「自定义编辑器」判断挪到「这个文件已经开着」**之前**：一份**没改过**的
+   过期文本标签会被就地换成扩展编辑器（改过的不动）。这样已经卡住的标签不用手动关掉
+   重开 —— 直接点它就会换成 Office Viewer。
+
+离线复验（真扩展）：管理器**构造完成时**已有 21 个 IPC 通道，`note.md` →
+`cweijan.markdownViewer`，`openCustomEditor` 返回 ok。
+
+### Claude 的界面开在编辑器区
+
+按你的要求改成和截图一样：Claude 的界面**开在编辑器区**（和「打开」其它扩展界面同一条
+路），标题栏那个星芒图标就是它的开关（开着再点一下关掉）。
+
+顺带一个约束：打开它会**把右侧面板切回 AI 对话** —— 右侧那个「Claude 扩展」标签渲染的
+是同一份 webview，两边同时活着就是你最早说的「为什么会有两个」，而且两份各自持有状态
+（一边在对话，另一边还停在引导页）。手动点右侧那个标签仍然可以，只是不再由「打开 /
+星芒」替你打开。
 
 ### 需要你在真机上确认的
 

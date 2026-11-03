@@ -25,6 +25,20 @@ export function absolutePathOf(path: string, workspace: string | null | undefine
 }
 
 /**
+ * 重试节奏（毫秒）。
+ *
+ * 为什么要重试而不是直接放弃：这个函数在**应用刚起来**的时候就会被调用（会话恢复），
+ * 而主进程那边「有没有这个 IPC 处理器」取决于扩展管理器建好没有。踩过一次：
+ * 主进程把扩展管理器延迟 2 秒初始化，会话恢复正好落在那 2 秒里，invoke 直接以
+ * `No handler registered` 被拒 —— 于是 `.md` 被当成普通文本恢复，之后点它只是切前台，
+ * 用户看到的是「装了 Office Viewer 却一直不生效」。
+ *
+ * 主进程那边已经把处理器提前到构造时注册（那是根治）。这里留一层兜底：
+ * 只要 invoke **抛错**（不是「查到了、没人认领」），就再问几次。
+ */
+const CLAIM_RETRY_DELAYS_MS = [0, 400, 1200, 2500];
+
+/**
  * 问主进程「这个文件归谁」。
  *
  * 拿不到答案一律返回 null（交回内置编辑器），不抛：这条路是「打开文件」的前置检查，
@@ -35,16 +49,21 @@ export async function resolveCustomEditorClaim(
   fallbackTitle: string,
 ): Promise<CustomEditorClaim | null> {
   if (!window.ide.customEditorMatch) return null;
-  try {
-    const claim = await window.ide.customEditorMatch(absolutePath);
-    const matched = claim?.match;
-    if (!matched) return null;
-    return {
-      tabPath: customEditorTabPath(absolutePath),
-      title: matched.displayName || fallbackTitle,
-    };
-  } catch (err) {
-    console.error('[customEditorRoute] 询问自定义编辑器失败：', err);
-    return null;
+
+  for (const delay of CLAIM_RETRY_DELAYS_MS) {
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      const claim = await window.ide.customEditorMatch(absolutePath);
+      const matched = claim?.match;
+      // 主进程答出来了（哪怕是「没人认领」）—— 这就是答案，重试没有意义
+      if (!matched) return null;
+      return {
+        tabPath: customEditorTabPath(absolutePath),
+        title: matched.displayName || fallbackTitle,
+      };
+    } catch (err) {
+      console.warn('[customEditorRoute] 询问自定义编辑器失败，稍后重试：', err);
+    }
   }
+  return null;
 }

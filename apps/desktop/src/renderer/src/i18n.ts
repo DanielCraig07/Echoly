@@ -894,8 +894,8 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'app.chatTab': { zh: 'AI 对话', en: 'AI Chat' },
   'app.claudeTab': { zh: 'Claude 扩展', en: 'Claude' },
   'app.claudeEntry': {
-    zh: 'Claude Code（在右侧面板打开 / 收起）',
-    en: 'Claude Code (open in the right panel)',
+    zh: 'Claude Code（打开 / 收起）',
+    en: 'Claude Code (open / close)',
   },
   'app.jumpedToLine': { zh: '已跳转到第 {line} 行', en: 'Jumped to line {line}' },
   'app.languageChanged': { zh: '语言模式已切换为 {lang}', en: 'Language mode set to {lang}' },
