@@ -3382,7 +3382,18 @@ export function App() {
        * 判据用视图 id 而不是扩展 id：将来别的扩展也可能把自己的视图贡献到右侧面板，
        * 到时候把这张「视图 → 面板」的对应关系扩成一张表即可。
        */
-      if (viewId === CLAUDE_CODE_VIEW_ID && claudeTabAvailable) {
+      if (viewId === CLAUDE_CODE_VIEW_ID) {
+        /**
+         * 不判断 `claudeTabAvailable` 再决定走哪条路。
+         *
+         * 用户能点到「打开」，就说明这个视图确实在 —— 它的判据（启动时探一次 +
+         * 等注册事件）本身就可能落空：扩展是异步加载的，探针跑在激活完成之前就会
+         * 得到「没装」的答案，而注册事件也可能早于渲染层订阅。判空的结果是回退到
+         * 「在编辑器区开一个扩展界面标签」—— 那正是 Claude 侧栏最不该去的地方
+         * （它的界面是按侧栏宽度设计的，塞进编辑器会变成一大片空白）。
+         * 所以这里直接认定它可用。
+         */
+        setClaudeTabAvailable(true);
         setLayout((prev) => {
           if (prev.chatPanelExpanded !== false) return prev;
           const next = { ...prev, chatPanelExpanded: true };
@@ -4552,6 +4563,30 @@ export function App() {
     ['--bottom-height' as string]: `${isWelcomeShell ? 0 : layout.bottomHeight}px`,
   } as CSSProperties;
 
+  /**
+   * 标题栏上那个 Claude 图标：把右侧面板切到 Claude 那一栏，再点一次收起来。
+   *
+   * 为什么要有这个入口：Claude 的界面是按**侧栏宽度**设计的，塞进编辑器会摊成
+   * 一大片空白（扩展列表里的「打开」以前就是那样）。所以「用 Claude」的正确入口
+   * 应该是「把右侧面板切到它」这件事本身，而不是去开一个编辑器标签。
+   * 与已有的 AI 面板开关同一套语义：开着且正停在 Claude 上 = 再点就收起来。
+   */
+  const toggleClaudePanel = useCallback(() => {
+    if (showChatPanel && rightPanelTab === 'claude') {
+      const next = { ...layout, chatPanelExpanded: false };
+      setLayout(next);
+      persistLayout(next);
+      return;
+    }
+    setLayout((prev) => {
+      if (prev.chatPanelExpanded !== false) return prev;
+      const next = { ...prev, chatPanelExpanded: true };
+      persistLayout(next);
+      return next;
+    });
+    setRightPanelTab('claude');
+  }, [showChatPanel, rightPanelTab, layout, persistLayout]);
+
   const ideActions: CommandAction[] = [
     {
       id: 'cmd-open-composer',
@@ -4964,6 +4999,35 @@ export function App() {
             <span className="search-trigger-text">{t('app.commandSearch')}</span>
             <kbd className="search-trigger-kbd">{isMac ? '⌘P' : 'Ctrl+P'}</kbd>
           </button>
+
+          {/*
+            Claude Code 装好之后的常驻入口。
+
+            只在它真的在场时出现（`claudeTabAvailable` 由扩展加载状态驱动）——
+            没装却摆一个点不动的图标，和以前那个假的暂停补全按钮是一回事。
+          */}
+          {claudeTabAvailable && (
+            <button
+              type="button"
+              className={`layout-toggle-btn claude-entry-btn${
+                showChatPanel && rightPanelTab === 'claude' ? ' active' : ''
+              }`}
+              title={t('app.claudeEntry')}
+              onClick={toggleClaudePanel}
+            >
+              {/*
+                星芒（Claude 的标志形状）+ 它自己的橙 —— 这个图标要一眼认出来是什么，
+                所以不跟着主题走，也不复用通用图标。
+              */}
+              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                <g fill="#d97757">
+                  <rect x="11" y="2" width="2" height="20" rx="1" />
+                  <rect x="11" y="2" width="2" height="20" rx="1" transform="rotate(60 12 12)" />
+                  <rect x="11" y="2" width="2" height="20" rx="1" transform="rotate(120 12 12)" />
+                </g>
+              </svg>
+            </button>
+          )}
 
           {/* 3个区域折叠/展开切换按钮 */}
           <div className="layout-toggle-group">

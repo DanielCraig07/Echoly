@@ -66,6 +66,17 @@ export function ExtensionEditorView({
    */
   const panelKeyRef = useRef('');
 
+  /**
+   * 回调放 ref 里，**不进依赖数组**。
+   *
+   * 调用方（编辑器面板）传的是内联箭头函数，每次渲染都是新的。把它放进依赖数组，
+   * 这个 effect 就会在每一轮渲染后重跑 —— 重跑 = 重新 `openCustomEditor` = 新的
+   * panelKey = 新的 state = 再渲染一轮。结果是一个停不下来的循环，界面上就是
+   * 「编辑器一直在闪」，而且每轮都会把上一个面板 dispose 掉。
+   */
+  const onFallbackRef = useRef(onFallback);
+  onFallbackRef.current = onFallback;
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -77,7 +88,7 @@ export function ExtensionEditorView({
         if (cancelled) return;
         if (!result.ok) {
           // 明确退回内置编辑器，而不是留一个空白标签页
-          onFallback(result.error);
+          onFallbackRef.current(result.error);
           return;
         }
         panelKeyRef.current = result.panelKey;
@@ -86,7 +97,7 @@ export function ExtensionEditorView({
         setPreload(result.preloadUrl);
       })
       .catch((err: any) => {
-        if (!cancelled) onFallback(err?.message || String(err));
+        if (!cancelled) onFallbackRef.current(err?.message || String(err));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -100,7 +111,8 @@ export function ExtensionEditorView({
         panelKeyRef.current = '';
       }
     };
-  }, [filePath, onFallback]);
+    // 只认 filePath：同一个文件面板要一直开着，换文件才整个重建（key 也是它）
+  }, [filePath]);
 
   const { webviewRef } = useExtensionWebview({
     src,
