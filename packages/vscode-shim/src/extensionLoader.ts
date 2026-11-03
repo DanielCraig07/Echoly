@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { registerExtension } from './extensionRegistry';
 
 const execAsync = promisify(exec);
 
@@ -191,6 +192,15 @@ export async function loadExtension(extensionPath: string): Promise<LoadedExtens
   console.log(
     `[loadExtension] 扩展名: ${manifest.displayName || manifest.name}, 版本: ${manifest.version}`,
   );
+
+  /**
+   * 登记必须在加载主模块**之前**。
+   *
+   * 扩展在模块顶层就会问 `extensions.getExtension(...)`（Office Viewer 一上来就找
+   * `vscode.git`），那时候还没 activate，登记晚一步它拿到的就是 undefined 与
+   * 假对象的区别 —— 前者是它能处理的分支，后者会抛 TypeError。
+   */
+  registerExtension(`${manifest.publisher}.${manifest.name}`, extensionPath);
 
   // 加载主模块（如果有）
   let mainModule: any;

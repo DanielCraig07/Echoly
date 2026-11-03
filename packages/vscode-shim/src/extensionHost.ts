@@ -5,6 +5,7 @@
 
 import { VSCodeShim, ExtensionContext, createExtensionContext } from './index';
 import { LoadedExtension } from './extensionLoader';
+import { setExtensionExports, unregisterExtension } from './extensionRegistry';
 
 export interface ExtensionHostOptions {
   workspaceRoot: string;
@@ -18,6 +19,8 @@ export interface ExtensionHostOptions {
     /** 注册它的扩展 id。禁用/卸载时要按它把视图一起摘掉 */
     extensionId?: string,
   ) => void;
+  /** 落盘 WorkspaceEdit（自定义编辑器的保存路径）。没给时 applyEdit 返回 false。 */
+  onApplyEdit?: (edit: import('./index').WorkspaceEditDescriptor) => Promise<boolean>;
 }
 
 export class ExtensionHost {
@@ -34,6 +37,7 @@ export class ExtensionHost {
       onCommand: options.onCommand,
       onMessage: options.onMessage,
       onWebviewViewRegister: options.onWebviewViewRegister,
+      onApplyEdit: options.onApplyEdit,
     });
 
     // 立即注入 vscode 模块到全局，确保任何扩展 require('vscode') 时都能找到
@@ -59,6 +63,13 @@ export class ExtensionHost {
 
     // 保存扩展信息
     this.loadedExtensions.set(extensionId, extension);
+    /**
+     * `extensions.getExtension(id).exports` 要还给扩展自己模块导出的那份东西。
+     *
+     * 别的扩展会拿它去调对方暴露的 API（`getAPI(1)` 那套）。给空对象等于
+     * 「装了但 API 是空的」，调用方照样炸；给真 exports 才是官方语义。
+     */
+    setExtensionExports(extensionId, extension.mainModule);
     console.log(`[activateExtension] 扩展信息已保存`);
 
     // 调用扩展的 activate 函数（vscode 模块已在构造函数中全局注入）
@@ -138,11 +149,18 @@ export class ExtensionHost {
 
     this.loadedExtensions.delete(extensionId);
     this.extensionContexts.delete(extensionId);
+    // 登记簿也要摘：`getExtension` 只认「现在装着的」，停用之后就该是 undefined
+    unregisterExtension(extensionId);
   }
 
   /** 扩展注册的命令（带归属）。命令面板用它列出「扩展命令」。 */
   listExtensionCommands(): { command: string; extensionId?: string }[] {
     return this.shim.listCommands();
+  }
+
+  /** 已注册的自定义编辑器（带归属）。宿主据此把文件路由给扩展。 */
+  listCustomEditorProviders(): { viewType: string; extensionId?: string; options?: any }[] {
+    return this.shim.listCustomEditorProviders();
   }
 
   /** 某个扩展注册了哪些视图。 */

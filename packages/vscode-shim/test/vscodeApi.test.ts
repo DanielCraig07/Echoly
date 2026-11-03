@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { VSCodeShim, VSCODE_API_WHITELIST } from '../src/index';
+import {
+  registerExtension,
+  resetExtensionRegistry,
+  setExtensionExports,
+} from '../src/extensionRegistry';
 
 /**
  * vscode API 表面的回归测试。
@@ -249,5 +254,129 @@ describe('vscode API 表面', () => {
     const api = createApi();
     // 未列白名单的命名空间要走 stub 而不是 undefined，否则 `vscode.debug.x` 直接 TypeError
     expect(api.debug).toBeTruthy();
+  });
+});
+
+describe('Uri.with —— 少它整个自定义编辑器渲染不出来', () => {
+  /**
+   * 这条是 Office Viewer 的 markdown 编辑器踩出来的。
+   *
+   * `resolveCustomTextEditor` 里先 `Vce(documentUri, handler)`，而
+   * `Vce` 第一件事就是 `uri.with({ query: '', fragment: '' }).toString()`。
+   * 老 shim 的 Uri 是个只有 `fsPath`/`scheme`/`toString` 的字面量对象，
+   * `t.with is not a function` 把 `handleMarkdown` 打断在开头 —— 而它在调用处
+   * **没有 await**（扩展写的），异常不会冒到 `resolveCustomTextEditor`，
+   * 只留下一条 unhandledRejection。界面上看不出任何报错，只有「装了、点了没反应」。
+   */
+  it('with() 换掉指定段，其余原样带过去', () => {
+    const api = createApi();
+    const uri = api.Uri.parse('file:///tmp/a.md?x=1#frag');
+
+    const cleaned = uri.with({ query: '', fragment: '' });
+    expect(cleaned.fsPath).toBe('/tmp/a.md');
+    expect(cleaned.query).toBe('');
+    expect(cleaned.fragment).toBe('');
+    // 原对象不能被就地改：同一个 uri 后面还要用
+    expect(uri.query).toBe('x=1');
+    expect(uri.fragment).toBe('frag');
+  });
+
+  it('joinPath 会规范化 `..`（拿父目录就是这么拿的）', () => {
+    const api = createApi();
+    const parent = api.Uri.joinPath(api.Uri.file('/tmp/proj/notes/a.md'), '..');
+
+    expect(parent.fsPath).toBe('/tmp/proj/notes');
+  });
+
+  it('parse 认得协议头，认不出就当本地路径', () => {
+    const api = createApi();
+    expect(api.Uri.parse('https://example.com/a/b').scheme).toBe('https');
+    expect(api.Uri.parse('https://example.com/a/b').authority).toBe('example.com');
+    expect(api.Uri.parse('/tmp/a.md').scheme).toBe('file');
+    expect(api.Uri.parse('/tmp/a.md').fsPath).toBe('/tmp/a.md');
+  });
+
+  it('file 协议的 toString() 仍然是磁盘路径（老行为，不改）', () => {
+    const api = createApi();
+    expect(api.Uri.file('/tmp/a.md').toString()).toBe('/tmp/a.md');
+  });
+});
+
+describe('extensions.getExtension —— 没装就该是 undefined', () => {
+  /**
+   * 以前对**任何** id 都返回一个 `exports: {}` 的假对象。看起来更宽容，实际上
+   * 是把扩展推进沟里：Office Viewer 在模块顶层找 `vscode.git`，假对象的
+   * `exports.getAPI` 不是函数（`?.` 拦不住），直接 TypeError；而它在一条没人 await
+   * 的 async 链上，只剩一条 unhandledRejection。
+   *
+   * 官方的语义是没装就 undefined —— 扩展普遍写成 `if (!git) return`，
+   * 那正是它们期望的分支。
+   */
+  it('没登记过的扩展返回 undefined', () => {
+    resetExtensionRegistry();
+    const api = createApi();
+    expect(api.extensions.getExtension('vscode.git')).toBeUndefined();
+    expect(api.extensions.getExtension('')).toBeUndefined();
+  });
+
+  it('登记过的给出真路径，activate 之后 exports 是真导出', () => {
+    resetExtensionRegistry();
+    registerExtension('cweijan.vscode-office', '/tmp/ext/office');
+    setExtensionExports('cweijan.vscode-office', { activate() {} });
+
+    const api = createApi();
+    const ext = api.extensions.getExtension('cweijan.vscode-office');
+    expect(ext.extensionPath).toBe('/tmp/ext/office');
+    expect(ext.extensionUri.fsPath).toBe('/tmp/ext/office');
+    expect(typeof ext.exports.activate).toBe('function');
+
+    // 大小写不敏感（官方也是这个规则）
+    expect(api.extensions.getExtension('CWEIJAN.VSCODE-OFFICE')).toBeTruthy();
+    resetExtensionRegistry();
+  });
+});
+
+describe('WorkspaceEdit → applyEdit 真的交给宿主', () => {
+  /**
+   * 以前 `applyEdit` 无条件 `return true`：对扩展是「改好了」，对用户是
+   * 「什么都没发生」——Office Viewer 保存 markdown 走的就是这条路，
+   * 谎报成功的结果是用户的编辑被静默丢掉。
+   */
+  it('把 Range/Position 翻译成宿主能落盘的描述', async () => {
+    const captured: any[] = [];
+    const shim = new VSCodeShim({
+      workspaceRoot: '/tmp/echoly-shim-test',
+      extensionPath: '/tmp/echoly-shim-test',
+      onCommand: async () => undefined,
+      onMessage: () => {},
+      onApplyEdit: async (edit) => {
+        captured.push(edit);
+        return true;
+      },
+    });
+    const api = shim.createAPI() as any;
+
+    const edit = new api.WorkspaceEdit();
+    edit.replace(api.Uri.file('/tmp/a.md'), new api.Range(0, 0, 3, 0), 'new text');
+
+    await expect(api.workspace.applyEdit(edit)).resolves.toBe(true);
+    expect(captured).toHaveLength(1);
+    expect(captured[0].textEdits).toEqual([
+      {
+        fsPath: '/tmp/a.md',
+        startLine: 0,
+        startCharacter: 0,
+        endLine: 3,
+        endCharacter: 0,
+        newText: 'new text',
+      },
+    ]);
+  });
+
+  it('没接宿主时返回 false —— 不谎报成功', async () => {
+    const api = createApi();
+    const edit = new api.WorkspaceEdit();
+    edit.replace(api.Uri.file('/tmp/a.md'), new api.Range(0, 0, 0, 0), 'x');
+    await expect(api.workspace.applyEdit(edit)).resolves.toBe(false);
   });
 });
