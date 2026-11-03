@@ -61,6 +61,16 @@ export function ExtensionViewPanel({ viewId, onClose }: ExtensionViewPanelProps)
   const [error, setError] = useState('');
   const webviewRef = useRef<any>(null);
 
+  /**
+   * 页面就绪之前收到的消息先存着。
+   *
+   * 扩展在 `resolveWebviewView` 里就会往界面推消息（Claude Code 一上来就
+   * `updateSidebarActiveState` → `send(...)`），那会儿访客页面还不存在 ——
+   * 直接丢的话，界面起来时缺了第一帧状态，看起来就是「加载了但空着」。
+   */
+  const pendingRef = useRef<unknown[]>([]);
+  const readyRef = useRef(false);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -101,13 +111,47 @@ export function ExtensionViewPanel({ viewId, onClose }: ExtensionViewPanelProps)
   }, [viewId, t]);
 
   /**
-   * 两条消息通道 + 加载失败提示。
-   *
-   * 依赖 `src`：`<webview>` 还没挂上来时拿不到 ref，订阅也就白订了。
+   * 扩展 → 页面。**不依赖 src**：resolve 过程中扩展开手就推的消息也得接住，
+   * 接住之后先存着，等访客页面 dom-ready 再倒过去。
    */
+  useEffect(() => {
+    readyRef.current = false;
+    pendingRef.current = [];
+
+    const unsubscribe = window.ide.onExtensionWebviewMessage?.((data) => {
+      if (data.viewId !== viewId) return;
+      const webview = webviewRef.current;
+      if (!readyRef.current || !webview) {
+        pendingRef.current.push(data.message);
+        return;
+      }
+      try {
+        webview.send(HOST_MESSAGE_CHANNEL, data.message);
+      } catch (err) {
+        console.error('[ExtensionViewPanel] 转发消息到扩展界面失败：', err);
+      }
+    });
+
+    return () => unsubscribe?.();
+  }, [viewId]);
+
+  /** 页面就绪 + 页面 → 扩展 + 加载失败提示。依赖 src：`<webview>` 挂上来才有 ref。 */
   useEffect(() => {
     const webview = webviewRef.current;
     if (!webview || !src) return;
+
+    /** 访客页面的 preload 已经跑起来了（它注册了 ipcRenderer.on），可以灌消息了。 */
+    const handleDomReady = () => {
+      readyRef.current = true;
+      for (const message of pendingRef.current) {
+        try {
+          webview.send(HOST_MESSAGE_CHANNEL, message);
+        } catch (err) {
+          console.error('[ExtensionViewPanel] 补发消息失败：', err);
+        }
+      }
+      pendingRef.current = [];
+    };
 
     /** 页面 → 扩展。payload 就是访客页面 postMessage 出去的那个对象。 */
     const handleIpcMessage = (event: any) => {
@@ -115,16 +159,6 @@ export function ExtensionViewPanel({ viewId, onClose }: ExtensionViewPanelProps)
       const payload = event.args?.[0];
       void window.ide.extensionWebviewPost?.(viewId, payload);
     };
-
-    /** 扩展 → 页面。`send` 会在访客页面的 preload 里触发 ipcRenderer.on。 */
-    const unsubscribeHost = window.ide.onExtensionWebviewMessage?.((data) => {
-      if (data.viewId !== viewId) return;
-      try {
-        webview.send(HOST_MESSAGE_CHANNEL, data.message);
-      } catch (err) {
-        console.error('[ExtensionViewPanel] 转发消息到扩展界面失败：', err);
-      }
-    });
 
     const handleError = (e: any) => {
       console.error('[ExtensionViewPanel] webview error:', e);
@@ -135,15 +169,16 @@ export function ExtensionViewPanel({ viewId, onClose }: ExtensionViewPanelProps)
       console.log('[ExtensionViewPanel webview]', e.message);
     };
 
+    webview.addEventListener('dom-ready', handleDomReady);
     webview.addEventListener('ipc-message', handleIpcMessage);
     webview.addEventListener('did-fail-load', handleError);
     webview.addEventListener('console-message', handleConsole);
 
     return () => {
+      webview.removeEventListener('dom-ready', handleDomReady);
       webview.removeEventListener('ipc-message', handleIpcMessage);
       webview.removeEventListener('did-fail-load', handleError);
       webview.removeEventListener('console-message', handleConsole);
-      unsubscribeHost?.();
     };
   }, [src, viewId, t]);
 
