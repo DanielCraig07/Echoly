@@ -4,7 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { MarketplaceEntry } from '@deepseek-ide/shared';
+import type { MarketplaceDetailEntry, MarketplaceEntry } from '@deepseek-ide/shared';
 
 export interface ExtensionAPI {
   /**
@@ -44,13 +44,23 @@ export interface ExtensionAPI {
   getIconDataUrl(iconUrl: string): Promise<string | null>;
 
   /**
+   * 拉扩展详情（含 README 正文）。失败时 `ok:false`，由渲染层决定怎么兜底。
+   */
+  getExtensionDetail(id: string): Promise<{
+    ok: boolean;
+    error?: string;
+    detail?: MarketplaceDetailEntry;
+    readme?: string;
+  }>;
+
+  /**
    * 从市场安装并激活一个扩展
    */
   installFromMarketplace(extension: {
     id: string;
     downloadUrl: string;
     version?: string;
-  }): Promise<{ success: boolean; error?: string }>;
+  }): Promise<{ success: boolean; error?: string; warning?: string }>;
 
   /**
    * 执行扩展命令
@@ -99,6 +109,10 @@ export function createExtensionAPI(): ExtensionAPI {
 
     async getIconDataUrl(iconUrl: string) {
       return ipcRenderer.invoke('extension:icon-data-url', iconUrl);
+    },
+
+    async getExtensionDetail(id: string) {
+      return ipcRenderer.invoke('extension:detail', id);
     },
 
     async installFromMarketplace(extension: { id: string; downloadUrl: string; version?: string }) {

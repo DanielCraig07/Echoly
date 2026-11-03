@@ -77,6 +77,7 @@ import {
 import { RunWidget } from './components/RunWidget';
 import { ExtensionPanel } from './components/ExtensionPanel';
 import { ActivityBar } from './components/ActivityBar';
+import { EXTENSION_DETAIL_PREFIX } from './components/ExtensionDetailView';
 import { ClaudeChatPanel } from './components/ClaudeChatPanel';
 import { PanelChevron } from './components/PanelChevron';
 import { GitPanel } from './components/GitPanel';
@@ -3132,6 +3133,26 @@ export function App() {
     [],
   );
 
+  /**
+   * 在编辑器区打开扩展详情标签。
+   *
+   * 用虚拟标签而不是弹窗：详情页有 README 正文，弹窗里读长文很难受，
+   * 而且它本来就该像其它文件一样能切走再切回来、能并排比较两个扩展。
+   */
+  const openExtensionDetail = useCallback(
+    (row: { extensionId?: string; title: string }) => {
+      if (!row.extensionId) return;
+      openVirtualTab(
+        `${EXTENSION_DETAIL_PREFIX}${row.extensionId}`,
+        '',
+        row.title,
+        'extension',
+        false,
+      );
+    },
+    [openVirtualTab],
+  );
+
   /** 当前打开着的脚本相对路径：面板底部据此标出「已打开」 */
   const openScriptPaths = useMemo(
     () =>
@@ -5258,7 +5279,10 @@ export function App() {
                 }}
               >
                 <ErrorBoundary>
-                  <ExtensionPanel onOpenExtension={handleOpenExtension} />
+                  <ExtensionPanel
+                    onOpenExtension={handleOpenExtension}
+                    onOpenDetail={openExtensionDetail}
+                  />
                 </ErrorBoundary>
               </div>
               <div

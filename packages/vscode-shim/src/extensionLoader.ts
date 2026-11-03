@@ -43,6 +43,14 @@ export interface LoadedExtension {
   manifest: ExtensionManifest;
   extensionPath: string;
   mainModule?: any;
+  /**
+   * `main` 声明了、但模块没能加载起来的原因。
+   *
+   * 必须留下来：这条失败以前只打一行日志，随后 activateExtension 看到没有 mainModule
+   * 就走「该扩展没有 activate 函数」那条分支 —— 于是「包里没有 main」和「main 崩了」
+   * 在用户那里长得一模一样：装上了，什么都没发生。
+   */
+  mainModuleError?: string;
 }
 
 /**
@@ -126,14 +134,40 @@ export async function loadManifest(extensionPath: string): Promise<ExtensionMani
 }
 
 /**
+ * 把 `package.json` 的 `main` 解析成磁盘上真实存在的文件。
+ *
+ * **不能直接拿字面量去判存在。** VS Code 扩展的 `main` 普遍不带扩展名
+ * （`"./out/src/extension"`、`"./dist/extension"`）—— 那个写法是给 Node 的 require 用的，
+ * require 自己会补 `.js`。按字面量判存在会把一大票正常扩展判成「没有主模块」，
+ * 而这条失败路径只打一行日志、不抛错，界面上表现为**「装是装上了，但什么都不会发生」**。
+ *
+ * 解析顺序照抄 Node：原样 → `.js` → `.json` → `.node` → 当作目录取 `index.js`。
+ */
+export async function resolveExtensionMainFile(
+  extensionPath: string,
+  mainFile: string,
+): Promise<string | null> {
+  const base = path.join(extensionPath, mainFile);
+  const candidates = [
+    base,
+    `${base}.js`,
+    `${base}.json`,
+    `${base}.node`,
+    path.join(base, 'index.js'),
+  ];
+  for (const candidate of candidates) {
+    if (await exists(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
  * 加载扩展模块
  */
 export async function loadExtensionModule(extensionPath: string, mainFile: string): Promise<any> {
-  const mainPath = path.join(extensionPath, mainFile);
-
-  // 检查文件是否存在
-  if (!(await exists(mainPath))) {
-    throw new Error(`Extension main file not found: ${mainPath}`);
+  const mainPath = await resolveExtensionMainFile(extensionPath, mainFile);
+  if (!mainPath) {
+    throw new Error(`Extension main file not found: ${path.join(extensionPath, mainFile)}`);
   }
 
   try {
@@ -160,12 +194,14 @@ export async function loadExtension(extensionPath: string): Promise<LoadedExtens
 
   // 加载主模块（如果有）
   let mainModule: any;
+  let mainModuleError: string | undefined;
   if (manifest.main) {
     console.log(`[loadExtension] 加载主模块: ${manifest.main}`);
     try {
       mainModule = await loadExtensionModule(extensionPath, manifest.main);
       console.log(`[loadExtension] 主模块加载成功`);
-    } catch (err) {
+    } catch (err: any) {
+      mainModuleError = err?.message ?? String(err);
       console.error(`[loadExtension] Failed to load extension main module:`, err);
     }
   } else {
@@ -177,6 +213,7 @@ export async function loadExtension(extensionPath: string): Promise<LoadedExtens
     manifest,
     extensionPath,
     mainModule,
+    ...(mainModuleError ? { mainModuleError } : {}),
   };
 }
 

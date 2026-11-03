@@ -34,7 +34,8 @@
     "package-cursor-ext": "npm run build -w packages/cursor-extension && node scripts/package-cursor-ext.js",
     "sync-version": "node scripts/sync-version.js",
     "release": "node scripts/release.js",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "verify:extension": "npx vite-node scripts/verify-extension-install.mts"
   },
   "engines": {
     "node": ">=20"

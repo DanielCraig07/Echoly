@@ -15,7 +15,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useI18n } from '../i18n';
-import type { MarketplaceEntry } from '@deepseek-ide/shared';
+import type { MarketplaceDetailEntry, MarketplaceEntry } from '@deepseek-ide/shared';
+import { EXTENSION_INSTALLED_EVENT } from './ExtensionDetailView';
 import {
   formatDownloadCount,
   formatRating,
@@ -26,6 +27,12 @@ import {
 
 export interface ExtensionPanelProps {
   onOpenExtension?: (extensionId: string) => void;
+  /**
+   * 打开扩展详情（在编辑器区开一个标签，不是弹窗）。
+   * 传 RowView 而不是精简的 id/名字：调用方要用到标题做标签名，
+   * 重新声明一个更窄的形状只会让两边慢慢对不上。
+   */
+  onOpenDetail?: (row: RowView) => void;
   onClose?: () => void;
 }
 
@@ -42,11 +49,17 @@ declare global {
         size?: number,
       ): Promise<{ ok: boolean; error?: string; extensions: MarketplaceEntry[] }>;
       getIconDataUrl(iconUrl: string): Promise<string | null>;
+      getExtensionDetail(id: string): Promise<{
+        ok: boolean;
+        error?: string;
+        detail?: MarketplaceDetailEntry;
+        readme?: string;
+      }>;
       installFromMarketplace(extension: {
         id: string;
         downloadUrl: string;
         version?: string;
-      }): Promise<{ success: boolean; error?: string }>;
+      }): Promise<{ success: boolean; error?: string; warning?: string }>;
       executeCommand(
         command: string,
         ...args: any[]
@@ -68,8 +81,10 @@ const RECOMMENDED_COUNT = 8;
 const CLAUDE_CODE_ID = 'Anthropic.claude-code';
 
 /** 一行的全部展示数据。两种来源（已安装 / 市场条目）都先归一到这里再渲染。 */
-interface RowView {
+export interface RowView {
   key: string;
+  /** 有 id 才开得了详情页（已安装列表里也有 id，但那是本机扩展，同样能开） */
+  extensionId?: string;
   title: string;
   description: string;
   publisher: string;
@@ -86,22 +101,47 @@ interface RowView {
  * 图标三种情况：拿到了 data URL 用图片；有 iconUrl 但还没抓回来用首字母占位
  * （不留空位，否则列表会随着图标陆续到位而跳动）；没有 iconUrl 直接用首字母。
  */
-function ExtensionRow({ view, iconData }: { view: RowView; iconData?: string | null }) {
+function ExtensionRow({
+  view,
+  iconData,
+  onOpenDetail,
+}: {
+  view: RowView;
+  iconData?: string | null;
+  onOpenDetail?: (view: RowView) => void;
+}) {
+  const { t } = useI18n();
   const initial = iconInitial(view.title);
+  // 标题与图标这一块整体是「打开详情」的按钮：行内已经有安装/管理按钮，
+  // 给整行挂 onClick 会做出嵌套的可点区域 —— 键盘与读屏都读不清谁是谁。
+  const openable = Boolean(onOpenDetail && view.extensionId);
   return (
     <div className="ext-row">
-      <div className="ext-row-icon">
-        {iconData ? (
-          <img src={iconData} alt="" draggable={false} />
-        ) : (
-          <span className="ext-row-icon-letter">{initial}</span>
-        )}
-      </div>
+      <button
+        type="button"
+        className="ext-row-open"
+        disabled={!openable}
+        onClick={() => openable && onOpenDetail?.({ ...view, extensionId: view.extensionId! })}
+        title={openable ? t('extDetail.openTab') : undefined}
+      >
+        <span className="ext-row-icon">
+          {iconData ? (
+            <img src={iconData} alt="" draggable={false} />
+          ) : (
+            <span className="ext-row-icon-letter">{initial}</span>
+          )}
+        </span>
+      </button>
       <div className="ext-row-body">
         <div className="ext-row-top">
-          <span className="ext-row-name" title={view.title}>
+          <button
+            type="button"
+            className="ext-row-name"
+            disabled={!openable}
+            onClick={() => openable && onOpenDetail?.({ ...view, extensionId: view.extensionId! })}
+          >
             {view.title}
-          </span>
+          </button>
           <span className="ext-row-stats">{view.stats}</span>
         </div>
         {view.description && (
@@ -183,7 +223,7 @@ function SectionHeader({
   );
 }
 
-export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
+export function ExtensionPanel({ onOpenExtension, onOpenDetail }: ExtensionPanelProps = {}) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(false);
   const [extensions, setExtensions] = useState<string[]>([]);
@@ -257,6 +297,17 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       setRecommendedState('done');
     }
   }, [t]);
+
+  /**
+   * 详情页是另一个组件（在编辑器区），它装完扩展后这边必须跟着刷新 ——
+   * 否则刚装好的扩展在面板里还显示「安装」，两边说的不是一回事。
+   * 用一个 window 事件解耦，比把状态提到共同祖先再层层传下来轻得多。
+   */
+  useEffect(() => {
+    const onInstalled = () => void loadExtensions();
+    window.addEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+    return () => window.removeEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+  }, [loadExtensions]);
 
   useEffect(() => {
     void loadExtensions();
@@ -405,7 +456,12 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       });
       if (result.success) {
         await loadExtensions();
-        setSuccessMsg(t('ext.marketInstalled', { name: extension.displayName }));
+        // 装好了但没激活起来：把原因一并说出来，而不是只报「已安装」
+        setSuccessMsg(
+          result.warning
+            ? `${t('ext.marketInstalled', { name: extension.displayName })} —— ${result.warning}`
+            : t('ext.marketInstalled', { name: extension.displayName }),
+        );
       } else {
         setError(result.error || t('ext.installFailed'));
       }
@@ -464,6 +520,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
     () =>
       extensions.map((id) => ({
         key: id,
+        extensionId: id,
         title: friendlyExtensionName(id),
         description: '',
         publisher: publisherOf(id),
@@ -497,6 +554,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
       const rating = formatRating(entry.rating);
       return {
         key: entry.id,
+        extensionId: entry.id,
         title: entry.displayName || friendlyExtensionName(entry.id),
         description: entry.description,
         publisher: publisherOf(entry.id),
@@ -574,6 +632,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
   const claudeRow: RowView = useMemo(
     () => ({
       key: CLAUDE_CODE_ID,
+      extensionId: CLAUDE_CODE_ID,
       title: 'Claude Code',
       description: t('ext.heroDesc'),
       publisher: 'Anthropic',
@@ -743,7 +802,7 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
             ) : (
               <div className="ext-rows">
                 {installedRows.map((view) => (
-                  <ExtensionRow key={view.key} view={view} />
+                  <ExtensionRow key={view.key} view={view} onOpenDetail={onOpenDetail} />
                 ))}
               </div>
             ))}
@@ -794,7 +853,12 @@ export function ExtensionPanel({ onOpenExtension }: ExtensionPanelProps = {}) {
               {rows.length > 0 && (
                 <div className="ext-rows">
                   {rows.map((view) => (
-                    <ExtensionRow key={view.key} view={view} iconData={iconData[view.key]} />
+                    <ExtensionRow
+                      key={view.key}
+                      view={view}
+                      iconData={iconData[view.key]}
+                      onOpenDetail={onOpenDetail}
+                    />
                   ))}
                 </div>
               )}

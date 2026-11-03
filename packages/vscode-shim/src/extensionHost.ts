@@ -19,6 +19,8 @@ export interface ExtensionHostOptions {
 }
 
 export class ExtensionHost {
+  /** 注入给扩展的 `vscode` API。写磁盘 shim（ESM 用）时需要知道它有哪些键。 */
+  readonly vscodeApi: Record<string, unknown>;
   private shim: VSCodeShim;
   private loadedExtensions: Map<string, LoadedExtension> = new Map();
   private extensionContexts: Map<string, ExtensionContext> = new Map();
@@ -34,6 +36,7 @@ export class ExtensionHost {
 
     // 立即注入 vscode 模块到全局，确保任何扩展 require('vscode') 时都能找到
     const vscodeAPI = this.shim.createAPI();
+    this.vscodeApi = vscodeAPI as Record<string, unknown>;
     this.injectVscodeModule(vscodeAPI);
     this.injectWindowPolyfills();
     console.log('[ExtensionHost] VSCode 模块已全局注入');
@@ -66,6 +69,12 @@ export class ExtensionHost {
         console.error(`[activateExtension] Failed to activate extension ${extensionId}:`, err);
         throw err;
       }
+    } else if (extension.mainModuleError) {
+      // 声明了 main 却没加载起来：这是**失败**，不是「这个扩展没有 activate」。
+      // 以前这里只打一行日志，用户看到的就是「装上了但没反应」，无从查起。
+      throw new Error(
+        `扩展主模块加载失败（${extension.manifest.main}）：${extension.mainModuleError}`,
+      );
     } else {
       console.warn(`[activateExtension] Extension ${extensionId} has no activate function`);
     }
@@ -147,6 +156,10 @@ export class ExtensionHost {
 
     // 方法3：添加到 global
     (global as any).vscode = vscodeAPI;
+    // 方法4：留给磁盘上的 shim 模块（见 vscodeShimModule.ts）。
+    // ESM 的 `import 'vscode'` 绕不过 require 补丁，只能靠真的模块文件；
+    // 那个文件是生成的，它从这里取**当前**这份 API 对象。
+    (global as any).__echolyVscodeApi = vscodeAPI;
   }
 
   /**

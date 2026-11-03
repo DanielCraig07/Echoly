@@ -4,8 +4,11 @@ import {
   DEFAULT_RECOMMENDED_SIZE,
   MAX_MARKETPLACE_PAGE_SIZE,
   buildDownloadUrl,
+  buildReadmeUrl,
   buildRecommendedUrl,
   buildSearchUrl,
+  parseOpenVsxDetail,
+  splitExtensionId,
   isAllowedIconUrl,
   isPlatformAgnosticDownload,
   isSafeExtensionId,
@@ -323,5 +326,60 @@ describe('isAllowedIconUrl', () => {
     for (const bad of ['', null, undefined, 42, {}]) {
       expect(isAllowedIconUrl('https://open-vsx.org', bad)).toBe(false);
     }
+  });
+});
+
+describe('详情解析（parseOpenVsxDetail / buildReadmeUrl / splitExtensionId）', () => {
+  const detailPayload = {
+    ...entry({
+      files: { download: 'https://open-vsx.org/api/vscodevim/vim/1.27.2/file/vim.vsix' },
+    }),
+    timestamp: '2025-12-14T23:05:07.638873Z',
+    license: 'MIT',
+    repository: 'https://github.com/VSCodeVim/Vim.git',
+    bugs: 'https://github.com/VSCodeVim/Vim/issues',
+    categories: ['Programming Languages', 'Other'],
+    reviewCount: 24,
+    verified: true,
+    engines: { vscode: '^1.70.0' },
+    downloadSizes: { universal: 6826731, 'darwin-arm64': 999 },
+  };
+
+  it('认得出详情多出来的那些字段', () => {
+    const d = parseOpenVsxDetail(detailPayload, 'https://open-vsx.org');
+    expect(d).not.toBeNull();
+    expect(d!.license).toBe('MIT');
+    expect(d!.categories).toEqual(['Programming Languages', 'Other']);
+    expect(d!.reviewCount).toBe(24);
+    expect(d!.verified).toBe(true);
+    expect(d!.engines).toEqual({ vscode: '^1.70.0' });
+  });
+
+  it('体积取通用构建，而不是随机取一个平台包', () => {
+    const d = parseOpenVsxDetail(detailPayload, 'https://open-vsx.org');
+    expect(d!.size).toBe(6826731);
+  });
+
+  it('解析不了时返回 null（调用方用列表那一份兜底）', () => {
+    expect(parseOpenVsxDetail(null, 'https://open-vsx.org')).toBeNull();
+    expect(parseOpenVsxDetail({}, 'https://open-vsx.org')).toBeNull();
+    // id 不合法 → 整条丢弃，与搜索解析同一套防线
+    expect(
+      parseOpenVsxDetail({ ...detailPayload, namespace: '../evil' }, 'https://open-vsx.org'),
+    ).toBeNull();
+  });
+
+  it('splitExtensionId 挡掉会把路径带出去的 id', () => {
+    expect(splitExtensionId('ms-python.python')).toEqual({
+      namespace: 'ms-python',
+      name: 'python',
+    });
+    expect(splitExtensionId('../../etc.passwd')).toBeNull();
+  });
+
+  it('README 地址由校验过的 id 与版本拼出来', () => {
+    expect(buildReadmeUrl('https://open-vsx.org', 'ms-python.python', '2026.4.0')).toBe(
+      'https://open-vsx.org/api/ms-python/python/2026.4.0/file/README.md',
+    );
   });
 });

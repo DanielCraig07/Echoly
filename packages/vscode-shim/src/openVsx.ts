@@ -38,6 +38,30 @@ export interface MarketplaceExtension {
 
 export const DEFAULT_OPEN_VSX_REGISTRY = 'https://open-vsx.org';
 
+/**
+ * 扩展详情（`GET /api/{namespace}/{name}` 的产物）。
+ *
+ * 详情页要展示的东西比搜索结果多得多：体积、发布时间、许可、分类、仓库地址。
+ * 这些都是注册表**详情接口**才有字段，搜索接口给不了 —— 所以详情页单独拉一次，
+ * 而不是把搜索结果凑合着渲染出一个缺胳膊少腿的页面。
+ */
+export interface MarketplaceDetail extends MarketplaceExtension {
+  /** 发布时间（注册表给的是当前版本的时间戳） */
+  timestamp?: string;
+  /** 体积（字节）。注册表按平台给，取通用构建那一份 */
+  size?: number;
+  license?: string;
+  repository?: string;
+  bugs?: string;
+  homepage?: string;
+  categories?: string[];
+  verified?: boolean;
+  preview?: boolean;
+  reviewCount?: number;
+  /** 该扩展声明支持的编辑器版本 */
+  engines?: Record<string, string>;
+}
+
 /** 搜索一页的条数上限。注册表侧也有限制，这里只做防御性收敛。 */
 export const MAX_MARKETPLACE_PAGE_SIZE = 50;
 
@@ -179,6 +203,84 @@ export function buildDownloadUrl(
   }
   const base = normalizeRegistryBase(registryBase);
   return `${base}/api/${namespace}/${name}/${version}/file/${namespace}.${name}-${version}.vsix`;
+}
+
+/**
+ * 解析扩展详情。
+ *
+ * 与搜索解析共用同一套防御（坏数据整条丢弃、下载地址取注册表给的字段），
+ * 额外多认几个只在本接口出现的字段。识别不了就返回 null，
+ * 由调用方退回「用搜索结果那一份渲染」—— 少几行元信息，不该让详情页变成错误页。
+ */
+export function parseOpenVsxDetail(
+  payload: unknown,
+  registryBase: string,
+): MarketplaceDetail | null {
+  const [base] = parseOpenVsxSearch({ extensions: [payload] }, registryBase);
+  if (!base) return null;
+  const record = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<
+    string,
+    unknown
+  >;
+  const detail: MarketplaceDetail = { ...base };
+
+  const timestamp = asString(record.timestamp);
+  if (timestamp) detail.timestamp = timestamp;
+  const license = asString(record.license);
+  if (license) detail.license = license;
+  const repository = asString(record.repository);
+  if (repository) detail.repository = repository;
+  const bugs = asString(record.bugs);
+  if (bugs) detail.bugs = bugs;
+  const homepage = asString(record.homepage);
+  if (homepage) detail.homepage = homepage;
+
+  const categories = Array.isArray(record.categories)
+    ? record.categories.filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
+    : [];
+  if (categories.length > 0) detail.categories = categories;
+
+  const reviewCount = asNumber(record.reviewCount);
+  if (reviewCount !== undefined) detail.reviewCount = reviewCount;
+  if (record.verified === true) detail.verified = true;
+  if (record.preview === true) detail.preview = true;
+
+  const engines = record.engines;
+  if (typeof engines === 'object' && engines !== null) {
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(engines as Record<string, unknown>)) {
+      const text = asString(value);
+      if (text) out[key] = text;
+    }
+    if (Object.keys(out).length > 0) detail.engines = out;
+  }
+
+  // 体积按平台给（`{universal: 123, "darwin-arm64": 456}`）。优先通用构建：
+  // 展示一个「当前机器专属包」的大小会让人以为换台机器也是这个数。
+  const sizes = record.downloadSizes;
+  if (typeof sizes === 'object' && sizes !== null) {
+    const table = sizes as Record<string, unknown>;
+    const size = asNumber(table.universal) ?? asNumber(Object.values(table)[0]);
+    if (size !== undefined) detail.size = size;
+  }
+
+  return detail;
+}
+
+/** 详情页要抓的 README。注册表把它当普通文件放在 `/file/` 下。 */
+export const README_FILE_NAME = 'README.md';
+
+export function buildReadmeUrl(registryBase: string, id: string, version: string): string {
+  const base = normalizeRegistryBase(registryBase);
+  const [namespace, name] = id.split('.');
+  return `${base}/api/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/${encodeURIComponent(version)}/file/${README_FILE_NAME}`;
+}
+
+/** 从 `publisher.name` 拆出注册表 API 需要的两段。id 不合法时返回 null。 */
+export function splitExtensionId(id: string): { namespace: string; name: string } | null {
+  if (!isSafeExtensionId(id)) return null;
+  const [namespace, name] = id.split('.');
+  return { namespace, name };
 }
 
 function asString(value: unknown): string {

@@ -18,21 +18,31 @@ import {
 import {
   DEFAULT_RECOMMENDED_SIZE,
   MAX_MARKETPLACE_PAGE_SIZE,
+  buildReadmeUrl,
   buildRecommendedUrl,
   buildSearchUrl,
   isAllowedIconUrl,
   isPlatformAgnosticDownload,
   isSafeExtensionId,
   normalizeRegistryBase,
+  parseOpenVsxDetail,
   parseOpenVsxSearch,
+  splitExtensionId,
+  type MarketplaceDetail,
   type MarketplaceExtension,
 } from '@deepseek-ide/vscode-shim/src/openVsx';
+import { writeVscodeShimModule } from '@deepseek-ide/vscode-shim/src/vscodeShimModule';
 import {
   ICON_CACHE_LIMIT,
   ICON_FETCH_TIMEOUT_MS,
   MAX_ICON_BYTES,
   toIconDataUrl,
 } from './extensionIcons';
+
+/** README 抓取上限：详情页是展示用的，没必要为一个说明文件拉几百 KB。 */
+const maxReadmeBytes = 512 * 1024;
+const maxReadmeChars = 200_000;
+const readmeFetchTimeoutMs = 10_000;
 
 export interface ExtensionManagerOptions {
   workspaceRoot: string;
@@ -56,6 +66,8 @@ export class ExtensionManager {
    * 缓存的是**结果**（含 null）：抓失败的图标不该每次滚动都重试一遍。
    */
   private readonly iconCache = new Map<string, string | null>();
+  /** vscode shim 写盘的一次性任务，见 ensureVscodeShim */
+  private vscodeShimReady: Promise<void> | null = null;
 
   constructor(options: ExtensionManagerOptions) {
     this.workspaceRoot = options.workspaceRoot;
@@ -73,6 +85,11 @@ export class ExtensionManager {
       onMessage: this.handleMessage.bind(this),
       onWebviewViewRegister: this.handleWebviewViewRegister.bind(this),
     });
+
+    // 把 `vscode` 模块落到扩展目录旁（ESM 扩展只能靠真模块解析，require 补丁拦不住）。
+    // 在构造时就发起，但真正等它的是 ensureVscodeShim —— 安装/加载扩展前都会 await 一次，
+    // 免得「刚好在写盘那一刻点安装」这种竞态。
+    this.vscodeShimReady = this.ensureVscodeShim();
   }
 
   /**
@@ -153,6 +170,24 @@ export class ExtensionManager {
   }
 
   /**
+   * 确保磁盘上有 `vscode` shim 模块（幂等）。
+   *
+   * 失败**不致命**：CommonJS 的扩展仍然能通过 `Module.prototype.require` 的补丁解析到
+   * `vscode`，只有 ESM 形式的扩展会因此加载不了 —— 那种情况由 loadExtension 记录原因，
+   * 最终会显示在安装结果里，而不是静默地「装上了但没反应」。
+   */
+  private async ensureVscodeShim(): Promise<void> {
+    try {
+      await writeVscodeShimModule(
+        path.join(this.extensionsDir, 'node_modules'),
+        Object.keys(this.extensionHost.vscodeApi),
+      );
+    } catch (err) {
+      console.warn('[ExtensionManager] 写入 vscode shim 模块失败', err);
+    }
+  }
+
+  /**
    * 在 Open VSX 上搜索扩展。
    *
    * 走注册表公开 API，不需要 token。失败时返回空列表 + 原因，而不是抛错 ——
@@ -220,6 +255,73 @@ export class ExtensionManager {
   }
 
   /**
+   * 拉一个扩展的详情（含 README）。
+   *
+   * 详情页要的东西（体积、发布时间、许可、分类、仓库）搜索接口给不了，
+   * 所以点开某个扩展时单独拉一次；README 是另一个文件端点。
+   *
+   * 两处失败都**不抛错**，而是各自留空：
+   * - 详情拿不到：调用方用搜索结果那一份渲染，少几行元信息而已；
+   * - README 拿不到：正文区显示一句「注册表没有提供说明」。
+   * 详情页因为一个附加信息拉不到就整个变错误页，是过度反应。
+   */
+  async getExtensionDetail(id: string): Promise<{
+    ok: boolean;
+    error?: string;
+    detail?: MarketplaceDetail;
+    readme?: string;
+  }> {
+    const parts = splitExtensionId(id);
+    if (!parts) return { ok: false, error: `扩展 id 不合法：${id}` };
+
+    let detail: MarketplaceDetail | undefined;
+    try {
+      const res = await fetch(`${this.registry}/api/${parts.namespace}/${parts.name}`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) return { ok: false, error: `注册表返回 ${res.status}` };
+      const payload = await res.json();
+      detail = parseOpenVsxDetail(payload, this.registry) ?? undefined;
+    } catch (err: any) {
+      return { ok: false, error: `无法访问注册表：${err?.message ?? err}` };
+    }
+    if (!detail) return { ok: false, error: '注册表返回的数据无法解析' };
+
+    const readme = await this.fetchReadme(detail);
+    return { ok: true, detail, ...(readme ? { readme } : {}) };
+  }
+
+  /**
+   * 抓 README 正文。
+   *
+   * 地址是从**校验过的 id 与版本号**拼出来的，不是从渲染层传进来的任意 URL ——
+   * 这个方法是主进程代渲染层发请求，能抓什么必须由这里说了算。
+   * 注册表会 302 到这个文件的 CDN，所以这里跟随重定向（fetch 默认行为）；
+   * 能跳到哪去由配置的注册表决定，属于用户自己的信任边界。
+   */
+  private async fetchReadme(detail: MarketplaceExtension): Promise<string | undefined> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), readmeFetchTimeoutMs);
+    try {
+      const res = await fetch(buildReadmeUrl(this.registry, detail.id, detail.version), {
+        signal: controller.signal,
+      });
+      if (!res.ok) return undefined;
+      const stated = Number(res.headers.get('content-length') ?? '');
+      if (Number.isFinite(stated) && stated > maxReadmeBytes) return undefined;
+      const text = await res.text();
+      // 有的注册表把 README 当二进制流返回（content-type 是 octet-stream），
+      // 所以不看 content-type，只按长度与内容本身判断
+      if (!text.trim()) return undefined;
+      return text.length > maxReadmeChars ? `${text.slice(0, maxReadmeChars)}\n\n…` : text;
+    } catch {
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * 抓一个扩展图标并转成 data URL（渲染进程的 CSP 只放行 `data:`）。
    *
    * 只有配置的那个注册表 origin 上的地址会被抓 —— 否则这个方法就是一个
@@ -268,7 +370,7 @@ export class ExtensionManager {
     id: string;
     downloadUrl: string;
     version?: string;
-  }): Promise<void> {
+  }): Promise<{ warning?: string }> {
     if (!isSafeExtensionId(extension.id)) {
       throw new Error(`扩展 id 不合法，已拒绝安装：${extension.id}`);
     }
@@ -276,6 +378,7 @@ export class ExtensionManager {
       throw new Error('下载地址不合法（必须是 http/https）');
     }
 
+    await this.vscodeShimReady;
     const vsixPath = path.join(this.extensionsDir, `${extension.id}.vsix`);
     const extractDir = path.join(this.extensionsDir, extension.id);
 
@@ -284,12 +387,20 @@ export class ExtensionManager {
     });
 
     const loaded = await loadExtensionFromVsix(vsixPath, extractDir);
-    await this.extensionHost.activateExtension(loaded);
     this.loadedExtensionPaths.add(path.join(extractDir, 'extension'));
 
-    console.log(
-      `[ExtensionManager] 已从市场安装并激活：${extension.id} v${loaded.manifest.version}`,
-    );
+    // 文件已经装好了，所以激活失败**不算安装失败** —— 报成失败会让人以为得重装。
+    // 但也不能吞掉：那正是「装上了却什么都没发生」的由来。返回一句说明，由界面转达。
+    try {
+      await this.extensionHost.activateExtension(loaded);
+      console.log(
+        `[ExtensionManager] 已从市场安装并激活：${extension.id} v${loaded.manifest.version}`,
+      );
+      return {};
+    } catch (err: any) {
+      console.warn(`[ExtensionManager] ${extension.id} 已安装但激活失败：`, err);
+      return { warning: `已安装，但激活失败：${err?.message ?? err}` };
+    }
   }
 
   /**
@@ -615,6 +726,11 @@ export class ExtensionManager {
       return await this.getRecommendedExtensions(size);
     });
 
+    // 扩展详情（含 README）
+    ipcMain.handle('extension:detail', async (_event, id: string) => {
+      return await this.getExtensionDetail(id);
+    });
+
     // 扩展图标（主进程代理抓取，见 getIconDataUrl）
     ipcMain.handle('extension:icon-data-url', async (_event, iconUrl: string) => {
       return await this.getIconDataUrl(iconUrl);
@@ -625,8 +741,8 @@ export class ExtensionManager {
       'extension:install-from-marketplace',
       async (_event, extension: { id: string; downloadUrl: string; version?: string }) => {
         try {
-          await this.installFromMarketplace(extension);
-          return { success: true };
+          const { warning } = await this.installFromMarketplace(extension);
+          return { success: true, ...(warning ? { warning } : {}) };
         } catch (err: any) {
           return { success: false, error: err.message };
         }

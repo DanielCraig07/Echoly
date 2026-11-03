@@ -18936,6 +18936,238 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   cursor: default;
 }
 
+/* ── 行内的「打开详情」按钮 ──
+   图标与标题各自是一个按钮（行里已经有安装/管理按钮，整行可点会做出嵌套区域）。
+   这里把它们还原成「看起来就是行本身」：去掉按钮的边框与底色，只保留指针与悬停提示。 */
+.ext-row-open {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  border-radius: 10px;
+}
+
+.ext-row-open:disabled {
+  cursor: default;
+}
+
+.ext-row-name {
+  /* 覆盖全局 button 的底色/边框：它在视觉上是一个标题，不是按钮 */
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ext-row-name:disabled {
+  cursor: default;
+}
+
+.ext-row-name:hover:not(:disabled) {
+  color: var(--accent-light);
+}
+
+/* ── 扩展详情页（编辑器里打开的标签） ── */
+.ext-detail {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-editor);
+  color: var(--text);
+}
+
+.ext-detail-head {
+  display: flex;
+  gap: 20px;
+  padding: 26px 32px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ext-detail-icon {
+  width: 96px;
+  height: 96px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.ext-detail-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ext-detail-icon .ext-row-icon-letter {
+  font-size: 34px;
+}
+
+.ext-detail-headinfo {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ext-detail-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.ext-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: var(--ui-font-size, 13px);
+  color: var(--muted);
+}
+
+.ext-detail-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ext-detail-desc {
+  margin: 4px 0 0;
+  font-size: var(--ui-font-size, 13px);
+  line-height: 1.6;
+  color: var(--text);
+  max-width: 76ch;
+}
+
+.ext-detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ext-detail-actions .ext-btn {
+  padding: 5px 14px;
+  font-size: var(--ui-font-size, 13px);
+}
+
+.ext-detail-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 40px;
+  padding: 24px 32px 60px;
+}
+
+.ext-detail-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ext-detail-note {
+  padding: 18px 0;
+  color: var(--muted);
+  font-size: var(--ui-font-size, 13px);
+}
+
+.ext-detail-readme {
+  /* README 是别人写的 markdown，宽度收一收才好读（一行 90+ 字读起来很累） */
+  max-width: 88ch;
+}
+
+/* 右栏：元信息。窄屏（编辑器分栏）时自动落到正文下面 */
+.ext-detail-aside {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+@media (max-width: 900px) {
+  .ext-detail-body {
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .ext-detail-aside {
+    width: 100%;
+  }
+}
+
+.ext-detail-block h2 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ext-detail-block dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 11px;
+}
+
+.ext-detail-block dt {
+  color: var(--muted);
+}
+
+.ext-detail-block dd {
+  margin: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ext-detail-mono {
+  font-family: var(--font-mono);
+}
+
+.ext-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ext-detail-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  font-size: 11px;
+  color: var(--text);
+}
+
+.ext-detail-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.ext-detail-links a {
+  color: var(--accent-light);
+  text-decoration: none;
+}
+
+.ext-detail-links a:hover {
+  text-decoration: underline;
+}
+
+.ext-detail-license {
+  color: var(--muted);
+}
+
 /* ── 日志 ── */
 .ext-logs-section {
   border: 1px solid var(--border);

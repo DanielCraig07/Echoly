@@ -215,6 +215,29 @@ export type UiTheme = 'dark' | 'light';
  * 「preload 声明的字段比主进程实际返回的少一个」：类型检查一路全绿，
  * 运行时那个字段永远是 undefined，界面上表现为一个静默缺失的图标或数字。
  */
+/**
+ * 扩展详情（详情接口的产物，比列表项多一批元信息）。
+ *
+ * 与 `MarketplaceEntry` 分开而不是塞成一个可选字段满天飞的类型：
+ * 列表项是「搜出来的」，详情是「点进去再拉的」，两者字段集不同、
+ * 失败时的兜底也不同（列表拉不到就是空列表，详情拉不到还能用列表那份渲染）。
+ */
+export interface MarketplaceDetailEntry extends MarketplaceEntry {
+  /** 发布时间（注册表给的是当前版本的时间戳，ISO 8601） */
+  timestamp?: string;
+  /** 体积（字节，通用构建） */
+  size?: number;
+  license?: string;
+  repository?: string;
+  bugs?: string;
+  homepage?: string;
+  categories?: string[];
+  verified?: boolean;
+  preview?: boolean;
+  reviewCount?: number;
+  engines?: Record<string, string>;
+}
+
 export interface MarketplaceEntry {
   /** `publisher.name`，同时也是安装时的目录名（主进程会先校验再使用） */
   id: string;

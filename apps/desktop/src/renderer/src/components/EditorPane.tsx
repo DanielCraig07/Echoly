@@ -21,6 +21,7 @@ import {
   untitledTabLabel,
 } from '../utils';
 import { BrowserViewPane } from './browser/BrowserViewPane';
+import { EXTENSION_DETAIL_PREFIX, ExtensionDetailView } from './ExtensionDetailView';
 import { RenderFileTreeIcon } from './FileTree';
 import { translateSegments, useI18n, type Translate } from '../i18n';
 import {
@@ -5697,6 +5698,16 @@ export function EditorPane({
               />
             );
           })()
+        ) : active && active.path.startsWith(EXTENSION_DETAIL_PREFIX) ? (
+          <ExtensionDetailView
+            /**
+             * 按 id 当 key：在同一个标签里切换不同扩展时（理论上不会，但标签复用时可能），
+             * 让组件整个重建，而不是把上一个扩展的 README 留在屏幕上。
+             */
+            key={active.path}
+            extensionId={active.path.slice(EXTENSION_DETAIL_PREFIX.length)}
+            onShowToast={onShowToast}
+          />
         ) : active && active.virtual?.dbStructure ? (
           <DbStructureView
             /**
