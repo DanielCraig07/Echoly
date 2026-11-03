@@ -16,9 +16,10 @@
  *   把消息打进访客页面的 preload。
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n';
 import { EXTENSION_WEBVIEW_PARTITION } from '@deepseek-ide/shared';
+import { useExtensionWebview } from '../hooks/useExtensionWebview';
 
 /**
  * 扩展视图标签的虚拟路径前缀：`ext://view/<viewId>`。
@@ -27,12 +28,6 @@ import { EXTENSION_WEBVIEW_PARTITION } from '@deepseek-ide/shared';
  * 都要用它，各写一份字面量迟早漂移成两个不同的字符串。
  */
 export const EXTENSION_VIEW_PREFIX = 'ext://view/';
-
-/** 访客 preload 里用的通道名，必须与 webviewGuest.ts / extensionManager 里的一致。 */
-const GUEST_MESSAGE_CHANNEL = 'echoly-ext-message';
-const HOST_MESSAGE_CHANNEL = 'echoly-ext-host-message';
-/** 主题变量走单独一条通道，别和扩展自己的消息混在一起（见 webviewGuest.ts） */
-const THEME_MESSAGE_CHANNEL = 'echoly-ext-theme';
 
 // Electron webview 标签类型声明
 declare global {
@@ -61,146 +56,74 @@ export function ExtensionViewPanel({ viewId, onClose }: ExtensionViewPanelProps)
   const [preload, setPreload] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const webviewRef = useRef<any>(null);
 
   /**
-   * 页面就绪之前收到的消息先存着。
+   * 向主进程要这个视图的地址。
    *
-   * 扩展在 `resolveWebviewView` 里就会往界面推消息（Claude Code 一上来就
-   * `updateSidebarActiveState` → `send(...)`），那会儿访客页面还不存在 ——
-   * 直接丢的话，界面起来时缺了第一帧状态，看起来就是「加载了但空着」。
+   * provider 已经注册过才会拿到；扩展没激活起来 / 视图 id 不对时主进程回一个 error，
+   * 由下面转成看得见的提示。抽 `useExtensionWebview` 的时候这段曾经被一起删掉过 ——
+   * 表现是面板永远停在转圈上（`src` 一直是空串，`<webview>` 根本没挂上来），
+   * 而所有消息通道都是好的。别删。
    */
-  const pendingRef = useRef<unknown[]>([]);
-  const readyRef = useRef(false);
-
   useEffect(() => {
-    let isMounted = true;
+    let cancelled = false;
+    setLoading(true);
+    setError('');
 
-    // 向主进程要这个视图的地址：provider 已经注册过才会拿到，
-    // 扩展没激活起来 / 视图 id 不对时主进程会回一个 error，由下面转成可见的提示。
-    const loadWebview = async () => {
-      try {
-        setLoading(true);
-        setError('');
-
-        const result = await window.ide.extensionResolveWebview(viewId);
-
-        if (!isMounted) return;
-
+    void window.ide
+      .extensionResolveWebview(viewId)
+      .then((result) => {
+        if (cancelled) return;
         if (result.success && result.url) {
           setSrc(result.url);
           setPreload(result.preloadUrl || '');
         } else {
           setError(result.error || t('extView.loadUiFailed'));
         }
-      } catch (err: any) {
-        if (!isMounted) return;
-        console.error('[ExtensionViewPanel] Error resolving webview:', err);
-        setError(err.message || t('extView.loadFailed'));
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void loadWebview();
+      })
+      .catch((err: any) => {
+        if (!cancelled) setError(err?.message || t('extView.loadFailed'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
     // viewId 决定拉哪一份 HTML；t 只影响错误文案，多跑一次 IPC 可以接受。
   }, [viewId, t]);
 
-  /**
-   * 扩展 → 页面。**不依赖 src**：resolve 过程中扩展开手就推的消息也得接住，
-   * 接住之后先存着，等访客页面 dom-ready 再倒过去。
-   */
-  useEffect(() => {
-    readyRef.current = false;
-    pendingRef.current = [];
+  const { webviewRef } = useExtensionWebview({
+    src,
+    preload,
+    onGuestMessage: useCallback(
+      (payload: unknown) => {
+        void window.ide.extensionWebviewPost?.(viewId, payload);
+      },
+      [viewId],
+    ),
+    subscribeHost: useCallback(
+      (send: (message: unknown) => void) =>
+        window.ide.onExtensionWebviewMessage?.((data) => {
+          if (data.viewId !== viewId) return;
+          send(data.message);
+        }) ?? (() => {}),
+      [viewId],
+    ),
+  });
 
-    const unsubscribe = window.ide.onExtensionWebviewMessage?.((data) => {
-      if (data.viewId !== viewId) return;
-      const webview = webviewRef.current;
-      if (!readyRef.current || !webview) {
-        pendingRef.current.push(data.message);
-        return;
-      }
-      try {
-        webview.send(HOST_MESSAGE_CHANNEL, data.message);
-      } catch (err) {
-        console.error('[ExtensionViewPanel] 转发消息到扩展界面失败：', err);
-      }
-    });
-
-    return () => unsubscribe?.();
-  }, [viewId]);
-
-  /**
-   * 用户切主题时，已经打开的扩展界面立刻跟着换色。
-   *
-   * 首屏那次不用管：样式表是主进程写进 HTML 的 `<link>`。
-   */
-  useEffect(() => {
-    const unsubscribe = window.ide.onWebviewTheme?.(({ vars }) => {
-      const webview = webviewRef.current;
-      if (!webview || !readyRef.current) return;
-      try {
-        webview.send(THEME_MESSAGE_CHANNEL, vars);
-      } catch (err) {
-        console.error('[ExtensionViewPanel] 推送主题到扩展界面失败：', err);
-      }
-    });
-    return () => unsubscribe?.();
-  }, []);
-
-  /** 页面就绪 + 页面 → 扩展 + 加载失败提示。依赖 src：`<webview>` 挂上来才有 ref。 */
+  /** 加载失败时把原因显示出来（不要只留一个空面板）。 */
   useEffect(() => {
     const webview = webviewRef.current;
-    if (!webview || !src) return;
-
-    /** 访客页面的 preload 已经跑起来了（它注册了 ipcRenderer.on），可以灌消息了。 */
-    const handleDomReady = () => {
-      readyRef.current = true;
-      for (const message of pendingRef.current) {
-        try {
-          webview.send(HOST_MESSAGE_CHANNEL, message);
-        } catch (err) {
-          console.error('[ExtensionViewPanel] 补发消息失败：', err);
-        }
-      }
-      pendingRef.current = [];
-    };
-
-    /** 页面 → 扩展。payload 就是访客页面 postMessage 出去的那个对象。 */
-    const handleIpcMessage = (event: any) => {
-      if (event.channel !== GUEST_MESSAGE_CHANNEL) return;
-      const payload = event.args?.[0];
-      void window.ide.extensionWebviewPost?.(viewId, payload);
-    };
-
+    if (!webview) return;
     const handleError = (e: any) => {
       console.error('[ExtensionViewPanel] webview error:', e);
       setError(t('extView.loadFailedDetail', { msg: e.message || t('extView.unknownError') }));
     };
-
-    const handleConsole = (e: any) => {
-      console.log('[ExtensionViewPanel webview]', e.message);
-    };
-
-    webview.addEventListener('dom-ready', handleDomReady);
-    webview.addEventListener('ipc-message', handleIpcMessage);
     webview.addEventListener('did-fail-load', handleError);
-    webview.addEventListener('console-message', handleConsole);
-
-    return () => {
-      webview.removeEventListener('dom-ready', handleDomReady);
-      webview.removeEventListener('ipc-message', handleIpcMessage);
-      webview.removeEventListener('did-fail-load', handleError);
-      webview.removeEventListener('console-message', handleConsole);
-    };
-  }, [src, viewId, t]);
+    return () => webview.removeEventListener('did-fail-load', handleError);
+  }, [src, t, webviewRef]);
 
   if (loading) {
     return (

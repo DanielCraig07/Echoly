@@ -63,6 +63,11 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   'extDetail.views': { zh: '界面', en: 'Views' },
   'extDetail.commands': { zh: '命令', en: 'Commands' },
   'extDetail.run': { zh: '运行', en: 'Run' },
+  'extDetail.customEditors': { zh: '接管的文件', en: 'Custom Editors' },
+  'extDetail.customEditorIdle': {
+    zh: '（已注册，但当前未生效）',
+    en: '(registered, not active)',
+  },
   'extDetail.marketplace': { zh: '市场', en: 'Marketplace' },
   'extDetail.installs': { zh: '安装量', en: 'Installs' },
   'extDetail.rating': { zh: '评分', en: 'Rating' },
@@ -140,6 +145,16 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
     zh: '无法执行扩展命令 {command}',
     en: 'Could not run the extension command {command}',
   },
+
+  // ── 扩展提供的自定义编辑器（ExtensionEditorView） ──────────────────
+  'extEditor.loading': { zh: '正在用「{name}」打开…', en: 'Opening with "{name}"…' },
+  'extEditor.fallbackName': { zh: '扩展编辑器', en: 'extension editor' },
+  'extEditor.openWithBuiltin': { zh: '用内置编辑器打开', en: 'Open with Built-in Editor' },
+  'extEditor.fallbackToast': {
+    zh: '「{name}」打不开这个文件，已退回内置编辑器',
+    en: '"{name}" could not open this file — fell back to the built-in editor',
+  },
+  'extEditor.fallbackDetail': { zh: '原因：{msg}', en: 'Reason: {msg}' },
 
   // ── 扩展自带的 webview 界面（ExtensionViewPanel） ──────────────────
   // 任何扩展贡献的视图都用这套文案，不再带 Claude 字样。

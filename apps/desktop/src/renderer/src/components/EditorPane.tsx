@@ -23,6 +23,11 @@ import {
 import { BrowserViewPane } from './browser/BrowserViewPane';
 import { EXTENSION_DETAIL_PREFIX, ExtensionDetailView } from './ExtensionDetailView';
 import { EXTENSION_VIEW_PREFIX, ExtensionViewPanel } from './ExtensionViewPanel';
+import {
+  CUSTOM_EDITOR_PREFIX,
+  ExtensionEditorView,
+  filePathFromCustomEditorTab,
+} from './ExtensionEditorView';
 import { RenderFileTreeIcon } from './FileTree';
 import { translateSegments, useI18n, type Translate } from '../i18n';
 import {
@@ -4525,7 +4530,8 @@ export function EditorPane({
               const isVirtualSurface =
                 isBrowser ||
                 tab.path.startsWith(EXTENSION_DETAIL_PREFIX) ||
-                tab.path.startsWith(EXTENSION_VIEW_PREFIX);
+                tab.path.startsWith(EXTENSION_VIEW_PREFIX) ||
+                tab.path.startsWith(CUSTOM_EDITOR_PREFIX);
               return (
                 <button
                   key={tab.path}
@@ -4867,7 +4873,8 @@ export function EditorPane({
           // 扩展详情 / 扩展界面是虚拟路径（`ext://detail/…`、`ext://view/…`），
           // 按 '/' 切出来是「ext: > detail > …」这种没有意义的面包屑
           activePath.startsWith(EXTENSION_DETAIL_PREFIX) ||
-          activePath.startsWith(EXTENSION_VIEW_PREFIX)
+          activePath.startsWith(EXTENSION_VIEW_PREFIX) ||
+          activePath.startsWith(CUSTOM_EDITOR_PREFIX)
         ) && (
           <div className="editor-breadcrumb">
             <div className="editor-breadcrumb-crumbs">
@@ -5731,6 +5738,31 @@ export function EditorPane({
              */
             key={active.path}
             viewId={active.path.slice(EXTENSION_VIEW_PREFIX.length)}
+          />
+        ) : active && active.path.startsWith(CUSTOM_EDITOR_PREFIX) ? (
+          <ExtensionEditorView
+            /**
+             * 按标签路径当 key：同一个 viewType 会对多个文件各开一份面板，
+             * 换文件必须整个重建，否则第二个文件会显示第一个的界面。
+             */
+            key={active.path}
+            filePath={filePathFromCustomEditorTab(active.path)}
+            /**
+             * 打不开就退回内置编辑器。走 window 事件而不是 props：退回的动作是
+             * 「关掉这个标签 + 正常打开那个文件」，那是 App 的能力，编辑器面板
+             * 只负责报告失败。
+             */
+            onFallback={(reason) =>
+              window.dispatchEvent(
+                new CustomEvent('echoly:custom-editor-fallback', {
+                  detail: {
+                    tabPath: active.path,
+                    filePath: filePathFromCustomEditorTab(active.path),
+                    reason,
+                  },
+                }),
+              )
+            }
           />
         ) : active && active.virtual?.dbStructure ? (
           <DbStructureView

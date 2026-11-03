@@ -230,6 +230,19 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('extension:webview-registered', listener);
   },
   extensionResolveWebview: (viewId) => ipcRenderer.invoke('extension:resolve-webview', viewId),
+  customEditorMatch: (filePath) => ipcRenderer.invoke('extension:custom-editor-match', filePath),
+  listCustomEditors: () => ipcRenderer.invoke('extension:custom-editors'),
+  openCustomEditor: (filePath) => ipcRenderer.invoke('extension:custom-editor-open', filePath),
+  customEditorPost: (panelKey, message) =>
+    ipcRenderer.invoke('extension:custom-editor-post', panelKey, message),
+  customEditorDispose: (panelKey) =>
+    ipcRenderer.invoke('extension:custom-editor-dispose', panelKey),
+  onCustomEditorMessage: (cb) => {
+    const listener = (_: Electron.IpcRendererEvent, data: { panelKey: string; message: unknown }) =>
+      cb(data);
+    ipcRenderer.on('extension:custom-editor-message', listener);
+    return () => ipcRenderer.removeListener('extension:custom-editor-message', listener);
+  },
   setWebviewTheme: (vars) => ipcRenderer.invoke('extension:set-webview-theme', vars),
   onWebviewTheme: (cb: (data: { vars: Record<string, string> }) => void) => {
     const listener = (_: Electron.IpcRendererEvent, data: { vars: Record<string, string> }) =>

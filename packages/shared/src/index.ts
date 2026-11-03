@@ -2146,6 +2146,50 @@ export interface IpcApi {
     error?: string;
   }>;
   /**
+   * 这个文件该不该交给扩展的自定义编辑器。
+   *
+   * 打开文件**之前**问一次：返回非 null 就说明有扩展贡献了接管这个后缀的
+   * 自定义编辑器（比如 Office Viewer 接管 `.md`、`.xlsx`），界面据此决定
+   * 是渲染扩展的界面还是内置编辑器。
+   */
+  customEditorMatch: (filePath: string) => Promise<{
+    success: boolean;
+    error?: string;
+    match: { viewType: string; extensionId: string; displayName?: string } | null;
+  }>;
+  /** 所有能被路由的自定义编辑器（含 selector 里的文件模式） */
+  listCustomEditors: () => Promise<{
+    success: boolean;
+    error?: string;
+    editors: {
+      viewType: string;
+      displayName?: string;
+      priority?: string;
+      patterns: string[];
+      extensionId: string;
+      hasProvider: boolean;
+    }[];
+  }>;
+  /** 打开一个自定义编辑器面板（会真的调扩展的 resolve） */
+  openCustomEditor: (filePath: string) => Promise<
+    | {
+        ok: true;
+        panelKey: string;
+        viewType: string;
+        title: string;
+        url: string;
+        preloadUrl: string;
+      }
+    | { ok: false; error: string }
+  >;
+  /** 扩展界面里的操作 → 扩展的 onDidReceiveMessage */
+  customEditorPost: (panelKey: string, message: unknown) => Promise<{ success: boolean }>;
+  /** 关掉面板（扩展的 onDidDispose 会跑） */
+  customEditorDispose: (panelKey: string) => Promise<{ success: boolean }>;
+  /** 扩展 → 自定义编辑器界面 */
+  onCustomEditorMessage: (cb: (data: { panelKey: string; message: unknown }) => void) => () => void;
+
+  /**
    * 把当前主题的 `--vscode-*` 变量推给主进程。
    *
    * 扩展界面里的颜色全部写成 `var(--vscode-…)`，这些变量在 VS Code 里由宿主注入。

@@ -21,12 +21,12 @@ import {
   toWebviewResourcePath,
 } from './extensionWebview';
 import { ExtensionHost } from '@deepseek-ide/vscode-shim/src/extensionHost';
+import { ShimUri } from '@deepseek-ide/vscode-shim/src/uri';
 import {
   loadExtension,
   loadExtensionFromVsix,
   downloadClaudeCodeExtension,
   downloadVsix,
-  type LoadedExtension,
 } from '@deepseek-ide/vscode-shim/src/extensionLoader';
 import {
   DEFAULT_RECOMMENDED_SIZE,
@@ -48,6 +48,12 @@ import {
   type MarketplaceExtension,
 } from '@deepseek-ide/vscode-shim/src/openVsx';
 import { writeVscodeShimModule } from '@deepseek-ide/vscode-shim/src/vscodeShimModule';
+import {
+  isDefaultPriority,
+  pickCustomEditor,
+  type CustomEditorCandidate,
+  type CustomEditorContribution,
+} from './customEditors';
 import {
   ICON_CACHE_LIMIT,
   ICON_FETCH_TIMEOUT_MS,
@@ -74,6 +80,30 @@ export interface DownloadProgressPayload {
 /** Claude Code 的 id 与展示名（专用安装通道的进度也要能显示名字）。 */
 const CLAUDE_CODE_ID = 'Anthropic.claude-code';
 const CLAUDE_CODE_NAME = 'Claude Code';
+
+/**
+ * 行列位置 → 字符偏移（按 `\n` 切）。
+ *
+ * 落盘 `WorkspaceEdit` 时要按偏移切片。列号会被夹到该行长度内 ——
+ * 扩展给的 `Range(0,0,lineCount,0)` 里那个 0 是「最后一行的行首」，是合法位置；
+ * 而个别扩展会给出行长之外的列号，夹一下比抛异常合理。
+ */
+function offsetOf(text: string, position: { line: number; character: number }): number {
+  const lines = text.split('\n');
+  const line = Math.max(0, Math.min(position.line, lines.length));
+  let offset = 0;
+  for (let i = 0; i < line; i += 1) offset += lines[i].length + 1;
+  const character = Math.max(0, Math.min(position.character, lines[line]?.length ?? 0));
+  return Math.min(offset + character, text.length);
+}
+
+/**
+ * 等扩展设置 `webview.html` 的上限。
+ *
+ * 2 秒是个折中：扩展一般是同步赋值或本地读一个模板文件（毫秒级），2 秒足够；
+ * 再长就会让「打开文件」这件事明显卡住，而那种情况下多半是真的失败了。
+ */
+const CUSTOM_EDITOR_HTML_WAIT_MS = 2000;
 
 /** 协议处理里的纯文本响应头（错误信息要能直接看出来，不是一坨 HTML）。 */
 const TEXT_PLAIN_HEADERS = { 'content-type': 'text/plain; charset=utf-8' } as const;
@@ -178,6 +208,31 @@ export class ExtensionManager {
    * 渲染进程启动时推一次、切主题时再推一次。
    */
   private webviewThemeVars: Record<string, string> = {};
+  /**
+   * 「协议里的 key」→ 它的资源根目录。
+   *
+   * webview 视图与自定义编辑器面板是两套东西，但对协议处理器来说是一样的：
+   * 给定一个 key，去某个扩展目录里取文件。以前处理器直接查 `webviewViewProviders`，
+   * 加了自定义编辑器之后就必须有这张独立的表，否则后者的资源一个都取不到。
+   */
+  private resourceRoots = new Map<string, string>();
+  /**
+   * 已打开的自定义编辑器面板：panelKey → 运行时。
+   *
+   * key 用 `editor:<序号>` 而不是 viewType：同一个 viewType 可以对多个文件各开一个
+   * 面板（两个 .md 并排），HTML 是按**文件**生成的，不能按 viewType 缓存。
+   */
+  private customEditorPanels = new Map<
+    string,
+    {
+      viewType: string;
+      extensionId?: string;
+      filePath: string;
+      messageHandlers: Set<(message: any) => void>;
+      onDispose: Set<() => void>;
+    }
+  >();
+  private customEditorSeq = 0;
   /** 禁用列表的落盘位置 */
   private readonly stateFilePath: string;
 
@@ -197,6 +252,8 @@ export class ExtensionManager {
       onCommand: this.handleCommand.bind(this),
       onMessage: this.handleMessage.bind(this),
       onWebviewViewRegister: this.handleWebviewViewRegister.bind(this),
+      // 自定义编辑器保存时走这条路（Office Viewer 改 markdown 就是）
+      onApplyEdit: this.applyWorkspaceEdit.bind(this),
     });
 
     // 把 `vscode` 模块落到扩展目录旁（ESM 扩展只能靠真模块解析，require 补丁拦不住）。
@@ -294,15 +351,17 @@ export class ExtensionManager {
       });
     }
 
-    const providerInfo = this.webviewViewProviders.get(viewId);
-    if (!providerInfo) {
-      return new Response(`no provider for view "${viewId}"`, {
+    // 资源根目录按 key 查而不是按「有没有这个视图 provider」：自定义编辑器面板也走
+    // 同一条协议，它们没有 provider（只有 HTML），但一样要从扩展目录里取资源。
+    const extensionRoot = this.resourceRoots.get(viewId);
+    if (!extensionRoot) {
+      return new Response(`no resource root for "${viewId}"`, {
         status: 404,
         headers: TEXT_PLAIN_HEADERS,
       });
     }
 
-    const filePath = resolveWebviewFilePath(providerInfo.extensionPath, relPath);
+    const filePath = resolveWebviewFilePath(extensionRoot, relPath);
     if (!filePath) {
       // 目录穿越（或路径形状不对）：明确 403，不要静默 404 —— 静默会让人以为是文件不存在
       return new Response('forbidden', { status: 403, headers: TEXT_PLAIN_HEADERS });
@@ -1038,6 +1097,7 @@ export class ExtensionManager {
     this.webviewViewProviders.delete(viewId);
     this.webviewHtml.delete(viewId);
     this.webviewMessageHandlers.delete(viewId);
+    this.resourceRoots.delete(viewId);
   }
 
   /** 读禁用列表。文件损坏/不存在都当「没有禁用任何扩展」，不阻断启动。 */
@@ -1061,6 +1121,403 @@ export class ExtensionManager {
       await fs.writeFile(this.stateFilePath, payload, 'utf8');
     } catch (err: any) {
       console.error('[ExtensionManager] 写扩展状态文件失败：', err?.message ?? err);
+    }
+  }
+
+  // ─────────────────────────── 自定义编辑器 ───────────────────────────
+
+  /**
+   * 从各扩展的 manifest 里读 `contributes.customEditors`。
+   *
+   * 光有 provider 注册是不够的：`registerCustomEditorProvider` 只说「我能画这种
+   * viewType」，**哪些文件归它管**写在 manifest 的 selector 里。两张表对上了才算能用。
+   */
+  private async readCustomEditorContributions(): Promise<
+    (CustomEditorContribution & { extensionId: string })[]
+  > {
+    const out: (CustomEditorContribution & { extensionId: string })[] = [];
+    for (const { id, manifest } of await this.scanInstalledDirs()) {
+      const list = manifest?.contributes?.customEditors;
+      if (!Array.isArray(list)) continue;
+      for (const entry of list) {
+        if (!entry || typeof entry.viewType !== 'string') continue;
+        const patterns = Array.isArray(entry.selector)
+          ? entry.selector
+              .map((s: any) => (typeof s?.filenamePattern === 'string' ? s.filenamePattern : null))
+              .filter((p: string | null): p is string => !!p)
+          : [];
+        if (patterns.length === 0) continue;
+        out.push({
+          viewType: entry.viewType,
+          displayName: typeof entry.displayName === 'string' ? entry.displayName : undefined,
+          priority: typeof entry.priority === 'string' ? entry.priority : undefined,
+          patterns,
+          extensionId: id,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 所有能被路由的自定义编辑器（manifest 声明 × 真的注册了 provider）。
+   *
+   * 也是给界面看的：详情页「贡献的功能」里会列出「能接手哪些文件」。
+   */
+  async listCustomEditors(): Promise<CustomEditorCandidate[]> {
+    const registered = new Set(
+      this.extensionHost
+        .listCustomEditorProviders()
+        .filter((entry) => entry.extensionId)
+        .map((entry) => entry.viewType),
+    );
+    const contributions = await this.readCustomEditorContributions();
+    return contributions.map((contribution) => ({
+      ...contribution,
+      hasProvider: registered.has(contribution.viewType),
+    }));
+  }
+
+  /**
+   * 这个文件该交给谁。
+   *
+   * 只认 `default` 优先级的接管型 —— `option` 型（Office Viewer 的图片/HTML 预览）
+   * 在 VS Code 里也只有用户显式「打开方式」才生效，让它们悄悄抢走 .png/.html 是
+   * 行为倒退。返回 null 表示用内置编辑器。
+   */
+  async matchCustomEditor(filePath: string): Promise<CustomEditorCandidate | null> {
+    const candidates = (await this.listCustomEditors()).filter(
+      (candidate) => candidate.hasProvider && isDefaultPriority(candidate),
+    );
+    if (candidates.length === 0) return null;
+    const root = this.workspaceRoot.replace(/\\/g, '/').replace(/\/+$/, '');
+    const normalized = filePath.replace(/\\/g, '/');
+    // 匹配用**相对工作区**的路径：manifest 里写的是 `**/*.md` 这种相对 glob
+    const relative = normalized.startsWith(`${root}/`)
+      ? normalized.slice(root.length + 1)
+      : normalized;
+    return pickCustomEditor(candidates, relative);
+  }
+
+  /**
+   * 打开一个自定义编辑器：建面板 → 调扩展的 resolve* → 把 HTML 交给协议。
+   *
+   * 两种 provider 接口都要支持，实测各占一半：
+   * - `CustomTextEditorProvider.resolveCustomTextEditor(document, panel, token)`
+   *   —— Office Viewer 的 markdown 编辑器走这条，它要真的 `document.getText()`；
+   * - `CustomEditorProvider.openCustomDocument(uri,…)` + `resolveCustomEditor(document, panel, token)`
+   *   —— Office Viewer 的表格/压缩包/图片走这条。
+   *
+   * 两种都失败（provider 没有对应方法）时明确返回失败原因，界面据此退回内置编辑器，
+   * 而不是留一个空白标签页。
+   */
+  async openCustomEditor(filePath: string): Promise<
+    | {
+        ok: true;
+        panelKey: string;
+        viewType: string;
+        title: string;
+        url: string;
+        preloadUrl: string;
+      }
+    | { ok: false; error: string }
+  > {
+    const candidate = await this.matchCustomEditor(filePath);
+    if (!candidate) return { ok: false, error: `没有扩展认领这个文件：${filePath}` };
+
+    const registration = this.extensionHost
+      .listCustomEditorProviders()
+      .find((entry) => entry.viewType === candidate.viewType);
+    const provider = registration ? this.getCustomEditorProvider(candidate.viewType) : null;
+    if (!provider) return { ok: false, error: `扩展没有注册 provider：${candidate.viewType}` };
+
+    const dir = await this.resolveExtensionDir(candidate.extensionId);
+    if (!dir) return { ok: false, error: `找不到扩展目录：${candidate.extensionId}` };
+    const extensionPath = path.join(this.extensionsDir, dir, 'extension');
+
+    const panelKey = `editor:${++this.customEditorSeq}`;
+    let html = '';
+
+    // 面板与 webview 的 mock。字段按 VS Code 的语义给，缺一个就是扩展激活路径上的 TypeError。
+    const panelRuntime = {
+      viewType: candidate.viewType,
+      extensionId: candidate.extensionId,
+      filePath,
+      messageHandlers: new Set<(message: any) => void>(),
+      onDispose: new Set<() => void>(),
+    };
+
+    const panel: any = {
+      viewType: candidate.viewType,
+      title: candidate.displayName || path.basename(filePath),
+      viewColumn: 1,
+      active: true,
+      visible: true,
+      reveal: () => {},
+      dispose: () => this.disposeCustomEditor(panelKey),
+      onDidDispose: (cb: () => void) => {
+        panelRuntime.onDispose.add(cb);
+        return { dispose: () => panelRuntime.onDispose.delete(cb) };
+      },
+      onDidChangeViewState: () => ({ dispose() {} }),
+      webview: this.createCustomEditorWebview(panelKey, panelRuntime, extensionPath, (next) => {
+        html = next;
+      }),
+    };
+
+    const document = this.createTextDocumentMock(filePath);
+    const token = {
+      isCancellationRequested: false,
+      onCancellationRequested: () => ({ dispose() {} }),
+    };
+
+    this.customEditorPanels.set(panelKey, panelRuntime);
+    this.resourceRoots.set(panelKey, extensionPath);
+
+    try {
+      if (typeof provider.resolveCustomTextEditor === 'function') {
+        await provider.resolveCustomTextEditor(document, panel, token);
+      } else if (typeof provider.resolveCustomEditor === 'function') {
+        const custom = await Promise.resolve(
+          provider.openCustomDocument?.(document.uri, {}, token),
+        );
+        await provider.resolveCustomEditor(custom ?? document, panel, token);
+      } else {
+        throw new Error(
+          `provider 既没有 resolveCustomTextEditor 也没有 resolveCustomEditor：${candidate.viewType}`,
+        );
+      }
+    } catch (err: any) {
+      this.disposeCustomEditor(panelKey);
+      return { ok: false, error: `扩展渲染失败：${err?.message ?? err}` };
+    }
+
+    /**
+     * 等一小会儿再判失败。
+     *
+     * 扩展**不一定**在 `resolve*` 里把 html 赋上：Office Viewer 的 markdown 编辑器
+     * 在 `resolveCustomTextEditor` 里 `this.handleMarkdown(...)` 是**没有 await** 的，
+     * html 要等它内部读完 `index.html` 模板之后才设。立刻判定就会把一个正常的扩展
+     * 判成「没给出界面内容」，然后退回内置编辑器 —— 用户看到的是「装了没用」。
+     *
+     * 只等有限时间：真的没给就明确失败，而不是给界面一个永远打不开的地址。
+     */
+    for (let waited = 0; !html && waited < CUSTOM_EDITOR_HTML_WAIT_MS; waited += 50) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    if (!html) {
+      this.disposeCustomEditor(panelKey);
+      return { ok: false, error: `扩展没有给出界面内容：${candidate.viewType}` };
+    }
+
+    this.webviewHtml.set(panelKey, this.injectThemeLink(this.injectRuntimeScript(html), panelKey));
+
+    return {
+      ok: true,
+      panelKey,
+      viewType: candidate.viewType,
+      title: candidate.displayName || path.basename(filePath),
+      url: buildWebviewUrl(panelKey, WEBVIEW_INDEX_PATH),
+      preloadUrl: this.getWebviewPreloadUrl(),
+    };
+  }
+
+  /** 自定义编辑器的 `webview` 对象。与视图那份同源，只有 key 与消息集合不同。 */
+  private createCustomEditorWebview(
+    panelKey: string,
+    runtime: { messageHandlers: Set<(message: any) => void> },
+    extensionPath: string,
+    setHtml: (html: string) => void,
+  ): any {
+    let options: any = {};
+    return {
+      set html(value: string) {
+        setHtml(value ?? '');
+      },
+      get html() {
+        return '';
+      },
+      get options() {
+        return options;
+      },
+      set options(value: any) {
+        options = value;
+      },
+      onDidReceiveMessage: (callback: (message: any) => void) => {
+        runtime.messageHandlers.add(callback);
+        return { dispose: () => runtime.messageHandlers.delete(callback) };
+      },
+      postMessage: (message: any) => {
+        this.broadcastToRenderers('extension:custom-editor-message', { panelKey, message });
+        return Promise.resolve(true);
+      },
+      asWebviewUri: (uri: any) => {
+        const fsPath = extractFsPath(uri);
+        return buildWebviewUrl(panelKey, toWebviewResourcePath(extensionPath, fsPath));
+      },
+      cspSource: buildWebviewOrigin(),
+    };
+  }
+
+  /**
+   * 给扩展的 `TextDocument`。
+   *
+   * `getText()` **每次读盘**而不是缓存：自定义编辑器是「所见即所得」，扩展拿到的必须是
+   * 最新内容；缓存一份就要处理失效，而这里读一个文本文件的开销远小于出错的代价。
+   * `lineCount` 同理现算 —— Office Viewer 用它构造「全文替换」的范围。
+   */
+  private createTextDocumentMock(filePath: string): any {
+    const fsSync = require('fs') as typeof import('fs');
+    const readText = () => {
+      try {
+        return fsSync.readFileSync(filePath, 'utf8');
+      } catch {
+        return '';
+      }
+    };
+    /**
+     * 用 shim 那个真 Uri，不要手搓字面量。
+     *
+     * 扩展拿到 `document.uri` 之后会当 `vscode.Uri` 用：Office Viewer 的 markdown
+     * 编辑器一上来就 `uri.with({ query: '', fragment: '' })` 当缓存键，字面量对象没有
+     * `with`，整个渲染就断在那儿（而且异常没有人 await，界面上只剩「点了没反应」）。
+     */
+    const uri = ShimUri.file(filePath);
+    return {
+      uri,
+      fileName: filePath,
+      isUntitled: false,
+      isDirty: false,
+      isClosed: false,
+      eol: { value: '\n' },
+      encoding: 'utf8',
+      get version() {
+        return 1;
+      },
+      get lineCount() {
+        const text = readText();
+        if (text.length === 0) return 1;
+        return text.split(/\r\n|\r|\n/).length;
+      },
+      getText: () => readText(),
+      getWordRangeAtPosition: () => undefined,
+      lineAt: (line: number) => ({ lineNumber: line, text: '', range: undefined }),
+      offsetAt: () => 0,
+      positionAt: () => ({ line: 0, character: 0 }),
+      save: () => Promise.resolve(true),
+      validateRange: (range: any) => range,
+      validatePosition: (position: any) => position,
+      onDidChangeContent: () => ({ dispose() {} }),
+      onDidChange: () => ({ dispose() {} }),
+    };
+  }
+
+  /** shim 内部的 provider 对象（按 viewType 取）。 */
+  private getCustomEditorProvider(viewType: string): any {
+    return (this.extensionHost as any).shim?.customEditorProviders?.get(viewType)?.provider ?? null;
+  }
+
+  /** 界面里的操作 → 自定义编辑器扩展的 onDidReceiveMessage。 */
+  deliverCustomEditorMessage(panelKey: string, message: any): void {
+    const panel = this.customEditorPanels.get(panelKey);
+    if (!panel) {
+      console.warn(`[ExtensionManager] 自定义编辑器面板不存在：${panelKey}`);
+      return;
+    }
+    for (const handler of Array.from(panel.messageHandlers)) {
+      try {
+        handler(message);
+      } catch (err) {
+        console.error(`[ExtensionManager] 处理 ${panelKey} 的消息时出错：`, err);
+      }
+    }
+  }
+
+  /** 关掉一个自定义编辑器面板（切走标签 / 关标签时调用）。 */
+  disposeCustomEditor(panelKey: string): void {
+    const panel = this.customEditorPanels.get(panelKey);
+    if (!panel) return;
+    for (const cb of Array.from(panel.onDispose)) {
+      try {
+        cb();
+      } catch (err) {
+        console.error(`[ExtensionManager] 自定义编辑器 onDidDispose 回调出错：`, err);
+      }
+    }
+    this.customEditorPanels.delete(panelKey);
+    this.webviewHtml.delete(panelKey);
+    this.resourceRoots.delete(panelKey);
+  }
+
+  /**
+   * 落盘扩展提交的 `WorkspaceEdit`。
+   *
+   * 这是自定义编辑器「能改东西」的那一半。以前 shim 里 `applyEdit` 无条件返回 true ——
+   * 对扩展说「改好了」，对用户说「什么都没发生」：Office Viewer 保存 markdown 走的
+   * 就是这条路，静默丢改动是最糟的一种失败。
+   *
+   * 实现上按**文件**分组、同一文件内按位置**从后往前**应用：一条编辑会移动后面那些
+   * 编辑的下标，倒着来才不用重新计算。只处理纯文本编辑；文件级操作（建/删/改名）
+   * 也做，但只在真的指名到具体路径时 —— 拿不准就返回 false，让扩展知道失败。
+   */
+  private async applyWorkspaceEdit(edit: {
+    textEdits?: {
+      fsPath: string;
+      startLine: number;
+      startCharacter: number;
+      endLine: number;
+      endCharacter: number;
+      newText: string;
+    }[];
+    fileOps?: { kind: 'create' | 'delete' | 'rename'; fsPath: string; newPath?: string }[];
+  }): Promise<boolean> {
+    const byFile = new Map<string, NonNullable<typeof edit.textEdits>>();
+    for (const textEdit of edit.textEdits ?? []) {
+      if (!textEdit?.fsPath) continue;
+      const list = byFile.get(textEdit.fsPath) ?? [];
+      list.push(textEdit);
+      byFile.set(textEdit.fsPath, list);
+    }
+
+    try {
+      for (const [filePath, edits] of byFile) {
+        const original = await fs.readFile(filePath, 'utf8');
+        // 偏移一律相对**原始内容**算，然后从后往前应用：一条编辑会移动它后面那些
+        // 编辑的下标，倒着来就不用重新计算。
+        const ranges = edits
+          .map((textEdit) => ({
+            start: offsetOf(original, {
+              line: textEdit.startLine,
+              character: textEdit.startCharacter,
+            }),
+            end: offsetOf(original, { line: textEdit.endLine, character: textEdit.endCharacter }),
+            newText: textEdit.newText,
+          }))
+          .sort((a, b) => b.start - a.start);
+
+        let next = original;
+        for (const range of ranges) {
+          if (range.start > range.end) continue;
+          next = next.slice(0, range.start) + range.newText + next.slice(range.end);
+        }
+        if (next !== original) await fs.writeFile(filePath, next, 'utf8');
+      }
+
+      for (const op of edit.fileOps ?? []) {
+        if (op.kind === 'create') await fs.writeFile(op.fsPath, '', { flag: 'a' });
+        else if (op.kind === 'delete') await fs.rm(op.fsPath, { recursive: true, force: true });
+        else if (op.kind === 'rename' && op.newPath) await fs.rename(op.fsPath, op.newPath);
+      }
+
+      // 文件变了要通知界面刷新：用户可能同时开着这个文件的文本标签
+      for (const filePath of byFile.keys()) {
+        this.broadcastToRenderers('fs:changed', { type: 'change', path: filePath });
+      }
+      return true;
+    } catch (err: any) {
+      console.error('[ExtensionManager] applyEdit 落盘失败：', err?.message ?? err);
+      return false;
     }
   }
 
@@ -1185,26 +1642,8 @@ export class ExtensionManager {
         // 把文件端出去（含空格与 module script，见 extensionWebview.ts）。
         // 我们只需要做一件事：把 webview 运行时（acquireVsCodeApi）注入进去。
 
-        // 把 webview 运行时（acquireVsCodeApi）注入进去。
-        //
-        // VS Code 里这个函数由 webview 宿主运行时提供，不是扩展自己的代码 —— 少了它
-        // 扩展的 bundle 一上来就 `acquireVsCodeApi is not defined`。nonce 必须与
-        // 扩展页面自己的 CSP `script-src 'nonce-...'` 对上，所以 nonce 从它那儿取。
-        const nonceMatch = htmlContent.match(/nonce-([a-f0-9]+)/);
-        const nonce = nonceMatch ? nonceMatch[1] : '';
-        const runtimeScript = this.buildWebviewRuntimeScript(nonce);
-
-        // 插在第一个 nonce script 之前：扩展自己的脚本可能会在很靠前的位置同步读
-        // window.CLAUDE_PANEL_STARTED 之类的全局量，晚一步就白搭。
-        const firstScriptMatch = htmlContent.match(/<script[^>]*nonce/);
-        if (firstScriptMatch) {
-          htmlContent = htmlContent.replace(
-            firstScriptMatch[0],
-            `${runtimeScript}\n    ${firstScriptMatch[0]}`,
-          );
-        } else {
-          htmlContent = htmlContent.replace('</head>', `${runtimeScript}</head>`);
-        }
+        // 把 webview 运行时（acquireVsCodeApi + 消息桥）注入进去
+        htmlContent = this.injectRuntimeScript(htmlContent);
 
         // 主题变量当成一张样式表引进来（见 WEBVIEW_THEME_PATH 的注释）
         htmlContent = this.injectThemeLink(htmlContent, viewId);
@@ -1219,6 +1658,26 @@ export class ExtensionManager {
     }
 
     return htmlContent;
+  }
+
+  /**
+   * 把 webview 运行时（`acquireVsCodeApi` + 消息桥）注入扩展页面。
+   *
+   * VS Code 里这个函数由 webview 宿主运行时提供，不是扩展自己的代码 —— 少了它
+   * 扩展的 bundle 一上来就 `acquireVsCodeApi is not defined`。nonce 必须与扩展页面
+   * 自己的 CSP `script-src 'nonce-…'` 对上，所以 nonce 从它那儿取。
+   *
+   * 插在第一个 nonce script **之前**：扩展自己的脚本可能在很靠前的位置同步读
+   * `window.CLAUDE_PANEL_STARTED` 之类的全局量，晚一步就白搭。
+   */
+  private injectRuntimeScript(html: string): string {
+    const nonceMatch = html.match(/nonce-([a-f0-9]+)/);
+    const runtimeScript = this.buildWebviewRuntimeScript(nonceMatch ? nonceMatch[1] : '');
+    const firstScriptMatch = html.match(/<script[^>]*nonce/);
+    if (firstScriptMatch) {
+      return html.replace(firstScriptMatch[0], `${runtimeScript}\n    ${firstScriptMatch[0]}`);
+    }
+    return html.replace('</head>', `${runtimeScript}</head>`);
   }
 
   /**
@@ -1309,6 +1768,8 @@ export class ExtensionManager {
     // 界面会渲染上一个版本生成的那份，而里面的资源地址已经对不上了。
     this.webviewHtml.delete(viewId);
     this.webviewViewProviders.set(viewId, { provider, options, extensionPath });
+    // 资源根目录：协议处理器按它把这边的文件端出去
+    this.resourceRoots.set(viewId, extensionPath);
 
     // 通知渲染进程有新的 webview 可用
     this.broadcastToRenderers('extension:webview-registered', { viewId });
@@ -1433,6 +1894,54 @@ export class ExtensionManager {
       }
     });
 
+    // 这个文件该不该交给扩展的自定义编辑器（打开文件前问一次）
+    ipcMain.handle('extension:custom-editor-match', async (_event, filePath: string) => {
+      try {
+        const candidate = await this.matchCustomEditor(filePath);
+        return {
+          success: true,
+          match: candidate
+            ? {
+                viewType: candidate.viewType,
+                extensionId: candidate.extensionId,
+                displayName: candidate.displayName,
+              }
+            : null,
+        };
+      } catch (err: any) {
+        return { success: false, error: err?.message ?? String(err), match: null };
+      }
+    });
+
+    // 所有能被路由的自定义编辑器（详情页列「能接手哪些文件」用）
+    ipcMain.handle('extension:custom-editors', async () => {
+      try {
+        return { success: true, editors: await this.listCustomEditors() };
+      } catch (err: any) {
+        return { success: false, error: err?.message ?? String(err), editors: [] };
+      }
+    });
+
+    // 打开一个自定义编辑器（建面板 + 调扩展的 resolve）
+    ipcMain.handle('extension:custom-editor-open', async (_event, filePath: string) => {
+      return await this.openCustomEditor(filePath);
+    });
+
+    // 界面里的操作 → 扩展
+    ipcMain.handle(
+      'extension:custom-editor-post',
+      async (_event, panelKey: string, message: any) => {
+        this.deliverCustomEditorMessage(panelKey, message);
+        return { success: true };
+      },
+    );
+
+    // 关标签时释放面板（扩展的 onDidDispose 要跑）
+    ipcMain.handle('extension:custom-editor-dispose', async (_event, panelKey: string) => {
+      this.disposeCustomEditor(panelKey);
+      return { success: true };
+    });
+
     // 渲染进程推主题变量（`:root` 上的实际值只有它有）
     ipcMain.handle('extension:set-webview-theme', async (_event, vars: Record<string, string>) => {
       this.setWebviewTheme(vars ?? {});
@@ -1469,6 +1978,10 @@ export class ExtensionManager {
     this.messageHandlers.clear();
     this.webviewHtml.clear();
     this.webviewMessageHandlers.clear();
+    this.resourceRoots.clear();
+    for (const panelKey of Array.from(this.customEditorPanels.keys())) {
+      this.disposeCustomEditor(panelKey);
+    }
     for (const target of [
       session.defaultSession.protocol,
       session.fromPartition(EXTENSION_WEBVIEW_PARTITION).protocol,
