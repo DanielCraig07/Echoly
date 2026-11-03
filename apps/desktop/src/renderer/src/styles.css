@@ -1521,9 +1521,11 @@ select:focus {
   flex: 1;
   min-width: 0;
   height: 26px;
-  background: var(--bg-input);
+  /* 面板内的输入框都用 --bg-elevated：--bg-input 在暗色下就是面板底色，
+     等于只画了圈边框（同 .search-input-wrapper 的说明） */
+  background: var(--bg-elevated);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: 4px;
   padding: 0 6px;
 }
@@ -1636,9 +1638,9 @@ select:focus {
 .git-commit-box textarea {
   resize: vertical;
   min-height: 56px;
-  background: var(--bg-input);
+  background: var(--bg-elevated);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: 6px;
   padding: 6px 8px;
   font-family: var(--font-ui);
@@ -2023,7 +2025,7 @@ body.resizing.resizing-row {
   font: inherit;
   font-size: var(--ui-font-size, 12px);
   border-radius: 4px;
-  background: var(--bg-input, #131418);
+  background: var(--bg-elevated);
   border: 1px solid var(--accent, #6366f1);
   color: var(--text-bright, #fff);
   outline: none;
@@ -13699,8 +13701,12 @@ body.db-col-resizing .db-data-cell {
   position: relative;
   display: flex;
   align-items: center;
-  background: var(--bg-input, #12161c);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  /* 底色和扩展面板那个搜索框同一个坑：暗色主题下 --bg-input 就是 #141414，
+     和面板底色一模一样，输入框只剩一圈 8% 白的边框。--bg-elevated 两套主题
+     都给「比面板高一档」的值，边框跟着提到 --border-strong，
+     低亮度屏上才分得出来这一条是能打字的框。 */
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: 6px;
   box-sizing: border-box;
   transition:
@@ -13741,8 +13747,9 @@ body.db-col-resizing .db-data-cell {
 .search-filter-input {
   width: 100%;
   padding: 5px 8px;
-  background: var(--bg-input, #12161c);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  /* 同上：与面板同色的输入框等于没画框 */
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: 6px;
   color: var(--text);
   font-size: var(--ui-font-size, 12px);
