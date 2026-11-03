@@ -1296,6 +1296,35 @@ export class ExtensionManager {
   }
 
   /**
+   * 用户打开（或切换）了工作区。
+   *
+   * 三件事，缺一件都会让「扩展认的项目」和用户打开的项目对不上：
+   *
+   * 1. `workspace.workspaceFolders` —— 扩展按它分组会话、取工作区配置；
+   * 2. 自定义编辑器的 glob 匹配用的相对路径基准（`this.workspaceRoot`）；
+   * 3. **`process.chdir`** —— 这条最不显眼但要命：扩展宿主跑在主进程里，
+   *    而 Claude Code 的 CLI 把「项目」定义成 `process.cwd()`
+   *    （它内部 `VB()` 就是 `process.cwd()`，用来初始化 session 的 projectRoot）。
+   *    开发时主进程的 cwd 是**应用自己的仓库**，于是「让它分析我打开的项目」会变成
+   *    「分析 Echoly 自己」——用户完全无从理解。
+   *
+   * chdir 是进程级的，所以另外两处「靠 cwd 找自己资源」的地方（node-pty 的
+   * spawn-helper、打包好的 runner bundle）已经补上了不依赖 cwd 的候选。
+   */
+  setWorkspaceRoot(root: string): void {
+    if (!root || root === this.workspaceRoot) return;
+    this.workspaceRoot = root;
+    this.extensionHost.setWorkspaceRoot(root);
+    try {
+      process.chdir(root);
+      console.log(`[ExtensionManager] 扩展宿主的 cwd 跟着工作区走：${root}`);
+    } catch (err: any) {
+      // 只影响「扩展认哪个目录」，不该把切换工作区这件事本身弄失败
+      console.warn(`[ExtensionManager] chdir 失败（${root}）：${err?.message ?? err}`);
+    }
+  }
+
+  /**
    * 声明认这个文件、但**当前被禁用**的扩展（没有就返回 null）。
    *
    * 只用于给用户一句解释。禁用是用户自己做的选择，但要让他看得见后果：

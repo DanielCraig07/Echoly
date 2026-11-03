@@ -35,6 +35,8 @@ export function createSshTransport(ssh: SshSessionManager): RemoteTransport {
 export function resolveRunnerBundle(): RunnerBundle {
   const candidates = [
     process.resourcesPath ? path.join(process.resourcesPath, 'echoly-runner.mjs') : '',
+    // `process.cwd()` 会跟着用户打开的工作区走（见 ExtensionManager.setWorkspaceRoot），
+    // 所以那两个候选只在前两种跑法里有意义；`__dirname` 那条才是长期可靠的那个。
     path.join(process.cwd(), 'packages/runner/dist/echoly-runner.mjs'),
     path.join(process.cwd(), '../../packages/runner/dist/echoly-runner.mjs'),
     path.join(__dirname, '../../../../packages/runner/dist/echoly-runner.mjs'),

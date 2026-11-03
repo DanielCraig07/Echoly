@@ -36,6 +36,7 @@ import type { McpService } from './mcpService';
 import type { WindowRegistry } from './windowRegistry';
 import type { DiagnosticsEntry } from './diagnosticsStore';
 import { detectMavenEnvironment, initMavenWrapper, initMavenSettings } from './mavenService';
+import { getExtensionManager } from './extensionManager';
 import { detectInstalledJdks, getAvailableOnlineJdks, installOnlineJdk } from './javaService';
 import { detectCppToolchain, detectMultiLangToolchain } from './cppToolchainService';
 import { UnifiedLlmClient, guardSettingsFromAppSettings } from '@deepseek-ide/llm';
@@ -170,6 +171,14 @@ export function registerIpc(deps: {
   ipcMain.handle('workspace:set', (event, root: string) =>
     run(event, async () => {
       const result = registry.current().workspace.setRoot(root);
+      /**
+       * 扩展宿主也要知道「用户现在打开的是哪个项目」。
+       *
+       * 它建起来的时候只有应用数据目录可用，而扩展认的项目是这一个：
+       * `workspace.workspaceFolders` 影响会话分组与工作区配置，主进程的 cwd
+       * 更是 Claude Code 认定项目根的唯一依据（见 ExtensionManager.setWorkspaceRoot）。
+       */
+      getExtensionManager()?.setWorkspaceRoot(root);
       // 附加文件夹是按工作区持久化的，打开之后要恢复回来（见 workspace-folders.json）。
       // 放在 setRoot 之后：setRoot 会先清空上一份，避免把别的项目的文件夹带过来。
       await registry.current().workspace.loadFolders();

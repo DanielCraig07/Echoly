@@ -101,6 +101,7 @@ import { heuristicDetectTech } from './utils/techStack';
 import {
   isImagePath,
   isUntitledPath,
+  isEphemeralPath,
   isVirtualPath,
   isDbPath,
   isBrowserPath,
@@ -1136,8 +1137,12 @@ export function App() {
       }));
     saveWorkspaceOpenFiles(
       root,
-      tabsRef.current.map((t) => t.path).filter((p) => !isVirtualPath(p)),
-      activePathRef.current && !isVirtualPath(activePathRef.current) ? activePathRef.current : null,
+      // 用 isEphemeralPath 而不是 isVirtualPath：`ext://editor/…` 里带着文件路径，
+      // 重启后还能还原成同一个标签，得存下来（见 utils 里的说明）。
+      tabsRef.current.map((t) => t.path).filter((p) => !isEphemeralPath(p)),
+      activePathRef.current && !isEphemeralPath(activePathRef.current)
+        ? activePathRef.current
+        : null,
       fileCursorPositionsRef.current,
       cursorLineRef.current,
       cursorColRef.current,
@@ -1189,7 +1194,7 @@ export function App() {
       for (const p of saved.paths) {
         try {
           // 防御性跳过虚拟路径：db:// / untitled: 不对应磁盘文件，pathExists 必然失败
-          if (isVirtualPath(p)) continue;
+          if (isEphemeralPath(p)) continue;
 
           /**
            * 上一轮存的可能是自定义编辑器标签（`ext://editor/<编码后的绝对路径>`）。
@@ -1761,8 +1766,8 @@ export function App() {
         }));
       saveWorkspaceOpenFiles(
         workspace,
-        tabs.map((t) => t.path).filter((p) => !isVirtualPath(p)),
-        activePath && !isVirtualPath(activePath) ? activePath : null,
+        tabs.map((t) => t.path).filter((p) => !isEphemeralPath(p)),
+        activePath && !isEphemeralPath(activePath) ? activePath : null,
         fileCursorPositionsRef.current,
         cursorLineRef.current,
         cursorColRef.current,
@@ -5050,15 +5055,16 @@ export function App() {
               onClick={toggleClaudeView}
             >
               {/*
-                星芒（Claude 的标志形状）+ 它自己的橙 —— 这个图标要一眼认出来是什么，
-                所以不跟着主题走，也不复用通用图标。
+                Claude 自己的标志（从扩展的 `resources/claude-logo.svg` 里取的同一个
+                路径），连它的橙 #D97757 一起 —— 自己画一个「差不多的星芒」是不行的：
+                用户认的就是这个形状。
               */}
               <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                <g fill="#d97757">
-                  <rect x="11" y="2" width="2" height="20" rx="1" />
-                  <rect x="11" y="2" width="2" height="20" rx="1" transform="rotate(60 12 12)" />
-                  <rect x="11" y="2" width="2" height="20" rx="1" transform="rotate(120 12 12)" />
-                </g>
+                <path
+                  d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"
+                  fill="#D97757"
+                  fillRule="nonzero"
+                />
               </svg>
             </button>
           )}

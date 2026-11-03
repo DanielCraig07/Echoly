@@ -598,6 +598,17 @@ export class VSCodeShim {
   }
 
   /**
+   * 用户打开的工作区变了。
+   *
+   * 扩展宿主的 `workspaceRoot` 是启动时按应用数据目录给的，而扩展真正认的
+   * 「这个项目」是用户打开的那个 —— 不改过来，`workspace.workspaceFolders` 会一直
+   * 指向应用数据目录（Claude Code 的会话就是按它分组的）。
+   */
+  setWorkspaceRoot(root: string): void {
+    this.workspaceRoot = root;
+  }
+
+  /**
    * 创建 VSCode API 对象
    */
   createAPI(): typeof vscode {
@@ -884,15 +895,25 @@ export class VSCodeShim {
 
       // Workspace API
       workspace: {
-        workspaceFolders: this.workspaceRoot
-          ? [
-              {
-                uri: ShimUri.file(this.workspaceRoot),
-                name: this.workspaceRoot.split('/').pop() || 'workspace',
-                index: 0,
-              },
-            ]
-          : undefined,
+        /**
+         * 当前打开的工作区。
+         *
+         * **必须是 getter**：扩展宿主是用 `app.getPath('userData')` 建起来的，用户在
+         * 界面里打开的项目要能改到它（`setWorkspaceRoot`）。以前这里是一次性快照，
+         * 于是扩展看到的「工作区」永远是应用数据目录 —— Claude Code 的会话列表、
+         * 按工作区取配置这些全落在错的地方。
+         */
+        get workspaceFolders() {
+          const root = self.workspaceRoot;
+          if (!root) return undefined;
+          return [
+            {
+              uri: ShimUri.file(root),
+              name: root.split(/[\\/]/).pop() || 'workspace',
+              index: 0,
+            },
+          ];
+        },
         getConfiguration(section?: string) {
           return {
             get(key: string, defaultValue?: any) {

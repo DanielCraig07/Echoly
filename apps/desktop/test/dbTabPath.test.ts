@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildTableSelectSql, quoteIdent } from '../src/renderer/src/services/dbIdentifiers';
 import {
   isDbPath,
+  isEphemeralPath,
   isUntitledPath,
   isVirtualPath,
   requiresExactPathMatch,
@@ -149,5 +150,35 @@ describe('表数据视图生成的 SQL', () => {
   it('表名中的引号被双写转义，不会拼出可注入的 SQL', () => {
     expect(quoteIdent('mysql', 'we`ird')).toBe('`we``ird`');
     expect(buildTableSelectSql('mysql', 'cvm', 'we`ird')).toContain('`we``ird`');
+  });
+});
+
+/**
+ * 扩展标签（`ext://…`）也必须是「虚拟路径」。
+ *
+ * 这条踩过一次很好笑的坑：扩展编辑器里每保存一次（点任何一次工具栏按钮都可能触发），
+ * 主进程就广播 `fs:changed` → 渲染层清理失效标签时会拿每个标签的路径去 `pathExists()`。
+ * 那时 `isVirtualPath` 还不认 `ext://`，于是拿 `ext://editor/…` 去问磁盘 —— 当然不存在 ——
+ * **把它自己的标签关掉了**。用户看到的是「md 预览点一下就退出」。
+ */
+describe('扩展标签的虚拟路径判定', () => {
+  const editorTab = `ext://editor/${encodeURIComponent('/tmp/ws/README.md')}`;
+
+  it('ext:// 一律算虚拟路径（文件系统变更清理必须跳过它）', () => {
+    expect(isVirtualPath(editorTab)).toBe(true);
+    expect(isVirtualPath('ext://view/claudeVSCodeSidebar')).toBe(true);
+    expect(isVirtualPath('ext://detail/cweijan.vscode-office')).toBe(true);
+    expect(isVirtualPath('/tmp/ws/README.md')).toBe(false);
+  });
+
+  it('但「一次性虚拟路径」不包括它：里面带着文件，重启还要还原得回来', () => {
+    expect(isEphemeralPath(editorTab)).toBe(false);
+    // db 控制台那种就只剩一份状态，不存进「打开文件」
+    expect(isEphemeralPath('db://console/c1/a.sql')).toBe(true);
+    expect(isEphemeralPath('untitled:Untitled-1')).toBe(true);
+  });
+
+  it('虚拟路径只做精确匹配：不能被 endsWith 追赶成一个磁盘文件标签', () => {
+    expect(requiresExactPathMatch(editorTab)).toBe(true);
   });
 });

@@ -15,11 +15,46 @@ export function isUntitledPath(filePath: string): boolean {
 }
 
 /**
- * 内置虚拟标签页（草稿 untitled: / 数据库 db:// 数据视图、DDL、SQL 控制台 / 内置浏览器 browser://）。
- * 这些路径不对应磁盘文件，既不能进「打开文件」持久化，也不能被文件系统变更回调当作已删除清理掉。
+ * 扩展相关的虚拟路径前缀：`ext://detail/<id>`（扩展详情）、`ext://view/<viewId>`（扩展界面）、
+ * `ext://editor/<编码后的绝对路径>`（扩展提供的编辑器）。
+ */
+export const EXTENSION_TAB_PREFIX = 'ext://';
+
+/** 扩展相关的虚拟标签（详情 / 界面 / 自定义编辑器）。 */
+export function isExtensionTabPath(filePath: string): boolean {
+  return filePath.startsWith(EXTENSION_TAB_PREFIX);
+}
+
+/**
+ * 内置虚拟标签页（草稿 untitled: / 数据库 db:// 数据视图、DDL、SQL 控制台 /
+ * 内置浏览器 browser:// / 扩展的 ext://…）。
+ *
+ * 这些路径**不对应磁盘文件**，所以两类地方必须认出它们：
+ * 1. 「打开文件」持久化时不能当成普通路径；
+ * 2. 文件系统变更回调清理失效标签时不能把它们当成「文件已被删除」。
+ *
+ * 第 2 条踩过一个很好笑的坑：扩展编辑器里每保存一次（点任何一次工具栏按钮都可能触发）
+ * 主进程就广播一次 `fs:changed`，清理逻辑拿 `ext://editor/…` 去 `pathExists()` —— 当然
+ * 不存在 —— 于是**把它自己的标签关掉了**。表现出来就是「md 预览点一下就退出」。
  */
 export function isVirtualPath(filePath: string): boolean {
-  return isUntitledPath(filePath) || isDbPath(filePath) || isBrowserPath(filePath);
+  return (
+    isUntitledPath(filePath) ||
+    isDbPath(filePath) ||
+    isBrowserPath(filePath) ||
+    isExtensionTabPath(filePath)
+  );
+}
+
+/**
+ * 「连路径本身都还原不出一个文件」的虚拟标签（草稿 / db 控制台 / git-head）。
+ *
+ * 与 `isVirtualPath` 只差一条：`ext://editor/…` 里**带着**文件的绝对路径，重启后还能
+ * 还原成同一个标签；db 控制台那种只剩一份状态。
+ * 会话的存与取用这个判断，其余「有没有磁盘内容」的判断用 `isVirtualPath`。
+ */
+export function isEphemeralPath(filePath: string): boolean {
+  return isVirtualPath(filePath) && !isExtensionTabPath(filePath);
 }
 
 /** 数据库内置视图标签页（db://data|ddl|console/...），内容只存在于标签页状态里 */

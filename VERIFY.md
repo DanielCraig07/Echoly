@@ -20,7 +20,7 @@
 | `npx prettier --check .`           | 全部 ok                              | 格式漂移                                                                                                                   |
 | `npm run typecheck`                | 退出码 0                             | 类型错误（含各 workspace）                                                                                                 |
 | `npm run lint`                     | **0 error**（会有 96 条 warning）    | `react-hooks/rules-of-hooks` 是 error，专拦「hook 写在提前 return 之后」这类只在运行时炸、typecheck 与测试都看不出来的问题 |
-| `npm test`                         | **5023 passed / 139 files**          | 逻辑回归                                                                                                                   |
+| `npm test`                         | **5026 passed / 139 files**          | 逻辑回归                                                                                                                   |
 | `npm run build -w @echoly/desktop` | 构建成功                             | 打包期才会暴露的问题（含 runner 打包）                                                                                     |
 | `npm run audit:wiring`             | `✓ 没有发现「有实现、没入口」的接线` | **「功能做了但界面上够不到」** —— 这类问题其他门禁全拦不住：代码合法、类型正确、单测全绿，只是没人调用它                   |
 
@@ -33,7 +33,7 @@
 
 | 范围                 | 用例数 |
 | -------------------- | ------ |
-| apps/desktop         | 4460   |
+| apps/desktop         | 4463   |
 | packages/tools       | 229    |
 | packages/llm         | 126    |
 | packages/agent       | 92     |
@@ -489,6 +489,43 @@ Claude）。现在它渲染的就是**扩展自己的界面**（`registerWebview
 
 标题栏的星芒图标与扩展列表的「打开」都改成**展开右侧面板并切到 Claude**，
 不再在编辑器区开标签 —— 同一份 webview 只留一个实例。
+
+### 第六轮：md 预览「点一下就退出」的真凶 + 扩展认的项目
+
+**`ext://` 标签没被当成虚拟路径。** 这是个一石多鸟的漏判，表现却只有一句话：
+「md 预览点任何一个按钮就退出」。链条是这样的：
+
+1. 在扩展编辑器里点**任何**会改到文档的按钮（加粗、标题、链接、调色…）→ Vditor 改动内容；
+2. 扩展防抖后保存 → `WorkspaceEdit` → `applyEdit` → 主进程真的写盘；
+3. 写盘之后主进程按惯例广播 `fs:changed`（「文件变了，界面刷新一下」）；
+4. 渲染层的刷新逻辑会拿**每个标签的路径**去 `pathExists()`，不存在的就当成
+   「文件已被删除」清掉；
+5. 那时 `isVirtualPath` 只认 `untitled:` / `db://` / `browser://` —— `ext://editor/…`
+   不在其中，于是拿它去问磁盘，当然不存在，**把预览自己的标签关掉了**。
+
+现在 `ext://`（详情 / 界面 / 自定义编辑器）一律算虚拟路径，上面第 4 步会跳过它。
+同时区分出「一次性虚拟路径」：`ext://editor/…` 里带着文件的绝对路径，重启后还要还原成
+同一个标签，所以会话的存与取用 `isEphemeralPath`（`isVirtualPath && !ext://`），
+其余「有没有磁盘内容」的判断用 `isVirtualPath`。
+回归测试见 `dbTabPath.test.ts` 的「扩展标签的虚拟路径判定」。
+
+**扩展认的项目 = 用户打开的项目。** 以前扩展宿主的 workspace 是启动时按
+`app.getPath('userData')` 给的、之后再也不改，而 Claude Code 认定「项目根」的依据是
+**`process.cwd()`**（它内部的 `VB()` 就是 `process.cwd()`，用来初始化会话的 projectRoot）。
+开发时主进程的 cwd 是**应用自己的仓库** —— 于是「让它分析我打开的项目」变成了
+「分析 Echoly 自己」。
+
+现在 `workspace:set` 会把工作区同步给扩展管理器，做三件事：
+
+1. `workspace.workspaceFolders` 改成按当前根**现算**（以前是一次性快照）；
+2. 自定义编辑器 glob 匹配的相对路径基准跟着换；
+3. `process.chdir(工作区)` —— 这条最关键，Claude 的 CLI 就是这么认项目的。
+   chdir 是进程级的，所以另外两处「靠 cwd 找自己资源」的地方
+   （node-pty 的 spawn-helper、打包好的 runner bundle）先补上了不依赖 cwd 的候选，
+   否则终端会因为找不到 spawn-helper 起不来。
+
+离线复验（真扩展）：`setWorkspaceRoot(项目)` 之后
+`workspaceFolders[0].uri.fsPath` 与 `process.cwd()` 都变成该项目，两个扩展照常激活。
 
 ### 需要你在真机上确认的
 

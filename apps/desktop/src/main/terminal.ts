@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, app } from 'electron';
 import { spawn as ptySpawn, type IPty } from 'node-pty';
 import type { TerminalCreateOptions } from '@deepseek-ide/shared';
 import type { SshSessionManager } from './ssh/SshSessionManager';
@@ -29,11 +29,22 @@ type TermHandle = LocalHandle | SshHandle;
 function ensureSpawnHelperPermissions(): void {
   if (process.platform === 'win32') return;
   try {
+    /**
+     * 候选里**不能只靠 `process.cwd()`**。
+     *
+     * 主进程的 cwd 会跟着用户打开的工作区走（见 ExtensionManager.setWorkspaceRoot 里
+     * 对 `process.chdir` 的说明：扩展宿主里跑的 CLI 是按 cwd 认项目的）。
+     * 一旦 cwd 变成用户的项目目录，`cwd + /node_modules/node-pty` 就找不到了 ——
+     * 而它以前是唯一能找到 prebuilds 的那个候选，后果是终端起不来。
+     */
     const candidates = [
       path.join(process.cwd(), 'node_modules', 'node-pty', 'prebuilds'),
+      path.join(app.getAppPath(), 'node_modules', 'node-pty', 'prebuilds'),
+      path.join(app.getAppPath(), '..', '..', 'node_modules', 'node-pty', 'prebuilds'),
+      path.join(process.resourcesPath ?? '', 'node_modules', 'node-pty', 'prebuilds'),
       path.join(__dirname, '..', '..', 'node_modules', 'node-pty', 'prebuilds'),
       path.join(__dirname, 'node_modules', 'node-pty', 'prebuilds'),
-    ];
+    ].filter((p) => p.length > 0);
     for (const prebuildsRoot of candidates) {
       if (fs.existsSync(prebuildsRoot)) {
         for (const dir of fs.readdirSync(prebuildsRoot)) {

@@ -181,6 +181,11 @@ export class ExtensionHost {
     return this.shim.listCustomEditorProviders();
   }
 
+  /** 用户打开的工作区变了（见 VSCodeShim.setWorkspaceRoot）。 */
+  setWorkspaceRoot(root: string): void {
+    this.shim.setWorkspaceRoot(root);
+  }
+
   /** 某个扩展注册了哪些视图。 */
   listWebviewViewIds(extensionId: string): string[] {
     return this.shim.listWebviewViewIds(extensionId);
