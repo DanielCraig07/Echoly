@@ -1876,6 +1876,35 @@ body.resizing.resizing-row {
   cursor: row-resize;
 }
 
+/**
+ * 拖动分隔条时盖在整窗口上的透明遮罩（渲染在 app-shell 最后一个子节点）。
+ *
+ * 存在的理由只有一个：拖动时指针会滑到扩展界面的 `<webview>` 上，那是**独立进程**，
+ * mousemove/mouseup 不会回到本文档 —— 松手了还在拖。有了它，指针始终命中本文档的元素。
+ */
+.resize-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  background: transparent;
+}
+
+.resize-shield-col {
+  cursor: col-resize;
+}
+
+.resize-shield-row {
+  cursor: row-resize;
+}
+
+/**
+ * 兜底：遮罩万一盖不住 webview 的合成层，至少让指针穿过它。
+ * 只在拖动期间生效，不影响正常交互。
+ */
+body.resizing webview {
+  pointer-events: none !important;
+}
+
 .panel {
   min-height: 0;
   height: 100%;

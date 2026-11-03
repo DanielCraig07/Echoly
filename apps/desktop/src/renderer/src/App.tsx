@@ -390,6 +390,14 @@ export function App() {
   const [layout, setLayout] = useState<LayoutSettings>({ ...DEFAULT_LAYOUT });
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  /**
+   * 正在拖动的分隔条（null = 没在拖）。
+   *
+   * 只用来渲染那层「拖动遮罩」，见 startResize 的注释：拖动过程中指针会移到
+   * `<webview>`（独立进程）上面，而那里的事件不会回到这个文档 —— 鼠标松开也就
+   * 永远收不到，分隔条会一直粘在手上。
+   */
+  const [resizeAxis, setResizeAxis] = useState<ResizeAxis | null>(null);
   const [isMavenProject, setIsMavenProject] = useState(false);
   const autoSaveRef = useRef(autoSave);
   autoSaveRef.current = autoSave;
@@ -2388,6 +2396,16 @@ export function App() {
       const start = { ...layoutRef.current };
       const shell = shellRef.current;
       const startShellWidth = shell?.clientWidth ?? window.innerWidth;
+      /**
+       * 拖动期间指针会越过中间列的 `<webview>`（扩展界面，跑在**独立进程**里）。
+       * 那一层不会把 mousemove/mouseup 交回本文档，于是 window 上的 mouseup 永远
+       * 收不到 —— 表现就是「松手了还在拖，选中状态一直不释放」。
+       *
+       * 解法是拖动期间在整窗口上盖一层透明遮罩（`.resize-shield`）：指针始终落在
+       * 本文档的元素上，事件就都回来了。CSS 里再给 `webview` 加一条
+       * `pointer-events:none` 兜底（遮罩盖不住的合成层也吃不到指针）。
+       */
+      setResizeAxis(axis);
 
       const onMove = (ev: MouseEvent) => {
         const next = { ...start };
@@ -2417,7 +2435,10 @@ export function App() {
       const onUp = () => {
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('blur', onUp);
+        document.removeEventListener('mouseleave', onUp);
         document.body.classList.remove('resizing', 'resizing-row');
+        setResizeAxis(null);
         persistLayout(layoutRef.current);
       };
 
@@ -2425,6 +2446,10 @@ export function App() {
       if (axis === 'bottom') document.body.classList.add('resizing-row');
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
+      // 窗口失焦（切到别的应用、系统弹了窗）时也按「松开」处理，别把分隔条留在拖动态
+      window.addEventListener('blur', onUp);
+      // 指针离开文档边界同样兜底
+      document.addEventListener('mouseleave', onUp);
     },
     [persistLayout],
   );
@@ -6970,6 +6995,20 @@ export function App() {
       />
       <GlobalTooltip delay={hoverDelay} />
       {confirm.modal}
+
+      {/*
+        拖动分隔条时的整窗口遮罩。**必须放在最后一个子节点**：它得盖住包括
+        扩展界面 `<webview>` 在内的一切，指针才会一直留在本文档里 ——
+        否则指针一旦滑到 webview 上，mouseup 就再也回不来，分隔条会一直粘手。
+      */}
+      {resizeAxis && (
+        <div
+          className={`resize-shield ${
+            resizeAxis === 'bottom' ? 'resize-shield-row' : 'resize-shield-col'
+          }`}
+          data-testid="resize-shield"
+        />
+      )}
     </div>
   );
 }
