@@ -42,9 +42,70 @@ export const VSCODE_API_WHITELIST = new Set([
   'l10n',
   'ExtensionMode',
   'ExtensionKind',
+  'RelativePattern',
+  'LanguageStatusSeverity',
 ]);
 
 /** 扩展访问了未授权/未实现的 API，记录一条警告以便排查。 */
+/**
+ * `vscode.CodeActionKind`：一个带值的类，不是一组字符串。
+ *
+ * 官方语义里 `Refactor.append('extract')` 这种「父种类 + 子段」是常态用法，
+ * 所以必须是对象。`contains` 按官方的定义走：`'source.fixAll'.contains('source')`
+ * 为真（父种类包含子种类），`intersects` 有公共前缀也算相交。
+ */
+class CodeActionKindImpl {
+  static readonly Empty = new CodeActionKindImpl('');
+  static readonly QuickFix = new CodeActionKindImpl('quickfix');
+  static readonly Refactor = new CodeActionKindImpl('refactor');
+  static readonly RefactorExtract = new CodeActionKindImpl('refactor.extract');
+  static readonly RefactorInline = new CodeActionKindImpl('refactor.inline');
+  static readonly RefactorRewrite = new CodeActionKindImpl('refactor.rewrite');
+  static readonly Source = new CodeActionKindImpl('source');
+  static readonly SourceOrganizeImports = new CodeActionKindImpl('source.organizeImports');
+  static readonly SourceFixAll = new CodeActionKindImpl('source.fixAll');
+  static readonly Notebook = new CodeActionKindImpl('notebook');
+
+  constructor(public readonly value: string) {}
+
+  /** 拼一个子种类：`Refactor.append('extract')` → `refactor.extract`。 */
+  append(part: string): CodeActionKindImpl {
+    return new CodeActionKindImpl(this.value ? `${this.value}.${part}` : part);
+  }
+
+  /** 本种类是否包含 other（父包含子）。 */
+  contains(other: CodeActionKindImpl): boolean {
+    if (other.value === this.value) return true;
+    return other.value.startsWith(`${this.value}.`);
+  }
+
+  /** 两者是否有公共前缀（`a.b` 与 `a.b.c` 相交）。 */
+  intersects(other: CodeActionKindImpl): boolean {
+    return this.contains(other) || other.contains(this);
+  }
+
+  toString(): string {
+    return this.value;
+  }
+}
+
+/**
+ * 把 glob 入参印成人看得懂的一小段（出于排查用，不参与任何逻辑）。
+ *
+ * `RelativePattern` 与纯字符串两种形态都要能读出来 —— 排查「为什么扩展的
+ * watcher 不生效」时，日志里得能看出它到底在等什么。
+ */
+function describeGlobPattern(pattern: unknown): string {
+  if (typeof pattern === 'string') return JSON.stringify(pattern);
+  if (pattern && typeof pattern === 'object') {
+    const record = pattern as { base?: unknown; baseUri?: unknown; pattern?: unknown };
+    const base =
+      (record.baseUri as any)?.fsPath ?? record.base ?? (record as any).toString?.() ?? '?';
+    return `RelativePattern(${base} / ${String(record.pattern ?? '?')})`;
+  }
+  return String(pattern);
+}
+
 function warnUnsupportedApi(name: string): void {
   console.warn(`[vscode-shim] 扩展尝试访问未列入白名单的 API: "vscode.${name}"（已忽略）`);
 }
@@ -391,15 +452,35 @@ export class VSCodeShim {
         applyEdit() {
           return Promise.resolve(true);
         },
-        createFileSystemWatcher() {
+        /**
+         * 文件监视器。**不监听任何东西**（没有实现真实的 fs watch），
+         * 但形状要齐：扩展拿到之后会挂 onDidCreate/Change/Delete，缺一个就是
+         * 激活后的异步 TypeError。入参（glob 或 RelativePattern）明确丢弃 ——
+         * 与其假装匹配，不如什么都不报。
+         */
+        createFileSystemWatcher(globPattern?: any, ignoreCreateEvents?: boolean) {
+          console.log(
+            `[vscode-shim] createFileSystemWatcher(${describeGlobPattern(globPattern)}) —— 本实现不监听文件变化`,
+          );
           return {
+            ignoreCreateEvents: ignoreCreateEvents === true,
+            ignoreChangeEvents: false,
+            ignoreDeleteEvents: false,
             onDidCreate: () => ({ dispose() {} }),
             onDidChange: () => ({ dispose() {} }),
             onDidDelete: () => ({ dispose() {} }),
             dispose() {},
           } as any;
         },
-        findFiles() {
+        /**
+         * 文件查找。返回空数组是**刻意的**：本实现没有索引/glob 引擎，
+         * 返回「看起来像结果」的东西会让扩展基于假结果做决定。
+         * 入参接受 RelativePattern（官方签名允许），只是不参与计算。
+         */
+        findFiles(include?: any, exclude?: any, maxResults?: number, token?: any) {
+          console.log(
+            `[vscode-shim] findFiles(${describeGlobPattern(include)}) —— 本实现不返回文件`,
+          );
           return Promise.resolve([]);
         },
         name: undefined,
@@ -435,6 +516,35 @@ export class VSCodeShim {
       } as any,
 
       // Uri
+      /**
+       * `vscode.RelativePattern`。
+       *
+       * 实测 `vishalguptax.claude-manager@2.21.0` 在 activate() 里
+       * `new vscode.RelativePattern(folder, glob)` —— 没有这个类时整个扩展激活失败
+       * （`it.RelativePattern is not a constructor`）。
+       *
+       * 形状对齐官方：`base`（字符串，已废弃但扩展还在读）与 `baseUri` 都给，
+       * `pattern` 原样保留。**它本身不做任何文件匹配** —— 匹配是 findFiles /
+       * createFileSystemWatcher 的事，那两个在 shim 里本来就没有真实现。
+       */
+      RelativePattern: class RelativePattern {
+        base: string;
+        baseUri: vscode.Uri;
+        pattern: string;
+        constructor(base: any, pattern: string) {
+          // base 三种合法形态：工作区文件夹、Uri、纯路径字符串
+          const uri: vscode.Uri =
+            typeof base === 'string'
+              ? ({ fsPath: base, scheme: 'file', toString: () => base } as vscode.Uri)
+              : base && base.uri
+                ? base.uri
+                : (base as vscode.Uri);
+          this.baseUri = uri;
+          this.base = (uri as any)?.fsPath ?? String(uri);
+          this.pattern = pattern;
+        }
+      } as any,
+
       Uri: {
         parse(value: string) {
           return { fsPath: value, scheme: 'file', toString: () => value } as vscode.Uri;
@@ -466,6 +576,14 @@ export class VSCodeShim {
       // Other enums and types
       StatusBarAlignment: { Left: 1, Right: 2 },
       DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
+      /**
+       * 语言状态项的严重级别。
+       *
+       * 实测 `esbenp.prettier-vscode@12` 在 activate() 里就取这个导出（它给
+       * 「Prettier 是否可用」挂一个语言状态项），缺了整个扩展激活失败。
+       * 取值对齐官方（Information=0 / Warning=1 / Error=2）。
+       */
+      LanguageStatusSeverity: { Information: 0, Warning: 1, Error: 2 },
       ViewColumn: { One: 1, Two: 2, Three: 3, Active: -1, Beside: -2 },
       TextEditorRevealType: { Default: 0, InCenter: 1, InCenterIfOutsideViewport: 2, AtTop: 3 },
       OverviewRulerLane: { Left: 1, Center: 2, Right: 4, Full: 7 },
@@ -483,6 +601,26 @@ export class VSCodeShim {
         },
         registerCodeActionsProvider() {
           return { dispose() {} };
+        },
+        /**
+         * 语言状态项（编辑器右下角那一条状态）。收下并返回一个形状完整的对象：
+         * 扩展会去改 `severity` / `text` / `busy` 这些字段，字段缺失会让它在
+         * 后续赋值时抛错 —— 而那是异步的，报出来就不在 activate 的栈里了。
+         * 本实现不把它画到界面上（没有对应的 UI），见 VERIFY.md 已知边界。
+         */
+        createLanguageStatusItem(id: string, selector: any) {
+          return {
+            id,
+            selector,
+            name: undefined,
+            severity: 0,
+            text: '',
+            detail: undefined,
+            busy: false,
+            command: undefined,
+            accessibilityInformation: undefined,
+            dispose() {},
+          } as any;
         },
         createDiagnosticCollection() {
           return {
@@ -688,17 +826,16 @@ export class VSCodeShim {
       ThemeColor: class ThemeColor {} as any,
       ThemeIcon: class ThemeIcon {} as any,
       CodeAction: class CodeAction {} as any,
-      CodeActionKind: {
-        QuickFix: 'quickfix',
-        Refactor: 'refactor',
-        RefactorExtract: 'refactor.extract',
-        RefactorInline: 'refactor.inline',
-        RefactorRewrite: 'refactor.rewrite',
-        Source: 'source',
-        SourceOrganizeImports: 'source.organizeImports',
-        SourceFixAll: 'source.fixAll',
-        Empty: '',
-      } as any,
+      /**
+       * 代码动作种类。
+       *
+       * 原来只是一堆**字符串常量**，于是 `CodeActionKind.SourceFixAll.append('x')`
+       * 直接崩 —— 而这是扩展在**模块顶层**就会算的东西：实测
+       * `esbenp.prettier-vscode@12` 因此在主模块加载阶段就失败
+       * （`CodeActionKind.SourceFixAll.append is not a function`），
+       * 连 activate 都到不了。官方这里是个带 `append/contains/intersects` 的类。
+       */
+      CodeActionKind: CodeActionKindImpl,
       SnippetString: class SnippetString {} as any,
       CancellationTokenSource: class CancellationTokenSource {
         token = {
