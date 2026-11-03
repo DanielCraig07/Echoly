@@ -251,6 +251,8 @@ const api: IpcApi = {
     ipcRenderer.on('extension:command', listener);
     return () => ipcRenderer.removeListener('extension:command', listener);
   },
+  executeExtensionCommand: (command: string, ...args: unknown[]) =>
+    ipcRenderer.invoke('extension:execute-command', command, ...args),
   onCustomEditorMessage: (cb) => {
     const listener = (_: Electron.IpcRendererEvent, data: { panelKey: string; message: unknown }) =>
       cb(data);

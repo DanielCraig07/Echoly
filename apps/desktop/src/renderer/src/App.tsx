@@ -6410,10 +6410,49 @@ export function App() {
                       {t('app.claudeTab')}
                     </button>
                   )}
+                </div>
+              )}
+
+              {/*
+                扩展开出来的会话（Claude 点「+」就是它）单独占一行。
+
+                为什么和上面那排标签分开：上面两个是「面板」（一个 AI 对话、一个扩展侧栏），
+                是**固定的一对**；这里是**可增可减**的会话，长得也不一样（带图标和关闭按钮）。
+                挤在同一行里，用户根本分不清哪个是面板、哪个是会话。
+
+                标题由扩展给，会话有名字之后扩展会推一条新的过来（见 onExtensionPanelTitle）。
+              */}
+              {(claudeTabAvailable || extensionPanelTabs.length > 0) && (
+                <div className="right-panel-sessions">
                   {/*
-                    扩展开出来的会话（Claude 点「+」就是它）。标题由扩展给，
-                    会话有名字之后扩展会推一条新的过来（见 onExtensionPanelTitle）。
+                    与扩展自己那条会话栏上的「新建」是同一个动作：让扩展去开一个新会话。
+                    扩展会把新会话开成一个新面板 → 转成这里的一个新标签（见下面的事件接线）。
+                    禁用/没激活时按钮不出现，避免摆一个点不动的图标。
                   */}
+                  {claudeTabAvailable && (
+                    <button
+                      type="button"
+                      className="right-panel-session-new"
+                      title={t('app.newClaudeSession')}
+                      onClick={() => {
+                        void window.ide?.executeExtensionCommand?.('claude-vscode.newConversation');
+                      }}
+                    >
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                      >
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      {t('app.newClaudeSession')}
+                    </button>
+                  )}
                   {extensionPanelTabs.map((panelTab, index) => {
                     /*
                       会话还没起名字时扩展给的标题是同一个（「Claude Code」），
@@ -6425,12 +6464,11 @@ export function App() {
                         (other) => (other.title || t('app.claudeTab')) === base,
                       ).length > 1;
                     const label = duplicated ? `${base} ${index + 1}` : base;
+                    const isActive = rightPanelTab === panelTab.panelId;
                     return (
                       <span
                         key={panelTab.panelId}
-                        className={`right-panel-tab right-panel-tab-closable ${
-                          rightPanelTab === panelTab.panelId ? 'active' : ''
-                        }`}
+                        className={`right-panel-session ${isActive ? 'active' : ''}`}
                         role="button"
                         tabIndex={0}
                         title={base}
@@ -6440,15 +6478,29 @@ export function App() {
                             setRightPanelTab(panelTab.panelId);
                         }}
                       >
-                        <span className="right-panel-tab-label">{label}</span>
+                        {/* 会话气泡图标：与扩展自己那条会话栏上的图标同一个语义 */}
+                        <svg
+                          className="right-panel-session-icon"
+                          width="13"
+                          height="13"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.9"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.4 8.9 8.9 0 0 1-3.8-.9L3 21l1.9-5.4a8.4 8.4 0 0 1-.9-3.9A8.4 8.4 0 0 1 12.5 3.3 8.4 8.4 0 0 1 21 11.5Z" />
+                        </svg>
+                        <span className="right-panel-session-label">{label}</span>
                         {/*
-                        关闭 = 让扩展真的 dispose 那个面板（`panel.onDidDispose`）。
-                        只从界面上摘掉的话，扩展会一直以为会话还开在面板里，
-                        之后再点同一会话就什么都不发生。
-                      */}
+                          关闭 = 让扩展真的 dispose 那个面板（`panel.onDidDispose`）。
+                          只从界面上摘掉的话，扩展会一直以为会话还开在面板里，
+                          之后再点同一会话就什么都不发生。
+                        */}
                         <button
                           type="button"
-                          className="right-panel-tab-close"
+                          className="right-panel-session-close"
                           title={t('common.close')}
                           onClick={(e) => {
                             e.stopPropagation();

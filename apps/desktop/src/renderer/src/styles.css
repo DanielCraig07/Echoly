@@ -19371,34 +19371,80 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 /**
- * 扩展开出来的会话标签（Claude 点「+」新会话）：多一个关闭按钮。
+ * 扩展会话那一行（Claude 点「+」开出来的会话）。
  *
- * 标签条要能横向滚动 —— 开三四个会话之后 300px 宽的面板一行放不下，
- * 挤成两行会把下面的界面顶下去。`min-width: 0` 是 flex 里出省略号的前提。
+ * 单独一行而不是并进上面的面板标签：上面那两个是固定的一对（AI 对话 / Claude Code），
+ * 这里是可增可减的会话，样式也不同（气泡图标 + 名称 + 关闭）。
+ *
+ * 横向可滚：开三四个之后 300px 宽的面板一行放不下，挤成两行会把下面的界面顶下去。
  */
-.right-panel-tabs {
+.right-panel-sessions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
+  flex-shrink: 0;
 }
 
-.right-panel-tab-closable {
+.right-panel-session,
+.right-panel-session-new {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-shrink: 0;
-  padding: 6px 8px 6px 12px;
+  max-width: 190px;
+  padding: 5px 8px 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
   user-select: none;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
 }
 
-.right-panel-tab-label {
-  max-width: 120px;
+.right-panel-session:hover,
+.right-panel-session-new:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 当前会话：亮底 + 亮边框，和旁边那些暗的区分开 */
+.right-panel-session.active {
+  background: var(--bg-elevated, #252526);
+  border-color: var(--border-strong, rgba(255, 255, 255, 0.22));
+  color: var(--text-bright, #ffffff);
+}
+
+.right-panel-session-icon {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.right-panel-session-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.right-panel-tab-close {
+.right-panel-session-new {
+  padding-left: 8px;
+  color: var(--muted);
+}
+
+.right-panel-session-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -19412,10 +19458,10 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
-.right-panel-tab-close:hover {
+.right-panel-session-close:hover {
   background: rgba(0, 0, 0, 0.25);
   opacity: 1;
 }
