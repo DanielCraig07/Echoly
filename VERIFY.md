@@ -556,6 +556,44 @@ Received message from webview: {"type":"request",…,"request":{"type":"webview_
 
 **「Claude 扩展」改名「Claude Code」**（右侧面板那一栏的标签）。
 
+### 第八轮：拖动分隔条「松不开手」+ Claude 点「+」新增会话
+
+**拖动右侧 AI 面板宽度之后，分隔条一直粘在手上。** 拖动时指针会滑到中间列的
+`<webview>`（扩展界面，跑在**独立进程**里）上，那一层不把 `mousemove`/`mouseup`
+交回本文档 —— window 上的 `mouseup` 永远收不到，`body.resizing` 一直挂着，
+松手了还在拖、选中状态不释放。日志里那串隔几秒一条的 `engine_ui_attach` 就是它：
+卡在拖动态之后，鼠标随便一动就继续改面板宽度，扩展界面被反复 resize。
+
+现在拖动期间在整窗口盖一层透明遮罩（`.resize-shield`，渲染成 app-shell 的最后一个
+子节点），指针始终命中本文档的元素；CSS 再兜底一条 `body.resizing webview{pointer-events:none}`；
+另补 `window blur` / `document mouseleave` 两个兜底释放。
+
+**Claude 面板点「+」（新会话）什么都不发生，当前对话却被清空。** 两个原因叠在一起：
+
+1. `window.createWebviewPanel` 在 shim 里是个**空壳** —— `webview.html = …` 被丢掉、
+   面板不会出现在界面上，而扩展那边已经把这次会话记成「开在面板里」，于是把侧栏清空；
+2. 扩展用 `openNewInTab`（= 「这个界面是不是一个编辑器面板」）决定「+」干什么 ——
+   面板模式发消息给扩展、开一个新标签；侧栏模式则**就地新建会话**（清空当前对话）。
+   右侧那一栏渲染的正是侧栏那份界面，所以走的是后一条。
+
+现在把 `WebviewPanel` 补全成真的：扩展 `createWebviewPanel` → 主进程登记 →
+渲染层在编辑器区开一个标签。面板和「视图」共用同一套协议与消息通道，
+只是多了一张「谁开的」的登记表；资源走 `-/abs/<base64url>`（面板的 HTML 是扩展
+自己拼的，拿不到扩展目录）。关标签时回推 `panel.onDidDispose`，扩展才会把会话从
+`sessionPanels` 里注销。编辑器区的扩展视图/面板标签改成**常驻挂载、只切显隐**
+（照内置浏览器标签的做法）—— webview 一卸载就整个重载，会话与草稿全丢。
+
+同时把发给 Claude 侧栏那份界面的状态里 `openNewInTab` 改成 `true`（只动这一个布尔），
+于是点「+」会走 `claude-vscode.editor.open` → 真开一个新面板标签，侧栏不再被清空。
+
+离线复验（假扩展，真链路）：扩展 `createWebviewPanel` → 主进程登记 → 生成的 HTML 里
+资源是协议地址且注入了 `acquireVsCodeApi` → 协议能取到 `-/abs/` 那个文件 →
+界面发回的消息投到扩展的 `onDidReceiveMessage` → 关面板触发 `onDidDispose`。
+回归测试在 `vscodeApi.test.ts` 与 `extensionManager.test.ts`。
+
+已知边界：**禁用/卸载一个扩展时，它已经打开的面板标签不会被自动关掉**（面板的归属
+没法可靠地回溯到扩展）—— 那种标签会停在一个不再响应的界面上，手动关掉即可。
+
 ### 需要你在真机上确认的
 
 1. **完全退出应用再启动**（不是关窗口）。这几轮改了**主进程**，光靠渲染层热更新不生效。
@@ -570,6 +608,10 @@ Received message from webview: {"type":"request",…,"request":{"type":"webview_
    Claude 那一栏，里面是**扩展自己的界面**（不再是那个自造的聊天壳）；
    编辑器区不再多标签。星芒再点一次收起面板。
 6. 切一次主题（亮/暗）：已打开的扩展界面应立刻跟着变，不再是一块对不上的灰。
+7. **拖动**右栏与编辑器之间的分隔条（也可以试试左右/上下两条）：松手之后
+   `resizing` 状态要立刻释放（鼠标样式回到普通箭头、再移动鼠标不该继续改宽度）。
+8. 在右侧 Claude 面板里点**「+」**：应在编辑器区**新开一个标签**并显示一个新的
+   Claude 会话，右侧那一栏的当前对话**不该被清空**。标签切走再切回来，会话内容还在。
 
 ## 5. 建议顺序
 
