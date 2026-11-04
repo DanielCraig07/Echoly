@@ -68,13 +68,36 @@ export function compileFilenamePattern(pattern: string): RegExp | null {
   }
 }
 
-/** 文件路径（posix 风格）能不能被这条 contribution 认领。 */
+/**
+ * 从 `filenamePattern` 里取出 scheme 限定（没写 scheme 就返回 null）。
+ *
+ * 为什么必须看这一项：`openai-codex:/**\/*`（Codex 的会话编辑器）和
+ * `file:/**\/*.md`（Office Viewer 的 markdown）**去掉 scheme 之后长得一模一样**，
+ * 都成了「任意目录下的任意文件」。实测后果很具体：Codex 装好之后它把 `.md` 抢走了，
+ * 用户打开笔记拿到的是 `Invalid Codex conversation URI: /path/note.md`
+ * —— 表现成「Office Viewer 失效了」。scheme 是这两条声明之间唯一的区别，必须比。
+ */
+export function patternScheme(pattern: string): string | null {
+  const matched = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(pattern);
+  return matched ? matched[1].toLowerCase() : null;
+}
+
+/**
+ * 文件路径（posix 风格）能不能被这条 contribution 认领。
+ *
+ * `scheme` 是待打开文档的 scheme。本应用只开本地文件，所以默认就是 `file`：
+ * 于是 `file:/**\/*.md` 能匹配、`openai-codex:/**\/*` 与 `vscode-remote:/**\/*.md`
+ * 都不匹配。**不写 scheme 的写法（`*.md`）不看这一项** —— 那才是「什么 scheme 都收」。
+ */
 export function matchesContribution(
   contribution: CustomEditorContribution,
   relativePath: string,
+  scheme = 'file',
 ): boolean {
   const target = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
   for (const pattern of contribution.patterns) {
+    const required = patternScheme(pattern);
+    if (required && required !== scheme) continue;
     const compiled = compileFilenamePattern(pattern);
     if (!compiled) continue;
     if (compiled.test(target)) return true;
@@ -100,8 +123,11 @@ export function matchesContribution(
 export function pickCustomEditor(
   candidates: CustomEditorCandidate[],
   relativePath: string,
+  scheme = 'file',
 ): CustomEditorCandidate | null {
-  const matched = candidates.filter((candidate) => matchesContribution(candidate, relativePath));
+  const matched = candidates.filter((candidate) =>
+    matchesContribution(candidate, relativePath, scheme),
+  );
   if (matched.length === 0) return null;
   const rank = (c: CustomEditorCandidate) => {
     const priority = c.priority === 'option' ? 1 : 0;

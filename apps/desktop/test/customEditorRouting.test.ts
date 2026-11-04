@@ -54,6 +54,52 @@ describe('customEditors：谁接管这个文件', () => {
     expect(tarGz.test('pkg.gz')).toBe(false);
   });
 
+  /**
+   * scheme 必须参与匹配。
+   *
+   * 这条是「Codex 装好之后 Office Viewer 突然失效」的直接原因：Codex 的自定义编辑器
+   * 声明是 `openai-codex:/**\/*`（给 `openai-codex:` 这种虚拟文档用的），
+   * Office Viewer 的 markdown 是 `file:/**\/*.md`。**去掉 scheme 之后两条一模一样**，
+   * 于是 Codex 把 `.md` 抢走了 —— 用户打开笔记得到的是
+   * `Invalid Codex conversation URI: /path/note.md`。
+   */
+  it('scheme 限定的写法不会跨 scheme 匹配（openai-codex: 抢不走 file: 的 .md）', () => {
+    const codex = candidate({
+      viewType: 'chatgpt.conversationEditor',
+      patterns: ['openai-codex:/**/*'],
+    });
+    expect(matchesContribution(codex, 'note.md', 'file')).toBe(false);
+    // 它自己的 scheme 下照旧能匹配
+    expect(matchesContribution(codex, 'note.md', 'openai-codex')).toBe(true);
+  });
+
+  it('`file:` 的写法只认本地文件，vscode-remote: 之类不认（我们没有那些 scheme）', () => {
+    const office = candidate({ viewType: 'cweijan.markdownViewer', patterns: ['file:/**/*.md'] });
+    expect(matchesContribution(office, 'note.md', 'file')).toBe(true);
+    expect(matchesContribution(office, 'note.md', 'vscode-remote')).toBe(false);
+
+    const remote = candidate({ viewType: 'x.remote', patterns: ['vscode-remote:/**/*.md'] });
+    expect(matchesContribution(remote, 'note.md', 'file')).toBe(false);
+  });
+
+  it('不写 scheme 的写法不看 scheme —— 那才是「什么 scheme 都收」', () => {
+    const any = candidate({ viewType: 'a.any', patterns: ['*.md'] });
+    expect(matchesContribution(any, 'note.md', 'file')).toBe(true);
+    expect(matchesContribution(any, 'note.md', 'openai-codex')).toBe(true);
+  });
+
+  it('同时在场时，选中的是真正认这个文件的那条', () => {
+    const picked = pickCustomEditor(
+      [
+        candidate({ viewType: 'chatgpt.conversationEditor', patterns: ['openai-codex:/**/*'] }),
+        candidate({ viewType: 'cweijan.markdownViewer', patterns: ['file:/**/*.md'] }),
+      ],
+      'note.md',
+      'file',
+    );
+    expect(picked?.viewType).toBe('cweijan.markdownViewer');
+  });
+
   it('不认识的写法返回 null —— 宁可少匹配，也不要用半吊子正则抢文件', () => {
     expect(compileFilenamePattern('*.{md,txt}')).toBeNull();
     expect(compileFilenamePattern('*.[md]')).toBeNull();
