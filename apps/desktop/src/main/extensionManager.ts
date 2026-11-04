@@ -305,6 +305,22 @@ export class ExtensionManager {
   /** 配置文件的路径（与禁用列表分开：那份是应用状态，这份是扩展设置）。 */
   private readonly settingsFilePath: string;
   /**
+   * 扩展的 `globalState` / `workspaceState`，落盘在 `extension-state.json`。
+   *
+   * 形状：`{ [扩展 id]: { global: {...}, workspace: { [工作区键]: {...} } } }`。
+   * 工作区那一层必须分开：同一个扩展在两个项目里的 workspaceState 是两份东西
+   * （「这个文件上次滚到哪儿」跨项目串了就很别扭）。
+   */
+  private extensionState: Record<
+    string,
+    { global?: Record<string, unknown>; workspace?: Record<string, Record<string, unknown>> }
+  > = {};
+  /** `secrets`（登录 token 这类）落盘在 `extension-secrets.json`，值走系统钥匙串加密。 */
+  private extensionSecrets: Record<string, Record<string, { enc: boolean; data: string }>> = {};
+  private readonly stateFilePath2: string;
+  private readonly secretsFilePath: string;
+  private readonly storageRootDir: string;
+  /**
    * 已打开的自定义编辑器面板：panelKey → 运行时。
    *
    * key 用 `editor:<序号>` 而不是 viewType：同一个 viewType 可以对多个文件各开一个
@@ -339,6 +355,9 @@ export class ExtensionManager {
     this.extensionsDir = path.join(app.getPath('userData'), 'extensions');
     this.stateFilePath = path.join(app.getPath('userData'), 'extensions-state.json');
     this.settingsFilePath = path.join(app.getPath('userData'), 'extension-settings.json');
+    this.stateFilePath2 = path.join(app.getPath('userData'), 'extension-state.json');
+    this.secretsFilePath = path.join(app.getPath('userData'), 'extension-secrets.json');
+    this.storageRootDir = path.join(app.getPath('userData'), 'extension-storage');
 
     if (options.onMessage) {
       this.messageHandlers.add(options.onMessage);
@@ -373,6 +392,17 @@ export class ExtensionManager {
           }),
           update: (key, value) => this.settingUpdate(key, value),
         },
+        storage: {
+          get: (id, scope, key) => this.stateGet(id, scope, key),
+          update: (id, scope, key, value) => this.stateUpdate(id, scope, key, value),
+          keys: (id, scope) => this.stateKeys(id, scope),
+        },
+        secrets: {
+          get: (id, key) => this.secretGet(id, key),
+          store: (id, key, value) => this.secretStore(id, key, value),
+          delete: (id, key) => this.secretDelete(id, key),
+        },
+        storagePaths: (id) => this.extensionStoragePaths(id),
       },
       // 扩展开一个 webview 面板（Claude Code 的「+」新会话走这里）。
       // 以前这个 API 在 shim 里是空壳：HTML 被丢掉、标签不出现，而扩展那边
@@ -411,6 +441,9 @@ export class ExtensionManager {
     // 扩展配置（用户值）与各扩展贡献的默认值也要在激活之前就位：
     // 扩展在 activate() 里读配置，晚一步它拿到的就是「默认值」那一份。
     await this.loadExtensionSettings();
+    // 状态与密钥同理：扩展在 activate() 里就会读 globalState 判断「是不是第一次运行」。
+    await this.loadExtensionState();
+    await this.loadExtensionSecrets();
 
     // IPC 处理器在构造函数里已经注册过了（见那里的注释），这里不重复注册
 
@@ -1226,6 +1259,10 @@ export class ExtensionManager {
 
       // 卸载之后这条 id 不该再留在禁用名单里：重装一次就该能用
       if (this.disabledExtensions.delete(id)) await this.persistDisabledState();
+      // 它记下的状态与密钥也一起清掉：留着的话「重新装一次」会继承上一次的登录态，
+      // 用户看到的是一堆对不上的旧设置
+      await this.purgeExtensionStorage(id);
+      await this.refreshSettingDefaults();
       return { ok: true };
     } catch (err: any) {
       return { ok: false, error: `卸载失败：${err?.message ?? err}` };
@@ -1263,6 +1300,193 @@ export class ExtensionManager {
     this.webviewHtml.delete(viewId);
     this.webviewMessageHandlers.delete(viewId);
     this.resourceRoots.delete(viewId);
+  }
+
+  // ─────────────────── 扩展状态 / 密钥 / 存储目录 ───────────────────
+
+  /** 当前工作区在存储里的键（不同项目分开存 workspaceState）。 */
+  private workspaceStorageKey(): string {
+    return Buffer.from(this.workspaceRoot || 'no-workspace', 'utf8').toString('base64url');
+  }
+
+  private async loadExtensionState(): Promise<void> {
+    try {
+      const raw = JSON.parse(await fs.readFile(this.stateFilePath2, 'utf8'));
+      this.extensionState = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      this.extensionState = {};
+    }
+  }
+
+  private stateBucket(extensionId: string, scope: 'global' | 'workspace'): Record<string, unknown> {
+    const entry = (this.extensionState[extensionId] ??= {});
+    if (scope === 'global') return (entry.global ??= {});
+    const byWorkspace = (entry.workspace ??= {});
+    return (byWorkspace[this.workspaceStorageKey()] ??= {});
+  }
+
+  private stateGet(extensionId: string, scope: 'global' | 'workspace', key: string): unknown {
+    return this.stateBucket(extensionId, scope)[key];
+  }
+
+  /**
+   * 写/删一项状态。
+   *
+   * `value === undefined` 的语义是**删除**（VS Code 就是这么约定的）——
+   * 当成「存一个 undefined」的话，`keys()` 会把它列出来，扩展会以为那一项还在。
+   */
+  private stateUpdate(
+    extensionId: string,
+    scope: 'global' | 'workspace',
+    key: string,
+    value: unknown,
+  ): void {
+    const bucket = this.stateBucket(extensionId, scope);
+    if (value === undefined) delete bucket[key];
+    else bucket[key] = value;
+    void this.persistExtensionState();
+  }
+
+  private stateKeys(extensionId: string, scope: 'global' | 'workspace'): string[] {
+    return Object.keys(this.stateBucket(extensionId, scope));
+  }
+
+  private async persistExtensionState(): Promise<void> {
+    try {
+      await fs.writeFile(this.stateFilePath2, JSON.stringify(this.extensionState, null, 2), 'utf8');
+    } catch (err: any) {
+      console.error('[ExtensionManager] 写扩展状态文件失败：', err?.message ?? err);
+    }
+  }
+
+  private async loadExtensionSecrets(): Promise<void> {
+    try {
+      const raw = JSON.parse(await fs.readFile(this.secretsFilePath, 'utf8'));
+      this.extensionSecrets = raw && typeof raw === 'object' ? raw : {};
+    } catch {
+      this.extensionSecrets = {};
+    }
+  }
+
+  /**
+   * 系统钥匙串。macOS/Windows 上 electron 的 `safeStorage` 由系统密钥保护，
+   * 用它加密之后再落盘，磁盘上不会留明文 token；拿不到加密能力时退回明文
+   * 并在日志里说清楚 —— 比「存了但读不出来」强，也比「什么都不存」强。
+   */
+  private safeStorageApi(): typeof import('electron').safeStorage | undefined {
+    try {
+      const electron = require('electron') as typeof import('electron');
+      return electron.safeStorage;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async secretGet(extensionId: string, key: string): Promise<string | undefined> {
+    const entry = this.extensionSecrets[extensionId]?.[key];
+    if (!entry) return undefined;
+    if (!entry.enc) return entry.data;
+    const safe = this.safeStorageApi();
+    if (!safe?.isEncryptionAvailable?.()) return undefined;
+    try {
+      return safe.decryptString(Buffer.from(entry.data, 'base64'));
+    } catch (err: any) {
+      console.warn(
+        `[ExtensionManager] 解密密钥失败（${extensionId}/${key}）：`,
+        err?.message ?? err,
+      );
+      return undefined;
+    }
+  }
+
+  private async secretStore(extensionId: string, key: string, value: string): Promise<void> {
+    const safe = this.safeStorageApi();
+    const canEncrypt = !!safe?.isEncryptionAvailable?.();
+    const stored = canEncrypt
+      ? { enc: true, data: safe!.encryptString(value).toString('base64') }
+      : { enc: false, data: value };
+    if (!canEncrypt) {
+      console.warn(
+        `[ExtensionManager] 系统钥匙串不可用，扩展 ${extensionId} 的密钥将以明文存盘：${key}`,
+      );
+    }
+    (this.extensionSecrets[extensionId] ??= {})[key] = stored;
+    await this.persistExtensionSecrets();
+  }
+
+  private async secretDelete(extensionId: string, key: string): Promise<void> {
+    const bucket = this.extensionSecrets[extensionId];
+    if (bucket) delete bucket[key];
+    await this.persistExtensionSecrets();
+  }
+
+  private async persistExtensionSecrets(): Promise<void> {
+    try {
+      await fs.writeFile(
+        this.secretsFilePath,
+        JSON.stringify(this.extensionSecrets, null, 2),
+        'utf8',
+      );
+    } catch (err: any) {
+      console.error('[ExtensionManager] 写扩展密钥文件失败：', err?.message ?? err);
+    }
+  }
+
+  /**
+   * 扩展的存储目录。
+   *
+   * 以前 `storageUri` 直接指向**扩展自己的目录** —— 扩展往里写东西会跟着扩展一起
+   * 被卸载/升级覆盖掉。现在放在 userData 下，按作用域与工作区分开。
+   *
+   * 这里**只算路径、不建目录**：建目录由 shim 在扩展真的去碰 `storageUri` 时按需做
+   * （见 createExtensionContext 里那个 getter 的注释）。在这个函数里建，就等于
+   * 「每次激活都往磁盘写一次」，会和收尾清理撞车。
+   */
+  private extensionStoragePaths(extensionId: string): {
+    globalStorage: string;
+    workspaceStorage: string;
+    log: string;
+  } {
+    const safeId = extensionId.replace(/[^A-Za-z0-9._-]/g, '_');
+    const paths = {
+      globalStorage: path.join(this.storageRootDir, 'global', safeId),
+      workspaceStorage: path.join(
+        this.storageRootDir,
+        'workspace',
+        this.workspaceStorageKey(),
+        safeId,
+      ),
+      log: path.join(this.storageRootDir, 'logs', safeId),
+    };
+    return paths;
+  }
+
+  /** 卸载时把它的状态 / 密钥 / 存储目录一并清掉（重装不该继承上一次的登录态）。 */
+  private async purgeExtensionStorage(extensionId: string): Promise<void> {
+    if (this.extensionState[extensionId]) {
+      delete this.extensionState[extensionId];
+      await this.persistExtensionState();
+    }
+    if (this.extensionSecrets[extensionId]) {
+      delete this.extensionSecrets[extensionId];
+      await this.persistExtensionSecrets();
+    }
+    const safeId = extensionId.replace(/[^A-Za-z0-9._-]/g, '_');
+    for (const dir of [
+      path.join(this.storageRootDir, 'global', safeId),
+      path.join(this.storageRootDir, 'logs', safeId),
+    ]) {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+    // 工作区那一层是按工作区分目录的，逐个删
+    const workspaceRoot = path.join(this.storageRootDir, 'workspace');
+    const entries = await fs.readdir(workspaceRoot, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      await fs
+        .rm(path.join(workspaceRoot, entry.name, safeId), { recursive: true, force: true })
+        .catch(() => {});
+    }
   }
 
   // ─────────────────────────── 扩展配置 ───────────────────────────

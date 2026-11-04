@@ -456,7 +456,7 @@ module.exports = { activate };
 
     it('update 写进文件，重开之后还在', async () => {
       (manager as any).settingUpdate('demo.panelType.mode', 'slow');
-      await new Promise((r) => setTimeout(r, 20));
+      await (manager as any).persistExtensionSettings();
 
       const saved = JSON.parse(
         await readFile(path.join(base, 'extension-settings.json'), 'utf8'),
@@ -468,6 +468,95 @@ module.exports = { activate };
       expect((again as any).settingGet('demo.panelType.mode')).toBe('slow');
       // manifest 里的默认值仍然在（另一项没被覆盖）
       expect((again as any).settingGet('demo.panelType.other')).toBe('keep');
+    });
+  });
+
+  describe('扩展状态 / 密钥 / 存储目录真的落盘', () => {
+    it('globalState / workspaceState 写进文件，重开之后还在', async () => {
+      (manager as any).stateUpdate('demo.panel', 'global', 'nuxShown', true);
+      (manager as any).stateUpdate('demo.panel', 'workspace', 'lastFile', 'a.ts');
+      // 落盘本身是后台跑的（不阻塞扩展），测试里显式等它写完，别靠 sleep
+      await (manager as any).persistExtensionState();
+
+      const saved = JSON.parse(
+        await readFile(path.join(base, 'extension-state.json'), 'utf8'),
+      ) as Record<string, any>;
+      expect(saved['demo.panel'].global.nuxShown).toBe(true);
+      expect(Object.values(saved['demo.panel'].workspace)[0]).toEqual({ lastFile: 'a.ts' });
+
+      const again = new ExtensionManager({ workspaceRoot: base, registry: 'https://open-vsx.org' });
+      await again.initialize();
+      expect((again as any).stateGet('demo.panel', 'global', 'nuxShown')).toBe(true);
+      expect((again as any).stateGet('demo.panel', 'workspace', 'lastFile')).toBe('a.ts');
+    });
+
+    it('workspaceState 按工作区分开存（同一个扩展在两个项目里是两份）', async () => {
+      // 先在工作区 A 里写下两份状态
+      (manager as any).stateUpdate('demo.panel', 'global', 'nuxShown', true);
+      (manager as any).stateUpdate('demo.panel', 'workspace', 'lastFile', 'a.ts');
+      await (manager as any).persistExtensionState();
+
+      // 换一个工作区：workspaceState 是另一份，globalState 还是同一份
+      const other = new ExtensionManager({ workspaceRoot: base + '/other', registry: 'x' });
+      await other.initialize();
+      expect((other as any).stateGet('demo.panel', 'workspace', 'lastFile')).toBeUndefined();
+      expect((other as any).stateGet('demo.panel', 'global', 'nuxShown')).toBe(true);
+
+      (other as any).stateUpdate('demo.panel', 'workspace', 'lastFile', 'b.ts');
+      await (other as any).persistExtensionState();
+
+      // 第三个工作区：两份 workspaceState 都读不到，globalState 仍然在
+      const third = new ExtensionManager({ workspaceRoot: base + '/third', registry: 'x' });
+      await third.initialize();
+      expect((third as any).stateGet('demo.panel', 'workspace', 'lastFile')).toBeUndefined();
+      expect((third as any).stateGet('demo.panel', 'global', 'nuxShown')).toBe(true);
+    });
+
+    it('secrets 落盘（系统钥匙串不可用时退明文，但读得回来）', async () => {
+      await (manager as any).secretStore('demo.panel', 'token', 'sk-123');
+      expect(await (manager as any).secretGet('demo.panel', 'token')).toBe('sk-123');
+
+      const saved = JSON.parse(
+        await readFile(path.join(base, 'extension-secrets.json'), 'utf8'),
+      ) as Record<string, any>;
+      expect(saved['demo.panel'].token.data).toBe('sk-123');
+
+      await (manager as any).secretDelete('demo.panel', 'token');
+      expect(await (manager as any).secretGet('demo.panel', 'token')).toBeUndefined();
+    });
+
+    it('存储目录在 userData 下按扩展 id 分，不是扩展自己的目录', () => {
+      const paths = (manager as any).extensionStoragePaths('demo.panel');
+      expect(paths.globalStorage.startsWith(base)).toBe(true);
+      expect(paths.globalStorage).toContain('demo.panel');
+      expect(paths.workspaceStorage).toContain('workspace');
+      // 换一个工作区就是另一个目录（workspaceState 不跨项目）
+      const other = new ExtensionManager({ workspaceRoot: base + '/other', registry: 'x' });
+      expect((other as any).extensionStoragePaths('demo.panel').globalStorage).toBe(
+        paths.globalStorage,
+      );
+      expect((other as any).extensionStoragePaths('demo.panel').workspaceStorage).not.toBe(
+        paths.workspaceStorage,
+      );
+    });
+
+    it('卸载之后状态与密钥一起清掉（重装不该继承上一次的登录态）', async () => {
+      (manager as any).stateUpdate('demo.view', 'global', 'token', 'x');
+      await (manager as any).secretStore('demo.view', 'token', 'y');
+      await (manager as any).persistExtensionState();
+      await (manager as any).persistExtensionSecrets();
+
+      const res = await manager.uninstallExtension('demo.view');
+      expect(res.ok).toBe(true);
+
+      const stateFile = JSON.parse(
+        await readFile(path.join(base, 'extension-state.json'), 'utf8'),
+      ) as Record<string, any>;
+      const secretsFile = JSON.parse(
+        await readFile(path.join(base, 'extension-secrets.json'), 'utf8'),
+      ) as Record<string, any>;
+      expect(stateFile['demo.view']).toBeUndefined();
+      expect(secretsFile['demo.view']).toBeUndefined();
     });
   });
 

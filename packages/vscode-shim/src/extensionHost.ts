@@ -56,7 +56,10 @@ export class ExtensionHost {
   private loadedExtensions: Map<string, LoadedExtension> = new Map();
   private extensionContexts: Map<string, ExtensionContext> = new Map();
 
+  private readonly services?: Partial<import('./index').ExtensionHostServices>;
+
   constructor(options: ExtensionHostOptions) {
+    this.services = options.services;
     this.shim = new VSCodeShim({
       workspaceRoot: options.workspaceRoot,
       extensionPath: options.workspaceRoot,
@@ -106,7 +109,13 @@ export class ExtensionHost {
 
     // 创建扩展上下文
     console.log(`[activateExtension] 创建扩展上下文...`);
-    const context = createExtensionContext(extension.extensionPath);
+    const context = createExtensionContext({
+      extensionId,
+      extensionPath: extension.extensionPath,
+      manifest: extension.manifest,
+      storagePaths: this.services?.storagePaths?.(extensionId),
+      services: this.services,
+    });
     this.extensionContexts.set(extensionId, context);
 
     // 保存扩展信息
@@ -214,6 +223,8 @@ export class ExtensionHost {
   /** 用户打开的工作区变了（见 VSCodeShim.setWorkspaceRoot）。 */
   setWorkspaceRoot(root: string): void {
     this.shim.setWorkspaceRoot(root);
+    // context 里的 storageUri 是**惰性**解析的（每次取值都重新问 services.storagePaths），
+    // 所以这里不需要把已经交出去的 context 逐个改一遍。
   }
 
   /** 某个扩展注册了哪些视图。 */

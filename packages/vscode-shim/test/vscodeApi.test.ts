@@ -1,5 +1,8 @@
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { VSCodeShim, VSCODE_API_WHITELIST } from '../src/index';
+import { VSCodeShim, VSCODE_API_WHITELIST, createExtensionContext } from '../src/index';
 import {
   registerExtension,
   resetExtensionRegistry,
@@ -659,5 +662,141 @@ describe('workspace.getConfiguration 真读真写（以前永远返回调用方�
     expect(chatgpt.get('model')).toBe('gpt-5.4');
     // 写完不通知的话，扩展「写完之后重读」这一步等于什么都没发生
     expect(affected).toEqual(['chatgpt']);
+  });
+});
+
+describe('扩展 context 的身份、状态与密钥（以前全是假的）', () => {
+  /**
+   * 以前 `context.extension.id` 写死 `'unknown.extension'`、`globalState`/`workspaceState`
+   * 不落盘、`secrets` 永远 undefined —— 扩展每重启一次就像第一次运行。
+   * 这里钉的是「身份和这三个存储真的接上了宿主」。
+   */
+  const setup = () => {
+    const global: Record<string, unknown> = {};
+    const workspace: Record<string, unknown> = {};
+    const secrets: Record<string, string> = {};
+    const shim = new VSCodeShim({
+      workspaceRoot: '/tmp/x',
+      extensionPath: '/tmp/x',
+      onCommand: async () => undefined,
+      onMessage: () => {},
+      services: {
+        storage: {
+          get: (_id, scope, key) => (scope === 'global' ? global : workspace)[key],
+          update: (_id, scope, key, value) => {
+            const bucket = scope === 'global' ? global : workspace;
+            if (value === undefined) delete bucket[key];
+            else bucket[key] = value;
+          },
+          keys: (_id, scope) => Object.keys(scope === 'global' ? global : workspace),
+        },
+        secrets: {
+          get: async (_id, key) => secrets[key],
+          store: async (_id, key, value) => {
+            secrets[key] = value;
+          },
+          delete: async (_id, key) => {
+            delete secrets[key];
+          },
+        },
+        storagePaths: () => ({
+          globalStorage: '/tmp/x/global',
+          workspaceStorage: '/tmp/x/ws',
+          log: '/tmp/x/log',
+        }),
+      },
+    });
+    return { shim, global, workspace, secrets };
+  };
+
+  const makeContext = (shim: any) => {
+    return createExtensionContext({
+      extensionId: 'openai.chatgpt',
+      extensionPath: '/tmp/x',
+      manifest: { name: 'chatgpt', publisher: 'openai', version: '9.9.9', displayName: 'Codex' },
+      storagePaths: {
+        globalStorage: '/tmp/x/global',
+        workspaceStorage: '/tmp/x/ws',
+        log: '/tmp/x/log',
+      },
+      services: (shim as any).services,
+    });
+  };
+
+  it('extension.id 是真的 id，存储目录来自宿主而不是扩展自己的目录', () => {
+    const { shim } = setup();
+    const ctx = makeContext(shim);
+    expect(ctx.extension.id).toBe('openai.chatgpt');
+    expect(ctx.extension.packageJSON.version).toBe('9.9.9');
+    expect(ctx.globalStorageUri.fsPath).toBe('/tmp/x/global');
+    expect(ctx.storageUri.fsPath).toBe('/tmp/x/ws');
+    // 以前这三个都指向扩展自己的目录，写进去的东西会跟着扩展一起被删
+    expect(ctx.globalStorageUri.fsPath).not.toBe('/tmp/x');
+  });
+
+  it('存储目录是「按需」建的：真去碰 storageUri 时才建出来', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'echoly-ctx-'));
+    try {
+      const globalDir = path.join(root, 'global');
+      const shim = new VSCodeShim({
+        workspaceRoot: '/tmp/x',
+        extensionPath: '/tmp/x',
+        onCommand: async () => undefined,
+        onMessage: () => {},
+      });
+      const ctx = createExtensionContext({
+        extensionId: 'demo.ext',
+        extensionPath: '/tmp/x',
+        storagePaths: {
+          globalStorage: globalDir,
+          workspaceStorage: path.join(root, 'ws'),
+          log: path.join(root, 'log'),
+        },
+        services: (shim as any).services,
+      });
+      // 建目录这件事**不**发生在建 context 的时候（那会和收尾清理撞车）
+      expect(existsSync(globalDir)).toBe(false);
+      expect(ctx.globalStorageUri.fsPath).toBe(globalDir);
+      expect(existsSync(globalDir)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('globalState / workspaceState 真的存得住，两个作用域互不串', async () => {
+    const { shim } = setup();
+    const ctx = makeContext(shim);
+
+    await ctx.globalState.update('nuxShown', true);
+    await ctx.workspaceState.update('lastFile', 'a.ts');
+
+    expect(ctx.globalState.get('nuxShown')).toBe(true);
+    expect(ctx.globalState.get('nuxShown', false)).toBe(true);
+    expect(ctx.workspaceState.get('lastFile')).toBe('a.ts');
+    // 同名 key 在两个作用域里是两份
+    expect(ctx.workspaceState.get('nuxShown')).toBeUndefined();
+    expect(ctx.globalState.keys()).toEqual(['nuxShown']);
+    expect(ctx.workspaceState.keys()).toEqual(['lastFile']);
+
+    // 存过 false 也要能取回 false（`??` 会把 false 当成「没存过」）
+    await ctx.globalState.update('flag', false);
+    expect(ctx.globalState.get('flag', true)).toBe(false);
+
+    // update(undefined) 的语义是删除
+    await ctx.globalState.update('flag', undefined);
+    expect(ctx.globalState.get('flag')).toBeUndefined();
+    expect(ctx.globalState.keys()).toEqual(['nuxShown']);
+  });
+
+  it('secrets 真的存得住、删得掉', async () => {
+    const { shim, secrets } = setup();
+    const ctx = makeContext(shim);
+
+    expect(await ctx.secrets.get('token')).toBeUndefined();
+    await ctx.secrets.store('token', 'sk-123');
+    expect(await ctx.secrets.get('token')).toBe('sk-123');
+    expect(secrets).toEqual({ token: 'sk-123' });
+    await ctx.secrets.delete('token');
+    expect(await ctx.secrets.get('token')).toBeUndefined();
   });
 });

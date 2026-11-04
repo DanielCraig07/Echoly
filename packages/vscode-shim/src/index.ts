@@ -133,9 +133,21 @@ export interface ExtensionContext {
   globalStoragePath?: string;
   logPath?: string;
   extensionUri: vscode.Uri;
+  /**
+   * 扩展自己的存储目录（宿主给的，不是扩展目录）。
+   *
+   * 这三个是**惰性**的：只有扩展真的去取时才解析路径并建目录，
+   * 见 `createExtensionContext` 里那段注释。
+   */
+  storageUri: vscode.Uri;
+  globalStorageUri: vscode.Uri;
+  logUri: vscode.Uri;
   environmentVariableCollection: any;
   extensionMode: vscode.ExtensionMode;
   secrets: any;
+  /** 扩展自己的描述（`context.extension.id` 等）。以前这里是写死的 `unknown.extension`。 */
+  extension: any;
+  asAbsolutePath(relativePath: string): string;
 }
 
 /**
@@ -1890,40 +1902,91 @@ export class VSCodeShim {
 /**
  * 创建扩展上下文
  */
-export function createExtensionContext(extensionPath: string): ExtensionContext {
-  return {
+/**
+ * 建一个扩展的 `ExtensionContext`。
+ *
+ * 以前这个函数只收一个路径，于是 context 里那些「跟身份和存储有关」的东西全是假的：
+ * `extension.id` 写死 `'unknown.extension'`、`globalState`/`workspaceState` 不落盘
+ * （get 永远返回默认值、update 空操作）、`secrets` 永远 undefined —— 结果是
+ * 扩展每重启一次就像第一次运行（引导页又弹一遍、登录态没了）。
+ *
+ * 现在身份、存储目录、状态与密钥都由宿主提供；宿主没给实现时退回「空实现」，
+ * 而不是假装成功（谎报会让扩展以为记住的东西还在）。
+ */
+export interface ExtensionContextInit {
+  /** 真实扩展 id（`Anthropic.claude-code`）。 */
+  extensionId: string;
+  extensionPath: string;
+  /** 宿主给的存储目录；没给就退到扩展自己的目录（读写得进去，但会跟着扩展目录一起被删）。 */
+  storagePaths?: { globalStorage: string; workspaceStorage: string; log: string };
+  /** 扩展的 manifest（`context.extension.packageJSON`）。 */
+  manifest?: any;
+  services?: Partial<ExtensionHostServices>;
+}
+
+export function createExtensionContext(init: ExtensionContextInit): ExtensionContext {
+  const { extensionId, extensionPath, storagePaths, manifest, services } = init;
+
+  /**
+   * `globalState` / `workspaceState` 共用一套实现，只有作用域不同。
+   *
+   * 两个坑：`get(key, dflt)` 在存过 `false`/`0` 时要返回那个值（不能用 `??` 兜底），
+   * 而 `update(key, undefined)` 的语义是**删除**这一项。
+   */
+  const stateApi = (scope: 'global' | 'workspace') => ({
+    get(key: string, defaultValue?: any) {
+      const value = services?.storage?.get(extensionId, scope, key);
+      return value === undefined ? defaultValue : value;
+    },
+    update(key: string, value: any) {
+      services?.storage?.update(extensionId, scope, key, value);
+      return Promise.resolve();
+    },
+    keys() {
+      return services?.storage?.keys(extensionId, scope) ?? [];
+    },
+    setKeysForSync() {},
+  });
+
+  /**
+   * 三个存储目录**按需**解析（连目录也一起建）。
+   *
+   * 为什么不在这里直接算好：算好的那一刻就要建目录，而建目录如果发生在扩展激活
+   * 过程中，就会和「收尾删临时目录」这种动作撞车（删完又被建回来）。改成 getter 之后
+   * 只有**扩展真的去碰 storageUri** 时才动手，顺带还解决了「切了工作区之后 storageUri
+   * 还指着上一个工作区」——每次取值都重新问宿主。
+   */
+  const lazyPath = (kind: 'globalStorage' | 'workspaceStorage' | 'log') => {
+    let cached: { uri: any; path: string } | undefined;
+    return () => {
+      const resolved =
+        services?.storagePaths?.(extensionId)?.[kind] ??
+        (kind === 'log' ? storagePaths?.log : storagePaths?.[kind]) ??
+        extensionPath;
+      if (!cached || cached.path !== resolved) {
+        try {
+          require('fs').mkdirSync(resolved, { recursive: true });
+        } catch {
+          // 建不出来（权限等）不该让扩展拿不到路径 —— 它自己写的时候会看到真正的错误
+        }
+        cached = { uri: ShimUri.file(resolved), path: resolved };
+      }
+      return cached;
+    };
+  };
+  const globalStoragePathOf = lazyPath('globalStorage');
+  const workspaceStoragePathOf = lazyPath('workspaceStorage');
+  const logPathOf = lazyPath('log');
+
+  const context: any = {
     subscriptions: [],
-    workspaceState: {
-      get(key: string, defaultValue?: any) {
-        return defaultValue;
-      },
-      update(key: string, value: any) {
-        return Promise.resolve();
-      },
-      keys() {
-        return [];
-      },
-    },
-    globalState: {
-      get(key: string, defaultValue?: any) {
-        return defaultValue;
-      },
-      update(key: string, value: any) {
-        return Promise.resolve();
-      },
-      keys() {
-        return [];
-      },
-      setKeysForSync() {},
-    },
+    workspaceState: stateApi('workspace') as any,
+    globalState: stateApi('global') as any,
     extensionPath,
     extensionUri: ShimUri.file(extensionPath),
     asAbsolutePath(relativePath: string) {
       return require('path').join(extensionPath, relativePath);
     },
-    storageUri: ShimUri.file(extensionPath),
-    globalStorageUri: ShimUri.file(extensionPath),
-    logUri: ShimUri.file(extensionPath),
     environmentVariableCollection: {
       persistent: true,
       replace() {},
@@ -1939,26 +2002,26 @@ export function createExtensionContext(extensionPath: string): ExtensionContext 
     extensionMode: 1, // Production
     secrets: {
       get(key: string) {
-        return Promise.resolve(undefined);
+        return Promise.resolve(services?.secrets?.get(extensionId, key)).then((v) => v);
       },
       store(key: string, value: string) {
-        return Promise.resolve();
+        return Promise.resolve(services?.secrets?.store(extensionId, key, value)).then(() => {});
       },
       delete(key: string) {
-        return Promise.resolve();
+        return Promise.resolve(services?.secrets?.delete(extensionId, key)).then(() => {});
       },
       onDidChange: () => ({ dispose() {} }),
     },
     extension: {
-      id: 'unknown.extension',
+      id: extensionId,
       extensionUri: ShimUri.file(extensionPath),
       extensionPath,
       isActive: true,
-      packageJSON: {
-        name: 'extension',
-        publisher: 'unknown',
+      packageJSON: manifest ?? {
+        name: extensionId.split('.').pop() ?? extensionId,
+        publisher: extensionId.split('.')[0] ?? 'unknown',
         version: '1.0.0',
-        displayName: 'Extension',
+        displayName: extensionId,
         description: '',
         engines: { vscode: '^1.94.0' },
       },
@@ -1969,7 +2032,16 @@ export function createExtensionContext(extensionPath: string): ExtensionContext 
       onDidChange: () => ({ dispose() {} }),
       canSendRequest: () => undefined,
     },
-  } as ExtensionContext;
+  };
+  Object.defineProperties(context, {
+    globalStorageUri: { get: () => globalStoragePathOf().uri, enumerable: true },
+    storageUri: { get: () => workspaceStoragePathOf().uri, enumerable: true },
+    logUri: { get: () => logPathOf().uri, enumerable: true },
+    globalStoragePath: { get: () => globalStoragePathOf().path, enumerable: true },
+    storagePath: { get: () => workspaceStoragePathOf().path, enumerable: true },
+    logPath: { get: () => logPathOf().path, enumerable: true },
+  });
+  return context as ExtensionContext;
 }
 
 export {
