@@ -174,7 +174,7 @@ export function ExtensionViewPanel({
       if (cancelled) return;
 
       const summary = slot
-        ? `top=${Math.round(slot.top)} height=${Math.round(slot.height)}`
+        ? `top=${Math.round(slot.top)} height=${Math.round(slot.height)} mode=${slot.mode} anchor=${slot.anchor}`
         : '量不到（退回左下角浮层）';
       if (summary !== lastSlotSummaryRef.current) {
         lastSlotSummaryRef.current = summary;

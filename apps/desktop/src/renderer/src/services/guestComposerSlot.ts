@@ -36,6 +36,21 @@ export interface GuestComposerSlot {
   top: number;
   /** 空位高度（= 我们那一栏的高度）。 */
   height: number;
+  /**
+   * 这个位置是怎么定出来的。
+   *
+   * - `slot`：页面里真的让出了一块空位（最干净，谁也不遮谁）；
+   * - `overlay`：空位插不成，位置是从输入框那一块的坐标**算**出来的（会盖住转录区
+   *   最后一点点）。
+   */
+  mode?: 'slot' | 'overlay';
+  /**
+   * 诊断用：认到的那个元素的 tag.class@上-下。
+   *
+   * 这套东西是在**别人的页面**里认输入框，认错了只会表现成「位置不对」—— 从界面上
+   * 完全看不出是没认到、还是认到了别的元素。带上这一句，一条日志就够定位。
+   */
+  anchor?: string;
 }
 
 interface GuestRect {
@@ -51,6 +66,8 @@ interface GuestElement {
   parentElement: GuestElement | null;
   /** `TEXTAREA` / `INPUT`（会转成大写比较）。 */
   tagName?: string;
+  /** 只有诊断日志用得到。SVG 上它不是字符串，所以得判一下类型。 */
+  className?: unknown;
   /** 浏览器自己算出来的「这个元素真的能编辑吗」—— `contenteditable` 的继承也算在内。 */
   isContentEditable?: boolean;
   /** 自定义元素把自己的内容藏在里面（VS Code 风格的界面到处都是），要深挖进去。 */
@@ -72,6 +89,8 @@ interface GuestDocument {
 
 interface GuestWindow {
   innerHeight: number;
+  /** 读元素的 computed style（这里只用 `order`）。取不到就跳过。 */
+  getComputedStyle?: (el: GuestElement) => { order?: string } | null;
 }
 
 export function measureComposerSlot(
@@ -155,39 +174,74 @@ export function measureComposerSlot(
     block = parent;
   }
 
-  /* 3) 在它前面插空位。插不动就往上再试一层 —— 有的界面把输入框包在一个不带 flex 的
-        容器里，插在那一层不会把它顶上去。 */
+  /** 找输入框那一块**之前**的位置：插空位失败时要靠它算出「紧挨着它上方」是哪儿。 */
+  const blockTopBefore = rectOf(block) ? rectOf(block)!.top : -1;
+
+  /** 只给日志用：认到的到底是谁。 */
+  const describe = (el: GuestElement): string => {
+    const tag = String(el.tagName || '?').toLowerCase();
+    const cls =
+      typeof el.className === 'string'
+        ? el.className
+            .split(/\s+/)
+            .filter((name) => name)
+            .slice(0, 2)
+            .join('.')
+        : '';
+    const rect = rectOf(el);
+    return (
+      tag +
+      (cls ? '.' + cls : '') +
+      (rect ? '@' + Math.round(rect.top) + '-' + Math.round(rect.bottom) : '')
+    );
+  };
+  const anchor = describe(block);
+
+  /* 3) 先试「在它上面插一块空位」—— 最干净的做法：页面的流里真的让出地方，输入框被
+        顶上去一点，我们的栏落在空位上，谁也不遮谁。插不动就往上再试一层（有的界面把
+        输入框包在一个不带 flex 的容器里，插在那一层不会把它顶上去）。 */
   let host = block.parentElement;
   for (let attempt = 0; attempt < 3 && host; attempt++) {
     const slot = doc.createElement('div');
     slot.setAttribute('id', SLOT_ID);
     slot.setAttribute('data-echoly', 'pending-bar');
+
+    /* 抄一份 `order`。有的界面用 flex 的 `order` 排「消息区 / 输入框」，我们这块默认
+       `order: 0` 会被排到**最前面** —— 表现就是「栏跑到面板顶部去了」（真实事故）。
+       抄一份之后，同一个 order 内部按文档顺序决定，而我们就插在输入框前面，正好贴着它。 */
+    let orderStyle = '';
+    if (typeof win.getComputedStyle === 'function') {
+      try {
+        const computed = win.getComputedStyle(block);
+        if (computed && computed.order && computed.order !== '0') {
+          orderStyle = 'order:' + computed.order + ';';
+        }
+      } catch {
+        // 拿不到就算了：下面还有「覆盖」那条兜底
+      }
+    }
+
     /* pointer-events:none：这块空位只是占地方，点它应该落到下面的页面上 */
-    slot.style.cssText = 'flex:0 0 auto;width:100%;height:' + barHeight + 'px;pointer-events:none;';
+    slot.style.cssText =
+      'flex:0 0 auto;width:100%;height:' + barHeight + 'px;pointer-events:none;' + orderStyle;
     host.insertBefore(slot, block);
 
-    /* 3) 自检。插进去**不等于**插对了 —— 有的界面把输入框钉死（`position: fixed`），
-          空位会直接落在输入框身上；有的容器不是 flex，插一行会把输入框顶出视口。
-          这两种都必须撤掉并返回 null：栏盖住用户打字的地方，比栏跑到左下角糟得多。
+    /* 自检，只认一种「插对了」：空位**紧贴着输入框那一块的上沿**。
+       注意**不要求输入框的位置发生变化** —— 正常的 flex 列里，空位是让上面的消息区
+       缩掉、输入框继续贴着底边，空位就是它上面那一行，这正是我们要的。
 
-          注意**不要求输入框的位置发生变化**：正常的 flex 列里，空位是让上面的消息区
-          缩掉、输入框继续贴着底边 —— 空位就是它上面那一行，这正是我们要的。 */
+       反过来，只要空位没贴在它上面（被 `order` 排到别处、被钉死的输入框顶开…），就
+       **必须**撤掉：留着它既挡不住输入框、又会在页面上留一段莫名其妙的空白。 */
     const slotRect = rectOf(slot);
     const blockRect = rectOf(block);
-    const overlapsBlock =
-      !!slotRect &&
-      !!blockRect &&
-      slotRect.bottom > blockRect.top + 2 &&
-      slotRect.top < blockRect.bottom - 2;
+    const adjacent = !!slotRect && !!blockRect && Math.abs(slotRect.bottom - blockRect.top) <= 2;
     const placed =
-      !!slotRect &&
-      !!blockRect &&
-      slotRect.height >= barHeight - 4 &&
-      slotRect.top >= -2 &&
-      !overlapsBlock &&
-      blockRect.bottom <= viewportH + 2;
+      adjacent &&
+      slotRect!.height >= barHeight - 4 &&
+      slotRect!.top >= viewportH * 0.35 &&
+      blockRect!.bottom <= viewportH + 2;
     if (placed) {
-      return { top: slotRect.top, height: barHeight };
+      return { top: slotRect!.top, height: barHeight, mode: 'slot', anchor };
     }
 
     host.removeChild(slot);
@@ -196,6 +250,15 @@ export function measureComposerSlot(
     if (!outer || outer === doc.body || outer === doc.documentElement) break;
     block = host;
     host = outer;
+  }
+
+  /* 4) 兜底：空位插不成（对方把输入框钉死了、容器不是 flex、`order` 排不出来…），就直接
+        把栏摆在**输入框那一块的上沿之上** —— 会盖住转录区最后一点点，但位置是对的，
+        比飘在对话中间 / 面板顶上强得多。
+        前提是这块地方看着像输入框：它得在下半屏，而且整块都在视口里。 */
+  const fallbackTop = blockTopBefore - barHeight;
+  if (blockTopBefore > 0 && fallbackTop >= viewportH * 0.35 && blockTopBefore <= viewportH) {
+    return { top: fallbackTop, height: barHeight, mode: 'overlay', anchor };
   }
 
   return null;

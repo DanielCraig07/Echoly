@@ -49,6 +49,8 @@ class FakeEl {
   isContentEditable = false;
   /** 自定义元素藏内容的地方（VS Code 风格界面到处都是）。 */
   shadowRoot: { querySelectorAll(selector: string): FakeEl[] } | null = null;
+  /** flex 的 `order`（有的界面用它排「消息区 / 输入框」）。 */
+  order = 0;
   /** 固定高度；null = flex:1，吃掉剩下的高度。 */
   fixedHeight: number | null = null;
   /** 子节点从下往上排（`display:flex; flex-direction:column`）。 */
@@ -74,6 +76,12 @@ class FakeEl {
 
   get parentElement(): FakeEl | null {
     return this.parent;
+  }
+
+  /** 生效的 `order`：cssText 里写了就用它（宿主给我们那块空位就是这么设的）。 */
+  get cssOrder(): number {
+    const matched = /order:\s*(-?\d+)/.exec(this.css);
+    return matched ? Number(matched[1]) : this.order;
   }
 
   /** 自己多高：cssText 里写了 `height:Npx` 就用它，否则用固定高度。 */
@@ -142,7 +150,16 @@ function kids(node: FakeEl): FakeEl[] {
   return [...node.children, ...shadow];
 }
 
-function makeScene(options: { pinnedComposer?: boolean; shadowComposer?: boolean } = {}) {
+function makeScene(
+  options: {
+    pinnedComposer?: boolean;
+    shadowComposer?: boolean;
+    /** 用 flex `order` 排「消息区 / 输入框」的那种界面。 */
+    flexOrder?: boolean;
+    /** 装成「读不到 computed style」的样子（order 抄不过来）。 */
+    noComputedStyle?: boolean;
+  } = {},
+) {
   const VIEWPORT_H = 800;
   const body = new FakeEl();
   body.column = true;
@@ -184,11 +201,17 @@ function makeScene(options: { pinnedComposer?: boolean; shadowComposer?: boolean
     }
     /* 先把「固定高度」的加起来，剩下的给 flex:1 那个 —— 真实的 flex 列就是这个算法。
        钉死的（position: fixed）不占流里的位置，也不参与这个加法。 */
-    const flow = kids(node);
+    /* 真实的 flex 列会先按 `order` 排，再按文档顺序（稳定排序）。有的界面就是靠
+       `order` 把输入框放到最后的 —— 我们插进去的那一块如果 `order` 是默认的 0，
+       会被排到最前面（= 面板顶部），这正是「栏跑到顶上了」那个事故。 */
+    const flow = kids(node)
+      .filter((child) => !child.pinned)
+      .map((child, index) => ({ child, index }))
+      .sort((a, b) => a.child.cssOrder - b.child.cssOrder || a.index - b.index)
+      .map((entry) => entry.child);
     let used = 0;
     let hasFlex = false;
     for (const child of flow) {
-      if (child.pinned) continue;
       const h = child.ownHeight;
       if (h == null) hasFlex = true;
       else used += h;
@@ -198,7 +221,6 @@ function makeScene(options: { pinnedComposer?: boolean; shadowComposer?: boolean
     let bottom = top + height;
     for (let i = flow.length - 1; i >= 0; i--) {
       const child = flow[i];
-      if (child.pinned) continue;
       const childHeight = child.ownHeight ?? flexHeight;
       layoutNode(child, bottom - childHeight, childHeight);
       bottom -= childHeight;
@@ -245,7 +267,19 @@ function makeScene(options: { pinnedComposer?: boolean; shadowComposer?: boolean
     querySelectorAll: () => collectDescendants(body),
     createElement: () => new FakeEl(),
   };
-  const win = { innerHeight: VIEWPORT_H };
+  if (options.flexOrder) {
+    messages.order = 1;
+    box.order = 2;
+    layout();
+  }
+
+  const win: {
+    innerHeight: number;
+    getComputedStyle?: (el: FakeEl) => { order: string };
+  } = { innerHeight: VIEWPORT_H };
+  if (!options.noComputedStyle) {
+    win.getComputedStyle = (el: FakeEl) => ({ order: String(el.cssOrder) });
+  }
 
   return { doc, win, body, messages, input, box, inner, layout };
 }
@@ -256,7 +290,9 @@ describe('measureComposerSlot', () => {
     const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
 
     // 输入框那一整块贴着底边（690..800），空位就落在它上面（634..690）
-    expect(slot).toEqual({ top: 634, height: 56 });
+    expect(slot).toMatchObject({ top: 634, height: 56, mode: 'slot' });
+    // 日志里带上「认到的到底是谁」：位置不对时一条日志就够定位
+    expect(slot?.anchor).toContain('@690-800');
     // 插在「输入框那一整块」前面，而不是塞进输入框和工具栏之间
     const inserted = findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID);
     expect(inserted?.parent).toBe(scene.body);
@@ -265,11 +301,32 @@ describe('measureComposerSlot', () => {
     expect(scene.input.getBoundingClientRect().bottom).toBe(770);
   });
 
-  it('输入框被钉死在底部（position:fixed）→ 拒绝，并把空位撤干净', () => {
+  it('输入框被钉死在底部（position:fixed）→ 不插空位，改成「紧贴它上方」覆盖', () => {
     const scene = makeScene({ pinnedComposer: true });
-    expect(measureComposerSlot(scene.doc as never, scene.win as never, 56)).toBeNull();
-    // 钉死的输入框不占流里的位置：空位会**正好落在它身上**。这时宁可不显示这一栏，
-    // 也绝不把栏盖到用户打字的地方去。
+    const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
+
+    // 钉死的输入框不占流里的位置：空位会**正好落在它身上**（挡住用户打字的地方），
+    // 所以必须撤掉 —— 位置改成「输入框那一块的上沿之上」直接算出来。
+    expect(slot).toMatchObject({ top: 634, height: 56, mode: 'overlay' });
+    expect(findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID)).toBeNull();
+  });
+
+  it('界面用 flex `order` 排输入框 → 抄一份 order，空位照样贴着它', () => {
+    const scene = makeScene({ flexOrder: true });
+    const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
+
+    expect(slot).toMatchObject({ top: 634, height: 56 });
+    // 抄了 order 才贴得上：不抄的话空位默认 order:0，会被排到消息区**前面**去
+    expect(findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID)).not.toBeNull();
+  });
+
+  it('抄不到 order（读不到 computed style）→ 空位撤掉，位置靠算，绝不飘到面板顶上', () => {
+    /* 这是真实事故：空位被 order 排到消息区前面，栏就跑到面板顶部去了。撤掉空位之后
+       至少要落在「输入框上方」—— 位置是从输入框那一块的坐标算出来的。 */
+    const scene = makeScene({ flexOrder: true, noComputedStyle: true });
+    const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
+
+    expect(slot).toMatchObject({ top: 634, height: 56, mode: 'overlay' });
     expect(findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID)).toBeNull();
   });
 
@@ -283,7 +340,7 @@ describe('measureComposerSlot', () => {
   it('输入框藏在 shadow root 里也能找到（VS Code 风格的界面就是这样）', () => {
     const scene = makeScene({ shadowComposer: true });
     const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
-    expect(slot).toEqual({ top: 634, height: 56 });
+    expect(slot).toMatchObject({ top: 634, height: 56, mode: 'slot' });
   });
 
   it('只有转录区里那种可编辑块（离底部很远）→ 拒绝，绝不拿它当锚点', () => {
