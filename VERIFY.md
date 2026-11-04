@@ -1477,6 +1477,30 @@ Claude 的界面用 **flex 的 `order`** 排「消息区 / 输入框」（输入
 **门禁**：prettier / typecheck / lint（0 error）/ audit:wiring（202 handler = 202 invoke，
 233 preload 方法全部有调用）/ test（143 files、5133 passed —— 少的正是删掉的那个测试文件）。
 
+### 第二十五轮：左下角那张浮层卡片也取消；前进 / 后退挪到编辑区那一侧
+
+**1. 左下角的「文件已被改动」浮层卡片去掉。**
+
+上一轮保留了它（面板收起 / 停在扩展标签上时提示）。用户看下来觉得多余 —— 现在就只剩
+**内置会话那一栏**这一个落点：面板停在 AI 对话上时，它贴着输入框上方；其余情况不提示。
+
+连带清掉：`pendingChangesOutsideChat` 判定、`App.tsx` 里的 `PendingChangesBar` 引用、
+`.chat-diff-summary-container.pending-changes-bar--floating` 样式。左下角浮层现在只放 toast。
+
+> 代价说清楚：面板停在 Claude / Codex 上时，代理改文件**界面上不再有任何提示**。
+> 文件本身照旧会重新载入（见第十四轮），只是没有「接受 / 拒绝」的入口。
+
+**2. 标题栏的前进 / 后退从左侧挪到右侧。**
+
+原来它在红绿灯按钮后面（Cursor 的位置），但左边那一块是「项目 / 菜单」的地盘，和它要
+操作的东西（编辑器里打开的文件）隔了半个窗口。现在挪进右侧动作组，紧邻布局开关那一排 ——
+和编辑区在**同一侧**，视线不用来回跑。
+
+新增 `.titlebar-nav` 样式（尺寸 / 圆角 / hover 都照抄 `.layout-toggle-btn`），把原来那一坨
+行内样式收进 CSS。它单独成组、不并进布局开关那个圆角容器：文件导航和布局开关不是一类东西。
+
+**门禁**：prettier / typecheck / lint（0 error）/ audit:wiring / test（143 files、5133 passed）全过。
+
 ## 5. 建议顺序
 
 1. `npm run dev` 之前先过**第 1 节门禁**（四条命令）。这一步不过，后面的现象都不可信。

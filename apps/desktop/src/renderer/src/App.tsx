@@ -98,7 +98,6 @@ import { AgentTaskPanel } from './components/AgentTaskPanel';
 import { ProblemsPanel } from './components/ProblemsPanel';
 import { StatusBar } from './components/StatusBar';
 import { GlobalTooltip } from './components/GlobalTooltip';
-import { PendingChangesBar } from './components/PendingChangesBar';
 import { heuristicDetectTech } from './utils/techStack';
 import {
   isImagePath,
@@ -5138,12 +5137,6 @@ export function App() {
   const isWelcomeShell = !workspace;
   const showLeftPanel = !isWelcomeShell && layout.leftPanelExpanded !== false;
   const showChatPanel = !isWelcomeShell && layout.chatPanelExpanded !== false;
-  /**
-   * 「内置会话那边看不到『文件已被改动』那一栏」—— 面板收起来、或停在扩展标签上时。
-   *
-   * 只有这种时候才需要那个左下角浮层；内置会话自己那栏贴着它的输入框，用不着兜底。
-   */
-  const pendingChangesOutsideChat = !showChatPanel || rightPanelTab !== 'chat';
   const effectiveWidths = isWelcomeShell
     ? { explorerWidth: 0, chatWidth: 0 }
     : computeEffectiveLayoutWidths(layout, shellWidth);
@@ -5509,60 +5502,6 @@ export function App() {
             ))}
           </div>
         )}
-        {/* 前进 / 后退：与 Cursor 同位置（紧邻红绿灯按钮之后）。 */}
-        <div
-          className="titlebar-nav"
-          style={
-            { display: 'flex', alignItems: 'center', gap: 2, WebkitAppRegion: 'no-drag' } as any
-          }
-        >
-          <button
-            type="button"
-            disabled={!canGoBack(navHistory)}
-            title="后退到上一个文件"
-            onClick={() => navigateHistory('back')}
-            style={{
-              width: 24,
-              height: 24,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: 4,
-              color: canGoBack(navHistory) ? 'var(--text)' : 'var(--muted)',
-              opacity: canGoBack(navHistory) ? 1 : 0.4,
-              cursor: canGoBack(navHistory) ? 'pointer' : 'default',
-              fontSize: 14,
-              lineHeight: 1,
-            }}
-          >
-            ←
-          </button>
-          <button
-            type="button"
-            disabled={!canGoForward(navHistory)}
-            title="前进到下一个文件"
-            onClick={() => navigateHistory('forward')}
-            style={{
-              width: 24,
-              height: 24,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: 4,
-              color: canGoForward(navHistory) ? 'var(--text)' : 'var(--muted)',
-              opacity: canGoForward(navHistory) ? 1 : 0.4,
-              cursor: canGoForward(navHistory) ? 'pointer' : 'default',
-              fontSize: 14,
-              lineHeight: 1,
-            }}
-          >
-            →
-          </button>
-        </div>
         <div className="titlebar-center" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {remoteHost && (
             <span
@@ -5635,6 +5574,26 @@ export function App() {
             <span className="search-trigger-text">{t('app.commandSearch')}</span>
             <kbd className="search-trigger-kbd">{isMac ? '⌘P' : 'Ctrl+P'}</kbd>
           </button>
+
+          {/* 前进 / 后退：和编辑器那一侧的动作组同一排（紧邻下面的布局开关）。 */}
+          <div className="titlebar-nav">
+            <button
+              type="button"
+              disabled={!canGoBack(navHistory)}
+              title="后退到上一个文件"
+              onClick={() => navigateHistory('back')}
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              disabled={!canGoForward(navHistory)}
+              title="前进到下一个文件"
+              onClick={() => navigateHistory('forward')}
+            >
+              →
+            </button>
+          </div>
 
           {/* 3个区域折叠/展开切换按钮 */}
           <div className="layout-toggle-group">
@@ -7389,8 +7348,8 @@ export function App() {
         onShowToast={showToast}
       />
 
-      {/* 左下角浮层：待处理的磁盘改动栏（兜底）+ toast 通知 */}
-      {(toasts.length > 0 || (pendingChangesOutsideChat && pendingChanges.length > 0)) && (
+      {/* 左下角浮层：toast 通知 */}
+      {toasts.length > 0 && (
         <div
           style={{
             position: 'fixed',
@@ -7404,26 +7363,6 @@ export function App() {
             pointerEvents: 'none',
           }}
         >
-          {/*
-            「文件已被改动」的**兜底位**：内置会话那一栏看不到的时候用。
-
-            内置会话那边，这一栏贴在它自己输入框的正上方 —— 那才是它该在的地方。
-            但面板整个收起来、或者面板正停在 Claude / Codex 这些**扩展自己的界面**上时，
-            用户就完全看不到它了，而外部改动照样在发生，所以这里留一个浮层版本。
-
-            为什么不再往扩展面板里塞：那些扩展的输入框长在它们自己的 webview 里，
-            我们既插不进去、也量不准，硬摆过去只会挡住用户打字的地方（试过几轮，位置
-            始终别扭）。**扩展面板保持它原本的交互**，提示就放在这个不打扰人的角落。
-          */}
-          {pendingChangesOutsideChat && pendingChanges.length > 0 && (
-            <PendingChangesBar
-              className="pending-changes-bar--floating"
-              changes={pendingChanges}
-              onAcceptAll={handleAcceptAllExternalChanges}
-              onRejectAll={handleRejectAllExternalChanges}
-              onShowDiff={handleShowExternalDiff}
-            />
-          )}
           {toasts.map((toast) => {
             const cleanTitle = toast.title.replace(
               /^[\u2713\u2715\u26a0\u2139\u26a1\u2699\u00d7]\uFE0F?\s*/u,

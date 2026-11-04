@@ -311,6 +311,47 @@ select:focus {
   -webkit-app-region: no-drag;
 }
 
+/*
+ * 标题栏上的「前进 / 后退」。
+ *
+ * 它是**文件导航**（在打开过的文件之间走），和旁边那一排「布局开关」不是一类东西，
+ * 所以不并进那个圆角容器里，单独成一组、贴着它左边。尺寸、圆角、hover 都照抄那一排，
+ * 免得并排时看着是两种按钮。
+ */
+.titlebar-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 5px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.titlebar-nav button:hover:not(:disabled) {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.titlebar-nav button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .layout-toggle-group {
   display: flex;
   align-items: center;
@@ -24578,27 +24619,6 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 .chat-diff-action-right .btn-reject-all:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-/*
- * 左下角浮层形态：**内置会话那一栏看不到**时用它。
- *
- * 内置会话开着的时候，这一栏贴在它自己输入框的正上方 —— 那才是它该在的地方。
- * 但面板整个收起来、或者面板正停在 Claude / Codex 这些扩展自己的界面上时，用户
- * 在那里看不到提示，而外部改动照样在发生 —— 这时放到左下角，别让提示整个消失。
- *
- * 扩展面板**保持它原本的交互**：那些输入框长在扩展自己的 webview 里，我们既插不
- * 进去也量不准，硬摆过去只会挡住用户打字的地方。
- */
-.chat-diff-summary-container.pending-changes-bar--floating {
-  position: fixed;
-  left: 24px;
-  bottom: 28px;
-  z-index: 99999;
-  width: min(420px, calc(100vw - 32px));
-  margin: 0;
-  pointer-events: auto;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 /* webview 层的定位参照（那些层是 `position: absolute`）。 */
