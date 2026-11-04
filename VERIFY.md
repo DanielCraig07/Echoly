@@ -737,6 +737,74 @@ webview 层不再互相挤高度，切换标签也不会重排。
 11. **拖动两侧分隔条之后**（第七轮那条的回归）再点「+」：命中的应该是**当前**那一层，
     隐藏的那几层不该抢走点击。
 
+### 第十轮：右上角收口 + 进度条 + 「Codex 装上了但用不了」的真凶
+
+**1. 标题栏右上角。** 设置按钮以前画的是「一个圆 + 八根辐条」，渲染出来是一颗**星芒**
+—— 而 Claude 的标志恰好也是星芒，两个挨在同一片区域，看着像同一类东西。现在换成
+标准齿轮（与「运行时参数配置」那个齿轮同一条 path，两个齿轮长得一致），并且和三个
+布局开关、内置浏览器收进**同一个容器**：布局开关 → 浏览器 → 设置。
+
+**2. 下载进度条不随进度增长。** `.ext-progress-track` / `.ext-progress-bar` 补了
+`display: block`：搜索结果那一行用的是 `<span>`，span 默认**行内** —— 行内的东西
+`height` 无效、子元素 `width: 95%` 按零宽算，于是「百分比在涨、条一动不动」。
+卡片里那份用的是 `<div>`，所以那边一直是好的，这个坑才一直没被发现。
+
+**3. Codex（`openai.chatgpt`）装完「应用插件的展示还是老样子」—— 根因找到了。**
+
+现象是扩展列表里躺着一条「已启用 / v26.51021.22027」，但**没有任何视图、没有命令**，
+详情页「贡献的功能」是空的。真机扩展目录 + 探针实跑，结论是
+**扩展主模块压根没加载成功**（不是 activate 里失败）：
+
+```
+ACTIVATE FAILED: TypeError: Cannot read properties of undefined (reading 'Workspace')
+  ... ExtensionHost.activateExtension (packages/vscode-shim/src/extensionHost.ts:154)
+```
+
+`out/extension.js` 顶层写着 `dv=F(require("vscode"))` 后紧跟
+`commentCodeLensEnabled: dv.ConfigurationTarget.Workspace` —— 而 shim 上没有
+`ConfigurationTarget`。**枚举缺失会死在模块加载阶段**，界面上只剩一句「激活失败」。
+
+修完之后探针的结论：
+
+| 检查                 | 修之前                        | 修之后                                                   |
+| -------------------- | ----------------------------- | -------------------------------------------------------- |
+| 主模块加载           | 失败（`undefined.Workspace`） | 成功                                                     |
+| `activate()`         | 没跑到                        | 成功                                                     |
+| 视图                 | `[]`                          | `["chatgpt.sidebarView"]`（名字 `Codex`）                |
+| 命令                 | `[]`                          | 10 条（`chatgpt.openSidebar`、`chatgpt.newCodexPanel`…） |
+| 详情页「贡献的功能」 | 空                            | 视图 + 命令两节                                          |
+
+（探针里那 2 条 unhandled rejection 是 Codex 自己去 `chmod ~/.codex/ipc` 被环境挡下，
+与 shim 无关。）
+
+**所以这一轮不是「补上 Codex 要的那一个枚举」，而是把这个病根一次治掉：**
+
+- `vscodeEnums.ts`：把官方 64 个枚举**全部**落下来，取值逐字对齐 `@types/vscode`。
+  零散补法治不了这个病 —— 补完 Codex 还有下一个扩展。顺带修了两个**取值本身是错的**：
+  `UIKind` 写成了 `Web = 1, Desktop = 2`（官方 `Desktop = 1, Web = 2`），而 `env.uiKind`
+  标着 2 说是 Desktop —— 两者一比会让扩展**误判成跑在浏览器里**。现在两边一致（Desktop）。
+- `vscodePlaceholderClasses.ts`：缺的 50 个类给**形状占位**（能 new、能 instanceof、
+  构造参数留着），`CancellationError` / `FileSystemError` 单独真实现（它们是错误类，
+  扩展会 `instanceof Error`、会读 `err.code`）。缺类的后果同样是
+  `X is not a constructor` → 整个扩展激活失败。
+- `window` / `workspace` / `env` 补齐：`onDidChangeTerminalShellIntegration` 那一批终端
+  集成事件（Codex 在 activate 里第一件事就是订它）、Notebook 的一批事件、`createQuickPick` /
+  `createInputBox` / `createTextEditorDecorationType` / `withScmProgress`、`workspace.save` /
+  `saveAs`、`env.isAppPortable` / `onDidChangeShell`。
+  **规则**：事件订阅一律返回 disposable、属性一律返回空值而不是 undefined ——
+  扩展读到 undefined 就是 `undefined.xxx` 的 TypeError。
+- 新增 `chat` / `lm` 两个命名空间（**给形状不给能力**：`selectChatModels` 返回空数组、
+  注册类返回空 disposable）。真实 VS Code 里这两个总是存在，AI 扩展普遍先探测再用
+  （`if (vscode.lm?.selectChatModels)`）；探测到 undefined 时它走的是完全不同的降级分支。
+- `createAPI()` 的返回值外面套了一层**诊断代理**：读到 shim 上不存在的键时打一行
+  `[vscode-shim] 扩展读取了 shim 上不存在的 API: "vscode.Xxx"`。行为不变（未知键照样
+  返回 undefined，特征检测不受影响），只是下次再遇到「装上了但什么都没发生」时，
+  不用再去 2.5MB 的 bundle 里翻 `require("vscode")` 的用法。
+
+回归测试：`npx vitest run packages/vscode-shim/test/vscodeApi.test.ts`
+（新增 8 条，断言的是「整批」而不是「今天用到的那个」：全部枚举存在且取值一致、
+全部类可 new、window 上那批事件订阅返回 disposable、`UIKind` 与 `env.uiKind` 一致）。
+
 ## 5. 建议顺序
 
 1. `npm run dev` 之前先过**第 1 节门禁**（四条命令）。这一步不过，后面的现象都不可信。

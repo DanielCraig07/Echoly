@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { VSCodeShim, VSCODE_API_WHITELIST, createExtensionContext } from '../src/index';
+import { VSCODE_ENUMS } from '../src/vscodeEnums';
+import { VSCODE_ERROR_CLASSES, VSCODE_PLACEHOLDER_CLASSES } from '../src/vscodePlaceholderClasses';
 import {
   registerExtension,
   resetExtensionRegistry,
@@ -798,5 +800,117 @@ describe('扩展 context 的身份、状态与密钥（以前全是假的）', (
     expect(secrets).toEqual({ token: 'sk-123' });
     await ctx.secrets.delete('token');
     expect(await ctx.secrets.get('token')).toBeUndefined();
+  });
+});
+
+/**
+ * API 表面完整性：枚举与类。
+ *
+ * 这一组是 `openai.chatgpt`（Codex）踩出来的，教训不是「少了一个功能」而是
+ * **少一个枚举/类 = 整个扩展装不上用不了**：
+ *
+ * - `out/extension.js` 顶层就写 `dv.ConfigurationTarget.Workspace`，
+ *   而 shim 上没有 `ConfigurationTarget` → `Cannot read properties of undefined
+ *   (reading 'Workspace')`，主模块**加载**阶段就挂，界面上只有一句
+ *   「已安装，但激活失败」，视图列表全空（用户看到的正是「装完了还是这样」）；
+ * - 补完枚举后紧接着是 `window.onDidChangeTerminalShellIntegration is not a function`，
+ *   同样把 activate() 打断在开头。
+ *
+ * 所以这里断言的粒度是「整批」而不是「我今天用到的那个」：枚举、类、以及
+ * window/workspace 上那一批事件订阅，全部必须存在。
+ */
+describe('API 表面完整性（缺一个枚举/类 = 整个扩展装不上用不了）', () => {
+  it('官方枚举一个都不能少，且取值与官方一致', () => {
+    const api = createApi();
+    for (const [name, values] of Object.entries(VSCODE_ENUMS)) {
+      expect(api[name], `vscode.${name} 缺失`).toBeDefined();
+      expect(api[name], `vscode.${name} 取值与官方不一致`).toEqual(values);
+    }
+  });
+
+  it('ConfigurationTarget 的取值就是 Codex 依赖的那三个（回归点）', () => {
+    const api = createApi();
+    // 这条以前是崩点：`ConfigurationTarget` 不存在，扩展主模块加载即失败
+    expect(api.ConfigurationTarget.Global).toBe(1);
+    expect(api.ConfigurationTarget.Workspace).toBe(2);
+    expect(api.ConfigurationTarget.WorkspaceFolder).toBe(3);
+  });
+
+  it('枚举/类的来源就是 createAPI 的返回值（不是「文件里写了但没接上」）', () => {
+    const api = createApi();
+    for (const name of Object.keys(VSCODE_ENUMS)) {
+      expect(api[name], `vscode.${name} 没接到 createAPI 上`).toBeDefined();
+    }
+    for (const name of Object.keys(VSCODE_PLACEHOLDER_CLASSES)) {
+      expect(typeof api[name], `vscode.${name} 应是可 new 的类`).toBe('function');
+      // 占位类也要能当 disposable 用（扩展普遍把它塞进 subscriptions）
+      expect(typeof new api[name]().dispose).toBe('function');
+    }
+    for (const name of Object.keys(VSCODE_ERROR_CLASSES)) {
+      expect(typeof api[name], `vscode.${name} 应是错误类`).toBe('function');
+      expect(new api[name]()).toBeInstanceOf(Error);
+    }
+  });
+
+  it('错误类带着官方那套 code 与静态构造器', () => {
+    const api = createApi();
+    const notFound = api.FileSystemError.FileNotFound(api.Uri.file('/tmp/nope'));
+    expect(notFound).toBeInstanceOf(Error);
+    expect(notFound.code).toBe('FileNotFound');
+    expect(String(notFound.message)).toContain('/tmp/nope');
+  });
+
+  it('window 上的事件订阅全都在（Codex 第一件事就是订终端 shell 集成）', () => {
+    const api = createApi();
+    const events = [
+      'onDidChangeTerminalShellIntegration',
+      'onDidStartTerminalShellExecution',
+      'onDidEndTerminalShellExecution',
+      'onDidChangeTerminalState',
+      'onDidChangeActiveNotebookEditor',
+      'onDidChangeVisibleNotebookEditors',
+      'onDidChangeNotebookEditorSelection',
+      'onDidChangeNotebookEditorVisibleRanges',
+    ];
+    for (const name of events) {
+      const subscribe = pick(api, `window.${name}`);
+      expect(typeof subscribe, `window.${name} 缺失`).toBe('function');
+      // 订阅必须返回 disposable：扩展会把它收进 subscriptions，再统一 dispose
+      expect(typeof subscribe(() => {}).dispose).toBe('function');
+    }
+    // 没有 notebook UI，属性要给空值而不是 undefined（undefined 会变成 undefined.xxx）
+    expect(api.window.activeNotebookEditor).toBeUndefined();
+    expect(api.window.visibleNotebookEditors).toEqual([]);
+  });
+
+  it('window / workspace / env 上 Codex 会碰的形状都在', async () => {
+    const api = createApi();
+    expect(typeof api.window.createQuickPick().show).toBe('function');
+    expect(typeof api.window.createInputBox().show).toBe('function');
+    expect(typeof api.window.createTextEditorDecorationType({}).dispose).toBe('function');
+    expect(await api.workspace.save(api.Uri.file('/tmp/a'))).toBeUndefined();
+    expect(api.workspace.notebookDocuments).toEqual([]);
+    expect(api.env.isAppPortable).toBe(false);
+    expect(typeof api.env.onDidChangeShell).toBe('function');
+  });
+
+  it('chat / lm 给形状不给能力（扩展会先探测再用）', async () => {
+    const api = createApi();
+    // 探测拿到 undefined 时扩展会走完全不同的降级分支，所以这两个命名空间必须在
+    expect(api.lm).toBeTruthy();
+    await expect(api.lm.selectChatModels()).resolves.toEqual([]);
+    expect(typeof api.lm.onDidChangeChatModels).toBe('function');
+    expect(typeof api.lm.registerTool({ id: 'x' }).dispose).toBe('function');
+    expect(typeof api.chat.registerChatSessionItemProvider({}).dispose).toBe('function');
+    expect(typeof api.chat.createChatParticipant('x').dispose).toBe('function');
+  });
+
+  it('UIKind 的取值是官方那套（Desktop=1 / Web=2），env.uiKind 与它一致', () => {
+    const api = createApi();
+    // 以前这里写成 Web=1/Desktop=2，而 env.uiKind 又标成 Desktop，
+    // 结果是 UIKind.Web 与 uiKind 相等 —— 扩展会误判成「跑在浏览器里」
+    expect(api.UIKind.Desktop).toBe(1);
+    expect(api.UIKind.Web).toBe(2);
+    expect(api.env.uiKind).toBe(api.UIKind.Desktop);
   });
 });

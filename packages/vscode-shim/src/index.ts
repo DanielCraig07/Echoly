@@ -6,6 +6,8 @@
 
 import * as vscode from 'vscode';
 import { ShimUri } from './uri';
+import { VSCODE_ENUMS } from './vscodeEnums';
+import { VSCODE_ERROR_CLASSES, VSCODE_PLACEHOLDER_CLASSES } from './vscodePlaceholderClasses';
 import { getRegisteredExtension, listRegisteredExtensionIds } from './extensionRegistry';
 
 /**
@@ -122,6 +124,33 @@ function fsPathOfUri(uri: any): string {
 
 function warnUnsupportedApi(name: string): void {
   console.warn(`[vscode-shim] 扩展尝试访问未列入白名单的 API: "vscode.${name}"（已忽略）`);
+}
+
+/**
+ * 给整份 vscode API 套一层「读到不存在的键就出声」的代理。
+ *
+ * 为什么值得加这一层：排查「装上了但什么都没发生」时，最贵的一步是从一句
+ * `Cannot read properties of undefined (reading 'Workspace')` 反推扩展到底取了哪个键。
+ * 实测 Codex（`openai.chatgpt`）就卡在这里 —— 日志里没有任何线索，只能去
+ * 2.5MB 的 bundle 里翻 `require("vscode")` 的用法。
+ *
+ * 代理**不改行为**：未知键照样返回 undefined（特征检测 `if (vscode.foo)` 仍是假），
+ * 只是把键名打出来。修 shim 时照日志补，不用再猜。
+ */
+function withApiAccessDiagnostics(api: Record<string, unknown>): Record<string, unknown> {
+  return new Proxy(api, {
+    get(target, prop, receiver) {
+      // 符号键（Symbol.iterator / toStringTag / inspect.custom…）和已存在的键直接放行
+      if (typeof prop === 'symbol' || prop in target) {
+        return Reflect.get(target, prop, receiver);
+      }
+      console.warn(
+        `[vscode-shim] 扩展读取了 shim 上不存在的 API: "vscode.${String(prop)}"` +
+          '（返回 undefined；若扩展因此报错，说明这个 API 该补进 vscode-shim）',
+      );
+      return undefined;
+    },
+  });
 }
 
 export interface ExtensionContext {
@@ -473,6 +502,49 @@ function makeLanguagesNamespace(): any {
       return stub;
     },
   });
+}
+
+/**
+ * `window.createQuickPick()` / `createInputBox()` 的最小可用形状。
+ *
+ * 与 `showQuickPick` / `showInputBox`（一步式：宿主真的会把选择框弹出来）不同，
+ * 这两个是「手工模式」—— 扩展自己建控件、订阅事件、再 `show()`。我们这边没有
+ * 可编程的 QuickPick 控件，所以给一个**形状完整、界面不出**的对象：调用不会崩，
+ * 但也不会弹出选择框。因此建的时候打一条警告 —— 免得又变成「点了没反应却查不出原因」。
+ */
+function createQuickInputStub(kind: string): any {
+  warnUnsupportedApi(`window.${kind}（控件不会真的显示，请在宿主里实现）`);
+  const emitter = () => ({ dispose() {} });
+  return {
+    value: '',
+    placeholder: '',
+    title: '',
+    prompt: '',
+    step: undefined,
+    totalSteps: undefined,
+    validationMessage: undefined,
+    busy: false,
+    enabled: true,
+    ignoreFocusOut: false,
+    canSelectMany: false,
+    keepScrollPosition: false,
+    matchOnDescription: false,
+    matchOnDetail: false,
+    items: [],
+    activeItems: [],
+    selectedItems: [],
+    buttons: [],
+    onDidChangeValue: emitter,
+    onDidChangeActive: emitter,
+    onDidChangeSelection: emitter,
+    onDidAccept: emitter,
+    onDidTriggerButton: emitter,
+    onDidTriggerItemButton: emitter,
+    onDidHide: emitter,
+    show() {},
+    hide() {},
+    dispose() {},
+  };
 }
 
 /**
@@ -849,7 +921,25 @@ export class VSCodeShim {
   createAPI(): typeof vscode {
     const self = this;
 
-    return {
+    const api: any = {
+      /**
+       * 枚举先铺开（唯一来源见 `vscodeEnums.ts`）。
+       *
+       * 放在最前面：下面的命名空间与类会覆盖同名键，而这里的枚举不参与覆盖，
+       * 它只负责「保证每一个官方枚举都存在」。少一个枚举的后果是扩展主模块
+       * 加载失败（`ConfigurationTarget.Workspace` → undefined.Workspace），
+       * 不是某个功能不好用 —— 所以这一行是**完整性兜底**，不是顺手加的。
+       */
+      ...VSCODE_ENUMS,
+      /**
+       * 类的形状占位（`FoldingRange`、`SemanticTokensLegend`、`ProcessExecution`…）。
+       *
+       * 少一个类的后果和少一个枚举一样重：`X is not a constructor` 会让整个扩展
+       * 激活失败。这里给的是形状不是能力，取舍见 `vscodePlaceholderClasses.ts` 的文件头。
+       */
+      ...VSCODE_PLACEHOLDER_CLASSES,
+      ...VSCODE_ERROR_CLASSES,
+
       // Commands API
       commands: {
         registerCommand(command: string, callback: (...args: any[]) => any) {
@@ -1217,6 +1307,47 @@ export class VSCodeShim {
         onDidChangeActiveTerminal: () => ({ dispose() {} }),
         activeColorTheme: {} as any,
         onDidChangeActiveColorTheme: () => ({ dispose() {} }),
+
+        /**
+         * 终端 Shell 集成。
+         *
+         * 实测 `openai.chatgpt`（Codex）在 activate() 里第一件事就是订阅
+         * `onDidChangeTerminalShellIntegration`。缺了它不是「终端集成不好用」，而是
+         * `RX.window.onDidChangeTerminalShellIntegration is not a function` ——
+         * 整个扩展激活失败，视图列表全空、界面上只有一个「已启用」的假象。
+         *
+         * 事件永远不会触发（我们的终端不产出 shell 集成数据），但**订阅必须成功**：
+         * 扩展据此认为「暂时没有集成」，走它自己的空分支。
+         */
+        onDidChangeTerminalShellIntegration: () => ({ dispose() {} }),
+        onDidStartTerminalShellExecution: () => ({ dispose() {} }),
+        onDidEndTerminalShellExecution: () => ({ dispose() {} }),
+        onDidChangeTerminalState: () => ({ dispose() {} }),
+
+        /**
+         * Notebook UI：宿主没有 Notebook 编辑器。
+         *
+         * 规则和上面一致 —— 订阅返回空 disposable、属性返回**空值而不是 undefined**。
+         * 扩展读到「没有打开的 notebook」会走空分支；读到 undefined 就是 TypeError。
+         */
+        activeNotebookEditor: undefined,
+        visibleNotebookEditors: [],
+        onDidChangeActiveNotebookEditor: () => ({ dispose() {} }),
+        onDidChangeVisibleNotebookEditors: () => ({ dispose() {} }),
+        onDidChangeNotebookEditorSelection: () => ({ dispose() {} }),
+        onDidChangeNotebookEditorVisibleRanges: () => ({ dispose() {} }),
+        showNotebookDocument: () => Promise.resolve(undefined),
+
+        /** 装饰类型：我们不渲染装饰，但扩展普遍先建一个再 setDecorations。 */
+        createTextEditorDecorationType: (options?: any) => ({
+          key: JSON.stringify(options ?? {}),
+          dispose() {},
+        }),
+        /** 手工版 QuickPick / InputBox，见 createQuickInputStub 的注释。 */
+        createQuickPick: () => createQuickInputStub('createQuickPick'),
+        createInputBox: () => createQuickInputStub('createInputBox'),
+        /** SCM 进度条：没有 SCM 视图，直接把任务跑掉。 */
+        withScmProgress: (task: any) => Promise.resolve().then(() => task?.(undefined)),
       } as any,
 
       // Workspace API
@@ -1447,6 +1578,25 @@ export class VSCodeShim {
         },
         isTrusted: true,
         onDidGrantWorkspaceTrust: () => ({ dispose() {} }),
+
+        /**
+         * 保存 / 另存为。
+         *
+         * 宿主没有实现「让扩展驱动保存」这条链路，按「没有保存」返回 undefined：
+         * 官方签名就是 `Thenable<Uri | undefined>`，扩展本来就要处理这个分支。
+         */
+        save: () => Promise.resolve(undefined),
+        saveAs: () => Promise.resolve(undefined),
+
+        /** Notebook：同 window 里那段注释。 */
+        notebookDocuments: [],
+        openNotebookDocument: () => Promise.resolve(undefined),
+        registerNotebookSerializer: () => ({ dispose() {} }),
+        onDidOpenNotebookDocument: () => ({ dispose() {} }),
+        onDidChangeNotebookDocument: () => ({ dispose() {} }),
+        onDidSaveNotebookDocument: () => ({ dispose() {} }),
+        onDidCloseNotebookDocument: () => ({ dispose() {} }),
+        onWillSaveNotebookDocument: () => ({ dispose() {} }),
       } as any,
 
       // Uri
@@ -1493,47 +1643,56 @@ export class VSCodeShim {
        */
       Uri: ShimUri as any,
 
-      // ExtensionMode enum
-      ExtensionMode: {
-        Production: 1,
-        Development: 2,
-        Test: 3,
-      },
-
-      // Extension kind enum
-      ExtensionKind: {
-        UI: 1,
-        Workspace: 2,
-      },
-
-      // Other enums and types
-      StatusBarAlignment: { Left: 1, Right: 2 },
-      DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
       /**
-       * 语言状态项的严重级别。
+       * 枚举**不在这里单列**，统一来自 `vscodeEnums.ts`（见函数开头的展开）。
        *
-       * 实测 `esbenp.prettier-vscode@12` 在 activate() 里就取这个导出（它给
-       * 「Prettier 是否可用」挂一个语言状态项），缺了整个扩展激活失败。
-       * 取值对齐官方（Information=0 / Warning=1 / Error=2）。
+       * 以前这里是零散的几个：`ExtensionMode`、`FileType`、`UIKind`… 谁崩了补谁。
+       * 于是 `openai.chatgpt` 栽在 `ConfigurationTarget` 上时，界面上只剩
+       * 「已安装，但激活失败」。零散补法治不了这个病 —— 枚举必须一次全有。
        */
-      LanguageStatusSeverity: { Information: 0, Warning: 1, Error: 2 },
-      ViewColumn: { One: 1, Two: 2, Three: 3, Active: -1, Beside: -2 },
-      TextEditorRevealType: { Default: 0, InCenter: 1, InCenterIfOutsideViewport: 2, AtTop: 3 },
-      OverviewRulerLane: { Left: 1, Center: 2, Right: 4, Full: 7 },
-      DecorationRangeBehavior: { OpenOpen: 0, ClosedClosed: 1, OpenClosed: 2, ClosedOpen: 3 },
-      EndOfLine: { LF: 1, CRLF: 2 },
-      FileType: { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 },
-      /**
-       * 运行界面形态。
-       *
-       * 数字必须和官方一致（Web = 1，Desktop = 2）：扩展会拿它和 `env.uiKind` 比，
-       * 比错了会走错分支（Office Viewer 用 `uiKind === UIKind.Web` 决定要不要列出盘符，
-       * 站错边就是一行 `undefined.Web` 的 TypeError）。
-       */
-      UIKind: { Web: 1, Desktop: 2 },
 
       // Languages API (minimal)
       languages: makeLanguagesNamespace(),
+
+      /**
+       * `vscode.chat` / `vscode.lm` —— 语言模型相关 API。
+       *
+       * 真实 VS Code 里这两个命名空间**总是存在**（能力取决于有没有模型提供方）。
+       * AI 类扩展（Codex 就是）普遍先探测再用：`if (vscode.lm?.selectChatModels)`。
+       * 探测拿到 undefined 时它走降级分支 —— 也就是说「没有」和「有但不能用」
+       * 会导致完全不同的代码路径。
+       *
+       * 我们的原则是**给形状、不给能力**：列表类返回空数组（扩展会对它 .map / .length），
+       * 注册类返回空 disposable，于是扩展能正常加载与激活；真正的模型能力由宿主
+       * 自己的 AI 面板提供，不从这里走。
+       */
+      chat: {
+        /**
+         * 会话项提供者（Copilot Chat 那种「会话列表」）。
+         *
+         * 官方 1.125 的 `chat` 命名空间里还没有它，但 Codex 会调 —— 收下注册即可，
+         * 我们的 AI 面板不消费这个列表。
+         */
+        registerChatSessionItemProvider: () => ({ dispose() {} }),
+        createChatParticipant: (id: string) => ({
+          id,
+          iconPath: undefined,
+          requestHandler: undefined,
+          welcomeMessageProvider: undefined,
+          followupProvider: undefined,
+          dispose() {},
+        }),
+      } as any,
+      lm: {
+        /** 没有任何模型可选：返回空数组而不是 undefined。 */
+        selectChatModels: () => Promise.resolve([]),
+        onDidChangeChatModels: () => ({ dispose() {} }),
+        registerLanguageModelChatProvider: () => ({ dispose() {} }),
+        registerMcpServerDefinitionProvider: () => ({ dispose() {} }),
+        registerTool: () => ({ dispose() {} }),
+        invokeTool: () => Promise.resolve({ content: [] }),
+        tools: [],
+      } as any,
 
       // Environment
       env: {
@@ -1552,7 +1711,7 @@ export class VSCodeShim {
         sessionId: 'unknown-session-id',
         remoteName: '',
         shell: process.env.SHELL || '/bin/bash',
-        uiKind: 2, // UIKind.Desktop（官方取值：Web = 1，Desktop = 2）
+        uiKind: 1, // UIKind.Desktop（官方取值：Desktop = 1，Web = 2）
         /**
          * 用系统浏览器打开链接。
          *
@@ -1597,7 +1756,10 @@ export class VSCodeShim {
         },
         isNewAppInstall: false,
         isTelemetryEnabled: false,
+        /** 便携版？官方给了这个开关，扩展会据此决定配置存放位置。 */
+        isAppPortable: false,
         onDidChangeTelemetryEnabled: () => ({ dispose() {} }),
+        onDidChangeShell: () => ({ dispose() {} }),
         appHost: 'desktop',
       } as any,
 
@@ -1799,7 +1961,6 @@ export class VSCodeShim {
         dispose() {}
       } as any,
       TreeItem: class TreeItem {} as any,
-      TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
 
       // VSCode version
       version: '1.94.0',
@@ -1819,6 +1980,8 @@ export class VSCodeShim {
         ),
       ),
     } as any;
+
+    return withApiAccessDiagnostics(api) as typeof vscode;
   }
 
   /**
