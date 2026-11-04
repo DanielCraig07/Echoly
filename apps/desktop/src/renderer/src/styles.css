@@ -19556,10 +19556,10 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 /**
- * 右侧面板的内容区：`body` + 底部那一栏（「文件已被改动」）的容器。
+ * 右侧面板的内容区：内置会话（ChatPanel）与各扩展 webview 层的容器。
  *
- * 底部那一栏是**正常流里的兄弟**，不是浮层 —— 它要占真实空间，把 body 顶上去，
- * 而不是盖在 Claude / Codex 自己的输入框上。
+ * 内容区必须是 `position: relative` 且撑满剩下的高度 —— webview 层是绝对定位叠在
+ * 一起的，没有参照物就会以整个窗口为准铺满。
  */
 .right-panel-content {
   position: relative;
@@ -24581,11 +24581,14 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 }
 
 /*
- * AI 面板整个收起来时的浮层形态。
+ * 左下角浮层形态：**内置会话那一栏看不到**时用它。
  *
- * 面板开着的时候这一栏是贴在面板里的（内置会话是输入框正上方，扩展面板是面板顶部），
- * 那才是它该在的地方；但面板关掉之后用户就完全看不到它了，而外部改动照样在发生 ——
- * 这时把它放到左下角，别让提示整个消失。
+ * 内置会话开着的时候，这一栏贴在它自己输入框的正上方 —— 那才是它该在的地方。
+ * 但面板整个收起来、或者面板正停在 Claude / Codex 这些扩展自己的界面上时，用户
+ * 在那里看不到提示，而外部改动照样在发生 —— 这时放到左下角，别让提示整个消失。
+ *
+ * 扩展面板**保持它原本的交互**：那些输入框长在扩展自己的 webview 里，我们既插不
+ * 进去也量不准，硬摆过去只会挡住用户打字的地方。
  */
 .chat-diff-summary-container.pending-changes-bar--floating {
   position: fixed;
@@ -24598,14 +24601,7 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
-/*
- * 扩展面板里那一栏贴在**面板底部**。
- *
- * 要点是它得占**真实空间**，不能盖在 webview 上：webview 层的定位参照是
- * `.right-panel-body`，body 自己 `flex: 1`，这一栏是它下面的正常流兄弟 ——
- * flex 会自动把 body 缩短，于是 Claude/Codex 自己的输入框被顶上去一点，
- * 而不是被挡住。
- */
+/* webview 层的定位参照（那些层是 `position: absolute`）。 */
 .right-panel-body {
   position: relative;
   flex: 1;
@@ -24618,22 +24614,4 @@ body.has-active-ghost-text .monaco-inline-git-blame,
 /* 内置会话那一栏在输入框正上方：和输入框之间留一点缝 */
 .pending-changes-bar--in-chat {
   margin-bottom: 8px;
-}
-
-/*
- * 扩展面板里那一栏的外层：浮在**访客页面让出来的那块空位**上。
- *
- * `top` 由访客页面量出来（见 services/guestComposerSlot.ts）—— 空位是插在它自己输入框
- * 上面的，所以这一栏落下去正好是「紧贴着扩展自己的输入框上沿」，和内置会话一致。
- * 高度**不写死**：栏按自己内容撑开，量出来多少就回报给访客页面，让它插一样高的空位。
- */
-.right-panel-composer-slot {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  /* `bottom` 由访客页面量出来（见 services/guestComposerSlot.ts）。按底边贴，
-     栏只会往上长，不会往下压到输入框。这里给个兜底值，正常都被内联样式覆盖。 */
-  bottom: 0;
-  z-index: 3;
-  pointer-events: auto;
 }

@@ -1436,6 +1436,47 @@ Claude 的界面用 **flex 的 `order`** 排「消息区 / 输入框」（输入
 回归测试 18 条，其中两条现在断言 `bottomInset`（= 输入框上沿到视口底部的距离）——
 「下边钉在输入框上沿」这条不变量写进测试了。
 
+### 第二十四轮：取消「往扩展面板里塞那一栏」—— 扩展面板回到原生交互
+
+**用户的判定：这套位置始终别扭，不要了。**
+
+前七轮都在解同一个死结：Claude Code 的输入框长在**它自己的 webview** 里，我们既插不进去、
+也量不准。绕的办法是「请访客页面在它输入框上面让一块空位」，结果每一步都换来一个新的
+遮挡（飘到对话中间 → 跑到面板顶上 → 盖住转录区 → 压住输入框）。位置从「差不多」到
+「接近」，始终没有到「就是它」。
+
+结论很清楚：**这套不值得继续调**。扩展面板是别人的界面，我们不该去改它的 DOM 来换一个
+自己的浮层位置。所以这一轮把它整段撤掉，Claude / Codex 面板恢复原生交互。
+
+**撤掉了什么**
+
+| 位置                             | 撤掉的东西                                                                                                                                                  |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/guestComposerSlot.ts`  | 整个文件（往访客页面注入脚本、找输入框、插空位、自检、三种让位策略）                                                                                        |
+| `test/guestComposerSlot.test.ts` | 整个文件（18 条，随实现一起删）                                                                                                                             |
+| `ExtensionViewPanel.tsx`         | `composerSlotActive` / `composerBarHeight` / `onComposerSlot` 三个 props、一秒一次的轮询、卸载时清空位；现在它**不认识任何「空位」概念**                    |
+| `App.tsx`                        | `composerSlot` / `pendingBarHeight` / `handleComposerSlot` / `pendingBarNode` / `composerSlotWanted` / `COMPOSER_SLOT_EXTENSION_ID`、那一栏在面板里的渲染点 |
+| `styles.css`                     | `.right-panel-composer-slot`                                                                                                                                |
+| `app:log` IPC                    | 这条通道（shared 类型 + preload + main handler）只为这套的调试日志存在                                                                                      |
+
+`app:log` 一起删是有理由的：接线审计要求「preload 暴露的方法至少在渲染层被调用一次」，
+留着它就是一条**没人用的死接线**。删掉比加豁免诚实。
+
+**那「文件已被改动」还剩几个地方**
+
+1. **内置会话（AI 对话）**：不变，仍是贴着它自己输入框正上方那一栏（`ChatPanel` 里，
+   进正常流，不受这一轮影响）；
+2. **左下角浮层**：面板整个收起来、**或面板正停在扩展标签上**（Claude / Codex）时用它 ——
+   那两种情况下用户在内置会话里看不到第 1 条，而外部改动照样在发生。
+
+判定写在 `App.tsx` 的 `pendingChangesOutsideChat = !showChatPanel || rightPanelTab !== 'chat'`。
+
+> 一句话：扩展面板里不再有任何我们摆的东西；提示只出现在「不打扰人」的地方。
+> 若连左下角浮层也不需要，把 `pendingChangesOutsideChat` 改成 `false` 即可。
+
+**门禁**：prettier / typecheck / lint（0 error）/ audit:wiring（202 handler = 202 invoke，
+233 preload 方法全部有调用）/ test（143 files、5133 passed —— 少的正是删掉的那个测试文件）。
+
 ## 5. 建议顺序
 
 1. `npm run dev` 之前先过**第 1 节门禁**（四条命令）。这一步不过，后面的现象都不可信。

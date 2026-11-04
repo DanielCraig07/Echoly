@@ -2406,14 +2406,6 @@ export interface IpcApi {
    * （不是增量），空数组表示工作区已无诊断。
    */
   reportDiagnostics?: (entries: WorkspaceDiagnostic[]) => Promise<boolean>;
-  /**
-   * 往**应用日志**（main.log / 日志面板）里写一行。
-   *
-   * 渲染层的 `console.log` 只在 DevTools 里看得到，而用户报问题时看的是日志面板 ——
-   * 「界面位置不对」这类问题，一行日志就能定位，前提是那行日志得落在用户看得见的地方。
-   */
-  logLine?: (message: string) => Promise<boolean>;
-
   /** 挂载/更新内置浏览器 DevTools 原生视图（bounds 为渲染层 CSS 像素，主进程负责换算 DIP） */
   openDevToolsView?: (targetWebContentsId: number, layout: DevToolsViewLayout) => Promise<boolean>;
   updateDevToolsViewBounds?: (

@@ -7,7 +7,6 @@ import {
   type Dialog,
   type WebContents,
 } from 'electron';
-import electronLog from 'electron-log';
 import fs from 'node:fs';
 import path from 'node:path';
 import type {
@@ -1047,12 +1046,6 @@ export function registerIpc(deps: {
   // ── 工作区诊断上报 ──
   // TS/JS 的 marker 只存在于渲染层的 Monaco 里，Agent 的 get_diagnostics 工具却跑在主进程，
   // 因此需要渲染层在上报时把 marker 推过来（主进程 LSP 的推送由 windowRegistry 直接入缓存）。
-  /** 渲染层往应用日志里写一行（用户看的就是这份日志）。 */
-  ipcMain.handle('app:log', (_e, message: unknown) => {
-    electronLog.info('[renderer]', typeof message === 'string' ? message : String(message ?? ''));
-    return true;
-  });
-
   ipcMain.handle('diagnostics:report', (e, entries: DiagnosticsEntry[]) =>
     run(e, () => {
       registry.current().diagnostics.replaceFromRenderer(entries ?? []);
