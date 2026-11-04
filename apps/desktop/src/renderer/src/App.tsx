@@ -98,6 +98,7 @@ import { AgentTaskPanel } from './components/AgentTaskPanel';
 import { ProblemsPanel } from './components/ProblemsPanel';
 import { StatusBar } from './components/StatusBar';
 import { GlobalTooltip } from './components/GlobalTooltip';
+import { ExternalChangePrompt } from './components/ExternalChangePrompt';
 import { heuristicDetectTech } from './utils/techStack';
 import {
   isImagePath,
@@ -121,7 +122,13 @@ import {
 } from './workspaceSession';
 import { absolutePathOf, resolveCustomEditorClaim } from './services/customEditorRoute';
 import { buildAiPanelEntries } from './services/aiPanelEntries';
-import { baseNameOf, decideDiskChange, summariseFileNames } from './services/externalFileChanges';
+import {
+  baseNameOf,
+  decideDiskChange,
+  mergePendingChange,
+  planExternalChangeActions,
+  type PendingExternalChange,
+} from './services/externalFileChanges';
 import { useI18n } from './i18n';
 import { setupSymbolNavigation } from './services/symbolNavigation';
 import { setupDiagnosticsReporting } from './services/diagnosticsReporter';
@@ -593,6 +600,21 @@ export function App() {
       type: 'success' | 'error' | 'info' | 'warn';
     }>
   >([]);
+  /**
+   * 「磁盘上被别人改了」的待办清单 —— 界面上是一叠带「接受 / 拒绝」的卡片。
+   *
+   * 为什么不用 toast：代理改盘之后，编辑器里那一份和磁盘上那一份就分叉了，用户得挑一份。
+   * toast 只能「告诉你一声」，挑不了；而且它 4 秒就消失，看完还得自己再手动比对一遍。
+   */
+  const [pendingChanges, setPendingChanges] = useState<PendingExternalChange[]>([]);
+  /**
+   * 卡片清单的「最新值」副本，给「全部接受 / 全部拒绝」这类事件处理器用。
+   *
+   * 处理器是从 render 里闭包出来的，直接读 state 会拿到渲染那一刻的旧数组；
+   * 而「全部接受」是连点触发的，必须看到点下去那一刻的真实清单。
+   */
+  const pendingChangesRef = useRef<PendingExternalChange[]>(pendingChanges);
+  pendingChangesRef.current = pendingChanges;
   const [toastDetailModal, setToastDetailModal] = useState<{
     id: string;
     title: string;
@@ -2223,39 +2245,44 @@ export function App() {
   }, [workspace, getBreakpointsStorageKey]);
 
   /**
-   * 磁盘上的文件被**别人**改了 → 把开着的那几个标签重新读一遍，并且**说出来**。
+   * 磁盘上的文件被**别人**改了 → 攒成一叠「待处理改动」卡片，让用户**接受 / 拒绝**。
    *
    * 为什么必须管这件事：Claude Code / Codex 这类代理是**自己写盘**的（它们跑自己的
    * 进程，不走我们的编辑器缓冲区），于是「对话里说改好了，编辑器里还是旧内容」，
    * 而且一个字都不提示 —— 用户只能自己发现（「修改文件没有任何提示」就是这么来的）。
-   * 外部编辑器改动、git 操作、扩展的 `applyEdit` 走的也是同一条通知。
+   * 外部编辑器改动、扩展的 `applyEdit` 走的也是同一条通知。
    *
-   * 两种处置，分界线是「用户有没有未保存的编辑」：
-   * - 没有 → 直接换成磁盘上的新内容。用户什么都没做，不该让他自己去刷新；
-   * - 有 → **保留编辑器里的内容**，只提示磁盘上也变了。覆盖用户的未保存内容是不可逆的
-   *   数据丢失，任何情况下都不做。
+   * 为什么不是「自动重载 + 一条 toast」：改动落到磁盘之后，编辑器里那一份和磁盘上
+   * 那一份就分叉了，用户得挑一份。toast 只能告诉你一声，挑不了 —— 这正是「我想要的
+   * 是类似 Cursor 的接受 / 拒绝」那条反馈。所以这里**只登记「该做决定了」，一个字都
+   * 不改编辑器**；真正动手全在用户点按钮的时候（acceptExternalChange /
+   * rejectExternalChange）。
    *
-   * 攒 400ms 再处理：代理动一次手往往连着写好几个文件，一个个弹提示只会刷屏。
+   * 有一条铁律不受影响：**绝不用磁盘内容覆盖用户未保存的编辑**（那不可逆）。所以
+   * 「接受」在有未保存编辑时会被拦下来，让用户先自己处置。
+   *
+   * 攒 400ms 再处理：代理动一次手往往连着写好几个文件，一个个弹卡片只会刷屏。
    */
   useEffect(() => {
-    const pending = new Set<string>();
+    /**
+     * 路径 → 这次磁盘事件带上来的「改动前的内容」（主进程有记录时才有）。
+     *
+     * 用 Map 而不是 Set：`before` 是**跟着事件走的**，攒起来的时候不能丢 —— 它是
+     * 「拒绝 / 还原」唯一的原料。
+     */
+    const pending = new Map<string, string | undefined>();
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const flush = async () => {
-      timer = null;
-      const targets = Array.from(pending);
+    /** 把攒下来的路径变成一张张「待处理改动」卡片（去重、判定、取改动前的内容）。 */
+    const collect = async (): Promise<PendingExternalChange[]> => {
+      const targets = Array.from(pending.entries());
       pending.clear();
-      if (targets.length === 0) return;
+      if (targets.length === 0) return [];
 
-      /** 去重过的、确实变了的文件（basename）。 */
-      const changed: string[] = [];
-      /** 其中被我们重新读进编辑器的。 */
-      const reloaded: string[] = [];
-      /** 其中用户有未保存编辑、只能提示的。 */
-      const conflicted: string[] = [];
+      const found: PendingExternalChange[] = [];
       const seen = new Set<string>();
 
-      for (const rawPath of targets) {
+      for (const [rawPath, eventBefore] of targets) {
         const abs = absolutePathOf(rawPath, workspaceRef.current);
         const key = abs.replace(/\\/g, '/');
         if (seen.has(key)) continue;
@@ -2271,75 +2298,76 @@ export function App() {
             isSameFileByPath(candidate.path, abs),
         );
 
-        // 没开着的文件照样要说 —— 用户恰恰是「编辑器里什么都没变，所以什么都不知道」
-        if (!tab) {
-          changed.push(baseNameOf(abs));
-          continue;
-        }
-
         let fresh: string | null;
         try {
-          fresh = await window.ide.readFile(tab.path);
+          fresh = await window.ide.readFile(tab ? tab.path : rawPath);
         } catch {
           fresh = null;
         }
 
-        if (fresh === null) {
-          // 读不到：多半是被删了 —— 删除更该说一声（标签会被文件树那条路关掉）
-          try {
-            if (!(await window.ide.pathExists(tab.path))) changed.push(baseNameOf(abs));
-          } catch {
-            // 连存在性都问不出来，就当没这回事
-          }
-          continue;
-        }
-
-        // 两条规则（自己写盘的回声要忽略、有未保存编辑绝不覆盖）见 decideDiskChange
-        const decision = decideDiskChange({
-          dirty: tab.dirty,
-          savedContent: tab.savedContent,
-          freshContent: fresh,
-        });
+        // 开着的标签：两条规则（自己写盘的回声要忽略、有未保存编辑绝不覆盖）见 decideDiskChange。
+        // 没开着的：主进程记过「改动前」就直接比，一样才当没变；读不到就是被删了。
+        const decision = tab
+          ? decideDiskChange({
+              dirty: tab.dirty,
+              savedContent: tab.savedContent,
+              freshContent: fresh,
+            })
+          : fresh === null
+            ? 'deleted'
+            : eventBefore !== undefined && eventBefore === fresh
+              ? 'ignore'
+              : 'reload';
         if (decision === 'ignore') continue;
 
-        changed.push(baseNameOf(abs));
-        if (decision === 'conflict') {
-          conflicted.push(baseNameOf(abs));
-          continue;
+        // 没开着的文件「读不到」多半只是二进制 / 太大，确认真的没了才打扰用户
+        if (decision === 'deleted' && !tab) {
+          try {
+            if (await window.ide.pathExists(rawPath)) continue;
+          } catch {
+            continue;
+          }
         }
-        reloaded.push(baseNameOf(abs));
-        setTabs((prev) =>
-          prev.map((candidate) =>
-            candidate.path === tab.path
-              ? { ...candidate, content: fresh, savedContent: fresh, dirty: false }
-              : candidate,
-          ),
-        );
-      }
 
-      if (changed.length > 0) {
-        showToast(
-          t('app.diskChangedTitle'),
-          t(reloaded.length > 0 ? 'app.diskChangedDetailReloaded' : 'app.diskChangedDetail', {
-            count: changed.length,
-            names: summariseFileNames(changed),
-          }),
-          'info',
-        );
+        // 「改动前」优先用标签自己的基准（编辑器里那一份的原样），它比主进程的快照更新 ——
+        // 快照只在「读过 / 存过」的时候刷新，而标签的基准在用户每次保存后就跟着往前走了。
+        const before = tab?.savedContent ?? eventBefore;
+        found.push({
+          path: tab ? tab.path : rawPath,
+          abs,
+          name: baseNameOf(abs),
+          ...(before === undefined ? {} : { before }),
+          fresh,
+          dirty: tab?.dirty ?? false,
+          open: Boolean(tab),
+        });
       }
-      if (conflicted.length > 0) {
-        showToast(
-          t('app.diskChangedConflictTitle'),
-          t('app.diskChangedConflictDetail', { names: summariseFileNames(conflicted) }),
-          'warn',
-        );
-      }
+      return found;
+    };
+
+    const flush = async () => {
+      timer = null;
+      const found = await collect();
+      if (found.length === 0) return;
+      setPendingChanges((prev) => {
+        const next = [...prev];
+        for (const change of found) {
+          const at = next.findIndex((item) => item.abs === change.abs);
+          // 同一条路径已经在卡片里了：并入新的磁盘内容，但「改动前」保持最早那一份
+          if (at >= 0) next[at] = mergePendingChange(next[at], change);
+          else next.push(change);
+        }
+        return next;
+      });
     };
 
     const unlisten = window.ide?.onFsChanged?.((data) => {
+      // 我们自己写盘的回声（保存、还原、git 操作）：不是「别人改了文件」，不打扰用户
+      if (data?.self) return;
       const changedPath = data?.path;
       if (!changedPath) return;
-      pending.add(String(changedPath));
+      const key = String(changedPath);
+      pending.set(key, pending.get(key) ?? data.before);
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => void flush(), 400);
     });
@@ -2348,7 +2376,7 @@ export function App() {
       if (timer) clearTimeout(timer);
       unlisten?.();
     };
-  }, [showToast, t]);
+  }, []);
 
   // 监听调试事件以自动展开底部调试面板
   useEffect(() => {
@@ -3410,6 +3438,129 @@ export function App() {
       return next;
     });
   }, []);
+
+  /**
+   * 「接受」：把磁盘上的版本收下。
+   *
+   * 三种结果（见 planExternalChangeActions）：重新载入编辑器、承认文件被删了（关标签）、
+   * 或者只是收起提示（文件没开着）。
+   *
+   * 有未保存编辑时**不做**：那会把用户正在敲的字换成代理写的版本，是不可逆的数据丢失。
+   * 这时保留卡片并让用户先自己处理（保存或放弃）。
+   */
+  const acceptExternalChange = useCallback(
+    (change: PendingExternalChange): boolean => {
+      const actions = planExternalChangeActions(change);
+      if (actions.accept === 'dismiss') return true;
+
+      const tab = tabsRef.current.find((candidate) => isSameFileByPath(candidate.path, change.abs));
+      if (tab?.dirty) {
+        // 坚决不覆盖：卡片留着，等用户自己保存或放弃
+        showToast(t('app.extChangeSaveFirst'), change.name, 'warn');
+        return false;
+      }
+
+      if (actions.accept === 'close') {
+        if (tab) closeTabDirect(tab.path);
+        return true;
+      }
+
+      if (!tab || change.fresh === null) return true;
+      const fresh = change.fresh;
+      setTabs((prev) =>
+        prev.map((candidate) =>
+          isSameFileByPath(candidate.path, change.abs)
+            ? { ...candidate, content: fresh, savedContent: fresh, dirty: false }
+            : candidate,
+        ),
+      );
+      return true;
+    },
+    [closeTabDirect, showToast, t],
+  );
+
+  /**
+   * 「拒绝」：还原到**改动前**。
+   *
+   * 两种情形必须分开处理，混了就是数据丢失：
+   * - 用户有未保存的编辑 → 只把磁盘还原回去，**编辑器一个字都不动**（他要的正是「保住
+   *   我写的」）；
+   * - 没有 → 磁盘和编辑器一起回到改动前。
+   *
+   * 写盘走 `window.ide.writeFile`：主进程会把它标成「自己写的」，不会再弹一张新卡片。
+   */
+  const rejectExternalChange = useCallback(
+    async (change: PendingExternalChange): Promise<boolean> => {
+      if (change.before === undefined) return false;
+      const before = change.before;
+      try {
+        await window.ide.writeFile(change.path, before);
+      } catch (err) {
+        showToast(
+          t('app.extChangeRejectFailed'),
+          err instanceof Error ? err.message : String(err),
+          'error',
+        );
+        return false;
+      }
+      const tab = tabsRef.current.find((candidate) => isSameFileByPath(candidate.path, change.abs));
+      if (tab?.dirty) return true; // 保住用户未保存的内容
+      setTabs((prev) =>
+        prev.map((candidate) =>
+          isSameFileByPath(candidate.path, change.abs)
+            ? { ...candidate, content: before, savedContent: before, dirty: false }
+            : candidate,
+        ),
+      );
+      return true;
+    },
+    [showToast, t],
+  );
+
+  const handleAcceptExternalChange = useCallback(
+    (change: PendingExternalChange) => {
+      if (acceptExternalChange(change)) {
+        setPendingChanges((prev) => prev.filter((item) => item.abs !== change.abs));
+      }
+    },
+    [acceptExternalChange],
+  );
+
+  const handleRejectExternalChange = useCallback(
+    (change: PendingExternalChange) => {
+      void rejectExternalChange(change).then((ok) => {
+        if (ok) setPendingChanges((prev) => prev.filter((item) => item.abs !== change.abs));
+      });
+    },
+    [rejectExternalChange],
+  );
+
+  /** 「全部接受 / 全部拒绝」：逐个走同一套逻辑，成功一个消一个（失败的那个得留下）。 */
+  const handleAcceptAllExternalChanges = useCallback(() => {
+    const remaining: PendingExternalChange[] = [];
+    for (const change of pendingChangesRef.current) {
+      if (!acceptExternalChange(change)) remaining.push(change);
+    }
+    setPendingChanges(remaining);
+  }, [acceptExternalChange]);
+
+  const handleRejectAllExternalChanges = useCallback(() => {
+    const targets = pendingChangesRef.current.filter(
+      (change) => planExternalChangeActions(change).canReject,
+    );
+    void (async () => {
+      const kept: PendingExternalChange[] = [];
+      for (const change of targets) {
+        const ok = await rejectExternalChange(change);
+        if (!ok) kept.push(change);
+      }
+      // 还原不了的（没记到「改动前」）留在卡片上，别让用户以为处理过了
+      const unreachable = pendingChangesRef.current.filter(
+        (change) => !planExternalChangeActions(change).canReject,
+      );
+      setPendingChanges([...unreachable, ...kept]);
+    })();
+  }, [rejectExternalChange]);
 
   const requestCloseTab = useCallback(
     (path: string) => {
@@ -7177,8 +7328,8 @@ export function App() {
         onShowToast={showToast}
       />
 
-      {/* Bottom-Left Drawer Toast Notifications Overlay */}
-      {toasts.length > 0 && (
+      {/* 左下角浮层：待处理的磁盘改动卡片 + toast 通知 */}
+      {(toasts.length > 0 || pendingChanges.length > 0) && (
         <div
           style={{
             position: 'fixed',
@@ -7192,6 +7343,14 @@ export function App() {
             pointerEvents: 'none',
           }}
         >
+          {/* 待办卡片排在最上面：它要用户做决定，不该被会自己消失的 toast 压在下面 */}
+          <ExternalChangePrompt
+            changes={pendingChanges}
+            onAccept={handleAcceptExternalChange}
+            onReject={handleRejectExternalChange}
+            onAcceptAll={handleAcceptAllExternalChanges}
+            onRejectAll={handleRejectAllExternalChanges}
+          />
           {toasts.map((toast) => {
             const cleanTitle = toast.title.replace(
               /^[\u2713\u2715\u26a0\u2139\u26a1\u2699\u00d7]\uFE0F?\s*/u,

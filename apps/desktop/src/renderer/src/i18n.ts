@@ -917,6 +917,38 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     zh: '{names}：你有未保存的修改，已保留你编辑器里的内容',
     en: '{names}: you have unsaved edits, your version was kept',
   },
+  /**
+   * 「别人改了磁盘上的文件」的待办卡片（带接受 / 拒绝）。
+   *
+   * 和上面那对 toast 文案的区别：toast 只是「告诉你有这回事」，卡片要用户**做决定** ——
+   * 所以每一条都得说清楚「接受会怎样、拒绝会怎样、什么时候拒绝不了」。
+   */
+  'app.extChangeTitle': {
+    zh: '文件已在磁盘上改变（{count}）',
+    en: 'Files changed on disk ({count})',
+  },
+  'app.extChangeAccept': { zh: '接受', en: 'Keep' },
+  'app.extChangeReject': { zh: '拒绝', en: 'Undo' },
+  'app.extChangeAcceptAll': { zh: '全部接受', en: 'Keep all' },
+  'app.extChangeRejectAll': { zh: '全部拒绝', en: 'Undo all' },
+  'app.extChangeDeleted': { zh: '已在磁盘上删除', en: 'Deleted on disk' },
+  /** 文件没开着、或只是「知道一下」：这时「接受」是空动作，按钮得说实话。 */
+  'app.extChangeDismiss': { zh: '知道了', en: 'Got it' },
+  /** 文件在磁盘上被删了：「接受」= 收下这件事（把标签关掉）。 */
+  'app.extChangeClose': { zh: '关闭标签', en: 'Close tab' },
+  'app.extChangeNoBefore': {
+    zh: '没记录到改动前的内容，还原不了',
+    en: 'No pre-change copy was recorded, cannot undo',
+  },
+  'app.extChangeLosesEdits': {
+    zh: '接受会丢弃你未保存的修改',
+    en: 'Keeping will discard your unsaved edits',
+  },
+  'app.extChangeRejectFailed': { zh: '还原失败', en: 'Undo failed' },
+  'app.extChangeSaveFirst': {
+    zh: '这个文件有未保存的修改，先保存或放弃再「接受」',
+    en: 'This file has unsaved edits — save or discard them before keeping',
+  },
   'app.copiedFull': { zh: '✓ 已复制完整内容', en: '✓ Full content copied' },
   'app.copyContent': { zh: '复制内容', en: 'Copy content' },
   'app.browserTab': { zh: '内置浏览器', en: 'Built-in Browser' },

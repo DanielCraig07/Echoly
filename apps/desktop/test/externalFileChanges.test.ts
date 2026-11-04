@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   baseNameOf,
   decideDiskChange,
+  mergePendingChange,
+  planExternalChangeActions,
   summariseFileNames,
+  type PendingExternalChange,
 } from '../src/renderer/src/services/externalFileChanges';
 
 /**
@@ -61,5 +64,92 @@ describe('提示里的文件名', () => {
     expect(summariseFileNames(['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'])).toBe(
       'a.ts、b.ts、c.ts 等 5 个',
     );
+  });
+});
+
+/**
+ * 「接受 / 拒绝」这两个按钮**什么时候能给、按下去意味着什么**。
+ *
+ * 写错的代价不对称：
+ * - 把「不能还原」判成「能还原」→ 用户点「拒绝」得到一句莫名其妙的失败，或者更糟，
+ *   拿一份**更早**的内容盖掉磁盘（把代理的改动和用户的中间改动一起丢掉）；
+ * - 把「没有未保存编辑」判成「有」→ 用户被拦下来，多一步操作。
+ * 所以这里优先钉住「还原不了」的那几种，绝不放行。
+ */
+describe('planExternalChangeActions', () => {
+  const change = (over: Partial<PendingExternalChange> = {}): PendingExternalChange => ({
+    path: 'src/a.ts',
+    abs: '/proj/src/a.ts',
+    name: 'a.ts',
+    before: 'old',
+    fresh: 'new',
+    dirty: false,
+    open: true,
+    ...over,
+  });
+
+  it('开着、有改动前的内容 → 接受是重新载入，拒绝可以点', () => {
+    expect(planExternalChangeActions(change())).toEqual({
+      accept: 'reload',
+      canReject: true,
+      acceptLosesEdits: false,
+    });
+  });
+
+  it('没记到改动前的内容 → 拒绝**不能**点（宁可说不出来，也不拿旧内容乱盖）', () => {
+    const actions = planExternalChangeActions(change({ before: undefined }));
+    expect(actions.canReject).toBe(false);
+    expect(actions.accept).toBe('reload');
+  });
+
+  it('文件没开着 → 接受只是收起提示，没有可同步的编辑器内容', () => {
+    const actions = planExternalChangeActions(change({ open: false }));
+    expect(actions.accept).toBe('dismiss');
+  });
+
+  it('磁盘上已被删除 → 接受是「承认删除」（把标签关掉）', () => {
+    const actions = planExternalChangeActions(change({ fresh: null }));
+    expect(actions.accept).toBe('close');
+    expect(actions.canReject).toBe(true);
+  });
+
+  it('有未保存的编辑 → 标出「接受会丢改动」，界面必须说清楚', () => {
+    expect(planExternalChangeActions(change({ dirty: true })).acceptLosesEdits).toBe(true);
+    // 文件没开着时谈不上「丢编辑器里的改动」
+    expect(planExternalChangeActions(change({ dirty: true, open: false })).acceptLosesEdits).toBe(
+      false,
+    );
+  });
+});
+
+describe('mergePendingChange', () => {
+  const base: PendingExternalChange = {
+    path: 'src/a.ts',
+    abs: '/proj/src/a.ts',
+    name: 'a.ts',
+    before: 'v1',
+    fresh: 'v2',
+    dirty: false,
+    open: true,
+  };
+
+  it('同一条路径又变了 → 磁盘内容取新的，「改动前」保留最早那一份', () => {
+    const merged = mergePendingChange(base, { ...base, before: 'v2', fresh: 'v3' });
+    expect(merged.fresh).toBe('v3');
+    // 「拒绝」要的是「回到代理动手之前」，不是「回到上一次磁盘变动之前」
+    expect(merged.before).toBe('v1');
+  });
+
+  it('已经接受过一次（旧的那份 before 没了）→ 以新的一份为准', () => {
+    const merged = mergePendingChange(
+      { ...base, before: undefined },
+      { ...base, before: 'v2', fresh: 'v3' },
+    );
+    expect(merged.before).toBe('v2');
+  });
+
+  it('中途关掉了标签 → 「开着」这个事实要留住（只要前后任一时刻开着）', () => {
+    expect(mergePendingChange(base, { ...base, open: false }).open).toBe(true);
+    expect(mergePendingChange({ ...base, open: false }, base).open).toBe(true);
   });
 });
