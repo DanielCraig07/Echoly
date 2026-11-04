@@ -1,176 +1,98 @@
 # Echoly
 
-> **Echoly** 是一款 AI 原生、轻量极速的现代智能代码编辑器（AI-first Intelligent IDE）。深度融合 Monaco Editor、智能 AI Agent 与全功能开发者工具链，为开发者提供媲美商业级 IDE 的沉浸式工程体验。
-
----
+> AI 原生、轻量极速的现代智能代码编辑器。融合 Monaco Editor、AI Agent 与全功能开发者工具链，为开发者提供沉浸式的工程体验。
 
 ## ✨ 核心特性
 
-### 🤖 1. 下一代 AI 协同中枢
-
-- **多模型灵活切换 (Model Switcher)**：
-  - 开箱即用预置 **DeepSeek-V4.1（内网）**、**DeepSeek-R1（深度思考）**、**Claude 3.7 Sonnet / 3.5 Haiku**、**OpenAI GPT-4o / GPT-4o-mini** 等主流大模型，另可自定义任意 OpenAI 兼容端点；
-  - 聊天输入区直观下拉切换当前模型，支持自定义 Base URL 与 API Key。
-- **三大 AI 交互模式**：
-  - 💬 **Ask 模式**：纯只读提问与代码答疑；
-  - 📋 **Plan 模式**：只读深度调研，自动生成步骤化执行计划与 Todo 事项；
-  - ⚡ **Agent 模式**：具备自主探索闭环（文件搜索、代码阅读、写入、文件替换、终端执行与交互式确认）。
-- **智能上下文感知**：
-  - 支持 `@file`、`@folder` 精准引用工作区文件作为 Prompt 背景；
-  - 实时 Token 上下文用量监控与步数穿透。
-
-### ⚡ 2. 全能指令面板 (Command Palette / Search Everywhere)
-
-- 键盘流极速操作：
-  - 📂 **文件快速打开**：`Cmd+P` / `Ctrl+P`，极速模糊检索全工程文件；
-  - ⚡ **动作指令面板**：`Cmd+Shift+P` / `Ctrl+Shift+P`（或在搜索框输入 `>` 自动切入），一键触发 IDE 各项操作（切换分支、新建会话、拉取提交、清空终端、打开设置等）；
-  - 🔍 **代码符号检索**：`Cmd+Shift+F` / `Ctrl+Shift+F`，全文代码检索并精准定位行号。
-
-### ▶️ 3. IDEA 风格 Run Configuration 一键运行
-
-- 位于顶部导航栏中央标志性位置；
-- **自动脚本扫描**：自动解析当前项目 `package.json` 中的 `scripts`（如 `dev`, `start`, `build`, `test`, `lint` 等）；
-- **一键启动 ▶**：用户无需手动打开终端，点击绿色运行按钮自动展开底部终端并执行脚本，支持微光状态指示与一键 ⏹ 停止。
-
-### 🌿 4. 工业级 Git 版本控制全闭环
-
-- **Monaco 行级 Git Blame**：光标在任意代码行停留时，行末以优雅淡灰字实时浮现最后提交作者、相对时间与 Commit 摘要；
-- **完整 Git 周期管理**：工作区更改列表、单文件/全部文件暂存与取消暂存、提交、分支切换与创建、Pull / Push；
-- **智能空状态引导**：当打开非 Git 项目时，展示现代卡片引导界面，支持一键 `git init` 初始化仓库。
-
-### 🌐 5. 远程 SSH 开发与弹性保活
-
-- **SFTP 远程文件工作区**：直连 Linux 服务器，无缝浏览与编辑远程代码；
-- **远程终端会话**：内置 SSH 交互式终端，支持高低延迟网络自适应；
-- **连接弹性保活与容灾**：5 秒智能心跳保持，网络临时抖动自动重试，平滑保持 Git 与编辑状态，杜绝误判断线。
-
----
+- **AI 协同中枢**：预置 DeepSeek-V4.1（内网）、DeepSeek-R1、Claude、GPT-4o 等模型，可自定义任意 OpenAI 兼容端点；聊天区下拉直切，支持自定义 Base URL / API Key。
+- **三大交互模式**：💬 **Ask**（只读问答）、📋 **Plan**（调研并生成步骤化计划与 Todo）、⚡ **Agent**（自主搜索、读写文件、执行终端，闭环完成任务）。
+- **上下文感知**：`@file` / `@folder` 精准引用工作区文件；实时 Token 用量与步数监控；超长对话自动压缩上下文。
+- **命令面板**：`Cmd/Ctrl+P` 开文件、`Cmd/Ctrl+Shift+P` 动作指令、`Cmd/Ctrl+Shift+F` 全文检索；双击 `Shift` 唤起 Search Everywhere。
+- **Run Configuration**：自动解析 `package.json` 的 `scripts`，一键 ▶ 启动 / ⏹ 停止。
+- **Git 全闭环**：Monaco 行级 Blame、暂存与提交、分支切换与创建、Pull / Push；非 Git 项目提供一键 `git init` 引导。
+- **远程 SSH 开发**：SFTP 文件工作区 + SSH 交互式终端，5 秒心跳保活、抖动自动重连。
+- **其他**：本地 / SSH 终端（PTY）、代码库 BM25 索引检索、`.cursor/skills` 技能与 `.echoly/commands` 斜杠命令、MCP (stdio) 工具接入、中英双语界面。
 
 ## 🚀 快速开始
 
-### 运行环境
-
-- **Node.js** >= 20.0.0
-- **npm** >= 10.0.0
-- 系统要求：macOS (Apple Silicon / Intel) 或 Windows 10/11 (x64 / ia32)
-
-### 安装依赖与启动
+**环境要求**：Node.js >= 20、npm >= 10；macOS (Apple Silicon / Intel) 或 Windows 10/11 (x64 / ia32)。
 
 ```bash
-# 1. 克隆代码仓库
 git clone https://github.com/DanielCraig07/Echoly.git
 cd Echoly
-
-# 2. 安装项目依赖
 npm install
-
-# 3. 启动开发模式
 npm run dev
 ```
 
-### 类型检查与编译验证
+### 校验与测试
 
 ```bash
-# 执行全工作区 TypeScript 类型严格检查（含 test/ 目录）
-npm run typecheck
-
-# 编译主进程与渲染进程
-npm run build
+npm run typecheck     # 全工作区类型检查（含 test/）
+npm run build         # 编译主进程与渲染进程
+npm test              # 全部单元测试（vitest）
+npm run test:coverage # 带 v8 覆盖率（coverage/）
+npm run lint          # ESLint
+npm run format        # prettier --write
+npm run format:check  # 只检查（CI 门禁）
 ```
 
-### 测试与代码规范
+> 提交前请至少跑 `npm run typecheck && npm test && npm run format:check` —— 这三条正是 CI `quality-gate` 卡住合并的部分。
+
+## 📦 打包
+
+**macOS**（需在 macOS 上执行，依赖原生 `hdiutil`）：
 
 ```bash
-# 运行全部单元测试（vitest，5 个 workspace project）
-npm test
-
-# 带覆盖率报告（v8，产物在 coverage/）
-npm run test:coverage
-
-# ESLint 检查 / 格式化
-npm run lint
-npm run format        # 自动格式化
-npm run format:check  # 只检查（CI 用的就是这条）
+npm run pack:mac:arm64   # Apple Silicon
+npm run pack:mac:x64     # Intel
+npm run pack:mac         # 两种架构
 ```
 
-> 本地改动提交前请至少跑一遍 `npm run typecheck && npm test && npm run format:check`，
-> 这三条正是 CI `quality-gate` 里卡住合并的部分。
+产物：`apps/desktop/release/Echoly-<version>-<arch>.dmg`。
 
----
-
-## 📦 打包构建指南
-
-### macOS (DMG 安装镜像)
-
-> **注意**：必须在 macOS 环境下执行打包（依赖系统原生 `hdiutil`）。
+**Windows**：
 
 ```bash
-# 打包 Apple Silicon (M1/M2/M3/M4) 架构 DMG (推荐)
-npm run pack:mac:arm64
-
-# 打包 Intel (x64) 架构 DMG
-npm run pack:mac:x64
-
-# 同时构建两种架构
-npm run pack:mac
+npm run pack        # x64 安装包
+npm run pack:win32  # ia32
 ```
 
-- 构建完成后，DMG 安装包将产出至 `apps/desktop/release/Echoly-<version>-<arch>.dmg`。
+产物：`apps/desktop/release/Echoly-<version>-<arch>-Setup.exe` 与免安装目录 `win-unpacked/`。
 
-### Windows (EXE 安装包 & 便携版)
+## 📂 项目结构
 
-```bash
-# 打包 64 位安装程序 (NSIS Setup.exe)
-npm run pack
-
-# 打包 32 位程序
-npm run pack:win32
-```
-
-- 构建产物包含：
-  - **安装向导包**：`apps/desktop/release/Echoly-<version>-<arch>-Setup.exe`
-  - **免安装绿色便携目录**：`apps/desktop/release/win-unpacked/`
-
----
-
-## 📂 项目工程架构
-
-本项目采用基于 npm workspaces 的 Monorepo 模块化架构：
+采用 npm workspaces 的 Monorepo：
 
 ```text
-Echoly/
-├── apps/
-│   └── desktop/               # Electron 主进程、Preload 与 React 渲染层
-├── packages/
-│   ├── agent/                 # AI Agent 自主推理执行引擎
-│   ├── llm/                   # 统一大模型驱动与多 Provider 协议适配层
-│   ├── shared/                # 全局共享 TypeScript 类型定义与通用工具
-│   ├── skills/                # 外部扩展技能 (Skills) 扫描与注入管理
-│   ├── tools/                 # IDE 工具环（文件读写、搜索、Git、终端等）
-│   ├── cursor-extension/      # Cursor / VSCode 扩展连接层
-│   └── vscode-shim/           # VSCode API 运行期兼容垫片
-├── scripts/                   # 打包与辅助构建脚本
-├── package.json               # 根项目工作区配置
-└── README.md
+apps/desktop/            # Electron 主进程、Preload 与 React 渲染层
+packages/
+  agent/                 # AI Agent 推理执行引擎（工具循环、上下文压缩、MCP 客户端）
+  llm/                   # 大模型驱动与多 Provider 协议适配
+  shared/                # 全局共享类型定义与 IPC 契约
+  skills/                # 技能（Skills）扫描、评分与注入
+  tools/                 # 工具集（文件读写、搜索、终端等，本地 / SSH 双后端）
+  runner/                # 远端 Agent runner：在 SSH 主机上执行 Agent 并回写事件
+  cursor-extension/      # Cursor / VSCode 扩展连接层
+  vscode-shim/           # VSCode API 运行期兼容垫片
+scripts/                 # 构建、打包与辅助脚本
 ```
 
----
+详细架构与开发约定见 [CLAUDE.md](CLAUDE.md)。
 
-## 🛠️ 键盘快捷键速查
+## 🛠️ 快捷键
 
-| 快捷键 (macOS / Win)           | 功能描述                               |
-| :----------------------------- | :------------------------------------- |
-| `Cmd+P` / `Ctrl+P`             | 打开文件快速检索面板                   |
-| `Cmd+Shift+P` / `Ctrl+Shift+P` | 唤起全局动作指令面板 (Command Palette) |
-| `Cmd+Shift+F` / `Ctrl+Shift+F` | 全文代码符号检索                       |
-| `Cmd+Shift+B` / `Ctrl+Shift+B` | 展开 / 折叠左侧资源管理器边栏          |
-| `Cmd+J` / `Ctrl+J`             | 展开 / 折叠底部控制台终端              |
-| `Cmd+B` / `Ctrl+B`             | 展开 / 折叠右侧 AI 助手面板            |
-| `Cmd+Shift+G` / `Ctrl+Shift+G` | 快速切到 Git 版本控制面板              |
-| `Cmd+,` / `Ctrl+,`             | 打开系统首选项与模型设置               |
+| 快捷键 (macOS / Win)           | 功能                    |
+| :----------------------------- | :---------------------- |
+| `Cmd+P` / `Ctrl+P`             | 文件快速打开            |
+| `Cmd+Shift+P` / `Ctrl+Shift+P` | 动作指令面板            |
+| `Cmd+Shift+F` / `Ctrl+Shift+F` | 全文代码检索            |
+| 双击 `Shift`                   | Search Everywhere       |
+| `Cmd+Shift+B` / `Ctrl+Shift+B` | 展开 / 折叠左侧边栏     |
+| `Cmd+J` / `Ctrl+J`             | 展开 / 折叠底部终端     |
+| `Cmd+B` / `Ctrl+B`             | 展开 / 折叠右侧 AI 面板 |
+| `Cmd+Shift+G` / `Ctrl+Shift+G` | 切到 Git 面板           |
+| `Cmd+,` / `Ctrl+,`             | 打开设置                |
 
----
+## 📄 许可证
 
-## 📄 开源许可证
-
-本项目基于 [MIT License](LICENSE) 开源协议。
+本项目基于 [MIT License](LICENSE) 开源。
