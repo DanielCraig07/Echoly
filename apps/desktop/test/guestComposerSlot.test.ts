@@ -151,12 +151,17 @@ function collectDescendants(root: FakeEl, into: FakeEl[] = []): FakeEl[] {
  * 于是「从输入框往上找到那一整块」这条规则必须能跨过 30px 的落差。
  */
 /** 内容撑出来的高度（`autoHeight` 那种盒子：往里面插一行它就长一行）。 */
+let growRatio = 1;
+
 function contentHeight(node: FakeEl): number {
   let sum = 0;
   for (const child of kids(node)) {
     if (child.pinned) continue;
     // flex:1 那种孩子按它当前的实测高度算（它不撑高，也不塌掉）
-    sum += heightOf(child) ?? child.rect.height;
+    let h = heightOf(child) ?? child.rect.height;
+    // 我们插进去那块空位：有的界面不会照单全收（按比例长、或者被别的约束卡住）
+    if (child.id === COMPOSER_SLOT_ID) h *= growRatio;
+    sum += h;
   }
   return sum;
 }
@@ -184,6 +189,8 @@ function makeScene(
     flexOrder?: boolean;
     /** 装成「读不到 computed style」的样子（order 抄不过来）。 */
     noComputedStyle?: boolean;
+    /** 输入框那一块「让出的空间 / 请求的空间」的比值（1 = 完全照办）。 */
+    growRatio?: number;
   } = {},
 ) {
   const VIEWPORT_H = 800;
@@ -199,11 +206,14 @@ function makeScene(
     box.autoHeight = true;
     box.fixedHeight = null;
   } else {
-    box.fixedHeight = 110;
+    // 高度被钉死：内容只会被挤出去，不会让地方
+    box.fixedHeight = 70;
   }
 
+  /* 输入框的父容器（真实界面里它一定是**紧包着**输入框那一层，中间没有富余的空白） */
   const inner = new FakeEl();
   inner.column = true;
+  inner.autoHeight = true;
 
   const input = new FakeEl();
   input.tagName = 'TEXTAREA';
@@ -280,6 +290,7 @@ function makeScene(
     layoutChildren(node);
   }
 
+  growRatio = options.growRatio ?? 1;
   const layout = () => layoutNode(body, 0, VIEWPORT_H);
   onMutation = layout;
   layout();
@@ -296,10 +307,11 @@ function makeScene(
     layout();
   }
 
+  // 钉死在底部的那种：插兄弟节点不会让它动（真实界面里就是 position: fixed）。
+  // 布局已经把它的 rect 算成贴着底边了，这里只是再确认一次位置。
   if (options.pinnedComposer) {
-    // 钉死在底部：插兄弟节点也不会让它动（真实界面里这就是 position: fixed）
-    box.rect = rect(690, 110);
-    inner.rect = rect(690, 110);
+    box.rect = rect(730, box.autoHeight ? 70 : 70);
+    inner.rect = rect(730, 70);
     input.rect = rect(730, 40);
     toolbar.rect = rect(770, 30);
   }
@@ -334,9 +346,9 @@ describe('measureComposerSlot', () => {
     const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
 
     // 输入框那一整块贴着底边（690..800），空位就落在它上面（634..690）
-    expect(slot).toMatchObject({ top: 634, height: 56, mode: 'slot' });
+    expect(slot).toMatchObject({ top: 674, height: 56, mode: 'slot' });
     // 日志里带上「认到的到底是谁」：位置不对时一条日志就够定位
-    expect(slot?.anchor).toContain('@690-800');
+    expect(slot?.anchor).toContain('@730-800');
     // 插在「输入框那一整块」前面，而不是塞进输入框和工具栏之间
     const inserted = findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID);
     expect(inserted?.parent).toBe(scene.body);
@@ -351,7 +363,9 @@ describe('measureComposerSlot', () => {
 
     // 钉死的输入框不占流里的位置：空位会**正好落在它身上**（挡住用户打字的地方），
     // 所以必须撤掉 —— 位置改成「输入框那一块的上沿之上」直接算出来。
-    expect(slot).toMatchObject({ top: 634, height: 56, mode: 'overlay' });
+    // 位置按**输入框**的上沿算（730 - 56），不是按那一块的边算 ——
+    // 这样栏的下边永远等于输入框的上边，一个字都盖不住
+    expect(slot).toMatchObject({ top: 674, height: 56, mode: 'overlay' });
     expect(findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID)).toBeNull();
   });
 
@@ -361,19 +375,36 @@ describe('measureComposerSlot', () => {
 
     // 外面插兄弟节点它不动（钉死的），但往它自己里面插一行它会长高 ——
     // 长出来的那块正好放我们的栏，转录区和输入框都不被挡
-    expect(slot).toMatchObject({ top: 634, height: 56, mode: 'inside' });
+    expect(slot).toMatchObject({ top: 674, height: 56, mode: 'inside' });
     const inserted = findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID);
-    expect(inserted?.parent).toBe(scene.box);
+    expect(inserted?.parent).toBe(scene.inner);
     // 输入框那一块确实往上长了：底边没动，上沿从 690 变成 634
     expect(scene.box.getBoundingClientRect().bottom).toBe(800);
-    expect(scene.box.getBoundingClientRect().top).toBe(634);
+    expect(scene.box.getBoundingClientRect().top).toBe(674);
+  });
+
+  it('对方只按比例让出空间（让出的比请求的少）→ 校准到够为止，且绝不盖住输入框', () => {
+    /* 真实界面里「请求多少」和「真的让出多少」经常对不上（max-height、被挤而不是长高…）。
+       所以不猜：量出实际空档，不够就按比例再加一点重试。 */
+    const scene = makeScene({ pinnedComposer: true, autoComposer: true, growRatio: 0.5 });
+    const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
+
+    expect(slot).toMatchObject({ top: 674, height: 56, mode: 'inside' });
+    const inserted = findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID);
+    // 请求的高度被放大了（56 只换来 28，于是要了更多）
+    const requested = /height:\s*(\d+(?:\.\d+)?)px/.exec(
+      (inserted as unknown as { cssText: string }).cssText,
+    );
+    expect(Number(requested?.[1])).toBeGreaterThan(56);
+    // 栏的下边正好是输入框的上边 —— 一个字都不盖
+    expect(scene.input.getBoundingClientRect().top).toBe(slot!.top + slot!.height);
   });
 
   it('界面用 flex `order` 排输入框 → 抄一份 order，空位照样贴着它', () => {
     const scene = makeScene({ flexOrder: true });
     const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
 
-    expect(slot).toMatchObject({ top: 634, height: 56 });
+    expect(slot).toMatchObject({ top: 674, height: 56, mode: 'slot' });
     // 抄了 order 才贴得上：不抄的话空位默认 order:0，会被排到消息区**前面**去
     expect(findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID)).not.toBeNull();
   });
@@ -384,7 +415,9 @@ describe('measureComposerSlot', () => {
     const scene = makeScene({ flexOrder: true, noComputedStyle: true });
     const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
 
-    expect(slot).toMatchObject({ top: 634, height: 56, mode: 'overlay' });
+    // 位置按**输入框**的上沿算（730 - 56），不是按那一块的边算 ——
+    // 这样栏的下边永远等于输入框的上边，一个字都盖不住
+    expect(slot).toMatchObject({ top: 674, height: 56, mode: 'overlay' });
     expect(findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID)).toBeNull();
   });
 
@@ -398,6 +431,7 @@ describe('measureComposerSlot', () => {
   it('输入框藏在 shadow root 里也能找到（VS Code 风格的界面就是这样）', () => {
     const scene = makeScene({ shadowComposer: true });
     const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
+    // 找到的是藏在 shadow root 里那个输入框：空位贴在**它那一块**（外面那层 110 高）上面
     expect(slot).toMatchObject({ top: 634, height: 56, mode: 'slot' });
   });
 

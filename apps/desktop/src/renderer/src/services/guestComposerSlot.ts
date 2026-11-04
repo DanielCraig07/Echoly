@@ -42,8 +42,8 @@ export interface GuestComposerSlot {
    * - `slot`：在输入框那一块**外面**插了一块空位，页面真的让出了地方（最干净，谁也不遮）；
    * - `inside`：外面插不动（那一块被钉在底部），改在它**里面**最前面插一行 —— 它自己
    *   往上长，空出来的地方给我们（同样谁也不遮）；
-   * - `overlay`：上面两条都不成，位置是从输入框那一块的坐标**算**出来的（会盖住转录区
-   *   最后一点点）。
+   * - `overlay`：上面两条都不成，位置同样是按输入框的上沿算的（只可能盖住输入框**上面**
+   *   那条空档或转录区的一点点，绝不盖输入框）。
    */
   mode?: 'slot' | 'inside' | 'overlay';
   /**
@@ -178,9 +178,6 @@ export function measureComposerSlot(
     block = parent;
   }
 
-  /** 找输入框那一块**之前**的位置：插空位失败时要靠它算出「紧挨着它上方」是哪儿。 */
-  const blockTopBefore = rectOf(block) ? rectOf(block)!.top : -1;
-
   /** 只给日志用：认到的到底是谁。 */
   const describe = (el: GuestElement): string => {
     const tag = String(el.tagName || '?').toLowerCase();
@@ -259,44 +256,85 @@ export function measureComposerSlot(
     host = outer;
   }
 
-  /* 3b) 再试「把空位塞进输入框那一块**里面**」。
-        有的界面把输入框那一块钉在底部（absolute/fixed 那种），在它外面插兄弟节点它压根不动；
-        但它**自己的盒子会长**：在最前面插一行，它就往上长，输入框被顶到下面去，上面空出来的
-        地方正好放我们的栏 —— 同样谁也不遮。 */
+  /* 输入框平时在哪儿 —— 「栏贴在哪里」全靠它。 */
   const inputRectBefore = rectOf(input);
-  const blockRectBefore = rectOf(block);
-  if (inputRectBefore && blockRectBefore) {
-    /* 空位插进去之前，输入框在那一块里的纵向偏移 —— 插完必须贴着它长大 barHeight */
-    const offsetBefore = inputRectBefore.top - blockRectBefore.top;
+  if (!inputRectBefore) return null;
 
-    const inner = doc.createElement('div');
-    inner.setAttribute('id', SLOT_ID);
-    inner.setAttribute('data-echoly', 'pending-bar');
-    inner.style.cssText =
-      'display:block;width:100%;height:' + barHeight + 'px;flex:0 0 auto;pointer-events:none;';
-    block.insertBefore(inner, block.firstChild || null);
+  /**
+   * 栏贴在哪里：**紧贴着输入框的上沿**（`输入框上沿 - 栏高`）。
+   *
+   * 为什么不贴「输入框那一块」的上沿：那一块的内部结构是对方的自由，顶上可能有内边距、
+   * 也可能夹着一小段别的东西。贴着**输入框自己**算，栏的下边就永远等于输入框的上边 ——
+   * 一个字都不会盖住用户打字的地方。
+   */
+  const topFor = (inputRect: GuestRect): number => inputRect.top - barHeight;
 
-    const blockRect = rectOf(block);
-    const inputRect = rectOf(input);
-    const grew =
-      !!blockRect &&
-      !!inputRect &&
-      inputRect.top - blockRect.top >= offsetBefore + barHeight - 4 &&
-      blockRect.bottom <= viewportH + 2 &&
-      blockRect.top >= viewportH * 0.1;
-    if (grew) {
-      return { top: blockRect!.top, height: barHeight, mode: 'inside', anchor };
+  /* 3b) 再试「把空位塞进输入框**自己的父容器**里、紧挨着它上面」。
+        有的界面把输入框那一块钉在底部（absolute/fixed 那种），在它外面插兄弟节点它压根
+        不动；但往输入框上面塞一行，它自己会让出地方来。
+
+        插在**输入框正上方**（而不是容器顶部）是有意的：中间夹着别的东西时，那些东西会
+        被我们的栏盖住 —— 紧挨着插，中间就只可能有内边距。
+
+        「请求多少」和「真的让出多少」不是一回事（对方可能有 max-height、可能只按比例长、
+        也可能把内容挤下去），所以**不猜**：量出实际的空档，不够就按这一轮的比例再加一点
+        重试（最多三次）。还不够就整条作废，绝不把栏塞进去盖住输入框。 */
+  const insertParent = input.parentElement;
+  const parentRectBefore = rectOf(insertParent);
+  if (insertParent && parentRectBefore) {
+    const inputHeightBefore = inputRectBefore.height;
+    const spaceBefore = inputRectBefore.top - parentRectBefore.top;
+    let request = barHeight;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const inner = doc.createElement('div');
+      inner.setAttribute('id', SLOT_ID);
+      inner.setAttribute('data-echoly', 'pending-bar');
+      inner.style.cssText =
+        'display:block;width:100%;height:' + request + 'px;flex:0 0 auto;pointer-events:none;';
+      insertParent.insertBefore(inner, input);
+
+      const parentRect = rectOf(insertParent);
+      const inputRect = rectOf(input);
+      /* 输入框上面现在有多少空档（那才是能放我们这一栏的地方） */
+      const space = parentRect && inputRect ? inputRect.top - parentRect.top : -1;
+      const inputIntact = !!inputRect && inputRect.height >= inputHeightBefore - 4;
+      /* 撑住的这一层**不能顶破它外面那一层**。只把输入框往下挤、外面那一块纹丝不动，
+         说明它的高度是钉死的 —— 内容只会被挤出去（工具栏会被顶到视口外面）。 */
+      const blockRectNow = rectOf(block);
+      const contained =
+        !!blockRectNow &&
+        !!parentRect &&
+        parentRect.top >= blockRectNow.top - 2 &&
+        parentRect.bottom <= blockRectNow.bottom + 2;
+      const sane =
+        !!inputRect &&
+        !!parentRect &&
+        inputRect.bottom <= viewportH + 2 &&
+        parentRect.bottom <= viewportH + 2 &&
+        parentRect.top >= viewportH * 0.05;
+
+      if (inputRect && space >= barHeight - 2 && inputIntact && contained && sane) {
+        return { top: topFor(inputRect), height: barHeight, mode: 'inside', anchor };
+      }
+
+      insertParent.removeChild(inner);
+
+      const gained = space - spaceBefore;
+      const need = barHeight - spaceBefore;
+      if (gained <= 0 || need <= 0) break;
+      /* 按这一轮的实际比例反推：想让空档长到够用，得请求多高 */
+      const next = Math.min(Math.ceil((need * request) / gained) + 8, barHeight * 5);
+      if (next <= request) break;
+      request = next;
     }
-
-    block.removeChild(inner);
   }
 
-  /* 4) 兜底：空位插不成（对方把输入框钉死了、容器不是 flex、`order` 排不出来…），就直接
-        把栏摆在**输入框那一块的上沿之上** —— 会盖住转录区最后一点点，但位置是对的，
-        比飘在对话中间 / 面板顶上强得多。
-        前提是这块地方看着像输入框：它得在下半屏，而且整块都在视口里。 */
-  const fallbackTop = blockTopBefore - barHeight;
-  if (blockTopBefore > 0 && fallbackTop >= viewportH * 0.35 && blockTopBefore <= viewportH) {
+  /* 4) 兜底：上面两条都不成（对方把输入框钉死了、容器不是 flex、怎么插都不让…），
+        就按输入框的上沿算位置直接盖 —— 只可能盖住输入框**上面**那条空档或转录区的
+        一点点，绝不盖输入框本身。 */
+  const fallbackTop = topFor(inputRectBefore);
+  if (fallbackTop >= viewportH * 0.35 && inputRectBefore.bottom <= viewportH + 2) {
     return { top: fallbackTop, height: barHeight, mode: 'overlay', anchor };
   }
 
