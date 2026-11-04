@@ -45,6 +45,23 @@ export const WEBVIEW_INDEX_PATH = 'index.html';
  */
 export const WEBVIEW_THEME_PATH = '__echoly-theme.css';
 
+/**
+ * 注入给扩展页面的 webview 运行时（`acquireVsCodeApi` + 消息桥）在协议里的固定路径。
+ *
+ * 为什么不一律内联：扩展页面自己的 CSP 常见有**三种写法**，只有前两种容得下内联脚本 ——
+ *
+ * - `script-src 'unsafe-inline'` → 内联可跑；
+ * - `script-src 'nonce-xxx'` → 内联可以，但 tag 上必须带同一个 nonce；
+ * - `script-src ${webview.cspSource}`（= 我们这个 origin，**既没 unsafe-inline 也没 nonce**）
+ *   → 内联**直接被拦**。
+ *
+ * 第三种就是 Codex（`openai.chatgpt`）：视图能打开、HTML 也送到了，但页面里的
+ * `acquireVsCodeApi` 是 undefined，它的 bundle 一上来就崩，几秒后自己把界面换成
+ * 「Codex could not start its user interface.」。走外部脚本 + 同 origin 地址，
+ * `script-src <origin>` 天然放行。
+ */
+export const WEBVIEW_RUNTIME_PATH = '__echoly-runtime.js';
+
 /** `echoly-webview://ext` —— 也就是该页面的 origin，扩展的 CSP 里 `'self'` 指的就是它。 */
 export function buildWebviewOrigin(): string {
   return `${EXTENSION_WEBVIEW_SCHEME}://${EXTENSION_WEBVIEW_HOST}`;

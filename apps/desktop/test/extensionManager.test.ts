@@ -773,3 +773,210 @@ module.exports = { activate };
     });
   });
 });
+/**
+ * 归属 + webview 运行时注入。
+ *
+ * 这几条都是「Codex 装上之后 Office Viewer 突然失效」这一串问题里挖出来的，
+ * 每一条都独立地让扩展「装上了却用不了」：
+ *
+ * 1. **归属靠一个全局字段**（`activeExtensionId` / `activeExtensionPath`），
+ *    而启动时所有扩展是**同时**激活的 —— 字段互相覆盖。实测 Office Viewer 注册的
+ *    自定义编辑器归属变成 undefined，于是它的 provider 被算成「不存在」，
+ *    `.md` 于是交回内置编辑器；
+ * 2. **`hasProvider` 不该看归属**：provider 在不在，和记没记住主人是两件事；
+ * 3. **自定义编辑器的 scheme 必须比**：`openai-codex:/**\/*`（Codex 的会话编辑器）
+ *    与 `file:/**\/*.md`（Office Viewer 的 markdown）去掉 scheme 后一模一样，
+ *    不比就会让 Codex 抢走 `.md`（用户看到的是 `Invalid Codex conversation URI`）；
+ * 4. **运行时脚本要按 CSP 选落法**：CSP 只给 origin 白名单（没有 `'unsafe-inline'`
+ *    也没有 nonce）时内联脚本会被拦，页面里 `acquireVsCodeApi` 就是 undefined，
+ *    扩展的 bundle 一上来就崩（Codex 表现为「could not start its user interface」）。
+ */
+describe('扩展归属 + webview 运行时注入', () => {
+  let base: string;
+  let extensionsDir: string;
+  let manager: InstanceType<typeof ExtensionManager>;
+
+  /** 无 nonce 的 CSP：`script-src` 只给 origin 白名单 —— Codex 就是这样。 */
+  const ORIGIN_ONLY_CSP = "default-src 'none'; script-src echoly-webview://ext;";
+  /** 带 nonce 的 CSP —— Claude Code 那一类。 */
+  const NONCE_CSP = "default-src 'none'; script-src 'nonce-abc123';";
+
+  /**
+   * 注册两个 webview 视图的语句（**只是语句**，不要再套一层 `function activate`）。
+   *
+   * 之前套了一层，写出来的文件就成了「两层 activate，只闭了一个括号」——
+   * 扩展加载直接 SyntaxError，测试里表现为一堆莫名其妙的「provider 没注册」。
+   */
+  const paneStatements = `
+  const mkPane = (id, csp) =>
+    vscode.window.registerWebviewViewProvider(id, {
+      resolveWebviewView(view) {
+        view.webview.html =
+          '<!doctype html><html><head>' +
+          '<meta http-equiv="Content-Security-Policy" content="' + csp + '">' +
+          '</head><body></body></html>';
+      },
+    });
+  mkPane('demo.aPane', ${JSON.stringify(ORIGIN_ONLY_CSP)});
+  mkPane('demo.aNoncePane', ${JSON.stringify(NONCE_CSP)});
+`;
+
+  async function waitFor<T>(what: string, probe: () => Promise<T | undefined>): Promise<T> {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const value = await probe();
+      if (value !== undefined) return value;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error(`等了 5 秒，${what} 还是没有出现`);
+  }
+
+  beforeEach(async () => {
+    base = await mkdtemp(path.join(tmpdir(), 'echoly-owner-'));
+    hoisted.userDataRoot = base;
+    extensionsDir = path.join(base, 'extensions');
+
+    // demo.a：同步注册自定义编辑器 + 两个视图（一个无 nonce、一个有 nonce）
+    await seedExtension(extensionsDir, 'demo.a', {
+      name: 'a',
+      publisher: 'demo',
+      displayName: 'Demo A',
+      version: '1.0.0',
+      main: './extension.js',
+      contributes: {
+        views: {
+          demoAContainer: [
+            { id: 'demo.aPane', name: 'A Pane', type: 'webview' },
+            { id: 'demo.aNoncePane', name: 'A Nonce Pane', type: 'webview' },
+          ],
+        },
+        customEditors: [
+          {
+            viewType: 'demo.aEditor',
+            displayName: 'Demo A Editor',
+            selector: [{ filenamePattern: 'file:/**/*.md' }],
+          },
+        ],
+      },
+    });
+    await writeFile(
+      path.join(extensionsDir, 'demo.a', 'extension', 'extension.js'),
+      `function activate(context) {
+  const vscode = require('vscode');
+  vscode.window.registerCustomEditorProvider('demo.aEditor', {
+    resolveCustomTextEditor() {},
+  });
+${paneStatements}}
+module.exports = { activate };
+`,
+      'utf8',
+    );
+
+    // demo.b：声明里带 scheme 限定，且**在 activate 的异步尾巴里**才注册 provider
+    await seedExtension(extensionsDir, 'demo.b', {
+      name: 'b',
+      publisher: 'demo',
+      displayName: 'Demo B',
+      version: '1.0.0',
+      main: './extension.js',
+      contributes: {
+        customEditors: [
+          {
+            viewType: 'demo.bEditor',
+            displayName: 'Demo B Editor',
+            selector: [{ filenamePattern: 'demo-b:/**/*' }],
+          },
+        ],
+      },
+    });
+    await writeFile(
+      path.join(extensionsDir, 'demo.b', 'extension', 'extension.js'),
+      `function activate(context) {
+  const vscode = require('vscode');
+  // 故意晚一拍：注册时「谁在激活」那个字段已经清空了
+  setTimeout(() => {
+    vscode.window.registerCustomEditorProvider('demo.bEditor', { resolveCustomEditor() {} });
+  }, 0);
+}
+module.exports = { activate };
+`,
+      'utf8',
+    );
+
+    manager = new ExtensionManager({ workspaceRoot: base, registry: 'https://open-vsx.org' });
+    await manager.initialize();
+  });
+
+  afterEach(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('同步注册的 provider 归属是对的（并发激活时会串到别的扩展）', async () => {
+    const owner = await waitFor('demo.aEditor 的 provider', async () => {
+      const hit = (manager as any).extensionHost
+        .listCustomEditorProviders()
+        .find((e: any) => e.viewType === 'demo.aEditor');
+      return hit ? hit : undefined;
+    });
+    expect(owner.extensionId).toBe('demo.a');
+  });
+
+  it('hasProvider 只看 provider 在不在，与「记没记住主人」无关', async () => {
+    const byViewType = await waitFor('demo.bEditor 的 provider', async () => {
+      const list = await manager.listCustomEditors();
+      return list.find((c) => c.viewType === 'demo.bEditor')?.hasProvider ? list : undefined;
+    });
+    // demo.b 是在异步尾巴里注册的 → 归属记不下来，但它确实注册上了
+    expect(byViewType.find((c) => c.viewType === 'demo.aEditor')!.hasProvider).toBe(true);
+    expect(
+      (manager as any).extensionHost
+        .listCustomEditorProviders()
+        .find((e: any) => e.viewType === 'demo.bEditor')?.extensionId,
+    ).toBeUndefined();
+  });
+
+  it('scheme 限定的 selector 不会来抢 file: 的真实文件', async () => {
+    const mdPath = path.join(base, 'note.md');
+    await writeFile(mdPath, '# hi\n', 'utf8');
+    await waitFor('两个 provider 都注册好', async () =>
+      (await manager.listCustomEditors()).every((c) => c.hasProvider) ? true : undefined,
+    );
+    const picked = await manager.matchCustomEditor(mdPath);
+    // `demo-b:/**/*` 与 `file:/**/*.md` 去掉 scheme 后一模一样，只有比 scheme 才分得开
+    expect(picked?.viewType).toBe('demo.aEditor');
+  });
+
+  it('CSP 只给 origin 白名单时，运行时脚本走外部文件（内联会被拦）', async () => {
+    const html = await waitFor('demo.aPane 的 provider', async () => {
+      try {
+        return await manager.resolveWebviewView('demo.aPane');
+      } catch {
+        return undefined;
+      }
+    });
+    expect(html).toContain('src="echoly-webview://ext/demo.aPane/__echoly-runtime.js"');
+    expect(html).not.toContain('window.acquireVsCodeApi = function');
+  });
+
+  it('有 nonce 的 CSP 仍旧走内联，并且带上同一个 nonce', async () => {
+    const html = await waitFor('demo.aNoncePane 的 provider', async () => {
+      try {
+        return await manager.resolveWebviewView('demo.aNoncePane');
+      } catch {
+        return undefined;
+      }
+    });
+    expect(html).toContain('window.acquireVsCodeApi = function');
+    expect(html).toContain('nonce="abc123"');
+    expect(html).not.toContain('__echoly-runtime.js');
+  });
+
+  it('运行时脚本本身能从协议里取到（否则外部引用就是 404）', async () => {
+    const res: Response = await (manager as any).handleWebviewRequest(
+      'echoly-webview://ext/demo.aPane/__echoly-runtime.js',
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('javascript');
+    expect(await res.text()).toContain('acquireVsCodeApi');
+  });
+});

@@ -12,6 +12,7 @@ import { app } from 'electron';
 import {
   EXTENSION_WEBVIEW_SCHEME,
   WEBVIEW_INDEX_PATH,
+  WEBVIEW_RUNTIME_PATH,
   WEBVIEW_THEME_PATH,
   buildWebviewOrigin,
   buildWebviewUrl,
@@ -155,6 +156,41 @@ function toElectronFilters(filters: any): { name: string; extensions: string[] }
       extensions: Array.isArray(exts) ? exts.map((e: any) => String(e).replace(/^\./, '')) : [],
     }))
     .filter((entry) => entry.extensions.length > 0);
+}
+
+/**
+ * 注入给扩展页面的 webview 运行时源码（不含 `<script>` 标签）。
+ *
+ * 单独抽成模块级函数是因为它现在有**两个消费者**：
+ * - 内联注入（页面 CSP 容得下内联脚本时，见 `injectRuntimeScript`）；
+ * - 协议处理器按 `WEBVIEW_RUNTIME_PATH` 把它当成一个外部脚本端出去
+ *   （页面 CSP 只给 origin 白名单时，内联会被拦，只能这么给）。
+ */
+function buildWebviewRuntimeSource(): string {
+  return `
+(function() {
+  var bridge = window.__echolyWebviewBridge;
+  var state = {};
+
+  // 宿主 → 页面。用 window.postMessage 而不是 new MessageEvent：
+  // 扩展页面里那层包装会检查 event.source 是不是自己的祖先窗口（Claude Code 用它的
+  // sBn() 做这件事）。window.postMessage 派发出来的 source 正好是 window 自己，能过；
+  // 手动构造的 MessageEvent 的 source 是 null，会被它当成别的窗口的消息丢掉。
+  if (bridge && typeof bridge.onMessage === 'function') {
+    bridge.onMessage(function(data) { window.postMessage(data, '*'); });
+  }
+
+  window.acquireVsCodeApi = function() {
+    return {
+      postMessage: function(message) {
+        if (bridge && typeof bridge.post === 'function') bridge.post(message);
+        else console.warn('[echoly] webview 消息桥不可用，这条消息被丢弃：', message);
+      },
+      getState: function() { return state; },
+      setState: function(next) { state = next; return state; }
+    };
+  };
+})();`;
 }
 
 /** 协议处理里的纯文本响应头（错误信息要能直接看出来，不是一坨 HTML）。 */
@@ -537,6 +573,14 @@ export class ExtensionManager {
         headers: { 'content-type': 'text/css; charset=utf-8' },
       });
     }
+    if (relPath === WEBVIEW_RUNTIME_PATH) {
+      // 注入的 webview 运行时。见 WEBVIEW_RUNTIME_PATH 的注释：CSP 只给 origin 白名单的
+      // 页面（Codex）容不下内联脚本，只能从同一个 origin 取一份外部脚本。
+      return new Response(buildWebviewRuntimeSource(), {
+        status: 200,
+        headers: { 'content-type': 'text/javascript; charset=utf-8' },
+      });
+    }
     if (relPath === WEBVIEW_INDEX_PATH) {
       const html = this.webviewHtml.get(viewId);
       if (html === undefined) {
@@ -680,31 +724,45 @@ export class ExtensionManager {
    * 自动加载已安装的扩展
    */
   private async loadInstalledExtensions(): Promise<void> {
-    const pending: Promise<unknown>[] = [];
-    try {
-      // 用扫描结果而不是裸 readdir：判「有没有被禁用」要用扩展 id，
-      // 而目录名可能是 `claude-code` 这种和 id 对不上的名字。
-      for (const record of await this.scanInstalledDirs()) {
-        if (this.disabledExtensions.has(record.id) || this.disabledExtensions.has(record.dir)) {
-          console.log(`Skipping disabled extension: ${record.id}`);
-          continue;
+    /**
+     * **逐个激活，不并发。** 这一条是踩出来的，不是风格偏好。
+     *
+     * shim 判断「这个注册是谁的」靠的是一个全局字段 —— `activeExtensionId` /
+     * `activeExtensionPath`，它只在「某个扩展正在 activate」这段时间里有值。
+     * 以前这里把所有扩展的 `loadExtensionFromPath` 一起点着，多个 activate 同时跑：
+     *
+     * - 归属互相覆盖：实测 Codex（激活很慢）与 Office Viewer 同时跑时，
+     *   Office Viewer 注册的自定义编辑器归属变成了 `undefined`，
+     *   于是它的 provider 被算成「不存在」—— 用户那边就是「Office Viewer 突然失效了」；
+     * - 同一个字段还决定 webview 视图的资源根目录，错一位就是视图里所有资源 404。
+     *
+     * 代价是启动时扩展一个接一个激活；渲染层本来就是「谁好了谁先出现」，
+     * 不依赖并发。`initialActivation` 依旧是一个 promise，`awaitInitialActivation()`
+     * 照旧可用（见 matchCustomEditor 的竞态处理）。
+     */
+    this.initialActivation = (async () => {
+      try {
+        // 用扫描结果而不是裸 readdir：判「有没有被禁用」要用扩展 id，
+        // 而目录名可能是 `claude-code` 这种和 id 对不上的名字。
+        for (const record of await this.scanInstalledDirs()) {
+          if (this.disabledExtensions.has(record.id) || this.disabledExtensions.has(record.dir)) {
+            console.log(`Skipping disabled extension: ${record.id}`);
+            continue;
+          }
+          console.log(`Auto-loading extension: ${record.id}`);
+          try {
+            await this.loadExtensionFromPath(
+              path.join(this.extensionsDir, record.dir, 'extension'),
+            );
+          } catch (err: any) {
+            // 一个扩展崩了不该让后面那些都装不上
+            console.error(`Failed to auto-load extension ${record.id}:`, err?.message ?? err);
+          }
         }
-        console.log(`Auto-loading extension: ${record.id}`);
-        // 异步加载，不阻塞启动 —— 但把 promise 收起来，见 initialActivation
-        pending.push(
-          this.loadExtensionFromPath(path.join(this.extensionsDir, record.dir, 'extension')).catch(
-            (err) => {
-              console.error(`Failed to auto-load extension ${record.id}:`, err.message);
-            },
-          ),
-        );
+      } catch (err) {
+        console.error('Failed to scan extensions directory:', err);
       }
-    } catch (err) {
-      console.error('Failed to scan extensions directory:', err);
-    } finally {
-      // allSettled 而不是 all：一个扩展崩了不该让「等启动激活」永远挂着
-      this.initialActivation = Promise.allSettled(pending).then(() => undefined);
-    }
+    })();
   }
 
   /**
@@ -1682,11 +1740,17 @@ export class ExtensionManager {
    * 也是给界面看的：详情页「贡献的功能」里会列出「能接手哪些文件」。
    */
   async listCustomEditors(): Promise<CustomEditorCandidate[]> {
+    /**
+     * `hasProvider` 只看「provider 有没有注册上来」，**不看有没有记到归属**。
+     *
+     * 这里原来有个 `.filter((entry) => entry.extensionId)`，看着像「只统计知道主人的」，
+     * 实际是个陷阱：扩展在 `activate()` 的异步尾巴里注册时，shim 那个「现在是谁在激活」
+     * 的字段已经清空了，归属就是 undefined —— provider 明明在，却统计成「没有」，
+     * 文件于是仍旧交给内置编辑器，用户看到的就是「Office Viewer 失效了」。
+     * 归属只用来做禁用 / 卸载时的清理，不该决定「这个 provider 存不存在」。
+     */
     const registered = new Set(
-      this.extensionHost
-        .listCustomEditorProviders()
-        .filter((entry) => entry.extensionId)
-        .map((entry) => entry.viewType),
+      this.extensionHost.listCustomEditorProviders().map((entry) => entry.viewType),
     );
     const contributions = await this.readCustomEditorContributions();
     return contributions.map((contribution) => ({
@@ -1916,7 +1980,10 @@ export class ExtensionManager {
       return { ok: false, error: `扩展没有给出界面内容：${candidate.viewType}` };
     }
 
-    this.webviewHtml.set(panelKey, this.injectThemeLink(this.injectRuntimeScript(html), panelKey));
+    this.webviewHtml.set(
+      panelKey,
+      this.injectThemeLink(this.injectRuntimeScript(html, panelKey), panelKey),
+    );
     console.log(
       `[customEditor] ${candidate.viewType} 打开 ${filePath}（面板 ${panelKey}，${html.length} 字节）`,
     );
@@ -2288,7 +2355,7 @@ export class ExtensionManager {
         // 我们只需要做一件事：把 webview 运行时（acquireVsCodeApi）注入进去。
 
         // 把 webview 运行时（acquireVsCodeApi + 消息桥）注入进去
-        htmlContent = this.injectRuntimeScript(htmlContent);
+        htmlContent = this.injectRuntimeScript(htmlContent, viewId);
 
         // 主题变量当成一张样式表引进来（见 WEBVIEW_THEME_PATH 的注释）
         htmlContent = this.injectThemeLink(htmlContent, viewId);
@@ -2398,7 +2465,10 @@ export class ExtensionManager {
       cspSource: buildWebviewOrigin(),
       setHtml: (html: string) => {
         // 与视图同源：注入 webview 运行时（acquireVsCodeApi）与主题表
-        const withRuntime = this.injectThemeLink(this.injectRuntimeScript(html ?? ''), panelId);
+        const withRuntime = this.injectThemeLink(
+          this.injectRuntimeScript(html ?? '', panelId),
+          panelId,
+        );
         this.webviewHtml.set(panelId, withRuntime);
         this.broadcastToRenderers('extension:webview-registered', { viewId: panelId });
         // 渲染层收到这条就开一个编辑器标签，标签里是上面这份 HTML
@@ -2445,52 +2515,46 @@ export class ExtensionManager {
    * 插在第一个 nonce script **之前**：扩展自己的脚本可能在很靠前的位置同步读
    * `window.CLAUDE_PANEL_STARTED` 之类的全局量，晚一步就白搭。
    */
-  private injectRuntimeScript(html: string): string {
-    const nonceMatch = html.match(/nonce-([a-f0-9]+)/);
-    const runtimeScript = this.buildWebviewRuntimeScript(nonceMatch ? nonceMatch[1] : '');
+  private injectRuntimeScript(html: string, viewId: string): string {
+    /**
+     * 运行时脚本怎么落，取决于**扩展自己的 CSP 容得下哪一种**。
+     *
+     * 之前只有一条路：内联脚本，nonce 从它页面里取。这在 Claude Code 那种
+     * `script-src 'nonce-…'` 的 CSP 下是对的，但 Codex 的 CSP 是
+     * `script-src <我们的 origin>` —— 既没有 `'unsafe-inline'` 也没有 nonce，
+     * 内联脚本会被直接拦掉。页面上什么都看不出来，只有扩展几秒后自己把界面换成
+     * 「Codex could not start its user interface.」（它等不到页面回 `ready`）。
+     *
+     * 所以按「能不能活下来」依次选：
+     * 1. 页面里有 nonce → 内联 + 同一个 nonce（原路，Claude 一直靠它）；
+     * 2. `script-src` 里有 `'unsafe-inline'`、或页面压根没有 `script-src` → 内联；
+     * 3. 其余（origin 白名单写法）→ 外部脚本，地址与页面同 origin。
+     */
+    const scriptSrc = (html.match(/script-src([^;"]*)/i) ?? [])[1] ?? '';
+    const nonce = (html.match(/nonce-([a-zA-Z0-9+/=_-]+)/i) ?? [])[1];
+    const useExternal = !nonce && !/'unsafe-inline'/.test(scriptSrc) && scriptSrc.trim().length > 0;
+
+    const tag = useExternal
+      ? `<script src="${buildWebviewUrl(viewId, WEBVIEW_RUNTIME_PATH)}"></script>`
+      : `<script${nonce ? ` nonce="${nonce}"` : ''}>
+${buildWebviewRuntimeSource()}
+</script>`;
+
+    if (useExternal) {
+      // 必须是页面里的**第一个**脚本，否则扩展的入口先跑、`acquireVsCodeApi` 还是没定义。
+      // 插在 `<head>` 开标签之后就是这个位置。
+      const headOpen = html.match(/<head[^>]*>/i);
+      if (headOpen) return html.replace(headOpen[0], `${headOpen[0]}\n    ${tag}`);
+      return `${tag}\n${html}`;
+    }
+
+    // 内联：插在第一个带 nonce 的 `<script>` **之前** —— 扩展自己的脚本可能很靠前就
+    // 同步读 `window.CLAUDE_PANEL_STARTED` 之类的全局量，晚一步就白搭。
     const firstScriptMatch = html.match(/<script[^>]*nonce/);
     if (firstScriptMatch) {
-      return html.replace(firstScriptMatch[0], `${runtimeScript}\n    ${firstScriptMatch[0]}`);
+      return html.replace(firstScriptMatch[0], `${tag}\n    ${firstScriptMatch[0]}`);
     }
-    return html.replace('</head>', `${runtimeScript}</head>`);
-  }
-
-  /**
-   * 注入给扩展页面的最小 webview 运行时。
-   *
-   * 两件事：
-   * 1. `acquireVsCodeApi()` —— 扩展的 bundle 一上来就调它，没有就整个挂掉；
-   * 2. 接上消息桥的两端：
-   *    - 出：页面 `postMessage` → 访客 preload → 渲染进程 → 主进程 → 扩展的 onDidReceiveMessage；
-   *    - 入：扩展 `postMessage` → 主进程 → 渲染进程 → 页面里的一个 message 事件。
-   */
-  private buildWebviewRuntimeScript(nonce: string): string {
-    return `
-<script nonce="${nonce}">
-(function() {
-  var bridge = window.__echolyWebviewBridge;
-  var state = {};
-
-  // 宿主 → 页面。用 window.postMessage 而不是 new MessageEvent：
-  // 扩展页面里那层包装会检查 event.source 是不是自己的祖先窗口（Claude Code 用它的
-  // sBn() 做这件事）。window.postMessage 派发出来的 source 正好是 window 自己，能过；
-  // 手动构造的 MessageEvent 的 source 是 null，会被它当成别的窗口的消息丢掉。
-  if (bridge && typeof bridge.onMessage === 'function') {
-    bridge.onMessage(function(data) { window.postMessage(data, '*'); });
-  }
-
-  window.acquireVsCodeApi = function() {
-    return {
-      postMessage: function(message) {
-        if (bridge && typeof bridge.post === 'function') bridge.post(message);
-        else console.warn('[echoly] webview 消息桥不可用，这条消息被丢弃：', message);
-      },
-      getState: function() { return state; },
-      setState: function(next) { state = next; return state; }
-    };
-  };
-})();
-</script>`;
+    return html.replace('</head>', `${tag}</head>`);
   }
 
   /**
