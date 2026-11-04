@@ -232,6 +232,11 @@ export class ExtensionHost {
     return this.shim.listWebviewViewIds(extensionId);
   }
 
+  /** 某个视图 id 是哪个扩展注册的。 */
+  getWebviewViewOwner(viewId: string): string | undefined {
+    return this.shim.getViewOwner(viewId);
+  }
+
   /**
    * 执行命令
    */

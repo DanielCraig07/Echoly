@@ -269,7 +269,7 @@ const api: IpcApi = {
   onExtensionPanelOpened: (cb) => {
     const listener = (
       _: Electron.IpcRendererEvent,
-      data: { panelId: string; title: string; viewType?: string },
+      data: { panelId: string; title: string; viewType?: string; ownerExtensionId?: string },
     ) => cb(data);
     ipcRenderer.on('extension:panel-opened', listener);
     return () => ipcRenderer.removeListener('extension:panel-opened', listener);

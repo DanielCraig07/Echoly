@@ -18891,6 +18891,14 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   gap: 6px;
 }
 
+/* 一个视图一行：左边「打开」，右边「固定到 AI 面板」 */
+.ext-detail-view-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .ext-detail-command-list {
   display: flex;
   flex-direction: column;

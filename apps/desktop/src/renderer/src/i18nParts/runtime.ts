@@ -137,6 +137,11 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   'ext.uninstallFailed': { zh: '卸载失败：{msg}', en: 'Failed to uninstall: {msg}' },
   'ext.uninstalledToast': { zh: '已卸载 {name}', en: 'Uninstalled {name}' },
   'ext.openView': { zh: '打开', en: 'Open' },
+  // 右侧 AI 面板的固定开关（见 ExtensionDetailView 里那段注释）
+  'extDetail.pinAiPanel': { zh: '固定到 AI 面板', en: 'Pin to AI panel' },
+  'extDetail.unpinAiPanel': { zh: '取消固定', en: 'Unpin' },
+  'extDetail.pinnedToast': { zh: '已固定到右侧 AI 面板', en: 'Pinned to the AI panel' },
+  'extDetail.unpinnedToast': { zh: '已从右侧 AI 面板移除', en: 'Removed from the AI panel' },
   'ext.openViewTitle': {
     zh: '打开这个扩展贡献的界面',
     en: 'Open the view contributed by this extension',

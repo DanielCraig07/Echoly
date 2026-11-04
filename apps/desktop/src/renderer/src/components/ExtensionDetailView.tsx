@@ -12,6 +12,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { DEFAULT_AI_PANEL_VIEW_ID } from '@deepseek-ide/shared';
 import { useI18n } from '../i18n';
 import type { MarketplaceDetailEntry } from '@deepseek-ide/shared';
 import { stripRawHtml } from '../services/extensionReadme';
@@ -35,6 +36,14 @@ export const EXTENSION_DETAIL_PREFIX = 'ext://detail/';
 
 /** 面板订阅这个事件来刷新已安装列表。 */
 export const EXTENSION_INSTALLED_EVENT = 'echoly:extension-installed';
+
+/**
+ * 「右侧 AI 面板里固定了哪些视图」变了。
+ *
+ * 固定列表是应用级布局设置（存在 layout 里），而改它的按钮在扩展详情页 ——
+ * 用 window 事件通知 App 重新解析那一栏，和 EXTENSION_INSTALLED_EVENT 同一套做法。
+ */
+export const AI_PANEL_VIEWS_CHANGED_EVENT = 'echoly:ai-panel-views-changed';
 
 export interface ExtensionDetailViewProps {
   /** `publisher.name` */
@@ -196,6 +205,40 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
    * 在 macOS 上装到 alpine 的包。专用通道按本机去 VS Code 市场取对应构建。
    */
   const usesDedicatedChannel = extensionId.toLowerCase() === CLAUDE_CODE_ID.toLowerCase();
+
+  /** 右侧 AI 面板里固定了哪些视图（与 App 的 layout 是同一份设置）。 */
+  const [aiPanelViewIds, setAiPanelViewIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    void window.ide?.getSettings?.().then((settings: any) => {
+      const ids = settings?.layout?.aiPanelViewIds;
+      setAiPanelViewIds(Array.isArray(ids) ? ids : [DEFAULT_AI_PANEL_VIEW_ID]);
+    });
+  }, []);
+
+  const isPinnedToAiPanel = (viewId: string) => aiPanelViewIds.includes(viewId);
+
+  /** 固定 / 取消固定。写进 layout，再广播一条事件让 App 那边立刻重算那一栏。 */
+  const toggleAiPanelPin = (viewId: string) => {
+    const next = isPinnedToAiPanel(viewId)
+      ? aiPanelViewIds.filter((id) => id !== viewId)
+      : [...aiPanelViewIds, viewId];
+    setAiPanelViewIds(next);
+    void window.ide
+      ?.getSettings?.()
+      .then((settings: any) =>
+        window.ide?.saveSettings?.({
+          layout: { ...(settings?.layout ?? {}), aiPanelViewIds: next },
+        }),
+      )
+      .then(() => {
+        window.dispatchEvent(new CustomEvent(AI_PANEL_VIEWS_CHANGED_EVENT));
+        onShowToast?.(
+          isPinnedToAiPanel(viewId) ? t('extDetail.unpinnedToast') : t('extDetail.pinnedToast'),
+          'success',
+        );
+      });
+  };
 
   /** 打开某个指定的扩展视图（编辑器区新开一个标签，由 App 接管）。 */
   const handleOpenView = (viewId?: string) => {
@@ -487,15 +530,32 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
                           */}
                       <div className="ext-detail-view-list">
                         {installedInfo.views.map((view) => (
-                          <button
-                            key={view.id}
-                            type="button"
-                            className="ext-btn ext-btn-primary"
-                            onClick={() => handleOpenView(view.id)}
-                            title={view.id}
-                          >
-                            {t('ext.openView')} {view.name}
-                          </button>
+                          <div key={view.id} className="ext-detail-view-row">
+                            <button
+                              type="button"
+                              className="ext-btn ext-btn-primary"
+                              onClick={() => handleOpenView(view.id)}
+                              title={view.id}
+                            >
+                              {t('ext.openView')} {view.name}
+                            </button>
+                            {/*
+                              「固定到 AI 面板」：把这一栏放到右侧那一列去。
+                              Claude Code 的侧栏视图默认就是固定的（它是这一类界面的
+                              典型），别的 AI 扩展（Codex 之类）由用户在这里加上去 ——
+                              哪个扩展的界面该占右侧那一栏不该写死在代码里。
+                            */}
+                            <button
+                              type="button"
+                              className={`ext-btn ${isPinnedToAiPanel(view.id) ? '' : 'ext-btn-ghost'}`}
+                              onClick={() => toggleAiPanelPin(view.id)}
+                              title={view.id}
+                            >
+                              {isPinnedToAiPanel(view.id)
+                                ? t('extDetail.unpinAiPanel')
+                                : t('extDetail.pinAiPanel')}
+                            </button>
+                          </div>
                         ))}
                       </div>
                     </>

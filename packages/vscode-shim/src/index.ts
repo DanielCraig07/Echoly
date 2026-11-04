@@ -1838,6 +1838,11 @@ export class VSCodeShim {
     }));
   }
 
+  /** 某个视图 id 是哪个扩展注册的（面板归属要用它）。 */
+  getViewOwner(viewId: string): string | undefined {
+    return this.viewOwners.get(viewId);
+  }
+
   /** 所有由扩展注册的命令（带归属）。命令面板据此列出「扩展命令」。 */
   listCommands(): { command: string; extensionId?: string }[] {
     return Array.from(this.commands.keys()).map((command) => ({

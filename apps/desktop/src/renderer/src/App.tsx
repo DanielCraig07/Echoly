@@ -24,6 +24,7 @@ import type {
   DapBreakpoint,
 } from '@deepseek-ide/shared';
 import {
+  DEFAULT_AI_PANEL_VIEW_ID,
   DEFAULT_LAYOUT,
   DEFAULT_PINNED_PANELS,
   type LeftPanelId,
@@ -78,6 +79,7 @@ import { RunWidget } from './components/RunWidget';
 import { ExtensionPanel } from './components/ExtensionPanel';
 import { ActivityBar } from './components/ActivityBar';
 import {
+  AI_PANEL_VIEWS_CHANGED_EVENT,
   EXTENSION_DETAIL_PREFIX,
   EXTENSION_INSTALLED_EVENT,
 } from './components/ExtensionDetailView';
@@ -86,7 +88,6 @@ import {
   CUSTOM_EDITOR_PREFIX,
   filePathFromCustomEditorTab,
 } from './components/ExtensionEditorView';
-import { CLAUDE_CODE_ID, CLAUDE_CODE_VIEW_ID } from './services/claudeCode';
 import { buildVscodeThemeVars, readAppTokens } from './services/vscodeTheme';
 import { PanelChevron } from './components/PanelChevron';
 import { GitPanel } from './components/GitPanel';
@@ -302,7 +303,16 @@ export function App() {
    * 以前这个开关被接在扩展面板的「管理」按钮上 —— 点**任何**一个已安装扩展的
    * 「管理」都会把它设成 true，于是弹出一个跟那个扩展毫无关系的对话面板。
    */
-  const [claudeTabAvailable, setClaudeTabAvailable] = useState(false);
+  /**
+   * 右侧 AI 面板里固定的扩展视图（`layout.aiPanelViewIds` 解析出来的那一份）。
+   *
+   * 以前这一栏写死给 Claude Code：别的扩展（Codex 之类）也有同样的 AI 界面，
+   * 却只能开成编辑器标签。现在「哪个扩展的界面占右侧那一栏」是用户可配的，
+   * 这里存的就是配置与已装扩展求交之后的结果。
+   */
+  const [aiPanelViews, setAiPanelViews] = useState<
+    { viewId: string; title: string; extensionId: string; available: boolean }[]
+  >([]);
   /**
    * 扩展自己贡献的命令（注册进命令面板）。
    *
@@ -330,8 +340,19 @@ export function App() {
    * 会话与草稿不会丢（编辑器区只有当前标签是活的）。
    */
   const [extensionPanelTabs, setExtensionPanelTabs] = useState<
-    { panelId: string; title: string }[]
+    { panelId: string; title: string; ownerExtensionId?: string }[]
   >([]);
+  /**
+   * 上面两份列表的 ref 版本。
+   *
+   * 事件回调（扩展开/关面板）里要按「最新的」列表算归属，而事件订阅只建一次 ——
+   * 拿 state 会读到闭包里的旧值。这个文件里 layoutRef / tabsRef 都是同一套做法。
+   */
+  const extensionPanelTabsRef = useRef(extensionPanelTabs);
+  extensionPanelTabsRef.current = extensionPanelTabs;
+  const aiPanelViewsRef = useRef(aiPanelViews);
+  aiPanelViewsRef.current = aiPanelViews;
+
   const [diffs, setDiffs] = useState<PendingDiff[]>([]);
   const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
 
@@ -1859,44 +1880,62 @@ export function App() {
    * 顺带确保右侧面板是展开的，否则点了「管理」什么都不会发生。
    */
   /**
-   * 「Claude」标签什么时候出现。
+   * 右侧 AI 面板里那几栏什么时候出现。
    *
-   * 两个来源，缺一不可：
-   * - **启动时的探测**：如果扩展在渲染层挂载之前就激活完了（它注册视图时那条广播
-   *   已经过去了），只订阅事件会永远收不到，标签也就永远不出现；
-   * - **注册事件**：扩展是刚装上的/刚激活的，这时列表还是旧的，得靠事件补上。
+   * 三个来源缺一不可：
+   * - **启动时的探测**：扩展可能在渲染层挂载之前就激活完了（它注册视图时那条广播
+   *   已经过去了），只订阅事件会永远收不到；
+   * - **注册事件**：扩展是刚装上的/刚激活的，这时列表还是旧的，得靠事件补上；
+   * - **用户改了固定列表**（详情页那个按钮），随时要重算。
    *
-   * 判据取「已加载的扩展里有 Claude Code」而不是「本机上有没有这个目录」：
+   * 判据取「已加载的扩展里有没有它」而不是「本机上有没有这个目录」：
    * 装坏了、没激活起来的扩展不该换来一个点开是空的标签。
    */
   useEffect(() => {
     let cancelled = false;
     const probe = async () => {
       try {
-        const result = await window.extensions?.getLoadedExtensions?.();
+        const result = await window.extensions?.listInstalled?.();
         if (cancelled || !result?.success) return;
-        const loaded = result.extensions ?? [];
-        if (loaded.some((id) => id.toLowerCase() === CLAUDE_CODE_ID.toLowerCase())) {
-          setClaudeTabAvailable(true);
+        const loaded = await window.extensions?.getLoadedExtensions?.();
+        const activeIds = new Set((loaded?.extensions ?? []).map((id) => id.toLowerCase()));
+        const pinned = layoutRef.current.aiPanelViewIds ?? [DEFAULT_AI_PANEL_VIEW_ID];
+        const installed = result.extensions ?? [];
+        const next: { viewId: string; title: string; extensionId: string; available: boolean }[] =
+          [];
+        for (const viewId of pinned) {
+          const owner = installed.find((ext) =>
+            (ext.views ?? []).some((view) => view.id === viewId),
+          );
+          if (!owner) continue; // 没装/没贡献这个视图 → 不摆一个点开是空的标签
+          next.push({
+            viewId,
+            title:
+              (owner.views ?? []).find((view) => view.id === viewId)?.name || owner.displayName,
+            extensionId: owner.id,
+            available: owner.active || activeIds.has(owner.id.toLowerCase()),
+          });
         }
+        setAiPanelViews(next);
       } catch {
-        // 探测失败就当没装：宁可晚一点出现，也不要出现一个空的 Claude 面板
+        // 探测失败就当没装：宁可晚一点出现，也不要出现一个点了没反应的面板
       }
     };
     void probe();
 
-    const unsubscribe = window.ide?.onExtensionWebviewRegistered?.(({ viewId }) => {
-      if (viewId === CLAUDE_CODE_VIEW_ID) setClaudeTabAvailable(true);
-    });
-    // 刚装完就再探一次：这时候 getLoadedExtensions 才是最新的一份
+    const unsubscribe = window.ide?.onExtensionWebviewRegistered?.(() => void probe());
+    // 刚装完就再探一次：这时候列表才是最新的一份
     const onInstalled = () => void probe();
+    const onPinned = () => void probe();
     window.addEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+    window.addEventListener(AI_PANEL_VIEWS_CHANGED_EVENT, onPinned);
     return () => {
       cancelled = true;
       unsubscribe?.();
       window.removeEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+      window.removeEventListener(AI_PANEL_VIEWS_CHANGED_EVENT, onPinned);
     };
-  }, []);
+  }, [layout.aiPanelViewIds]);
 
   /**
    * 拉取扩展命令列表。
@@ -3401,6 +3440,22 @@ export function App() {
     [openVirtualTab],
   );
 
+  /** 右侧面板里「某个扩展视图」那一栏的标签 id。 */
+  const viewTabId = useCallback((viewId: string) => `view:${viewId}`, []);
+
+  /** 这个视图是不是固定在右侧 AI 面板里（决定「打开」是揭示那一栏还是开编辑器标签）。 */
+  const isAiPanelView = useCallback(
+    (viewId: string) =>
+      (layoutRef.current.aiPanelViewIds ?? [DEFAULT_AI_PANEL_VIEW_ID]).includes(viewId),
+    [],
+  );
+
+  /** 从标签 id 反查视图 id（`view:<viewId>` → `<viewId>`）。 */
+  const viewIdFromTab = useCallback(
+    (tab: string) => (tab.startsWith('view:') ? tab.slice('view:'.length) : undefined),
+    [],
+  );
+
   /**
    * 在编辑器区打开某个扩展自己贡献的界面（webview 视图）。
    *
@@ -3412,34 +3467,22 @@ export function App() {
       if (!viewId) return;
 
       /**
-       * Claude 的侧栏视图已经有一个「正式的家」：右侧面板里的「Claude 扩展」标签。
+       * 固定在右侧 AI 面板里的视图，它的「正式的家」就是右侧那一栏 ——
+       * 再在编辑器区开一份会是同一份界面的第二个实例（各自持有状态：
+       * 一边在对话、另一边还停在引导页），也就是最早那个「为什么会有两个」。
        *
-       * 再在编辑器区开一份，就是同一份界面的第二个实例 —— 用户看到的是
-       * 「为什么会有两个」，而且两份 webview 各自持有状态（一边开始对话，另一边还是
-       * 空的引导页）。所以这里不是「再开一个」，而是**揭示已有的那个**。
-       *
-       * 判据用视图 id 而不是扩展 id：将来别的扩展也可能把自己的视图贡献到右侧面板，
-       * 到时候把这张「视图 → 面板」的对应关系扩成一张表即可。
+       * 所以这里不是「再开一个」，而是**把右侧那一栏揭示出来并切到它**。
+       * 判据用「固定列表」而不是视图 id：Claude 是 `claudeVSCodeSidebar`，
+       * 别的 AI 扩展有自己的 id —— 写死任何一个都会让另一个用不上这一栏。
        */
-      /**
-       * Claude 的界面**开在右侧面板**，不开编辑器标签。
-       *
-       * 它本来就是个侧栏形态的界面，塞进编辑器会摊成一大片空白；而且右侧那一栏
-       * 现在渲染的就是同一份扩展界面 —— 两边同时开就是同一份 webview 的两个实例
-       * （各自持有状态），也就是最早那个「为什么会有两个」。
-       *
-       * 不判断 `claudeTabAvailable`：用户点得到「打开」就说明这个视图在，
-       * 而那个判据（启动时探一次 + 等注册事件）本身可能落空。
-       */
-      if (viewId === CLAUDE_CODE_VIEW_ID) {
-        setClaudeTabAvailable(true);
+      if (isAiPanelView(viewId)) {
         setLayout((prev) => {
           if (prev.chatPanelExpanded !== false) return prev;
           const next = { ...prev, chatPanelExpanded: true };
           persistLayout(next);
           return next;
         });
-        setRightPanelTab('claude');
+        setRightPanelTab(viewTabId(viewId));
         return;
       }
 
@@ -3451,7 +3494,7 @@ export function App() {
         false,
       );
     },
-    [openVirtualTab, t, claudeTabAvailable, persistLayout],
+    [openVirtualTab, t, persistLayout, isAiPanelView],
   );
 
   /**
@@ -3504,7 +3547,14 @@ export function App() {
       setExtensionPanelTabs((prev) =>
         prev.some((tab) => tab.panelId === data.panelId)
           ? prev
-          : [...prev, { panelId: data.panelId, title: data.title || '' }],
+          : [
+              ...prev,
+              {
+                panelId: data.panelId,
+                title: data.title || '',
+                ownerExtensionId: data.ownerExtensionId,
+              },
+            ],
       );
       showExtensionPanel(data.panelId);
     });
@@ -3517,8 +3567,15 @@ export function App() {
     const offClose = window.ide?.onExtensionPanelClosed?.((data) => {
       if (!data?.panelId) return;
       setExtensionPanelTabs((prev) => prev.filter((tab) => tab.panelId !== data.panelId));
-      // 关掉的正好是当前那一个 → 退回到扩展的侧栏那一栏，别留一个空白面板
-      setRightPanelTab((current) => (current === data.panelId ? 'claude' : current));
+      // 关掉的正好是当前那一个 → 退回它所属的那一栏，别留一个空白面板
+      setRightPanelTab((current) => {
+        if (current !== data.panelId) return current;
+        const owner = extensionPanelTabsRef.current.find(
+          (tab) => tab.panelId === data.panelId,
+        )?.ownerExtensionId;
+        const target = aiPanelViewsRef.current.find((view) => view.extensionId === owner);
+        return target ? `view:${target.viewId}` : 'chat';
+      });
     });
     const offReveal = window.ide?.onExtensionPanelRevealed?.((data) => {
       if (!data?.panelId) return;
@@ -4715,8 +4772,34 @@ export function App() {
    * 用来决定第二行（会话列表）显不显示：会话只属于它自己那个面板，
    * 选中「AI 对话」时不该看到 Claude 的会话。
    */
-  const showingClaudePanel =
-    rightPanelTab === 'claude' || extensionPanelTabs.some((tab) => tab.panelId === rightPanelTab);
+  /**
+   * 当前右侧面板「停在哪一个扩展视图上」。
+   *
+   * 三种情况都算：选中了它自己那一栏、选中了它开出来的某个会话、
+   * 或者选中了它开出来的会话但归属还没认出来（面板归属靠一条时间窗提示推的，
+   * 认不出来时按「当前这一栏」算，总比把会话藏起来强）。
+   */
+  const activeAiView =
+    aiPanelViews.find((view) => viewTabId(view.viewId) === rightPanelTab) ??
+    (() => {
+      const panelTab = extensionPanelTabs.find((tab) => tab.panelId === rightPanelTab);
+      if (!panelTab) return undefined;
+      return aiPanelViews.find((view) => view.extensionId === panelTab.ownerExtensionId);
+    })();
+
+  /**
+   * 会话那一行显示哪些：**只显示属于当前这一栏的**。
+   *
+   * 会话只挂在它自己所属的面板下面 —— 选中「AI 对话」时不显示，选中 Claude 时
+   * 不显示别的扩展的会话。归属认不出来的（扩展没走 asWebviewUri / 建面板时不在
+   * 任何请求里）按「当前这一栏」算，免得好端端的会话从列表里消失。
+   */
+  const activeViewSessions = activeAiView
+    ? extensionPanelTabs.filter(
+        (tab) =>
+          (tab.ownerExtensionId ?? aiPanelViews[0]?.extensionId) === activeAiView.extensionId,
+      )
+    : [];
 
   const shellStyle = {
     ['--explorer-width' as string]: `${effectiveWidths.explorerWidth}px`,
@@ -4730,15 +4813,31 @@ export function App() {
    * 点开：展开右侧面板并切到 Claude（和扩展列表的「打开」同一条路）；
    * 再点：收起面板。语义与旁边的 AI 面板开关一致。
    */
-  const toggleClaudeView = useCallback(() => {
-    if (showChatPanel && rightPanelTab === 'claude') {
+  /**
+   * 标题栏那个图标 = 右侧 AI 面板的开关（打开时切到第一个固定的视图）。
+   *
+   * 第一个固定的视图默认就是 Claude Code，所以对现在的用户来说行为没变；
+   * 换成别的 AI 扩展之后，这个开关跟着走，图标也就跟着换成它的。
+   */
+  const [firstAiPanelView] = aiPanelViews;
+  const toggleAiPanel = useCallback(() => {
+    if (!firstAiPanelView) return;
+    if (showChatPanel && rightPanelTab === viewTabId(firstAiPanelView.viewId)) {
       const next = { ...layout, chatPanelExpanded: false };
       setLayout(next);
       persistLayout(next);
       return;
     }
-    openExtensionView(CLAUDE_CODE_VIEW_ID);
-  }, [showChatPanel, rightPanelTab, layout, persistLayout, openExtensionView]);
+    openExtensionView(firstAiPanelView.viewId);
+  }, [
+    showChatPanel,
+    rightPanelTab,
+    layout,
+    persistLayout,
+    openExtensionView,
+    firstAiPanelView,
+    viewTabId,
+  ]);
 
   const ideActions: CommandAction[] = [
     {
@@ -5154,19 +5253,22 @@ export function App() {
           </button>
 
           {/*
-            Claude Code 装好之后的常驻入口：点一下在右侧面板打开它的界面，再点收起。
+            AI 面板的常驻入口：点一下在右侧面板打开它，再点收起。
 
-            只在它真的在场时出现（`claudeTabAvailable` 由扩展加载状态驱动）——
-            没装却摆一个点不动的图标，和以前那个假的暂停补全按钮是一回事。
+            只在**第一个固定的视图就是 Claude Code** 时出现 —— 图标用的是 Claude 的
+            标志，拿它去开别的扩展的界面等于指鹿为马。别的扩展从扩展列表/详情页进，
+            或者把它固定到 AI 面板（那一栏自己会出现标签）。
           */}
-          {claudeTabAvailable && (
+          {firstAiPanelView?.viewId === DEFAULT_AI_PANEL_VIEW_ID && (
             <button
               type="button"
               className={`layout-toggle-btn claude-entry-btn${
-                showChatPanel && rightPanelTab === 'claude' ? ' active' : ''
+                showChatPanel && rightPanelTab === viewTabId(firstAiPanelView.viewId)
+                  ? ' active'
+                  : ''
               }`}
               title={t('app.claudeEntry')}
-              onClick={toggleClaudeView}
+              onClick={toggleAiPanel}
             >
               {/*
                 Claude 自己的标志（从扩展的 `resources/claude-logo.svg` 里取的同一个
@@ -6403,8 +6505,11 @@ export function App() {
                 display: showChatPanel ? 'flex' : 'none',
               }}
             >
-              {/* 右侧面板标签切换（Claude Code 扩展在场时才显示，默认隐藏单标签的 AI 对话） */}
-              {(claudeTabAvailable || extensionPanelTabs.length > 0) && (
+              {/*
+                右侧面板的固定标签：自带的「AI 对话」+ 用户固定在 AI 面板里的扩展视图。
+                固定列表可配（扩展详情页里那个按钮），不是写死给某一个扩展的。
+              */}
+              {(aiPanelViews.length > 0 || extensionPanelTabs.length > 0) && (
                 <div className="right-panel-tabs">
                   <button
                     className={`right-panel-tab ${rightPanelTab === 'chat' ? 'active' : ''}`}
@@ -6412,14 +6517,18 @@ export function App() {
                   >
                     {t('app.chatTab')}
                   </button>
-                  {claudeTabAvailable && (
+                  {aiPanelViews.map((view) => (
                     <button
-                      className={`right-panel-tab ${rightPanelTab === 'claude' ? 'active' : ''}`}
-                      onClick={() => setRightPanelTab('claude')}
+                      key={view.viewId}
+                      className={`right-panel-tab ${
+                        rightPanelTab === viewTabId(view.viewId) ? 'active' : ''
+                      }`}
+                      title={view.viewId}
+                      onClick={() => setRightPanelTab(viewTabId(view.viewId))}
                     >
-                      {t('app.claudeTab')}
+                      {view.title}
                     </button>
-                  )}
+                  ))}
                 </div>
               )}
 
@@ -6436,17 +6545,18 @@ export function App() {
                 会话全关掉之后这一行自然消失（也就不需要「新建」按钮了，扩展界面上
                 本来就有「+」）。
               */}
-              {showingClaudePanel && extensionPanelTabs.length > 0 && (
+              {activeViewSessions.length > 0 && (
                 <div className="right-panel-sessions">
-                  {extensionPanelTabs.map((panelTab, index) => {
+                  {activeViewSessions.map((panelTab, index) => {
                     /*
                       会话还没起名字时扩展给的标题是同一个（「Claude Code」），
                       几个标签会长得一模一样 —— 重名时补一个序号，至少分得清。
                     */
-                    const base = panelTab.title || t('app.claudeTab');
+                    const base = panelTab.title || activeAiView?.title || t('app.chatTab');
                     const duplicated =
-                      extensionPanelTabs.filter(
-                        (other) => (other.title || t('app.claudeTab')) === base,
+                      activeViewSessions.filter(
+                        (other) =>
+                          (other.title || activeAiView?.title || '') === (panelTab.title || ''),
                       ).length > 1;
                     const label = duplicated ? `${base} ${index + 1}` : base;
                     const isActive = rightPanelTab === panelTab.panelId;
@@ -6559,14 +6669,15 @@ export function App() {
                   自己 Agent 的壳 —— 跟扩展没有半点关系，用户在里面发的消息也到不了
                   Claude Code。现在换成扩展界面，这一栏才算真的「Claude 扩展」。
                 */}
-                {claudeTabAvailable && (
+                {aiPanelViews.map((view) => (
                   <div
+                    key={view.viewId}
                     className="right-panel-webview"
-                    data-active={rightPanelTab === 'claude' ? 'true' : 'false'}
+                    data-active={rightPanelTab === viewTabId(view.viewId) ? 'true' : 'false'}
                   >
-                    <ExtensionViewPanel viewId={CLAUDE_CODE_VIEW_ID} />
+                    <ExtensionViewPanel viewId={view.viewId} />
                   </div>
-                )}
+                ))}
 
                 {/*
                   扩展开出来的面板（Claude 的「+」新会话）。全部**常驻挂载**、只切显隐：

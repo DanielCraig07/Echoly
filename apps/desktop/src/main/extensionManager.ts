@@ -194,8 +194,15 @@ export interface InstalledExtensionInfo {
   active: boolean;
   /** 它注册的命令（带人类可读标题，供详情页直接列出来运行） */
   commands: { command: string; title: string }[];
-  /** 它注册的 webview 视图 id 列表（非空才有「打开视图」可点） */
-  views: string[];
+  /**
+   * 它注册的 webview 视图（非空才有「打开视图」可点）。
+   *
+   * **必须带上展示名**：渲染层一直按 `{id, name}` 读（`ext.views[0].id`），
+   * 而这里以前只给 `string[]` —— 于是 `视图.id` 是 `undefined`，
+   * 扩展列表与详情页上的「打开」点下去什么都不会发生。
+   * 名字来自 manifest 的 `contributes.views`，取不到时退回 id。
+   */
+  views: { id: string; name: string }[];
 }
 
 export interface ExtensionManagerOptions {
@@ -275,7 +282,19 @@ export class ExtensionManager {
    * 区别只在谁开的：视图是扩展注册 provider 由我们 resolve，面板是扩展自己
    * new 出来、自己把 HTML 塞进来的（Claude 的「+」新会话就是后者）。
    */
-  private webviewPanels = new Map<string, { title: string; viewType: string }>();
+  private webviewPanels = new Map<
+    string,
+    { title: string; viewType: string; ownerExtensionId?: string }
+  >();
+  /**
+   * 「刚才这条请求是哪个扩展在处理」。
+   *
+   * 面板的归属没法从 `createWebviewPanel` 的参数里看出来（它只有 viewType 和标题），
+   * 而归属决定「这个会话标签挂在哪个面板下面」。投递界面消息时我们知道那个视图是谁
+   * 注册的，就先记一笔：扩展处理完请求、真的建面板时把这个提示读走。
+   * 带时间戳是因为处理是异步的 —— 太久之前的提示已经不相关了。
+   */
+  private panelOwnerHint?: { id: string; at: number };
   /** 面板 id 的自增序号（`panel:<viewType>:<n>`，同一 viewType 可以开多个）。 */
   private panelSeq = 0;
   /**
@@ -320,6 +339,15 @@ export class ExtensionManager {
   private readonly stateFilePath2: string;
   private readonly secretsFilePath: string;
   private readonly storageRootDir: string;
+  /**
+   * 落盘的写队列：文件路径 → 最后一次写。
+   *
+   * 必须串行。这几份 JSON 都是**整体重写**（先 JSON.stringify 全部状态再写），
+   * 两次写并发跑起来就会互相穿插 —— 实测直接写出一个 JSON 解析不了的半截文件，
+   * 下次启动读它时进入 catch 分支，用户看到的是「上次记住的东西全没了」。
+   * 顺带用「临时文件 + 改名」落盘：改名是原子的，中途崩了也不会留半截。
+   */
+  private writeQueues = new Map<string, Promise<void>>();
   /**
    * 已打开的自定义编辑器面板：panelKey → 运行时。
    *
@@ -629,6 +657,10 @@ export class ExtensionManager {
       this.extensionHost.deliverPanelMessage(viewId, message);
       return;
     }
+
+    // 记一笔「谁在处理这条请求」：扩展接下来要是开了面板，归属就按它算
+    const owner = this.extensionHost.getWebviewViewOwner(viewId);
+    if (owner) this.panelOwnerHint = { id: owner, at: Date.now() };
 
     const handlers = this.webviewMessageHandlers.get(viewId);
     if (!handlers || handlers.size === 0) {
@@ -1136,6 +1168,7 @@ export class ExtensionManager {
     const loaded = new Set(this.extensionHost.getLoadedExtensions());
     const registeredCommands = this.extensionHost.listExtensionCommands();
     const titles = await this.readCommandTitles();
+    const viewTitles = await this.readViewTitles();
     const out: InstalledExtensionInfo[] = [];
 
     // 走扫描而不是裸 readdir：列表里的 id 必须是**扩展 id**（宿主记的那个），
@@ -1153,7 +1186,10 @@ export class ExtensionManager {
         commands: registeredCommands
           .filter((c) => c.extensionId === id)
           .map((c) => ({ command: c.command, title: titles.get(c.command) || c.command })),
-        views: this.extensionHost.listWebviewViewIds(id),
+        views: this.extensionHost.listWebviewViewIds(id).map((viewId) => ({
+          id: viewId,
+          name: viewTitles.get(viewId) || viewId,
+        })),
       });
     }
 
@@ -1177,6 +1213,29 @@ export class ExtensionManager {
       ...c,
       title: titles.get(c.command) || c.command,
     }));
+  }
+
+  /**
+   * 扫一遍已安装扩展的 package.json，收集 `viewId → 展示名`。
+   *
+   * 名字写在 `contributes.views` 里（那是一个「容器 id → 视图数组」的对象，
+   * 一个扩展可以在不同容器下挂好几个视图），所以要把每一层都摊平。
+   */
+  private async readViewTitles(): Promise<Map<string, string>> {
+    const titles = new Map<string, string>();
+    for (const { manifest } of await this.scanInstalledDirs()) {
+      const containers = manifest?.contributes?.views;
+      if (!containers || typeof containers !== 'object') continue;
+      for (const list of Object.values(containers as Record<string, unknown>)) {
+        if (!Array.isArray(list)) continue;
+        for (const view of list) {
+          if (view && typeof view.id === 'string') {
+            titles.set(view.id, typeof view.name === 'string' ? view.name : view.id);
+          }
+        }
+      }
+    }
+    return titles;
   }
 
   /** 扫一遍已安装扩展的 package.json，收集 `command → title`。 */
@@ -1302,6 +1361,23 @@ export class ExtensionManager {
     this.resourceRoots.delete(viewId);
   }
 
+  /** 把一个文件整体重写：排队 + 临时文件 + 原子改名（见 writeQueues 的注释）。 */
+  private queueWrite(filePath: string, data: string): Promise<void> {
+    const previous = this.writeQueues.get(filePath) ?? Promise.resolve();
+    const next = previous
+      .catch(() => {})
+      .then(async () => {
+        const tmp = `${filePath}.tmp`;
+        await fs.writeFile(tmp, data, 'utf8');
+        await fs.rename(tmp, filePath);
+      })
+      .catch((err: any) => {
+        console.error(`[ExtensionManager] 写文件失败（${filePath}）：`, err?.message ?? err);
+      });
+    this.writeQueues.set(filePath, next);
+    return next;
+  }
+
   // ─────────────────── 扩展状态 / 密钥 / 存储目录 ───────────────────
 
   /** 当前工作区在存储里的键（不同项目分开存 workspaceState）。 */
@@ -1352,11 +1428,7 @@ export class ExtensionManager {
   }
 
   private async persistExtensionState(): Promise<void> {
-    try {
-      await fs.writeFile(this.stateFilePath2, JSON.stringify(this.extensionState, null, 2), 'utf8');
-    } catch (err: any) {
-      console.error('[ExtensionManager] 写扩展状态文件失败：', err?.message ?? err);
-    }
+    await this.queueWrite(this.stateFilePath2, JSON.stringify(this.extensionState, null, 2));
   }
 
   private async loadExtensionSecrets(): Promise<void> {
@@ -1421,15 +1493,7 @@ export class ExtensionManager {
   }
 
   private async persistExtensionSecrets(): Promise<void> {
-    try {
-      await fs.writeFile(
-        this.secretsFilePath,
-        JSON.stringify(this.extensionSecrets, null, 2),
-        'utf8',
-      );
-    } catch (err: any) {
-      console.error('[ExtensionManager] 写扩展密钥文件失败：', err?.message ?? err);
-    }
+    await this.queueWrite(this.secretsFilePath, JSON.stringify(this.extensionSecrets, null, 2));
   }
 
   /**
@@ -1554,11 +1618,7 @@ export class ExtensionManager {
 
   private async persistExtensionSettings(): Promise<void> {
     const payload = JSON.stringify({ values: this.extensionSettings }, null, 2);
-    try {
-      await fs.writeFile(this.settingsFilePath, payload, 'utf8');
-    } catch (err: any) {
-      console.error('[ExtensionManager] 写扩展配置文件失败：', err?.message ?? err);
-    }
+    await this.queueWrite(this.settingsFilePath, payload);
   }
 
   /** 读禁用列表。文件损坏/不存在都当「没有禁用任何扩展」，不阻断启动。 */
@@ -1578,11 +1638,7 @@ export class ExtensionManager {
       null,
       2,
     );
-    try {
-      await fs.writeFile(this.stateFilePath, payload, 'utf8');
-    } catch (err: any) {
-      console.error('[ExtensionManager] 写扩展状态文件失败：', err?.message ?? err);
-    }
+    await this.queueWrite(this.stateFilePath, payload);
   }
 
   // ─────────────────────────── 自定义编辑器 ───────────────────────────
@@ -2328,7 +2384,12 @@ export class ExtensionManager {
     const panelId = `panel:${safeType}:${this.panelSeq}`;
     const title = spec.title || 'Extension';
 
-    this.webviewPanels.set(panelId, { title, viewType: spec.viewType });
+    const hintedOwner =
+      this.panelOwnerHint && Date.now() - this.panelOwnerHint.at < 5000
+        ? this.panelOwnerHint.id
+        : undefined;
+    const ownerExtensionId = spec.extensionId ?? hintedOwner;
+    this.webviewPanels.set(panelId, { title, viewType: spec.viewType, ownerExtensionId });
     // 面板的资源一律走 `-/abs/`（见 PANEL_ROOT_SENTINEL 的注释）
     this.resourceRoots.set(panelId, ExtensionManager.PANEL_ROOT_SENTINEL);
 
@@ -2345,6 +2406,7 @@ export class ExtensionManager {
           panelId,
           title,
           viewType: spec.viewType,
+          ownerExtensionId,
         });
       },
       asWebviewUri: (uri: any) => {

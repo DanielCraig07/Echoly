@@ -212,6 +212,14 @@ export interface LayoutSettings {
   bottomActiveTab?: 'terminal' | 'diff';
   /** 活动栏上固定的面板（顺序不参与渲染，见 leftPanels 的说明） */
   pinnedPanels?: LeftPanelId[];
+  /**
+   * 固定在右侧 AI 面板里的扩展视图（顺序就是标签顺序）。
+   *
+   * 「哪个扩展的界面该占右侧那一栏」不该写死在代码里：Claude Code 是
+   * `claudeVSCodeSidebar`，别的 AI 扩展（Codex 之类）有自己的视图 id。
+   * 默认值只放 Claude，用户在扩展详情页里点「固定到 AI 面板」加减。
+   */
+  aiPanelViewIds?: string[];
 }
 
 export type UiTheme = 'dark' | 'light';
@@ -383,6 +391,14 @@ export interface UpdateFeedConfig {
   token?: string;
 }
 
+/**
+ * 默认占着右侧 AI 面板的那个视图（Claude Code 的侧栏视图 id）。
+ *
+ * 写成常量而不是散在各处的字面量：主进程改状态时要按它认「这是 Claude 侧栏」，
+ * 渲染层也要按它认「默认固定的是哪一栏」。
+ */
+export const DEFAULT_AI_PANEL_VIEW_ID = 'claudeVSCodeSidebar';
+
 export const DEFAULT_LAYOUT: LayoutSettings = {
   explorerWidth: 200,
   chatWidth: 300,
@@ -392,6 +408,7 @@ export const DEFAULT_LAYOUT: LayoutSettings = {
   chatPanelExpanded: true,
   bottomActiveTab: 'terminal',
   pinnedPanels: [...DEFAULT_PINNED_PANELS],
+  aiPanelViewIds: [DEFAULT_AI_PANEL_VIEW_ID],
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -2235,7 +2252,13 @@ export interface IpcApi {
    * 当前窗口却被重置」。
    */
   onExtensionPanelOpened: (
-    cb: (data: { panelId: string; title: string; viewType?: string }) => void,
+    cb: (data: {
+      panelId: string;
+      title: string;
+      viewType?: string;
+      /** 开这个面板的是哪个扩展 —— 会话标签据此挂在它自己那个面板下面。 */
+      ownerExtensionId?: string;
+    }) => void,
   ) => () => void;
   /** 面板被关掉了（扩展自己 dispose，或标签被关）。渲染层据此关掉同名标签。 */
   onExtensionPanelClosed: (cb: (data: { panelId: string }) => void) => () => void;

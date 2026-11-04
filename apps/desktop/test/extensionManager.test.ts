@@ -109,6 +109,9 @@ module.exports = { activate };
       displayName: 'Demo View',
       version: '1.0.0',
       main: './extension.js',
+      contributes: {
+        views: { demoViewContainer: [{ id: 'demo.viewPane', name: 'Demo Pane', type: 'webview' }] },
+      },
     });
     await mkdir(path.join(extensionsDir, 'demo.view', 'extension', 'webview'), { recursive: true });
     await writeFile(
@@ -557,6 +560,49 @@ module.exports = { activate };
       ) as Record<string, any>;
       expect(stateFile['demo.view']).toBeUndefined();
       expect(secretsFile['demo.view']).toBeUndefined();
+    });
+  });
+
+  describe('贡献的视图：展示名与面板归属', () => {
+    /**
+     * `views` 以前是 `string[]`，而渲染层一直按 `{id, name}` 读（`ext.views[0].id`）——
+     * 于是扩展列表与详情页上的「打开」拿到的是 `undefined`，点下去什么都不会发生。
+     */
+    it('views 是 {id, name}，名字来自 manifest 的 contributes.views', async () => {
+      const viewId = await waitFor('demo.view 的视图注册完成', async () => {
+        const hit = (await manager.listInstalledExtensions()).find((e) => e.id === 'demo.view');
+        return hit && hit.views.length > 0 ? hit.views[0].id : undefined;
+      });
+      expect(viewId).toBe('demo.viewPane');
+
+      const hit = (await manager.listInstalledExtensions()).find((e) => e.id === 'demo.view')!;
+      expect(hit.views).toEqual([{ id: 'demo.viewPane', name: 'Demo Pane' }]);
+    });
+
+    /**
+     * 面板归属决定「这个会话标签挂在哪个面板下面」。它没法从 createWebviewPanel 的
+     * 参数里看出来，只能靠「刚才这条请求是谁在处理」推 —— 推错的表现是会话跑到
+     * 别的扩展的标签行里，或者干脆不显示。
+     */
+    it('建面板时按「谁在处理这条请求」记归属', () => {
+      (manager as any).panelOwnerHint = { id: 'demo.view', at: Date.now() };
+      const backend = (manager as any).createExtensionWebviewPanel({
+        viewType: 'demo.panelType',
+        title: 'Demo Panel',
+      });
+      backend.setHtml('<html></html>');
+      expect((manager as any).webviewPanels.get(backend.panelId)?.ownerExtensionId).toBe(
+        'demo.view',
+      );
+    });
+
+    it('归属提示过期（或压根没有）时不乱认亲戚', () => {
+      (manager as any).panelOwnerHint = { id: 'demo.view', at: Date.now() - 60_000 };
+      const backend = (manager as any).createExtensionWebviewPanel({
+        viewType: 'demo.panelType',
+        title: 'Demo Panel',
+      });
+      expect((manager as any).webviewPanels.get(backend.panelId)?.ownerExtensionId).toBeUndefined();
     });
   });
 
