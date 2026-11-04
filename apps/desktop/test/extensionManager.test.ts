@@ -844,6 +844,9 @@ describe('扩展归属 + webview 运行时注入', () => {
       version: '1.0.0',
       main: './extension.js',
       contributes: {
+        viewsContainers: {
+          activitybar: [{ id: 'demoAContainer', title: 'Demo A', icon: 'resources/demo-a.svg' }],
+        },
         views: {
           demoAContainer: [
             { id: 'demo.aPane', name: 'A Pane', type: 'webview' },
@@ -859,6 +862,12 @@ describe('扩展归属 + webview 运行时注入', () => {
         ],
       },
     });
+    await mkdir(path.join(extensionsDir, 'demo.a', 'extension', 'resources'), { recursive: true });
+    await writeFile(
+      path.join(extensionsDir, 'demo.a', 'extension', 'resources', 'demo-a.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>',
+      'utf8',
+    );
     await writeFile(
       path.join(extensionsDir, 'demo.a', 'extension', 'extension.js'),
       `function activate(context) {
@@ -969,6 +978,37 @@ module.exports = { activate };
     expect(html).toContain('window.acquireVsCodeApi = function');
     expect(html).toContain('nonce="abc123"');
     expect(html).not.toContain('__echoly-runtime.js');
+  });
+
+  it('视图带上容器自己的图标（标题栏那排 AI 入口用的就是它）', async () => {
+    const ext = (await manager.listInstalledExtensions()).find((e) => e.id === 'demo.a')!;
+    const pane = ext.views.find((v) => v.id === 'demo.aPane')!;
+    // 取的是 contributes.viewsContainers[].icon，读成 data URL 交给渲染层
+    expect(pane.icon).toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(Buffer.from(pane.icon!.split(',')[1], 'base64').toString('utf8')).toContain('<svg');
+    // 没声明图标的视图不该被硬塞一个
+    expect(ext.views.every((v) => typeof v.icon === 'string' || v.icon === undefined)).toBe(true);
+  });
+
+  it('注入的运行时脚本里有 DisposableStack 兜底（Codex 的界面靠它才不报错）', async () => {
+    // 内联那份：这个视图的页面带 nonce，走内联分支
+    const html = await waitFor('demo.aNoncePane 的 provider', async () => {
+      try {
+        return await manager.resolveWebviewView('demo.aNoncePane');
+      } catch {
+        return undefined;
+      }
+    });
+    expect(html).toContain('DisposableStack');
+    expect(html).toContain('Symbol.dispose');
+
+    // 外部那份（origin 白名单的页面走它）必须一模一样 —— 两份是同一个函数序列化出来的
+    const res: Response = await (manager as any).handleWebviewRequest(
+      'echoly-webview://ext/demo.aPane/__echoly-runtime.js',
+    );
+    const body = await res.text();
+    expect(body).toContain('DisposableStack');
+    expect(body).toContain('Symbol.dispose');
   });
 
   it('运行时脚本本身能从协议里取到（否则外部引用就是 404）', async () => {

@@ -6,6 +6,7 @@
 import { VSCodeShim, ExtensionContext, createExtensionContext } from './index';
 import { LoadedExtension } from './extensionLoader';
 import { setExtensionExports, unregisterExtension } from './extensionRegistry';
+import { installDisposablePolyfills } from './polyfills';
 
 export interface ExtensionHostOptions {
   workspaceRoot: string;
@@ -82,6 +83,14 @@ export class ExtensionHost {
     this.vscodeApi = vscodeAPI as Record<string, unknown>;
     this.injectVscodeModule(vscodeAPI);
     this.injectWindowPolyfills();
+    /**
+     * 语言层面的兜底，和扩展无关。
+     *
+     * Electron 35 带的是 Node 22，没有 `DisposableStack` / `Symbol.dispose` ——
+     * 而现在的扩展（Codex 之类）在扩展宿主这一侧也会用它们。放在这里装一次，
+     * 免得每个扩展各自踩一遍 `X is not defined`。
+     */
+    installDisposablePolyfills();
     console.log('[ExtensionHost] VSCode 模块已全局注入');
   }
 

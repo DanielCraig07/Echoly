@@ -23,6 +23,7 @@ import {
   toWebviewResourcePath,
 } from './extensionWebview';
 import { ExtensionHost } from '@deepseek-ide/vscode-shim/src/extensionHost';
+import { installDisposablePolyfills } from '@deepseek-ide/vscode-shim/src/polyfills';
 import { ShimUri } from '@deepseek-ide/vscode-shim/src/uri';
 import {
   loadExtension,
@@ -169,6 +170,20 @@ function toElectronFilters(filters: any): { name: string; extensions: string[] }
 function buildWebviewRuntimeSource(): string {
   return `
 (function() {
+  /**
+   * 语言层面的兜底先装：先把 DisposableStack / Symbol.dispose 补上，再谈别的。
+   *
+   * 为什么非要在这里装：Codex 的界面每次调 transport 都写 \`new DisposableStack\`，
+   * 而 Electron 35 的 Chromium 还没有它 —— 报错是 \`DisposableStack is not defined\`，
+   * 用户看到的是「提交消息时出错」，同时凡是走那条路的动作（新会话、切会话、改设置）
+   * 全都点了没反应。扩展自己的 bundle 改不了，但它是**在我们的脚本之后**才执行的，
+   * 所以在这里补上就够。
+   *
+   * 实现只有一份（vscode-shim 的 polyfills.ts），这里直接序列化过来 ——
+   * 免得主进程与 webview 两份实现哪天走了样。
+   */
+  (${installDisposablePolyfills.toString()})();
+
   var bridge = window.__echolyWebviewBridge;
   var state = {};
 
@@ -238,7 +253,18 @@ export interface InstalledExtensionInfo {
    * 扩展列表与详情页上的「打开」点下去什么都不会发生。
    * 名字来自 manifest 的 `contributes.views`，取不到时退回 id。
    */
-  views: { id: string; name: string }[];
+  views: {
+    id: string;
+    name: string;
+    /**
+     * 视图容器的图标（data URL），标题栏那些「AI 面板入口」用的就是它。
+     *
+     * 取的是 `contributes.viewsContainers.<位置>[].icon` —— 也就是 VS Code 挂在侧栏上
+     * 的那个标志，用户认的就是它（Claude 是 `claude-logo.svg`、Codex 是
+     * `blossom-white.svg`）；取不到才退回 manifest 顶层的 `icon`。
+     */
+    icon?: string;
+  }[];
 }
 
 export interface ExtensionManagerOptions {
@@ -1227,6 +1253,7 @@ export class ExtensionManager {
     const registeredCommands = this.extensionHost.listExtensionCommands();
     const titles = await this.readCommandTitles();
     const viewTitles = await this.readViewTitles();
+    const viewIcons = await this.readViewIcons();
     const out: InstalledExtensionInfo[] = [];
 
     // 走扫描而不是裸 readdir：列表里的 id 必须是**扩展 id**（宿主记的那个），
@@ -1244,10 +1271,13 @@ export class ExtensionManager {
         commands: registeredCommands
           .filter((c) => c.extensionId === id)
           .map((c) => ({ command: c.command, title: titles.get(c.command) || c.command })),
-        views: this.extensionHost.listWebviewViewIds(id).map((viewId) => ({
-          id: viewId,
-          name: viewTitles.get(viewId) || viewId,
-        })),
+        views: await Promise.all(
+          this.extensionHost.listWebviewViewIds(id).map(async (viewId) => ({
+            id: viewId,
+            name: viewTitles.get(viewId) || viewId,
+            icon: await this.readIconAsDataUrl(viewIcons.get(viewId)),
+          })),
+        ),
       });
     }
 
@@ -1294,6 +1324,96 @@ export class ExtensionManager {
       }
     }
     return titles;
+  }
+
+  /**
+   * 扫一遍已安装扩展的 package.json，收集 `viewId → 图标文件（磁盘绝对路径）`。
+   *
+   * 取**视图容器**的图标而不是 manifest 顶层的 `icon`：前者才是挂在侧栏上的那个标志。
+   * 一个扩展可以有好几个容器（Codex 就有 activitybar 与 secondarySidebar 两份），
+   * 所以先建「容器 id → 图标」，再按视图归属的容器取值。
+   */
+  private async readViewIcons(): Promise<Map<string, string>> {
+    const icons = new Map<string, string>();
+    for (const record of await this.scanInstalledDirs()) {
+      const { manifest, dir } = record;
+      const groups = manifest?.contributes?.views;
+      if (!groups || typeof groups !== 'object') continue;
+
+      const extensionPath = path.join(this.extensionsDir, dir, 'extension');
+      const containerIcons = new Map<string, string>();
+      const containers = manifest?.contributes?.viewsContainers;
+      if (containers && typeof containers === 'object') {
+        for (const list of Object.values(containers as Record<string, unknown>)) {
+          if (!Array.isArray(list)) continue;
+          for (const container of list) {
+            if (
+              container &&
+              typeof container.id === 'string' &&
+              typeof container.icon === 'string'
+            ) {
+              containerIcons.set(container.id, container.icon);
+            }
+          }
+        }
+      }
+      const fallback = typeof manifest?.icon === 'string' ? manifest.icon : undefined;
+
+      for (const [containerId, list] of Object.entries(groups as Record<string, unknown>)) {
+        if (!Array.isArray(list)) continue;
+        const icon = containerIcons.get(containerId) ?? fallback;
+        if (!icon) continue;
+        const absolute = path.isAbsolute(icon) ? icon : path.join(extensionPath, icon);
+        for (const view of list) {
+          if (view && typeof view.id === 'string') icons.set(view.id, absolute);
+        }
+      }
+    }
+    return icons;
+  }
+
+  /** 图标文件的磁盘路径 → data URL。读失败一律返回 undefined（画个兜底图形就行）。 */
+  private readonly extensionIconCache = new Map<string, string>();
+
+  /**
+   * 把扩展图标读成 data URL。
+   *
+   * 为什么不给渲染层一个 `echoly-webview://` 地址：那条协议是按「视图 / 面板」组织的
+   * （得先有一个 resolve 过的视图才有资源根），而标题栏那几个入口正是在**还没有任何
+   * 视图被 resolve 的时候**就要画出来。图标只有几 KB（SVG 更小），读一次缓存起来
+   * 更简单，也不会多一条协议路径要维护。
+   */
+  private async readIconAsDataUrl(filePath: string | undefined): Promise<string | undefined> {
+    if (!filePath) return undefined;
+    const cached = this.extensionIconCache.get(filePath);
+    if (cached) return cached;
+
+    const ext = path.extname(filePath).toLowerCase();
+    const mime =
+      ext === '.svg'
+        ? 'image/svg+xml'
+        : ext === '.png'
+          ? 'image/png'
+          : ext === '.jpg' || ext === '.jpeg'
+            ? 'image/jpeg'
+            : ext === '.gif'
+              ? 'image/gif'
+              : ext === '.webp'
+                ? 'image/webp'
+                : undefined;
+    if (!mime) return undefined;
+
+    try {
+      const bytes = await fs.readFile(filePath);
+      // SVG 也走 base64：少一个「文本还是二进制」的分支，编码错的风险也更小
+      const url = `data:${mime};base64,${bytes.toString('base64')}`;
+      this.extensionIconCache.set(filePath, url);
+      return url;
+    } catch (err) {
+      // 只记日志不缓存：图标文件可能稍后才落盘（正在安装），下次刷新再试
+      console.warn(`[ExtensionManager] 读扩展图标失败：${filePath}`, err);
+      return undefined;
+    }
   }
 
   /** 扫一遍已安装扩展的 package.json，收集 `command → title`。 */
