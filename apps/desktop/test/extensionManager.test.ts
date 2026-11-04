@@ -156,6 +156,15 @@ module.exports = { activate };
       displayName: 'Demo Panel',
       version: '1.0.0',
       main: './extension.js',
+      // 配置项也要真的声明：默认值从 manifest 读，是这一轮补的能力
+      contributes: {
+        configuration: {
+          properties: {
+            'demo.panelType.mode': { type: 'string', default: 'fast' },
+            'demo.panelType.other': { type: 'string', default: 'keep' },
+          },
+        },
+      },
     });
     await mkdir(path.join(extensionsDir, 'demo.panel', 'extension', 'webview'), {
       recursive: true,
@@ -420,6 +429,45 @@ module.exports = { activate };
       delete (globalThis as any).__echolyDemoGot;
       manager.deliverWebviewMessage('demo.viewPane', { type: 'after-disable' });
       expect((globalThis as any).__echolyDemoGot).toBeUndefined();
+    });
+  });
+
+  describe('扩展配置：默认值来自 manifest，用户值优先，且真的落盘', () => {
+    /**
+     * 以前 `getConfiguration().get()` 永远返回调用方传进来的默认值 ——
+     * manifest 里 `contributes.configuration.properties[].default` 写的默认值
+     * 完全没用上，用户改的值也传不进扩展。
+     */
+    it('取值顺序：用户值 → manifest 默认值 → undefined', async () => {
+      const settings = (manager as any).extensionSettings as Record<string, unknown>;
+      // demo.panel 的 manifest 里声明了 demo.panelType.mode 的默认值
+      expect((manager as any).settingDefaults.get('demo.panelType.mode')).toBe('fast');
+      expect((manager as any).settingGet('demo.panelType.mode')).toBe('fast');
+
+      settings['demo.panelType.mode'] = 'slow';
+      expect((manager as any).settingGet('demo.panelType.mode')).toBe('slow');
+
+      // 显式写成 false/0 也要能取回来（用 `??` 就会把它当成「没设置」）
+      settings['demo.panelType.flag'] = false;
+      expect((manager as any).settingGet('demo.panelType.flag')).toBe(false);
+
+      expect((manager as any).settingGet('nobody.nothing')).toBeUndefined();
+    });
+
+    it('update 写进文件，重开之后还在', async () => {
+      (manager as any).settingUpdate('demo.panelType.mode', 'slow');
+      await new Promise((r) => setTimeout(r, 20));
+
+      const saved = JSON.parse(
+        await readFile(path.join(base, 'extension-settings.json'), 'utf8'),
+      ) as { values: Record<string, unknown> };
+      expect(saved.values['demo.panelType.mode']).toBe('slow');
+
+      const again = new ExtensionManager({ workspaceRoot: base, registry: 'https://open-vsx.org' });
+      await again.initialize();
+      expect((again as any).settingGet('demo.panelType.mode')).toBe('slow');
+      // manifest 里的默认值仍然在（另一项没被覆盖）
+      expect((again as any).settingGet('demo.panelType.other')).toBe('keep');
     });
   });
 

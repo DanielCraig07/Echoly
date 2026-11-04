@@ -470,6 +470,48 @@ function makeLanguagesNamespace(): any {
  * 「扩展 ↔ 界面」之间来回，这两件事都只有宿主知道怎么办（协议名、渲染层的通道）。
  * shim 自己不去拼这些 —— 它还要能在纯 Node 里跑。
  */
+/**
+ * 宿主（Echoly 主进程）提供给扩展的「有状态」能力。
+ *
+ * 这三样以前都是假的，而它们恰好是「除 Claude 之外的扩展能不能真用起来」的门槛：
+ * - `settings`：`workspace.getConfiguration()` 以前**永远返回传进去的默认值** ——
+ *   扩展自己 package.json 里的默认配置不生效，用户改的值传不进去，`update()` 是空操作；
+ * - `storage`：`globalState` / `workspaceState` 以前不落盘（get 永远返回默认、update 空操作），
+ *   扩展记住的任何东西（引导页看过了、上次选的模型）重启就没了；
+ * - `secrets`：以前 `get` 永远 undefined、`store` 不落盘，要存 token 的扩展每次重启都要重登。
+ *
+ * 宿主没给实现时，shim 退回「空实现」而不是假装成功 —— 见各处注释。
+ */
+export interface ExtensionHostServices {
+  settings: {
+    /** 整键取值（`chatgpt.model`），未设置时返回 `undefined`（由宿主决定要不要回退到贡献的默认值）。 */
+    get(key: string): unknown;
+    has(key: string): boolean;
+    update(key: string, value: unknown, target?: unknown): void | Promise<void>;
+    inspect?(key: string): {
+      defaultValue?: unknown;
+      globalValue?: unknown;
+      workspaceValue?: unknown;
+    };
+  };
+  storage: {
+    get(extensionId: string, scope: 'global' | 'workspace', key: string): unknown;
+    update(extensionId: string, scope: 'global' | 'workspace', key: string, value: unknown): void;
+    keys(extensionId: string, scope: 'global' | 'workspace'): string[];
+  };
+  secrets: {
+    get(extensionId: string, key: string): Promise<string | undefined>;
+    store(extensionId: string, key: string, value: string): Promise<void>;
+    delete(extensionId: string, key: string): Promise<void>;
+  };
+  /** 扩展自己的存储目录（`globalStorageUri` / `storageUri` / `logUri`）。 */
+  storagePaths(extensionId: string): {
+    globalStorage: string;
+    workspaceStorage: string;
+    log: string;
+  };
+}
+
 export interface WebviewPanelBackend {
   /** 宿主分配的稳定 id；渲染层用它开标签、拼资源地址。 */
   panelId: string;
@@ -562,6 +604,8 @@ export interface VSCodeShimOptions {
     /** 创建时正在 activate 的扩展 id（可能为空，例如命令是异步触发的）。 */
     extensionId?: string;
   }) => WebviewPanelBackend;
+  /** 配置 / 存储 / 密钥（见 ExtensionHostServices 的注释）。 */
+  services?: Partial<ExtensionHostServices>;
 }
 
 /**
@@ -629,6 +673,14 @@ export class VSCodeShim {
     extensionId?: string,
   ) => void;
   private onWebviewPanelHandler?: VSCodeShimOptions['onWebviewPanel'];
+  private services?: Partial<ExtensionHostServices>;
+  /**
+   * `workspace.onDidChangeConfiguration` 的订阅者。
+   *
+   * 自己改配置（`update()`）之后必须回调它们：扩展常常「写完之后重读一遍」，
+   * 不通知就等于这次修改在它看来没发生（Claude 切首选位置、Codex 换模型都走这条）。
+   */
+  private configChangeListeners = new Set<(event: any) => void>();
   /**
    * 已经开出去的 webview 面板，按宿主给的 panelId 存着。
    *
@@ -662,6 +714,60 @@ export class VSCodeShim {
     this.inputBoxHandler = options.onInputBox;
     this.openExternalHandler = options.onOpenExternal;
     this.onWebviewPanelHandler = options.onWebviewPanel;
+    this.services = options.services;
+  }
+
+  /**
+   * 配置取值（整键）。宿主没实现时返回 `undefined` —— 调用方会退回它自己给的默认值。
+   */
+  private settingsGet(key: string): unknown {
+    return this.services?.settings?.get(key);
+  }
+
+  private settingsHas(key: string): boolean {
+    const settings = this.services?.settings;
+    if (!settings) return false;
+    if (typeof settings.has === 'function') return settings.has(key);
+    return settings.get(key) !== undefined;
+  }
+
+  private settingsInspect(key: string): {
+    defaultValue?: unknown;
+    globalValue?: unknown;
+    workspaceValue?: unknown;
+  } {
+    const settings = this.services?.settings;
+    if (settings?.inspect) return settings.inspect(key);
+    return { globalValue: settings?.get(key) };
+  }
+
+  /**
+   * 写配置。写完**必须**通知订阅者（见 configChangeListeners 的注释）。
+   *
+   * 宿主没实现时返回 resolved 的 Promise：谎报失败会让扩展走进错误分支，
+   * 而这里的失败本来就不是扩展的错。
+   */
+  private settingsUpdate(key: string, value: unknown, target?: unknown): Promise<void> {
+    const settings = this.services?.settings;
+    if (!settings) return Promise.resolve();
+    return Promise.resolve(settings.update(key, value, target)).then(() => {
+      const event = {
+        affectsConfiguration: (section: string) =>
+          key === section || key.startsWith(section.endsWith('.') ? section : `${section}.`),
+      };
+      this.configChangeListeners.forEach((listener) => {
+        try {
+          listener(event);
+        } catch (err) {
+          console.error('[vscode-shim] onDidChangeConfiguration 回调抛错：', err);
+        }
+      });
+    });
+  }
+
+  private onConfigurationChange(listener: (event: any) => void): { dispose(): void } {
+    this.configChangeListeners.add(listener);
+    return { dispose: () => this.configChangeListeners.delete(listener) };
   }
 
   /**
@@ -1122,20 +1228,35 @@ export class VSCodeShim {
             },
           ];
         },
+        /**
+         * 扩展的配置。
+         *
+         * 以前这里**永远返回调用方给的默认值** —— 扩展自己 `package.json` 里
+         * `contributes.configuration.properties[].default` 写的默认值不生效，
+         * 用户在设置里改的值传不进来，`update()` 也是空操作。
+         * 对 Claude 那种「读不到就自己兜底」的扩展看不出区别，对 Codex 这种有
+         * 三十多个配置项的扩展就是「怎么调都没反应」。
+         *
+         * 现在取值顺序是：用户设置（落盘，宿主给的）→ 扩展贡献的默认值（宿主合并）
+         * → 调用方传进来的默认值。合并由宿主做（它手上有 manifest），shim 只问一次。
+         */
         getConfiguration(section?: string) {
+          const fullKey = (key: string) => (section ? `${section}.${key}` : key);
           return {
             get(key: string, defaultValue?: any) {
-              return defaultValue;
+              const value = self.settingsGet(fullKey(key));
+              return value === undefined ? defaultValue : value;
             },
             has(key: string) {
-              return false;
+              return self.settingsHas(fullKey(key));
             },
             inspect(key: string) {
+              const info = self.settingsInspect(fullKey(key));
               return {
-                key: section ? `${section}.${key}` : key,
-                defaultValue: undefined,
-                globalValue: undefined,
-                workspaceValue: undefined,
+                key: fullKey(key),
+                defaultValue: info.defaultValue,
+                globalValue: info.globalValue,
+                workspaceValue: info.workspaceValue,
                 workspaceFolderValue: undefined,
                 defaultLanguageValue: undefined,
                 globalLanguageValue: undefined,
@@ -1145,11 +1266,12 @@ export class VSCodeShim {
               };
             },
             update(key: string, value: any, configurationTarget?: any) {
-              return Promise.resolve();
+              return self.settingsUpdate(fullKey(key), value, configurationTarget);
             },
           } as any;
         },
-        onDidChangeConfiguration: () => ({ dispose() {} }),
+        onDidChangeConfiguration: (listener: (event: any) => void) =>
+          self.onConfigurationChange(listener),
         onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
         textDocuments: [],
         onDidOpenTextDocument: () => ({ dispose() {} }),

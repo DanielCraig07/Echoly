@@ -45,6 +45,8 @@ export interface ExtensionHostOptions {
     options?: any;
     extensionId?: string;
   }) => import('./index').WebviewPanelBackend;
+  /** 配置 / 存储 / 密钥（见 `ExtensionHostServices` 的注释）。 */
+  services?: Partial<import('./index').ExtensionHostServices>;
 }
 
 export class ExtensionHost {
@@ -69,6 +71,7 @@ export class ExtensionHost {
       onInputBox: options.onInputBox,
       onOpenExternal: options.onOpenExternal,
       onWebviewPanel: options.onWebviewPanel,
+      services: options.services,
     });
 
     // 立即注入 vscode 模块到全局，确保任何扩展 require('vscode') 时都能找到

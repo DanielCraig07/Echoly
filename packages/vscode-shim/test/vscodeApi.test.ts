@@ -602,3 +602,62 @@ describe('createWebviewPanel 真的开成一个面板（Claude 的「+」走这�
     }).not.toThrow();
   });
 });
+
+describe('workspace.getConfiguration 真读真写（以前永远返回调用方给的默认值）', () => {
+  /**
+   * 这条以前是坏的：`get(key, dflt)` 无条件返回 `dflt` —— 扩展自己 package.json 里
+   * 声明的默认值不生效，用户改的值传不进来，`update()` 也是空操作。
+   * 对 Claude 那种「读不到就自己兜底」的扩展看不出来，对 Codex 那种三十多个配置项的
+   * 扩展就是「怎么调都没反应」。
+   */
+  const setup = () => {
+    const values: Record<string, unknown> = { 'chatgpt.model': 'gpt-5.3-codex' };
+    const writes: { key: string; value: unknown }[] = [];
+    const shim = new VSCodeShim({
+      workspaceRoot: '/tmp/x',
+      extensionPath: '/tmp/x',
+      onCommand: async () => undefined,
+      onMessage: () => {},
+      services: {
+        settings: {
+          get: (key) => values[key],
+          has: (key) => values[key] !== undefined,
+          inspect: (key) => ({ defaultValue: 'fallback', globalValue: values[key] }),
+          update: (key, value) => {
+            values[key] = value;
+            writes.push({ key, value });
+          },
+        },
+      },
+    });
+    return { api: shim.createAPI() as any, values, writes };
+  };
+
+  it('用户值优先，其次才是调用方传的默认值', () => {
+    const { api } = setup();
+    const chatgpt = api.workspace.getConfiguration('chatgpt');
+    expect(chatgpt.get('model')).toBe('gpt-5.3-codex');
+    expect(chatgpt.get('model', '想被忽略')).toBe('gpt-5.3-codex');
+    // 没设过的项回落到调用方给的默认值，而不是 undefined
+    expect(chatgpt.get('approvalMode', 'auto')).toBe('auto');
+    expect(chatgpt.has('model')).toBe(true);
+    expect(chatgpt.has('nope')).toBe(false);
+  });
+
+  it('update 真的写下去，并且回调 onDidChangeConfiguration', async () => {
+    const { api, writes } = setup();
+    const chatgpt = api.workspace.getConfiguration('chatgpt');
+    const affected: string[] = [];
+    api.workspace.onDidChangeConfiguration((e: any) => {
+      if (e.affectsConfiguration('chatgpt')) affected.push('chatgpt');
+      if (e.affectsConfiguration('chatgpt.other')) affected.push('chatgpt.other');
+    });
+
+    await chatgpt.update('model', 'gpt-5.4');
+
+    expect(writes).toEqual([{ key: 'chatgpt.model', value: 'gpt-5.4' }]);
+    expect(chatgpt.get('model')).toBe('gpt-5.4');
+    // 写完不通知的话，扩展「写完之后重读」这一步等于什么都没发生
+    expect(affected).toEqual(['chatgpt']);
+  });
+});

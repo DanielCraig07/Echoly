@@ -288,6 +288,23 @@ export class ExtensionManager {
    */
   private static readonly PANEL_ROOT_SENTINEL = '/__echoly-webview-panel__';
   /**
+   * 扩展配置的用户值（整键 → 值），落盘在 `extension-settings.json`。
+   *
+   * 「整键」= `chatgpt.model` 这种带 section 的完整 key：扩展调
+   * `getConfiguration('chatgpt').get('model')`，两边拼起来才是唯一的那个设置。
+   */
+  private extensionSettings: Record<string, unknown> = {};
+  /**
+   * 扩展贡献的配置默认值（`contributes.configuration.properties[].default`）。
+   *
+   * 以前这一份是**完全没用上**的：`getConfiguration().get(key)` 永远返回调用方
+   * 传进来的默认值，于是「扩展自己声明的默认值」和「用户在设置里改的值」都被丢掉。
+   * 取值顺序 = 用户值 → 这一份 → 调用方传的默认值。
+   */
+  private settingDefaults = new Map<string, unknown>();
+  /** 配置文件的路径（与禁用列表分开：那份是应用状态，这份是扩展设置）。 */
+  private readonly settingsFilePath: string;
+  /**
    * 已打开的自定义编辑器面板：panelKey → 运行时。
    *
    * key 用 `editor:<序号>` 而不是 viewType：同一个 viewType 可以对多个文件各开一个
@@ -321,6 +338,7 @@ export class ExtensionManager {
     this.registry = normalizeRegistryBase(options.registry);
     this.extensionsDir = path.join(app.getPath('userData'), 'extensions');
     this.stateFilePath = path.join(app.getPath('userData'), 'extensions-state.json');
+    this.settingsFilePath = path.join(app.getPath('userData'), 'extension-settings.json');
 
     if (options.onMessage) {
       this.messageHandlers.add(options.onMessage);
@@ -342,6 +360,20 @@ export class ExtensionManager {
       onSaveDialog: (options) => this.showSaveDialog(options),
       onQuickPick: (items, options) => this.showQuickPick(items, options),
       onOpenExternal: (url) => this.openExternal(url),
+      // 配置 / 存储 / 密钥：这三样是「除 Claude 之外的扩展能不能真用起来」的门槛，
+      // 见 ExtensionHostServices 的注释。以前它们全是空实现（配置永远返回默认值、
+      // globalState 不落盘、secrets 永远 undefined）。
+      services: {
+        settings: {
+          get: (key) => this.settingGet(key),
+          has: (key) => this.settingGet(key) !== undefined,
+          inspect: (key) => ({
+            defaultValue: this.settingDefaults.get(key),
+            globalValue: this.extensionSettings[key],
+          }),
+          update: (key, value) => this.settingUpdate(key, value),
+        },
+      },
       // 扩展开一个 webview 面板（Claude Code 的「+」新会话走这里）。
       // 以前这个 API 在 shim 里是空壳：HTML 被丢掉、标签不出现，而扩展那边
       // 已经把会话记成「在面板里」，于是侧栏被清空 —— 用户看到的就是
@@ -376,6 +408,9 @@ export class ExtensionManager {
 
     // 先读禁用列表，再扫目录：不然被禁用的扩展会在启动时被加载一遍
     await this.loadDisabledState();
+    // 扩展配置（用户值）与各扩展贡献的默认值也要在激活之前就位：
+    // 扩展在 activate() 里读配置，晚一步它拿到的就是「默认值」那一份。
+    await this.loadExtensionSettings();
 
     // IPC 处理器在构造函数里已经注册过了（见那里的注释），这里不重复注册
 
@@ -937,6 +972,9 @@ export class ExtensionManager {
 
     const loaded = await loadExtensionFromVsix(vsixPath, extractDir);
     this.loadedExtensionPaths.add(path.join(extractDir, 'extension'));
+    // 新装的扩展带来的配置默认值要立刻生效：它 activate() 里就会读配置，
+    // 而这份默认值是我们从 manifest 扫出来的，晚一步它读到的就是「没默认值」。
+    await this.refreshSettingDefaults();
 
     // 文件已经装好了，所以激活失败**不算安装失败** —— 报成失败会让人以为得重装。
     // 但也不能吞掉：那正是「装上了却什么都没发生」的由来。返回一句说明，由界面转达。
@@ -1225,6 +1263,78 @@ export class ExtensionManager {
     this.webviewHtml.delete(viewId);
     this.webviewMessageHandlers.delete(viewId);
     this.resourceRoots.delete(viewId);
+  }
+
+  // ─────────────────────────── 扩展配置 ───────────────────────────
+
+  /**
+   * 读扩展配置的用户值 + 重新扫一遍各扩展贡献的默认值。
+   *
+   * 文件损坏/不存在都当「没改过任何设置」，不阻断启动 —— 与禁用列表同一套策略。
+   */
+  private async loadExtensionSettings(): Promise<void> {
+    try {
+      const raw = JSON.parse(await fs.readFile(this.settingsFilePath, 'utf8'));
+      const values = raw?.values;
+      this.extensionSettings =
+        values && typeof values === 'object' ? { ...(values as Record<string, unknown>) } : {};
+    } catch {
+      this.extensionSettings = {};
+    }
+    await this.refreshSettingDefaults();
+  }
+
+  /**
+   * 扫一遍已安装扩展，收集 `contributes.configuration` 里的默认值。
+   *
+   * 这个字段有两种官方形状：一个对象，或者对象的数组（多份配置合并）。
+   * 两种都收 —— 只认第一种的话，用数组形状的扩展所有默认值都会变成 undefined。
+   */
+  private async refreshSettingDefaults(): Promise<void> {
+    const defaults = new Map<string, unknown>();
+    for (const { id, manifest } of await this.scanInstalledDirs()) {
+      const contributed = manifest?.contributes?.configuration;
+      const blocks = Array.isArray(contributed) ? contributed : contributed ? [contributed] : [];
+      for (const block of blocks) {
+        const properties = block?.properties;
+        if (!properties || typeof properties !== 'object') continue;
+        for (const [key, schema] of Object.entries(properties as Record<string, any>)) {
+          if (schema && typeof schema === 'object' && 'default' in schema) {
+            defaults.set(key, (schema as any).default);
+          }
+        }
+      }
+      void id;
+    }
+    this.settingDefaults = defaults;
+  }
+
+  /** 取值顺序：用户值 → 扩展贡献的默认值 → undefined（由调用方兜底）。 */
+  private settingGet(key: string): unknown {
+    if (Object.prototype.hasOwnProperty.call(this.extensionSettings, key)) {
+      return this.extensionSettings[key];
+    }
+    return this.settingDefaults.get(key);
+  }
+
+  /**
+   * 写一个设置项。
+   *
+   * 写完落盘（异步，不阻塞扩展那边）—— 以前这里是空操作，扩展改完再读回来的还是旧值，
+   * 表现出来就是「设置改了不生效」。
+   */
+  private settingUpdate(key: string, value: unknown): void {
+    this.extensionSettings[key] = value;
+    void this.persistExtensionSettings();
+  }
+
+  private async persistExtensionSettings(): Promise<void> {
+    const payload = JSON.stringify({ values: this.extensionSettings }, null, 2);
+    try {
+      await fs.writeFile(this.settingsFilePath, payload, 'utf8');
+    } catch (err: any) {
+      console.error('[ExtensionManager] 写扩展配置文件失败：', err?.message ?? err);
+    }
   }
 
   /** 读禁用列表。文件损坏/不存在都当「没有禁用任何扩展」，不阻断启动。 */
