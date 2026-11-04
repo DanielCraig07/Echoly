@@ -897,6 +897,26 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'app.languageChanged': { zh: '语言模式已切换为 {lang}', en: 'Language mode set to {lang}' },
   'app.copyHint': { zh: '复制提示内容', en: 'Copy prompt content' },
   'app.viewFullDetail': { zh: '弹窗查看完整详情', en: 'View full details' },
+  /**
+   * 「磁盘上的文件被改了」这两条。
+   *
+   * 说的是同一件事、两种处置：没有未保存编辑的就直接换成新内容（并说出来了），
+   * 有未保存编辑的只提示 —— 覆盖用户的未保存内容是数据丢失，绝不做。
+   */
+  'app.diskChangedTitle': { zh: '文件已在磁盘上改变', en: 'Files changed on disk' },
+  'app.diskChangedDetail': {
+    zh: '{count} 个：{names}',
+    en: '{count} file(s): {names}',
+  },
+  'app.diskChangedDetailReloaded': {
+    zh: '{count} 个：{names}（已打开的那几个已重新载入）',
+    en: '{count} file(s): {names} (the open ones were reloaded)',
+  },
+  'app.diskChangedConflictTitle': { zh: '磁盘上的内容也变了', en: 'Files also changed on disk' },
+  'app.diskChangedConflictDetail': {
+    zh: '{names}：你有未保存的修改，已保留你编辑器里的内容',
+    en: '{names}: you have unsaved edits, your version was kept',
+  },
   'app.copiedFull': { zh: '✓ 已复制完整内容', en: '✓ Full content copied' },
   'app.copyContent': { zh: '复制内容', en: 'Copy content' },
   'app.browserTab': { zh: '内置浏览器', en: 'Built-in Browser' },

@@ -2411,6 +2411,11 @@ export class ExtensionManager {
         if (op.kind === 'create') await fs.writeFile(op.fsPath, '', { flag: 'a' });
         else if (op.kind === 'delete') await fs.rm(op.fsPath, { recursive: true, force: true });
         else if (op.kind === 'rename' && op.newPath) await fs.rename(op.fsPath, op.newPath);
+        // 增删改名同样要说一声：界面拿它刷新文件树，也拿它提示「扩展动了这些文件」
+        this.broadcastToRenderers('fs:changed', {
+          type: op.kind,
+          path: op.newPath ?? op.fsPath,
+        });
       }
 
       // 文件变了要通知界面刷新：用户可能同时开着这个文件的文本标签

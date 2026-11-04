@@ -120,6 +120,8 @@ import {
   type VirtualTabState,
 } from './workspaceSession';
 import { absolutePathOf, resolveCustomEditorClaim } from './services/customEditorRoute';
+import { buildAiPanelEntries } from './services/aiPanelEntries';
+import { baseNameOf, decideDiskChange, summariseFileNames } from './services/externalFileChanges';
 import { useI18n } from './i18n';
 import { setupSymbolNavigation } from './services/symbolNavigation';
 import { setupDiagnosticsReporting } from './services/diagnosticsReporter';
@@ -310,6 +312,23 @@ export function App() {
    * 却只能开成编辑器标签。现在「哪个扩展的界面占右侧那一栏」是用户可配的，
    * 这里存的就是配置与已装扩展求交之后的结果。
    */
+  /**
+   * 标题栏那几个「AI 面板入口」——**每个装了、且贡献了视图的扩展一个**。
+   *
+   * 与 aiPanelViews（右侧面板里固定的那几栏）是两份数据：入口是**快捷方式**，
+   * 「装了就有」，不该要求用户先去扩展面板点一次「打开」才出现（那是用户踩过的坑）；
+   * 而面板里显示哪几栏仍旧由固定的那份决定 —— 不能因为装了个扩展就往面板里塞标签。
+   */
+  const [aiPanelEntries, setAiPanelEntries] = useState<
+    {
+      viewId: string;
+      title: string;
+      extensionId: string;
+      available: boolean;
+      icon?: string;
+    }[]
+  >([]);
+
   const [aiPanelViews, setAiPanelViews] = useState<
     {
       viewId: string;
@@ -1930,6 +1949,16 @@ export function App() {
           });
         }
         setAiPanelViews(next);
+
+        /**
+         * 入口：**每个贡献了视图的扩展一个**（不管有没有固定）。
+         *
+         * 一个扩展可能贡献好几个视图（Claude 就有三个：侧栏、次级侧栏、会话列表），
+         * 但在标题栏上摆三个几乎一样的图标只会让人更糊涂 —— 一个扩展一个入口，
+         * 取「已经固定的那个」，没有固定的就取它注册的第一个。别的视图仍旧能从
+         * 扩展详情页固定/打开。
+         */
+        setAiPanelEntries(buildAiPanelEntries(installed, pinned, activeIds));
       } catch {
         // 探测失败就当没装：宁可晚一点出现，也不要出现一个点了没反应的面板
       }
@@ -2192,6 +2221,134 @@ export function App() {
       localStorage.setItem(key, '[]');
     } catch {}
   }, [workspace, getBreakpointsStorageKey]);
+
+  /**
+   * 磁盘上的文件被**别人**改了 → 把开着的那几个标签重新读一遍，并且**说出来**。
+   *
+   * 为什么必须管这件事：Claude Code / Codex 这类代理是**自己写盘**的（它们跑自己的
+   * 进程，不走我们的编辑器缓冲区），于是「对话里说改好了，编辑器里还是旧内容」，
+   * 而且一个字都不提示 —— 用户只能自己发现（「修改文件没有任何提示」就是这么来的）。
+   * 外部编辑器改动、git 操作、扩展的 `applyEdit` 走的也是同一条通知。
+   *
+   * 两种处置，分界线是「用户有没有未保存的编辑」：
+   * - 没有 → 直接换成磁盘上的新内容。用户什么都没做，不该让他自己去刷新；
+   * - 有 → **保留编辑器里的内容**，只提示磁盘上也变了。覆盖用户的未保存内容是不可逆的
+   *   数据丢失，任何情况下都不做。
+   *
+   * 攒 400ms 再处理：代理动一次手往往连着写好几个文件，一个个弹提示只会刷屏。
+   */
+  useEffect(() => {
+    const pending = new Set<string>();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const flush = async () => {
+      timer = null;
+      const targets = Array.from(pending);
+      pending.clear();
+      if (targets.length === 0) return;
+
+      /** 去重过的、确实变了的文件（basename）。 */
+      const changed: string[] = [];
+      /** 其中被我们重新读进编辑器的。 */
+      const reloaded: string[] = [];
+      /** 其中用户有未保存编辑、只能提示的。 */
+      const conflicted: string[] = [];
+      const seen = new Set<string>();
+
+      for (const rawPath of targets) {
+        const abs = absolutePathOf(rawPath, workspaceRef.current);
+        const key = abs.replace(/\\/g, '/');
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        // 只认「开着、且是普通文本标签」的：虚拟标签没有磁盘内容，
+        // 图片/大文件的内容本来就不在标签里，回读也没有意义
+        const tab = tabsRef.current.find(
+          (candidate) =>
+            !isVirtualPath(candidate.path) &&
+            !candidate.previewUrl &&
+            !candidate.isLargeFile &&
+            isSameFileByPath(candidate.path, abs),
+        );
+
+        // 没开着的文件照样要说 —— 用户恰恰是「编辑器里什么都没变，所以什么都不知道」
+        if (!tab) {
+          changed.push(baseNameOf(abs));
+          continue;
+        }
+
+        let fresh: string | null;
+        try {
+          fresh = await window.ide.readFile(tab.path);
+        } catch {
+          fresh = null;
+        }
+
+        if (fresh === null) {
+          // 读不到：多半是被删了 —— 删除更该说一声（标签会被文件树那条路关掉）
+          try {
+            if (!(await window.ide.pathExists(tab.path))) changed.push(baseNameOf(abs));
+          } catch {
+            // 连存在性都问不出来，就当没这回事
+          }
+          continue;
+        }
+
+        // 两条规则（自己写盘的回声要忽略、有未保存编辑绝不覆盖）见 decideDiskChange
+        const decision = decideDiskChange({
+          dirty: tab.dirty,
+          savedContent: tab.savedContent,
+          freshContent: fresh,
+        });
+        if (decision === 'ignore') continue;
+
+        changed.push(baseNameOf(abs));
+        if (decision === 'conflict') {
+          conflicted.push(baseNameOf(abs));
+          continue;
+        }
+        reloaded.push(baseNameOf(abs));
+        setTabs((prev) =>
+          prev.map((candidate) =>
+            candidate.path === tab.path
+              ? { ...candidate, content: fresh, savedContent: fresh, dirty: false }
+              : candidate,
+          ),
+        );
+      }
+
+      if (changed.length > 0) {
+        showToast(
+          t('app.diskChangedTitle'),
+          t(reloaded.length > 0 ? 'app.diskChangedDetailReloaded' : 'app.diskChangedDetail', {
+            count: changed.length,
+            names: summariseFileNames(changed),
+          }),
+          'info',
+        );
+      }
+      if (conflicted.length > 0) {
+        showToast(
+          t('app.diskChangedConflictTitle'),
+          t('app.diskChangedConflictDetail', { names: summariseFileNames(conflicted) }),
+          'warn',
+        );
+      }
+    };
+
+    const unlisten = window.ide?.onFsChanged?.((data) => {
+      const changedPath = data?.path;
+      if (!changedPath) return;
+      pending.add(String(changedPath));
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void flush(), 400);
+    });
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      unlisten?.();
+    };
+  }, [showToast, t]);
 
   // 监听调试事件以自动展开底部调试面板
   useEffect(() => {
@@ -4861,8 +5018,8 @@ export function App() {
     [showChatPanel, rightPanelTab, layout, persistLayout, openExtensionView, viewTabId],
   );
 
-  /** 标题栏要摆哪几个 AI 面板入口（没激活的扩展不摆：点了是空的）。 */
-  const aiPanelEntries = aiPanelViews.filter((view) => view.available);
+  /** 标题栏实际摆出来的入口（没激活的扩展不摆：点了是空的）。 */
+  const visibleAiPanelEntries = aiPanelEntries.filter((view) => view.available);
 
   const ideActions: CommandAction[] = [
     {
@@ -5441,10 +5598,10 @@ export function App() {
               以前这里写死成「第一个固定视图必须等于 Claude Code 才显示」，只有 Claude
               有一个入口；现在固定了几个 AI 扩展就有几个。
             */}
-            {aiPanelEntries.length > 0 && (
+            {visibleAiPanelEntries.length > 0 && (
               <span className="layout-toggle-divider" aria-hidden="true" />
             )}
-            {aiPanelEntries.map((view) => (
+            {visibleAiPanelEntries.map((view) => (
               <button
                 key={view.viewId}
                 type="button"
@@ -5479,7 +5636,7 @@ export function App() {
                 )}
               </button>
             ))}
-            {aiPanelEntries.length > 0 && (
+            {visibleAiPanelEntries.length > 0 && (
               <span className="layout-toggle-divider" aria-hidden="true" />
             )}
 
