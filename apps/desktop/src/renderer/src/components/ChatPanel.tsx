@@ -3853,16 +3853,14 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         代理一次改几十个文件也不会把输入框挤出去。
       */}
       {pendingChanges.length > 0 && onAcceptExternalChange && onRejectExternalChange && (
-        <div className="chat-pending-changes">
-          <PendingChangesBar
-            changes={pendingChanges}
-            onAccept={onAcceptExternalChange}
-            onReject={onRejectExternalChange}
-            onAcceptAll={onAcceptAllExternalChanges ?? (() => {})}
-            onRejectAll={onRejectAllExternalChanges ?? (() => {})}
-            onOpenFile={onOpenFile ? (path) => onOpenFile(path) : undefined}
-          />
-        </div>
+        <PendingChangesBar
+          changes={pendingChanges}
+          onAccept={onAcceptExternalChange}
+          onReject={onRejectExternalChange}
+          onAcceptAll={onAcceptAllExternalChanges ?? (() => {})}
+          onRejectAll={onRejectAllExternalChanges ?? (() => {})}
+          onOpenFile={onOpenFile ? (path) => onOpenFile(path) : undefined}
+        />
       )}
 
       {/* Input Box */}

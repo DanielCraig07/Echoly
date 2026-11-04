@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useI18n } from '../i18n';
-import { countLineChanges } from '../services/textDiff';
+import { PanelChevron } from './PanelChevron';
+import { computeLineDiffStats } from '../services/diffStats';
 import {
   planExternalChangeActions,
   type PendingExternalChange,
@@ -14,7 +15,7 @@ export interface PendingChangesBarProps {
   onRejectAll: () => void;
   /** 点一行 → 打开这个文件（用户想先看看改了什么再决定）。 */
   onOpenFile?: (path: string, abs: string) => void;
-  /** 外层容器是浮层时用的额外类名（`.pending-changes-bar--floating`）。 */
+  /** 面板整个收起来、只能浮在左下角时加的类名。 */
   className?: string;
 }
 
@@ -29,14 +30,19 @@ interface Row {
 }
 
 /**
- * 「代理改了磁盘上的文件，你打算怎么办」那一栏 —— 和 Cursor 一样贴在聊天输入框上方。
+ * 「代理改了磁盘上的文件，你打算怎么办」那一栏 —— 和 Cursor 一样贴在 AI 输入框上方。
+ *
+ * 长得**和内置会话里那块「本轮改动的文件」一模一样**：同一套 class
+ * （`.chat-diff-summary-container` 那几个）、同一套文案 key（`chat.diff*`）。
+ * 两处说的是同一件事（「这些文件变了，你接受还是拒绝」），长得不一样只会让人以为是
+ * 两种东西；而且它们经常同时出现（内置 Agent 刚改完，Claude 又改了一批）。
  *
  * 为什么不是一个只读提示：代理改盘之后编辑器里那一份和磁盘上那一份就分叉了，用户得
  * 挑一份。给一行文件名、加删行数，再给「接受 / 拒绝」两个出口，用户才真的有的选。
  *
  * 为什么行数可能是空的：`+N -M` 要拿「改动前」和「改动后」两份内容去比，而代理是
  * **别的进程**写的盘 —— 我们从没读过、没存过的文件就没有那份「改动前」。这时宁可不显示
- * 数字（也不显示一份按「整个文件都是新加的」算出来的假数字），行上会写明原因。
+ * 数字（也不显示一份按「整个文件都是新加的」算出来的假数字），行上写明原因。
  */
 export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
   changes,
@@ -57,13 +63,15 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
         let additions: number | null = null;
         let deletions: number | null = null;
 
-        if (change.fresh !== null && change.before !== undefined) {
-          const counts = countLineChanges(change.before, change.fresh);
-          additions = counts.additions;
-          deletions = counts.deletions;
-        } else if (change.fresh === null && change.before !== undefined) {
-          // 文件被删了：整份内容的行数就是「删掉的多少行」
-          deletions = countLineChanges(change.before, '').deletions;
+        if (change.before !== undefined) {
+          // 只有拿到「改动前」才算数字：没有它就只知道「现在这么多行」，
+          // 报成 `+N` 会让用户以为代理加了一整个文件的内容。
+          const stats = computeLineDiffStats(change.before, change.fresh ?? '');
+          // 两个都是 0（只剩空白字符之类的差异）时不显示 `+0 -0`：那个数字没有信息量
+          if (stats.added !== 0 || stats.deleted !== 0) {
+            additions = change.fresh === null ? null : stats.added;
+            deletions = stats.deleted;
+          }
         }
 
         return {
@@ -87,101 +95,104 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
   const rejectable = rows.filter((row) => row.canReject).length;
 
   return (
-    <div className={`pending-changes-bar${className ? ` ${className}` : ''}`}>
-      {/* 列表本身限高并滚动：代理一次动手可能是几十个文件，不能让输入框被挤出去 */}
-      <div className="pending-changes-list" data-collapsed={collapsed ? 'true' : 'false'}>
-        {rows.map((row) => (
-          <div
-            key={row.change.abs}
-            className="pending-change-row"
-            role="button"
-            tabIndex={0}
-            title={row.change.path}
-            onClick={() => onOpenFile?.(row.change.path, row.change.abs)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') onOpenFile?.(row.change.path, row.change.abs);
-            }}
-          >
-            <span className="pending-change-icon" aria-hidden="true">
-              <span className="pending-change-icon-dot" />
-            </span>
-
-            <span className="pending-change-stats">
-              {row.additions !== null && (row.additions > 0 || row.deletions === null) && (
-                <span className="add">+{row.additions}</span>
-              )}
-              {row.deletions !== null && (row.deletions > 0 || row.additions === null) && (
-                <span className="del">-{row.deletions}</span>
-              )}
-            </span>
-
-            <span className="pending-change-name">{row.change.name}</span>
-            <span className="pending-change-path">{row.change.path}</span>
-
-            {/* 行内的「接受 / 拒绝」平时收起来：整栏要像 Cursor 那样干净。
-                悬停或键盘聚焦时露出来 —— 多文件时用户往往只想处理其中一两个。 */}
-            <span className="pending-change-row-actions">
-              <button
-                type="button"
-                className="pending-row-btn accept"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAccept(row.change);
-                }}
-                title={row.acceptLosesEdits ? t('app.extChangeLosesEdits') : t(row.acceptLabelKey)}
+    <div className={`chat-diff-summary-container${className ? ` ${className}` : ''}`}>
+      {/* 列表本身限高并滚动（见 .chat-diff-file-list）：代理一次动手可能是几十个文件，
+          不能让输入框被挤出去 */}
+      {!collapsed && (
+        <div className="chat-diff-file-list">
+          {rows.map((row) => (
+            <div
+              key={row.change.abs}
+              className="chat-diff-file-item"
+              role="button"
+              tabIndex={0}
+              title={t('chat.diffViewTip', { path: row.change.path })}
+              onClick={() => onOpenFile?.(row.change.path, row.change.abs)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ')
+                  onOpenFile?.(row.change.path, row.change.abs);
+              }}
+            >
+              {/* 橙色小方块（带一个亮点）：和内置会话那块同一个「这个文件被改了」标记 */}
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 16 16"
+                fill="none"
+                style={{ color: 'var(--warn)', flexShrink: 0 }}
+                aria-hidden="true"
               >
-                {t(row.acceptLabelKey)}
-              </button>
-              <button
-                type="button"
-                className="pending-row-btn reject"
-                disabled={!row.canReject}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onReject(row.change);
-                }}
-                title={row.canReject ? t('app.extChangeReject') : t('app.extChangeNoBefore')}
-              >
-                {t('app.extChangeReject')}
-              </button>
-            </span>
+                <rect
+                  x="2"
+                  y="2"
+                  width="12"
+                  height="12"
+                  rx="2"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <circle cx="8" cy="8" r="2" fill="currentColor" />
+              </svg>
 
-            {row.change.fresh === null ? (
-              <span className="pending-change-note">{t('app.extChangeDeleted')}</span>
-            ) : row.acceptLosesEdits ? (
-              <span className="pending-change-note warn">{t('app.extChangeLosesEdits')}</span>
-            ) : !row.canReject ? (
-              <span className="pending-change-note">{t('app.extChangeNoBefore')}</span>
-            ) : null}
-          </div>
-        ))}
-      </div>
+              <span className="diff-stats">
+                {row.additions !== null && <span className="diff-add">+{row.additions}</span>}
+                {row.deletions !== null && <span className="diff-del">-{row.deletions}</span>}
+              </span>
 
-      <div className="pending-changes-footer">
-        <button
-          type="button"
-          className="pending-changes-summary"
+              <span className="diff-filename">{row.change.name}</span>
+              <span className="diff-filepath">{row.change.path}</span>
+
+              {row.change.fresh === null ? (
+                <span className="pending-change-note">{t('app.extChangeDeleted')}</span>
+              ) : row.acceptLosesEdits ? (
+                <span className="pending-change-note warn">{t('app.extChangeDirtyShort')}</span>
+              ) : !row.canReject ? (
+                <span className="pending-change-note">{t('app.extChangeNoBeforeShort')}</span>
+              ) : null}
+
+              {/* 行内的「接受 / 拒绝」平时收着：整栏要像 Cursor 那样干净。悬停或键盘
+                  聚焦才露出来 —— 多文件时用户往往只想处理其中一两个，没有行内按钮
+                  就只能整批接受。 */}
+              <span className="pending-change-row-actions">
+                <button
+                  type="button"
+                  className="pending-row-btn accept"
+                  title={
+                    row.acceptLosesEdits ? t('app.extChangeLosesEdits') : t(row.acceptLabelKey)
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAccept(row.change);
+                  }}
+                >
+                  {t(row.acceptLabelKey)}
+                </button>
+                <button
+                  type="button"
+                  className="pending-row-btn reject"
+                  disabled={!row.canReject}
+                  title={row.canReject ? t('app.extChangeReject') : t('app.extChangeNoBefore')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReject(row.change);
+                  }}
+                >
+                  {t('app.extChangeReject')}
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="chat-diff-action-bar">
+        <div
+          className="chat-diff-action-left"
           onClick={() => setCollapsed((prev) => !prev)}
-          title={collapsed ? t('app.extChangeExpand') : t('app.extChangeCollapse')}
+          title={collapsed ? t('chat.diffExpandList') : t('chat.diffCollapseList')}
         >
+          <PanelChevron expanded={!collapsed} size={11} color="var(--muted)" />
           <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.9"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-            <polyline points="14 2 14 8 20 8" />
-          </svg>
-          <span>{t('app.extChangeFilesCount', { count: rows.length })}</span>
-          <svg
-            className="pending-changes-chevron"
-            data-collapsed={collapsed ? 'true' : 'false'}
             width="12"
             height="12"
             viewBox="0 0 24 24"
@@ -190,24 +201,39 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            style={{ opacity: 0.7 }}
             aria-hidden="true"
           >
-            <polyline points="18 15 12 9 6 15" />
+            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+            <polyline points="14 2 14 8 20 8" />
           </svg>
-        </button>
-
-        <div className="pending-changes-actions">
+          <span className="count-text">{t('chat.diffFilesWithChanges', { n: rows.length })}</span>
+        </div>
+        <div className="chat-diff-action-right">
           <button
             type="button"
-            className="pending-changes-btn reject-all"
+            className="btn-reject-all"
             disabled={rejectable === 0}
             onClick={onRejectAll}
-            title={rejectable === 0 ? t('app.extChangeNoBefore') : t('app.extChangeRejectAll')}
+            title={rejectable === 0 ? t('app.extChangeNoBefore') : t('chat.diffRejectAll')}
           >
-            {t('app.extChangeRejectAll')}
+            {t('chat.diffRejectAll')}
           </button>
-          <button type="button" className="pending-changes-btn accept-all" onClick={onAcceptAll}>
-            {t('app.extChangeAcceptAll')}
+          <button type="button" className="btn-accept-all" onClick={onAcceptAll}>
+            {t('chat.diffAcceptAll')}
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
           </button>
         </div>
       </div>

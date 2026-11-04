@@ -918,23 +918,18 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
     en: '{names}: you have unsaved edits, your version was kept',
   },
   /**
-   * 「别人改了磁盘上的文件」的待办卡片（带接受 / 拒绝）。
+   * 「别人改了磁盘上的文件」那一栏（带接受 / 拒绝）的**行内**文案。
    *
-   * 和上面那对 toast 文案的区别：toast 只是「告诉你有这回事」，卡片要用户**做决定** ——
-   * 所以每一条都得说清楚「接受会怎样、拒绝会怎样、什么时候拒绝不了」。
+   * 栏的外壳、底部动作条、文件名逗号那些文案直接复用内置会话那块「本轮改动的文件」
+   * （`chat.diff*`）—— 两处说的是同一件事，长得不一样只会让人以为是两种东西。
+   * 这里只放它没有的：行内按钮的标签、以及「什么时候拒绝不了」的说明。
    */
-  'app.extChangeTitle': {
-    zh: '文件已在磁盘上改变（{count}）',
-    en: 'Files changed on disk ({count})',
-  },
   'app.extChangeAccept': { zh: '接受', en: 'Keep' },
   'app.extChangeReject': { zh: '拒绝', en: 'Undo' },
-  'app.extChangeFilesCount': { zh: '{count} 个文件有改动', en: '{count} Files With Changes' },
-  'app.extChangeExpand': { zh: '展开', en: 'Expand' },
-  'app.extChangeCollapse': { zh: '收起', en: 'Collapse' },
-  'app.extChangeAcceptAll': { zh: '全部接受', en: 'Keep all' },
-  'app.extChangeRejectAll': { zh: '全部拒绝', en: 'Undo all' },
   'app.extChangeDeleted': { zh: '已在磁盘上删除', en: 'Deleted on disk' },
+  /** 行末那一小截说明：整栏要像 Cursor 那样干净，长句放不下。 */
+  'app.extChangeNoBeforeShort': { zh: '无法还原', en: "can't undo" },
+  'app.extChangeDirtyShort': { zh: '有未保存的修改', en: 'unsaved edits' },
   /** 文件没开着、或只是「知道一下」：这时「接受」是空动作，按钮得说实话。 */
   'app.extChangeDismiss': { zh: '知道了', en: 'Got it' },
   /** 文件在磁盘上被删了：「接受」= 收下这件事（把标签关掉）。 */

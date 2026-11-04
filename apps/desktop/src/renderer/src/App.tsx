@@ -6995,15 +6995,13 @@ export function App() {
                 ChatPanel 里，是严格贴着输入框上沿的。
               */}
               {rightPanelTab !== 'chat' && pendingChanges.length > 0 && (
-                <div className="right-panel-pending-changes">
-                  <PendingChangesBar
-                    changes={pendingChanges}
-                    onAccept={handleAcceptExternalChange}
-                    onReject={handleRejectExternalChange}
-                    onAcceptAll={handleAcceptAllExternalChanges}
-                    onRejectAll={handleRejectAllExternalChanges}
-                  />
-                </div>
+                <PendingChangesBar
+                  changes={pendingChanges}
+                  onAccept={handleAcceptExternalChange}
+                  onReject={handleRejectExternalChange}
+                  onAcceptAll={handleAcceptAllExternalChanges}
+                  onRejectAll={handleRejectAllExternalChanges}
+                />
               )}
 
               {/*
