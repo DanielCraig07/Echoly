@@ -1020,3 +1020,160 @@ module.exports = { activate };
     expect(await res.text()).toContain('acquireVsCodeApi');
   });
 });
+
+/**
+ * 「新会话开成新面板」这条链：`vscode.openWith` + 自定义编辑器 + 右侧 AI 面板标签。
+ *
+ * 两个提交前的行为：
+ * - `vscode.openWith` 被无条件转发给渲染层，而渲染层只认得 `'default'` ——
+ *   扩展想开自己的编辑器时**什么都没发生**（用户看到的是「点了没反应」）；
+ * - Codex 界面里的「新聊天」是另一条路（往侧栏推一条 `new-chat`，界面就地换成空白会话），
+ *   于是**正在聊的那条被重置**。
+ */
+describe('扩展的「新会话」：openWith 与 new-chat 接管', () => {
+  let base: string;
+  let manager: InstanceType<typeof ExtensionManager>;
+
+  const EXT_JS = `function activate(context) {
+  const vscode = require('vscode');
+  let viewRef = null;
+
+  vscode.window.registerWebviewViewProvider('chatgpt.sidebarView', {
+    resolveWebviewView(view) {
+      viewRef = view;
+      view.webview.html = '<html><head></head><body>sidebar</body></html>';
+    },
+  });
+
+  vscode.window.registerCustomEditorProvider('demo.virtualEditor', {
+    openCustomDocument(uri) { return { uri }; },
+    resolveCustomEditor(document, panel) {
+      panel.webview.html = '<html><head></head><body data-uri="' +
+        document.uri.toString() + '">panel</body></html>';
+    },
+  });
+
+  // 扩展自己那条「开一个新会话面板」的路（名字与真 Codex 一致：接管规则按它登记）
+  vscode.commands.registerCommand('chatgpt.newCodexPanel', () => {
+    globalThis.__newPanelCalls = (globalThis.__newPanelCalls || 0) + 1;
+    const uri = vscode.Uri.file('/panel/new').with({ scheme: 'demo-scheme', authority: 'route' });
+    return vscode.commands.executeCommand('vscode.openWith', uri, 'demo.virtualEditor', {});
+  });
+
+  // 界面里那个「新聊天」：往当前视图推一条 new-chat，界面就地重置
+  vscode.commands.registerCommand('demo.newChat', (prefill) => {
+    const payload = { type: 'new-chat' };
+    if (prefill) payload.chatGptPrefill = prefill;
+    return viewRef.webview.postMessage(payload);
+  });
+}
+module.exports = { activate };
+`;
+
+  beforeEach(async () => {
+    base = await mkdtemp(path.join(tmpdir(), 'echoly-newchat-'));
+    hoisted.userDataRoot = base;
+    const dir = path.join(base, 'extensions', 'demo.chat', 'extension');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      path.join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'chat',
+        publisher: 'demo',
+        displayName: 'Demo Chat',
+        version: '1.0.0',
+        main: './extension.js',
+        contributes: {
+          views: { demoChat: [{ id: 'chatgpt.sidebarView', name: 'Demo Chat', type: 'webview' }] },
+          customEditors: [
+            {
+              viewType: 'demo.virtualEditor',
+              displayName: 'Demo Virtual',
+              selector: [{ filenamePattern: 'demo-scheme:/**/*' }],
+            },
+          ],
+        },
+      }),
+      'utf8',
+    );
+    await writeFile(path.join(dir, 'extension.js'), EXT_JS, 'utf8');
+
+    manager = new ExtensionManager({ workspaceRoot: base, registry: 'https://open-vsx.org' });
+    await manager.initialize();
+    await new Promise((r) => setTimeout(r, 300));
+    (globalThis as any).__newPanelCalls = 0;
+  });
+
+  afterEach(async () => {
+    await rm(base, { recursive: true, force: true });
+  });
+
+  it('vscode.openWith 打开虚拟文档 → 变成一个面板（以前是扔给渲染层、什么都不发生）', async () => {
+    const ok = await (manager as any).extensionHost.executeCommand('chatgpt.newCodexPanel');
+    expect(ok as unknown as boolean).toBe(true);
+
+    const panelIds = Array.from((manager as any).webviewPanels.keys()) as string[];
+    expect(panelIds).toHaveLength(1);
+    const html: string = (manager as any).webviewHtml.get(panelIds[0]) ?? '';
+    // 扩展给的 HTML + 注入的运行时（消息通道与 acquireVsCodeApi 全靠它）
+    expect(html).toContain('data-uri=');
+    expect(html).toContain('demo-scheme');
+    expect(html).toContain('acquireVsCodeApi');
+    // 面板是给右侧 AI 面板用的（渲染层按 extension:panel-opened 开标签）
+    expect(panelIds[0].startsWith('panel:')).toBe(true);
+    // 面板的资源目录走绝对路径模式：扩展目录之外的文件也能取
+    expect((manager as any).resourceRoots.get(panelIds[0])).toBeTruthy();
+  });
+
+  it('file 的自定义编辑器仍旧交给渲染层（行为不变）', async () => {
+    const broadcast = vi.spyOn(manager as any, 'broadcastToRenderers');
+    await (manager as any).extensionHost.executeCommand(
+      'vscode.openWith',
+      // 真文件的 scheme 是 file：不该被宿主接管
+      { scheme: 'file', fsPath: '/tmp/note.md', toString: () => '/tmp/note.md' },
+      'demo.virtualEditor',
+    );
+    const relayed = broadcast.mock.calls.filter(([channel]) => channel === 'extension:command');
+    expect(relayed).toHaveLength(1);
+    expect(Array.from((manager as any).webviewPanels.keys())).toHaveLength(0);
+  });
+
+  it('界面里的「新聊天」被接管：改开一个新面板，当前会话不动', async () => {
+    await waitForView();
+    const broadcast = vi.spyOn(manager as any, 'broadcastToRenderers');
+
+    await (manager as any).extensionHost.executeCommand('demo.newChat');
+
+    // 走的是扩展自己那条「开新面板」的路
+    expect((globalThis as any).__newPanelCalls).toBe(1);
+    // 而那条会重置当前会话的消息**没有**被投给界面
+    const delivered = broadcast.mock.calls.filter(
+      ([channel, payload]) =>
+        channel === 'extension:webview-message' && (payload as any)?.message?.type === 'new-chat',
+    );
+    expect(delivered).toHaveLength(0);
+  });
+
+  it('带 prefill 的「新聊天」不接管（那条消息捎着用户选中的内容）', async () => {
+    await waitForView();
+
+    await (manager as any).extensionHost.executeCommand('demo.newChat', {
+      text: '选中的代码',
+      systemHints: [],
+    });
+
+    expect((globalThis as any).__newPanelCalls).toBe(0);
+  });
+
+  async function waitForView(): Promise<string> {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      try {
+        return await manager.resolveWebviewView('chatgpt.sidebarView');
+      } catch {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+    }
+    throw new Error('等不到视图 provider');
+  }
+});

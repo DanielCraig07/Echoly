@@ -1119,6 +1119,14 @@ export class VSCodeShim {
           return {
             webview,
             viewType,
+            /**
+             * Echoly 内部用的面板 id（VS Code 的 `WebviewPanel` 上没有这个字段）。
+             *
+             * 宿主有时要**代扩展**建面板（见 ExtensionHost.createPanelAsExtension），
+             * 建完得知道它是哪一个才能接着写地址、发消息。多一个下划线开头的字段，
+             * 比让宿主去猜「刚建的是哪个」稳。
+             */
+            __panelId: backend.panelId,
             get title() {
               return panelTitle;
             },

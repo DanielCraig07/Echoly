@@ -93,6 +93,31 @@ const CLAUDE_CODE_NAME = 'Claude Code';
 const CLAUDE_CODE_VIEW_ID = 'claudeVSCodeSidebar';
 
 /**
+ * 「新聊天」该开一个新面板，而不是把当前会话重置掉 —— 按视图显式登记。
+ *
+ * 键：视图 id。值：这个扩展**自己**那条「开一个新会话面板」的命令，以及它用来
+ * 「让界面就地重置」的那条消息类型。
+ *
+ * 为什么是登记制而不是通用规则：怎么实现「新聊天」是各扩展自己的约定（Codex 是往
+ * 侧栏推一条 `new-chat`，界面收到就把当前会话换成空的），宿主没有通用的替代路径 ——
+ * 唯一能做的是改走它**已经具备**的多会话入口。登记制的好处是显式：没登记的扩展
+ * 行为一点不变。
+ */
+const NEW_CHAT_TAKEOVER: Record<
+  string,
+  { messageType: string; command: string; prefillKey?: string }
+> = {
+  // Codex：`chatgpt.newChat`（界面里的铅笔 / Cmd+N）会往侧栏推 `new-chat`，
+  // 界面就地重置当前会话；而 `chatgpt.newCodexPanel` 是它自己的「开一个新会话面板」，
+  // 走 `vscode.openWith` + 自定义编辑器（见 openVirtualCustomEditor）。
+  'chatgpt.sidebarView': {
+    messageType: 'new-chat',
+    command: 'chatgpt.newCodexPanel',
+    prefillKey: 'chatGptPrefill',
+  },
+};
+
+/**
  * 行列位置 → 字符偏移（按 `\n` 切）。
  *
  * 落盘 `WorkspaceEdit` 时要按偏移切片。列号会被夹到该行长度内 ——
@@ -2225,6 +2250,76 @@ export class ExtensionManager {
     return (this.extensionHost as any).shim?.customEditorProviders?.get(viewType)?.provider ?? null;
   }
 
+  /**
+   * 「虚拟文档」的自定义编辑器 —— 直接挂成**右侧 AI 面板里的一个标签**。
+   *
+   * 这是 Codex 的多会话入口：它的每个会话面板就是一个自定义编辑器
+   * （`chatgpt.conversationEditor`），URI 形如 `openai-codex://route/extension/panel/new`；
+   * 它自己那个「新会话」命令走 `vscode.openWith`，指望宿主把文档开出来。
+   *
+   * 为什么不像 `.md` 那样开在编辑器区：这类 URI **不对应磁盘上的任何文件**，
+   * 它代表的是「一个会话」。Claude 的会话（`createWebviewPanel`）就在右侧那一栏 ——
+   * 同类东西放同一个地方，用户才不会问「为什么这个在右边、那个在中间」。
+   *
+   * 面板交给 shim 建（`createPanelAsExtension`）：消息双向通道、关闭回调、归属
+   * 与扩展自己 new 出来的面板完全一致，不用再维护第二条通路。
+   */
+  async openVirtualCustomEditor(spec: {
+    uri: any;
+    viewType: string;
+  }): Promise<{ ok: true; panelId: string } | { ok: false; error: string }> {
+    const provider = this.getCustomEditorProvider(spec.viewType);
+    if (!provider) return { ok: false, error: `扩展没有注册 provider：${spec.viewType}` };
+    if (typeof provider.resolveCustomEditor !== 'function') {
+      return { ok: false, error: `provider 没有 resolveCustomEditor：${spec.viewType}` };
+    }
+
+    const owner = this.extensionHost
+      .listCustomEditorProviders()
+      .find((entry) => entry.viewType === spec.viewType)?.extensionId;
+
+    const { panel, panelId } = this.extensionHost.createPanelAsExtension({
+      viewType: spec.viewType,
+      title: await this.displayNameForExtension(owner, spec.viewType),
+      extensionId: owner,
+      options: { enableScripts: true, retainContextWhenHidden: true },
+    });
+
+    const token = {
+      isCancellationRequested: false,
+      onCancellationRequested: () => ({ dispose() {} }),
+    };
+
+    try {
+      let document: any = spec.uri;
+      if (typeof provider.openCustomDocument === 'function') {
+        document = await Promise.resolve(provider.openCustomDocument(spec.uri, {}, token));
+      }
+      await provider.resolveCustomEditor(document, panel, token);
+      console.log(
+        `[customEditor] ${spec.viewType} 打开虚拟文档 ${String(spec.uri)}（面板 ${panelId}）`,
+      );
+    } catch (err: any) {
+      console.error(`[customEditor] ${spec.viewType} 打开虚拟文档失败：`, err);
+      panel.dispose();
+      return { ok: false, error: `扩展渲染失败：${err?.message ?? err}` };
+    }
+
+    return { ok: true, panelId };
+  }
+
+  /** 给「宿主动手开的面板」一个像样的初始标题。取不到就退回 viewType。 */
+  private async displayNameForExtension(
+    extensionId: string | undefined,
+    fallback: string,
+  ): Promise<string> {
+    if (!extensionId) return fallback;
+    for (const record of await this.scanInstalledDirs()) {
+      if (record.id === extensionId) return record.manifest?.displayName || record.id;
+    }
+    return fallback;
+  }
+
   /** 界面里的操作 → 自定义编辑器扩展的 onDidReceiveMessage。 */
   deliverCustomEditorMessage(panelKey: string, message: any): void {
     console.log(`[webview→扩展] ${panelKey}: ${describeWebviewMessage(message)}`);
@@ -2412,6 +2507,9 @@ export class ExtensionManager {
        * 的 message 事件 data 就是什么」，而扩展自己会包一层 `{type:'from-extension'}`。
        */
       postMessage: (message: any) => {
+        // 「新聊天」先过一道接管判断（见 maybeTakeOverNewChat）：有的扩展把多会话做成
+        // 「往当前界面推一条 new-chat，界面就地换成空白会话」，那会把正在看的会话重置掉。
+        if (this.maybeTakeOverNewChat(viewId, message)) return Promise.resolve(true);
         this.broadcastToRenderers('extension:webview-message', {
           viewId,
           message: this.withPanelNewConversation(viewId, message),
@@ -2507,6 +2605,35 @@ export class ExtensionManager {
    * 只动这一个布尔值，别的状态原样透传 —— Claude 的会话状态很脆，
    * 「顺手修正」别的字段迟早会踩到它。
    */
+  /**
+   * 「新聊天」改成开一个新面板，而不是把当前会话重置掉。返回 true 表示已接管。
+   *
+   * 背景：Codex 的多会话本来就有 —— 会话是自定义编辑器，`chatgpt.newCodexPanel`
+   * 会 `vscode.openWith` 开一个新的。但界面里那个「新聊天」走的是**另一条路**：
+   * 扩展往侧栏推 `{type:'new-chat'}`，界面收到就把当前会话换成空白会话 ——
+   * 用户看到的是「点了新聊天，正在聊的那条被重置了」。
+   *
+   * 所以把那条消息截下来，改走扩展自己注册的那个「开新面板」命令。
+   */
+  private maybeTakeOverNewChat(viewId: string, message: any): boolean {
+    const rule = NEW_CHAT_TAKEOVER[viewId];
+    if (!rule || message?.type !== rule.messageType) return false;
+    /**
+     * 带 prefill 的不接管。
+     *
+     * 同一条消息还承担「把选中内容/截图发到一个新会话」——那时它捎着要带过去的内容，
+     * 而扩展的「开新面板」命令不吃这个参数，接管了就把用户选的东西弄丢了。
+     * 只在**空手**的「新聊天」上接管。
+     */
+    if (rule.prefillKey && message[rule.prefillKey] != null) return false;
+
+    console.log(`[newChat] ${viewId} 的「${rule.messageType}」改走 ${rule.command}（开新面板）`);
+    void this.extensionHost.executeCommand(rule.command).catch((err: any) => {
+      console.warn(`[newChat] ${rule.command} 执行失败：`, err?.message ?? err);
+    });
+    return true;
+  }
+
   private withPanelNewConversation(viewId: string, message: any): any {
     if (viewId !== CLAUDE_CODE_VIEW_ID) return message;
     const payload = message?.message;
@@ -2789,6 +2916,29 @@ ${buildWebviewRuntimeSource()}
       const target = args[0]?.fsPath ?? args[0];
       if (typeof target === 'string') shell.showItemInFolder(target);
       return undefined;
+    }
+
+    /**
+     * `vscode.openWith(uri, viewType)` 打开**自定义编辑器**时，这件事该宿主自己做。
+     *
+     * 以前这条命令无条件转发给渲染层，而渲染层只认得 `viewType === 'default'`
+     * （用内置编辑器打开）—— 于是扩展想开自己的编辑器时什么都没发生，用户看到的是
+     * 「点了没反应」。Codex 的「新会话」就卡在这里（它用自定义编辑器当会话面板）。
+     *
+     * 只接管**非 file 的 URI**：`.md` 那种真实文件仍旧走渲染层的编辑器标签，
+     * 行为不变；而 `openai-codex://route/…` 这类虚拟文档代表的是「一个会话」，
+     * 按右侧 AI 面板里的标签打开（见 openVirtualCustomEditor）。
+     */
+    if (command === 'vscode.openWith') {
+      const [uri, viewType] = args;
+      const scheme = typeof uri?.scheme === 'string' ? uri.scheme : '';
+      if (scheme && scheme !== 'file' && typeof viewType === 'string') {
+        if (this.getCustomEditorProvider(viewType)) {
+          const opened = await this.openVirtualCustomEditor({ uri, viewType });
+          if (!opened.ok) console.warn(`[customEditor] ${viewType} 打开失败：${opened.error}`);
+          return opened.ok;
+        }
+      }
     }
 
     // 将命令广播到所有渲染进程

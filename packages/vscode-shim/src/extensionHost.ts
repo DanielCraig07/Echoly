@@ -241,6 +241,40 @@ export class ExtensionHost {
     return this.shim.listWebviewViewIds(extensionId);
   }
 
+  /**
+   * 由宿主**代扩展**开一个 webview 面板（`window.createWebviewPanel` 那条路）。
+   *
+   * 为什么需要它：有的扩展把「多开一个会话」实现成宿主看不见的第三方 API
+   * （Codex 是 `vscode.openWith` + 自定义编辑器），而它自己已经有一个「开新面板」
+   * 的命令。宿主想复用扩展那条路时，得能替它把面板建出来 —— 面板会被登记进 shim 的
+   * 面板表，于是消息双向通道（`onDidReceiveMessage` / `postMessage` / 关闭回调）
+   * 与扩展自己 new 出来的面板完全一样。
+   *
+   * `extensionId` 只在这次调用期间设上去（归属按「谁在激活」推，这里没有 activate 阶段）。
+   */
+  createPanelAsExtension(spec: {
+    viewType: string;
+    title: string;
+    extensionId?: string;
+    options?: any;
+  }): { panel: any; panelId: string } {
+    const previousId = this.shim.activeExtensionId;
+    if (spec.extensionId) this.shim.activeExtensionId = spec.extensionId;
+    try {
+      const panel: any = this.shim
+        .createAPI()
+        .window.createWebviewPanel(
+          spec.viewType,
+          spec.title,
+          { viewColumn: 1, preserveFocus: false },
+          spec.options,
+        );
+      return { panel, panelId: String(panel.__panelId ?? '') };
+    } finally {
+      this.shim.activeExtensionId = previousId;
+    }
+  }
+
   /** 某个视图 id 是哪个扩展注册的。 */
   getWebviewViewOwner(viewId: string): string | undefined {
     return this.shim.getViewOwner(viewId);
