@@ -805,6 +805,17 @@ ACTIVATE FAILED: TypeError: Cannot read properties of undefined (reading 'Worksp
 （新增 8 条，断言的是「整批」而不是「今天用到的那个」：全部枚举存在且取值一致、
 全部类可 new、window 上那批事件订阅返回 disposable、`UIKind` 与 `env.uiKind` 一致）。
 
+**4. 视图不只是「注册上了」，是真的渲染得出来。** 用真扩展目录再跑一遍，让它的 provider
+走完整的 `resolveWebviewView`：产出的 HTML 有 15465 字节（真实的 ChatGPT 界面骨架），
+资源地址是 `echoly-webview://ext/chatgpt.sidebarView/webview/…`，
+CSP 里 `frame-src` / `connect-src` 都是扩展自己写的。也就是说装完之后点「打开」，
+右侧面板能拿到真界面，而不是一片空白。
+
+复跑方式（把真扩展目录软链进临时 userData，再初始化 + 激活 + resolve 视图）：
+`apps/desktop/test/_probeCodex.test.ts` 那份探针的原型留在 `/tmp/_probeCodex.test.ts.keep`，
+需要时拷回来跑 `npx vitest run apps/desktop/test/_probeCodex.test.ts`。
+（它依赖真机上装着 `openai.chatgpt`，所以**不进主干测试**。）
+
 ## 5. 建议顺序
 
 1. `npm run dev` 之前先过**第 1 节门禁**（四条命令）。这一步不过，后面的现象都不可信。
