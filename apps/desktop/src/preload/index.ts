@@ -334,6 +334,7 @@ const api: IpcApi = {
   },
 
   reportDiagnostics: (entries) => ipcRenderer.invoke('diagnostics:report', entries),
+  logLine: (message) => ipcRenderer.invoke('app:log', message),
 
   cppCheckToolchain: () => ipcRenderer.invoke('cpp:checkToolchain'),
   multiLangCheckToolchain: () => ipcRenderer.invoke('multiLang:checkToolchain'),

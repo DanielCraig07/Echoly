@@ -347,6 +347,8 @@ describe('measureComposerSlot', () => {
 
     // 输入框那一整块贴着底边（690..800），空位就落在它上面（634..690）
     expect(slot).toMatchObject({ top: 674, height: 56, mode: 'slot' });
+    // 下边钉在输入框的上沿（输入框 top=730，视口高 800）—— 栏只会往上长，绝不往下压
+    expect(slot?.bottomInset).toBe(70);
     // 日志里带上「认到的到底是谁」：位置不对时一条日志就够定位
     expect(slot?.anchor).toContain('@730-800');
     // 插在「输入框那一整块」前面，而不是塞进输入框和工具栏之间
@@ -376,6 +378,7 @@ describe('measureComposerSlot', () => {
     // 外面插兄弟节点它不动（钉死的），但往它自己里面插一行它会长高 ——
     // 长出来的那块正好放我们的栏，转录区和输入框都不被挡
     expect(slot).toMatchObject({ top: 674, height: 56, mode: 'inside' });
+    expect(slot?.bottomInset).toBe(70); // 同样钉在输入框上沿
     const inserted = findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID);
     expect(inserted?.parent).toBe(scene.inner);
     // 输入框那一块确实往上长了：底边没动，上沿从 690 变成 634
@@ -514,8 +517,11 @@ describe('measureSlotInWebview', () => {
   });
 
   it('拿到合法结果就用它', async () => {
-    const slot = await measureSlotInWebview(fakeWebview({ top: 12, height: 56 }), 56);
-    expect(slot).toEqual({ top: 12, height: 56 });
+    const slot = await measureSlotInWebview(
+      fakeWebview({ top: 12, height: 56, bottomInset: 700 }),
+      56,
+    );
+    expect(slot).toEqual({ top: 12, height: 56, bottomInset: 700 });
   });
 
   it('结果不合法 / 页面还没就绪（抛错）→ 当没有，不抛', async () => {
@@ -527,9 +533,12 @@ describe('measureSlotInWebview', () => {
   });
 
   it('isGuestComposerSlot 认得出「差一点」的结果', () => {
-    expect(isGuestComposerSlot({ top: 0, height: 56 })).toBe(true);
-    expect(isGuestComposerSlot({ top: 0, height: 0 })).toBe(false);
-    expect(isGuestComposerSlot({ top: Number.NaN, height: 56 })).toBe(false);
+    expect(isGuestComposerSlot({ top: 0, height: 56, bottomInset: 744 })).toBe(true);
+    expect(isGuestComposerSlot({ top: 0, height: 0, bottomInset: 744 })).toBe(false);
+    expect(isGuestComposerSlot({ top: Number.NaN, height: 56, bottomInset: 744 })).toBe(false);
+    // 少了「下边离底部多远」也不认：位置靠它钉在输入框上沿，缺了就贴不对
+    expect(isGuestComposerSlot({ top: 0, height: 56 })).toBe(false);
+    expect(isGuestComposerSlot({ top: 0, height: 56, bottomInset: -1 })).toBe(false);
     expect(isGuestComposerSlot(undefined)).toBe(false);
   });
 });

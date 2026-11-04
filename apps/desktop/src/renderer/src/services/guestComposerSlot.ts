@@ -37,6 +37,14 @@ export interface GuestComposerSlot {
   /** 空位高度（= 我们那一栏的高度）。 */
   height: number;
   /**
+   * 栏的**下边**离访客视口底部有多远。
+   *
+   * 调用方按这个值贴（`bottom: bottomInset`），而不是按 `top`。这样栏的下边永远钉在
+   * 输入框的上沿：栏自己变高变矮（文件多了、折叠了）都只会**往上长**，绝不会往下压到
+   * 输入框 —— 高度估短了也不会盖住用户打字的地方。
+   */
+  bottomInset: number;
+  /**
    * 这个位置是怎么定出来的。
    *
    * - `slot`：在输入框那一块**外面**插了一块空位，页面真的让出了地方（最干净，谁也不遮）；
@@ -245,7 +253,14 @@ export function measureComposerSlot(
       slotRect!.top >= viewportH * 0.35 &&
       blockRect!.bottom <= viewportH + 2;
     if (placed) {
-      return { top: slotRect!.top, height: barHeight, mode: 'slot', anchor };
+      const inputNow = rectOf(input);
+      return {
+        top: Math.round(slotRect!.top),
+        height: barHeight,
+        bottomInset: inputNow ? viewportH - inputNow.top : viewportH - slotRect!.bottom,
+        mode: 'slot',
+        anchor,
+      };
     }
 
     host.removeChild(slot);
@@ -315,7 +330,13 @@ export function measureComposerSlot(
         parentRect.top >= viewportH * 0.05;
 
       if (inputRect && space >= barHeight - 2 && inputIntact && contained && sane) {
-        return { top: topFor(inputRect), height: barHeight, mode: 'inside', anchor };
+        return {
+          top: Math.round(topFor(inputRect)),
+          height: barHeight,
+          bottomInset: viewportH - inputRect.top,
+          mode: 'inside',
+          anchor,
+        };
       }
 
       insertParent.removeChild(inner);
@@ -335,7 +356,13 @@ export function measureComposerSlot(
         一点点，绝不盖输入框本身。 */
   const fallbackTop = topFor(inputRectBefore);
   if (fallbackTop >= viewportH * 0.35 && inputRectBefore.bottom <= viewportH + 2) {
-    return { top: fallbackTop, height: barHeight, mode: 'overlay', anchor };
+    return {
+      top: Math.round(fallbackTop),
+      height: barHeight,
+      bottomInset: viewportH - inputRectBefore.top,
+      mode: 'overlay',
+      anchor,
+    };
   }
 
   return null;
@@ -369,7 +396,10 @@ export function isGuestComposerSlot(value: unknown): value is GuestComposerSlot 
     Number.isFinite(slot.top) &&
     typeof slot.height === 'number' &&
     Number.isFinite(slot.height) &&
-    slot.height > 0
+    slot.height > 0 &&
+    typeof slot.bottomInset === 'number' &&
+    Number.isFinite(slot.bottomInset) &&
+    slot.bottomInset >= 0
   );
 }
 

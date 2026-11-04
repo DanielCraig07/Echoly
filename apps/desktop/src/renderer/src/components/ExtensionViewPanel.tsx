@@ -178,7 +178,11 @@ export function ExtensionViewPanel({
         : '量不到（退回左下角浮层）';
       if (summary !== lastSlotSummaryRef.current) {
         lastSlotSummaryRef.current = summary;
-        console.log(`[pending-bar] ${viewId} 的输入框空位：${summary}`);
+        const line = `[pending-bar] ${viewId} 输入框空位：${summary}`;
+        /* 渲染层的 console 只在 DevTools 里看得到，而报问题时看的是**日志面板** ——
+           两边都写一份，谁都别漏。 */
+        console.log(line);
+        void window.ide.logLine?.(line);
       }
       onComposerSlot?.(slot);
     };

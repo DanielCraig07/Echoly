@@ -260,6 +260,14 @@ function normalizeWorkspacePath(p: string | null | undefined): string {
  * 为什么 id 要带前缀：`scmDiff` 这个位置同时被 git 的历史对比、工作区对比用着，
  * 处理完之后得能一眼认出「这一份是我们自己摆上去的外部改动对比」，才好收走它。
  */
+/**
+ * 「请扩展页面让地方」这套**只对 Claude 用**。
+ *
+ * 它是拿「找到对方的输入框、在它上面插空位」换来的贴合位置，代价是要动别人页面里的
+ * DOM。别的扩展（Codex 等）没有这个必要 —— 不碰它们的界面，那一栏就退回左下角浮层。
+ */
+const COMPOSER_SLOT_EXTENSION_ID = 'Anthropic.claude-code';
+
 const EXTERNAL_DIFF_ID_PREFIX = 'ext-change:';
 
 export function App() {
@@ -7155,7 +7163,9 @@ export function App() {
                       <ExtensionViewPanel
                         viewId={view.viewId}
                         composerSlotActive={
-                          composerSlotWanted && rightPanelTab === viewTabId(view.viewId)
+                          composerSlotWanted &&
+                          view.extensionId === COMPOSER_SLOT_EXTENSION_ID &&
+                          rightPanelTab === viewTabId(view.viewId)
                         }
                         composerBarHeight={pendingBarHeight}
                         onComposerSlot={handleComposerSlot}
@@ -7177,7 +7187,9 @@ export function App() {
                       <ExtensionViewPanel
                         viewId={panelTab.panelId}
                         composerSlotActive={
-                          composerSlotWanted && rightPanelTab === panelTab.panelId
+                          composerSlotWanted &&
+                          panelTab.ownerExtensionId === COMPOSER_SLOT_EXTENSION_ID &&
+                          rightPanelTab === panelTab.panelId
                         }
                         composerBarHeight={pendingBarHeight}
                         onComposerSlot={handleComposerSlot}
@@ -7197,7 +7209,10 @@ export function App() {
                   的输入框上挡住打字。
                 */}
                 {composerSlotWanted && composerSlot && (
-                  <div className="right-panel-composer-slot" style={{ top: composerSlot.top }}>
+                  <div
+                    className="right-panel-composer-slot"
+                    style={{ bottom: composerSlot.bottomInset }}
+                  >
                     <PendingChangesBar
                       innerRef={setPendingBarNode}
                       changes={pendingChanges}
