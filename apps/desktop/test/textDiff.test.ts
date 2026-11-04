@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeLineDiffs,
+  countLineChanges,
   computeInlineHunks,
   computeLineSimilarity,
   computeLineTokenDiff,
@@ -146,5 +147,67 @@ describe('computeLineTokenDiff', () => {
 
   it('两侧都为空时返回空数组而不是一个空片段', () => {
     expect(computeLineTokenDiff('', '')).toEqual({ partsOld: [], partsNew: [] });
+  });
+});
+
+/**
+ * 改动卡片上那两个 `+N -M`。
+ *
+ * 这里的错**不会抛异常**，只会让用户看到一个不对的数字，然后据此判断「代理到底
+ * 改了多少」—— 而且它挂在每一次外部改动上，代理改一个大文件时不能把渲染线程卡住。
+ */
+describe('countLineChanges', () => {
+  const text = (...lines: string[]) => lines.join('\n');
+
+  it('完全相同 → 0 / 0', () => {
+    expect(countLineChanges(text('a', 'b'), text('a', 'b'))).toEqual({
+      additions: 0,
+      deletions: 0,
+    });
+  });
+
+  it('改一行 → +1 -1（不是 +1 -3）', () => {
+    expect(countLineChanges(text('a', 'b', 'c'), text('a', 'B', 'c'))).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
+  });
+
+  it('纯新增 / 纯删除', () => {
+    expect(countLineChanges(text('a'), text('a', 'b', 'c'))).toEqual({
+      additions: 2,
+      deletions: 0,
+    });
+    expect(countLineChanges(text('a', 'b', 'c'), text('a'))).toEqual({
+      additions: 0,
+      deletions: 2,
+    });
+  });
+
+  it('空文件到有内容（反之亦然）不把空文本算成一行', () => {
+    expect(countLineChanges('', text('a', 'b'))).toEqual({ additions: 2, deletions: 0 });
+    expect(countLineChanges(text('a', 'b'), '')).toEqual({ additions: 0, deletions: 2 });
+  });
+
+  it('行被移动 → 按最小编辑算（一次删 + 一次增），不报成「改了整个文件」', () => {
+    // b 挪到了末尾：a、b、c 里最长公共子序列是 2（a,c 或 a,b），于是 +1 -1
+    expect(countLineChanges(text('a', 'b', 'c'), text('a', 'c', 'b'))).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
+  });
+
+  it('CRLF 与 LF 不算成「整个文件都改了」', () => {
+    expect(countLineChanges('a\r\nb\r\n', 'a\nb\n')).toEqual({ additions: 0, deletions: 0 });
+  });
+
+  it('超大文件不退化成卡死：仍然给出同量级的增删行数', () => {
+    // 3000 行 vs 3000 行 → 超出 DP 阈值，走多重集合近似；这里只挪了一行
+    const before = Array.from({ length: 3000 }, (_, i) => `line ${i}`).join('\n');
+    const after = before.split('\n');
+    after[1500] = 'line 1500 changed';
+    const counts = countLineChanges(before, after.join('\n'));
+    expect(counts.additions).toBe(1);
+    expect(counts.deletions).toBe(1);
   });
 });

@@ -51,6 +51,8 @@ import { InputCodeRefOverlay, type InputCodeRefOverlayHandle } from './chat/Inpu
 import { FileLanguageIcon } from './chat/CodeRefPill';
 import { ModelMetricsBadge } from './chat/ModelMetricsBadge';
 import { TurnCheckpointBar } from './chat/TurnCheckpointBar';
+import { PendingChangesBar } from './PendingChangesBar';
+import type { PendingExternalChange } from '../services/externalFileChanges';
 import { PanelChevron } from './PanelChevron';
 import { computeLineDiffStats } from '../services/diffStats';
 import { ProjectHistoryView } from './chat/ProjectHistoryView';
@@ -87,6 +89,16 @@ interface Props {
   onActiveModelChange?: (modelId: string) => void;
   recentWorkspaces?: RecentWorkspaceItem[];
   gitBranch?: string | null;
+  /**
+   * 磁盘上被**别人**（Claude Code / Codex / 外部编辑器）改过的文件，等用户决定
+   * 「接受 / 拒绝」。渲染在输入框**上方**，和 Cursor 一样 —— 决定和「接下来要说什么」
+   * 是同一件事，放在同一个视线里最省事。
+   */
+  pendingChanges?: PendingExternalChange[];
+  onAcceptExternalChange?: (change: PendingExternalChange) => void;
+  onRejectExternalChange?: (change: PendingExternalChange) => void;
+  onAcceptAllExternalChanges?: () => void;
+  onRejectAllExternalChanges?: () => void;
 }
 
 export type ChatPanelHandle = {
@@ -307,6 +319,11 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     onActiveModelChange,
     recentWorkspaces,
     gitBranch,
+    pendingChanges = [],
+    onAcceptExternalChange,
+    onRejectExternalChange,
+    onAcceptAllExternalChanges,
+    onRejectAllExternalChanges,
   } = props;
   // 面板里有大量中文注释与日志（不翻译），这里只接用户可见文案
   const { t, locale } = useI18n();
@@ -3828,6 +3845,24 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           onDismiss={() => updateTab(activeTab.id, (t) => ({ ...t, plan: null }))}
           busy={!!activeTab.runId}
         />
+      )}
+
+      {/*
+        「文件已被改动」贴在输入框**上方**：用户下一步要么接受、要么拒绝、要么继续
+        让代理改，三件事都在同一个视线里。列表本身限高 + 滚动（见 .pending-changes-list），
+        代理一次改几十个文件也不会把输入框挤出去。
+      */}
+      {pendingChanges.length > 0 && onAcceptExternalChange && onRejectExternalChange && (
+        <div className="chat-pending-changes">
+          <PendingChangesBar
+            changes={pendingChanges}
+            onAccept={onAcceptExternalChange}
+            onReject={onRejectExternalChange}
+            onAcceptAll={onAcceptAllExternalChanges ?? (() => {})}
+            onRejectAll={onRejectAllExternalChanges ?? (() => {})}
+            onOpenFile={onOpenFile ? (path) => onOpenFile(path) : undefined}
+          />
+        </div>
       )}
 
       {/* Input Box */}

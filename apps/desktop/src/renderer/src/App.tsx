@@ -98,7 +98,7 @@ import { AgentTaskPanel } from './components/AgentTaskPanel';
 import { ProblemsPanel } from './components/ProblemsPanel';
 import { StatusBar } from './components/StatusBar';
 import { GlobalTooltip } from './components/GlobalTooltip';
-import { ExternalChangePrompt } from './components/ExternalChangePrompt';
+import { PendingChangesBar } from './components/PendingChangesBar';
 import { heuristicDetectTech } from './utils/techStack';
 import {
   isImagePath,
@@ -6986,6 +6986,27 @@ export function App() {
               )}
 
               {/*
+                扩展面板（Claude Code / Codex）也要有那一栏。
+
+                为什么是**面板顶部**而不是输入框正上方：那两栏的输入框长在扩展自己的
+                webview 里，我们既插不进去、也不知道它多高 —— 想「贴在上面」就只能覆盖
+                它，正好挡住用户打字的地方。所以退一步放在 webview 之上的正常流里：
+                它仍然是「在输入框上方」，而且不遮任何东西。内置会话那一栏在
+                ChatPanel 里，是严格贴着输入框上沿的。
+              */}
+              {rightPanelTab !== 'chat' && pendingChanges.length > 0 && (
+                <div className="right-panel-pending-changes">
+                  <PendingChangesBar
+                    changes={pendingChanges}
+                    onAccept={handleAcceptExternalChange}
+                    onReject={handleRejectExternalChange}
+                    onAcceptAll={handleAcceptAllExternalChanges}
+                    onRejectAll={handleRejectAllExternalChanges}
+                  />
+                </div>
+              )}
+
+              {/*
                 内容区：所有 webview 层都**留在布局里**，只切可见性 —— 见下面
                 `.right-panel-webview` 的注释，这里用 `position: absolute` 叠在一起，
                 而不是靠 `display: none` 把没选中的那些藏掉。
@@ -7029,6 +7050,11 @@ export function App() {
                       onActiveModelChange={handleActiveModelChange}
                       recentWorkspaces={recentWorkspaces}
                       gitBranch={gitStatus?.branch}
+                      pendingChanges={pendingChanges}
+                      onAcceptExternalChange={handleAcceptExternalChange}
+                      onRejectExternalChange={handleRejectExternalChange}
+                      onAcceptAllExternalChanges={handleAcceptAllExternalChanges}
+                      onRejectAllExternalChanges={handleRejectAllExternalChanges}
                     />
                   </ErrorBoundary>
                 )}
@@ -7328,8 +7354,8 @@ export function App() {
         onShowToast={showToast}
       />
 
-      {/* 左下角浮层：待处理的磁盘改动卡片 + toast 通知 */}
-      {(toasts.length > 0 || pendingChanges.length > 0) && (
+      {/* 左下角浮层：待处理的磁盘改动栏（兜底）+ toast 通知 */}
+      {(toasts.length > 0 || (!showChatPanel && pendingChanges.length > 0)) && (
         <div
           style={{
             position: 'fixed',
@@ -7343,14 +7369,23 @@ export function App() {
             pointerEvents: 'none',
           }}
         >
-          {/* 待办卡片排在最上面：它要用户做决定，不该被会自己消失的 toast 压在下面 */}
-          <ExternalChangePrompt
-            changes={pendingChanges}
-            onAccept={handleAcceptExternalChange}
-            onReject={handleRejectExternalChange}
-            onAcceptAll={handleAcceptAllExternalChanges}
-            onRejectAll={handleRejectAllExternalChanges}
-          />
+          {/*
+            待办栏的**兜底位**：只在 AI 面板整个收起来时用。
+
+            面板开着的时候，这一栏是贴在面板里的（内置会话是输入框正上方，扩展面板
+            是面板顶部）—— 那才是它该在的地方。但面板关掉之后用户就完全看不到它了，
+            而外部改动照样在发生，所以这里留一个浮层版本，别让提示整个消失。
+          */}
+          {!showChatPanel && pendingChanges.length > 0 && (
+            <PendingChangesBar
+              className="pending-changes-bar--floating"
+              changes={pendingChanges}
+              onAccept={handleAcceptExternalChange}
+              onReject={handleRejectExternalChange}
+              onAcceptAll={handleAcceptAllExternalChanges}
+              onRejectAll={handleRejectAllExternalChanges}
+            />
+          )}
           {toasts.map((toast) => {
             const cleanTitle = toast.title.replace(
               /^[\u2713\u2715\u26a0\u2139\u26a1\u2699\u00d7]\uFE0F?\s*/u,
