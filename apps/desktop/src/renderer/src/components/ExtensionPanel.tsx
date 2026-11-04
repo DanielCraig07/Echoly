@@ -55,7 +55,11 @@ interface InstalledExtensionRow {
   /** 它注册的命令（带标题） */
   commands: { command: string; title: string }[];
   /** 它注册的视图（id + 展示名） */
-  views: { id: string; name: string }[];
+  /**
+   * 它注册的视图。`icon` 是视图容器自己的图标（data URL，由主进程读成），
+   * 标题栏那排「AI 面板入口」用它 —— 没有就画一个通用图形。
+   */
+  views: { id: string; name: string; icon?: string }[];
 }
 
 declare global {

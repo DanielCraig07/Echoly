@@ -887,6 +887,70 @@ npx vitest run apps/desktop/test/extensionManager.test.ts
 npx vitest run packages/vscode-shim/test/vscodeApi.test.ts
 ```
 
+### 第十二轮：标题栏的 AI 入口 + Codex 界面里的 DisposableStack
+
+**1. 标题栏：一个固定的 AI 扩展一个入口，挪到浏览器图标的左侧。**
+
+以前那里只有**一个**写死的按钮，而且条件是「第一个固定视图必须等于 Claude Code」——
+所以装了 Codex 也没有它的入口。现在按 `layout.aiPanelViewIds` 展开：固定了几个 AI 扩展
+就有几个按钮，位置在三个布局开关之后、浏览器之前（这三个都是「把某个面板叫出来」的开关，
+放一起才读得通）。
+
+图标用**扩展自己声明的那个**：`contributes.viewsContainers.<位置>[].icon`，也就是 VS Code
+挂在侧栏上的标志（Claude 是 `claude-logo.svg`、Codex 是 `blossom-white.svg`），取不到才
+退回 manifest 顶层的 `icon`，再取不到才画一个通用面板图形。主进程把图标读成 **data URL**
+随 `views[]` 一起给渲染层 —— 不给 `echoly-webview://` 地址是因为那条协议要先有一个
+resolve 过的视图才有资源根，而标题栏这几个入口在**还没打开任何视图**的时候就要画出来。
+
+顺带把选中态的颜色去掉了「Claude 橙」：那个橙是配 Claude 标志挑的，用在 Codex 的白色
+花环上不成立。现在只做轻微提亮，谁是谁靠图标自己的颜色分。
+
+真扩展实测：
+
+```
+VIEW Anthropic.claude-code claudeVSCodeSidebar      icon=data:image/svg+xml;base64,…(2290)
+VIEW openai.chatgpt        chatgpt.sidebarView      icon=data:image/svg+xml;base64,…(2734)
+```
+
+**2. 「提交消息时出错 / DisposableStack is not defined」—— 界面里少一个全局。**
+
+Codex 的界面 bundle 里，`new DisposableStack` 出现在 7 个文件、11 处：`sendMessage`、
+`sendQueuedMessageNow`、产物任务、`share_thread`……是它做「用完即清」的通用写法。
+而 Electron 35 带的 Chromium 还没有这个全局（扩展宿主那侧同理：Electron 35 的 Node 22
+也没有）。报错发生在包装层里，界面拿不到任何回执 —— 所以**凡是走那条路的动作全都
+点了没反应**（新会话、切换会话、改设置），用户看到的只是其中一条「提交消息时出错」。
+
+修法是补上语言层面的兜底（`Symbol.dispose` / `Symbol.asyncDispose` / `DisposableStack` /
+`AsyncDisposableStack` / `SuppressedError`），装在两个地方：
+
+- **webview 运行时脚本**里（`(${installDisposablePolyfills.toString()})()`）——
+  扩展自己的 bundle 改不了，但它是**在我们的脚本之后**才执行的；
+- **扩展宿主**里（`ExtensionHost` 构造时），别让主进程侧的扩展也各踩一遍。
+
+实现只有一份（`packages/vscode-shim/src/polyfills.ts`），序列化过去给 webview 用。
+平台已经有真实现时**不覆盖**。
+
+这里有两个容易翻车的点，都钉在测试里了：
+
+- 那个函数会被 `.toString()` 丢进 webview 里跑，所以**不能引用模块外的任何东西**
+  （import、编译 helper）—— 测试直接在一个空 vm 上下文里跑序列化后的函数；
+- 生产构建之后还得成立 —— 从 `out/main/index.js` 里把函数抠出来，在空上下文里跑一遍。
+
+真扩展实测：Codex 视图 HTML 的 `<head>` 第一行就是
+`<script src="echoly-webview://ext/chatgpt.sidebarView/__echoly-runtime.js">`（外部脚本，
+因为它那条 CSP 只给 origin 白名单），取回来 200 / `text/javascript` / 5105 字节，
+里面有 `SuppressedError`，也就是兜底确实在里面。
+
+复跑方式：
+
+```bash
+# 兜底的语义 + 序列化后能不能跑
+npx vitest run packages/vscode-shim/test/polyfills.test.ts
+
+# 图标 data URL + 注入的运行时里确实有兜底
+npx vitest run apps/desktop/test/extensionManager.test.ts
+```
+
 ## 5. 建议顺序
 
 1. `npm run dev` 之前先过**第 1 节门禁**（四条命令）。这一步不过，后面的现象都不可信。

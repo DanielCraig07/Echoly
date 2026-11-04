@@ -311,7 +311,14 @@ export function App() {
    * 这里存的就是配置与已装扩展求交之后的结果。
    */
   const [aiPanelViews, setAiPanelViews] = useState<
-    { viewId: string; title: string; extensionId: string; available: boolean }[]
+    {
+      viewId: string;
+      title: string;
+      extensionId: string;
+      available: boolean;
+      /** 视图容器自己的图标（data URL），标题栏那个入口用的就是它 */
+      icon?: string;
+    }[]
   >([]);
   /**
    * 扩展自己贡献的命令（注册进命令面板）。
@@ -1901,19 +1908,25 @@ export function App() {
         const activeIds = new Set((loaded?.extensions ?? []).map((id) => id.toLowerCase()));
         const pinned = layoutRef.current.aiPanelViewIds ?? [DEFAULT_AI_PANEL_VIEW_ID];
         const installed = result.extensions ?? [];
-        const next: { viewId: string; title: string; extensionId: string; available: boolean }[] =
-          [];
+        const next: {
+          viewId: string;
+          title: string;
+          extensionId: string;
+          available: boolean;
+          icon?: string;
+        }[] = [];
         for (const viewId of pinned) {
           const owner = installed.find((ext) =>
             (ext.views ?? []).some((view) => view.id === viewId),
           );
           if (!owner) continue; // 没装/没贡献这个视图 → 不摆一个点开是空的标签
+          const contributed = (owner.views ?? []).find((view) => view.id === viewId);
           next.push({
             viewId,
-            title:
-              (owner.views ?? []).find((view) => view.id === viewId)?.name || owner.displayName,
+            title: contributed?.name || owner.displayName,
             extensionId: owner.id,
             available: owner.active || activeIds.has(owner.id.toLowerCase()),
+            icon: contributed?.icon,
           });
         }
         setAiPanelViews(next);
@@ -4829,25 +4842,24 @@ export function App() {
    * 第一个固定的视图默认就是 Claude Code，所以对现在的用户来说行为没变；
    * 换成别的 AI 扩展之后，这个开关跟着走，图标也就跟着换成它的。
    */
-  const [firstAiPanelView] = aiPanelViews;
-  const toggleAiPanel = useCallback(() => {
-    if (!firstAiPanelView) return;
-    if (showChatPanel && rightPanelTab === viewTabId(firstAiPanelView.viewId)) {
-      const next = { ...layout, chatPanelExpanded: false };
-      setLayout(next);
-      persistLayout(next);
-      return;
-    }
-    openExtensionView(firstAiPanelView.viewId);
-  }, [
-    showChatPanel,
-    rightPanelTab,
-    layout,
-    persistLayout,
-    openExtensionView,
-    firstAiPanelView,
-    viewTabId,
-  ]);
+  /**
+   * 标题栏上某个 AI 面板入口的开关：点一下打开那一栏，再点收起。
+   *
+   * 一个视图一个按钮，**不是**一个写死的 Claude 按钮：固定了几个 AI 扩展就有几个
+   * 入口（Claude Code、Codex…），图标各用各的扩展自己声明的那一个。
+   */
+  const toggleAiPanelView = useCallback(
+    (viewId: string, title?: string) => {
+      if (showChatPanel && rightPanelTab === viewTabId(viewId)) {
+        const next = { ...layout, chatPanelExpanded: false };
+        setLayout(next);
+        persistLayout(next);
+        return;
+      }
+      openExtensionView(viewId, title);
+    },
+    [showChatPanel, rightPanelTab, layout, persistLayout, openExtensionView, viewTabId],
+  );
 
   const ideActions: CommandAction[] = [
     {
@@ -5262,39 +5274,6 @@ export function App() {
             <kbd className="search-trigger-kbd">{isMac ? '⌘P' : 'Ctrl+P'}</kbd>
           </button>
 
-          {/*
-            AI 面板的常驻入口：点一下在右侧面板打开它，再点收起。
-
-            只在**第一个固定的视图就是 Claude Code** 时出现 —— 图标用的是 Claude 的
-            标志，拿它去开别的扩展的界面等于指鹿为马。别的扩展从扩展列表/详情页进，
-            或者把它固定到 AI 面板（那一栏自己会出现标签）。
-          */}
-          {firstAiPanelView?.viewId === DEFAULT_AI_PANEL_VIEW_ID && (
-            <button
-              type="button"
-              className={`layout-toggle-btn claude-entry-btn${
-                showChatPanel && rightPanelTab === viewTabId(firstAiPanelView.viewId)
-                  ? ' active'
-                  : ''
-              }`}
-              title={t('app.claudeEntry')}
-              onClick={toggleAiPanel}
-            >
-              {/*
-                Claude 自己的标志（从扩展的 `resources/claude-logo.svg` 里取的同一个
-                路径），连它的橙 #D97757 一起 —— 自己画一个「差不多的星芒」是不行的：
-                用户认的就是这个形状。
-              */}
-              <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z"
-                  fill="#D97757"
-                  fillRule="nonzero"
-                />
-              </svg>
-            </button>
-          )}
-
           {/* 3个区域折叠/展开切换按钮 */}
           <div className="layout-toggle-group">
             <button
@@ -5444,6 +5423,63 @@ export function App() {
                 />
               </svg>
             </button>
+
+            {/*
+              AI 面板的常驻入口：一个固定的 AI 视图一个按钮，点开 / 再点收起。
+
+              位置紧挨着浏览器图标（在它的**左侧**）—— 这几个都是「把某个面板在这个
+              窗口里叫出来」的开关，放一起才读得通。
+
+              图标用**扩展自己声明的那个**（`contributes.viewsContainers[].icon`：
+              Claude 是 claude-logo.svg、Codex 是 blossom-white.svg）。自己画一个
+              「差不多的标志」是不行的 —— 用户认的就是各自那一个，而且几个 AI 扩展
+              并排时，两个形状相近的星芒根本分不出谁是谁。取不到图标才退回通用图形。
+
+              以前这里写死成「第一个固定视图必须等于 Claude Code 才显示」，只有 Claude
+              有一个入口；现在固定了几个 AI 扩展就有几个。
+            */}
+            {aiPanelViews
+              .filter((view) => view.available)
+              .map((view) => (
+                <button
+                  key={view.viewId}
+                  type="button"
+                  className={`layout-toggle-btn ai-panel-entry-btn${
+                    showChatPanel && rightPanelTab === viewTabId(view.viewId) ? ' active' : ''
+                  }`}
+                  title={view.title}
+                  onClick={() => toggleAiPanelView(view.viewId, view.title)}
+                >
+                  {view.icon ? (
+                    <img
+                      className="ai-panel-entry-icon"
+                      src={view.icon}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <rect
+                        x="1.5"
+                        y="2.5"
+                        width="13"
+                        height="11"
+                        rx="2.5"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                      />
+                      <line
+                        x1="1.5"
+                        y1="6"
+                        x2="14.5"
+                        y2="6"
+                        stroke="currentColor"
+                        strokeWidth="1.4"
+                      />
+                    </svg>
+                  )}
+                </button>
+              ))}
 
             {/*
             浏览器与设置跟三个布局开关放进**同一个容器**。

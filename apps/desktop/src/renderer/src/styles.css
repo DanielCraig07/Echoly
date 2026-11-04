@@ -363,16 +363,32 @@ select:focus {
   标题栏上的 Claude 入口：与折叠按钮同构（同一排、同样大小），
   只有「已打开」的底色用它自己的橙 —— 这样它在灰按钮里认得出，又不至于显眼到抢焦点。
 */
-.layout-toggle-btn.claude-entry-btn {
+/**
+ * 标题栏上的「AI 面板入口」（一个固定的 AI 视图一个）。
+ *
+ * 图标是扩展**自己**的标志：Claude 的橙色星芒、Codex 的白色花环……所以底色不能写死
+ * 成某一家的颜色 —— 那个橙当初是配 Claude 的标志挑的，用在 Codex 的花环上不成立。
+ * 选中态只做轻微提亮，交给图标自己的颜色去区分谁是谁。
+ */
+.layout-toggle-btn.ai-panel-entry-btn {
   width: 28px;
   height: 26px;
   border-radius: 7px;
 }
 
-.layout-toggle-btn.claude-entry-btn.active,
-.layout-toggle-btn.claude-entry-btn.active:hover {
-  background: color-mix(in srgb, #d97757 30%, transparent);
+.layout-toggle-btn.ai-panel-entry-btn.active,
+.layout-toggle-btn.ai-panel-entry-btn.active:hover {
+  background: color-mix(in srgb, var(--fg, #ffffff) 14%, transparent);
   color: #ffffff;
+}
+
+/** 图标本身：`<img>` 画的是扩展给的 SVG/PNG，尺寸钉死，免得各家给的画布大小不一。 */
+.ai-panel-entry-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
 }
 
 /* 顶部「设置」入口：与折叠按钮同构，单独放大并补足悬浮反馈 */
