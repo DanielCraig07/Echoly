@@ -21,6 +21,11 @@
  *   比会得出错的结论。
  * - **这段函数必须是自包含的**：它在访客页面里执行，碰不到我们这个模块里的任何东西
  *   （见 `buildMeasureScript`）。
+ *
+ * 还有一条是从真实事故里补回来的：**认不出输入框时宁可不插**。第一版只按「最靠下的
+ * 可编辑元素」找，结果 Claude 的输入框（在 shadow root 里、普通查询穿不过去）没被认出来，
+ * 转录区里一个可编辑块被当成了锚点 —— 栏就飘在对话中间。所以现在：深挖 shadow root，
+ * 并且**要求锚点贴着视口底部那一带**（输入框永远在底部，转录区里那种块不是）。
  */
 
 /** 访客页面里那块空位的 id。改这里就要改 `measureComposerSlot` 里的同名常量（有测试钉着）。 */
@@ -44,6 +49,12 @@ interface GuestRect {
 
 interface GuestElement {
   parentElement: GuestElement | null;
+  /** `TEXTAREA` / `INPUT`（会转成大写比较）。 */
+  tagName?: string;
+  /** 浏览器自己算出来的「这个元素真的能编辑吗」—— `contenteditable` 的继承也算在内。 */
+  isContentEditable?: boolean;
+  /** 自定义元素把自己的内容藏在里面（VS Code 风格的界面到处都是），要深挖进去。 */
+  shadowRoot?: { querySelectorAll(selector: string): ArrayLike<GuestElement> } | null;
   style: { cssText: string };
   getBoundingClientRect(): GuestRect;
   insertBefore(node: GuestElement, reference: GuestElement | null): void;
@@ -81,16 +92,44 @@ export function measureComposerSlot(
   const previous = doc.getElementById(SLOT_ID);
   if (previous && previous.parentElement) previous.parentElement.removeChild(previous);
 
-  /* 1) 最靠下的那个可编辑元素 = 输入框本体（页面上可能还有别处的 textarea） */
-  const nodes = doc.querySelectorAll('textarea, [contenteditable="true"], [contenteditable=""]');
+  /* 1) 找「输入框本体」。三个条件并用 —— 少一个都会挑错人：
+        - **深挖 shadow root**：VS Code 风格的界面把控件放在自定义元素里，普通的
+          `querySelectorAll` 穿不过去；
+        - 只认**最外层**那个可编辑元素（里面的 span 不算，叠加的是同一个输入框）；
+        - 必须**贴着视口底部那一带**。这一条是血的教训：找不到输入框时，转录区里
+          随便一个可编辑块（diff 预览、代码块之类）都会被当成锚点，
+          于是栏就飘在对话中间了。输入框永远在底部，那种块不是。 */
+  const allNodes: GuestElement[] = [];
+  const collectAll = (
+    root: { querySelectorAll(selector: string): ArrayLike<GuestElement> } | null,
+    out: GuestElement[],
+  ): void => {
+    if (!root) return;
+    const nodes = root.querySelectorAll('*');
+    for (let i = 0; i < nodes.length; i++) {
+      const el = nodes[i];
+      out.push(el);
+      if (el.shadowRoot) collectAll(el.shadowRoot, out);
+    }
+  };
+  collectAll(doc, allNodes);
+
+  const bottomZone = Math.max(140, viewportH * 0.25);
   let input: GuestElement | null = null;
   let bestBottom = -Infinity;
-  for (let i = 0; i < nodes.length; i++) {
-    const el = nodes[i];
+  for (let i = 0; i < allNodes.length; i++) {
+    const el = allNodes[i];
+    const tag = String(el.tagName || '').toUpperCase();
+    const isField = tag === 'TEXTAREA' || tag === 'INPUT';
+    if (!isField && !el.isContentEditable) continue;
+    /* 只要最外层那个可编辑元素：里面的子节点属于同一个输入框 */
+    if (!isField && el.parentElement && el.parentElement.isContentEditable) continue;
+
     const rect = rectOf(el);
     if (!rect) continue;
     if (!(rect.width > 40 && rect.height > 8)) continue;
     if (rect.bottom <= 0 || rect.top >= viewportH) continue;
+    if (viewportH - rect.bottom > bottomZone) continue;
     if (rect.bottom > bestBottom) {
       bestBottom = rect.bottom;
       input = el;

@@ -44,8 +44,11 @@ let onMutation: () => void = () => {};
 class FakeEl {
   id = '';
   attrs: Record<string, string> = {};
-  /** 可编辑元素（`querySelectorAll` 只认这些）。 */
-  editable = false;
+  tagName = 'DIV';
+  /** 浏览器算出来的「真的能编辑吗」（`contenteditable` 的继承也算在内）。 */
+  isContentEditable = false;
+  /** 自定义元素藏内容的地方（VS Code 风格界面到处都是）。 */
+  shadowRoot: { querySelectorAll(selector: string): FakeEl[] } | null = null;
   /** 固定高度；null = flex:1，吃掉剩下的高度。 */
   fixedHeight: number | null = null;
   /** 子节点从下往上排（`display:flex; flex-direction:column`）。 */
@@ -107,16 +110,18 @@ class FakeEl {
 
 function findByClass(root: FakeEl, pick: (el: FakeEl) => boolean): FakeEl | null {
   if (pick(root)) return root;
-  for (const child of root.children) {
+  for (const child of kids(root)) {
     const found = findByClass(child, pick);
     if (found) return found;
   }
   return null;
 }
 
-function collectEditable(root: FakeEl, into: FakeEl[] = []): FakeEl[] {
-  if (root.editable) into.push(root);
-  for (const child of root.children) collectEditable(child, into);
+function collectDescendants(root: FakeEl, into: FakeEl[] = []): FakeEl[] {
+  for (const child of kids(root)) {
+    into.push(child);
+    collectDescendants(child, into);
+  }
   return into;
 }
 
@@ -131,7 +136,13 @@ function collectEditable(root: FakeEl, into: FakeEl[] = []): FakeEl[] {
  * 「输入框不贴底」是有意的：截图里 Claude 的输入框下面还有一行工具栏，
  * 于是「从输入框往上找到那一整块」这条规则必须能跨过 30px 的落差。
  */
-function makeScene(options: { pinnedComposer?: boolean } = {}) {
+/** `kids()`：一个节点的孩子（含 shadow root 里的那些）。 */
+function kids(node: FakeEl): FakeEl[] {
+  const shadow = node.shadowRoot ? node.shadowRoot.querySelectorAll('*') : [];
+  return [...node.children, ...shadow];
+}
+
+function makeScene(options: { pinnedComposer?: boolean; shadowComposer?: boolean } = {}) {
   const VIEWPORT_H = 800;
   const body = new FakeEl();
   body.column = true;
@@ -146,9 +157,9 @@ function makeScene(options: { pinnedComposer?: boolean } = {}) {
   inner.column = true;
 
   const input = new FakeEl();
-  input.editable = true;
+  input.tagName = 'TEXTAREA';
+  input.isContentEditable = true;
   input.fixedHeight = 40;
-  input.attrs['contenteditable'] = 'true';
 
   const toolbar = new FakeEl();
   toolbar.fixedHeight = 30;
@@ -165,7 +176,7 @@ function makeScene(options: { pinnedComposer?: boolean } = {}) {
   function layoutChildren(node: FakeEl): void {
     const { top, height } = node.rect;
     if (!node.column) {
-      for (const child of node.children) {
+      for (const child of kids(node)) {
         if (child.pinned) continue; // 钉死的自己说了算
         layoutNode(child, top, height);
       }
@@ -173,9 +184,10 @@ function makeScene(options: { pinnedComposer?: boolean } = {}) {
     }
     /* 先把「固定高度」的加起来，剩下的给 flex:1 那个 —— 真实的 flex 列就是这个算法。
        钉死的（position: fixed）不占流里的位置，也不参与这个加法。 */
+    const flow = kids(node);
     let used = 0;
     let hasFlex = false;
-    for (const child of node.children) {
+    for (const child of flow) {
       if (child.pinned) continue;
       const h = child.ownHeight;
       if (h == null) hasFlex = true;
@@ -184,8 +196,8 @@ function makeScene(options: { pinnedComposer?: boolean } = {}) {
     const flexHeight = hasFlex ? Math.max(0, height - used) : 0;
 
     let bottom = top + height;
-    for (let i = node.children.length - 1; i >= 0; i--) {
-      const child = node.children[i];
+    for (let i = flow.length - 1; i >= 0; i--) {
+      const child = flow[i];
       if (child.pinned) continue;
       const childHeight = child.ownHeight ?? flexHeight;
       layoutNode(child, bottom - childHeight, childHeight);
@@ -206,6 +218,18 @@ function makeScene(options: { pinnedComposer?: boolean } = {}) {
   onMutation = layout;
   layout();
 
+  if (options.shadowComposer) {
+    /* 输入框藏在自定义元素的 shadow root 里：普通 `querySelectorAll` 是找不到它的 */
+    const host = new FakeEl();
+    host.fixedHeight = 110;
+    host.children = [];
+    host.shadowRoot = { querySelectorAll: () => [box] };
+    box.parent = host;
+    body.children = [messages, host];
+    host.parent = body;
+    layout();
+  }
+
   if (options.pinnedComposer) {
     // 钉死在底部：插兄弟节点也不会让它动（真实界面里这就是 position: fixed）
     box.rect = rect(690, 110);
@@ -218,12 +242,12 @@ function makeScene(options: { pinnedComposer?: boolean } = {}) {
     body,
     documentElement: body,
     getElementById: (id: string) => findByClass(body, (el) => el.id === id),
-    querySelectorAll: () => collectEditable(body),
+    querySelectorAll: () => collectDescendants(body),
     createElement: () => new FakeEl(),
   };
   const win = { innerHeight: VIEWPORT_H };
 
-  return { doc, win, body, input, box, inner, layout };
+  return { doc, win, body, messages, input, box, inner, layout };
 }
 
 describe('measureComposerSlot', () => {
@@ -251,8 +275,38 @@ describe('measureComposerSlot', () => {
 
   it('页面上没有可编辑元素 → 拒绝', () => {
     const scene = makeScene();
-    scene.input.editable = false;
+    scene.input.isContentEditable = false;
+    scene.input.tagName = 'DIV';
     expect(measureComposerSlot(scene.doc as never, scene.win as never, 56)).toBeNull();
+  });
+
+  it('输入框藏在 shadow root 里也能找到（VS Code 风格的界面就是这样）', () => {
+    const scene = makeScene({ shadowComposer: true });
+    const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
+    expect(slot).toEqual({ top: 634, height: 56 });
+  });
+
+  it('只有转录区里那种可编辑块（离底部很远）→ 拒绝，绝不拿它当锚点', () => {
+    /* 上一版的真实事故：Claude 的输入框在 shadow root 里没被认出来，转录区里一个
+       可编辑块被当成锚点，栏就飘在对话中间了。锚点必须贴着视口底部那一带。 */
+    const scene = makeScene();
+    scene.input.isContentEditable = false;
+    scene.input.tagName = 'DIV';
+
+    const editable = new FakeEl();
+    editable.tagName = 'TEXTAREA';
+    editable.isContentEditable = true;
+    editable.fixedHeight = 40;
+    scene.messages.column = true;
+    const filler = new FakeEl();
+    scene.messages.children = [editable, filler];
+    editable.parent = scene.messages;
+    filler.parent = scene.messages;
+    scene.layout();
+
+    expect(editable.getBoundingClientRect().bottom).toBeLessThan(200);
+    expect(measureComposerSlot(scene.doc as never, scene.win as never, 56)).toBeNull();
+    expect(findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID)).toBeNull();
   });
 
   it('高度为 0 / 非法 → 拒绝（宁可不出这一栏，也不要插一块 0 高度的空位）', () => {

@@ -16,7 +16,7 @@
  *   把消息打进访客页面的 preload。
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { EXTENSION_WEBVIEW_PARTITION } from '@deepseek-ide/shared';
 import { useExtensionWebview } from '../hooks/useExtensionWebview';
@@ -140,6 +140,15 @@ export function ExtensionViewPanel({
   });
 
   /**
+   * 上一次量到的结果（只为「变化时打一行日志」）。
+   *
+   * 为什么要日志：这套东西是在**别人的页面**里认输入框，认错了只会表现成「栏的位置
+   * 不对」—— 从界面上完全看不出是没认到、还是认到了别的元素。打一行，用户报问题时
+   * 一眼就知道量到没有、量到了哪。
+   */
+  const lastSlotSummaryRef = useRef('');
+
+  /**
    * 请访客页面在它自己的输入框上面让出一块空位（见 services/guestComposerSlot.ts）。
    *
    * 为什么轮询而不是听事件：输入框的高度会随用户打字（多行）、随附件变，而我们
@@ -162,7 +171,16 @@ export function ExtensionViewPanel({
       running = true;
       const slot = await measureSlotInWebview(webview, composerBarHeight);
       running = false;
-      if (!cancelled) onComposerSlot?.(slot);
+      if (cancelled) return;
+
+      const summary = slot
+        ? `top=${Math.round(slot.top)} height=${Math.round(slot.height)}`
+        : '量不到（退回左下角浮层）';
+      if (summary !== lastSlotSummaryRef.current) {
+        lastSlotSummaryRef.current = summary;
+        console.log(`[pending-bar] ${viewId} 的输入框空位：${summary}`);
+      }
+      onComposerSlot?.(slot);
     };
 
     void measure();
