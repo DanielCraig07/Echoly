@@ -51,6 +51,8 @@ class FakeEl {
   shadowRoot: { querySelectorAll(selector: string): FakeEl[] } | null = null;
   /** flex 的 `order`（有的界面用它排「消息区 / 输入框」）。 */
   order = 0;
+  /** 高度由内容决定（真实的输入框那一块就是这样，往里面插一行它会长高）。 */
+  autoHeight = false;
   /** 固定高度；null = flex:1，吃掉剩下的高度。 */
   fixedHeight: number | null = null;
   /** 子节点从下往上排（`display:flex; flex-direction:column`）。 */
@@ -76,6 +78,10 @@ class FakeEl {
 
   get parentElement(): FakeEl | null {
     return this.parent;
+  }
+
+  get firstChild(): FakeEl | null {
+    return kids(this)[0] ?? null;
   }
 
   /** 生效的 `order`：cssText 里写了就用它（宿主给我们那块空位就是这么设的）。 */
@@ -144,6 +150,24 @@ function collectDescendants(root: FakeEl, into: FakeEl[] = []): FakeEl[] {
  * 「输入框不贴底」是有意的：截图里 Claude 的输入框下面还有一行工具栏，
  * 于是「从输入框往上找到那一整块」这条规则必须能跨过 30px 的落差。
  */
+/** 内容撑出来的高度（`autoHeight` 那种盒子：往里面插一行它就长一行）。 */
+function contentHeight(node: FakeEl): number {
+  let sum = 0;
+  for (const child of kids(node)) {
+    if (child.pinned) continue;
+    // flex:1 那种孩子按它当前的实测高度算（它不撑高，也不塌掉）
+    sum += heightOf(child) ?? child.rect.height;
+  }
+  return sum;
+}
+
+/** 一个孩子在父容器里的高度：写死的高度 > 内容高度 > null（flex:1，吃剩下的）。 */
+function heightOf(child: FakeEl): number | null {
+  const own = child.ownHeight;
+  if (own != null) return own;
+  return child.autoHeight ? contentHeight(child) : null;
+}
+
 /** `kids()`：一个节点的孩子（含 shadow root 里的那些）。 */
 function kids(node: FakeEl): FakeEl[] {
   const shadow = node.shadowRoot ? node.shadowRoot.querySelectorAll('*') : [];
@@ -153,6 +177,8 @@ function kids(node: FakeEl): FakeEl[] {
 function makeScene(
   options: {
     pinnedComposer?: boolean;
+    /** 输入框那一块的高度由内容决定（往里面插一行它会长高）。 */
+    autoComposer?: boolean;
     shadowComposer?: boolean;
     /** 用 flex `order` 排「消息区 / 输入框」的那种界面。 */
     flexOrder?: boolean;
@@ -167,8 +193,14 @@ function makeScene(
   const messages = new FakeEl();
   const box = new FakeEl();
   box.column = true;
-  box.fixedHeight = 110;
   box.pinned = Boolean(options.pinnedComposer);
+  if (options.autoComposer) {
+    // 高度由内容决定：往里面插一行它真的会长高（真实界面里输入框那一块就是这样）
+    box.autoHeight = true;
+    box.fixedHeight = null;
+  } else {
+    box.fixedHeight = 110;
+  }
 
   const inner = new FakeEl();
   inner.column = true;
@@ -212,7 +244,7 @@ function makeScene(
     let used = 0;
     let hasFlex = false;
     for (const child of flow) {
-      const h = child.ownHeight;
+      const h = heightOf(child);
       if (h == null) hasFlex = true;
       else used += h;
     }
@@ -221,14 +253,26 @@ function makeScene(
     let bottom = top + height;
     for (let i = flow.length - 1; i >= 0; i--) {
       const child = flow[i];
-      const childHeight = child.ownHeight ?? flexHeight;
+      const childHeight = heightOf(child) ?? flexHeight;
       layoutNode(child, bottom - childHeight, childHeight);
       bottom -= childHeight;
+    }
+
+    /* 钉死的孩子不占流里的位置，但**要让它自己重新锚定**：高度由内容决定的盒子
+       （真实界面里的输入框那一块）在内容变多时会往上长。 */
+    for (const child of kids(node)) {
+      if (!child.pinned) continue;
+      layoutNode(child, child.rect.top, Math.max(child.rect.height, contentHeight(child)));
     }
   }
 
   function layoutNode(node: FakeEl, top: number, height: number): void {
     if (node.pinned && node.rect.height > 0) {
+      if (node.autoHeight) {
+        // 钉在底部 + 高度由内容决定 ⇒ 内容变多时**往上长**（底边不动）
+        const grown = contentHeight(node) || node.rect.height;
+        node.rect = rect(node.rect.bottom - grown, grown);
+      }
       layoutChildren(node); // 位置不变，但里面的东西要跟着排
       return;
     }
@@ -309,6 +353,20 @@ describe('measureComposerSlot', () => {
     // 所以必须撤掉 —— 位置改成「输入框那一块的上沿之上」直接算出来。
     expect(slot).toMatchObject({ top: 634, height: 56, mode: 'overlay' });
     expect(findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID)).toBeNull();
+  });
+
+  it('输入框那一块钉在底部、高度由内容决定 → 塞进它**里面**最前面，它自己往上长', () => {
+    const scene = makeScene({ pinnedComposer: true, autoComposer: true });
+    const slot = measureComposerSlot(scene.doc as never, scene.win as never, 56);
+
+    // 外面插兄弟节点它不动（钉死的），但往它自己里面插一行它会长高 ——
+    // 长出来的那块正好放我们的栏，转录区和输入框都不被挡
+    expect(slot).toMatchObject({ top: 634, height: 56, mode: 'inside' });
+    const inserted = findByClass(scene.body, (el) => el.id === COMPOSER_SLOT_ID);
+    expect(inserted?.parent).toBe(scene.box);
+    // 输入框那一块确实往上长了：底边没动，上沿从 690 变成 634
+    expect(scene.box.getBoundingClientRect().bottom).toBe(800);
+    expect(scene.box.getBoundingClientRect().top).toBe(634);
   });
 
   it('界面用 flex `order` 排输入框 → 抄一份 order，空位照样贴着它', () => {

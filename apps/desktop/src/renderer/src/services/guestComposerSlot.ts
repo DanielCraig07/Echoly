@@ -39,11 +39,13 @@ export interface GuestComposerSlot {
   /**
    * 这个位置是怎么定出来的。
    *
-   * - `slot`：页面里真的让出了一块空位（最干净，谁也不遮谁）；
-   * - `overlay`：空位插不成，位置是从输入框那一块的坐标**算**出来的（会盖住转录区
+   * - `slot`：在输入框那一块**外面**插了一块空位，页面真的让出了地方（最干净，谁也不遮）；
+   * - `inside`：外面插不动（那一块被钉在底部），改在它**里面**最前面插一行 —— 它自己
+   *   往上长，空出来的地方给我们（同样谁也不遮）；
+   * - `overlay`：上面两条都不成，位置是从输入框那一块的坐标**算**出来的（会盖住转录区
    *   最后一点点）。
    */
-  mode?: 'slot' | 'overlay';
+  mode?: 'slot' | 'inside' | 'overlay';
   /**
    * 诊断用：认到的那个元素的 tag.class@上-下。
    *
@@ -64,6 +66,8 @@ interface GuestRect {
 
 interface GuestElement {
   parentElement: GuestElement | null;
+  /** 第一个孩子（往「里面最前面」插东西要用它）。 */
+  firstChild?: GuestElement | null;
   /** `TEXTAREA` / `INPUT`（会转成大写比较）。 */
   tagName?: string;
   /** 只有诊断日志用得到。SVG 上它不是字符串，所以得判一下类型。 */
@@ -200,7 +204,10 @@ export function measureComposerSlot(
   /* 3) 先试「在它上面插一块空位」—— 最干净的做法：页面的流里真的让出地方，输入框被
         顶上去一点，我们的栏落在空位上，谁也不遮谁。插不动就往上再试一层（有的界面把
         输入框包在一个不带 flex 的容器里，插在那一层不会把它顶上去）。 */
-  let host = block.parentElement;
+  /* 往上爬的那个游标。**不能动 `block` 本身** —— 后面「塞进它里面」和「兜底算位置」
+     都还得用最初认定的那一块。 */
+  let probe = block;
+  let host = probe.parentElement;
   for (let attempt = 0; attempt < 3 && host; attempt++) {
     const slot = doc.createElement('div');
     slot.setAttribute('id', SLOT_ID);
@@ -212,7 +219,7 @@ export function measureComposerSlot(
     let orderStyle = '';
     if (typeof win.getComputedStyle === 'function') {
       try {
-        const computed = win.getComputedStyle(block);
+        const computed = win.getComputedStyle(probe);
         if (computed && computed.order && computed.order !== '0') {
           orderStyle = 'order:' + computed.order + ';';
         }
@@ -224,7 +231,7 @@ export function measureComposerSlot(
     /* pointer-events:none：这块空位只是占地方，点它应该落到下面的页面上 */
     slot.style.cssText =
       'flex:0 0 auto;width:100%;height:' + barHeight + 'px;pointer-events:none;' + orderStyle;
-    host.insertBefore(slot, block);
+    host.insertBefore(slot, probe);
 
     /* 自检，只认一种「插对了」：空位**紧贴着输入框那一块的上沿**。
        注意**不要求输入框的位置发生变化** —— 正常的 flex 列里，空位是让上面的消息区
@@ -233,7 +240,7 @@ export function measureComposerSlot(
        反过来，只要空位没贴在它上面（被 `order` 排到别处、被钉死的输入框顶开…），就
        **必须**撤掉：留着它既挡不住输入框、又会在页面上留一段莫名其妙的空白。 */
     const slotRect = rectOf(slot);
-    const blockRect = rectOf(block);
+    const blockRect = rectOf(probe);
     const adjacent = !!slotRect && !!blockRect && Math.abs(slotRect.bottom - blockRect.top) <= 2;
     const placed =
       adjacent &&
@@ -248,8 +255,40 @@ export function measureComposerSlot(
 
     const outer = host.parentElement;
     if (!outer || outer === doc.body || outer === doc.documentElement) break;
-    block = host;
+    probe = host;
     host = outer;
+  }
+
+  /* 3b) 再试「把空位塞进输入框那一块**里面**」。
+        有的界面把输入框那一块钉在底部（absolute/fixed 那种），在它外面插兄弟节点它压根不动；
+        但它**自己的盒子会长**：在最前面插一行，它就往上长，输入框被顶到下面去，上面空出来的
+        地方正好放我们的栏 —— 同样谁也不遮。 */
+  const inputRectBefore = rectOf(input);
+  const blockRectBefore = rectOf(block);
+  if (inputRectBefore && blockRectBefore) {
+    /* 空位插进去之前，输入框在那一块里的纵向偏移 —— 插完必须贴着它长大 barHeight */
+    const offsetBefore = inputRectBefore.top - blockRectBefore.top;
+
+    const inner = doc.createElement('div');
+    inner.setAttribute('id', SLOT_ID);
+    inner.setAttribute('data-echoly', 'pending-bar');
+    inner.style.cssText =
+      'display:block;width:100%;height:' + barHeight + 'px;flex:0 0 auto;pointer-events:none;';
+    block.insertBefore(inner, block.firstChild || null);
+
+    const blockRect = rectOf(block);
+    const inputRect = rectOf(input);
+    const grew =
+      !!blockRect &&
+      !!inputRect &&
+      inputRect.top - blockRect.top >= offsetBefore + barHeight - 4 &&
+      blockRect.bottom <= viewportH + 2 &&
+      blockRect.top >= viewportH * 0.1;
+    if (grew) {
+      return { top: blockRect!.top, height: barHeight, mode: 'inside', anchor };
+    }
+
+    block.removeChild(inner);
   }
 
   /* 4) 兜底：空位插不成（对方把输入框钉死了、容器不是 flex、`order` 排不出来…），就直接
