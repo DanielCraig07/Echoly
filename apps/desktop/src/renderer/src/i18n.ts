@@ -924,16 +924,16 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
    * （`chat.diff*`）—— 两处说的是同一件事，长得不一样只会让人以为是两种东西。
    * 这里只放它没有的：行内按钮的标签、以及「什么时候拒绝不了」的说明。
    */
-  'app.extChangeAccept': { zh: '接受', en: 'Keep' },
-  'app.extChangeReject': { zh: '拒绝', en: 'Undo' },
   'app.extChangeDeleted': { zh: '已在磁盘上删除', en: 'Deleted on disk' },
+  /** 编辑区里那份对比的两栏标题（点文件名打开）。 */
+  'app.extChangeDiffBefore': {
+    zh: '改动前（我们最后看到的内容）',
+    en: 'Before (last content we saw)',
+  },
+  'app.extChangeDiffAfter': { zh: '磁盘上的当前内容', en: 'Current content on disk' },
   /** 行末那一小截说明：整栏要像 Cursor 那样干净，长句放不下。 */
   'app.extChangeNoBeforeShort': { zh: '无法还原', en: "can't undo" },
   'app.extChangeDirtyShort': { zh: '有未保存的修改', en: 'unsaved edits' },
-  /** 文件没开着、或只是「知道一下」：这时「接受」是空动作，按钮得说实话。 */
-  'app.extChangeDismiss': { zh: '知道了', en: 'Got it' },
-  /** 文件在磁盘上被删了：「接受」= 收下这件事（把标签关掉）。 */
-  'app.extChangeClose': { zh: '关闭标签', en: 'Close tab' },
   'app.extChangeNoBefore': {
     zh: '没记录到改动前的内容，还原不了',
     en: 'No pre-change copy was recorded, cannot undo',

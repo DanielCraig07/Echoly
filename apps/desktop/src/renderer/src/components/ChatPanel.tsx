@@ -95,10 +95,10 @@ interface Props {
    * 是同一件事，放在同一个视线里最省事。
    */
   pendingChanges?: PendingExternalChange[];
-  onAcceptExternalChange?: (change: PendingExternalChange) => void;
-  onRejectExternalChange?: (change: PendingExternalChange) => void;
   onAcceptAllExternalChanges?: () => void;
   onRejectAllExternalChanges?: () => void;
+  /** 点某一行的文件名 → 在编辑区并排看「改动前 / 改动后」（和点内置那一块一样）。 */
+  onShowExternalDiff?: (change: PendingExternalChange) => void;
 }
 
 export type ChatPanelHandle = {
@@ -320,10 +320,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     recentWorkspaces,
     gitBranch,
     pendingChanges = [],
-    onAcceptExternalChange,
-    onRejectExternalChange,
     onAcceptAllExternalChanges,
     onRejectAllExternalChanges,
+    onShowExternalDiff,
   } = props;
   // 面板里有大量中文注释与日志（不翻译），这里只接用户可见文案
   const { t, locale } = useI18n();
@@ -3852,14 +3851,13 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         让代理改，三件事都在同一个视线里。列表本身限高 + 滚动（见 .pending-changes-list），
         代理一次改几十个文件也不会把输入框挤出去。
       */}
-      {pendingChanges.length > 0 && onAcceptExternalChange && onRejectExternalChange && (
+      {pendingChanges.length > 0 && (
         <PendingChangesBar
+          className="pending-changes-bar--in-chat"
           changes={pendingChanges}
-          onAccept={onAcceptExternalChange}
-          onReject={onRejectExternalChange}
           onAcceptAll={onAcceptAllExternalChanges ?? (() => {})}
           onRejectAll={onRejectAllExternalChanges ?? (() => {})}
-          onOpenFile={onOpenFile ? (path) => onOpenFile(path) : undefined}
+          onShowDiff={onShowExternalDiff}
         />
       )}
 

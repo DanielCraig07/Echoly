@@ -253,6 +253,14 @@ function normalizeWorkspacePath(p: string | null | undefined): string {
   return clean;
 }
 
+/**
+ * 编辑区里「改动前 / 改动后」那份对比的 id 前缀。
+ *
+ * 为什么 id 要带前缀：`scmDiff` 这个位置同时被 git 的历史对比、工作区对比用着，
+ * 处理完之后得能一眼认出「这一份是我们自己摆上去的外部改动对比」，才好收走它。
+ */
+const EXTERNAL_DIFF_ID_PREFIX = 'ext-change:';
+
 export function App() {
   // 面板里有大量中文注释与日志（不翻译），这里只接用户可见文案
   const { t } = useI18n();
@@ -3517,23 +3525,59 @@ export function App() {
     [showToast, t],
   );
 
-  const handleAcceptExternalChange = useCallback(
+  /*
+   * 没有「单文件接受 / 拒绝」这一对了：那一栏的行上不再摆按钮（用户明确要求，
+   * 且和内置会话那一块看齐 —— 行是拿来看 diff 的）。批量的出口在底部那行，
+   * 直接走上面的 acceptExternalChange / rejectExternalChange。
+   */
+
+  /**
+   * 点那一栏里的一行 → 在**编辑区**把那处改动对着看。
+   *
+   * 用的是和「AI 会话」点文件名**完全相同**的那条路（`previewDiff` → EditorPane 的
+   * diff 视图），所以外观、关闭方式、后续动作全都一致 —— 用户不用学第二套。
+   *
+   * 没有「改动前」的内容时就给不出对比（代理是别的进程写的盘，我们没读过就没记过）：
+   * 这时退一步只把文件打开，并说清楚为什么看不到对比，而不是伪造一份「整份都是新增」
+   * 的 diff。
+   */
+  const handleShowExternalDiff = useCallback(
     (change: PendingExternalChange) => {
-      if (acceptExternalChange(change)) {
-        setPendingChanges((prev) => prev.filter((item) => item.abs !== change.abs));
+      if (change.before === undefined) {
+        if (change.fresh !== null) void openFile(change.path);
+        showToast(t('app.extChangeNoBefore'), change.name, 'info');
+        return;
       }
+      // 和 AI 会话那条路一样：先把 agent 的那份对比让开，再摆上这一份
+      setActiveDiffId(null);
+      setScmDiff({
+        id: `${EXTERNAL_DIFF_ID_PREFIX}${change.abs}`,
+        path: change.path,
+        original: change.before,
+        modified: change.fresh ?? '',
+        description: t('app.diffTitle', { path: change.path }),
+        originalTitle: t('app.extChangeDiffBefore'),
+        modifiedTitle: t('app.extChangeDiffAfter'),
+      });
+      // 被删掉的文件没有标签可开：diff 视图自己就能看
+      if (change.fresh !== null) void openFile(change.path);
     },
-    [acceptExternalChange],
+    [openFile, showToast, t],
   );
 
-  const handleRejectExternalChange = useCallback(
-    (change: PendingExternalChange) => {
-      void rejectExternalChange(change).then((ok) => {
-        if (ok) setPendingChanges((prev) => prev.filter((item) => item.abs !== change.abs));
-      });
-    },
-    [rejectExternalChange],
-  );
+  /**
+   * 那一栏里的改动处理完之后，编辑区还挂着的对比得跟着收起来。
+   *
+   * 否则会出现「文件已经接受 / 还原了，编辑区还停在一份早就不成立的 diff 上」——
+   * 用户接着就会怀疑接受到底生效没有。
+   */
+  useEffect(() => {
+    setScmDiff((prev) => {
+      if (!prev || !prev.id.startsWith(EXTERNAL_DIFF_ID_PREFIX)) return prev;
+      const abs = prev.id.slice(EXTERNAL_DIFF_ID_PREFIX.length);
+      return pendingChanges.some((change) => change.abs === abs) ? prev : null;
+    });
+  }, [pendingChanges]);
 
   /** 「全部接受 / 全部拒绝」：逐个走同一套逻辑，成功一个消一个（失败的那个得留下）。 */
   const handleAcceptAllExternalChanges = useCallback(() => {
@@ -6986,25 +7030,6 @@ export function App() {
               )}
 
               {/*
-                扩展面板（Claude Code / Codex）也要有那一栏。
-
-                为什么是**面板顶部**而不是输入框正上方：那两栏的输入框长在扩展自己的
-                webview 里，我们既插不进去、也不知道它多高 —— 想「贴在上面」就只能覆盖
-                它，正好挡住用户打字的地方。所以退一步放在 webview 之上的正常流里：
-                它仍然是「在输入框上方」，而且不遮任何东西。内置会话那一栏在
-                ChatPanel 里，是严格贴着输入框上沿的。
-              */}
-              {rightPanelTab !== 'chat' && pendingChanges.length > 0 && (
-                <PendingChangesBar
-                  changes={pendingChanges}
-                  onAccept={handleAcceptExternalChange}
-                  onReject={handleRejectExternalChange}
-                  onAcceptAll={handleAcceptAllExternalChanges}
-                  onRejectAll={handleRejectAllExternalChanges}
-                />
-              )}
-
-              {/*
                 内容区：所有 webview 层都**留在布局里**，只切可见性 —— 见下面
                 `.right-panel-webview` 的注释，这里用 `position: absolute` 叠在一起，
                 而不是靠 `display: none` 把没选中的那些藏掉。
@@ -7014,50 +7039,59 @@ export function App() {
                 webview 层绝对定位铺满整块。
               */}
               <div className="right-panel-content">
-                {rightPanelTab === 'chat' && (
-                  <ErrorBoundary title={t('errorBoundary.panelTitle', { name: t('panel.chat') })}>
-                    <ChatPanel
-                      key={`${workspaceInfo.kind}-${workspace || 'none'}-${chatResetKey}`}
-                      ref={chatRef}
-                      workspace={workspace}
-                      workspaceInfo={workspaceInfo}
-                      openFiles={openFilesForChat}
-                      selection={editorSelection}
-                      cursor={
-                        activePath
-                          ? { path: activePath, line: cursorLine, column: cursorCol }
-                          : undefined
-                      }
-                      onPendingDiff={onPendingDiff}
-                      sessionMessages={messages}
-                      onMessagesChange={setMessages}
-                      onSessionChange={setSessionId}
-                      permissionMode={permissionMode}
-                      onPermissionModeChange={(m) => void changePermissionMode(m)}
-                      contextWindowTokens={contextWindowTokens}
-                      diffs={diffs}
-                      onAcceptAllDiffs={handleChatAcceptAllDiffs}
-                      onRejectAllDiffs={handleChatRejectAllDiffs}
-                      onRevertTurn={handleChatRevertTurn}
-                      onSelectDiff={handleChatSelectDiff}
-                      onOpenFile={handleChatOpenFile}
-                      onOpenSettings={handleOpenSettings}
-                      onSwitchWorkspace={handleSwitchWorkspacePath}
-                      models={models}
-                      activeModelId={activeModelId}
-                      onActiveModelChange={handleActiveModelChange}
-                      recentWorkspaces={recentWorkspaces}
-                      gitBranch={gitStatus?.branch}
-                      pendingChanges={pendingChanges}
-                      onAcceptExternalChange={handleAcceptExternalChange}
-                      onRejectExternalChange={handleRejectExternalChange}
-                      onAcceptAllExternalChanges={handleAcceptAllExternalChanges}
-                      onRejectAllExternalChanges={handleRejectAllExternalChanges}
-                    />
-                  </ErrorBoundary>
-                )}
-
                 {/*
+                    webview 层要能**让出底部那条**给下面那一栏，所以它们不再直接铺满
+                    `.right-panel-content`，而是铺满这个 body —— 否则那一栏只能盖在
+                    Claude 自己的输入框上，正好挡住用户打字的地方。
+
+                    body 是这一整块的定位参照（webview 层是 `position: absolute`），
+                    它自己 `flex: 1` 吃掉剩余高度；下面那一栏是正常流里的兄弟，
+                    flex 布局会把 body 自动缩短，谁也不会遮住谁。
+                  */}
+                <div className="right-panel-body">
+                  {rightPanelTab === 'chat' && (
+                    <ErrorBoundary title={t('errorBoundary.panelTitle', { name: t('panel.chat') })}>
+                      <ChatPanel
+                        key={`${workspaceInfo.kind}-${workspace || 'none'}-${chatResetKey}`}
+                        ref={chatRef}
+                        workspace={workspace}
+                        workspaceInfo={workspaceInfo}
+                        openFiles={openFilesForChat}
+                        selection={editorSelection}
+                        cursor={
+                          activePath
+                            ? { path: activePath, line: cursorLine, column: cursorCol }
+                            : undefined
+                        }
+                        onPendingDiff={onPendingDiff}
+                        sessionMessages={messages}
+                        onMessagesChange={setMessages}
+                        onSessionChange={setSessionId}
+                        permissionMode={permissionMode}
+                        onPermissionModeChange={(m) => void changePermissionMode(m)}
+                        contextWindowTokens={contextWindowTokens}
+                        diffs={diffs}
+                        onAcceptAllDiffs={handleChatAcceptAllDiffs}
+                        onRejectAllDiffs={handleChatRejectAllDiffs}
+                        onRevertTurn={handleChatRevertTurn}
+                        onSelectDiff={handleChatSelectDiff}
+                        onOpenFile={handleChatOpenFile}
+                        onOpenSettings={handleOpenSettings}
+                        onSwitchWorkspace={handleSwitchWorkspacePath}
+                        models={models}
+                        activeModelId={activeModelId}
+                        onActiveModelChange={handleActiveModelChange}
+                        recentWorkspaces={recentWorkspaces}
+                        gitBranch={gitStatus?.branch}
+                        pendingChanges={pendingChanges}
+                        onAcceptAllExternalChanges={handleAcceptAllExternalChanges}
+                        onRejectAllExternalChanges={handleRejectAllExternalChanges}
+                        onShowExternalDiff={handleShowExternalDiff}
+                      />
+                    </ErrorBoundary>
+                  )}
+
+                  {/*
                   这一栏渲染的就是扩展**自己的**界面（`registerWebviewViewProvider` 给的那份），
                   和编辑器区那个「打开扩展视图」是同一个组件、同一份 HTML。
 
@@ -7065,30 +7099,50 @@ export function App() {
                   自己 Agent 的壳 —— 跟扩展没有半点关系，用户在里面发的消息也到不了
                   Claude Code。现在换成扩展界面，这一栏才算真的「Claude 扩展」。
                 */}
-                {aiPanelViews.map((view) => (
-                  <div
-                    key={view.viewId}
-                    className="right-panel-webview"
-                    data-active={rightPanelTab === viewTabId(view.viewId) ? 'true' : 'false'}
-                  >
-                    <ExtensionViewPanel viewId={view.viewId} />
-                  </div>
-                ))}
+                  {aiPanelViews.map((view) => (
+                    <div
+                      key={view.viewId}
+                      className="right-panel-webview"
+                      data-active={rightPanelTab === viewTabId(view.viewId) ? 'true' : 'false'}
+                    >
+                      <ExtensionViewPanel viewId={view.viewId} />
+                    </div>
+                  ))}
 
-                {/*
+                  {/*
                   扩展开出来的面板（Claude 的「+」新会话）。全部**常驻挂载**、只切显隐：
                   webview 一卸载就整个重载，会话与草稿全丢 —— 与上面那一栏同一套做法。
                   面板和扩展视图共用一份 HTML，viewId 就是 panelId。
                 */}
-                {extensionPanelTabs.map((panelTab) => (
-                  <div
-                    key={panelTab.panelId}
-                    className="right-panel-webview"
-                    data-active={rightPanelTab === panelTab.panelId ? 'true' : 'false'}
-                  >
-                    <ExtensionViewPanel viewId={panelTab.panelId} />
-                  </div>
-                ))}
+                  {extensionPanelTabs.map((panelTab) => (
+                    <div
+                      key={panelTab.panelId}
+                      className="right-panel-webview"
+                      data-active={rightPanelTab === panelTab.panelId ? 'true' : 'false'}
+                    >
+                      <ExtensionViewPanel viewId={panelTab.panelId} />
+                    </div>
+                  ))}
+                </div>
+
+                {/*
+                    扩展面板（Claude Code / Codex）里那一栏：贴在**底部**。
+
+                    为什么不是输入框正上方：那两栏的输入框长在扩展自己的 webview 里，
+                    我们既插不进去、也不知道它多高 —— 想「贴在上面」就只剩覆盖它这一条
+                    路，而那正好挡住用户打字的地方。贴在面板底部、给它让出一条真实空间，
+                    效果上就是「紧挨着输入框旁边」，而且不遮任何东西。
+                    内置会话那一栏在 ChatPanel 里，是严格贴着输入框上沿的。
+                  */}
+                {rightPanelTab !== 'chat' && pendingChanges.length > 0 && (
+                  <PendingChangesBar
+                    className="pending-changes-bar--docked"
+                    changes={pendingChanges}
+                    onAcceptAll={handleAcceptAllExternalChanges}
+                    onRejectAll={handleRejectAllExternalChanges}
+                    onShowDiff={handleShowExternalDiff}
+                  />
+                )}
               </div>
             </aside>
           </>
@@ -7378,10 +7432,9 @@ export function App() {
             <PendingChangesBar
               className="pending-changes-bar--floating"
               changes={pendingChanges}
-              onAccept={handleAcceptExternalChange}
-              onReject={handleRejectExternalChange}
               onAcceptAll={handleAcceptAllExternalChanges}
               onRejectAll={handleRejectAllExternalChanges}
+              onShowDiff={handleShowExternalDiff}
             />
           )}
           {toasts.map((toast) => {

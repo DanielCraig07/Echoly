@@ -9,12 +9,10 @@ import {
 
 export interface PendingChangesBarProps {
   changes: PendingExternalChange[];
-  onAccept: (change: PendingExternalChange) => void;
-  onReject: (change: PendingExternalChange) => void;
   onAcceptAll: () => void;
   onRejectAll: () => void;
-  /** 点一行 → 打开这个文件（用户想先看看改了什么再决定）。 */
-  onOpenFile?: (path: string, abs: string) => void;
+  /** 点一行 → 在编辑区把那处改动**对着看**（和内置会话点文件名的行为一致）。 */
+  onShowDiff?: (change: PendingExternalChange) => void;
   /** 面板整个收起来、只能浮在左下角时加的类名。 */
   className?: string;
 }
@@ -26,19 +24,19 @@ interface Row {
   deletions: number | null;
   canReject: boolean;
   acceptLosesEdits: boolean;
-  acceptLabelKey: string;
 }
 
 /**
- * 「代理改了磁盘上的文件，你打算怎么办」那一栏 —— 和 Cursor 一样贴在 AI 输入框上方。
+ * 「代理改了磁盘上的文件，你打算怎么办」那一栏。
  *
  * 长得**和内置会话里那块「本轮改动的文件」一模一样**：同一套 class
- * （`.chat-diff-summary-container` 那几个）、同一套文案 key（`chat.diff*`）。
- * 两处说的是同一件事（「这些文件变了，你接受还是拒绝」），长得不一样只会让人以为是
- * 两种东西；而且它们经常同时出现（内置 Agent 刚改完，Claude 又改了一批）。
+ * （`.chat-diff-summary-container` 那几个）、同一套文案 key（`chat.diff*`）、同一套
+ * 数字口径（`computeLineDiffStats`）。两处说的是同一件事，而且经常同时出现（内置 Agent
+ * 刚改完一批，Claude 又改了一批），长得不一样只会让人以为是两种东西。
  *
- * 为什么不是一个只读提示：代理改盘之后编辑器里那一份和磁盘上那一份就分叉了，用户得
- * 挑一份。给一行文件名、加删行数，再给「接受 / 拒绝」两个出口，用户才真的有的选。
+ * 交互也**刻意和那一块看齐**：行上没有按钮，点一行就在编辑区把「改动前 / 改动后」并排
+ * 打开 —— 判断要不要接受，得先看见改了什么。批量的出口只有一个，在底部那行
+ * （全部拒绝 / 全部接受），这样整栏既干净又不会误点。
  *
  * 为什么行数可能是空的：`+N -M` 要拿「改动前」和「改动后」两份内容去比，而代理是
  * **别的进程**写的盘 —— 我们从没读过、没存过的文件就没有那份「改动前」。这时宁可不显示
@@ -46,11 +44,9 @@ interface Row {
  */
 export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
   changes,
-  onAccept,
-  onReject,
   onAcceptAll,
   onRejectAll,
-  onOpenFile,
+  onShowDiff,
   className,
 }) => {
   const { t } = useI18n();
@@ -80,12 +76,6 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
           deletions,
           canReject: actions.canReject,
           acceptLosesEdits: actions.acceptLosesEdits,
-          acceptLabelKey:
-            actions.accept === 'dismiss'
-              ? 'app.extChangeDismiss'
-              : actions.accept === 'close'
-                ? 'app.extChangeClose'
-                : 'app.extChangeAccept',
         };
       }),
     [changes],
@@ -107,10 +97,9 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
               role="button"
               tabIndex={0}
               title={t('chat.diffViewTip', { path: row.change.path })}
-              onClick={() => onOpenFile?.(row.change.path, row.change.abs)}
+              onClick={() => onShowDiff?.(row.change)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ')
-                  onOpenFile?.(row.change.path, row.change.abs);
+                if (e.key === 'Enter' || e.key === ' ') onShowDiff?.(row.change);
               }}
             >
               {/* 橙色小方块（带一个亮点）：和内置会话那块同一个「这个文件被改了」标记 */}
@@ -149,37 +138,6 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
               ) : !row.canReject ? (
                 <span className="pending-change-note">{t('app.extChangeNoBeforeShort')}</span>
               ) : null}
-
-              {/* 行内的「接受 / 拒绝」平时收着：整栏要像 Cursor 那样干净。悬停或键盘
-                  聚焦才露出来 —— 多文件时用户往往只想处理其中一两个，没有行内按钮
-                  就只能整批接受。 */}
-              <span className="pending-change-row-actions">
-                <button
-                  type="button"
-                  className="pending-row-btn accept"
-                  title={
-                    row.acceptLosesEdits ? t('app.extChangeLosesEdits') : t(row.acceptLabelKey)
-                  }
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAccept(row.change);
-                  }}
-                >
-                  {t(row.acceptLabelKey)}
-                </button>
-                <button
-                  type="button"
-                  className="pending-row-btn reject"
-                  disabled={!row.canReject}
-                  title={row.canReject ? t('app.extChangeReject') : t('app.extChangeNoBefore')}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onReject(row.change);
-                  }}
-                >
-                  {t('app.extChangeReject')}
-                </button>
-              </span>
             </div>
           ))}
         </div>

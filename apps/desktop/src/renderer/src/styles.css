@@ -19556,11 +19556,10 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 /**
- * 右侧面板的内容区：ChatPanel 与各扩展 webview 层共用的容器。
+ * 右侧面板的内容区：`body` + 底部那一栏（「文件已被改动」）的容器。
  *
- * webview 层绝对定位叠在一起（见 `.right-panel-webview`），所以这里必须是
- * `position: relative` 且撑满剩下的高度 —— 否则那几个绝对定位的孩子没有参照物，
- * 会以整个窗口为准铺满。
+ * 底部那一栏是**正常流里的兄弟**，不是浮层 —— 它要占真实空间，把 body 顶上去，
+ * 而不是盖在 Claude / Codex 自己的输入框上。
  */
 .right-panel-content {
   position: relative;
@@ -24576,46 +24575,6 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   color: var(--warn);
 }
 
-.chat-diff-file-item .pending-change-row-actions {
-  display: inline-flex;
-  gap: 4px;
-  flex-shrink: 0;
-  margin-left: auto;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.chat-diff-file-item:hover .pending-change-row-actions,
-.chat-diff-file-item:focus-within .pending-change-row-actions {
-  opacity: 1;
-}
-
-.chat-diff-file-item .pending-row-btn {
-  font-size: 11px;
-  line-height: 16px;
-  padding: 0 7px;
-  border-radius: 5px;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.chat-diff-file-item .pending-row-btn:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-
-.chat-diff-file-item .pending-row-btn.accept {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.chat-diff-file-item .pending-row-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .chat-diff-action-right .btn-reject-all:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -24637,4 +24596,30 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   margin: 0;
   pointer-events: auto;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/*
+ * 扩展面板里那一栏贴在**面板底部**。
+ *
+ * 要点是它得占**真实空间**，不能盖在 webview 上：webview 层的定位参照是
+ * `.right-panel-body`，body 自己 `flex: 1`，这一栏是它下面的正常流兄弟 ——
+ * flex 会自动把 body 缩短，于是 Claude/Codex 自己的输入框被顶上去一点，
+ * 而不是被挡住。
+ */
+.right-panel-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pending-changes-bar--docked {
+  margin-bottom: 10px;
+}
+
+/* 内置会话那一栏在输入框正上方：和输入框之间留一点缝 */
+.pending-changes-bar--in-chat {
+  margin-bottom: 8px;
 }
