@@ -816,6 +816,77 @@ CSP 里 `frame-src` / `connect-src` 都是扩展自己写的。也就是说装�
 需要时拷回来跑 `npx vitest run apps/desktop/test/_probeCodex.test.ts`。
 （它依赖真机上装着 `openai.chatgpt`，所以**不进主干测试**。）
 
+### 第十一轮：Codex 界面起不来 + Office Viewer 又失效了
+
+用户报的现象是两条，其实是三个独立的问题叠在一起。真机扩展目录 + 探针全部复现过。
+
+**1. `Codex could not start its user interface.` —— 我们注入的运行时脚本被它自己的 CSP 拦了。**
+
+Codex 的视图 HTML 里那条 CSP 是 `script-src echoly-webview://ext` —— **既没有
+`'unsafe-inline'` 也没有 nonce**。我们一直用内联 `<script>` 注入 `acquireVsCodeApi`
+（Claude Code 的 CSP 带 nonce，所以那条路一直是对的），在这种 CSP 下会被浏览器直接拦掉：
+页面里没有 `acquireVsCodeApi`，扩展的 bundle 一上来就崩，几秒后它自己把界面换成
+「Codex could not start its user interface.」（它等不到页面回 `ready`）。
+
+现在按「页面 CSP 容得下哪一种」选落法：
+
+| 页面 CSP 的 `script-src`                      | 注入方式                                                                             |
+| --------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 有 `nonce-…`                                  | 内联 + 同一个 nonce（Claude Code 走这条，行为没变）                                  |
+| 有 `'unsafe-inline'`，或压根没有 `script-src` | 内联（Office Viewer 走这条，行为没变）                                               |
+| 只给 origin 白名单（Codex）                   | **外部脚本**，地址与页面同 origin：`echoly-webview://ext/<视图>/__echoly-runtime.js` |
+
+实测（真扩展）：注入出来的是
+`<script src="echoly-webview://ext/chatgpt.sidebarView/__echoly-runtime.js">`，
+从协议取回来是 `200 / text/javascript`，内容里有 `acquireVsCodeApi`。
+
+**2. Office Viewer 失效 —— 是被 Codex「抢」了，而且抢的理由很荒。**
+
+Codex 的自定义编辑器声明是 `openai-codex:/**\/*`（给 `openai-codex:` 这种虚拟文档用的），
+Office Viewer 的 markdown 是 `file:/**\/*.md`。**去掉 scheme 之后两条一模一样**，
+而我们的匹配函数正好把 scheme 直接丢掉了 —— 于是 Codex 认领了 `.md`，用户打开笔记
+得到的是 `Invalid Codex conversation URI: /path/note.md`。
+
+现在 scheme 参与匹配（不写 scheme 的写法照旧「什么 scheme 都收」）：
+`file:/**\/*.md` 只认 `file:`，`openai-codex:/**\/*` 只认 `openai-codex:`。
+
+修完实测：`.md` → `cweijan.markdownViewer`，HTML 21858 字节正常生成。
+
+**3. 顺带挖出来的真问题：归属靠「谁在激活」这个全局字段，而扩展是并发激活的。**
+
+`loadInstalledExtensions` 以前把所有扩展的加载**一起点着**，而 shim 判断「这个注册是谁的」
+用的是单个字段 `activeExtensionId` / `activeExtensionPath` —— 多个 activate 同时跑就会
+互相覆盖。实测（Codex 激活很慢，和 Office Viewer 撞在一起）：Office Viewer 注册的
+自定义编辑器归属变成了 `undefined`，于是 `listCustomEditors()` 里那句
+`.filter((entry) => entry.extensionId)` 把它算成「没有 provider」，`.md` 交回内置编辑器。
+
+两处一起改：
+
+- **逐个激活**（不再是 `Promise.all` 式并发）。同一个字段还决定 webview 视图的资源根目录，
+  错一位就是视图里所有资源 404 —— 不只是归属问题。
+- **`hasProvider` 只看 provider 在不在**，与「记没记住主人」无关。归属只用来做禁用/卸载
+  的清理，不该决定这个 provider 存不存在。
+
+**4. 「打开」一个扩展视图固定去编辑器区了。**（用户点的是「打开」，看的是两个地方）
+
+以前分两条路：固定在 AI 面板里的走右侧，**没固定的在编辑器区开标签**。同一个按钮两个去处：
+Claude（默认固定）在右侧，Codex 在编辑器区。现在统一成 **打开 = 固定（没固定的话）+ 展开
+右侧并切过去** —— 视图的家本来就是侧栏，编辑器区留给真正的面板。编辑器区那条渲染保留，
+详情页多一个「在编辑器里打开」的 ghost 按钮走它（免得那条路变成谁都到不了的死代码）。
+
+回归测试：
+
+```bash
+# scheme 匹配 + 优先级（纯逻辑）
+npx vitest run apps/desktop/test/customEditorRouting.test.ts
+
+# 归属（逐个激活）+ hasProvider + 运行时注入的三种落法
+npx vitest run apps/desktop/test/extensionManager.test.ts
+
+# shim 的 API 表面（上一轮那批枚举/类）
+npx vitest run packages/vscode-shim/test/vscodeApi.test.ts
+```
+
 ## 5. 建议顺序
 
 1. `npm run dev` 之前先过**第 1 节门禁**（四条命令）。这一步不过，后面的现象都不可信。

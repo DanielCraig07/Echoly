@@ -3443,13 +3443,6 @@ export function App() {
   /** 右侧面板里「某个扩展视图」那一栏的标签 id。 */
   const viewTabId = useCallback((viewId: string) => `view:${viewId}`, []);
 
-  /** 这个视图是不是固定在右侧 AI 面板里（决定「打开」是揭示那一栏还是开编辑器标签）。 */
-  const isAiPanelView = useCallback(
-    (viewId: string) =>
-      (layoutRef.current.aiPanelViewIds ?? [DEFAULT_AI_PANEL_VIEW_ID]).includes(viewId),
-    [],
-  );
-
   /** 从标签 id 反查视图 id（`view:<viewId>` → `<viewId>`）。 */
   const viewIdFromTab = useCallback(
     (tab: string) => (tab.startsWith('view:') ? tab.slice('view:'.length) : undefined),
@@ -3463,38 +3456,54 @@ export function App() {
    * 扩展真正跑起来的界面。装完扩展要「能用它」，靠的就是这个入口。
    */
   const openExtensionView = useCallback(
-    (viewId: string, title?: string) => {
+    (viewId: string, title?: string, options?: { inEditor?: boolean }) => {
       if (!viewId) return;
 
       /**
-       * 固定在右侧 AI 面板里的视图，它的「正式的家」就是右侧那一栏 ——
-       * 再在编辑器区开一份会是同一份界面的第二个实例（各自持有状态：
-       * 一边在对话、另一边还停在引导页），也就是最早那个「为什么会有两个」。
-       *
-       * 所以这里不是「再开一个」，而是**把右侧那一栏揭示出来并切到它**。
-       * 判据用「固定列表」而不是视图 id：Claude 是 `claudeVSCodeSidebar`，
-       * 别的 AI 扩展有自己的 id —— 写死任何一个都会让另一个用不上这一栏。
+       * 明确要求「在编辑器区打开」时走这条（详情页那个 ghost 按钮）。
+       * 默认不开这条路：视图的家是右侧 AI 面板，编辑器区留给真正的面板。
        */
-      if (isAiPanelView(viewId)) {
-        setLayout((prev) => {
-          if (prev.chatPanelExpanded !== false) return prev;
-          const next = { ...prev, chatPanelExpanded: true };
-          persistLayout(next);
-          return next;
-        });
-        setRightPanelTab(viewTabId(viewId));
+      if (options?.inEditor) {
+        openVirtualTab(
+          `${EXTENSION_VIEW_PREFIX}${viewId}`,
+          '',
+          title || t('extView.tabTitle'),
+          'extension-view',
+          false,
+        );
         return;
       }
 
-      openVirtualTab(
-        `${EXTENSION_VIEW_PREFIX}${viewId}`,
-        '',
-        title || t('extView.tabTitle'),
-        'extension-view',
-        false,
-      );
+      /**
+       * 扩展视图（`contributes.views` 里的 webview 视图）的「家」是**右侧 AI 面板**。
+       *
+       * 对应 VS Code 的语义：视图本来住在侧栏里，编辑器区是留给
+       * `window.createWebviewPanel`（真正的面板）的 —— 那个走 showExtensionPanel。
+       *
+       * 以前这里分了两条路：已经在 AI 面板里的走右侧，**没固定的就在编辑器区开一个标签**。
+       * 同一个「打开」按钮、两个去处：Claude（默认固定）在右侧，Codex（没固定）在编辑器区 ——
+       * 用户点的都是一样的按钮，看到的却是两个地方。而且编辑器区那份与 AI 面板那份是
+       * 同一份界面的两个实例（各自持有状态：一边在对话、另一边还停在引导页）。
+       *
+       * 现在统一：**打开 = 固定（还没固定的话）+ 展开右侧并切过去**。
+       * 判据、归属都用「固定列表」而不是写死视图 id：Claude 是 `claudeVSCodeSidebar`，
+       * 别的 AI 扩展有自己的 id。不想让它待在 AI 面板里，详情页有「取消固定」。
+       */
+      setLayout((prev) => {
+        const pinned = prev.aiPanelViewIds ?? [DEFAULT_AI_PANEL_VIEW_ID];
+        const alreadyPinned = pinned.includes(viewId);
+        if (alreadyPinned && prev.chatPanelExpanded !== false) return prev;
+        const next = {
+          ...prev,
+          aiPanelViewIds: alreadyPinned ? pinned : [...pinned, viewId],
+          chatPanelExpanded: true,
+        };
+        persistLayout(next);
+        return next;
+      });
+      setRightPanelTab(viewTabId(viewId));
     },
-    [openVirtualTab, t, persistLayout, isAiPanelView],
+    [persistLayout, viewTabId, openVirtualTab, t],
   );
 
   /**
@@ -3505,9 +3514,10 @@ export function App() {
    */
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ viewId?: string; title?: string }>).detail;
+      const detail = (e as CustomEvent<{ viewId?: string; title?: string; inEditor?: boolean }>)
+        .detail;
       if (!detail?.viewId) return;
-      openExtensionView(detail.viewId, detail.title);
+      openExtensionView(detail.viewId, detail.title, { inEditor: detail.inEditor });
     };
     window.addEventListener('echoly:open-extension-view', handler);
     return () => window.removeEventListener('echoly:open-extension-view', handler);

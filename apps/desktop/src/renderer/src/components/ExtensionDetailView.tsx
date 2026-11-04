@@ -240,7 +240,11 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
       });
   };
 
-  /** 打开某个指定的扩展视图（编辑器区新开一个标签，由 App 接管）。 */
+  /**
+   * 打开某个指定的扩展视图 —— 在**右侧 AI 面板**里打开（由 App 接管）。
+   *
+   * 视图的家是侧栏，编辑器区留给真正的面板；「在编辑器里打开」是下面那个单独的动作。
+   */
   const handleOpenView = (viewId?: string) => {
     const target = installedInfo?.views?.find((v) => v.id === viewId) ?? installedInfo?.views?.[0];
     if (!target) return;
@@ -250,6 +254,21 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
           viewId: target.id,
           // 与已安装列表那条保持同一个规则：标签用视图名，不用扩展名
           title: target.name || installedInfo?.displayName || title,
+        },
+      }),
+    );
+  };
+
+  /** 同上，但明说「去编辑器区」。App 收到这个标记就不走 AI 面板那条路。 */
+  const handleOpenViewInEditor = (viewId?: string) => {
+    const target = installedInfo?.views?.find((v) => v.id === viewId) ?? installedInfo?.views?.[0];
+    if (!target) return;
+    window.dispatchEvent(
+      new CustomEvent('echoly:open-extension-view', {
+        detail: {
+          viewId: target.id,
+          title: target.name || installedInfo?.displayName || title,
+          inEditor: true,
         },
       }),
     );
@@ -554,6 +573,20 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
                               {isPinnedToAiPanel(view.id)
                                 ? t('extDetail.unpinAiPanel')
                                 : t('extDetail.pinAiPanel')}
+                            </button>
+                            {/*
+                              「在编辑器里打开」：视图的默认去处是右侧 AI 面板（见
+                              App.tsx 的 openExtensionView），但编辑器区那份渲染并没有
+                              被删掉 —— 留一个显式入口，需要并排对照时还能用，
+                              也免得那条路变成谁都到不了的死代码。
+                            */}
+                            <button
+                              type="button"
+                              className="ext-btn ext-btn-ghost"
+                              onClick={() => handleOpenViewInEditor(view.id)}
+                              title={view.id}
+                            >
+                              {t('extDetail.openInEditor')}
                             </button>
                           </div>
                         ))}

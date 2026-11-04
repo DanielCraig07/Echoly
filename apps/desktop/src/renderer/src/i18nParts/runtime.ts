@@ -140,6 +140,7 @@ export const runtimeDict: Record<string, { zh: string; en: string }> = {
   // 右侧 AI 面板的固定开关（见 ExtensionDetailView 里那段注释）
   'extDetail.pinAiPanel': { zh: '固定到 AI 面板', en: 'Pin to AI panel' },
   'extDetail.unpinAiPanel': { zh: '取消固定', en: 'Unpin' },
+  'extDetail.openInEditor': { zh: '在编辑器里打开', en: 'Open in editor' },
   'extDetail.pinnedToast': { zh: '已固定到右侧 AI 面板', en: 'Pinned to the AI panel' },
   'extDetail.unpinnedToast': { zh: '已从右侧 AI 面板移除', en: 'Removed from the AI panel' },
   'ext.openViewTitle': {
