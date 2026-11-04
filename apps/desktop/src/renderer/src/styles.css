@@ -24615,11 +24615,22 @@ body.has-active-ghost-text .monaco-inline-git-blame,
   overflow: hidden;
 }
 
-.pending-changes-bar--docked {
-  margin-bottom: 10px;
-}
-
 /* 内置会话那一栏在输入框正上方：和输入框之间留一点缝 */
 .pending-changes-bar--in-chat {
   margin-bottom: 8px;
+}
+
+/*
+ * 扩展面板里那一栏的外层：浮在**访客页面让出来的那块空位**上。
+ *
+ * `top` 由访客页面量出来（见 services/guestComposerSlot.ts）—— 空位是插在它自己输入框
+ * 上面的，所以这一栏落下去正好是「紧贴着扩展自己的输入框上沿」，和内置会话一致。
+ * 高度**不写死**：栏按自己内容撑开，量出来多少就回报给访客页面，让它插一样高的空位。
+ */
+.right-panel-composer-slot {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  z-index: 3;
+  pointer-events: auto;
 }

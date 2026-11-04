@@ -15,6 +15,13 @@ export interface PendingChangesBarProps {
   onShowDiff?: (change: PendingExternalChange) => void;
   /** 面板整个收起来、只能浮在左下角时加的类名。 */
   className?: string;
+  /**
+   * 拿到根元素。
+   *
+   * 外部需要它的**真实高度**：扩展面板里，我们要在访客页面里插一块一样高的空位，
+   * 栏才能正好浮在对方输入框的上方（见 services/guestComposerSlot.ts）。
+   */
+  innerRef?: (el: HTMLDivElement | null) => void;
 }
 
 /** 一行文件摊开后的展示数据。 */
@@ -48,6 +55,7 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
   onRejectAll,
   onShowDiff,
   className,
+  innerRef,
 }) => {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
@@ -85,7 +93,10 @@ export const PendingChangesBar: React.FC<PendingChangesBarProps> = ({
   const rejectable = rows.filter((row) => row.canReject).length;
 
   return (
-    <div className={`chat-diff-summary-container${className ? ` ${className}` : ''}`}>
+    <div
+      ref={innerRef}
+      className={`chat-diff-summary-container${className ? ` ${className}` : ''}`}
+    >
       {/* 列表本身限高并滚动（见 .chat-diff-file-list）：代理一次动手可能是几十个文件，
           不能让输入框被挤出去 */}
       {!collapsed && (

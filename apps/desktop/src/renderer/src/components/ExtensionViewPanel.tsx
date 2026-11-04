@@ -20,6 +20,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n';
 import { EXTENSION_WEBVIEW_PARTITION } from '@deepseek-ide/shared';
 import { useExtensionWebview } from '../hooks/useExtensionWebview';
+import {
+  clearSlotInWebview,
+  measureSlotInWebview,
+  type GuestComposerSlot,
+} from '../services/guestComposerSlot';
 
 /**
  * 扩展视图标签的虚拟路径前缀：`ext://view/<viewId>`。
@@ -48,9 +53,30 @@ interface ExtensionViewPanelProps {
   /** 扩展贡献的视图 id（注册时那个 `viewId`）。 */
   viewId: string;
   onClose?: () => void;
+  /**
+   * 下面三个是给「文件已被改动」那一栏用的。
+   *
+   * 那一栏要贴在**扩展自己的输入框上方**，而那个输入框长在访客页面里、我们插不进去 ——
+   * 只能反过来请访客页面让出地方：在它的输入框上面插一块和栏一样高的空位，我们把栏
+   * 画在那块空位上（见 services/guestComposerSlot.ts）。
+   *
+   * `composerSlotActive` 只有**当前显示的那一栏**为 true：几层 webview 是常驻挂载的，
+   * 让每一层都去插一块空位，用户切回去时会看到一段莫名其妙的空白。
+   */
+  composerSlotActive?: boolean;
+  /** 那一栏要占多高（栏自己量出来的）。 */
+  composerBarHeight?: number;
+  /** 量到的空位；`null` = 量不到，调用方退回「浮在左下角」。 */
+  onComposerSlot?: (slot: GuestComposerSlot | null) => void;
 }
 
-export function ExtensionViewPanel({ viewId, onClose }: ExtensionViewPanelProps) {
+export function ExtensionViewPanel({
+  viewId,
+  onClose,
+  composerSlotActive = false,
+  composerBarHeight = 0,
+  onComposerSlot,
+}: ExtensionViewPanelProps) {
   const { t } = useI18n();
   const [src, setSrc] = useState('');
   const [preload, setPreload] = useState('');
@@ -112,6 +138,48 @@ export function ExtensionViewPanel({ viewId, onClose }: ExtensionViewPanelProps)
       [viewId],
     ),
   });
+
+  /**
+   * 请访客页面在它自己的输入框上面让出一块空位（见 services/guestComposerSlot.ts）。
+   *
+   * 为什么轮询而不是听事件：输入框的高度会随用户打字（多行）、随附件变，而我们
+   * **观测不到**访客页面里的布局变化 —— 这是别人的页面，只有 `executeJavaScript`
+   * 这一条路。一秒一次的量测只做一次 DOM 查询，代价可以忽略；要的正是「它变了，
+   * 我们的位置跟着变」。
+   */
+  useEffect(() => {
+    const webview = webviewRef.current;
+    // 这一栏没了 / 切到别的标签了：把空位收掉，别在扩展界面上留一段空白
+    if (!composerSlotActive || !composerBarHeight) {
+      void clearSlotInWebview(webview);
+      return;
+    }
+
+    let cancelled = false;
+    let running = false;
+    const measure = async () => {
+      if (cancelled || running) return;
+      running = true;
+      const slot = await measureSlotInWebview(webview, composerBarHeight);
+      running = false;
+      if (!cancelled) onComposerSlot?.(slot);
+    };
+
+    void measure();
+    const timer = setInterval(() => void measure(), 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [composerSlotActive, composerBarHeight, onComposerSlot, webviewRef, src]);
+
+  /** 面板被卸载（关标签 / 切工作区）：访客页面跟着走，但空位有可能留在它的 DOM 里。 */
+  useEffect(
+    () => () => {
+      void clearSlotInWebview(webviewRef.current);
+    },
+    [webviewRef],
+  );
 
   /** 加载失败时把原因显示出来（不要只留一个空面板）。 */
   useEffect(() => {

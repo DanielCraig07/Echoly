@@ -99,6 +99,7 @@ import { ProblemsPanel } from './components/ProblemsPanel';
 import { StatusBar } from './components/StatusBar';
 import { GlobalTooltip } from './components/GlobalTooltip';
 import { PendingChangesBar } from './components/PendingChangesBar';
+import type { GuestComposerSlot } from './services/guestComposerSlot';
 import { heuristicDetectTech } from './utils/techStack';
 import {
   isImagePath,
@@ -623,6 +624,19 @@ export function App() {
    */
   const pendingChangesRef = useRef<PendingExternalChange[]>(pendingChanges);
   pendingChangesRef.current = pendingChanges;
+
+  /**
+   * 扩展面板里那块「空位」的坐标 —— 由**访客页面**让出来（见 services/guestComposerSlot.ts）。
+   *
+   * `null` = 还没量到 / 量不到：那一栏退回「浮在左下角」，绝不硬贴到人家输入框上。
+   */
+  const [composerSlot, setComposerSlot] = useState<GuestComposerSlot | null>(null);
+  /** 那一栏的真实高度（它自己量出来的）。访客页面里要插一块一样高的空位。 */
+  const [pendingBarHeight, setPendingBarHeight] = useState(0);
+
+  const handleComposerSlot = useCallback((slot: GuestComposerSlot | null) => {
+    setComposerSlot(slot);
+  }, []);
   const [toastDetailModal, setToastDetailModal] = useState<{
     id: string;
     title: string;
@@ -3541,6 +3555,32 @@ export function App() {
    * 这时退一步只把文件打开，并说清楚为什么看不到对比，而不是伪造一份「整份都是新增」
    * 的 diff。
    */
+  /**
+   * 量「文件已被改动」那一栏有多高。
+   *
+   * 为什么需要这个数：扩展面板里我们要请访客页面在它自己的输入框上面让出一块**一样高**
+   * 的空位，栏才能正好落在上面。用 ResizeObserver 而不是只量一次 —— 文件多了列表会变高、
+   * 折叠了会变矮，空位得跟着变。
+   */
+  const [pendingBarNode, setPendingBarNode] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!pendingBarNode) {
+      setPendingBarHeight(0);
+      return;
+    }
+    const update = () => setPendingBarHeight(pendingBarNode.getBoundingClientRect().height);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(pendingBarNode);
+    return () => observer.disconnect();
+  }, [pendingBarNode]);
+
+  // 换面板（Claude ↔ Codex ↔ AI 对话）时旧坐标立刻作废：不然那一栏会先闪一下上一个
+  // 面板的位置。新的那一栏量到之后会自己报上来。
+  useEffect(() => {
+    setComposerSlot(null);
+  }, [rightPanelTab]);
+
   const handleShowExternalDiff = useCallback(
     (change: PendingExternalChange) => {
       if (change.before === undefined) {
@@ -5137,6 +5177,13 @@ export function App() {
   const isWelcomeShell = !workspace;
   const showLeftPanel = !isWelcomeShell && layout.leftPanelExpanded !== false;
   const showChatPanel = !isWelcomeShell && layout.chatPanelExpanded !== false;
+  /**
+   * 扩展面板里那一栏要不要「请访客页面让出一块空位」。
+   *
+   * 只有「面板开着 + 停在扩展标签上 + 确实有改动待处理」才要 —— 其余情况下让空位
+   * 只会在扩展界面上留一段空白。
+   */
+  const composerSlotWanted = showChatPanel && rightPanelTab !== 'chat' && pendingChanges.length > 0;
   const effectiveWidths = isWelcomeShell
     ? { explorerWidth: 0, chatWidth: 0 }
     : computeEffectiveLayoutWidths(layout, shellWidth);
@@ -7105,7 +7152,14 @@ export function App() {
                       className="right-panel-webview"
                       data-active={rightPanelTab === viewTabId(view.viewId) ? 'true' : 'false'}
                     >
-                      <ExtensionViewPanel viewId={view.viewId} />
+                      <ExtensionViewPanel
+                        viewId={view.viewId}
+                        composerSlotActive={
+                          composerSlotWanted && rightPanelTab === viewTabId(view.viewId)
+                        }
+                        composerBarHeight={pendingBarHeight}
+                        onComposerSlot={handleComposerSlot}
+                      />
                     </div>
                   ))}
 
@@ -7120,28 +7174,38 @@ export function App() {
                       className="right-panel-webview"
                       data-active={rightPanelTab === panelTab.panelId ? 'true' : 'false'}
                     >
-                      <ExtensionViewPanel viewId={panelTab.panelId} />
+                      <ExtensionViewPanel
+                        viewId={panelTab.panelId}
+                        composerSlotActive={
+                          composerSlotWanted && rightPanelTab === panelTab.panelId
+                        }
+                        composerBarHeight={pendingBarHeight}
+                        onComposerSlot={handleComposerSlot}
+                      />
                     </div>
                   ))}
                 </div>
 
                 {/*
-                    扩展面板（Claude Code / Codex）里那一栏：贴在**底部**。
+                  扩展面板（Claude Code / Codex）里那一栏：浮在**访客页面让出来的那块
+                  空位**上 —— 也就是扩展自己的输入框**正上方**（和内置会话的位置一致）。
 
-                    为什么不是输入框正上方：那两栏的输入框长在扩展自己的 webview 里，
-                    我们既插不进去、也不知道它多高 —— 想「贴在上面」就只剩覆盖它这一条
-                    路，而那正好挡住用户打字的地方。贴在面板底部、给它让出一条真实空间，
-                    效果上就是「紧挨着输入框旁边」，而且不遮任何东西。
-                    内置会话那一栏在 ChatPanel 里，是严格贴着输入框上沿的。
-                  */}
-                {rightPanelTab !== 'chat' && pendingChanges.length > 0 && (
-                  <PendingChangesBar
-                    className="pending-changes-bar--docked"
-                    changes={pendingChanges}
-                    onAcceptAll={handleAcceptAllExternalChanges}
-                    onRejectAll={handleRejectAllExternalChanges}
-                    onShowDiff={handleShowExternalDiff}
-                  />
+                  输入框长在扩展自己的 webview 里，我们插不进去，所以反过来请它让地方：
+                  在它的输入框上面插一块和这一栏一样高的空位，我们画在空位上
+                  （见 services/guestComposerSlot.ts）。量不到（对方把输入框钉死了、
+                  或页面还没起来）就什么都不画 —— 上面那个浮层会兜底，绝不硬贴到人家
+                  的输入框上挡住打字。
+                */}
+                {composerSlotWanted && composerSlot && (
+                  <div className="right-panel-composer-slot" style={{ top: composerSlot.top }}>
+                    <PendingChangesBar
+                      innerRef={setPendingBarNode}
+                      changes={pendingChanges}
+                      onAcceptAll={handleAcceptAllExternalChanges}
+                      onRejectAll={handleRejectAllExternalChanges}
+                      onShowDiff={handleShowExternalDiff}
+                    />
+                  </div>
                 )}
               </div>
             </aside>
@@ -7407,7 +7471,9 @@ export function App() {
       />
 
       {/* 左下角浮层：待处理的磁盘改动栏（兜底）+ toast 通知 */}
-      {(toasts.length > 0 || (!showChatPanel && pendingChanges.length > 0)) && (
+      {(toasts.length > 0 ||
+        ((!showChatPanel || (composerSlotWanted && !composerSlot)) &&
+          pendingChanges.length > 0)) && (
         <div
           style={{
             position: 'fixed',
@@ -7428,15 +7494,17 @@ export function App() {
             是面板顶部）—— 那才是它该在的地方。但面板关掉之后用户就完全看不到它了，
             而外部改动照样在发生，所以这里留一个浮层版本，别让提示整个消失。
           */}
-          {!showChatPanel && pendingChanges.length > 0 && (
-            <PendingChangesBar
-              className="pending-changes-bar--floating"
-              changes={pendingChanges}
-              onAcceptAll={handleAcceptAllExternalChanges}
-              onRejectAll={handleRejectAllExternalChanges}
-              onShowDiff={handleShowExternalDiff}
-            />
-          )}
+          {(!showChatPanel || (composerSlotWanted && !composerSlot)) &&
+            pendingChanges.length > 0 && (
+              <PendingChangesBar
+                className="pending-changes-bar--floating"
+                innerRef={setPendingBarNode}
+                changes={pendingChanges}
+                onAcceptAll={handleAcceptAllExternalChanges}
+                onRejectAll={handleRejectAllExternalChanges}
+                onShowDiff={handleShowExternalDiff}
+              />
+            )}
           {toasts.map((toast) => {
             const cleanTitle = toast.title.replace(
               /^[\u2713\u2715\u26a0\u2139\u26a1\u2699\u00d7]\uFE0F?\s*/u,
