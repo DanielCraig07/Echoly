@@ -951,6 +951,70 @@ npx vitest run packages/vscode-shim/test/polyfills.test.ts
 npx vitest run apps/desktop/test/extensionManager.test.ts
 ```
 
+### 第十三轮：标题栏分组线 + Codex 的「新聊天」改成开新会话
+
+**1. 标题栏那一排分了组。** AI 面板入口的两边各画一条竖分隔线：
+
+```
+[布局开关 ×3] │ [Claude] [Codex] │ [浏览器] [设置]
+```
+
+这一排本来是三簇不同的东西挤在同一个圆角容器里，中间没有任何区隔，「哪几个是一组」
+只能靠数图标。哪边没有 AI 入口就不画那条线（见 App.tsx 里的条件）——
+一个孤零零的分隔线比没有更难看。
+
+**2. Codex 的「新聊天」不再重置当前会话，改成开一个新会话。**
+
+背景：Codex 的**多会话本来就有** —— 每个会话是一个自定义编辑器
+（`chatgpt.conversationEditor`），URI 形如 `openai-codex://route/extension/panel/new`，
+扩展自己那个「New Codex Agent」命令走 `vscode.openWith` 打开一个新的。
+但界面里那个「新聊天」（侧栏头部的铅笔 / `Cmd+N`）走的是**另一条路**：
+扩展往侧栏推一条 `{type:'new-chat'}`，界面收到就把当前会话换成空白会话 ——
+用户看到的就是「点了新聊天，正在聊的那条被重置了」。
+
+这条链上原来有两个洞，都补了：
+
+| 洞                               | 以前                                                                                   | 现在                                                                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `vscode.openWith(uri, viewType)` | 无条件转发给渲染层，而渲染层只认 `'default'` —— 扩展想开自己的编辑器时**什么都没发生** | 宿主动手：`viewType` 是已注册的自定义编辑器、且 URI **不是 `file:`** 时，驱动它的 provider 并把面板挂成**右侧 AI 面板里的一个标签** |
+| `{type:'new-chat'}` 推给侧栏     | 原样投给界面 → 当前会话被重置                                                          | 截下来，改走扩展自己那条「开新面板」的命令（`chatgpt.newCodexPanel`）                                                               |
+
+几个刻意的选择：
+
+- **只接管非 `file:` 的 URI**：`.md` 那种真实文件仍旧走渲染层的编辑器标签（行为不变），
+  而 `openai-codex://route/…` 代表的是「一个会话」——Claude 的会话就在右侧那一栏，
+  同类东西放同一个地方。
+- **接管是登记制**（`NEW_CHAT_TAKEOVER`），不是通用规则：怎么实现「新聊天」是各扩展
+  自己的约定，宿主没有通用的替代路径，唯一能做的是改走它**已经具备**的多会话入口。
+  没登记的扩展行为一点不变。
+- **带 prefill 的不接管**：同一条消息还承担「把选中内容发到一个新会话」，那时它捎着
+  用户选中的东西，而扩展的「开新面板」命令不吃这个参数 —— 接管了就把内容弄丢了。
+- 面板交给 shim 建（`ExtensionHost.createPanelAsExtension`）：消息双向通道、关闭回调、
+  归属与扩展自己 `new` 出来的面板完全一致，不用再维护第二条通路。
+
+真扩展（`openai.chatgpt`）实测：
+
+```
+SIDEBAR_LEN=14695
+NEW_PANEL_CMD → PANELS=["panel:chatgpt.conversationEditor:1"]
+                 htmlLen=14970  runtime=true  startErr=false
+TAKEOVER=true  → PANELS=["panel:chatgpt.conversationEditor:1",
+                          "panel:chatgpt.conversationEditor:2"]   ← 又开了一个，前一个还在
+TAKEOVER_WITH_PREFILL=false      ← 带 prefill 的不接管
+TAKEOVER_OTHER_VIEW=false        ← 别的视图不受影响
+```
+
+`htmlLen=14970` / `startErr=false` 说明扩展真的把会话界面渲染出来了，而不是
+「Codex could not start」那个兜底页。
+
+回归测试：
+
+```bash
+npx vitest run apps/desktop/test/extensionManager.test.ts
+# 新增 4 条：openWith 虚拟文档 → 面板；file 的仍交渲染层；
+#            new-chat 被接管且有 prefill 时不接管
+```
+
 ## 5. 建议顺序
 
 1. `npm run dev` 之前先过**第 1 节门禁**（四条命令）。这一步不过，后面的现象都不可信。

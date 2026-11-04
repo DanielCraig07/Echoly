@@ -382,6 +382,21 @@ select:focus {
   color: #ffffff;
 }
 
+/**
+ * 组内的竖分隔线。
+ *
+ * 这一排是三簇不同的东西：布局开关 / AI 面板入口 / 浏览器与设置。挤在同一个圆角容器里、
+ * 中间没有任何区隔时，「哪几个是一组」只能靠数图标。分隔线让分组一眼可见 ——
+ * 也就是说它画在 AI 入口的**两边**（哪边没有 AI 入口就不画，见 App.tsx 里的条件）。
+ */
+.layout-toggle-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 3px;
+  background: rgba(255, 255, 255, 0.14);
+  flex-shrink: 0;
+}
+
 /** 图标本身：`<img>` 画的是扩展给的 SVG/PNG，尺寸钉死，免得各家给的画布大小不一。 */
 .ai-panel-entry-icon {
   width: 16px;

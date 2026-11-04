@@ -4861,6 +4861,9 @@ export function App() {
     [showChatPanel, rightPanelTab, layout, persistLayout, openExtensionView, viewTabId],
   );
 
+  /** 标题栏要摆哪几个 AI 面板入口（没激活的扩展不摆：点了是空的）。 */
+  const aiPanelEntries = aiPanelViews.filter((view) => view.available);
+
   const ideActions: CommandAction[] = [
     {
       id: 'cmd-open-composer',
@@ -5438,48 +5441,47 @@ export function App() {
               以前这里写死成「第一个固定视图必须等于 Claude Code 才显示」，只有 Claude
               有一个入口；现在固定了几个 AI 扩展就有几个。
             */}
-            {aiPanelViews
-              .filter((view) => view.available)
-              .map((view) => (
-                <button
-                  key={view.viewId}
-                  type="button"
-                  className={`layout-toggle-btn ai-panel-entry-btn${
-                    showChatPanel && rightPanelTab === viewTabId(view.viewId) ? ' active' : ''
-                  }`}
-                  title={view.title}
-                  onClick={() => toggleAiPanelView(view.viewId, view.title)}
-                >
-                  {view.icon ? (
-                    <img
-                      className="ai-panel-entry-icon"
-                      src={view.icon}
-                      alt=""
-                      aria-hidden="true"
+            {aiPanelEntries.length > 0 && (
+              <span className="layout-toggle-divider" aria-hidden="true" />
+            )}
+            {aiPanelEntries.map((view) => (
+              <button
+                key={view.viewId}
+                type="button"
+                className={`layout-toggle-btn ai-panel-entry-btn${
+                  showChatPanel && rightPanelTab === viewTabId(view.viewId) ? ' active' : ''
+                }`}
+                title={view.title}
+                onClick={() => toggleAiPanelView(view.viewId, view.title)}
+              >
+                {view.icon ? (
+                  <img className="ai-panel-entry-icon" src={view.icon} alt="" aria-hidden="true" />
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <rect
+                      x="1.5"
+                      y="2.5"
+                      width="13"
+                      height="11"
+                      rx="2.5"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
                     />
-                  ) : (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <rect
-                        x="1.5"
-                        y="2.5"
-                        width="13"
-                        height="11"
-                        rx="2.5"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                      />
-                      <line
-                        x1="1.5"
-                        y1="6"
-                        x2="14.5"
-                        y2="6"
-                        stroke="currentColor"
-                        strokeWidth="1.4"
-                      />
-                    </svg>
-                  )}
-                </button>
-              ))}
+                    <line
+                      x1="1.5"
+                      y1="6"
+                      x2="14.5"
+                      y2="6"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                    />
+                  </svg>
+                )}
+              </button>
+            ))}
+            {aiPanelEntries.length > 0 && (
+              <span className="layout-toggle-divider" aria-hidden="true" />
+            )}
 
             {/*
             浏览器与设置跟三个布局开关放进**同一个容器**。
