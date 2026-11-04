@@ -5575,26 +5575,6 @@ export function App() {
             <kbd className="search-trigger-kbd">{isMac ? '⌘P' : 'Ctrl+P'}</kbd>
           </button>
 
-          {/* 前进 / 后退：和编辑器那一侧的动作组同一排（紧邻下面的布局开关）。 */}
-          <div className="titlebar-nav">
-            <button
-              type="button"
-              disabled={!canGoBack(navHistory)}
-              title="后退到上一个文件"
-              onClick={() => navigateHistory('back')}
-            >
-              ←
-            </button>
-            <button
-              type="button"
-              disabled={!canGoForward(navHistory)}
-              title="前进到下一个文件"
-              onClick={() => navigateHistory('forward')}
-            >
-              →
-            </button>
-          </div>
-
           {/* 3个区域折叠/展开切换按钮 */}
           <div className="layout-toggle-group">
             <button
@@ -6382,6 +6362,12 @@ export function App() {
         <div className="middle-column" ref={middleColRef}>
           <ErrorBoundary title={t('errorBoundary.panelTitle', { name: t('panel.editor') })}>
             <EditorPane
+              fileNav={{
+                canGoBack: canGoBack(navHistory),
+                canGoForward: canGoForward(navHistory),
+                onBack: () => navigateHistory('back'),
+                onForward: () => navigateHistory('forward'),
+              }}
               tabs={tabs}
               activePath={activePath}
               gitStatus={gitStatus}

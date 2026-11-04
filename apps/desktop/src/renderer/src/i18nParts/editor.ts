@@ -253,7 +253,9 @@ export const editorDict: Record<string, { zh: string; en: string }> = {
     en: 'Search symbols (class, method, variable)...',
   },
   'editor.noSymbolMatch': { zh: '未找到匹配的符号', en: 'No matching symbols' },
-  'editor.backToPrev': { zh: '返回跳转前位置 (⌃- 或 ⌘[)', en: 'Go back (⌃- or ⌘[)' },
+  // 编辑器标签栏右上角那一对箭头：在打开过的文件之间走
+  'editor.fileNavBack': { zh: '上一个文件 (⌃- 或 ⌘[ 是「跳转前位置」)', en: 'Previous file' },
+  'editor.fileNavForward': { zh: '下一个文件', en: 'Next file' },
   'editor.edit': { zh: '编辑', en: 'Edit' },
   'editor.preview': { zh: '预览', en: 'Preview' },
   'editor.collapseToc': { zh: '收起目录大纲', en: 'Collapse outline' },

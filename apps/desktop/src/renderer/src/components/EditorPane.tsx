@@ -85,6 +85,18 @@ import {
 interface Props {
   tabs: OpenTab[];
   activePath: string | null;
+  /**
+   * 文件级的前进 / 后退（在**打开过的文件**之间走），编辑器标签栏右上角那一对箭头。
+   *
+   * 为什么放在编辑区而不是标题栏：它操作的是编辑区里开着的东西，挨着标签栏才顺手。
+   * 之前它在标题栏左端（红绿灯按钮后面），和它操作的对象隔了半个窗口。
+   */
+  fileNav: {
+    canGoBack: boolean;
+    canGoForward: boolean;
+    onBack: () => void;
+    onForward: () => void;
+  };
   gitStatus?: GitStatusResult | null;
   onSelectTab: (path: string) => void;
   onCloseTab: (path: string) => void;
@@ -284,6 +296,7 @@ interface TabContextMenuState {
 export function EditorPane({
   tabs,
   activePath,
+  fileNav,
   gitStatus,
   onSelectTab,
   onCloseTab,
@@ -4682,28 +4695,22 @@ export function EditorPane({
           </div>
 
           <div className="editor-tabs-actions">
+            {/*
+              文件前进 / 后退：在**打开过的文件**之间走。
+
+              这里原来是一个「返回跳转前位置」的箭头（符号跳转历史），标题栏另有一对
+              长得几乎一样的 ← → 做文件导航 —— 两个箭头干两件事，谁也说不清哪个是哪个。
+              现在只留这一对，语义就一个：上一个 / 下一个文件。
+
+              「跳转前位置」那套没删（⌃- / ⌘[ 还在，见本文件的命令注册），只是不再
+              单独占一个长得一样的按钮。
+            */}
             <button
               type="button"
               className="panel-action-btn"
-              title={t('editor.backToPrev')}
-              onClick={() => {
-                markNavigatingBack();
-                const fn = onOpenFileRef?.current ?? onOpenFile;
-                if (fn) {
-                  navigateBack(
-                    {
-                      onOpenFile: fn,
-                      getWorkspaceRoot: () => workspace,
-                      getCurrentPath: () => activeRef.current?.path ?? null,
-                      getCurrentPosition: () => {
-                        const pos = editorRef.current?.getPosition();
-                        return pos ? { line: pos.lineNumber, column: pos.column } : null;
-                      },
-                    },
-                    editorRef.current,
-                  );
-                }
-              }}
+              disabled={!fileNav.canGoBack}
+              title={t('editor.fileNavBack')}
+              onClick={fileNav.onBack}
             >
               <svg
                 width="15"
@@ -4717,6 +4724,27 @@ export function EditorPane({
               >
                 <line x1="19" y1="12" x2="5" y2="12" />
                 <polyline points="12 19 5 12 12 5" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="panel-action-btn"
+              disabled={!fileNav.canGoForward}
+              title={t('editor.fileNavForward')}
+              onClick={fileNav.onForward}
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
               </svg>
             </button>
 
