@@ -14,6 +14,7 @@ import {
   type WorkspaceFolder,
 } from './workspaceFolders';
 import { projectConfigChildPath, projectConfigDir } from './projectConfig';
+import { FileChangeSnapshots } from './fileChangeSnapshots';
 
 const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png',
@@ -30,6 +31,20 @@ const MIME_BY_EXT: Record<string, string> = {
 function mimeFromPath(relPath: string): string {
   const ext = relPath.split('.').pop()?.toLowerCase() ?? '';
   return MIME_BY_EXT[ext] ?? 'application/octet-stream';
+}
+
+/**
+ * 快照缓存的键：**后端根 + 相对路径**。
+ *
+ * 不用渲染层传来的逻辑路径（多根会带 `folderId/` 前缀），也不用裸相对路径 ——
+ * 磁盘监听到的、IPC 读写的都用这一个口子换算，键才对得上。
+ */
+function absKeyOfRoot(root: string, relPath: string): string {
+  return path.join(root, relPath).replace(/\\/g, '/');
+}
+
+function absKeyOf(backend: WorkspaceBackend, relPath: string): string {
+  return backend.resolveAbsolute(relPath).replace(/\\/g, '/');
 }
 
 export class WorkspaceService {
@@ -59,6 +74,14 @@ export class WorkspaceService {
    */
   private readonly configHomeDir?: string;
 
+  /**
+   * 「改动前的内容」快照。读文件 / 写文件时记，磁盘变更时取 —— 见 fileChangeSnapshots.ts。
+   */
+  private readonly snapshots = new FileChangeSnapshots();
+
+  /** 我们自己刚写过的路径 → 时间。见 markSelfWrite 的注释。 */
+  private readonly selfWrites = new Map<string, number>();
+
   constructor(opts: { configHomeDir?: string } = {}) {
     this.configHomeDir = opts.configHomeDir;
   }
@@ -67,12 +90,47 @@ export class WorkspaceService {
     this.onChange = cb;
   }
 
-  setFsChangeListener(cb: (data: { type: string; path?: string }) => void): void {
+  setFsChangeListener(cb: (data: { type: string; path?: string; before?: string }) => void): void {
     this.onFsChange = cb;
   }
 
-  notifyFsChange(type: string, relPath?: string): void {
-    this.onFsChange?.({ type, path: relPath });
+  /**
+   * 广播一次文件系统变更。
+   *
+   * `before` 是**改动前的内容**（能拿到时才有）—— 界面拿它把「拒绝」按钮做出来：
+   * 代理是别人进程写的盘，我们只能在改动落到磁盘之后才发现，所以「改之前是什么」
+   * 来自快照缓存（见 fileChangeSnapshots.ts）。
+   */
+  notifyFsChange(type: string, relPath?: string, before?: string, selfWrite = false): void {
+    this.onFsChange?.({
+      type,
+      path: relPath,
+      ...(before === undefined ? {} : { before }),
+      ...(selfWrite ? { self: true } : {}),
+    });
+  }
+
+  /**
+   * 记下「这个路径是我们自己刚写的」。
+   *
+   * 为什么需要它：磁盘监听器分不清是谁写的盘 —— 用户按保存、我们执行 git 操作、
+   * 我们替用户还原文件，都会触发它。这些**都不是「别人改了文件」**，报出去只会
+   * 变成噪音（「我明明刚保存，怎么提示文件被改了」）。
+   *
+   * 时间窗 3 秒：写入与监听事件之间的延迟通常几十毫秒，但文件大的时候会长一些。
+   */
+  private markSelfWrite(absPath: string): void {
+    this.selfWrites.set(absPath, Date.now());
+  }
+
+  private wasSelfWrite(absPath: string): boolean {
+    const at = this.selfWrites.get(absPath);
+    if (at === undefined) return false;
+    if (Date.now() - at > 3000) {
+      this.selfWrites.delete(absPath);
+      return false;
+    }
+    return true;
   }
 
   private stopWatcher(): void {
@@ -105,8 +163,17 @@ export class WorkspaceService {
           }
         }
         if (this.watchTimer) clearTimeout(this.watchTimer);
+        const relName = filename ? String(filename) : undefined;
         this.watchTimer = setTimeout(() => {
-          this.notifyFsChange('watch', filename ? String(filename) : undefined);
+          const abs = relName ? absKeyOfRoot(root, relName) : '';
+          const selfWrite = abs ? this.wasSelfWrite(abs) : false;
+          this.notifyFsChange(
+            'watch',
+            relName,
+            // 自己写的不算「改动前的快照已被消耗」，也不要拿旧快照去覆盖
+            abs && !selfWrite ? this.snapshots.claim(abs) : undefined,
+            selfWrite,
+          );
         }, 120);
       });
       this.watcher.on('error', (err) => {
@@ -521,7 +588,10 @@ export class WorkspaceService {
    */
   async readFile(relPath: string): Promise<string> {
     const { backend, rel } = this.backendFor(relPath);
-    return backend.readFile(rel);
+    const content = await backend.readFile(rel);
+    // 记下我们看到的这一份：下次这个文件被改，「改之前」就是它
+    this.snapshots.remember(absKeyOf(backend, rel), content);
+    return content;
   }
 
   async readFileLines(
@@ -549,14 +619,18 @@ export class WorkspaceService {
   async writeFile(relPath: string, content: string): Promise<void> {
     const { backend, rel } = this.backendFor(relPath);
     await backend.writeFile(rel, content);
+    // 用户自己写的这一份也是「我们知道的现状」
+    this.snapshots.remember(absKeyOf(backend, rel), content);
+    this.markSelfWrite(absKeyOf(backend, rel));
     // 广播时用**原始逻辑路径**：监听方拿它去刷新文件树，前缀必须留着。
-    this.notifyFsChange('create', relPath);
+    this.notifyFsChange('create', relPath, undefined, true);
   }
 
   async mkdir(relPath: string): Promise<void> {
     const { backend, rel } = this.backendFor(relPath);
     await backend.mkdir(rel);
-    this.notifyFsChange('create', relPath);
+    this.markSelfWrite(absKeyOf(backend, rel));
+    this.notifyFsChange('create', relPath, undefined, true);
   }
 
   async rename(fromRel: string, toRel: string): Promise<void> {
@@ -569,13 +643,20 @@ export class WorkspaceService {
       throw new Error('暂不支持在不同工作区文件夹之间移动文件');
     }
     await from.backend.rename(from.rel, to.rel);
-    this.notifyFsChange('rename', toRel);
+    // 改名是我们自己发起的：源、目标都标上，别让磁盘监听把这两条报成「别人改了文件」
+    this.markSelfWrite(absKeyOf(from.backend, from.rel));
+    this.markSelfWrite(absKeyOf(to.backend, to.rel));
+    this.snapshots.forget(absKeyOf(from.backend, from.rel));
+    this.notifyFsChange('rename', toRel, undefined, true);
   }
 
   async remove(relPath: string): Promise<void> {
     const { backend, rel } = this.backendFor(relPath);
     await backend.remove(rel);
-    this.notifyFsChange('delete', relPath);
+    // 文件没了，留着旧快照只会在下次同名文件出现时给出错误的「改动前」
+    this.snapshots.forget(absKeyOf(backend, rel));
+    this.markSelfWrite(absKeyOf(backend, rel));
+    this.notifyFsChange('delete', relPath, undefined, true);
   }
 
   async copy(fromRel: string, toRel: string): Promise<void> {
@@ -585,7 +666,8 @@ export class WorkspaceService {
       throw new Error('暂不支持在不同工作区文件夹之间复制文件');
     }
     await from.backend.copy(from.rel, to.rel);
-    this.notifyFsChange('create', toRel);
+    this.markSelfWrite(absKeyOf(to.backend, to.rel));
+    this.notifyFsChange('create', toRel, undefined, true);
   }
 
   async exists(relPath: string): Promise<boolean> {

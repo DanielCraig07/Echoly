@@ -2126,7 +2126,13 @@ export interface IpcApi {
   onTerminalExit: (cb: (payload: { id: string; exitCode: number }) => void) => () => void;
   onBackgroundJobsChanged: (cb: (jobs: BackgroundJob[]) => void) => () => void;
   onWorkspaceChanged: (cb: (info: WorkspaceInfo) => void) => () => void;
-  onFsChanged?: (cb: (data: { type: string; path?: string }) => void) => () => void;
+  /**
+   * 磁盘变更。`before` 是**改动前的内容**（能记到时才有），界面拿它做「拒绝/还原」；
+   * `self` 表示这次变化是我们自己写盘造成的（不该当成「别人改了文件」报给用户）。
+   */
+  onFsChanged?: (
+    cb: (data: { type: string; path?: string; before?: string; self?: boolean }) => void,
+  ) => () => void;
   onGitCloneLog: (cb: (line: string) => void) => () => void;
   onGitBranchSwitched: (cb: (data: { branch: string }) => void) => () => void;
   onSshDisconnected?: (cb: (data: { host: string; username: string }) => void) => () => void;

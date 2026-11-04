@@ -188,8 +188,10 @@ const api: IpcApi = {
     return () => ipcRenderer.removeListener('workspace:changed', listener);
   },
   onFsChanged: (cb) => {
-    const listener = (_: Electron.IpcRendererEvent, data: { type: string; path?: string }) =>
-      cb(data);
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      data: { type: string; path?: string; before?: string; self?: boolean },
+    ) => cb(data);
     ipcRenderer.on('workspace:fsChanged', listener);
     return () => ipcRenderer.removeListener('workspace:fsChanged', listener);
   },
