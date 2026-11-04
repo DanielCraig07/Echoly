@@ -18620,7 +18620,16 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   color: var(--muted);
 }
 
+/**
+ * 下载进度条。
+ *
+ * `display: block` 是必须的：搜索结果那一行用的是 `<span>`，而 span 默认**行内** ——
+ * 行内的东西 `height` 直接无效、子元素 `width: 95%` 也按零宽算，于是
+ * 「百分比在涨、进度条一动不动」。卡片里那份用的是 `<div>`，所以那边一直是好的，
+ * 这个坑才一直没被发现。两处共用这套样式，谁也别依赖标签名。
+ */
 .ext-progress-track {
+  display: block;
   height: 6px;
   background: var(--border);
   border-radius: 999px;
@@ -18628,6 +18637,7 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 }
 
 .ext-progress-bar {
+  display: block;
   height: 100%;
   background: var(--accent);
   border-radius: 999px;
