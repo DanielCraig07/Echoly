@@ -78,4 +78,10 @@ describe('buildAiPanelEntries', () => {
     );
     expect(entries[0].title).toBe('X Y');
   });
+
+  it('被禁用的扩展不显示（安装但禁用 = 标题栏自动隐藏入口）', () => {
+    const disabledCodex: InstalledForEntries = { ...codex, enabled: false };
+    const entries = buildAiPanelEntries([claude, disabledCodex], [], new Set());
+    expect(entries.map((e) => e.extensionId)).toEqual(['Anthropic.claude-code']);
+  });
 });

@@ -25,6 +25,7 @@ export interface InstalledForEntries {
   id: string;
   displayName: string;
   active?: boolean;
+  enabled?: boolean;
   views?: { id: string; name?: string; icon?: string }[];
 }
 
@@ -35,14 +36,18 @@ export function buildAiPanelEntries(
 ): AiPanelEntry[] {
   const entries: AiPanelEntry[] = [];
   for (const extension of installed) {
+    // 被禁用的扩展不显示右上角入口
+    if (extension.enabled === false) continue;
     const views = extension.views ?? [];
     if (views.length === 0) continue;
     const preferred = views.find((view) => pinnedViewIds.includes(view.id)) ?? views[0];
+    const isRunning =
+      Boolean(extension.active) || activeExtensionIds.has(extension.id.toLowerCase());
     entries.push({
       viewId: preferred.id,
       title: preferred.name || extension.displayName,
       extensionId: extension.id,
-      available: Boolean(extension.active) || activeExtensionIds.has(extension.id.toLowerCase()),
+      available: isRunning,
       icon: preferred.icon,
     });
   }

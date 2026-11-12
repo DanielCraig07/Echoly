@@ -171,10 +171,13 @@ export const ProjectHistoryView: React.FC<ProjectHistoryViewProps> = ({
                       type="button"
                       className="project-history-delete-btn"
                       title={t('chat.deleteSession')}
+                      aria-label={t('chat.deleteSession')}
                       onClick={(e) => {
                         e.stopPropagation();
                         onDeleteSession(session.id, session.title);
                       }}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
                     >
                       <svg
                         width="12"

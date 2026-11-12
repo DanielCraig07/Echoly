@@ -879,6 +879,7 @@ export class ExtensionManager {
       await this.extensionHost.activateExtension(extension);
 
       console.log('Claude Code extension activated successfully');
+      this.broadcastToRenderers('extension:installed-changed', { id: CLAUDE_CODE_ID });
     } catch (err) {
       console.error('Failed to install Claude Code extension:', err);
       throw err;
@@ -1157,6 +1158,7 @@ export class ExtensionManager {
       console.log(
         `[ExtensionManager] 已从市场安装并激活：${extension.id} v${loaded.manifest.version}`,
       );
+      this.broadcastToRenderers('extension:installed-changed', { id: extension.id });
       return resolved.warning ? { warning: resolved.warning } : {};
     } catch (err: any) {
       console.warn(`[ExtensionManager] ${extension.id} 已安装但激活失败：`, err);
@@ -1253,6 +1255,7 @@ export class ExtensionManager {
       this.loadedExtensionPaths.add(finalPath);
 
       console.log(`Extension loaded and activated: ${extension.manifest.displayName}`);
+      this.broadcastToRenderers('extension:installed-changed', { id: extension.manifest.name });
     } catch (err) {
       console.error(`Failed to load extension from ${extensionPath}:`, err);
       throw err;
@@ -1482,6 +1485,7 @@ export class ExtensionManager {
           await fs.access(path.join(extensionPath, 'package.json'));
           await this.loadExtensionFromPath(extensionPath);
         }
+        this.broadcastToRenderers('extension:installed-changed', { id, enabled: true });
         return { ok: true };
       }
 
@@ -1492,6 +1496,7 @@ export class ExtensionManager {
       await this.extensionHost.deactivateExtension(id);
       this.loadedExtensionPaths.delete(extensionPath);
       this.forgetExtensionViews(id, dir);
+      this.broadcastToRenderers('extension:installed-changed', { id, enabled: false });
       return { ok: true };
     } catch (err: any) {
       return { ok: false, error: err?.message ?? String(err) };
@@ -1525,6 +1530,7 @@ export class ExtensionManager {
       // 用户看到的是一堆对不上的旧设置
       await this.purgeExtensionStorage(id);
       await this.refreshSettingDefaults();
+      this.broadcastToRenderers('extension:installed-changed', { id, uninstalled: true });
       return { ok: true };
     } catch (err: any) {
       return { ok: false, error: `卸载失败：${err?.message ?? err}` };

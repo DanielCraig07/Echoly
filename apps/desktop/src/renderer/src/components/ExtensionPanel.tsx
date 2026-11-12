@@ -374,6 +374,7 @@ export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
               ? t('ext.disabledToast', { name: ext.displayName })
               : t('ext.enabledToast', { name: ext.displayName }),
           );
+          window.dispatchEvent(new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: ext.id }));
           await loadExtensions();
         } else {
           setError(t('ext.toggleFailed', { msg: res?.error || t('extView.unknownError') }));
@@ -397,6 +398,7 @@ export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
       const res = await window.extensions.uninstall(ext.id);
       if (res?.ok) {
         setSuccessMsg(t('ext.uninstalledToast', { name: ext.displayName }));
+        window.dispatchEvent(new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: ext.id }));
         await loadExtensions();
       } else {
         setError(t('ext.uninstallFailed', { msg: res?.error || t('extView.unknownError') }));
@@ -437,7 +439,11 @@ export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
   useEffect(() => {
     const onInstalled = () => void loadExtensions();
     window.addEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
-    return () => window.removeEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+    const unsubscribe = window.ide?.onExtensionInstalledChanged?.(() => void loadExtensions());
+    return () => {
+      window.removeEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
+      unsubscribe?.();
+    };
   }, [loadExtensions]);
 
   useEffect(() => {
@@ -580,6 +586,7 @@ export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
         version: extension.version,
       });
       if (result.success) {
+        window.dispatchEvent(new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: extension.id }));
         await loadExtensions();
         // 装好了但没激活起来：把原因一并说出来，而不是只报「已安装」
         setSuccessMsg(
@@ -613,6 +620,7 @@ export function ExtensionPanel({ onOpenDetail }: ExtensionPanelProps = {}) {
 
       const result = await window.extensions.loadFromPath(filePath);
       if (result.success) {
+        window.dispatchEvent(new CustomEvent(EXTENSION_INSTALLED_EVENT));
         await loadExtensions();
         setSuccessMsg(t('ext.localLoadOk', { name: filePath.split(/[/\\]/).pop() ?? '' }));
       } else {

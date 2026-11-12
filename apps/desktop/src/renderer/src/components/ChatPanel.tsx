@@ -354,7 +354,26 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     handleDeleteProjectSession,
     showHistoryModal,
     setShowHistoryModal,
-  } = useProjectSessions({ workspaceInfo });
+  } = useProjectSessions({
+    workspaceInfo,
+    confirm,
+    onSessionDeleted: (deletedId) => {
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.id === deletedId);
+        if (idx === -1) return prev;
+        if (prev.length === 1) {
+          const reset = createEmptyTab();
+          setActiveTabId(reset.id);
+          return [reset];
+        }
+        const nextTabs = prev.filter((t) => t.id !== deletedId);
+        setActiveTabId((curActive) =>
+          curActive === deletedId ? nextTabs[nextTabs.length - 1].id : curActive,
+        );
+        return nextTabs;
+      });
+    },
+  });
 
   // 领域 Hook：文件改动检查点与回退状态管理
   const { checkpoints, setCheckpoints, refreshCheckpoints, knownRunIds } = useChatCheckpoints();
@@ -1236,6 +1255,31 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
       (item) => item.title.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q),
     );
   }, [commandState.isOpen, commandState.query, commandCandidates]);
+
+  const inputPlaceholder = useMemo(() => {
+    // 运行中把「Enter 发送」改成「Enter 追加」：这两件事的行为不同（一个是新起一轮，
+    // 一个是插进当前这轮），占位文案是用户唯一能提前知道的途径。
+    if (activeTab?.runId) return t('chat.placeholderRunning');
+    const mode = activeTab?.mode || 'agent';
+    const modeAction =
+      mode === 'ask'
+        ? t('chat.placeholderAsk')
+        : mode === 'plan'
+          ? t('chat.placeholderPlan')
+          : t('chat.placeholderAgent');
+    const modeDesc =
+      mode === 'ask'
+        ? t('chat.hintAskDesc')
+        : mode === 'plan'
+          ? t('chat.hintPlanDesc')
+          : t('chat.hintAgentDesc');
+    const cmdHint = t('chat.hintCommands');
+    const ctxHint = t('chat.hintContext');
+    const modeName = MODE_LABEL[mode] || mode;
+    return locale === 'zh'
+      ? `${modeAction}（${modeName} · ${modeDesc} · / ${cmdHint}，@ ${ctxHint}）`
+      : `${modeAction} (${modeName} · ${modeDesc} · / ${cmdHint}, @ ${ctxHint})`;
+  }, [activeTab?.runId, activeTab?.mode, locale, t]);
 
   /**
    * 选中命令：用模板正文**替换掉** `/name` 与游标到行尾的这段输入。
@@ -4081,17 +4125,7 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               fontSize: 'var(--ui-font-size, 12px)',
             }}
             onOpenFile={onOpenFile}
-            placeholder={
-              // 运行中把「Enter 发送」改成「Enter 追加」：这两件事的行为不同（一个是新起一轮，
-              // 一个是插进当前这轮），占位文案是用户唯一能提前知道的途径。
-              activeTab?.runId
-                ? t('chat.placeholderRunning')
-                : activeTab?.mode === 'ask'
-                  ? t('chat.placeholderAsk')
-                  : activeTab?.mode === 'plan'
-                    ? t('chat.placeholderPlan')
-                    : t('chat.placeholderAgent')
-            }
+            placeholder={inputPlaceholder}
             onChange={(val) => {
               setLocalInput(val);
               debouncedSyncTabInput(val);
@@ -4198,26 +4232,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
               }
             }}
           />
-          {/* 常驻功能指引行：模式说明 + `/` `@` 两个触发符的用途。
-              放在工具栏上方，与 Cursor 的「Plan, Build, / for skills, @ for context」同位。 */}
-          <div className="chat-input-hint">
-            <span className="chat-input-hint-mode">{MODE_LABEL[activeTab?.mode || 'agent']}</span>
-            <span className="chat-input-hint-sep">·</span>
-            <span className="chat-input-hint-desc">
-              {activeTab?.mode === 'ask'
-                ? t('chat.hintAskDesc')
-                : activeTab?.mode === 'plan'
-                  ? t('chat.hintPlanDesc')
-                  : t('chat.hintAgentDesc')}
-            </span>
-            <span className="chat-input-hint-spacer" />
-            <span className="chat-input-hint-key">
-              <code>/</code> {t('chat.hintCommands')}
-            </span>
-            <span className="chat-input-hint-key">
-              <code>@</code> {t('chat.hintContext')}
-            </span>
-          </div>
           <div className="chat-input-toolbar">
             <div className="chat-toolbar-left">
               {/* Attachment Button & hidden file input */}

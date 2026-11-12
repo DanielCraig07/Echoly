@@ -231,6 +231,14 @@ const api: IpcApi = {
     ipcRenderer.on('extension:webview-registered', listener);
     return () => ipcRenderer.removeListener('extension:webview-registered', listener);
   },
+  onExtensionInstalledChanged: (cb) => {
+    const listener = (
+      _: Electron.IpcRendererEvent,
+      data?: { id?: string; enabled?: boolean; uninstalled?: boolean },
+    ) => cb(data);
+    ipcRenderer.on('extension:installed-changed', listener);
+    return () => ipcRenderer.removeListener('extension:installed-changed', listener);
+  },
   extensionResolveWebview: (viewId) => ipcRenderer.invoke('extension:resolve-webview', viewId),
   customEditorMatch: (filePath) => ipcRenderer.invoke('extension:custom-editor-match', filePath),
   listCustomEditors: () => ipcRenderer.invoke('extension:custom-editors'),

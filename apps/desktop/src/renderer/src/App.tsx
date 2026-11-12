@@ -1968,7 +1968,7 @@ export function App() {
           const owner = installed.find((ext) =>
             (ext.views ?? []).some((view) => view.id === viewId),
           );
-          if (!owner) continue; // 没装/没贡献这个视图 → 不摆一个点开是空的标签
+          if (!owner || owner.enabled === false) continue; // 没装/禁用/没贡献这个视图 → 不摆一个点开是空的标签
           const contributed = (owner.views ?? []).find((view) => view.id === viewId);
           next.push({
             viewId,
@@ -1988,14 +1988,22 @@ export function App() {
          * 取「已经固定的那个」，没有固定的就取它注册的第一个。别的视图仍旧能从
          * 扩展详情页固定/打开。
          */
-        setAiPanelEntries(buildAiPanelEntries(installed, pinned, activeIds));
+        const entries = buildAiPanelEntries(installed, pinned, activeIds);
+        setAiPanelEntries(entries);
+        setRightPanelTab((curTab) => {
+          if (curTab === 'chat' || curTab.startsWith('panel:')) return curTab;
+          const isStillPinned = next.some((v) => viewTabId(v.viewId) === curTab);
+          const isStillEntry = entries.some((e) => e.available && viewTabId(e.viewId) === curTab);
+          return isStillPinned || isStillEntry ? curTab : 'chat';
+        });
       } catch {
         // 探测失败就当没装：宁可晚一点出现，也不要出现一个点了没反应的面板
       }
     };
     void probe();
 
-    const unsubscribe = window.ide?.onExtensionWebviewRegistered?.(() => void probe());
+    const unsubscribeWebview = window.ide?.onExtensionWebviewRegistered?.(() => void probe());
+    const unsubscribeInstalled = window.ide?.onExtensionInstalledChanged?.(() => void probe());
     // 刚装完就再探一次：这时候列表才是最新的一份
     const onInstalled = () => void probe();
     const onPinned = () => void probe();
@@ -2003,7 +2011,8 @@ export function App() {
     window.addEventListener(AI_PANEL_VIEWS_CHANGED_EVENT, onPinned);
     return () => {
       cancelled = true;
-      unsubscribe?.();
+      unsubscribeWebview?.();
+      unsubscribeInstalled?.();
       window.removeEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
       window.removeEventListener(AI_PANEL_VIEWS_CHANGED_EVENT, onPinned);
     };
@@ -2029,11 +2038,13 @@ export function App() {
     void load();
     const onInstalled = () => void load();
     window.addEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
-    const unsubscribe = window.ide?.onExtensionWebviewRegistered?.(() => void load());
+    const unsubscribeWebview = window.ide?.onExtensionWebviewRegistered?.(() => void load());
+    const unsubscribeInstalled = window.ide?.onExtensionInstalledChanged?.(() => void load());
     return () => {
       cancelled = true;
       window.removeEventListener(EXTENSION_INSTALLED_EVENT, onInstalled);
-      unsubscribe?.();
+      unsubscribeWebview?.();
+      unsubscribeInstalled?.();
     };
   }, []);
 

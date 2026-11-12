@@ -307,6 +307,9 @@ export function ExtensionDetailView({ extensionId, onShowToast }: ExtensionDetai
             : t('ext.disabledToast', { name: installedInfo.displayName }),
           'success',
         );
+        window.dispatchEvent(
+          new CustomEvent(EXTENSION_INSTALLED_EVENT, { detail: installedInfo.id }),
+        );
         await load();
       } else {
         onShowToast?.(

@@ -2154,6 +2154,9 @@ export interface IpcApi {
     }) => void,
   ) => () => void;
   onExtensionWebviewRegistered: (cb: (data: { viewId: string }) => void) => () => void;
+  onExtensionInstalledChanged?: (
+    cb: (data?: { id?: string; enabled?: boolean; uninstalled?: boolean }) => void,
+  ) => () => void;
   /**
    * 解析一个扩展视图：主进程生成它的 HTML 并给出访问地址。
    *

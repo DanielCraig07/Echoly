@@ -2,16 +2,24 @@ import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { ChatSession, WorkspaceInfo } from '@deepseek-ide/shared';
 import { folderNameFromPath } from '../../../utils';
 import { isSessionMatchingWorkspace } from '../../SessionModal';
-import { useDbConfirm } from '../../../hooks/useDbConfirm';
+import { useDbConfirm, type DbConfirmHandle } from '../../../hooks/useDbConfirm';
+import { buildSqlConfirmMarkdown } from '../../../services/dbConfirmContent';
 import { useI18n } from '../../../i18n';
 
 export interface UseProjectSessionsOptions {
   workspaceInfo?: WorkspaceInfo;
+  confirm?: DbConfirmHandle;
+  onSessionDeleted?: (id: string) => void;
 }
 
-export function useProjectSessions({ workspaceInfo }: UseProjectSessionsOptions) {
+export function useProjectSessions({
+  workspaceInfo,
+  confirm: externalConfirm,
+  onSessionDeleted,
+}: UseProjectSessionsOptions) {
   const { t } = useI18n();
-  const confirm = useDbConfirm();
+  const internalConfirm = useDbConfirm();
+  const confirm = externalConfirm ?? internalConfirm;
   const [projectSessions, setProjectSessions] = useState<ChatSession[]>([]);
   const [hasLoadedSessions, setHasLoadedSessions] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -65,23 +73,38 @@ export function useProjectSessions({ workspaceInfo }: UseProjectSessionsOptions)
 
   const handleDeleteProjectSession = useCallback(
     async (id: string, title?: string) => {
+      const target = projectSessions.find((s) => s.id === id);
+      const sessionTitle = title?.trim() || target?.title?.trim() || t('session.untitled');
       const ok = await confirm.confirm({
         title: t('session.deleteTitle'),
-        content: t('chat.deleteSessionConfirm', {
-          title: title?.trim() || t('session.untitled'),
+        content: buildSqlConfirmMarkdown({
+          t,
+          intro: t('chat.deleteSessionConfirm', { title: sessionTitle }),
+          statements: [],
         }),
+        details: [
+          { label: t('session.labelTitle'), value: sessionTitle },
+          {
+            label: t('session.labelTurns'),
+            value: t('session.turnsCount', {
+              n: target?.messageCount ?? target?.messages?.length ?? 0,
+            }),
+          },
+        ],
         tone: 'danger',
         confirmLabel: t('session.confirmDelete'),
       });
       if (ok === null) return;
       try {
+        setProjectSessions((prev) => prev.filter((s) => s.id !== id));
         await window.ide.deleteSession(id);
+        onSessionDeleted?.(id);
         void loadProjectSessions();
       } catch (err) {
         console.error('Failed to delete session', err);
       }
     },
-    [confirm, t, loadProjectSessions],
+    [confirm, t, projectSessions, onSessionDeleted, loadProjectSessions],
   );
 
   return {
@@ -92,5 +115,6 @@ export function useProjectSessions({ workspaceInfo }: UseProjectSessionsOptions)
     handleDeleteProjectSession,
     showHistoryModal,
     setShowHistoryModal,
+    confirmModal: internalConfirm.modal,
   };
 }
