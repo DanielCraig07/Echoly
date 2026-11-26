@@ -92,3 +92,71 @@ describe('SftpBackend listDir & Path Resolution', () => {
     expect(await resolve(mockClient, '/var/www/', 'developer')).toBe('/var/www');
   });
 });
+
+/**
+ * 远端工作区根就是 `/` 时的路径校验。
+ *
+ * 这是用户报的那个 bug：「连接服务器 → 打开根目录 → 展开子目录」直接报
+ * `[ssh] 路径经符号链接逃出工作区: opt`。`toRel` 用 `root + '/'` 拼前缀，
+ * 根是 `/` 时拼出 `//`，`/opt` 剥不掉前缀就原样返回，调用方见「以 / 开头」
+ * 便判成逃逸 —— 根下**每一个**目录都打不开，文件树整个展不平。
+ */
+describe('SftpBackend.resolveSafe 在远端根为 / 时的判定', () => {
+  /** realpath 一律解析成自身（不涉及软链），只用来观察前缀判定。 */
+  function makeSftp() {
+    return {
+      realpath: vi.fn((p: string, cb: any) => cb(null, p)),
+      readdir: vi.fn((_p, cb) => cb(null, [])),
+    } as any;
+  }
+
+  it('根为 / 时，根下一级目录不算逃逸', async () => {
+    const backend = new SftpBackend('/', {} as any, makeSftp());
+    const entries = await backend.listDir('opt');
+    expect(entries).toEqual([]);
+  });
+
+  it('根为 / 时，多级路径同样放行', async () => {
+    const backend = new SftpBackend('/', {} as any, makeSftp());
+    await expect(backend.listDir('opt/apps/echoly')).resolves.toEqual([]);
+  });
+
+  it('根为 / 时，根自身（.）放行', async () => {
+    const backend = new SftpBackend('/', {} as any, makeSftp());
+    await expect(backend.listDir('.')).resolves.toEqual([]);
+  });
+
+  it('根为普通目录时行为不变', async () => {
+    const backend = new SftpBackend('/remote/project', {} as any, makeSftp());
+    await expect(backend.listDir('src')).resolves.toEqual([]);
+  });
+
+  it('软链真的指向工作区外时仍然拦下', async () => {
+    const sftp = {
+      realpath: vi.fn((p: string, cb: any) =>
+        cb(null, p === '/remote/project/escape' ? '/etc' : p),
+      ),
+      readdir: vi.fn((_p, cb) => cb(null, [])),
+    } as any;
+    const backend = new SftpBackend('/remote/project', {} as any, sftp);
+    await expect(backend.listDir('escape')).rejects.toThrow(/逃出工作区/);
+  });
+
+  it('指向根内的软链仍放行', async () => {
+    const sftp = {
+      realpath: vi.fn((p: string, cb: any) =>
+        cb(null, p === '/remote/project/alias' ? '/remote/project/real' : p),
+      ),
+      readdir: vi.fn((_p, cb) => cb(null, [])),
+    } as any;
+    const backend = new SftpBackend('/remote/project', {} as any, sftp);
+    await expect(backend.listDir('alias')).resolves.toEqual([]);
+  });
+
+  it('名字以 .. 开头的目录不算逃逸（..cache / ..eslintrc 这类）', async () => {
+    // `startsWith('..')` 的朴素写法会把它们当成上级目录，目录怎么都打不开
+    const backend = new SftpBackend('/remote/project', {} as any, makeSftp());
+    await expect(backend.listDir('..cache')).resolves.toEqual([]);
+    await expect(backend.listDir('..eslintrc')).resolves.toEqual([]);
+  });
+});

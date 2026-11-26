@@ -170,12 +170,38 @@ function posixJoin(root: string, relPath = '.'): string {
   return `/${out.join('/')}`;
 }
 
+/**
+ * 把远端绝对路径转成相对工作区根的路径。
+ *
+ * 两条容易踩空的边界，`startsWith(root + '/')` 的朴素写法都会错：
+ *
+ * 1. **根是 `/` 时**（用户连接服务器后直接打开根目录），`root + '/'` 拼出 `//`，
+ *    `/opt` 不以 `//` 开头 → 原样返回 `/opt`。而调用方把「结果以 `/` 开头」
+ *    判成逃逸，于是根下**每一个目录**都报「路径经符号链接逃出工作区」，
+ *    文件树整个展不开。这里对根单独用 `/` 作前缀。
+ *
+ * 2. **同级但名字以 `..` 开头的路径**（`/proj/..cache`）：原样返回之后
+ *    调用方用 `startsWith('..')` 判逃逸，`..cache` 被当成 `..` 的上级目录。
+ *    真正的逃逸是全的 `..` 或 `../`，所以调用方要按**路径段**比对，见 `escapesRoot`。
+ */
 function toRel(root: string, abs: string): string {
-  const rootN = root.replace(/\/$/, '') || '/';
-  const absN = abs.replace(/\/$/, '') || '/';
+  const rootN = (root || '/').replace(/\/+$/, '') || '/';
+  const absN = (abs || '/').replace(/\/+$/, '') || '/';
   if (absN === rootN) return '.';
-  if (absN.startsWith(`${rootN}/`)) return absN.slice(rootN.length + 1);
+  const prefix = rootN === '/' ? '/' : `${rootN}/`;
+  if (absN.startsWith(prefix)) return absN.slice(prefix.length);
   return absN;
+}
+
+/**
+ * `toRel` 的结果是否真的落在工作区之外。
+ *
+ * **不能写成 `rel.startsWith('..')`**：那会把工作区里名叫 `..cache` / `..eslintrc`
+ * 的目录当成上级目录。逃逸只有两种形状 —— 恰好是 `..`，或以 `../` 开头；
+ * 以及 `toRel` 没能剥掉根前缀时返回的绝对路径。
+ */
+function escapesRoot(rel: string): boolean {
+  return rel === '..' || rel.startsWith('../') || rel.startsWith('/');
 }
 
 /**
@@ -237,7 +263,7 @@ export class SftpBackend implements WorkspaceBackend {
       const real = await this.realpathOrNull(probe);
       if (real !== null) {
         const rel = toRel(rootReal, real);
-        if (rel !== '.' && (rel.startsWith('..') || rel.startsWith('/'))) {
+        if (escapesRoot(rel)) {
           throw new Error(`[ssh] 路径经符号链接逃出工作区: ${relPath}`);
         }
         return abs;

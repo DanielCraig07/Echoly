@@ -59,18 +59,20 @@ export class DiffStore {
   }
 
   /**
-   * 全部采纳 / 全部放弃：逐条处理，**一条失败不中断其余**。
+   * 全部采纳：逐条处理，**一条失败不中断其余**。
    *
    * 与单条不同，这里的语义是"尽力而为"：三条里有一条被占住，另外两条没有理由
    * 跟着不写。失败的条目原样留在列表里（accept/reject 已经保证了这点），
    * 最后统一把失败路径抛出去，让界面一次性告诉用户哪几个没成功。
+   *
+   * **没有对应的 `rejectAll`**：拒绝的语义是「把文件写回改动前」，而同一个文件
+   * 在一轮里可能有多条 diff，`original` 是**逐条递进**的。批量拒绝按任意顺序
+   * 回放会让文件停在某个中间态 —— 顺序稍一变化结果就不同，而且不报错。
+   * 渲染层按轮次拿到 id 列表后逐条 `rejectDiff`，由调用方保证逆序（见 App.tsx
+   * 的 `applyDiffs`）。给一个语义上不可能正确的批量接口，比不给更糟。
    */
   async acceptAll(): Promise<void> {
     await this.runAll((id) => this.accept(id));
-  }
-
-  async rejectAll(): Promise<void> {
-    await this.runAll((id) => this.reject(id));
   }
 
   private async runAll(op: (id: string) => Promise<void>): Promise<void> {

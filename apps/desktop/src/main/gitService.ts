@@ -26,6 +26,7 @@ import type {
   GitStatusResult,
   GitTagsResult,
 } from '@deepseek-ide/shared';
+import { escapesRoot } from '@deepseek-ide/tools';
 import type { SshSessionManager } from './ssh/SshSessionManager';
 import type { WorkspaceService } from './workspace';
 
@@ -1029,7 +1030,7 @@ export class GitService {
       try {
         if (path.isAbsolute(relPath)) {
           const rel = path.relative(root, relPath);
-          if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+          if (!escapesRoot(rel)) {
             posix = rel.replace(/\\/g, '/');
           }
         }

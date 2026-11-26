@@ -60,6 +60,7 @@ export {
   assertRealPathInside,
   PathJailError,
   toPosixRel,
+  escapesRoot,
 } from './pathJail.js';
 export type { WorkspaceBackend, DirEntry, CommandResult, FileStat } from './backend.js';
 export { LocalFsBackend } from './backend.js';
@@ -165,6 +166,19 @@ export interface ToolContext {
     kind: 'terminal' | 'write' | 'delete' | 'other';
     options?: string[];
     allowInput?: boolean;
+    /**
+     * 这次确认要动的路径（目前只有 write_file / apply_patch 填）。
+     *
+     * 「一次回复里改了好几个文件，能不能一次全同意」要在 Agent 层做合并确认：
+     * 它在执行这批工具调用之前就得知道它们各自会碰哪个路径，才能把 N 次询问
+     * 收成一次。靠 title 里那句英文去反解路径的话，改一次措辞就静默失效。
+     *
+     * 删除与移动**刻意不填**：它们仍然逐条询问。把一条删除混进「本轮将改动
+     * N 个文件」的同意框里，用户按下的是「改」，实际发生了「删」。
+     */
+    path?: string;
+    /** 合并确认：这一条代表下列文件的一次性同意 / 拒绝。 */
+    batch?: { files: string[] };
   }) => Promise<boolean | string>;
   enqueueDiff: (diff: Omit<PendingDiff, 'id'> & { id?: string }) => PendingDiff;
   applyImmediately?: boolean;
@@ -622,6 +636,7 @@ async function writeFileTool(
       title: `Write file ${relPath}`,
       detail: `Overwrite/create ${relPath} (${content.length} chars)`,
       kind: 'write',
+      path: relPath.replace(/\\/g, '/'),
     });
     if (!approved) {
       return { content: 'User rejected write_file', isError: true };
@@ -758,6 +773,7 @@ async function applyPatchTool(
       title: `Patch file ${relPath}`,
       detail: `${edits.length} edit(s), ${original.length} → ${modified.length} chars`,
       kind: 'write',
+      path: relPath.replace(/\\/g, '/'),
     });
     if (!approved) {
       return { content: 'User rejected apply_patch', isError: true };

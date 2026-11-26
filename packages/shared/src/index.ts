@@ -1118,6 +1118,14 @@ export interface ConfirmRequest {
   options?: string[];
   /** 是否显示自由文本输入（ask_user） */
   allowInput?: boolean;
+  /**
+   * 合并确认：一条回复里有多处文件写入时，把它们合成一次询问。
+   *
+   * 有一处就必须有另一处：主进程传下来的 `title` / `detail` 是英文兜底，
+   * 渲染层看到这个字段就改用字典里的标题与逐行文件清单 ——
+   * 否则「合并」只是少弹几次窗，文案仍然是一句话说不清的英文路径堆。
+   */
+  batch?: { files: string[] };
 }
 
 export interface FileTreeNode {
@@ -1856,8 +1864,16 @@ export interface IpcApi {
   stopContinueAgent: (runId: string) => Promise<void>;
   acceptDiff: (diffId: string) => Promise<void>;
   rejectDiff: (diffId: string) => Promise<void>;
+  /**
+   * 采纳**全部**待处理的改动。
+   *
+   * 只保留这一条批量入口，`rejectAll` 已移除：改动栏现在按轮次分组，
+   * 拒绝的语义是「把这一轮的这些文件写回改动前」，而跨轮次批量拒绝会把
+   * 前几轮**用户已经看过但还没决定**的改动一起还原 —— 那几条的 `original`
+   * 互相覆盖，最终停在哪个中间态取决于遍历顺序。渲染层改为逐条 `rejectDiff`，
+   * 由 `applyDiffs` 保证逆序。
+   */
   acceptAllDiffs: () => Promise<void>;
-  rejectAllDiffs: () => Promise<void>;
   /**
    * 本轮 AI 改动的写前记录摘要（用于「撤销本轮 AI 改动」按钮的可用性判断）。
    * 没有记录时返回 `null`。

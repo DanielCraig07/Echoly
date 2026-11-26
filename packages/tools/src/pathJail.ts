@@ -18,6 +18,21 @@ export class PathJailError extends Error {
 }
 
 /**
+ * `path.relative` 的结果是否真的落在根之外。
+ *
+ * **不能只写 `rel.startsWith('..')`**：工作区里一个名叫 `..cache` 或 `..eslintrc`
+ * 的目录，relative 出来就是 `..cache/...`，会被当成上级目录而误拒 ——
+ * 表现为「这个目录怎么都打不开」，日志里只有一句逃逸报错，看不出是名字撞上了。
+ * 逃逸只有两种形状：恰好是 `..`，或以 `..` + 分隔符开头；另一类是根本不同盘时的绝对路径。
+ *
+ * 导出给其它做同样判断的地方复用（git 服务的「绝对路径 → 仓库相对路径」）：
+ * 各写一份的结局是只有一处改对了。
+ */
+export function escapesRoot(rel: string): boolean {
+  return rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+}
+
+/**
  * 词法校验：确认 `relPath` 解析后落在 `workspaceRoot` 内。
  *
  * 这一步**只做字符串层面**的判断，不碰文件系统，所以对符号链接是盲的 ——
@@ -36,7 +51,7 @@ export function resolveInWorkspace(workspaceRoot: string, relPath = '.'): string
   }
   const target = path.resolve(root, relPath);
   const rel = path.relative(root, target);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+  if (escapesRoot(rel)) {
     throw new PathJailError(`Path escapes workspace: ${relPath}`);
   }
   return target;
@@ -62,7 +77,7 @@ export async function assertRealPathInside(workspaceRoot: string, absPath: strin
     const real = await realpathOrSelf(probe);
     if (real !== null) {
       const rel = path.relative(root, real);
-      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      if (escapesRoot(rel)) {
         throw new PathJailError(`Path escapes workspace via symlink: ${absPath}`);
       }
       return;

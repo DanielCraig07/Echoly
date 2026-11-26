@@ -506,6 +506,8 @@ export class AgentService {
       kind: ConfirmRequest['kind'];
       options?: string[];
       allowInput?: boolean;
+      /** 合并确认：这条询问代表下列文件的一次性结论，渲染层据此显示文件清单。 */
+      batch?: { files: string[] };
     }): Promise<boolean | string> => {
       if (controller.signal.aborted) return false;
       const liveMode = this.deps.settings.get().permissionMode;
@@ -513,7 +515,17 @@ export class AgentService {
         return true;
       }
       const id = randomUUID();
-      const confirm: ConfirmRequest = { id, ...req };
+      // 只转发界面认识的字段：工具层传下来的 `path` 是给 Agent 层做合并匹配用的，
+      // 漏进 IPC 只会在每条 ConfirmRequest 里多一个没人读的字段。
+      const confirm: ConfirmRequest = {
+        id,
+        title: req.title,
+        detail: req.detail,
+        kind: req.kind,
+        options: req.options,
+        allowInput: req.allowInput,
+        batch: req.batch,
+      };
       this.emit(runId, { type: 'confirm_request', request: confirm });
       return await new Promise<boolean | string>((resolve) => {
         if (controller.signal.aborted) {

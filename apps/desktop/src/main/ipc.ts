@@ -706,7 +706,6 @@ export function registerIpc(deps: {
   ipcMain.handle('diff:reject', (e, id: string) =>
     run(e, () => registry.current().diffs.reject(id)),
   );
-  ipcMain.handle('diff:rejectAll', (e) => run(e, () => registry.current().diffs.rejectAll()));
   ipcMain.handle('diff:acceptAll', (e) => run(e, () => registry.current().diffs.acceptAll()));
 
   ipcMain.handle('checkpoint:summary', (e, runId?: string) =>

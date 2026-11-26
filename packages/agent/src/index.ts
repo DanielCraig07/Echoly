@@ -31,6 +31,7 @@ import {
   type WorkspaceBackend,
   LocalFsBackend,
 } from '@deepseek-ide/tools';
+import { BatchApprovalGate, collectBatchWritePaths } from './batchConfirm.js';
 import {
   clampSummary,
   formatCompactionNotice,
@@ -559,6 +560,14 @@ export async function runAgent(
     return pending;
   };
 
+  /**
+   * 本轮合并确认的结论表。
+   *
+   * 一步里改多个文件时，先问一次「这批文件都改吗」，再由这张表放行/拒绝
+   * 各写工具自己的那条询问 —— 否则同一步要连点好几次「允许」。
+   */
+  const batchGate = new BatchApprovalGate();
+
   const toolCtx: ToolContext = {
     workspaceRoot,
     backend,
@@ -571,6 +580,11 @@ export async function runAgent(
       if (mode === 'allow_all_extreme') return true;
       // 允许所有：写/终端/删除自动放行；ask_user(other) 仍询问
       if (mode === 'allow_all' && req.kind !== 'other') return true;
+      // 本步已经被「这批文件」的合并确认处理过：不再逐条打扰用户。
+      // 必须在权限判断**之后**：权限中途改成「允许所有」时，合并确认里记下的
+      // 「拒绝」不该继续生效 —— 那是上一次询问的答案。
+      const batched = batchGate.take(req.path);
+      if (batched !== null) return batched;
       onEvent({ type: 'status', status: 'awaiting_confirm' });
       const ok = await requestConfirm(req);
       onEvent({ type: 'status', status: 'tool_running' });
@@ -1311,6 +1325,40 @@ ${el.outerHtml || att.content || ''}
         }
 
         totalToolCallsCount += toolCalls.length;
+
+        /*
+         * 一条回复里改了好几个文件时，先问一次，而不是每个文件弹一次。
+         *
+         * 只在这批里至少有两处**写路径**、且当前权限确实是「每步都要问」时才合并：
+         * `allow_all` 本来就不会弹窗，`deny_all` 在工具层就被挡掉了，
+         * 两种情况都没必要多走一次询问。
+         *
+         * 结论**不按步清空**：用户点的是「这一轮这几个文件」，模型随后在同一轮里
+         * 再改同一个文件仍在那个范围内；若每步清一次，模型每修一次就再弹一次窗，
+         * 等于没合并。这一轮新冒出来的文件没有记录，仍会单独询问。
+         */
+        if (mode === 'agent' && getPermissionMode() === 'ask') {
+          // 上一步没被消费掉的「拒绝」作废：那个工具可能在走到确认前就失败了，
+          // 留着它会让这一步对同一文件的写入被静默驳掉（用户根本没看到询问）。
+          batchGate.beginStep();
+          // 只问还没被同意过的那些：同一轮里模型反复微调同一批文件时，
+          // 每步都把所有路径重新列一遍、再问一次，等于把合并取消掉。
+          const batchPaths = batchGate.pending(collectBatchWritePaths(toolCalls));
+          // 只剩一处时不必合并：工具自己那一条询问就是它，多问一次只是重复。
+          if (batchPaths.length >= 2) {
+            onEvent({ type: 'status', status: 'awaiting_confirm' });
+            const verdict = await requestConfirm({
+              title: `Apply changes to ${batchPaths.length} files`,
+              detail: batchPaths.join('\n'),
+              kind: 'write',
+              batch: { files: batchPaths },
+            });
+            // 取消（signal 中断）与「拒绝」在这里不做区分：两者都不该继续写这批文件，
+            // 而工具层会把「用户拒绝」原样回报给模型，模型能据此调整策略。
+            batchGate.resolve(batchPaths, verdict === true || typeof verdict === 'string');
+            onEvent({ type: 'status', status: 'tool_running' });
+          }
+        }
 
         for (const call of toolCalls) {
           if (signal?.aborted) throw new Error('cancelled');

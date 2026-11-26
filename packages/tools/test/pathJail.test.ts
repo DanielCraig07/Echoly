@@ -39,4 +39,11 @@ describe('pathJail', () => {
     expect(toPosixRel(root, '/workspace/project/src/App.tsx')).toBe('src/App.tsx');
     expect(toPosixRel(root, '/workspace/project')).toBe('');
   });
+
+  it('名字以 .. 开头的条目不算逃逸（..cache / ..eslintrc）', () => {
+    // `startsWith('..')` 会把它们当成上级目录 —— 工作区里真有这种目录时表现为
+    // 「这个文件/目录怎么都打不开」，日志里只有一句逃逸报错
+    expect(() => resolveInWorkspace(root, '..cache/a.ts')).not.toThrow();
+    expect(resolveInWorkspace(root, '..eslintrc')).toBe('/workspace/project/..eslintrc');
+  });
 });

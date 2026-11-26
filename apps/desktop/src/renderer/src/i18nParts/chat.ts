@@ -112,6 +112,38 @@ export const chatDict: Record<string, { zh: string; en: string }> = {
   'chat.diffCollapseList': { zh: '折叠文件清单', en: 'Collapse file list' },
   'chat.diffRejectAll': { zh: '全部拒绝', en: 'Reject all' },
   'chat.diffAcceptAll': { zh: '全部接受', en: 'Accept all' },
+  /**
+   * 按轮次分组后的动作。**跨轮次的「全部接受」刻意不再提供**：
+   * 连问三轮之后，一键接受会把上一轮本来想再想想的改动一起落盘，
+   * 而工具栏上的文字看起来只是「接受这一批」。
+   */
+  'chat.diffBatchLatest': { zh: '本轮改动', en: 'This turn' },
+  'chat.diffBatchPrevious': { zh: '上一轮改动', en: 'Previous turn' },
+  'chat.diffBatchOlder': { zh: '更早的改动', en: 'Earlier changes' },
+  'chat.diffReviewTip': {
+    zh: '逐处查看并接受 / 拒绝…',
+    en: 'Inspect and accept / reject each change…',
+  },
+  'chat.diffBatchSummary': {
+    zh: '{n} 个文件 · {m} 处改动',
+    en: '{n} files · {m} changes',
+  },
+  'chat.diffApplyFailed': {
+    zh: '{n} 个文件未能写入，其余改动已处理',
+    en: '{n} files could not be written; the rest were applied',
+  },
+
+  // ---- 合并确认（一次回复改多个文件时只问一次） ----
+  'chat.batchConfirmTitle': {
+    zh: '本轮将改动 {n} 个文件',
+    en: 'This turn will change {n} files',
+  },
+  'chat.batchConfirmDetail': {
+    zh: '同意后本轮这些文件的改动会一并生效；拒绝则整批不动，模型会收到拒绝并调整方案。',
+    en: 'Allow to apply every change to these files in this turn; deny to leave all of them untouched — the model will be told and can revise its plan.',
+  },
+  'chat.batchAllowAll': { zh: '全部允许', en: 'Allow all' },
+  'chat.batchDenyAll': { zh: '全部拒绝', en: 'Deny all' },
 
   // ---- AI 问答 / 步数上限弹层 ----
   'chat.askAnswerPh': { zh: '输入回答后提交…', en: 'Type an answer and submit…' },

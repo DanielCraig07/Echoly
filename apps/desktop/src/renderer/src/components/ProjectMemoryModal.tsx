@@ -332,7 +332,17 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
         </div>
 
         {/* 编辑区 */}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex' }}>
+        <div
+          style={{
+            flex: 1,
+            position: 'relative',
+            overflow: 'hidden',
+            display: 'flex',
+            padding: '10px 14px',
+            background: 'var(--bg-panel, #1e1e1e)',
+            boxSizing: 'border-box',
+          }}
+        >
           {loading ? (
             <div
               style={{
@@ -360,15 +370,17 @@ export function ProjectMemoryModal({ open, onClose }: ProjectMemoryModalProps) {
                 height: '100%',
                 padding: '12px 14px',
                 boxSizing: 'border-box',
-                background: 'var(--bg-field)',
+                background: 'var(--bg-field, #141414)',
                 color: 'var(--text, #e2e8f0)',
-                border: 'none',
+                border: '1px solid var(--border, rgba(255, 255, 255, 0.12))',
+                borderRadius: 6,
                 outline: 'none',
                 resize: 'none',
                 fontFamily: 'Menlo, Monaco, "Cascadia Code", Consolas, "PingFang SC", monospace',
                 fontSize: 'var(--ui-font-size, 12px)',
                 lineHeight: 1.6,
                 tabSize: 2,
+                transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
               }}
               spellCheck={false}
             />

@@ -465,3 +465,87 @@ export function formatSessionWorkspaceLine(
     title: path || project,
   };
 }
+
+/**
+ * 计算多个打开标签页中同名文件的父路径区分提示（类似 VS Code 标签消歧）
+ * 仅在存在同名文件（同一显示名称在当前 tabs 中出现 >= 2 次）时，为同名文件计算出最短可唯一区分的父路径片段
+ */
+export function computeTabDisambiguationHints(
+  tabs: Array<{ path: string; title?: string }>,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  if (!tabs || tabs.length <= 1) return result;
+
+  const getBaseName = (t: { path: string; title?: string }): string => {
+    if (t.title) return t.title;
+    if (isUntitledPath(t.path)) return untitledTabLabel(t.path);
+    const segs = t.path.replace(/\\/g, '/').split('/');
+    return segs[segs.length - 1] || t.path;
+  };
+
+  // 按显示文件名分组
+  const groups = new Map<string, Array<{ path: string }>>();
+  for (const t of tabs) {
+    if (!t.path) continue;
+    // 忽略浏览器或特殊非本地文件路径
+    if (
+      t.path.startsWith('http://') ||
+      t.path.startsWith('https://') ||
+      t.path.startsWith('browser://') ||
+      t.path.startsWith('extension-')
+    ) {
+      continue;
+    }
+    const name = getBaseName(t);
+    const list = groups.get(name) || [];
+    list.push(t);
+    groups.set(name, list);
+  }
+
+  for (const [, groupTabs] of groups) {
+    if (groupTabs.length <= 1) continue;
+
+    // 解析出每个 tab 的父目录层级（从最近的直接父目录开始向上一级级回溯）
+    const parsed = groupTabs.map((t) => {
+      const norm = t.path.replace(/\\/g, '/').replace(/^\/+/, '');
+      const parts = norm.split('/').slice(0, -1); // 剥离文件名
+      parts.reverse(); // parts[0] 为直接父目录，parts[1] 为祖父目录...
+      return { path: t.path, parts };
+    });
+
+    for (const item of parsed) {
+      if (item.parts.length === 0) {
+        // 文件在根目录下
+        result.set(item.path, '• /');
+        continue;
+      }
+
+      // 逐步增加深度，直到找到能与该同名组其他 tab 区分开的最短相对父路径
+      let depth = 1;
+      let hint = '';
+      while (depth <= item.parts.length) {
+        const candidateParts = item.parts.slice(0, depth).slice().reverse();
+        const candidate = candidateParts.join('/');
+
+        const hasConflict = parsed.some((other) => {
+          if (other.path === item.path) return false;
+          if (other.parts.length < depth) return false;
+          const otherCandidate = other.parts.slice(0, depth).slice().reverse().join('/');
+          return otherCandidate === candidate;
+        });
+
+        if (!hasConflict || depth === item.parts.length) {
+          hint = candidate;
+          break;
+        }
+        depth++;
+      }
+
+      if (hint) {
+        result.set(item.path, hint);
+      }
+    }
+  }
+
+  return result;
+}

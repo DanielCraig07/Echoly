@@ -394,6 +394,15 @@ export function App() {
   aiPanelViewsRef.current = aiPanelViews;
 
   const [diffs, setDiffs] = useState<PendingDiff[]>([]);
+  /**
+   * `diffs` 的镜像。
+   *
+   * 批量接受/拒绝是 async 的：串行写盘的过程中用户可能又点了一次，
+   * 用闭包里的那份 `diffs` 会读到过期列表（把已经处理完的条目再写一遍，
+   * 或者漏掉期间新产生的改动）。ref 总是拿到最新值。
+   */
+  const diffsRef = useRef<PendingDiff[]>(diffs);
+  diffsRef.current = diffs;
   const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
 
   // Cmd/Ctrl+Shift+R 打开审阅面板。
@@ -2991,13 +3000,9 @@ export function App() {
     setSettingsOpen(true);
   }, []);
 
-  const handleChatAcceptAllDiffs = useCallback(() => {
-    void acceptAll();
-  }, [acceptAll]);
-
-  const handleChatRejectAllDiffs = useCallback(() => {
-    void rejectAll();
-  }, [rejectAll]);
+  const handleOpenReviewPanel = useCallback(() => {
+    setReviewPanelOpen(true);
+  }, []);
 
   const handleChatSelectDiff = useCallback(
     (id: string) => {
@@ -4855,40 +4860,64 @@ export function App() {
     }
   }
 
-  async function acceptAll(): Promise<void> {
-    await window.ide.acceptAllDiffs();
-    for (const diff of diffs) {
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.path === diff.path
-            ? { ...t, content: diff.modified, savedContent: diff.modified, dirty: false }
-            : t,
-        ),
-      );
+  /**
+   * 处理**一组**改动（通常是同一轮 Agent 产出的那批）。
+   *
+   * 为什么参数是 id 列表而不是「全部」：改动栏现在按轮次分组，每组的按钮只该管
+   * 自己那一轮。旧的 `acceptAllDiffs` 会把上一轮还挂着的改动一起落盘 ——
+   * 界面上那行字只是「全部接受」，用户看不出它的范围其实跨越了好几轮。
+   *
+   * 逐条**串行**写盘：并发写同一个文件时，几条 diff 的先后顺序会决定最终内容。
+   * 拒绝必须**逆序**回放：diff 记的是 `original → modified`，正的顺序会把后一条的
+   * `original`（也就是前一条的 `modified`）盖回去，文件停在中间态。
+   */
+  async function applyDiffs(ids: string[], action: 'accept' | 'reject'): Promise<void> {
+    const ordered = action === 'accept' ? ids : [...ids].reverse();
+    const failures: string[] = [];
+    const done: PendingDiff[] = [];
+
+    for (const id of ordered) {
+      const diff = diffsRef.current.find((d) => d.id === id);
+      if (!diff) continue;
+      try {
+        if (action === 'accept') await window.ide.acceptDiff(id);
+        else await window.ide.rejectDiff(id);
+        done.push(diff);
+      } catch (err) {
+        failures.push(`${diff.path}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
-    setDiffs([]);
-    setActiveDiffId(null);
-    setTreeRefreshKey((k) => k + 1);
-    window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+
+    const doneIds = new Set(done.map((d) => d.id));
+    setDiffs((prev) => prev.filter((d) => !doneIds.has(d.id)));
+    setActiveDiffId((current) => (current && doneIds.has(current) ? null : current));
+
+    // 每个文件按「这批里最后一条被处理的结果」定稿：同一文件可能被改过多次，
+    // 逐条 setTabs 会让标签内容在中间态闪一下。
+    const finalByPath = new Map<string, PendingDiff>();
+    for (const diff of done) finalByPath.set(diff.path, diff);
+    if (finalByPath.size > 0) {
+      setTabs((prev) =>
+        prev.map((tab) => {
+          const diff = finalByPath.get(tab.path);
+          if (!diff) return tab;
+          const content = action === 'accept' ? diff.modified : diff.original;
+          return { ...tab, content, savedContent: content, dirty: false };
+        }),
+      );
+      setTreeRefreshKey((k) => k + 1);
+      window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
+    }
+
+    if (failures.length > 0) {
+      showGlobalToast(t('chat.diffApplyFailed', { n: failures.length }), 'error');
+    }
   }
 
-  async function rejectAll(): Promise<void> {
-    await (window.ide.rejectAllDiffs?.() ??
-      Promise.all(diffs.map((d) => window.ide.rejectDiff(d.id))));
-    for (const diff of diffs) {
-      setTabs((prev) =>
-        prev.map((t) =>
-          t.path === diff.path
-            ? { ...t, content: diff.original, savedContent: diff.original, dirty: false }
-            : t,
-        ),
-      );
-    }
-    setDiffs([]);
-    setActiveDiffId(null);
-    setTreeRefreshKey((k) => k + 1);
-    window.dispatchEvent(new CustomEvent('echoly:refreshFileTree'));
-  }
+  // 不用 useCallback：`applyDiffs` 依赖 `t`（失败提示要按当前语言显示），
+  // 缓存住会把上一次的 `t` 一起留住，切到英文后报错仍是中文。
+  const acceptDiffs = (ids: string[]) => void applyDiffs(ids, 'accept');
+  const rejectDiffs = (ids: string[]) => void applyDiffs(ids, 'reject');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -5863,10 +5892,15 @@ export function App() {
       </header>
 
       <div className="main-grid">
-        {/* 左侧面板 */}
-        {showLeftPanel && (
+        {/* 左侧面板：保持挂载以保留文件树展开节点与面板状态，按需显隐 */}
+        {!isWelcomeShell && (
           <>
-            <aside className="panel left-side-panel">
+            <aside
+              className="panel left-side-panel"
+              style={{
+                display: showLeftPanel ? 'flex' : 'none',
+              }}
+            >
               <ActivityBar
                 active={leftPanel}
                 pinned={pinnedPanels}
@@ -6361,11 +6395,13 @@ export function App() {
               </div>
             </aside>
 
-            <div
-              className="splitter splitter-v"
-              onMouseDown={(e) => startResize('explorer', e)}
-              title={t('app.resizeTree')}
-            />
+            {showLeftPanel && (
+              <div
+                className="splitter splitter-v"
+                onMouseDown={(e) => startResize('explorer', e)}
+                title={t('app.resizeTree')}
+              />
+            )}
           </>
         )}
 
@@ -7029,8 +7065,9 @@ export function App() {
                         onPermissionModeChange={(m) => void changePermissionMode(m)}
                         contextWindowTokens={contextWindowTokens}
                         diffs={diffs}
-                        onAcceptAllDiffs={handleChatAcceptAllDiffs}
-                        onRejectAllDiffs={handleChatRejectAllDiffs}
+                        onAcceptDiffs={acceptDiffs}
+                        onRejectDiffs={rejectDiffs}
+                        onOpenReview={handleOpenReviewPanel}
                         onRevertTurn={handleChatRevertTurn}
                         onSelectDiff={handleChatSelectDiff}
                         onOpenFile={handleChatOpenFile}

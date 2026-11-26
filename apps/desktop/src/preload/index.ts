@@ -70,7 +70,6 @@ const api: IpcApi = {
   acceptDiff: (diffId) => ipcRenderer.invoke('diff:accept', diffId),
   rejectDiff: (diffId) => ipcRenderer.invoke('diff:reject', diffId),
   acceptAllDiffs: () => ipcRenderer.invoke('diff:acceptAll'),
-  rejectAllDiffs: () => ipcRenderer.invoke('diff:rejectAll'),
   getCheckpointSummary: (runId?: string) => ipcRenderer.invoke('checkpoint:summary', runId),
   getCheckpointDetail: (runId?: string) => ipcRenderer.invoke('checkpoint:detail', runId),
   revertCheckpoint: (runId?: string, options?: { paths?: string[]; force?: boolean }) =>

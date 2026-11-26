@@ -3217,6 +3217,62 @@ span.keybinding {
   max-width: 180px;
 }
 
+.tab .tab-path-hint {
+  font-size: 11px;
+  color: #888888;
+  margin-left: 5px;
+  margin-right: 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 110px;
+  vertical-align: middle;
+  line-height: 1.25;
+  flex-shrink: 0;
+  display: inline-block;
+  user-select: none;
+  pointer-events: none;
+  letter-spacing: 0.02em;
+  transition:
+    color 0.1s ease,
+    background 0.1s ease,
+    border-color 0.1s ease;
+}
+
+.tab:hover .tab-path-hint {
+  color: #cccccc;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.tab.active .tab-path-hint {
+  color: var(--accent-light, #38bdf8);
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.28);
+}
+
+[data-theme='light'] .tab .tab-path-hint {
+  color: #666666;
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme='light'] .tab:hover .tab-path-hint {
+  color: #333333;
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme='light'] .tab.active .tab-path-hint {
+  color: #0284c7;
+  background: rgba(2, 132, 199, 0.1);
+  border-color: rgba(2, 132, 199, 0.22);
+}
+
 .tab .tab-git-badge {
   font-size: 11px;
   font-weight: 600;
@@ -10899,6 +10955,34 @@ span.keybinding {
   gap: 6px;
 }
 
+/*
+ * 合并确认里的文件清单。
+ *
+ * 限高滚动而不是整屏铺开：一次回复改几十个文件时，弹层会把输入框整个顶走，
+ * 而用户此刻真正要做的只是「同意 / 拒绝」。
+ */
+.chat-ask-batch-files {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 140px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-ask-batch-file {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 2px;
+}
+
 .chat-ask-option {
   font-size: var(--ui-font-size, 12px) !important;
   padding: 4px 10px !important;
@@ -17352,6 +17436,29 @@ button.open-ws-action-icon-btn.remove-btn:hover {
   flex-shrink: 0;
 }
 
+/*
+ * 分组版（聊天里那一块）的批次区。
+ *
+ * **滚动放在这一层，不在容器上**：容器底部还有「打开审阅面板」那一行，
+ * 容器自己滚起来会把它滚出视野。同理也不能套到 `.chat-diff-summary-container`
+ * 本身 —— 外部改动栏（`PendingChangesBar`）复用了那个类，而它的
+ * 「全部接受 / 拒绝」正靠在容器底部。
+ */
+.chat-diff-batches {
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+/*
+ * 分组版里每个文件的清单不再单独限高：外层已经在滚，两层滚动条套在一起
+ * 会让「滚一下没反应」变成常态。外部改动栏没有这层容器，仍走 `104px` 那个规则。
+ */
+.chat-diff-batches .chat-diff-file-list {
+  max-height: none;
+}
+
 .chat-diff-file-list {
   display: flex;
   flex-direction: column;
@@ -17517,6 +17624,62 @@ button.open-ws-action-icon-btn.remove-btn:hover {
 
 .chat-diff-action-right .btn-accept-all:hover {
   background: var(--accent-2);
+}
+
+/*
+ * 按轮次分组的改动清单（`.chat-diff-batch`）。
+ *
+ * 一轮一组、组间一条细分隔线：不分组时所有改动挤成一串，用户看不出
+ * 「这个全部接受」到底覆盖哪几条 —— 而它其实只该覆盖一轮。
+ */
+.chat-diff-batch + .chat-diff-batch {
+  border-top: 1px solid var(--border);
+}
+
+.chat-diff-batch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.chat-diff-batch-header .batch-label {
+  color: var(--text);
+  font-weight: 600;
+  font-size: var(--ui-font-size, 12px);
+}
+
+.chat-diff-batch-header .count-text {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chat-diff-file-item .diff-filecount {
+  color: var(--muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* 打开完整审阅面板的那一行：低调的出口，不是本轮的主要动作 */
+.chat-diff-review-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.chat-diff-review-btn:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.chat-diff-action-bar .chat-diff-review-btn {
+  flex: 1;
 }
 
 /*

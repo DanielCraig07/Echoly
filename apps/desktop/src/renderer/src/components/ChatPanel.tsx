@@ -54,7 +54,7 @@ import { TurnCheckpointBar } from './chat/TurnCheckpointBar';
 import { PendingChangesBar } from './PendingChangesBar';
 import type { PendingExternalChange } from '../services/externalFileChanges';
 import { PanelChevron } from './PanelChevron';
-import { computeLineDiffStats } from '../services/diffStats';
+import { ChatDiffSummary } from './chat/ChatDiffSummary';
 import { ProjectHistoryView } from './chat/ProjectHistoryView';
 import { useProjectSessions } from './chat/hooks/useProjectSessions';
 import { useChatCheckpoints } from './chat/hooks/useChatCheckpoints';
@@ -76,8 +76,16 @@ interface Props {
   onPermissionModeChange: (mode: PermissionMode) => void;
   contextWindowTokens: number;
   diffs?: PendingDiff[];
-  onAcceptAllDiffs?: () => void;
-  onRejectAllDiffs?: () => void;
+  /**
+   * 按轮次处理待审阅的改动。
+   *
+   * 参数是**这一轮**的 diff id 列表，而不是「全部」：连问几轮之后，
+   * 一个跨轮次的「全部接受」会把用户本想再想想的改动一起落盘。
+   */
+  onAcceptDiffs?: (ids: string[]) => void;
+  onRejectDiffs?: (ids: string[]) => void;
+  /** 打开完整审阅面板（逐处展开 diff、按轮次分批、J/K 键盘流）。 */
+  onOpenReview?: () => void;
   /** 撤销完成后同步宿主状态：参数是实际被还原的文件路径。 */
   onRevertTurn?: (revertedPaths: string[]) => void | Promise<void>;
   onSelectDiff?: (id: string) => void;
@@ -307,8 +315,9 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
     onPermissionModeChange,
     contextWindowTokens,
     diffs,
-    onAcceptAllDiffs,
-    onRejectAllDiffs,
+    onAcceptDiffs,
+    onRejectDiffs,
+    onOpenReview,
     onRevertTurn,
     onSelectDiff,
     onOpenFile,
@@ -406,7 +415,6 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
   const [isDragging, setIsDragging] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [exported, setExported] = useState(false);
-  const [diffFilesCollapsed, setDiffFilesCollapsed] = useState(false);
   const [showAllOlderTurns, setShowAllOlderTurns] = useState(false);
 
   useEffect(() => {
@@ -3698,107 +3706,45 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
         )}
       </div>
 
-      {/* Windsurf/Cursor style modified files block (above chat input) */}
+      {/* 本轮改动的文件：按 Agent 轮次分组，每轮各自一键接受 / 拒绝 */}
       {diffs && diffs.length > 0 && (
-        <div className="chat-diff-summary-container">
-          {!diffFilesCollapsed && (
-            <div className="chat-diff-file-list">
-              {diffs.map((d) => {
-                const fileName = d.path.split('/').filter(Boolean).pop() || d.path;
-                const { added, deleted } = computeLineDiffStats(d.original, d.modified);
-
-                return (
-                  <div
-                    key={d.id}
-                    className="chat-diff-file-item"
-                    onClick={() => onSelectDiff?.(d.id)}
-                    title={t('chat.diffViewTip', { path: d.path })}
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      style={{ color: 'var(--warn)', flexShrink: 0 }}
-                    >
-                      <rect
-                        x="2"
-                        y="2"
-                        width="12"
-                        height="12"
-                        rx="2"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                      />
-                      <circle cx="8" cy="8" r="2" fill="currentColor" />
-                    </svg>
-                    <span className="diff-stats">
-                      <span className="diff-add">+{added}</span>
-                      <span className="diff-del">-{deleted}</span>
-                    </span>
-                    <span className="diff-filename">{fileName}</span>
-                    <span className="diff-filepath">{d.path}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="chat-diff-action-bar">
-            <div
-              className="chat-diff-action-left"
-              onClick={() => setDiffFilesCollapsed((c) => !c)}
-              title={diffFilesCollapsed ? t('chat.diffExpandList') : t('chat.diffCollapseList')}
-            >
-              <PanelChevron expanded={!diffFilesCollapsed} size={11} color="var(--muted)" />
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ opacity: 0.7 }}
-              >
-                <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-              <span className="count-text">
-                {t('chat.diffFilesWithChanges', { n: diffs.length })}
-              </span>
-            </div>
-            <div className="chat-diff-action-right">
-              <button type="button" className="btn-reject-all" onClick={onRejectAllDiffs}>
-                {t('chat.diffRejectAll')}
-              </button>
-              <button type="button" className="btn-accept-all" onClick={onAcceptAllDiffs}>
-                {t('chat.diffAcceptAll')}
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
+        <ChatDiffSummary
+          diffs={diffs}
+          onAccept={(ids) => onAcceptDiffs?.(ids)}
+          onReject={(ids) => onRejectDiffs?.(ids)}
+          onSelect={(id) => onSelectDiff?.(id)}
+          onOpenReview={onOpenReview}
+        />
       )}
 
-      {/* AI 交互确认 / 问答弹层（输入框上方） */}
+      {/*
+        权限确认 / AI 问答弹层。
+        `batch` 存在时说明这是一次「本轮改了多个文件」的合并询问：标题与说明走字典，
+        下面逐行列出要动的文件 —— 主进程给的 title/detail 是英文兜底，直接显示会变成
+        一屏路径，用户根本看不出这次要动几个文件。
+      */}
       {activeTab?.confirm && (
         <div className="chat-ask-popup">
-          <div className="chat-ask-popup-title">{activeTab.confirm.title}</div>
-          {activeTab.confirm.detail && (
-            <div className="chat-ask-popup-detail">{activeTab.confirm.detail}</div>
+          <div className="chat-ask-popup-title">
+            {activeTab.confirm.batch
+              ? t('chat.batchConfirmTitle', { n: activeTab.confirm.batch.files.length })
+              : activeTab.confirm.title}
+          </div>
+          {activeTab.confirm.batch ? (
+            <>
+              <div className="chat-ask-popup-detail">{t('chat.batchConfirmDetail')}</div>
+              <div className="chat-ask-batch-files">
+                {activeTab.confirm.batch.files.map((file) => (
+                  <div key={file} className="chat-ask-batch-file" title={file}>
+                    {file}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            activeTab.confirm.detail && (
+              <div className="chat-ask-popup-detail">{activeTab.confirm.detail}</div>
+            )
           )}
           {activeTab.confirm.options && activeTab.confirm.options.length > 0 && (
             <div className="chat-ask-popup-options">
@@ -3853,10 +3799,10 @@ const ChatPanelComponent: React.ForwardRefRenderFunction<ChatPanelHandle, Props>
           )}
           <div className="chat-ask-popup-actions">
             <button type="button" className="primary" onClick={() => void answerConfirm(true)}>
-              {t('chat.allow')}
+              {activeTab.confirm.batch ? t('chat.batchAllowAll') : t('chat.allow')}
             </button>
             <button type="button" className="danger" onClick={() => void answerConfirm(false)}>
-              {t('chat.deny')}
+              {activeTab.confirm.batch ? t('chat.batchDenyAll') : t('chat.deny')}
             </button>
           </div>
         </div>

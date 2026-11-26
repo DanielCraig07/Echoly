@@ -19,6 +19,7 @@ import {
   isVirtualPath,
   languageFromPath,
   untitledTabLabel,
+  computeTabDisambiguationHints,
 } from '../utils';
 import { BrowserViewPane } from './browser/BrowserViewPane';
 import { EXTENSION_DETAIL_PREFIX, ExtensionDetailView } from './ExtensionDetailView';
@@ -384,6 +385,10 @@ export function EditorPane({
       tabs.filter((t) => isBrowserPath(t.path) || t.language === 'browser' || t.virtual?.browser),
     [tabs],
   );
+  /** 同名标签页消歧提示（如多个 docker-compose.yaml 时分别显示父目录） */
+  const disambiguationHints = useMemo(() => {
+    return computeTabDisambiguationHints(tabs);
+  }, [tabs]);
   const isBrowserActive = !!(
     active &&
     (isBrowserPath(active.path) || active.language === 'browser' || active.virtual?.browser)
@@ -4537,6 +4542,7 @@ export function EditorPane({
                 (isUntitledPath(tab.path)
                   ? untitledTabLabel(tab.path)
                   : tab.path.split('/').pop() || tab.path);
+              const pathHint = disambiguationHints.get(tab.path);
               const gitMeta = getTabGitMeta(tab.path, gitStatus?.entries);
               const isActive = tab.path === activePath;
               /** 没有文本缓冲区的虚拟标签（扩展详情 / 扩展界面 / 浏览器）。 */
@@ -4553,9 +4559,7 @@ export function EditorPane({
                   title={
                     isBrowser
                       ? `${fileName}${tab.virtual?.browser?.url ? `\n${tab.virtual.browser.url}` : ''}`
-                      : tab.path.startsWith('/')
-                        ? tab.path
-                        : fileName
+                      : tab.path
                   }
                   onClick={() => onSelectTab(tab.path)}
                   onMouseDown={(e) => {
@@ -4617,17 +4621,22 @@ export function EditorPane({
                     className="tab-title"
                     style={{
                       color: gitMeta?.color,
-                      maxWidth: isBrowser ? 180 : 220,
+                      maxWidth: isBrowser ? 180 : pathHint ? 150 : 220,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
                       display: 'inline-block',
                       verticalAlign: 'middle',
                     }}
-                    title={fileName}
+                    title={tab.path}
                   >
                     {fileName}
                   </span>
+                  {pathHint && (
+                    <span className="tab-path-hint" title={tab.path}>
+                      {pathHint}
+                    </span>
+                  )}
                   {/*
                     「只读」徽标只对**真的有一份文本缓冲区**的标签有意义。
                     扩展详情页 / 扩展界面 / 内置浏览器这些虚拟标签里没有可编辑的文本，
