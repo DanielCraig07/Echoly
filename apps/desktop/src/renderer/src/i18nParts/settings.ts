@@ -368,6 +368,10 @@ export const settingsDict: Record<string, { zh: string; en: string }> = {
     zh: '光标所在行常驻显示 Git Blame (提交人、时间与提交摘要)',
     en: 'Always show Git Blame on the cursor line (author, time and commit summary)',
   },
+  'settings.general.showHiddenFiles': {
+    zh: '在文件资源管理器中显示隐藏文件与文件夹 (以点 . 开头)',
+    en: 'Show hidden files and folders in file explorer (starting with .)',
+  },
   'settings.general.docSources': {
     zh: '文档源（Agent 的 search_docs / read_doc 用这些站点）',
     en: 'Doc sources (used by the agent’s search_docs / read_doc)',

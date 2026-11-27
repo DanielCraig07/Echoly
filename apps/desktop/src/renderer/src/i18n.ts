@@ -870,6 +870,8 @@ export const CORE_DICT: Record<string, { zh: string; en: string }> = {
   'app.newFile': { zh: '新建文件', en: 'New File' },
   'app.newFolder': { zh: '新建文件夹', en: 'New Folder' },
   'app.refreshTree': { zh: '刷新文件树', en: 'Refresh file tree' },
+  'app.showHiddenFiles': { zh: '显示隐藏文件', en: 'Show hidden files' },
+  'app.hideHiddenFiles': { zh: '不显示隐藏文件', en: 'Hide hidden files' },
   'app.expandAll': { zh: '全部展开', en: 'Expand all' },
   'app.collapseAll': { zh: '全部折叠', en: 'Collapse all' },
   'app.resizeTree': { zh: '拖拽调整资源树宽度', en: 'Drag to resize the explorer' },

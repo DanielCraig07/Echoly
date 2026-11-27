@@ -2024,6 +2024,22 @@ export function SettingsModal({
                     >
                       <input
                         type="checkbox"
+                        checked={settings.showHiddenFiles === true}
+                        onChange={(e) =>
+                          setSettings({ ...settings, showHiddenFiles: e.target.checked })
+                        }
+                      />
+                      <span>{t('settings.general.showHiddenFiles')}</span>
+                    </label>
+                  </div>
+
+                  <div className="setting-control-group" style={{ marginTop: 12 }}>
+                    <label
+                      className="modern-checkbox-label"
+                      style={{ fontSize: 13, fontWeight: 500 }}
+                    >
+                      <input
+                        type="checkbox"
                         checked={settings.selectionAiFloat !== false}
                         onChange={(e) =>
                           setSettings({ ...settings, selectionAiFloat: e.target.checked })

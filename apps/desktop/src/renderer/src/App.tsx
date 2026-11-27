@@ -563,6 +563,7 @@ export function App() {
   const fileCursorPositionsRef = useRef<Record<string, CursorPos>>({});
   const searchRef = useRef<TopSearchBarHandle>(null);
   const fileTreeRef = useRef<FileTreeHandle>(null);
+  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
 
   const [gitStatus, setGitStatus] = useState<GitStatusResult | null>(null);
   const [workspaceExpanded, setWorkspaceExpanded] = useState(true);
@@ -1752,6 +1753,7 @@ export function App() {
     setFormatOnSave(s.formatOnSave === true);
     setKeymapPreset(s.keymapPreset ?? 'vscode');
     setLargeFileThresholdBytes(s.largeFileThresholdBytes ?? 2 * 1024 * 1024);
+    setShowHiddenFiles(s.showHiddenFiles === true);
     if (s.models && Array.isArray(s.models) && s.models.length > 0) {
       setModels(s.models);
     }
@@ -1759,6 +1761,17 @@ export function App() {
       setActiveModelId(s.activeModelId);
     }
   }, []);
+
+  const handleToggleShowHiddenFiles = useCallback(async () => {
+    const next = !showHiddenFiles;
+    setShowHiddenFiles(next);
+    try {
+      const s = await window.ide.getSettings();
+      await window.ide.saveSettings({ ...s, showHiddenFiles: next });
+    } catch (err) {
+      console.error('Failed to save showHiddenFiles setting:', err);
+    }
+  }, [showHiddenFiles]);
 
   const handleActiveModelChange = useCallback(async (modelId: string) => {
     setActiveModelId(modelId);
@@ -6130,7 +6143,38 @@ export function App() {
                         </svg>
                       </button>
 
-                      {/* 6. 全部折叠 / 展开 */}
+                      {/* 6. 切换显示/隐藏隐藏文件 */}
+                      <button
+                        type="button"
+                        className={`panel-action-btn${showHiddenFiles ? ' active' : ''}`}
+                        title={showHiddenFiles ? t('app.hideHiddenFiles') : t('app.showHiddenFiles')}
+                        onClick={() => void handleToggleShowHiddenFiles()}
+                      >
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          {showHiddenFiles ? (
+                            <>
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </>
+                          ) : (
+                            <>
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                              <line x1="1" y1="1" x2="23" y2="23" />
+                            </>
+                          )}
+                        </svg>
+                      </button>
+
+                      {/* 7. 全部折叠 / 展开 */}
                       <button
                         type="button"
                         className="panel-action-btn"
@@ -6175,6 +6219,7 @@ export function App() {
                           ref={fileTreeRef}
                           workspace={workspace}
                           isRemote={workspaceInfo.kind === 'ssh'}
+                          showHiddenFiles={showHiddenFiles}
                           activePath={activePath}
                           selectedNode={selectedNode}
                           onSelectNode={setSelectedNode}

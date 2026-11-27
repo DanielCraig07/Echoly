@@ -377,6 +377,8 @@ export interface AppSettings {
    * 启动一个能访问外部系统的子进程。这类能力必须由用户显式添加。
    */
   mcpServers?: McpServerConfig[];
+  /** 是否在文件资源管理器中显示隐藏文件与文件夹（以点 . 开头）。默认 false。 */
+  showHiddenFiles?: boolean;
 }
 
 export interface UpdateFeedConfig {
@@ -454,6 +456,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   formatOnSave: false,
   largeFileThresholdBytes: 2 * 1024 * 1024,
   mcpServers: [],
+  showHiddenFiles: false,
 };
 
 /**

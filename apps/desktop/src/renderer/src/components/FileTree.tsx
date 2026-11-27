@@ -81,6 +81,22 @@ export function normalizePathToRel(
   return p.replace(/^\/+/, '');
 }
 
+/**
+ * 判断节点是否为隐藏文件/目录（以点 . 开头或压缩合并路径中包含以点开头的子目录）。
+ * 当 showHiddenFiles 为 true 时直接放行返回 false。
+ */
+export function isHiddenNode(node: FileTreeNode, showHiddenFiles = false): boolean {
+  if (showHiddenFiles) return false;
+  if (node.name.split(' / ').some((part) => part.trim().startsWith('.'))) {
+    return true;
+  }
+  const norm = node.path.replace(/\\/g, '/');
+  if (norm.split('/').some((segment) => segment.startsWith('.'))) {
+    return true;
+  }
+  return false;
+}
+
 interface MenuProps {
   state: ContextMenuState;
   clipboard: PathClipboard;
@@ -664,6 +680,7 @@ interface TreeNodeProps {
   expandPath: string | null;
   inlineEdit: InlineEdit | null;
   isRemote?: boolean;
+  showHiddenFiles?: boolean;
   onOpenFile: (path: string) => void;
   onSelectNode?: (node: { path: string; isDirectory: boolean } | null) => void;
   onContextNode: (e: ReactMouseEvent, node: FileTreeNode) => void;
@@ -678,6 +695,7 @@ function areTreeNodePropsEqual(prev: TreeNodeProps, next: TreeNodeProps): boolea
   if (prev.expandKey !== next.expandKey) return false;
   if (prev.locateKey !== next.locateKey) return false;
   if (prev.isRemote !== next.isRemote) return false;
+  if (prev.showHiddenFiles !== next.showHiddenFiles) return false;
 
   // 节点元数据变动
   if (
@@ -752,6 +770,7 @@ function TreeNodeComponent({
   expandPath,
   inlineEdit,
   isRemote,
+  showHiddenFiles = false,
   onOpenFile,
   onSelectNode,
   onContextNode,
@@ -762,6 +781,10 @@ function TreeNodeComponent({
   const { t } = useI18n();
   const [open, setOpen] = useState(depth === 0);
   const [children, setChildren] = useState<FileTreeNode[] | null>(null);
+  const visibleChildren = useMemo(() => {
+    if (!children) return null;
+    return children.filter((child) => !isHiddenNode(child, showHiddenFiles));
+  }, [children, showHiddenFiles]);
   const [isDropTarget, setIsDropTarget] = useState(false);
   const dragHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1020,9 +1043,9 @@ function TreeNodeComponent({
           />
         )}
 
-        {open && children && (
+        {open && visibleChildren && (
           <>
-            {children.map((child) => (
+            {visibleChildren.map((child) => (
               <TreeNode
                 key={child.path}
                 node={child}
@@ -1036,6 +1059,7 @@ function TreeNodeComponent({
                 locateKey={locateKey}
                 expandPath={expandPath}
                 inlineEdit={inlineEdit}
+                showHiddenFiles={showHiddenFiles}
                 onOpenFile={onOpenFile}
                 onSelectNode={onSelectNode}
                 onContextNode={onContextNode}
@@ -1438,6 +1462,7 @@ interface Props extends FileTreeHandlers {
   ) => void;
   refreshKey: number;
   isRemote?: boolean;
+  showHiddenFiles?: boolean;
 }
 
 export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
@@ -1447,6 +1472,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     selectedNode = null,
     gitStatus,
     isRemote,
+    showHiddenFiles = false,
     onViewFileHistory,
     onDiscardPath,
     onPreviewGitDiff,
@@ -1476,6 +1502,9 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
     [gitStatus?.entries, gitStatus?.ignoredPaths],
   );
   const [roots, setRoots] = useState<FileTreeNode[]>([]);
+  const visibleRoots = useMemo(() => {
+    return roots.filter((node) => !isHiddenNode(node, showHiddenFiles));
+  }, [roots, showHiddenFiles]);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [collapseKey, setCollapseKey] = useState(0);
   const [expandKey, setExpandKey] = useState(0);
@@ -1914,7 +1943,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           onCancel={() => setInlineEdit(null)}
         />
       )}
-      {roots.map((node) => (
+      {visibleRoots.map((node) => (
         <TreeNode
           key={node.path}
           node={node}
@@ -1928,6 +1957,7 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree(
           locateKey={locateKey}
           expandPath={expandPath}
           inlineEdit={inlineEdit}
+          showHiddenFiles={showHiddenFiles}
           onOpenFile={onOpenFile}
           onSelectNode={onSelectNode}
           onContextNode={(e, n) => openMenu(e, { kind: 'node', node: n })}
